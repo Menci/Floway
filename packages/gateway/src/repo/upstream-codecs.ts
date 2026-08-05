@@ -1,11 +1,20 @@
 import { z } from 'zod';
 
-import { decodeStoredJson } from './stored-json.ts';
+import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
+import {
+  decodeStoredJson,
+  decodeStoredJsonValue,
+  parseStoredJson,
+  preserveDecodedStoredJsonProperties,
+} from './stored-json.ts';
 import { BILLING_METRICS, MODEL_KINDS, RERANK_PROTOCOLS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamModelsCache } from '@floway-dev/provider';
 import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 
-const opaqueJsonSchema = z.json();
+// JSON.parse already establishes the JSON grammar. This schema exists to keep
+// the repository boundary explicit without reconstructing objects and losing
+// unusual-but-valid own keys such as `__proto__`.
+const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
   completions: endpointSchema.optional(),
@@ -83,6 +92,7 @@ const modelsCacheSchema = z.object({
   models: z.array(providerModelSchema),
   lastError: z.object({ message: z.string(), at: z.number() }).passthrough().nullable(),
 }).passthrough();
+const modelsCacheEnvelopeSchema = z.object({ revision: z.number() }).passthrough();
 
 const flagOverridesRecordSchema = z.record(z.string(), z.boolean());
 const disabledPublicModelIdsSchema = z.array(z.string());
@@ -108,8 +118,19 @@ export const decodeUpstreamConfig = (raw: string, id: string): unknown =>
 export const decodeUpstreamState = (raw: string, id: string): unknown =>
   decodeUpstreamJson(raw, opaqueJsonSchema, 'state JSON', id);
 
-export const decodeUpstreamModelsCache = (raw: string, id: string): UpstreamModelsCache =>
-  decodeUpstreamJson(raw, modelsCacheSchema, 'models cache JSON', id);
+export const decodeUpstreamModelsCache = (raw: string, id: string): UpstreamModelsCache | null => {
+  const messages = {
+    malformed: `Malformed upstream models cache JSON for ${id}`,
+    invalid: `Invalid upstream models cache JSON for ${id}`,
+  };
+  const parsed = parseStoredJson(raw, messages.malformed);
+  const envelope = decodeStoredJsonValue(parsed, modelsCacheEnvelopeSchema, messages.invalid);
+  if (envelope.revision !== MODEL_CATALOG_REVISION) return null;
+  return preserveDecodedStoredJsonProperties(
+    parsed,
+    decodeStoredJsonValue(parsed, modelsCacheSchema, messages.invalid),
+  );
+};
 
 export const decodeUpstreamFlagOverrides = (raw: string, id: string): Record<string, boolean> =>
   decodeUpstreamJson(raw, flagOverridesRecordSchema, 'flag_overrides JSON', id);

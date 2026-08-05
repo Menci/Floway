@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { decodeStoredJson } from './stored-json.ts';
+import { decodeStoredJsonPreservingProperties } from './stored-json.ts';
 import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const reasoningSchema = z.object({
@@ -41,7 +41,7 @@ const announcedMetadataSchema = z.object({
 }).passthrough();
 
 const decodeAliasJson = <T>(raw: string, schema: z.ZodType<T>, field: string, id: string): T =>
-  decodeStoredJson(raw, schema, {
+  decodeStoredJsonPreservingProperties(raw, schema, {
     malformed: `model_aliases.${field} JSON is malformed for id=${id}`,
     invalid: `model_aliases.${field} JSON is invalid for id=${id}`,
   });
