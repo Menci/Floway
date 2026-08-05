@@ -8,7 +8,7 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
-import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
@@ -383,7 +383,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    const call: UpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
+    const call: MessagesUpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
     const result = await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
