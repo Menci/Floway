@@ -46,7 +46,7 @@ export const resolveAlphaSearchDispatcher = async ({
       {
         fetcher: candidate.fetcher,
         waitUntil: scheduler,
-        headers: filterInboundHeadersForProvider(headers, candidate.provider.kind, 'callAlphaSearch'),
+        headers: filterInboundHeadersForProvider(headers, candidate.provider.kind),
         wrapUpstreamCall: identityWrapUpstreamCall,
       },
     );
