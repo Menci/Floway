@@ -361,7 +361,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
       });
 
       assertEquals(response.status, 200);
-      assertEquals(await response.json(), { object: 'list', data: [] });
+      assertEquals(await response.json(), { object: 'list', data: [], has_more: false, first_id: null, last_id: null });
     },
   );
 });
