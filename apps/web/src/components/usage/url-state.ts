@@ -1,6 +1,7 @@
 import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from './types';
 import { oneOf, repeatedValues } from '../../lib/search-params';
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
+import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
 export interface UsageUrlState {
   range: UsageRange;
@@ -28,8 +29,8 @@ export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
     groupBy,
     filters: clearGroupedTelemetryFilters(filters, groupBy),
     metric: oneOf(search.get('m'), usageMetricValues, 'total'),
-    hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
-    hiddenSearch: (search.get('hideSearch') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
+    hidden: parseHiddenSeries(search, 'hide'),
+    hiddenSearch: parseHiddenSeries(search, 'hideSearch'),
   };
 };
 
@@ -45,7 +46,7 @@ export const serializeUsageUrlState = (state: UsageUrlState): URLSearchParams =>
     ['fk', state.filters.keyId],
   ];
   for (const [key, values] of filters) for (const value of values) search.append(key, value);
-  if (state.hidden.length > 0) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
-  if (state.hiddenSearch.length > 0) search.set('hideSearch', state.hiddenSearch.map(encodeURIComponent).join(','));
+  serializeHiddenSeries(search, 'hide', state.hidden);
+  serializeHiddenSeries(search, 'hideSearch', state.hiddenSearch);
   return search;
 };

@@ -24,4 +24,20 @@ describe('usage URL state', () => {
     expect(parseUsageUrlState(new URLSearchParams('g=userId&fusr=2&fk=key-1')).filters).toMatchObject({ userId: [], keyId: [] });
     expect(parseUsageUrlState(new URLSearchParams('g=keyId&fusr=2&fk=key-1')).filters).toMatchObject({ userId: [], keyId: [] });
   });
+
+  it('uses the shared opaque hidden-series format for both charts', () => {
+    const state = parseUsageUrlState(new URLSearchParams());
+    const serialized = serializeUsageUrlState({
+      ...state,
+      hidden: ['模型', '100%', 'a,b', 'duplicate', 'duplicate'],
+      hiddenSearch: ['search,series', '100%'],
+    });
+
+    expect(serialized.get('hidev')).toBe('2');
+    expect(serialized.get('hideSearchv')).toBe('2');
+    expect(parseUsageUrlState(serialized)).toMatchObject({
+      hidden: ['100%', 'a,b', 'duplicate', 'duplicate', '模型'],
+      hiddenSearch: ['100%', 'search,series'],
+    });
+  });
 });

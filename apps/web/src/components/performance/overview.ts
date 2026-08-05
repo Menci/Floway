@@ -1,6 +1,7 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
+import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type PerformanceRange = DashboardRange;
@@ -120,12 +121,6 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-const hiddenSeriesFormatVersion = '2';
-
-const parseHiddenSeries = (search: URLSearchParams): string[] => search.get('hidev') === hiddenSeriesFormatVersion
-  ? search.getAll('hide')
-  : (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean);
-
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
   const groupBy = oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model');
   const filters = clearGroupedTelemetryFilters({
@@ -138,7 +133,7 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
     groupBy,
     range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
     filters,
-    hidden: parseHiddenSeries(search),
+    hidden: parseHiddenSeries(search, 'hide'),
   };
 };
 
@@ -150,9 +145,6 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.range !== 'today') search.set('r', state.range);
   const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
   for (const [key, values] of filters) for (const value of values) search.append(key, value);
-  if (state.hidden.length) {
-    search.set('hidev', hiddenSeriesFormatVersion);
-    for (const id of [...state.hidden].sort()) search.append('hide', id);
-  }
+  serializeHiddenSeries(search, 'hide', state.hidden);
   return search;
 };
