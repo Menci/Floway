@@ -48,15 +48,16 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     const iterator = providerResult.events[Symbol.asyncIterator]();
     let sourceOpen = true;
     const readSource = async (): Promise<IteratorResult<ProtocolFrame<TEvent>>> => {
+      let next: IteratorResult<ProtocolFrame<TEvent>>;
       try {
-        const next = await iterator.next();
-        if (next.done) sourceOpen = false;
-        else observeFrame(next.value);
-        return next;
+        next = await iterator.next();
       } catch (error) {
         sourceOpen = false;
         throw error;
       }
+      if (next.done) sourceOpen = false;
+      else observeFrame(next.value);
+      return next;
     };
     try {
       while (true) {
