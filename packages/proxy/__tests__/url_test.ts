@@ -89,7 +89,7 @@ describe('parseProxyUri', () => {
   it('parses Shadowsocks legacy when base64 padding survives the URL parser as %3D', () => {
     // base64('aes-128-gcm:abcd') = 'YWVzLTEyOC1nY206YWJjZA==' — non-quad
     // input bytes force `=` padding, which the WHATWG URL constructor
-    // percent-encodes inside userinfo to %3D before atob ever sees it.
+    // percent-encodes inside userinfo before the decoder receives it.
     expect(parseProxyUri('ss://YWVzLTEyOC1nY206YWJjZA==@h:8388#p'))
       .toEqual({
         kind: 'ss',
