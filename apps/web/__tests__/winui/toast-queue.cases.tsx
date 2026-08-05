@@ -35,7 +35,7 @@ const QueueHarness = () => {
 };
 
 describe('winui toaster queue', () => {
-  stubMatchMedia(query => query === '(prefers-reduced-motion: reduce)');
+  stubMatchMedia(query => query.includes('(prefers-reduced-motion: reduce)'));
 
   it('holds a toast dispatched past the limit until a slot frees instead of removing it', async () => {
     renderInApp(<QueueHarness />);
