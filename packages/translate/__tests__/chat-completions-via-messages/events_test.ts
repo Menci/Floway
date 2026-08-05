@@ -415,6 +415,17 @@ test('message_delta with pause_turn → finish_reason stop', () => {
   assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
 });
 
+test.each(['future-stop-reason', ''])('message_delta preserves open stop reason %j', stopReason => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+  const result = translateMessagesEventToChatCompletionsChunks({
+    type: 'message_delta',
+    delta: { stop_reason: stopReason },
+  }, state);
+
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, stopReason);
+});
+
 test('message_delta with refusal → refusal delta and finish_reason stop', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);

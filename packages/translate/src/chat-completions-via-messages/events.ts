@@ -17,6 +17,8 @@ const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: Messages
     return 'length';
   case 'tool_use':
     return 'tool_calls';
+  default:
+    return stopReason;
   }
 };
 
