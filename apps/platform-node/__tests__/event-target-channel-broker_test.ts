@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { EventTargetChannelBroker } from '../src/event-target-channel-broker.ts';
-import type { ChannelCodec } from '@floway-dev/platform';
-import { assertEquals } from '@floway-dev/test-utils';
+import { CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY, type ChannelCodec } from '@floway-dev/platform';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode is identity. Every test below
 // drives the generic broker through this codec, so the broker's typing flows
@@ -19,6 +19,46 @@ const rejectingStringCodec: ChannelCodec<string> = {
     return payload;
   },
 };
+
+const activeChannelCount = <T>(broker: EventTargetChannelBroker<T>): number => {
+  const targets: unknown = Object.getOwnPropertyDescriptor(broker, 'targets')?.value;
+  if (!(targets instanceof Map)) throw new Error('EventTargetChannelBroker targets map is unavailable');
+  return targets.size;
+};
+
+test('EventTargetChannelBroker retains state only while a channel has subscribers', async () => {
+  const broker = new EventTargetChannelBroker<string>(stringCodec);
+  await broker.publish('without-subscribers', 'discarded');
+  assertEquals(activeChannelCount(broker), 0);
+
+  const first = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+  const second = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+  assertEquals(activeChannelCount(broker), 1);
+
+  await first.return?.();
+  assertEquals(activeChannelCount(broker), 1);
+  await second.return?.();
+  assertEquals(activeChannelCount(broker), 0);
+});
+
+test('EventTargetChannelBroker terminates a slow subscriber at the bounded queue capacity', async () => {
+  const broker = new EventTargetChannelBroker<string>(stringCodec);
+  const iter = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+
+  for (let i = 0; i <= CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY; i += 1) {
+    await broker.publish('k', `frame-${i}`);
+  }
+
+  assertEquals(activeChannelCount(broker), 0);
+  for (let i = 0; i < CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY; i += 1) {
+    assertEquals((await iter.next()).value, `frame-${i}`);
+  }
+  await assertRejects(
+    () => iter.next(),
+    Error,
+    `Channel subscriber exceeded ${CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY} buffered frames`,
+  );
+});
 
 test('EventTargetChannelBroker buffers published payloads before the first read', async () => {
   const broker = new EventTargetChannelBroker<string>(stringCodec);

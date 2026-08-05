@@ -12,6 +12,34 @@ export interface ChannelBroker<T> {
   closeChannel(channelId: string, reason: string): Promise<void>;
 }
 
+// Live subscriptions bridge push transports into pull-based async iterators.
+// Without a hard queue bound, a stalled client retains every later frame and
+// can exhaust the process or Worker isolate. 256 frames leaves ample room for
+// the snapshot-to-live handoff while terminating subscribers that stop making
+// progress.
+export const CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY = 256;
+
+export const channelSubscriptionQueuingStrategy = <T>(): QueuingStrategy<T> => ({
+  highWaterMark: CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY,
+  size: () => 1,
+});
+
+export const channelSubscriptionQueueIsEmpty = <T>(
+  controller: ReadableStreamDefaultController<T>,
+): boolean => controller.desiredSize === CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY;
+
+export const enqueueChannelValue = <T>(
+  controller: ReadableStreamDefaultController<T>,
+  value: T,
+): void => {
+  if ((controller.desiredSize ?? 0) <= 0) {
+    throw new Error(
+      `Channel subscriber exceeded ${CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY} buffered frames`,
+    );
+  }
+  controller.enqueue(value);
+};
+
 // The built-in ReadableStream async iterator serializes next() calls. A stream
 // error can therefore reject the active call and complete a concurrently queued
 // call. Channel consumers may issue concurrent reads, so each next() maps

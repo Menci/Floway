@@ -1,4 +1,11 @@
-import { iterateReadableStream, type ChannelBroker, type ChannelCodec } from '@floway-dev/platform';
+import {
+  channelSubscriptionQueueIsEmpty,
+  channelSubscriptionQueuingStrategy,
+  enqueueChannelValue,
+  iterateReadableStream,
+  type ChannelBroker,
+  type ChannelCodec,
+} from '@floway-dev/platform';
 
 // Minimal namespace surface for BROADCAST_DO — declared locally so this
 // file stays off `@cloudflare/workers-types`.
@@ -79,7 +86,10 @@ const iterateFromBroadcastSocket = <T>(
         if (closeUpstream) void closeSocket();
       };
       const flushError = (): void => {
-        if (!pendingError || (controller.desiredSize ?? 0) <= 0) return;
+        if (
+          !pendingError
+          || !channelSubscriptionQueueIsEmpty(controller)
+        ) return;
         const { error } = pendingError;
         pendingError = null;
         controller.error(error);
@@ -97,7 +107,7 @@ const iterateFromBroadcastSocket = <T>(
         try {
           const raw = event.data as string | ArrayBuffer;
           const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
-          controller.enqueue(codec.decode(text));
+          enqueueChannelValue(controller, codec.decode(text));
         } catch (error) {
           fail(error);
         }
@@ -137,5 +147,5 @@ const iterateFromBroadcastSocket = <T>(
     },
     cancel: () => cancel(),
     pull: () => pull(),
-  });
+  }, channelSubscriptionQueuingStrategy<T>());
 };

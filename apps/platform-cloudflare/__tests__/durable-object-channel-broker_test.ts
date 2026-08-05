@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { DurableObjectChannelBroker, type BroadcastNamespace } from '../src/durable-object-channel-broker.ts';
-import type { ChannelCodec } from '@floway-dev/platform';
-import { assertEquals } from '@floway-dev/test-utils';
+import { CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY, type ChannelCodec } from '@floway-dev/platform';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode rejects payloads prefixed with
 // `bad:` so the parse-fail path has a deterministic trigger. Every test below
@@ -244,6 +244,31 @@ test('DurableObjectChannelBroker.subscribe closes the socket when the iterator r
   await Promise.resolve();
   await iter.return?.();
 
+  assertEquals(socket.closed?.code, 1000);
+  assertEquals(socket.listeners.get('message')?.size, 0);
+  assertEquals(socket.listeners.get('close')?.size, 0);
+  assertEquals(socket.listeners.get('error')?.size, 0);
+});
+
+test('DurableObjectChannelBroker closes a slow subscriber at the bounded queue capacity', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const iter = broker.subscribe('k', new AbortController().signal)[Symbol.asyncIterator]();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  for (let i = 0; i <= CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY; i += 1) {
+    socket.emit('message', new MessageEvent('message', { data: `frame-${i}` }));
+  }
+
+  for (let i = 0; i < CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY; i += 1) {
+    assertEquals((await iter.next()).value, `frame-${i}`);
+  }
+  await assertRejects(
+    () => iter.next(),
+    Error,
+    `Channel subscriber exceeded ${CHANNEL_SUBSCRIPTION_BUFFER_CAPACITY} buffered frames`,
+  );
   assertEquals(socket.closed?.code, 1000);
   assertEquals(socket.listeners.get('message')?.size, 0);
   assertEquals(socket.listeners.get('close')?.size, 0);

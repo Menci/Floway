@@ -1,36 +1,63 @@
-import { iterateReadableStream, type ChannelBroker, type ChannelCodec } from '@floway-dev/platform';
+import {
+  channelSubscriptionQueueIsEmpty,
+  channelSubscriptionQueuingStrategy,
+  enqueueChannelValue,
+  iterateReadableStream,
+  type ChannelBroker,
+  type ChannelCodec,
+} from '@floway-dev/platform';
+
+interface ChannelTarget {
+  readonly events: EventTarget;
+  subscribers: number;
+}
 
 // In-process per-channel fan-out backed by EventTarget. The Node deployment
 // target only ever runs one worker process per gateway instance, so a Map of
 // plain emitters is enough — no IPC, no cross-process broadcast.
 export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
-  private readonly targets = new Map<string, EventTarget>();
+  private readonly targets = new Map<string, ChannelTarget>();
 
   constructor(private readonly codec: ChannelCodec<T>) {}
 
-  private targetFor(channelId: string): EventTarget {
+  private acquireTarget(channelId: string): ChannelTarget {
     let target = this.targets.get(channelId);
     if (!target) {
-      target = new EventTarget();
+      target = { events: new EventTarget(), subscribers: 0 };
       this.targets.set(channelId, target);
     }
+    target.subscribers += 1;
     return target;
   }
 
+  private releaseTarget(channelId: string, target: ChannelTarget): void {
+    target.subscribers -= 1;
+    if (target.subscribers === 0 && this.targets.get(channelId) === target) {
+      this.targets.delete(channelId);
+    }
+  }
+
   async publish(channelId: string, payload: T): Promise<void> {
-    this.targetFor(channelId).dispatchEvent(new CustomEvent('frame', { detail: this.codec.encode(payload) }));
+    const encoded = this.codec.encode(payload);
+    this.targets.get(channelId)?.events.dispatchEvent(new CustomEvent('frame', { detail: encoded }));
   }
 
   async closeChannel(channelId: string, _reason: string): Promise<void> {
     const target = this.targets.get(channelId);
     if (!target) return;
-    target.dispatchEvent(new Event('close'));
+    target.events.dispatchEvent(new Event('close'));
     this.targets.delete(channelId);
   }
 
   subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
     if (signal.aborted) return iterateReadableStream(closedStream<T>());
-    return iterateReadableStream(streamFromTarget<T>(this.targetFor(channelId), signal, this.codec));
+    const target = this.acquireTarget(channelId);
+    return iterateReadableStream(streamFromTarget<T>(
+      target.events,
+      signal,
+      this.codec,
+      () => this.releaseTarget(channelId, target),
+    ));
   }
 }
 
@@ -47,6 +74,7 @@ const streamFromTarget = <T>(
   target: EventTarget,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
+  onDetach: () => void,
 ): ReadableStream<T> => {
   let cancel = (): void => {};
   let pull = (): void => {};
@@ -60,6 +88,7 @@ const streamFromTarget = <T>(
         target.removeEventListener('frame', onFrame);
         target.removeEventListener('close', onClose);
         signal.removeEventListener('abort', onAbort);
+        onDetach();
       };
       const close = (): void => {
         if (terminated) return;
@@ -68,7 +97,10 @@ const streamFromTarget = <T>(
         controller.close();
       };
       const flushError = (): void => {
-        if (!pendingError || (controller.desiredSize ?? 0) <= 0) return;
+        if (
+          !pendingError
+          || !channelSubscriptionQueueIsEmpty(controller)
+        ) return;
         const { error } = pendingError;
         pendingError = null;
         controller.error(error);
@@ -83,7 +115,7 @@ const streamFromTarget = <T>(
       const onFrame = (event: Event): void => {
         if (terminated) return;
         try {
-          controller.enqueue(codec.decode((event as CustomEvent<string>).detail));
+          enqueueChannelValue(controller, codec.decode((event as CustomEvent<string>).detail));
         } catch (error) {
           fail(error);
         }
@@ -104,5 +136,5 @@ const streamFromTarget = <T>(
     },
     cancel: () => cancel(),
     pull: () => pull(),
-  });
+  }, channelSubscriptionQueuingStrategy<T>());
 };
