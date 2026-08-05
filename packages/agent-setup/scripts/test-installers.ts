@@ -851,6 +851,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: [workspace.binDir, SHIM_BIN].join(':'),
+    TERM: process.env.TERM ?? 'dumb',
     FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
@@ -1939,7 +1940,7 @@ test('claude', 'the copyable PowerShell command isolates the downloaded installe
 
 test('claude', 'the copyable PowerShell command propagates the downloaded installer status', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const command = powerShellSetupCommand(modelServer.url, '/probe/setup-fail.ps1');
+  const command = `${powerShellSetupCommand(modelServer.url, '/probe/setup-fail.ps1')}; exit $global:LASTEXITCODE`;
   const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
   t.equal(run.code, 23, `the clean child status must reach the caller:\n${run.combined}`);
 });
