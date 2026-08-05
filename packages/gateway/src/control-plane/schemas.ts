@@ -720,10 +720,7 @@ const usageBaseQuery = {
   view: z.enum(['all-by-user', 'self-by-key'], { error: "view must be 'all-by-user' or 'self-by-key'" }),
 };
 
-export const tokenUsageQuery = z.object({
-  ...usageBaseQuery,
-  include_upstream_dimension: z.literal('1').optional(),
-});
+export const tokenUsageQuery = z.object(usageBaseQuery);
 
 // Dashboard `/api/models` accepts two query knobs. `aliases=false` skips the
 // alias-merge pass — the alias edit dialog and shadow detection need the
@@ -756,18 +753,27 @@ const filterValues = (item: z.ZodString) =>
 // an empty result.
 const filterUserId = z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer');
 
-export const performanceQuery = z.object({
+const telemetryOverviewQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
-  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
   // Cross-cutting filters applied to raw records before aggregation. Values
   // within one filter are OR'd, and the filters themselves AND together.
   filter_model: filterValues(z.string()),
   filter_upstream: filterValues(z.string()),
-  filter_operation: filterValues(z.string()),
-  filter_runtime_location: filterValues(z.string()),
   filter_user_id: filterValues(filterUserId),
   filter_key_id: filterValues(z.string()),
+};
+
+export const tokenUsageOverviewQuery = z.object({
+  ...telemetryOverviewQuery,
+  group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
+});
+
+export const performanceQuery = z.object({
+  ...telemetryOverviewQuery,
+  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
+  filter_operation: filterValues(z.string()),
+  filter_runtime_location: filterValues(z.string()),
 });
