@@ -45,7 +45,10 @@ test('/api/token-usage/overview matches the Performance overview shape and filte
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.series.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['claude', 3], ['gpt-5', 5]]);
+  assertEquals(body.series.map((record: { bucket: string; group: string; requests: number }) => [record.bucket, record.group, record.requests]), [
+    ['2026-04-30T10', 'gpt-5', 5],
+    ['2026-04-30T11', 'claude', 3],
+  ]);
   assertEquals(body.axes.none.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['all', 8]]);
   assertEquals(body.dimensionValues, {
     keyIds: ['key_admin'],
