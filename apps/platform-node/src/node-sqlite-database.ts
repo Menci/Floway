@@ -11,11 +11,16 @@ import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from 
 class NodeSqlitePreparedStatement implements SqlPreparedStatement {
   constructor(
     private readonly stmt: StatementSync,
+    private readonly owner: object,
     private readonly bound: readonly SqlBindValue[] = [],
   ) {}
 
   bind(...values: SqlBindValue[]): SqlPreparedStatement {
-    return new NodeSqlitePreparedStatement(this.stmt, values);
+    return new NodeSqlitePreparedStatement(this.stmt, this.owner, values);
+  }
+
+  isOwnedBy(owner: object): boolean {
+    return this.owner === owner;
   }
 
   first<T = Record<string, unknown>>(): Promise<T | null> {
@@ -43,10 +48,12 @@ class NodeSqlitePreparedStatement implements SqlPreparedStatement {
 }
 
 class NodeSqliteDatabase implements SqlDatabase {
+  private readonly statementOwner = {};
+
   constructor(private readonly db: DatabaseSync) {}
 
   prepare(query: string): SqlPreparedStatement {
-    return new NodeSqlitePreparedStatement(this.db.prepare(query));
+    return new NodeSqlitePreparedStatement(this.db.prepare(query), this.statementOwner);
   }
 
   // Wraps the supplied statements in a single transaction so the batch is
@@ -59,7 +66,7 @@ class NodeSqliteDatabase implements SqlDatabase {
     this.db.exec('BEGIN');
     try {
       const results = statements.map(stmt => {
-        if (!(stmt instanceof NodeSqlitePreparedStatement)) {
+        if (!(stmt instanceof NodeSqlitePreparedStatement) || !stmt.isOwnedBy(this.statementOwner)) {
           throw new Error('NodeSqliteDatabase.batch received a statement from a different database adapter');
         }
         return stmt.runSync();
