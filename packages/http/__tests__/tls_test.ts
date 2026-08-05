@@ -26,6 +26,16 @@ describe('userspaceTls — input validation', () => {
     await fake.waitForWritten(1);
     ac.abort(new DOMException('cancelled', 'AbortError'));
     await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('cancelled') });
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('releases the writer when acquiring the transport reader fails', async () => {
+    const fake = makeFakeDuplex();
+    const heldReader = fake.readable.getReader();
+    await expect(userspaceTls(fake, { host: 'example.com' })).rejects.toBeInstanceOf(TypeError);
+    expect(fake.writable.locked).toBe(false);
+    heldReader.releaseLock();
   });
 });
 
@@ -69,6 +79,8 @@ describe('userspaceTls — handshake failure', () => {
     fake.endResponse();
 
     await expect(promise).rejects.toBeInstanceOf(Error);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
   });
 
   it('rejects when the transport EOFs before the handshake completes', async () => {
@@ -80,6 +92,8 @@ describe('userspaceTls — handshake failure', () => {
     await fake.waitForWritten(1);
     fake.endResponse();
     await expect(promise).rejects.toBeInstanceOf(Error);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
   });
 
   it('rejects with an AbortError when the signal aborts AFTER the ClientHello but before the ServerHello', async () => {
