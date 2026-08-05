@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
 import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -28,27 +29,98 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
 });
 const generationFor = (record: UpstreamRecord) => ({ updatedAt: record.updatedAt, config: record.config });
 
+const ownValue = (value: unknown, key: string): unknown => {
+  if (value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) {
+    throw new Error(`Expected own property ${JSON.stringify(key)}`);
+  }
+  return Reflect.get(value, key);
+};
+
+test('SQL upstream repo preserves nested own __proto__ fields in opaque config and state', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord({
+    config: JSON.parse('{"nested":{"__proto__":{"marker":"config"}}}'),
+    state: JSON.parse('{"nested":{"__proto__":{"marker":"state"}}}'),
+  }));
+
+  const stored = await repo.getById('up_test');
+  assertEquals(ownValue(ownValue(ownValue(stored?.config, 'nested'), '__proto__'), 'marker'), 'config');
+  assertEquals(ownValue(ownValue(ownValue(stored?.state, 'nested'), '__proto__'), 'marker'), 'state');
+});
+
 test('SQL upstream repo round-trips the cached catalog and its revision', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
 
   const cached = (await repo.getById('up_test'))?.modelsCache;
-  assertEquals(cached?.revision, 7);
+  assertEquals(cached?.revision, MODEL_CATALOG_REVISION);
   assertEquals(cached?.fetchedAt, 1_700_000_000_000);
   assertEquals(cached?.models.map(model => model.id), ['cached-model']);
   assertEquals(cached?.lastError, null);
+});
+
+test('SQL upstream repo rejects shape-invalid JSON in a cached catalog with row context', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
+    .bind(JSON.stringify({
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: 1_700_000_000_000,
+      models: [{ id: 42 }],
+      lastError: null,
+    }), 'up_test')
+    .run();
+
+  await assertRejects(
+    () => repo.getById('up_test'),
+    Error,
+    'Invalid upstream models cache JSON for up_test: models.0.id',
+  );
+});
+
+test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({
+      id: 'cached-model',
+      providerData: JSON.parse('{"enabledFlags":["provider-private"],"future":{"__proto__":{"marker":"provider"}}}'),
+    })],
+  });
+
+  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
+  assertEquals(model?.enabledFlags instanceof Set, true);
+  assertEquals(ownValue(model?.providerData, 'enabledFlags'), ['provider-private']);
+  assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
+});
+
+test('SQL upstream repo hydrates deeply nested opaque provider data without recursively copying it', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+  const depth = 20_000;
+  const providerData = `${'{"next":'.repeat(depth)}null${'}'.repeat(depth)}`;
+  const cache = `{"revision":${MODEL_CATALOG_REVISION},"fetchedAt":1700000000000,"models":[{"id":"deep-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"providerData":${providerData},"enabledFlags":[]}],"lastError":null}`;
+  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(cache, 'up_test').run();
+
+  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
+  assertEquals(model?.id, 'deep-model');
+  assertEquals(ownValue(model?.providerData, 'next') !== undefined, true);
 });
 
 test('SQL upstream repo saveModelsCacheError annotates a cached catalog and saveModelsCache clears it', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
@@ -59,7 +131,7 @@ test('SQL upstream repo saveModelsCacheError annotates a cached catalog and save
   assertEquals(annotated?.models.map(model => model.id), ['cached-model']);
 
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_001_000_000,
     models: [stubProviderModel({ id: 'refreshed-model' })],
   });
@@ -79,7 +151,7 @@ test('SQL upstream repo saveClearingModelsCache updates the row and removes the 
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
@@ -116,7 +188,7 @@ test('SQL model-cache generation accepts semantically equal noncanonical config 
   if (!parsed) throw new Error('upstream row missing');
 
   const saved = await repo.saveModelsCache(record.id, generationFor(parsed), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_001_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });
@@ -129,7 +201,7 @@ test('SQL upstream repo save leaves an existing cached catalog alone', async () 
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
-    revision: 7,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],
   });

@@ -344,6 +344,19 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
   expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
 });
 
+test('SQL rejects shape-invalid snapshot item ids with both row identities', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(apiKey());
+  await db.prepare(
+    'INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at) VALUES (?, ?, ?, ?)',
+  ).bind('resp-invalid', 'key-a', '["msg-valid",42]', atDay(10)).run();
+
+  await expect(repo.responsesSnapshots.lookup('key-a', 'resp-invalid', 0)).rejects.toThrow(
+    'responses_snapshots.item_ids_json is invalid for id=resp-invalid, api_key_id=key-a: 1',
+  );
+});
+
 test('SQL hydration retries with every current item identity column after a replacement race', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(atDay(11));

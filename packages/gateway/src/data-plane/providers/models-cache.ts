@@ -1,5 +1,6 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
+import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
@@ -14,10 +15,7 @@ import type { Fetcher, ProviderModel } from '@floway-dev/provider';
 const SOFT_MS = 10 * 60 * 1000;
 const HARD_MS = 24 * 60 * 60 * 1000;
 
-// Persisted ProviderModel rows contain code-derived metadata as well as the
-// upstream response. Increment this whenever that derived catalog contract or
-// its serialization changes so older rows become cold across deployments.
-export const MODEL_CATALOG_REVISION = 5;
+export { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 
 export interface ModelsCacheFetchOptions {
   scheduler: BackgroundScheduler;
