@@ -70,11 +70,19 @@ describe('Copilot device-flow polling', () => {
     pollResponse = async () => Response.json({ status: 'pending' });
     renderInApp(<ProviderConfigHarness record={record} />);
     const host = screen.getByRole('textbox', { name: copilot('githubHost') }) as HTMLInputElement;
+    const connect = screen.getByRole('button', { name: copilot('connect') }) as HTMLButtonElement;
 
     expect(host.value).toBe('github.com');
     expect(host.required).toBe(true);
+    fireEvent.change(host, { target: { value: '   ' } });
+    expect(connect.disabled).toBe(true);
+    fireEvent.click(connect);
+    await advance(0);
+    expect(startRecord).toBeNull();
+
     fireEvent.change(host, { target: { value: 'octocorp.ghe.com' } });
-    fireEvent.click(screen.getByRole('button', { name: copilot('connect') }));
+    expect(connect.disabled).toBe(false);
+    fireEvent.click(connect);
     await advance(0);
 
     expect(startRecord?.config.githubHost).toBe('octocorp.ghe.com');

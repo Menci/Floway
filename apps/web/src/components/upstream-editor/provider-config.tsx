@@ -278,6 +278,7 @@ function CopilotConfig({ record, onPatch }: {
   const { control } = useFormContext<ValuesForKind<'copilot'>>();
   const values = useWatch<UpstreamEditorValues>();
   const config = values.config as typeof record.config;
+  const githubHostEmpty = config.githubHost.trim() === '';
   const [flow, setFlow] = useState<DeviceFlowStart | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -337,41 +338,37 @@ function CopilotConfig({ record, onPatch }: {
     setFlow(result.data);
   };
 
-  const hostField = <Field
-    label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.copilot.githubHost'), t('dashboard.upstreamEditor.copilot.githubHostHint')) }}
-  >
-    <Controller
-      control={control}
-      name="config.githubHost"
-      render={({ field }) => <Input
-        className="font-mono"
-        name={field.name}
-        onBlur={field.onBlur}
-        onChange={(_, data) => field.onChange(data.value)}
-        readOnly={busy || flow !== null || Boolean(config.user.login)}
-        ref={field.ref}
-        required
-        value={field.value}
-      />}
-    />
-  </Field>;
-
-  if (config.user.login) {
-    return <div className="grid gap-3">
-      {hostField}
-      <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`${config.githubHost}/${config.user.login}`} />
-      {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
-    </div>;
-  }
   return <div className="grid gap-3">
-    {hostField}
-    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {!flow ? <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
-      <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
-      <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
-      <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
-      <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
-    </>}
+    <Field label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.copilot.githubHost'), t('dashboard.upstreamEditor.copilot.githubHostHint')) }}>
+      <Controller
+        control={control}
+        name="config.githubHost"
+        render={({ field }) => <Input
+          className="font-mono"
+          name={field.name}
+          onBlur={field.onBlur}
+          onChange={(_, data) => field.onChange(data.value)}
+          readOnly={busy || flow !== null || Boolean(config.user.login)}
+          ref={field.ref}
+          required
+          value={field.value}
+        />}
+      />
+    </Field>
+    {config.user.login
+      ? <>
+          <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`${config.githubHost}/${config.user.login}`} />
+          {isPersisted(record) ? <CopilotQuotaCard record={record} /> : <ReadyToSaveHint kind="copilot" />}
+        </>
+      : <>
+          {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
+          {!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
+            <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
+            <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
+            <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
+            <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
+          </>}
+        </>}
   </div>;
 }
 
