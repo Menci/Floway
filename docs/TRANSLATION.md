@@ -91,8 +91,9 @@ Codex declares `collaboration` as a reserved Responses namespace and marks the
 the Responses-only `encrypted: true` schema extension. Native Copilot rejects a
 reserved namespace whose schema removes that field, so Floway projects the
 entire namespace onto a request-scoped ordinary name
-`floway_collaboration`, adding the first free numeric suffix only when that name
-is already occupied. The deterministic name preserves prompt-cache prefixes.
+`collaboration_2`, incrementing the suffix only when that name is already
+occupied. This is ordinary client-side namespace collision resolution; neither
+wire side exposes a gateway-specific name. The deterministic name preserves prompt-cache prefixes.
 Only those three message schemas lose `encrypted`; the other collaboration
 actions and every unrelated tool are unchanged.
 

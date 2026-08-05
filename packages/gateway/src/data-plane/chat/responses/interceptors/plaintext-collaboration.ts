@@ -14,7 +14,7 @@ import {
 import type { ChatTargetApi } from '@floway-dev/provider';
 
 const CLIENT_NAMESPACE = 'collaboration';
-const UPSTREAM_NAMESPACE = 'floway_collaboration';
+const UPSTREAM_NAMESPACE_PREFIX = 'collaboration_';
 const MESSAGE_ACTIONS = new Set<string>(RESPONSES_INTER_AGENT_MESSAGE_ACTIONS);
 
 type NamespaceTool = ResponsesHostedTool & {
@@ -73,9 +73,10 @@ const namespaceNames = (payload: CanonicalResponsesPayload): Set<string> => {
 };
 
 const upstreamNamespace = (occupied: ReadonlySet<string>): string => {
-  let candidate = UPSTREAM_NAMESPACE;
-  for (let suffix = 2; occupied.has(candidate); suffix += 1) candidate = `${UPSTREAM_NAMESPACE}_${suffix}`;
-  return candidate;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${UPSTREAM_NAMESPACE_PREFIX}${suffix}`;
+    if (!occupied.has(candidate)) return candidate;
+  }
 };
 
 const rewriteMessageSchema = (tool: ResponsesTool, encrypted: boolean): ResponsesTool => {

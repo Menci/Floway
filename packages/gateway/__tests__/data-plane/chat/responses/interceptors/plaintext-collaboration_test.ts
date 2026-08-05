@@ -99,7 +99,7 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
 
   if (upstreamPayload === undefined) throw new Error('Expected upstream payload');
   const upstreamNamespace = (upstreamPayload.tools?.[0] as { name: string }).name;
-  expect(upstreamNamespace).toBe('floway_collaboration');
+  expect(upstreamNamespace).toBe('collaboration_2');
   const upstreamNamespaceTool = upstreamPayload.tools?.[0] as unknown as { tools: Array<{ name: string; parameters?: Record<string, unknown> }> };
   for (const tool of upstreamNamespaceTool.tools.filter(tool => ['spawn_agent', 'send_message', 'followup_task'].includes(tool.name))) {
     expect((tool.parameters?.properties as Record<string, Record<string, unknown>>).message).not.toHaveProperty('encrypted');
@@ -145,7 +145,7 @@ test('uses a deterministic collision suffix and restores shared context between 
     ...ctx.payload,
     tools: [
       ...(ctx.payload.tools ?? []),
-      { type: 'namespace', name: 'floway_collaboration', tools: [] } as ResponsesTool,
+      { type: 'namespace', name: 'collaboration_2', tools: [] } as ResponsesTool,
     ],
   };
   const seen: string[] = [];
@@ -156,7 +156,7 @@ test('uses a deterministic collision suffix and restores shared context between 
 
   await run();
   await run();
-  expect(seen).toEqual(['floway_collaboration_2', 'floway_collaboration_2']);
+  expect(seen).toEqual(['collaboration_3', 'collaboration_3']);
   expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration');
 });
 
@@ -205,11 +205,11 @@ test('projects deferred tool-search inventories without a top-level tool list', 
     if (item.type !== 'tool_search_output') throw new Error('Expected tool-search output');
     return eventResult((async function* () {
       yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-      yield eventFrame({ type: 'response.completed', response: response([item], [], 'floway_collaboration') });
+      yield eventFrame({ type: 'response.completed', response: response([item], [], 'collaboration_2') });
     })(), testTelemetryModelIdentity);
   });
 
-  expect(upstreamItem).toMatchObject({ tools: [{ name: 'floway_collaboration' }] });
+  expect(upstreamItem).toMatchObject({ tools: [{ name: 'collaboration_2' }] });
   if (result.type !== 'events') throw new Error('Expected events');
   const items: ResponsesOutputItem[] = [];
   for await (const frame of result.events) {
@@ -224,7 +224,7 @@ test('rejects an upstream encrypted marker before labeling the call plaintext', 
     type: 'function_call' as const,
     id: 'fc_1',
     call_id: 'call_1',
-    namespace: 'floway_collaboration',
+    namespace: 'collaboration_2',
     name: 'spawn_agent',
     arguments: '{"message":"opaque"}',
     encrypted_function_args: ['message'],
@@ -243,7 +243,7 @@ test('rejects an upstream encrypted marker before labeling the call plaintext', 
 test('preserves explicit null tools in response snapshots', async () => {
   const ctx = invocation();
   const snapshot = {
-    ...response([], [], 'floway_collaboration'),
+    ...response([], [], 'collaboration_2'),
     tools: null,
   } as unknown as ResponsesResult;
   const result = await withPlaintextCollaboration(ctx, mockChatGatewayCtx(), async () =>
