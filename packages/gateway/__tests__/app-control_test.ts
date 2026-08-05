@@ -78,8 +78,12 @@ test('Owner-via-API-key can rotate their own key', async () => {
   assertEquals(response.status, 200);
 });
 
-test('API key users cannot mutate /api/search-config routes', async () => {
+test('API key users cannot enter admin-only control routes', async () => {
   const { apiKey } = await setupAppTest();
+
+  const users = await requestApp('/api/users', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(users.status, 403);
+  assertEquals(await users.json(), { error: 'Admin privileges required' });
 
   const response = await requestApp('/api/search-config', {
     method: 'PUT',
