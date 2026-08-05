@@ -27,5 +27,5 @@ $results = foreach ($json in $cases) {
   });
 
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-  expect(result.stdout).toBe('rejected,rejected,rejected,accepted,accepted');
+  expect(result.stdout, result.stderr).toBe('rejected,rejected,rejected,accepted,accepted');
 });

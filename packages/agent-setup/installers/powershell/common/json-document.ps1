@@ -53,10 +53,9 @@ function Assert-SetupJsonInfoset {
     ))) {
       throw "JSON contains an invalid number: $($element.InnerText)"
     }
-    $names = if ($type -ceq 'object') {
-      [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    } else {
-      $null
+    $names = $null
+    if ($type -ceq 'object') {
+      $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     }
     foreach ($child in $element.ChildNodes) {
       if ($child -isnot [System.Xml.XmlElement]) { continue }
