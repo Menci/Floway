@@ -185,7 +185,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const upstreamBody = response.body;
     if (!upstreamBody) {
       ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordFailedRequest(ctx, performanceContext);
+      settle(ctx, performanceContext, identity, null, true);
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
       forwardUpstreamHeaders(c, response.headers);
