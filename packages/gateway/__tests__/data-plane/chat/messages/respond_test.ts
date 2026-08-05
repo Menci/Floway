@@ -126,8 +126,8 @@ test('respondMessages forwards upstream headers and strips hop-by-hop / framing 
 // --- partial usage checkpointing on client disconnect ---
 
 // A generator whose next() resolves only when emit() supplies the next event.
-// Lets a test interleave "upstream emitted frame X" with "downstream cancels",
-// so the streaming finally block fires while message_stop is still in flight.
+// It keeps producing after downstream cancellation so the retained response
+// path can drain terminal usage before settling telemetry.
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -140,21 +140,23 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve };
 };
 
-const controlledMessagesEvents = (signal: AbortSignal): {
+const controlledMessagesEvents = (): {
   readonly events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
   readonly emit: (event: MessagesStreamEvent) => void;
+  readonly close: () => void;
   readonly stopped: Promise<void>;
 } => {
   const queued: ProtocolFrame<MessagesStreamEvent>[] = [];
   let pending: Deferred<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> | undefined;
+  let closed = false;
   const stopped = deferred<void>();
   const events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>> = {
     [Symbol.asyncIterator]() {
       return {
         next(): Promise<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> {
-          if (signal.aborted) return Promise.resolve({ done: true, value: undefined });
           const frame = queued.shift();
           if (frame !== undefined) return Promise.resolve({ done: false, value: frame });
+          if (closed) return Promise.resolve({ done: true, value: undefined });
           pending = deferred<IteratorResult<ProtocolFrame<MessagesStreamEvent>>>();
           return pending.promise;
         },
@@ -166,11 +168,6 @@ const controlledMessagesEvents = (signal: AbortSignal): {
       };
     },
   };
-  signal.addEventListener('abort', () => {
-    pending?.resolve({ done: true, value: undefined });
-    pending = undefined;
-    stopped.resolve();
-  }, { once: true });
   return {
     events,
     emit: event => {
@@ -182,21 +179,27 @@ const controlledMessagesEvents = (signal: AbortSignal): {
         waiter.resolve({ done: false, value: frame });
       }
     },
+    close: () => {
+      closed = true;
+      pending?.resolve({ done: true, value: undefined });
+      pending = undefined;
+      stopped.resolve();
+    },
     stopped: stopped.promise,
   };
 };
 
-test('respondMessages records the latest upstream usage when the client disconnects before message_stop', async () => {
+test('respondMessages drains terminal upstream usage after the client disconnects', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const downstreamAbortController = new AbortController();
-  const controlled = controlledMessagesEvents(downstreamAbortController.signal);
+  const clientDisconnectController = new AbortController();
+  const controlled = controlledMessagesEvents();
   const scheduledUsage = deferred<Promise<unknown>>();
   const ctx: ChatGatewayCtx = {
     ...makeRespondCtx(),
     wantsStream: true,
-    abortSignal: downstreamAbortController.signal,
-    downstreamAbortController,
+    clientDisconnectSignal: clientDisconnectController.signal,
+    clientDisconnectController,
     backgroundScheduler: promise => { scheduledUsage.resolve(promise); },
   };
   const providerResult: ProviderStreamResult<MessagesStreamEvent> = {
@@ -230,11 +233,14 @@ test('respondMessages records the latest upstream usage when the client disconne
   }
 
   await reader.cancel();
+  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 23 } });
+  controlled.emit({ type: 'message_stop' });
+  controlled.close();
   await controlled.stopped;
   await (await scheduledUsage.promise);
 
-  assertEquals(downstreamAbortController.signal.aborted, true);
+  assertEquals(clientDisconnectController.signal.aborted, true);
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(tokenCountsFromUsage(rows[0]), { input: 20, output: 17 });
+  assertEquals(tokenCountsFromUsage(rows[0]), { input: 20, output: 23 });
 });

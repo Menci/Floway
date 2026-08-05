@@ -141,8 +141,7 @@ const mockControlledResponsesTurn = (
   const controlledEvents = deferred<ControlledResponsesEvents>();
   const metadataRead = deferred<void>();
   const generate = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
-    const signal = ctx.abortSignal;
-    assertExists(signal);
+    const signal = ctx.clientDisconnectSignal;
     const events = createEvents(signal);
     ctx.affinity.select(stubModelCandidate({ model: { id: 'gpt-direct-responses' } }));
     turnSignal.resolve(signal);
