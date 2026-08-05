@@ -33,6 +33,7 @@ import type {
   ResponsesRequestPayload,
   ResponsesTool,
   ResponsesToolChoice,
+  ResponsesToolOutputContent,
 } from '@floway-dev/protocols/responses';
 
 interface BuildTargetRequestOptions {
@@ -98,7 +99,7 @@ const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteIm
 // Multimodal `function_call_output` outputs carry the same content parts as a
 // user message; map them to Messages tool_result blocks (which natively carry
 // image blocks) rather than flattening images away.
-const translateToolOutput = async (output: string | ResponsesInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | MessagesToolResultContentBlock[]> => {
+const translateToolOutput = async (output: string | ResponsesToolOutputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | MessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
 
   const blocks: MessagesToolResultContentBlock[] = [];
