@@ -9,6 +9,10 @@ export interface RefreshControl {
   refreshing: boolean;
 }
 
+export interface RefreshOnChangeControl<Query> extends RefreshControl {
+  loadedQuery: Query;
+}
+
 export const useRefresh = (
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<void>,
 ): RefreshControl => {
@@ -57,10 +61,14 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
 export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   query: Query,
   reload: (signal: AbortSignal, options: { background: boolean }, arrived: () => void) => Promise<void>,
-): RefreshControl => {
+): RefreshOnChangeControl<Query> => {
   const loadedFor = useRef(query);
+  const [loadedQuery, setLoadedQuery] = useState(query);
   const control = useRefresh(useCallback(
-    (signal: AbortSignal, options: { background: boolean }) => reload(signal, options, () => { loadedFor.current = query; }),
+    (signal: AbortSignal, options: { background: boolean }) => reload(signal, options, () => {
+      loadedFor.current = query;
+      setLoadedQuery(query);
+    }),
     [query, reload],
   ));
   const { refresh } = control;
@@ -70,5 +78,5 @@ export const useRefreshOnChange = <Query extends Record<string, unknown>>(
     void refresh();
   }, [query, refresh]);
 
-  return control;
+  return { ...control, loadedQuery };
 };

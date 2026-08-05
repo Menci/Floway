@@ -95,12 +95,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setError(next.error);
   }, [loaderData.isAdmin, query]);
 
-  const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
+  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
   usePollWhileVisible(poll);
 
   const urlState = useMemo<UsageUrlState>(
-    () => ({ range, groupBy, filters, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch] }),
-    [filters, groupBy, hiddenSearch, hiddenSeries, metric, range],
+    () => ({ ...loadedQuery, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch] }),
+    [hiddenSearch, hiddenSeries, loadedQuery, metric],
   );
   useEffect(() => {
     setSearchParams(serializeUsageUrlState(urlState), rewrite);
@@ -126,9 +126,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [t, upstreams, usage]);
   const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || loaderData.isAdmin) ?? null;
   const filterDimensions = availableDimensions?.filter(dimension => (
-    !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
+    !((dimension.key === 'userId' || dimension.key === 'keyId') && (loadedQuery.groupBy === 'userId' || loadedQuery.groupBy === 'keyId'))
   ));
-  const selectedDimension = availableDimensions?.find(dimension => dimension.key === groupBy);
+  const selectedDimension = availableDimensions?.find(dimension => dimension.key === loadedQuery.groupBy);
   const visibleSeries = useMemo(
     () => usage?.series.filter(record => !hiddenSeries.has(record.group)) ?? null,
     [hiddenSeries, usage],
@@ -174,9 +174,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       {availableDimensions && filterDimensions && <TelemetryDimensionControls
         dimensions={availableDimensions}
         filterDimensions={filterDimensions}
-        filters={filters}
-        groupBy={groupBy}
-        groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
+        filters={loadedQuery.filters}
+        groupBy={loadedQuery.groupBy}
+        groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
           <Button
             appearance="subtle"
             aria-label={t('dashboard.usage.apiKeyScopeLabel')}
@@ -198,7 +198,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
             { value: '30d', label: t('dashboard.usage.range.thirtyDays'), to: addressOf({ range: '30d' }) },
           ]}
           onChange={value => setRange(value as UsageRange)}
-          value={range}
+          value={loadedQuery.range}
         />
       </div>
 

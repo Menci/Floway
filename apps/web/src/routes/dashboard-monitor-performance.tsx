@@ -128,13 +128,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     }
   }, [query]);
 
-  const { poll, refresh, refreshing } = useRefreshOnChange(query, reload);
+  const { loadedQuery, poll, refresh, refreshing } = useRefreshOnChange(query, reload);
 
   usePollWhileVisible(poll);
 
   const urlState = useMemo<PerformanceUrlState>(
-    () => ({ metric, percentile, groupBy, range, filters, hidden: [...hiddenSeries] }),
-    [filters, groupBy, hiddenSeries, metric, percentile, range],
+    () => ({ ...loadedQuery, metric, percentile, hidden: [...hiddenSeries] }),
+    [hiddenSeries, loadedQuery, metric, percentile],
   );
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const setFilter = (key: keyof PerformanceFilters, value: string[]) => setFilters(current => ({ ...current, [key]: value }));
   const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const labels = useMemo(() => overview && upstreamNames && performanceLabels(overview, upstreamNames), [overview, upstreamNames]);
-  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, groupBy, labels, buckets, loadedRange), [buckets, groupBy, labels, loadedRange, metric, overview, percentile]);
+  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedRange), [buckets, labels, loadedQuery.groupBy, loadedRange, metric, overview, percentile]);
   const summary = overview?.axes.none[0];
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
@@ -184,7 +184,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   ];
   const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
   const filterDimensions = availableDimensions.filter(dimension => (
-    !((dimension.key === 'userId' || dimension.key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId'))
+    !((dimension.key === 'userId' || dimension.key === 'keyId') && (loadedQuery.groupBy === 'userId' || loadedQuery.groupBy === 'keyId'))
   ));
 
   return <section className="dashboard-page">
@@ -199,9 +199,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         <TelemetryDimensionControls
           dimensions={availableDimensions}
           filterDimensions={filterDimensions}
-          filters={filters}
-          groupBy={groupBy}
-          groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+          filters={loadedQuery.filters}
+          groupBy={loadedQuery.groupBy}
+          groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
             <Button
               appearance="subtle"
               aria-label={t('dashboard.performance.apiKeyScopeLabel')}
@@ -228,11 +228,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
           <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
             { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-          ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
+          ]} onChange={value => setRange(value as PerformanceRange)} value={loadedQuery.range} />
         </div>
       </Panel>
       <Panel className="min-w-0">
-        <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
+        <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`), percentile })} />
       </Panel>
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         {/* The scrollport clips the 2px ring a focused tab paints, so it takes
