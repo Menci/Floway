@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { stringify } from 'uuid';
+import { v4 } from 'uuid';
 
 import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
@@ -75,8 +75,5 @@ const firstUserMessageText = (messages: MessagesMessage[]): string => {
 const sha256Hex = (input: string): string => bytesToHex(sha256(new TextEncoder().encode(input)));
 
 const sha256Uuidv4 = (input: string): string => {
-  const bytes = sha256(new TextEncoder().encode(input)).slice(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  return stringify(bytes);
+  return v4({ random: sha256(new TextEncoder().encode(input)) });
 };

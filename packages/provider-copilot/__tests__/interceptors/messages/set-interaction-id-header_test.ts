@@ -78,6 +78,7 @@ test('Interaction-id has RFC UUIDv4 version and variant bits', async () => {
 
   const value = ctx.headers.get('x-interaction-id');
   assert(value !== null && validate(value));
+  assertEquals(value, 'beaa3c07-13ee-4265-8432-db45acf47d67');
   assertEquals(version(value), 4);
   assertEquals(parse(value)[8] & 0xc0, 0x80);
 });

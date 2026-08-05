@@ -1,4 +1,4 @@
-import { stringify } from 'uuid';
+import { v4 } from 'uuid';
 
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
@@ -21,12 +21,7 @@ import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
  */
 const sessionUuid = async (input: string): Promise<string> => {
   const data = new TextEncoder().encode(input);
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data)).slice(0, 16);
-  // RFC 4122 §4.4 layout: stamp version 4 in the high nibble of byte 6 and
-  // variant 10 in the high two bits of byte 8.
-  digest[6] = (digest[6] & 0x0f) | 0x40;
-  digest[8] = (digest[8] & 0x3f) | 0x80;
-  return stringify(digest);
+  return v4({ random: new Uint8Array(await crypto.subtle.digest('SHA-256', data)) });
 };
 
 export const withInteractionIdHeaderSet: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
