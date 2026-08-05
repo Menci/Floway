@@ -63,16 +63,29 @@ const parsedBy = <T>(parser: (value: unknown) => T) => z.unknown().transform((va
   }
 });
 
-const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must be a non-empty string` })
-  .min(1, { error: `${field} must be a non-empty string` });
+const parseValue = <T>(schema: z.ZodType<T>, value: unknown): T => {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new Error(result.error.issues[0].message);
+  return result.data;
+};
+
+const recordBoundarySchema = (message: string) => z.object({}, { error: message }).loose();
+const parseRecord = (value: unknown, message: string): Record<string, unknown> => parseValue(recordBoundarySchema(message), value);
+const objectIncludingArraySchema = (message: string) => z.custom<Record<string, unknown>>(
+  value => typeof value === 'object' && value !== null,
+  { error: message },
+);
+
+const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must be a string` })
+  .transform(value => value.trim())
+  .refine(value => value !== '', { error: `${field} must be a non-empty string` });
 const nonEmptyStringWithError = (message: string) => z.string({ error: message }).min(1, { error: message });
 const nullableStringSchema = (field: string) => z.union([
   z.string(),
   z.null(),
 ], { error: `${field} must be null or an ISO string` });
 const positiveIntegerSchema = (field: string) => z.number({ error: `${field} must be a positive integer` })
-  .int({ error: `${field} must be a positive integer` })
-  .positive({ error: `${field} must be a positive integer` });
+  .refine(value => Number.isInteger(value) && value > 0, { error: `${field} must be a positive integer` });
 const nonNegativeSafeIntegerSchema = (message: string) => z.number({ error: message })
   .int({ error: message })
   .nonnegative({ error: message })
@@ -110,6 +123,9 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   }
 };
 
+// Codex and Claude Code state contains refresh credentials and health that
+// cannot be re-derived, so it round-trips through their strict runtime
+// assertions. Every other provider owns no durable state or can re-mint it.
 const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unknown => {
   if (kind !== 'codex' && kind !== 'claude-code') return null;
   if (value === null || value === undefined) throw new Error(`${kind} upstream is missing state — re-export with current code`);
@@ -118,78 +134,63 @@ const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unk
   return value;
 };
 
-const upstreamWireShapeSchema = z.object({
-  id: nonEmptyStringSchema('id'),
-  kind: z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}` }),
-  name: nonEmptyStringSchema('name'),
-  enabled: z.boolean({ error: 'enabled must be a boolean' }),
-  sort_order: z.number({ error: 'sort_order must be a finite number' })
-    .finite({ error: 'sort_order must be a finite number' }),
-  created_at: nonEmptyStringSchema('created_at'),
-  updated_at: nonEmptyStringSchema('updated_at'),
-  flag_overrides: parsedBy(parseFlagOverridesWire),
-  disabled_public_model_ids: parsedBy(parseDisabledPublicModelIdsWire),
-  proxy_fallback_list: proxyFallbackListSchema,
-  model_prefix: parsedBy(normalizeModelPrefix),
-  hue: parsedBy(normalizeUpstreamHue),
-  config: z.unknown(),
-  state: z.unknown().optional(),
-}).superRefine((wire, ctx) => {
-  if (isLegacyUpstreamIdentity(wire.id)) {
-    addIssue(ctx, 'id must use a raw upstream id, not a legacy provider-prefixed identity');
+const upstreamKindSchema = z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}` });
+const finiteSortOrderSchema = z.number({ error: 'sort_order must be a finite number' })
+  .finite({ error: 'sort_order must be a finite number' });
+
+const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
+  const wire = parseRecord(value, 'record must be an object');
+  if (hasOwn(wire, 'enabled_fixes')) {
+    throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
   }
-}).transform((wire, ctx): UpstreamRecord => {
+  const kind = parseValue(upstreamKindSchema, wire.kind);
+  const enabled = parseValue(z.boolean({ error: 'enabled must be a boolean' }), wire.enabled);
+  const sortOrder = Math.floor(parseValue(finiteSortOrderSchema, wire.sort_order));
+  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  if (isLegacyUpstreamIdentity(id)) {
+    throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
+  }
+
   try {
     const record: UpstreamRecord = {
-      id: wire.id,
-      kind: wire.kind,
-      name: wire.name,
-      enabled: wire.enabled,
-      sortOrder: Math.floor(wire.sort_order),
-      createdAt: wire.created_at,
-      updatedAt: wire.updated_at,
-      flagOverrides: wire.flag_overrides,
-      disabledPublicModelIds: wire.disabled_public_model_ids,
-      proxyFallbackList: wire.proxy_fallback_list,
-      modelPrefix: wire.model_prefix,
-      hue: wire.hue,
+      id,
+      kind,
+      name: parseValue(nonEmptyStringSchema('name'), wire.name),
+      enabled,
+      sortOrder,
+      createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
+      updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
+      flagOverrides: parseValue(parsedBy(parseFlagOverridesWire), wire.flag_overrides),
+      disabledPublicModelIds: parseValue(parsedBy(parseDisabledPublicModelIdsWire).optional().default([]), wire.disabled_public_model_ids),
+      proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
+      modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),
+      hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
       config: wire.config,
-      state: normalizeUpstreamState(wire.kind, wire.state),
+      state: normalizeUpstreamState(kind, wire.state),
       modelsCache: null,
     };
     return { ...record, config: normalizeUpstreamConfig(record) };
   } catch (cause) {
-    addIssue(ctx, messageFor(cause));
-    return z.NEVER;
+    throw new Error(messageFor(cause));
   }
 });
 
-const upstreamWireSchema = z.unknown().transform((value, ctx) => {
-  if (isRecord(value) && hasOwn(value, 'enabled_fixes')) {
-    addIssue(ctx, "legacy 'enabled_fixes' field is no longer supported; re-export with current code");
-    return z.NEVER;
+const proxySchema = parsedBy((value): SerializedProxy => {
+  const wire = parseRecord(value, 'record must be an object');
+  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
+  const name = parseValue(nonEmptyStringSchema('name'), wire.name);
+  const url = parseValue(nonEmptyStringSchema('url'), wire.url);
+  try {
+    parseProxyUri(url);
+  } catch (cause) {
+    throw new Error(`url did not parse: ${messageFor(cause)}`);
   }
-  return value;
-}).pipe(upstreamWireShapeSchema);
-
-const proxySchema = z.object({
-  id: nonEmptyStringSchema('id').refine(id => !isDirectFallbackId(id), {
-    error: 'id must not be a reserved direct-transport sentinel',
-  }),
-  name: nonEmptyStringSchema('name'),
-  url: nonEmptyStringSchema('url').transform((url, ctx) => {
-    try {
-      parseProxyUri(url);
-      return url;
-    } catch (cause) {
-      addIssue(ctx, `url did not parse: ${messageFor(cause)}`);
-      return z.NEVER;
-    }
-  }),
-  dial_timeout_seconds: z.union([
+  const dialTimeoutSeconds = parseValue(z.union([
     positiveIntegerSchema('dial_timeout_seconds'),
     z.null(),
-  ], { error: 'dial_timeout_seconds must be null or a positive integer' }),
+  ], { error: 'dial_timeout_seconds must be null or a positive integer' }), wire.dial_timeout_seconds);
+  return { id, name, url, dial_timeout_seconds: dialTimeoutSeconds };
 });
 
 const dumpRetentionSchema = parsedBy((value): number | null => {
@@ -206,18 +207,27 @@ const responsesRetentionSchema = parsedBy((value): number => {
   return value;
 });
 
-const apiKeySchema = z.object({
-  id: nonEmptyStringSchema('id'),
-  userId: positiveIntegerSchema('userId'),
-  name: nonEmptyStringSchema('name'),
-  key: nonEmptyStringSchema('key'),
-  serverSecret: parsedBy(parseServerSecret),
-  createdAt: nonEmptyStringSchema('createdAt'),
-  lastUsedAt: nonEmptyStringSchema('lastUsedAt').optional(),
-  upstreamIds: upstreamIdsSchema,
-  deletedAt: nullableStringSchema('deletedAt'),
-  dumpRetentionSeconds: dumpRetentionSchema,
-  responsesRetentionSeconds: responsesRetentionSchema,
+const apiKeySchema = parsedBy((value): ApiKey => {
+  const wire = parseRecord(value, 'record must be an object');
+  const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
+  const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
+  const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
+  const lastUsedAt = wire.lastUsedAt === undefined
+    ? {}
+    : { lastUsedAt: parseValue(nonEmptyStringSchema('lastUsedAt'), wire.lastUsedAt) };
+  return {
+    id: parseValue(nonEmptyStringSchema('id'), wire.id),
+    userId,
+    name: parseValue(nonEmptyStringSchema('name'), wire.name),
+    key: parseValue(nonEmptyStringSchema('key'), wire.key),
+    serverSecret: parseValue(parsedBy(parseServerSecret), wire.serverSecret),
+    createdAt: parseValue(nonEmptyStringSchema('createdAt'), wire.createdAt),
+    ...lastUsedAt,
+    upstreamIds,
+    deletedAt,
+    dumpRetentionSeconds: parseValue(dumpRetentionSchema.optional().default(null), wire.dumpRetentionSeconds),
+    responsesRetentionSeconds: parseValue(responsesRetentionSchema, wire.responsesRetentionSeconds),
+  };
 });
 
 const userSchema = z.object({
@@ -298,57 +308,57 @@ const metricsSchema = sequentialArraySchema(
 );
 
 const invalidUsageField = 'record has invalid usage fields';
-const usageSchema = z.object({
+const usageFieldsSchema = z.object({
   keyId: nonEmptyStringWithError(invalidUsageField),
   model: nonEmptyStringWithError(invalidUsageField),
   upstream: z.union([z.string(), z.null()], { error: invalidUsageField }),
   modelKey: nonEmptyStringWithError(invalidUsageField),
   hour: z.string({ error: invalidUsageField }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: invalidUsageField }),
-  pricingSelector: z.record(z.string(), z.unknown(), { error: 'pricingSelector must be an object' }).transform((selector, ctx) => {
-    try {
-      return canonicalizePricingSelector(selector as PricingSelector);
-    } catch (cause) {
-      addIssue(ctx, `invalid pricingSelector: ${messageFor(cause)}`);
-      return z.NEVER;
-    }
-  }),
   requests: nonNegativeSafeIntegerSchema(invalidUsageField),
-  metrics: metricsSchema,
-}, { error: 'record must be an object' }).superRefine((record, ctx) => {
-  if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
-    addIssue(ctx, 'upstream must use a raw upstream id, not a legacy provider-prefixed identity');
-  }
 });
 
-const searchUsageSchema = z.object({
-  provider: z.unknown().transform((value, ctx) => {
-    if (!isWebSearchProviderName(value)) {
-      addIssue(ctx, 'invalid provider');
-      return z.NEVER;
-    }
-    return value;
-  }),
-  keyId: nonEmptyStringSchema('keyId'),
-  action: z.enum(['search', 'fetch_page'], { error: 'action must be "search" or "fetch_page"' }),
-  hour: z.string({ error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' })
-    .regex(SEARCH_USAGE_HOUR_PATTERN, { error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' }),
-  requests: nonNegativeSafeIntegerSchema('requests must be a non-negative safe integer'),
-}, { error: 'record must be an object' });
+const usageSchema = parsedBy((value): UsageRecord => {
+  const wire = parseRecord(value, 'record must be an object');
+  const fields = parseValue(usageFieldsSchema, wire);
+  if (typeof fields.upstream === 'string' && isLegacyUpstreamIdentity(fields.upstream)) {
+    throw new Error('upstream must use a raw upstream id, not a legacy provider-prefixed identity');
+  }
+  const rawPricingSelector = parseRecord(wire.pricingSelector, 'pricingSelector must be an object');
+  let pricingSelector: PricingSelector;
+  try {
+    pricingSelector = canonicalizePricingSelector(rawPricingSelector as PricingSelector);
+  } catch (cause) {
+    throw new Error(`invalid pricingSelector: ${messageFor(cause)}`);
+  }
+  const metrics = parseValue(metricsSchema, wire.metrics);
+  return { ...fields, pricingSelector, metrics };
+});
+
+const searchUsageSchema = parsedBy((value): WebSearchUsageRecord => {
+  const wire = parseValue(objectIncludingArraySchema('record must be an object'), value);
+  if (!isWebSearchProviderName(wire.provider)) throw new Error('invalid provider');
+  const keyId = parseValue(nonEmptyStringWithError('keyId must be a non-empty string'), wire.keyId);
+  const action = parseValue(z.enum(['search', 'fetch_page'], { error: 'action must be "search" or "fetch_page"' }), wire.action);
+  const hour = parseValue(z.string({ error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' })
+    .regex(SEARCH_USAGE_HOUR_PATTERN, { error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' }), wire.hour);
+  const requests = parseValue(nonNegativeSafeIntegerSchema('requests must be a non-negative safe integer'), wire.requests);
+  return { provider: wire.provider, keyId, action, hour, requests };
+});
 
 const malformedPerformance = 'record fields are missing or malformed';
 const performanceInteger = nonNegativeSafeIntegerSchema(malformedPerformance);
-const performanceBucketSchema = z.object({
-  metric: z.enum(PERFORMANCE_METRICS, { error: 'bucket metric/lower/upper/count fields are missing or malformed' }),
-  lower: nonNegativeSafeIntegerSchema('bucket metric/lower/upper/count fields are missing or malformed'),
-  upper: z.union([
+const malformedBucket = 'bucket metric/lower/upper/count fields are missing or malformed';
+const performanceBucketSchema = parsedBy((value) => {
+  const wire = parseValue(objectIncludingArraySchema('bucket is not an object'), value);
+  const metric = parseValue(z.enum(PERFORMANCE_METRICS, { error: malformedBucket }), wire.metric);
+  const lower = parseValue(nonNegativeSafeIntegerSchema(malformedBucket), wire.lower);
+  const upper = parseValue(z.union([
     nonNegativeSafeIntegerSchema('bucket metric/lower/upper/count fields are missing or malformed'),
     z.null(),
-  ], { error: 'bucket metric/lower/upper/count fields are missing or malformed' }),
-  count: nonNegativeSafeIntegerSchema('bucket metric/lower/upper/count fields are missing or malformed'),
-}, { error: 'bucket is not an object' }).superRefine((bucket, ctx) => {
-  if (bucket.upper !== null && bucket.upper <= bucket.lower) {
-    addIssue(ctx, 'bucket metric/lower/upper/count fields are missing or malformed');
-  }
+  ], { error: malformedBucket }), wire.upper);
+  const count = parseValue(nonNegativeSafeIntegerSchema(malformedBucket), wire.count);
+  if (upper !== null && upper <= lower) throw new Error(malformedBucket);
+  return { metric, lower, upper, count };
 });
 
 const performanceBucketsSchema = sequentialArraySchema(
@@ -359,18 +369,11 @@ const performanceBucketsSchema = sequentialArraySchema(
     : null,
 );
 
-const performanceSchema = z.object({
+const performanceFieldsSchema = z.object({
   hour: z.string({ error: malformedPerformance }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: malformedPerformance }),
   keyId: nonEmptyStringWithError(malformedPerformance),
   model: nonEmptyStringWithError(malformedPerformance),
   upstream: nonEmptyStringWithError(malformedPerformance).refine(value => !isLegacyUpstreamIdentity(value), { error: malformedPerformance }),
-  operation: parsedBy(value => {
-    try {
-      return parsePerformanceOperation(value);
-    } catch {
-      throw new Error(malformedPerformance);
-    }
-  }),
   runtimeLocation: nonEmptyStringWithError(malformedPerformance),
   requests: performanceInteger,
   ttftSamplesOk: performanceInteger,
@@ -380,34 +383,47 @@ const performanceSchema = z.object({
   tpotSamples: performanceInteger,
   ttftMsSum: performanceInteger,
   tpotUsSum: performanceInteger,
-  buckets: performanceBucketsSchema,
-}, { error: 'record is not an object' }).superRefine((record, ctx) => {
-  const ttftSamples = record.ttftSamplesOk + record.errorsWithOutput;
-  if (ttftSamples + record.errorsNoOutput + record.neutral !== record.requests) {
-    addIssue(ctx, 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
-    return;
+  buckets: z.array(z.unknown(), { error: malformedPerformance }),
+}, { error: malformedPerformance });
+
+const performanceSchema = parsedBy((value): PerformanceTelemetryRecord => {
+  const wire = parseValue(objectIncludingArraySchema('record is not an object'), value);
+  let operation: ReturnType<typeof parsePerformanceOperation>;
+  try {
+    operation = parsePerformanceOperation(wire.operation);
+  } catch {
+    throw new Error(malformedPerformance);
   }
-  if (record.tpotSamples > ttftSamples) {
-    addIssue(ctx, 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput');
-    return;
+  const fields = parseValue(performanceFieldsSchema, wire);
+  const ttftSamples = fields.ttftSamplesOk + fields.errorsWithOutput;
+  if (ttftSamples + fields.errorsNoOutput + fields.neutral !== fields.requests) {
+    throw new Error('ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
+  }
+  if (fields.tpotSamples > ttftSamples) {
+    throw new Error('tpotSamples must not exceed ttftSamplesOk + errorsWithOutput');
   }
 
+  const buckets = parseValue(performanceBucketsSchema, fields.buckets);
   let ttftBucketCount = 0;
   let tpotBucketCount = 0;
-  for (const bucket of record.buckets) {
+  for (const bucket of buckets) {
     if (bucket.metric === 'ttft_ms') ttftBucketCount += bucket.count;
     else tpotBucketCount += bucket.count;
   }
   if (ttftBucketCount !== ttftSamples) {
-    addIssue(ctx, `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamples})`);
-  } else if (tpotBucketCount !== record.tpotSamples) {
-    addIssue(ctx, `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${record.tpotSamples})`);
+    throw new Error(`ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamples})`);
   }
+  if (tpotBucketCount !== fields.tpotSamples) {
+    throw new Error(`tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${fields.tpotSamples})`);
+  }
+  const { buckets: _rawBuckets, ...recordFields } = fields;
+  return { ...recordFields, operation, buckets };
 });
 
 interface CollectionOptions<T> {
   arrayError: string;
   optional?: boolean;
+  validateInput?: (value: unknown, index: number, prior: readonly T[]) => string | null;
   validateRecord?: (record: T, index: number, prior: readonly T[]) => string | null;
 }
 
@@ -426,6 +442,8 @@ const parseCollection = <T>(
 
   const records: T[] = [];
   for (let index = 0; index < array.data.length; index++) {
+    const inputValidationError = options.validateInput?.(array.data[index], index, records);
+    if (inputValidationError) return { type: 'invalid', error: `invalid ${label} at index ${index}: ${inputValidationError}` };
     const result = schema.safeParse(array.data[index]);
     if (!result.success) {
       return { type: 'invalid', error: `invalid ${label} at index ${index}: ${result.error.issues[0].message}` };
@@ -444,9 +462,15 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (apiKeys.type === 'invalid') return apiKeys;
   const users = parseCollection('users', userSchema, value.users, {
     arrayError: 'users must be an array',
-    validateRecord: (user, _index, prior) => prior.some(candidate => candidate.id === user.id)
-      ? `duplicate user id ${user.id}`
-      : null,
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const id = parseValue(positiveIntegerSchema('id'), wire.id);
+        return prior.some(candidate => candidate.id === id) ? `duplicate user id ${id}` : null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
   });
   if (users.type === 'invalid') return users;
   if (!users.records.some(user => user.id === SEED_ADMIN_USER_ID)) {

@@ -22,7 +22,7 @@ import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredRe
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -922,6 +922,70 @@ test('import strips unknown fields at transferable record boundaries', async () 
   assertEquals((await repo.performance.listAll())[0].buckets.some(bucket => 'smuggled' in bucket), false);
 });
 
+test('import trims every formerly normalized non-empty string field', async () => {
+  const { app, repo } = setup();
+  const upstream = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const result = await doImport(app, 'replace', latestImportData({
+    users: [{ ...SEED_ADMIN, createdAt: `  ${SEED_ADMIN.createdAt}  ` }],
+    apiKeys: [{
+      ...KEY_A,
+      id: `  ${KEY_A.id}  `,
+      name: `  ${KEY_A.name}  `,
+      key: `  ${KEY_A.key}  `,
+      createdAt: `  ${KEY_A.createdAt}  `,
+      lastUsedAt: '  2026-03-01T00:00:00.000Z  ',
+    }],
+    upstreams: [{
+      ...upstream,
+      id: `  ${upstream.id}  `,
+      name: `  ${upstream.name}  `,
+      created_at: `  ${upstream.created_at}  `,
+      updated_at: `  ${upstream.updated_at}  `,
+    }],
+    proxies: [{ id: '  p1  ', name: '  Proxy  ', url: `  ${HTTP_PROXY_URL}  `, dial_timeout_seconds: null }],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals((await repo.users.listIncludingDeleted())[0].createdAt, SEED_ADMIN.createdAt);
+  assertEquals(await repo.apiKeys.listIncludingDeleted(), [{ ...KEY_A, lastUsedAt: '2026-03-01T00:00:00.000Z' }]);
+  assertEquals((await repo.upstreams.list())[0].id, CUSTOM_UPSTREAM.id);
+  assertEquals((await repo.upstreams.list())[0].name, CUSTOM_UPSTREAM.name);
+  assertEquals((await repo.upstreams.list())[0].createdAt, CUSTOM_UPSTREAM.createdAt);
+  assertEquals((await repo.upstreams.list())[0].updatedAt, CUSTOM_UPSTREAM.updatedAt);
+  assertEquals(await repo.proxies.list(), [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dialTimeoutSeconds: null }]);
+
+  const whitespaceOnly = await doImport(app, 'merge', latestImportData({ apiKeys: [{ ...KEY_A, key: '   ' }] }));
+  assertEquals(whitespaceOnly.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
+});
+
+test('import retains optional defaults from the v19 wire contract', async () => {
+  const { app, repo } = setup();
+  const { disabled_public_model_ids: _disabled, model_prefix: _prefix, ...upstream } = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const result = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: undefined }],
+    upstreams: [upstream],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals((await repo.apiKeys.listIncludingDeleted())[0].dumpRetentionSeconds, null);
+  assertEquals((await repo.upstreams.list())[0].disabledPublicModelIds, []);
+  assertEquals((await repo.upstreams.list())[0].modelPrefix, null);
+});
+
+test('positive-integer import fields preserve Number.isInteger semantics', async () => {
+  const { app, repo } = setup();
+  const beyondSafeInteger = Number.MAX_SAFE_INTEGER + 1;
+  const result = await doImport(app, 'replace', latestImportData({
+    users: [SEED_ADMIN, { ...USER_BOB, id: beyondSafeInteger }],
+    apiKeys: [{ ...KEY_A, userId: beyondSafeInteger }],
+    proxies: [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dial_timeout_seconds: beyondSafeInteger }],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals((await repo.apiKeys.listIncludingDeleted())[0].userId, beyondSafeInteger);
+  assertEquals((await repo.proxies.list())[0].dialTimeoutSeconds, beyondSafeInteger);
+});
+
 test('import reports the earliest duplicate before later malformed records', async () => {
   const { app } = setup();
   const duplicateUser = await doImport(app, 'replace', latestImportData({
@@ -952,6 +1016,52 @@ test('import reports the earliest duplicate before later malformed records', asy
   assertEquals(duplicateUser.body.error, 'invalid users at index 1: duplicate user id 1');
   assertEquals(duplicateMetric.body.error, 'invalid usage at index 0: duplicate usage metric: input_tokens');
   assertEquals(duplicateBucket.body.error, 'invalid performance record at index 0: duplicate bucket entry for {metric: ttft_ms, lower: 0}');
+});
+
+test('import preserves staged intra-record error precedence', async () => {
+  const { app } = setup();
+  const badUpstream = await doImport(app, 'replace', latestImportData({
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), kind: 'invalid', id: '' }],
+  }));
+  const badApiKey = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, upstreamIds: {}, id: '' }],
+  }));
+  const duplicateMalformedUser = await doImport(app, 'replace', latestImportData({
+    users: [SEED_ADMIN, { ...USER_BOB, id: SEED_ADMIN.id, username: 'bad username' }],
+  }));
+  const badUsage = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_1, requests: -1, pricingSelector: null }],
+  }));
+  const badPerformance = await doImport(app, 'replace', latestImportData({
+    performanceIncluded: true,
+    performance: [{ ...PERFORMANCE_1, requests: PERFORMANCE_1.requests + 1, buckets: [null] }],
+  }));
+
+  assertEquals(badUpstream.body.error, `invalid upstreams at index 0: kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}`);
+  assertEquals(badApiKey.body.error, 'invalid apiKeys at index 0: upstream_ids must be null or an array of upstream ids');
+  assertEquals(duplicateMalformedUser.body.error, 'invalid users at index 1: duplicate user id 1');
+  assertEquals(badUsage.body.error, 'invalid usage at index 0: record has invalid usage fields');
+  assertEquals(badPerformance.body.error, 'invalid performance record at index 0: ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests');
+});
+
+test('import preserves collection-specific array-record boundaries', async () => {
+  const { app } = setup();
+  const upstream = await doImport(app, 'replace', latestImportData({ upstreams: [[]] }));
+  const apiKey = await doImport(app, 'replace', latestImportData({ apiKeys: [[]] }));
+  const usage = await doImport(app, 'replace', latestImportData({ usage: [[]] }));
+  const searchUsage = await doImport(app, 'replace', latestImportData({ searchUsage: [[]] }));
+  const performance = await doImport(app, 'replace', latestImportData({ performanceIncluded: true, performance: [[]] }));
+  const bucket = await doImport(app, 'replace', latestImportData({
+    performanceIncluded: true,
+    performance: [{ ...PERFORMANCE_1, buckets: [[]] }],
+  }));
+
+  assertEquals(upstream.body.error, 'invalid upstreams at index 0: record must be an object');
+  assertEquals(apiKey.body.error, 'invalid apiKeys at index 0: record must be an object');
+  assertEquals(usage.body.error, 'invalid usage at index 0: record must be an object');
+  assertEquals(searchUsage.body.error, 'invalid searchUsage at index 0: invalid provider');
+  assertEquals(performance.body.error, 'invalid performance record at index 0: record fields are missing or malformed');
+  assertEquals(bucket.body.error, 'invalid performance record at index 0: bucket metric/lower/upper/count fields are missing or malformed');
 });
 
 test('import rejects api key unique identity conflicts before mutating', async () => {
