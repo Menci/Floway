@@ -13,8 +13,11 @@ export const vlessFrameOverStream = async (
 ): Promise<DialResult> => {
   const header = buildVlessHeader(uuid, target);
   const writer = transport.writable.getWriter();
-  await writer.write(header);
-  writer.releaseLock();
+  try {
+    await writer.write(header);
+  } finally {
+    writer.releaseLock();
+  }
 
   const stripped = stripVlessReplyPrefix(transport.readable);
 
@@ -66,13 +69,27 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
   const reader = source.getReader();
   let stripped = false;
   let buf = new Uint8Array(0);
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  const fail = async (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    error: ProxyDialError,
+  ): Promise<void> => {
+    try { await reader.cancel(error); } catch { /* reader already cancelled */ }
+    finally { release(); }
+    controller.error(error);
+  };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (!stripped) {
         while (buf.byteLength < 2) {
           const r = await reader.read();
           if (r.done) {
-            controller.error(new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'));
+            await fail(controller, new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'));
             return;
           }
           buf = concat(buf, r.value);
@@ -81,14 +98,14 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
         // bytes never reach the payload stream and surface as an opaque
         // downstream failure.
         if (buf[0] !== 0x00) {
-          controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
+          await fail(controller, new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
           return;
         }
         const addonsLen = buf[1]!;
         while (buf.byteLength < 2 + addonsLen) {
           const r = await reader.read();
           if (r.done) {
-            controller.error(new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'));
+            await fail(controller, new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'));
             return;
           }
           buf = concat(buf, r.value);
@@ -100,12 +117,22 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
           return;
         }
       }
-      const r = await reader.read();
-      if (r.done) controller.close();
-      else controller.enqueue(copy(r.value));
+      try {
+        const r = await reader.read();
+        if (r.done) {
+          controller.close();
+          release();
+        } else {
+          controller.enqueue(copy(r.value));
+        }
+      } catch (error) {
+        release();
+        throw error;
+      }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
+      finally { release(); }
     },
   });
 };
