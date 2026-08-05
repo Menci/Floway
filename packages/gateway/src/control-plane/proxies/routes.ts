@@ -1,13 +1,13 @@
 import type { Context } from 'hono';
 
-import { ANCHORS, isIpV4, isIpV6 } from './egress-probe.ts';
+import { probeProxyEgress } from './egress-probe.ts';
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { getSocketDial } from '@floway-dev/platform';
-import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
+import { parseProxyUri, runProxiedRequest, type ProxyConfig } from '@floway-dev/proxy';
 
 const proxyUriValidationError = (err: unknown): string => {
   const raw = err instanceof Error ? err.message : String(err);
@@ -110,7 +110,6 @@ export const deleteProxy = async (c: Context) => {
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const body = c.req.valid('json');
   const anchorName = body.anchor ?? 'ipify';
-  const anchor = ANCHORS[anchorName];
 
   // The endpoint runs against the live URL the operator is editing, so a
   // parse failure here is a form-validation failure (400), not a dial
@@ -122,52 +121,14 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     return c.json({ error: proxyUriValidationError(err) }, 400);
   }
 
-  try {
-    const target: ProxyRequestTarget = {
-      host: anchor.host,
-      port: anchor.port,
-      tls: true,
-    };
-    const response = await runProxiedRequest(
+  return c.json(await probeProxyEgress(
+    {
       config,
-      target,
-      {
-        method: 'GET',
-        path: anchor.path,
-        headers: { 'User-Agent': 'floway-proxy-test/1' },
-      },
-      {
-        socketDial: getSocketDial(),
-        ...(body.dial_timeout_seconds == null ? {} : { dialTimeoutMs: body.dial_timeout_seconds * 1000 }),
-      },
-    );
-    if (!response.ok) {
-      return c.json({ ok: false, error: `anchor returned status ${response.status}` });
-    }
-    const truncated = (await response.text()).slice(0, 256).trim();
-    if (!isIpV4(truncated) && !isIpV6(truncated)) {
-      return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
-    }
-    // 6.ident.me is v6-only (AAAA-only), so a v4-only proxy fails to dial
-    // it at all and never reaches this branch. The v4-shape rejection is
-    // defense-in-depth in case the anchor's records change upstream, or a
-    // NAT64/DNS64 synthesizer hands the runtime a v4 path that round-trips
-    // a v4 address through a "v6" check.
-    if (anchorName === 'ident.me-v6' && !truncated.includes(':')) {
-      return c.json({ ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` });
-    }
-    return c.json({ ok: true, egress_ip: truncated });
-  } catch (err) {
-    // Every dial-shaped failure inside runProxiedRequest surfaces as a typed
-    // ProxyDialError carrying the stage tag. Programmer errors (TypeError
-    // from a typo, RangeError, etc.) and AbortError MUST propagate to the
-    // framework's top-level handler instead of getting flattened into a
-    // green-channel ok:false reply.
-    if (err instanceof ProxyDialError) {
-      return c.json({ ok: false, error: `[${err.stage}] ${err.message}` });
-    }
-    throw err;
-  }
+      anchorName,
+      dialTimeoutSeconds: body.dial_timeout_seconds,
+    },
+    { runProxiedRequest, socketDial: getSocketDial() },
+  ));
 };
 
 export const listAllBackoffs = async (c: Context) => {
