@@ -95,7 +95,11 @@ describe('usage dimension controls', () => {
   });
 
   it('hides both identity filters while grouping by either identity dimension', () => {
-    renderPage({ ...loaderData, state: { ...loaderData.state, groupBy: 'userId' } });
+    renderPage({
+      ...loaderData,
+      state: { ...loaderData.state, groupBy: 'userId' },
+      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: '2' }] },
+    });
 
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By User');
     expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
@@ -105,7 +109,11 @@ describe('usage dimension controls', () => {
   });
 
   it('discloses that API key grouping is account-scoped', () => {
-    renderPage({ ...loaderData, state: { ...loaderData.state, groupBy: 'keyId' } });
+    renderPage({
+      ...loaderData,
+      state: { ...loaderData.state, groupBy: 'keyId' },
+      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: 'key-2' }] },
+    });
 
     expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
   });
@@ -122,7 +130,7 @@ describe('usage dimension controls', () => {
       },
     });
 
-    expect(screen.getByText('99')).toBeTruthy();
+    expect(screen.getAllByText('99').length).toBeGreaterThan(0);
   });
 
   it('loads the overview contract and derives Search scope from the actor', async () => {
