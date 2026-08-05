@@ -1,8 +1,9 @@
 // SOCKS5 client (TCP CONNECT only).
 
-import { concat, copy, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
+import { concat, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
+import { postHandshakeReadable } from '../post-handshake-readable.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
@@ -106,44 +107,10 @@ const dialSocks5Inner = async (
   }
 
   writer.releaseLock();
-  let initial = copy(pending);
-  let readerReleased = false;
-  const releaseReader = (): void => {
-    if (readerReleased) return;
-    readerReleased = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
+  return {
+    readable: postHandshakeReadable(socket, reader, pending),
+    writable: socket.writable,
   };
-  const postHandshake = new ReadableStream<Uint8Array>({
-    start(controller) {
-      if (initial.byteLength) controller.enqueue(initial);
-      initial = new Uint8Array(0);
-    },
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          controller.close();
-          releaseReader();
-          void socket.close().catch(() => {});
-        } else {
-          controller.enqueue(copy(result.value));
-        }
-      } catch (error) {
-        releaseReader();
-        void socket.close().catch(() => {});
-        throw error;
-      }
-    },
-    async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ }
-      finally {
-        releaseReader();
-        await socket.close().catch(() => {});
-      }
-    },
-  });
-
-  return { readable: postHandshake, writable: socket.writable };
 };
 
 /** Build a SOCKS5 CONNECT request frame (VER|CMD|RSV|ATYP+addr|port[BE]). Exported for tests. */
