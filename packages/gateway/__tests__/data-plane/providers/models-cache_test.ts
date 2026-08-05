@@ -270,6 +270,9 @@ describe('fetchUpstreamModelsCached', () => {
       modelPrefix: null,
       hue: 210,
     });
+    // Deliberately schema-incompatible body: a stale numeric revision is an
+    // opaque obsolete payload, so hydration must not apply today's model
+    // schema before deciding the cache is cold.
     await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
       revision: MODEL_CATALOG_REVISION - 1,
       fetchedAt: Date.now() - 1_000,

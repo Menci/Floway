@@ -890,13 +890,13 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
                 json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]'),
               ('up_cold', 'custom', 'Cold', 1, 2, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
                 json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]')`);
-    // This is a genuine pre-revision-5 shape: revision 4 did not carry the
-    // current limits/kind/endpoints projection. Hydration must treat it as a
-    // cold cache without applying today's ProviderModel schema.
+    // Revision 4 already carried the core ProviderModel projection below;
+    // revision 5 changed pricing semantics. The migration must preserve this
+    // faithful old catalog even though current hydration treats it as cold.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)
             VALUES
-              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","enabledFlags":["vendor-deepseek"]}]', NULL),
-              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
+              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":["vendor-deepseek"]}]', NULL),
+              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
 
     applySqlJsFile(db, '0072_fold_models_cache.sql');
 
