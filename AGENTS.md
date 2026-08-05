@@ -288,11 +288,15 @@ Vendor credentials, catalog projection, and wire behavior stay in the vendor
 packages. Each package's static `ProviderModule` surface also declares, per
 provider call method, the case-insensitive exact names and lowercase-name
 regular expressions for client headers that call accepts. The gateway applies
-the selected allowlist after it selects a candidate and before it calls the
-provider, so protocol-specific headers do not leak onto sibling surfaces and
-failover candidates never share a filtered or mutated header bag. The gateway
-owns the control-plane handlers that call vendor APIs and maps their results
-onto Floway HTTP responses.
+the selected allowlist plus the candidate's instance rules after it selects a
+candidate and before it calls the provider, so protocol-specific headers do
+not leak onto sibling surfaces and failover candidates never share a filtered
+or mutated header bag. Custom upstreams derive exact-name instance rules from
+`config.ingressHeadersRules`; `null` preserves a matched ingress value and a
+string replaces it, including the empty string. Rules never synthesize a
+header absent from the ingress request. The gateway owns the control-plane
+handlers that call vendor APIs and maps their results onto Floway HTTP
+responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.

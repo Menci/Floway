@@ -32,7 +32,7 @@ const custom: UpstreamRecord = {
   config: {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
-    ingressHeadersRules: [],
+    ingressHeadersRules: [{ key: 'x-route', value: '' }],
     apiKey: 'sk-secret-token-12345',
     endpoints: { chatCompletions: {}, responses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },
@@ -57,6 +57,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals('apiKey' in config, false);
   assertEquals(config.apiKeySet, true);
   assertEquals(config.endpoints, { chatCompletions: {}, responses: {} });
+  assertEquals(config.ingressHeadersRules, [{ key: 'x-route', value: '' }]);
   assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
   assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }]);
 });

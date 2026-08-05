@@ -73,7 +73,17 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ flag_overrides: { 'vendor-kimi': true } })));
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      ...customConfig,
+      ingressHeadersRules: [
+        { key: 'X-Request-ID', value: null },
+        { key: 'X-Empty', value: '' },
+        { key: 'X-Route', value: 'configured' },
+      ],
+    },
+    flag_overrides: { 'vendor-kimi': true },
+  })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
@@ -81,10 +91,16 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(created.config.apiKey, undefined);
   assertEquals(created.config.apiKeySet, true);
   assertEquals(created.config.baseUrl, 'https://custom.example.com');
+  assertEquals(created.config.ingressHeadersRules, [
+    { key: 'x-request-id', value: null },
+    { key: 'x-empty', value: '' },
+    { key: 'x-route', value: 'configured' },
+  ]);
   assertEquals(created.flag_overrides, { 'vendor-kimi': true });
 
   const stored = await repo.upstreams.getById(created.id);
   assertEquals((stored?.config as Record<string, unknown>).apiKey, 'sk-test');
+  assertEquals((stored?.config as Record<string, unknown>).ingressHeadersRules, created.config.ingressHeadersRules);
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   const items = (await list.json()) as JsonObject[];
@@ -286,7 +302,12 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
+        body: JSON.stringify({
+          config: {
+            endpoints: { responses: {} },
+            ingressHeadersRules: [{ key: 'X-Route', value: 'patched' }],
+          },
+        }),
       });
       assertEquals(patch.status, 200);
     },
@@ -295,6 +316,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { responses: {} });
+  assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
   const cached = updated?.modelsCache;
   assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
@@ -2189,6 +2211,7 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
   assertEquals(custom.config.endpoints, { chatCompletions: {} });
+  assertEquals(custom.config.ingressHeadersRules, []);
   assertEquals(custom.config.modelsFetch, { enabled: true });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(azure.config.models, []);

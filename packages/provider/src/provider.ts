@@ -34,6 +34,9 @@ export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
   name: string;
+  // Candidate-specific exact/regex transformations layered over the static
+  // per-call allowlist. `null` preserves a matched ingress value; a string
+  // replaces it. Rules do not create a header absent from ingress.
   ingressHeaderRules: readonly IngressHeaderRule[];
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
@@ -102,11 +105,11 @@ export type ProviderResponsesResult =
 // no-op. Providers use it for post-response persistence the caller has
 // already stopped waiting on.
 //
-// `headers` is the single inbound-headers conduit from gateway to provider.
-// The gateway filters the source request through this provider method's entry
-// in `inboundHeaderAllowlist` before constructing the bag. A provider may
-// clone and mutate it for request-specific wire shaping, but must not retain
-// the gateway-owned reference past the call.
+// `headers` is the gateway-resolved ingress header bag. The gateway combines
+// this provider method's static allowlist with the candidate's instance rules
+// before constructing it. A provider may clone and mutate the bag for
+// request-specific wire shaping, but must not retain the gateway-owned
+// reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;

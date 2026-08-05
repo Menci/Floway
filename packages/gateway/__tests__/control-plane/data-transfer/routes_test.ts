@@ -91,7 +91,10 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
-    ingressHeadersRules: [],
+    ingressHeadersRules: [
+      { key: 'x-request-id', value: null },
+      { key: 'x-route', value: 'backup' },
+    ],
     apiKey: 'sk-custom',
     endpoints: { chatCompletions: {}, responses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },
@@ -404,6 +407,10 @@ test('export includes full upstream configs and omits performance by default', a
   assertEquals(result.data.apiKeys, [KEY_A]);
   assertEquals(result.data.upstreams.map((upstream: any) => upstream.id), ['up_copilot_a', 'up_custom_a', 'up_azure_a']);
   assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_custom_a').config.apiKey, 'sk-custom');
+  assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_custom_a').config.ingressHeadersRules, [
+    { key: 'x-request-id', value: null },
+    { key: 'x-route', value: 'backup' },
+  ]);
   assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_copilot_a').config.githubToken, 'ghu-alice');
   assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_azure_a').config.apiKey, 'az-key');
   assertEquals(result.data.usage, [USAGE_1]);
