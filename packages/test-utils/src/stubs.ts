@@ -1,16 +1,21 @@
-import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type MessagesUpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type MessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
 // intercept; waitUntil drops the promise (the runtime would have absorbed it
 // in production). The Headers bag is per-call so tests that mutate it do not
 // bleed state across cases.
-export const noopUpstreamCallOptions = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
   fetcher: directFetcher,
   waitUntil: () => {},
   headers: new Headers(),
-  anthropicBeta: [],
   wrapUpstreamCall: identityWrapUpstreamCall,
+  ...overrides,
+});
+
+export const noopMessagesUpstreamCallOptions = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+  ...noopUpstreamCallOptions(overrides),
+  anthropicBeta: [],
   ...overrides,
 });
 

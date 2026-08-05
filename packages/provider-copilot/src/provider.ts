@@ -22,7 +22,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForMessagesCall, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -126,12 +126,6 @@ const messagesBoundaryContext = (
     anthropicBeta: [...anthropicBeta],
     model,
   };
-};
-
-const messagesWireHeaders = (ctx: MessagesBoundaryCtx): Headers => {
-  const headers = new Headers(ctx.headers);
-  if (ctx.anthropicBeta.length > 0) headers.set('anthropic-beta', ctx.anthropicBeta.join(','));
-  return headers;
 };
 
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
@@ -443,7 +437,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const result = await runInterceptors<MessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
         ctx, {}, COPILOT_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, messagesWireHeaders(ctx), parseMessagesStream, opts));
+          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, headersForMessagesCall(ctx.headers, ctx.anthropicBeta), parseMessagesStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
@@ -457,7 +451,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const response = await runInterceptors<MessagesBoundaryCtx, object, Response>(
         ctx, {}, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, messagesWireHeaders(ctx), opts);
+          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, headersForMessagesCall(ctx.headers, ctx.anthropicBeta), opts);
           return response;
         },
       );
