@@ -92,7 +92,7 @@ describe('usage dimension controls', () => {
   });
 
   it('hides both identity filters while grouping by either identity dimension', () => {
-    const { unmount } = renderPage({
+    renderPage({
       ...loaderData,
       state: { ...loaderData.state, groupBy: 'userId' },
       usage: { ...loaderData.usage, series: [{ ...usageRecord, group: '2' }] },
@@ -106,7 +106,7 @@ describe('usage dimension controls', () => {
   });
 
   it('labels unattributed user usage without weakening real-user metadata checks', () => {
-    renderPage({
+    const { unmount } = renderPage({
       ...loaderData,
       state: { ...loaderData.state, groupBy: 'userId' },
       usage: {
