@@ -36,6 +36,29 @@ const oauthRequestOptions = (fetcher: Fetcher) => ({
   [oauth.customFetch]: (url: string, init: RequestInit) => fetcher(url, init),
 });
 
+const normalizeGitHubDeviceCodeErrorStatus = async (response: Response): Promise<Response> => {
+  if (response.status !== 200) return response;
+
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return response;
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return response;
+  const error = Reflect.get(body, 'error');
+  if (typeof error !== 'string' || error.length === 0) return response;
+
+  // GitHub sends its documented device-flow errors with HTTP 200, while the
+  // OAuth processor recognizes error bodies on 4xx responses. Normalize only
+  // that transport quirk so the library still parses both errors and tokens.
+  // https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#error-codes-for-the-device-flow
+  return new Response(response.body, {
+    status: 400,
+    headers: response.headers,
+  });
+};
+
 // All GitHub egress accepts a Fetcher so the copilot auth poll can forward
 // the operator's edit-form proxy override; absent that, direct egress.
 export const startGitHubDeviceFlow = async (fetcher: Fetcher = directFetcher) => {
@@ -67,12 +90,12 @@ export const pollGitHubDeviceFlow = async (deviceCode: string, fetcher: Fetcher 
   );
 
   try {
-    return await oauth.processDeviceCodeResponse(GITHUB_AUTHORIZATION_SERVER, GITHUB_CLIENT, resp);
+    return await oauth.processDeviceCodeResponse(
+      GITHUB_AUTHORIZATION_SERVER,
+      GITHUB_CLIENT,
+      await normalizeGitHubDeviceCodeErrorStatus(resp),
+    );
   } catch (error) {
-    // RFC 8628 returns authorization_pending and slow_down as OAuth error
-    // responses, including with HTTP 200 on GitHub. Keep those protocol
-    // outcomes in the compatibility shape consumed by the control plane;
-    // malformed and non-OAuth failures continue to throw.
     if (error instanceof oauth.ResponseBodyError) return error.cause as GitHubDeviceFlowPoll;
     throw error;
   }

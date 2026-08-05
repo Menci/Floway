@@ -84,27 +84,21 @@ test('pollGitHubDeviceFlow sends the device grant through the supplied fetcher',
   assertEquals(called, true);
 });
 
-test('pollGitHubDeviceFlow preserves GitHub HTTP 200 authorization_pending', async () => {
-  const fetcher: Fetcher = async () => jsonResponse({ error: 'authorization_pending' });
-  assertEquals(await pollGitHubDeviceFlow('device', fetcher), { error: 'authorization_pending' });
-});
-
-test('pollGitHubDeviceFlow preserves slow_down and terminal OAuth errors', async () => {
-  const slowDown = {
+test.each([
+  { error: 'authorization_pending' },
+  {
     error: 'slow_down',
     error_description: 'Too many requests have been made in the same timeframe.',
     interval: 10,
-  };
-  assertEquals(
-    await pollGitHubDeviceFlow('device', async () => jsonResponse(slowDown, 400)),
-    slowDown,
-  );
+  },
+  { error: 'access_denied', error_description: 'The user has rejected authorization.' },
+])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async (body) => {
+  assertEquals(await pollGitHubDeviceFlow('device', async () => jsonResponse(body)), body);
+});
 
-  const denied = { error: 'access_denied', error_description: 'The user has rejected authorization.' };
-  assertEquals(
-    await pollGitHubDeviceFlow('device', async () => jsonResponse(denied, 400)),
-    denied,
-  );
+test('pollGitHubDeviceFlow preserves conforming HTTP 400 OAuth errors', async () => {
+  const body = { error: 'expired_token', error_description: 'The device code has expired.' };
+  assertEquals(await pollGitHubDeviceFlow('device', async () => jsonResponse(body, 400)), body);
 });
 
 test('pollGitHubDeviceFlow rejects malformed token and HTTP responses', async () => {
@@ -116,6 +110,6 @@ test('pollGitHubDeviceFlow rejects malformed token and HTTP responses', async ()
   await assertRejects(
     () => pollGitHubDeviceFlow('device', async () => new Response('bad gateway', { status: 502 })),
     Error,
-    'unexpected HTTP response status code',
+    'unexpected HTTP status code',
   );
 });
