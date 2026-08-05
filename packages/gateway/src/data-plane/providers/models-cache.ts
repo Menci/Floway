@@ -1,4 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
+import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
@@ -22,9 +23,8 @@ export interface ModelsCacheFetchOptions {
   scheduler: BackgroundScheduler;
   fetcher: Fetcher;
   // Skip the SOFT/HARD cache check and always trigger a fresh fetch. The
-  // call still joins the L1 in-flight map so concurrent forces for the same
-  // upstream generation share one request. Failure throws; no fall-back to
-  // the stored row.
+  // call still joins the L1 in-flight map when both fetch identity and cache
+  // ownership match. Failure throws; no fall-back to the stored row.
   force?: boolean;
   // Some control-plane callers also need the upstream's raw catalog shape.
   // Their loader projects that already-fetched response into the exact
@@ -33,9 +33,9 @@ export interface ModelsCacheFetchOptions {
   loadProvidedModels?: () => Promise<ProviderModel[]>;
 }
 
-// L1: per-isolate in-flight memoization. Collapses concurrent callers for
-// the same upstream generation onto a single fetch. Superseded and current
-// providers never join each other. Not a TTL cache — the entry is removed
+// L1: per-isolate in-flight memoization. Callers join only when both their
+// actual fetch inputs and persisted-cache ownership match; different drafts
+// and superseded rows remain isolated. Not a TTL cache — the entry is removed
 // when the promise settles. The conditional delete defends against a stale
 // removal racing a later replacement.
 const inFlight = new Map<string, Promise<ProviderModel[]>>();
@@ -89,7 +89,8 @@ export const fetchUpstreamModelsCached = async (
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
   const key = instance.upstreamId;
-  const inFlightKey = `${key}\0${instance.modelsFetchIdentity}`;
+  const generation = instance.modelsCacheGeneration;
+  const inFlightKey = `${key}\0${instance.modelsFetchIdentity}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
   const now = Date.now();
 
   if (force) {

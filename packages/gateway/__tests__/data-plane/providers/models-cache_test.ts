@@ -198,7 +198,7 @@ describe('fetchUpstreamModelsCached', () => {
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
     const oldRequest = fetchUpstreamModelsCached(
-      stubInstance(oldFetch),
+      stubInstance(oldFetch, null, CACHE_GENERATION, 'same-fetch'),
       { scheduler: () => {}, fetcher: directFetcher },
     );
     await Promise.resolve();
@@ -209,7 +209,7 @@ describe('fetchUpstreamModelsCached', () => {
     await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration.updatedAt, config: nextGeneration.config });
     const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
     const newRequest = fetchUpstreamModelsCached(
-      stubInstance(newFetch, null, nextGeneration),
+      stubInstance(newFetch, null, nextGeneration, 'same-fetch'),
       { scheduler: () => {}, fetcher: directFetcher, force: true },
     );
 
