@@ -43,9 +43,9 @@ test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow'
 
 // The blueprint envelope shape the SPA sends when the operator has not yet
 // saved a Copilot row. Matches `blueprintUpstreamRecord('copilot')` on the
-// wire — the exchange endpoint only reads `id`, `kind`, and
-// `config.githubHost` and `proxy_fallback_list` from the envelope, so a minimal literal keeps the
-// test focused on the exchange semantics.
+// wire. The device-flow endpoints consume only `id`, `kind`,
+// `config.githubHost`, and `proxy_fallback_list`, so a minimal literal keeps
+// the test focused on their exchange semantics.
 const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: { githubHost: 'github.com' }, state: null, proxy_fallback_list: MOCKED_FETCH_EGRESS };
 
 test('/api/upstreams/copilot/oauth/device-login/start targets the selected GHE.com tenant', async () => {

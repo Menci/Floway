@@ -5,9 +5,9 @@
 //      `/v1/messages` call — streaming included, where they arrive ahead of the
 //      first SSE byte. This is the passive source: it costs nothing and tracks
 //      consumption from every client sharing the seat, not just ours.
-//   2. `GET https://api.github.com/copilot_internal/user`, the operator-driven
-//      refresh. This is the only source for an upstream that has not served a
-//      request yet.
+//   2. `GET /copilot_internal/user` on the selected GitHub API origin, the
+//      operator-driven refresh. This is the only source for an upstream that
+//      has not served a request yet.
 //
 // Both project into `CopilotQuotaSnapshot` so the dashboard renders one shape
 // regardless of which path filled the slot. Field names follow the REST

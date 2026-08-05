@@ -1,6 +1,5 @@
--- Copilot management-plane requests previously targeted github.com implicitly.
--- Materialize that host so every stored record has the shape the provider now
--- requires before code starts deriving GitHub and GHE.com endpoints from it.
+-- Copilot records require an explicit GitHub management-plane host. Existing
+-- records represent github.com because that was their only possible host.
 UPDATE upstreams
 SET config_json = json_set(config_json, '$.githubHost', 'github.com')
 WHERE provider = 'copilot'

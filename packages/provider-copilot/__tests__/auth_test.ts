@@ -89,7 +89,7 @@ const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<R
   return await copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 };

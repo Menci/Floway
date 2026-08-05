@@ -39,9 +39,9 @@ const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID())
 // on retry. 403 = the GitHub token is unauthorized for Copilot; 429 = the
 // upstream rate-limits the token endpoint, and waiting out the window inside
 // our retry budget burns the dial deadline without changing the verdict. The
-// HTTP-convention 5xx range falls through to the retry path because GitHub
-// returns 500/502/503/504 transiently when api.github.com itself is having
-// a bad minute (caozhiyuan/copilot-api retries every refresh failure).
+// HTTP-convention 5xx range falls through to the retry path because the
+// selected GitHub API endpoint can return 500/502/503/504 transiently
+// (caozhiyuan/copilot-api retries every refresh failure).
 const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
 
 // Two-level Copilot token cache: in-process (60s) memo keyed by upstream id,
@@ -280,7 +280,8 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   return dispatchUpstreamFetch(options, `${entry.baseUrl}${path}`, request);
 }
 
-// Headers for api.github.com calls — token exchange and /copilot_internal/user.
+// Headers for management-plane calls on the selected GitHub API origin — token
+// exchange and /copilot_internal/user.
 // VSCode Copilot Chat (and caozhiyuan/copilot-api) deliberately omit editor-*
 // here: those headers belong on the copilot data plane, not on the GitHub
 // management plane. x-github-api-version uses GitHub's REST date, distinct

@@ -15,7 +15,7 @@ interface GitHubDeviceFlowStart {
 
 // All GitHub egress accepts a Fetcher so the copilot auth poll can forward
 // the operator's edit-form proxy override; absent that, direct egress.
-export const startGitHubDeviceFlow = async (githubHost: string, fetcher: Fetcher = directFetcher) => {
+export const startGitHubDeviceFlow = async (githubHost: string, fetcher: Fetcher) => {
   const resp = await fetcher(`${githubWebOrigin(githubHost)}/login/device/code`, {
     method: 'POST',
     headers: {
