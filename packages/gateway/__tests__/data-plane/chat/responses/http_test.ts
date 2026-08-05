@@ -564,6 +564,32 @@ test('POST /v1/responses and /v1/responses/compact reject a non-string previous_
   }
 });
 
+test('POST /v1/responses rejects a malformed item reference before resolution or state writes', async () => {
+  const repo = installRepo();
+  lastSeenModel.value = null;
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'item_reference', id: 42 }],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+  assertEquals(body.error, {
+    message: 'Responses item_reference id must be a non-empty string.',
+    type: 'invalid_request_error',
+    param: 'input[0].id',
+    code: 'invalid_request_error',
+  });
+  assertEquals(lastSeenModel.value, null);
+  assertEquals(await repo.responsesItems.findOldestRefreshedAt(API_KEY_ID), null);
+  assertEquals(await repo.responsesSnapshots.findOldestRefreshedAt(API_KEY_ID), null);
+});
+
 test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
   installRepo();
 

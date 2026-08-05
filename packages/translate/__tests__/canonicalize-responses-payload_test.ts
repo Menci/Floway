@@ -111,6 +111,27 @@ test('rejects non-string previous_response_id values at the canonical boundary',
   }
 });
 
+test('rejects an item reference without a non-empty string id at the canonical boundary', () => {
+  for (const malformed of [
+    { type: 'item_reference' },
+    { type: 'item_reference', id: '' },
+    { type: 'item_reference', id: 42 },
+    { type: 'item_reference', id: null },
+    { type: 'item_reference', id: [] },
+    { type: 'item_reference', id: {} },
+  ]) {
+    const error = assertThrows(
+      () => canonicalizeResponsesPayload({
+        model: 'gpt-test',
+        input: [malformed] as unknown as ResponsesPayload['input'],
+      }),
+      TranslatorInputError,
+      'non-empty string',
+    ) as TranslatorInputError;
+    assertEquals(error.param, 'input[0].id');
+  }
+});
+
 test('canonicalizeResponsesPayload preserves reasoning.context verbatim, including future modes', () => {
   const canonicalCurrent = canonicalizeResponsesPayload({
     model: 'gpt-test',

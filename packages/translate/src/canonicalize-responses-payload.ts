@@ -71,6 +71,10 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
           if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
             throw new TranslatorInputError('Untyped Responses input items require a valid role and content.', { param: `input[${index}]` });
           }
+          const typedItem = item as Record<string, unknown>;
+          if (typedItem.type === 'item_reference' && (typeof typedItem.id !== 'string' || typedItem.id.length === 0)) {
+            throw new TranslatorInputError('Responses item_reference id must be a non-empty string.', { param: `input[${index}].id` });
+          }
           return item as ResponsesInputItem;
         }),
   };
