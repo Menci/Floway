@@ -1,6 +1,6 @@
 import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
-import { telemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 
 export type PerformanceBucketGranularity = TelemetryBucketGranularity;
 export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
@@ -28,6 +28,7 @@ export interface PerformanceDisplayRecord {
 export interface AggregateOptions {
   bucket: PerformanceBucketGranularity;
   groupBy: PerformanceGroupBy;
+  timeZone?: string;
   timezoneOffsetMinutes: number;
 }
 
@@ -55,8 +56,8 @@ const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOpti
   return String(record[options.groupBy]);
 };
 
-const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): void => {
-  const bucket = telemetryBucket(record.hour, options.bucket, options.timezoneOffsetMinutes);
+const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, bucketFor: (hour: string) => string, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): void => {
+  const bucket = bucketFor(record.hour);
   const group = displayGroup(record, options, keyToUser);
   if (group === null) return;
   const key = `${bucket}\0${group}`;
@@ -127,11 +128,12 @@ export const aggregatePerformanceForDisplay = <K extends string>(
 ): Record<K, PerformanceDisplayRecord[]> => {
   const entries = Object.entries(axes) as [K, AggregateOptions][];
   const maps = entries.map(() => new Map<string, MutableAggregate>());
+  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
   for (const record of records) {
     for (let i = 0; i < entries.length; i++) {
       const options = entries[i][1];
       if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
-      updateAggregate(maps[i], record, options, keyToUser);
+      updateAggregate(maps[i], record, bucketResolvers[i], options, keyToUser);
     }
   }
   const result = {} as Record<K, PerformanceDisplayRecord[]>;

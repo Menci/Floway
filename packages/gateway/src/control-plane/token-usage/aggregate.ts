@@ -1,5 +1,5 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { telemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 import { addDecimalStrings, multiplyDecimalStrings, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
@@ -38,6 +38,7 @@ export interface UsageOverviewRecord {
 export interface UsageOverviewAggregateOptions {
   bucket: TelemetryBucketGranularity;
   groupBy: UsageOverviewGroupBy | 'none';
+  timeZone?: string;
   timezoneOffsetMinutes: number;
 }
 
@@ -149,13 +150,14 @@ export const aggregateUsageForOverview = <K extends string>(
 ): Record<K, UsageOverviewRecord[]> => {
   const entries = Object.entries(axes) as [K, UsageOverviewAggregateOptions][];
   const maps = entries.map(() => new Map<string, UsageOverviewRecord>());
+  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
   for (const record of records) {
     for (let index = 0; index < entries.length; index++) {
       const options = entries[index][1];
       if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
       const group = overviewGroup(record, options.groupBy, keyToUser);
       if (group === null) continue;
-      const bucket = telemetryBucket(record.hour, options.bucket, options.timezoneOffsetMinutes);
+      const bucket = bucketResolvers[index](record.hour);
       const key = `${bucket}\0${group}`;
       let aggregate = maps[index].get(key);
       if (!aggregate) {

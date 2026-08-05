@@ -757,6 +757,7 @@ const telemetryOverviewQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
+  timezone: z.string().optional(),
   timezone_offset_minutes: z.string().optional(),
   // Cross-cutting filters applied to raw records before aggregation. Values
   // within one filter are OR'd, and the filters themselves AND together.

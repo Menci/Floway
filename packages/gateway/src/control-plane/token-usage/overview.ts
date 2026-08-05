@@ -1,10 +1,9 @@
 import { aggregateUsageForOverview, usageUpstreamDimension, type UsageOverviewGroupBy } from './aggregate.ts';
-import { userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageRecord } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
@@ -21,6 +20,7 @@ interface UsageOverviewParams {
   end: string;
   groupBy: UsageOverviewGroupBy;
   bucket: 'hour' | '4h' | '8h' | 'day' | 'all';
+  timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;
 }
@@ -29,21 +29,13 @@ const readUsageOverviewQuery = (
   c: Ctx,
 ): { type: 'ok'; value: UsageOverviewParams } | { type: 'error'; error: string } => {
   const query = c.req.valid('query');
-  if (!query.start || !query.end) {
-    return { type: 'error', error: 'start and end query parameters are required (e.g. 2026-03-09T00)' };
-  }
-  const timezoneOffsetMinutes = Number(query.timezone_offset_minutes ?? '0');
-  if (!Number.isFinite(timezoneOffsetMinutes) || timezoneOffsetMinutes < -1440 || timezoneOffsetMinutes > 1440) {
-    return { type: 'error', error: 'timezone_offset_minutes must be between -1440 and 1440' };
-  }
+  const window = readTelemetryOverviewWindow(query);
+  if (window.type === 'error') return window;
   return {
     type: 'ok',
     value: {
-      start: query.start,
-      end: query.end,
+      ...window.value,
       groupBy: query.group_by ?? 'model',
-      bucket: query.bucket ?? 'hour',
-      timezoneOffsetMinutes,
       filters: {
         keyId: new Set(query.filter_key_id),
         userId: new Set(query.filter_user_id?.map(Number)),
@@ -95,27 +87,17 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const params = readUsageOverviewQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
   const { start, end, groupBy, bucket, timezoneOffsetMinutes, filters } = params.value;
-  const actor = userFromContext(c);
-  if (!actor.isAdmin) {
-    if (groupBy === 'userId') return c.json({ error: 'group_by=userId requires administrator privileges' }, 403);
-    if (filters.userId.size > 0) return c.json({ error: 'filter_user_id requires administrator privileges' }, 403);
-  }
-
   const repo = getRepo();
-  const allKeys = await repo.apiKeys.listIncludingDeleted();
-  const ownedKeys = allKeys.filter(key => key.userId === actor.id);
-  const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  const unknownKeyId = [...filters.keyId].find(keyId => !ownedKeyIds.has(keyId));
-  if (unknownKeyId !== undefined) return c.json({ error: 'Unknown filter_key_id' }, 404);
+  const identity = await loadTelemetryOverviewIdentity(c);
+  const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
+  if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
   const rawRecords = await repo.usage.query({ start, end });
-  const scopedRecords = !actor.isAdmin || groupBy === 'keyId'
-    ? rawRecords.filter(record => ownedKeyIds.has(record.keyId))
+  const scopedRecords = !identity.actor.isAdmin || groupBy === 'keyId'
+    ? rawRecords.filter(record => identity.ownedKeyIds.has(record.keyId))
     : rawRecords;
-  const users = actor.isAdmin ? await repo.users.listIncludingDeleted() : [];
-  const keyToUser = buildKeyToUserMap(allKeys);
-  const { filtered, dimensionValues } = partitionUsage(scopedRecords, filters, keyToUser, ownedKeyIds, actor.isAdmin);
-  const tzOnly = { timezoneOffsetMinutes };
+  const { filtered, dimensionValues } = partitionUsage(scopedRecords, filters, identity.keyToUser, identity.ownedKeyIds, identity.actor.isAdmin);
+  const tzOnly = { timeZone: params.value.timeZone, timezoneOffsetMinutes };
   const { series, ...axes } = aggregateUsageForOverview(filtered, {
     series: { ...tzOnly, bucket, groupBy },
     none: { ...tzOnly, bucket: 'all', groupBy: 'none' },
@@ -123,15 +105,13 @@ export const tokenUsageOverview = async (c: Ctx) => {
     userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' },
     model: { ...tzOnly, bucket: 'all', groupBy: 'model' },
     upstream: { ...tzOnly, bucket: 'all', groupBy: 'upstream' },
-  }, keyToUser, ownedKeyIds);
+  }, identity.keyToUser, identity.ownedKeyIds);
+  const metadata = telemetryIdentityMetadata(identity);
 
   return c.json({
     series,
-    axes: { ...axes, userId: actor.isAdmin ? axes.userId : [] },
+    axes: { ...axes, userId: identity.actor.isAdmin ? axes.userId : [] },
     dimensionValues,
-    users: users.map(user => ({ id: user.id, username: user.username })).sort((left, right) => left.id - right.id),
-    keys: ownedKeys
-      .map(key => ({ id: key.id, name: key.name, createdAt: key.createdAt }))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)),
+    ...metadata,
   } satisfies TokenUsageOverviewResponse);
 };

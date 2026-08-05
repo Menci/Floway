@@ -16,12 +16,11 @@
 // never surface either.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
-import { userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -39,6 +38,7 @@ interface PerformanceQueryParams {
   end: string;
   bucket: PerformanceBucketGranularity;
   groupBy: PerformanceGroupBy;
+  timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: PerformanceFilters;
 }
@@ -47,23 +47,14 @@ const readPerformanceQuery = (
   c: Ctx,
 ): { type: 'ok'; value: PerformanceQueryParams } | { type: 'error'; error: string } => {
   const query = c.req.valid('query');
-  if (!query.start || !query.end) {
-    return { type: 'error', error: 'start and end query parameters are required (e.g. 2026-03-09T00)' };
-  }
-
-  const timezoneOffsetMinutes = Number(query.timezone_offset_minutes ?? '0');
-  if (!Number.isFinite(timezoneOffsetMinutes) || timezoneOffsetMinutes < -1440 || timezoneOffsetMinutes > 1440) {
-    return { type: 'error', error: 'timezone_offset_minutes must be between -1440 and 1440' };
-  }
+  const window = readTelemetryOverviewWindow(query);
+  if (window.type === 'error') return window;
 
   return {
     type: 'ok',
     value: {
-      start: query.start,
-      end: query.end,
-      bucket: query.bucket ?? 'hour',
+      ...window.value,
       groupBy: query.group_by ?? 'model',
-      timezoneOffsetMinutes,
       filters: {
         model: new Set(query.filter_model),
         upstream: new Set(query.filter_upstream),
@@ -150,31 +141,19 @@ export const performanceOverview = async (c: Ctx) => {
   if (params.type === 'error') return c.json({ error: params.error }, 400);
   const { start, end, bucket, groupBy, timezoneOffsetMinutes, filters } = params.value;
 
-  const actor = userFromContext(c);
-  if (!actor.isAdmin) {
-    if (groupBy === 'userId') return c.json({ error: 'group_by=userId requires administrator privileges' }, 403);
-    if (filters.userId.size > 0) return c.json({ error: 'filter_user_id requires administrator privileges' }, 403);
-  }
-
   const repo = getRepo();
-  const allKeys = await repo.apiKeys.listIncludingDeleted();
-  const ownedKeys = allKeys.filter(key => key.userId === actor.id);
-  const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  const unknownKeyId = [...filters.keyId].find(keyId => !ownedKeyIds.has(keyId));
-  if (unknownKeyId !== undefined) {
-    return c.json({ error: 'Unknown filter_key_id' }, 404);
-  }
+  const identity = await loadTelemetryOverviewIdentity(c);
+  const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
+  if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
   const rawRecords = await repo.performance.query({ start, end });
   const scopedRecords = groupBy === 'keyId'
-    ? rawRecords.filter(r => ownedKeyIds.has(r.keyId))
+    ? rawRecords.filter(r => identity.ownedKeyIds.has(r.keyId))
     : rawRecords;
 
-  const users = actor.isAdmin ? await repo.users.listIncludingDeleted() : [];
-  const keyToUser = buildKeyToUserMap(allKeys);
-  const { filtered, dimensionValues } = partitionRecords(scopedRecords, filters, keyToUser, ownedKeyIds, actor.isAdmin);
+  const { filtered, dimensionValues } = partitionRecords(scopedRecords, filters, identity.keyToUser, identity.ownedKeyIds, identity.actor.isAdmin);
 
-  const tzOnly = { timezoneOffsetMinutes };
+  const tzOnly = { timeZone: params.value.timeZone, timezoneOffsetMinutes };
   const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
     series: { ...tzOnly, bucket, groupBy },
     // 'none' axis carries the summary row.
@@ -185,23 +164,16 @@ export const performanceOverview = async (c: Ctx) => {
     operation: { ...tzOnly, bucket: 'all', groupBy: 'operation' as const },
     keyId: { ...tzOnly, bucket: 'all', groupBy: 'keyId' as const },
     userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' as const },
-  }, keyToUser, ownedKeyIds);
-
-  const userMetadata = users
-    .map(u => ({ id: u.id, username: u.username }))
-    .sort((a, b) => a.id - b.id);
-  const keys = ownedKeys
-    .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  }, identity.keyToUser, identity.ownedKeyIds);
+  const metadata = telemetryIdentityMetadata(identity);
 
   return c.json({
     series,
     axes: {
       ...axes,
-      userId: actor.isAdmin ? axes.userId : [],
+      userId: identity.actor.isAdmin ? axes.userId : [],
     },
     dimensionValues,
-    users: userMetadata,
-    keys,
+    ...metadata,
   });
 };

@@ -67,6 +67,7 @@ export const buildPerformanceQuery = (
 ): Record<string, string | string[]> => ({
   ...dashboardRangeQuery(range, nowMs),
   group_by: groupBy,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
   filter_model: filters.model,
   filter_upstream: filters.upstream,
