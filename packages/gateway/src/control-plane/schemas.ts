@@ -221,7 +221,7 @@ const ollamaConfigSchema = z.object({
 const PASSWORD_MAX_BYTES = 1024;
 const utf8 = new TextEncoder();
 const passwordWithinByteLimitSchema = z.string().refine(
-  value => utf8.encode(value).byteLength <= PASSWORD_MAX_BYTES,
+  value => value.length <= PASSWORD_MAX_BYTES && utf8.encode(value).byteLength <= PASSWORD_MAX_BYTES,
   { message: `password must be at most ${PASSWORD_MAX_BYTES} UTF-8 bytes` },
 );
 const passwordSchema = passwordWithinByteLimitSchema.refine(value => value.length > 0, { message: 'password must not be empty' });

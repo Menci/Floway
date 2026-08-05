@@ -38,7 +38,10 @@ const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, dept
 };
 
 export const internalErrorResponse = (error: Error, c: Context): Response => {
-  if (error instanceof HTTPException) return error.getResponse();
+  if (error instanceof HTTPException) {
+    const response = error.getResponse();
+    return c.newResponse(response.body, response);
+  }
 
   console.error(error);
 

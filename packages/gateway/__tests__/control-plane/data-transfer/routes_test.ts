@@ -67,7 +67,7 @@ const SEED_ADMIN: User = {
 const USER_BOB: User = {
   id: 2,
   username: 'bob',
-  passwordHash: 'pbkdf2-sha256$600000$c2FsdA==$aGFzaA==',
+  passwordHash: 'pbkdf2-sha256$1000$AAECAwQFBgcICQoLDA0ODw==$rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=',
   isAdmin: false,
   upstreamIds: null,
   createdAt: '2026-02-01T00:00:00.000Z',
@@ -989,17 +989,26 @@ test('import retains optional defaults from the v20 wire contract', async () => 
   assertEquals((await repo.upstreams.list())[0].modelPrefix, null);
 });
 
-test('positive-integer import fields preserve Number.isInteger semantics', async () => {
+test('account ids require safe integers while unrelated positive-integer fields retain their contract', async () => {
   const { app, repo } = setup();
   const beyondSafeInteger = Number.MAX_SAFE_INTEGER + 1;
-  const result = await doImport(app, 'replace', latestImportData({
+
+  const unsafeUser = await doImport(app, 'replace', latestImportData({
     users: [SEED_ADMIN, { ...USER_BOB, id: beyondSafeInteger }],
+  }));
+  assertEquals(unsafeUser.status, 400);
+  assertEquals(String(unsafeUser.body.error).includes('id must be a positive safe integer'), true);
+
+  const unsafeKeyOwner = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, userId: beyondSafeInteger }],
+  }));
+  assertEquals(unsafeKeyOwner.status, 400);
+  assertEquals(String(unsafeKeyOwner.body.error).includes('userId must be a positive safe integer'), true);
+
+  const proxy = await doImport(app, 'replace', latestImportData({
     proxies: [{ id: 'p1', name: 'Proxy', url: HTTP_PROXY_URL, dial_timeout_seconds: beyondSafeInteger }],
   }));
-
-  assertEquals(result.status, 200);
-  assertEquals((await repo.apiKeys.listIncludingDeleted())[0].userId, beyondSafeInteger);
+  assertEquals(proxy.status, 200);
   assertEquals((await repo.proxies.list())[0].dialTimeoutSeconds, beyondSafeInteger);
 });
 
