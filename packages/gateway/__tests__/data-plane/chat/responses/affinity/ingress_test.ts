@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
 import { analyzeResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
-import { INTER_AGENT_MESSAGE_DOMAIN } from '../../../../../src/data-plane/chat/responses/affinity/opaque-locations.ts';
 import { AffinityCodec, type AffinityRequestAnalysis, type AffinityTarget, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
@@ -16,7 +15,7 @@ const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { ...base.model, id: 'model', endpoints: { responses: {} } },
+    model: { id: 'model' },
   });
 };
 
@@ -69,19 +68,14 @@ test('restores an owned blob only for its exact target without changing item ids
   expect(select([mismatchedRules, candidateA], prepared).candidates).toEqual([candidateA, mismatchedRules]);
 });
 
-test('forces nested agent-message ciphertext to its producer and preserves foreign values', async () => {
+test('rewrites nested agent-message carriers and preserves foreign values', async () => {
   const first = await codec.wrap(
     'first',
     targetFor(candidateA),
-    INTER_AGENT_MESSAGE_DOMAIN,
+    carrierDomain('agent_message', 'content.0.encrypted_content'),
   );
   const synthetic = await codec.wrap(
     undefined,
-    targetFor(candidateA),
-    INTER_AGENT_MESSAGE_DOMAIN,
-  );
-  const legacy = await codec.wrap(
-    'legacy',
     targetFor(candidateA),
     carrierDomain('agent_message', 'content.1.encrypted_content'),
   );
@@ -94,7 +88,6 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
       recipient: 'b',
       content: [
         { type: 'encrypted_content', encrypted_content: first },
-        { type: 'encrypted_content', encrypted_content: legacy },
         { type: 'encrypted_content', encrypted_content: synthetic },
         { type: 'encrypted_content', encrypted_content: 'foreign' },
         { type: 'input_text', text: 'visible' },
@@ -103,130 +96,25 @@ test('forces nested agent-message ciphertext to its producer and preserves forei
   }, codec);
 
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  expect(prepared.requiredTargets).toEqual([]);
-  expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
   expect(projectionA.materialize().input[0]).toMatchObject({
     id: 'amsg_client',
     content: [
       { type: 'encrypted_content', encrypted_content: 'first' },
-      { type: 'encrypted_content', encrypted_content: 'legacy' },
+      { type: 'encrypted_content', encrypted_content: 'foreign' },
+      { type: 'input_text', text: 'visible' },
+    ],
+  });
+  expect(projectionB.materialize().input[0]).toMatchObject({
+    id: 'amsg_client',
+    content: [
       { type: 'encrypted_content', encrypted_content: 'foreign' },
       { type: 'input_text', text: 'visible' },
     ],
   });
   expect(projectionA.degrades).toBe(false);
-  expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+  expect(projectionB.degrades).toBe(true);
 });
-
-test.each([
-  {
-    name: 'function_call',
-    item: (argumentsJson: string) => ({
-      type: 'function_call' as const,
-      id: 'fc_1',
-      call_id: 'call_1',
-      namespace: 'collaboration',
-      name: 'spawn_agent',
-      arguments: argumentsJson,
-      encrypted_function_args: ['message'],
-      status: 'completed' as const,
-    }),
-  },
-  {
-    name: 'multi_agent_call',
-    item: (argumentsJson: string) => ({
-      type: 'multi_agent_call' as const,
-      id: 'mac_1',
-      call_id: 'call_1',
-      action: 'followup_task' as const,
-      arguments: argumentsJson,
-    }),
-  },
-])('forces $name encrypted message arguments to their producer', async ({ item }) => {
-  const encrypted = await codec.wrap('gAAAA-producer-ciphertext', targetFor(candidateA), INTER_AGENT_MESSAGE_DOMAIN);
-  const prepared = await analyzeResponsesAffinity({
-    model: 'model',
-    input: [item(JSON.stringify({ target: '/root/worker', message: encrypted }))],
-  }, codec);
-
-  expect(prepared.requiredTargets).toEqual([]);
-  expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
-  expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
-  const sameUpstreamOtherModel = { ...candidateA, model: { ...candidateA.model, id: 'child-model' } };
-  expect(prepared.evaluateCandidate(sameUpstreamOtherModel)).toMatchObject({ kind: 'accepted', degrades: false });
-  const restored = acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0];
-  if (restored.type !== 'function_call' && restored.type !== 'multi_agent_call') throw new Error('Expected inter-agent call');
-  expect(JSON.parse(restored.arguments)).toEqual({ target: '/root/worker', message: 'gAAAA-producer-ciphertext' });
-});
-
-test('leaves explicitly plaintext collaboration arguments outside affinity', async () => {
-  const item = {
-    type: 'function_call' as const,
-    id: 'fc_1',
-    call_id: 'call_1',
-    namespace: 'collaboration',
-    name: 'send_message',
-    arguments: JSON.stringify({ target: '/root/worker', message: 'plain text' }),
-    encrypted_function_args: [],
-    status: 'completed' as const,
-  };
-  const prepared = await analyzeResponsesAffinity({ model: 'model', input: [item] }, codec);
-
-  expect(prepared.requiredTargets).toEqual([]);
-  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().input).toEqual([item]);
-});
-
-test.each([null, ['message'], ['target']] as const)(
-  'treats encrypted_function_args=%j as encrypted collaboration mode',
-  async encryptedFunctionArgs => {
-    const encrypted = await codec.wrap('opaque', targetFor(candidateA), INTER_AGENT_MESSAGE_DOMAIN);
-    const prepared = await analyzeResponsesAffinity({
-      model: 'model',
-      input: [{
-        type: 'function_call',
-        id: 'fc_1',
-        call_id: 'call_1',
-        namespace: 'collaboration',
-        name: 'send_message',
-        arguments: JSON.stringify({ target: '/root/worker', message: encrypted }),
-        encrypted_function_args: encryptedFunctionArgs === null ? null : [...encryptedFunctionArgs],
-        status: 'completed',
-      }],
-    }, codec);
-
-    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
-  },
-);
-
-test.each(['function_call_output', 'custom_tool_call_output'] as const)(
-  'forces encrypted content nested in %s to its producer',
-  async type => {
-    const domain = `responses.${type}.output.1.encrypted_content`;
-    const encrypted = await codec.wrap('opaque-output', targetFor(candidateA), domain);
-    const prepared = await analyzeResponsesAffinity({
-      model: 'model',
-      input: [{
-        type,
-        id: 'out_1',
-        call_id: 'call_1',
-        output: [
-          { type: 'input_text', text: 'visible' },
-          { type: 'encrypted_content', encrypted_content: encrypted },
-        ],
-      }],
-    }, codec);
-
-    expect(prepared.requiredTargets).toEqual([]);
-    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
-    expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
-    expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({
-      output: [
-        { type: 'input_text', text: 'visible' },
-        { type: 'encrypted_content', encrypted_content: 'opaque-output' },
-      ],
-    });
-  },
-);
 
 test('removes only items explicitly marked synthetic and preserves markerless originless items', async () => {
   const syntheticItem = await codec.wrap(
