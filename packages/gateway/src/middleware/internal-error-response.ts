@@ -1,5 +1,7 @@
 import type { Context } from 'hono';
 
+import { RequestBodyTooLargeError } from './request-body-limit.ts';
+
 const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 32;
 
 const serializedErrorIdentity = (error: Error) => ({
@@ -37,6 +39,18 @@ const serializeErrorCause = (cause: unknown, ancestors: ReadonlySet<Error>, dept
 };
 
 export const internalErrorResponse = (error: Error, c: Context): Response => {
+  if (error instanceof RequestBodyTooLargeError) {
+    return c.json({
+      error: {
+        type: 'request_too_large',
+        message: error.message,
+        max_bytes: error.maxBytes,
+        method: c.req.method,
+        path: c.req.path,
+      },
+    }, 413);
+  }
+
   console.error(error);
 
   return c.json(
