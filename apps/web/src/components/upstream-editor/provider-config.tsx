@@ -290,14 +290,17 @@ function CopilotConfig({ record, onPatch }: {
   const cancelled = useRef(false);
   const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
 
-  const expire = () => {
+  const expire = useCallback(() => {
     timer.current = null;
     setBusy(false);
     setFlow(null);
-  };
+  }, []);
 
-  const schedulePoll = (deviceCode: string, interval: number, secondsLeft: number) => {
-    if (secondsLeft <= 0) { expire(); return; }
+  const schedulePoll = useCallback((deviceCode: string, interval: number, secondsLeft: number) => {
+    if (secondsLeft <= 0) {
+      timer.current = window.setTimeout(expire, 0);
+      return;
+    }
     if (interval > secondsLeft) {
       timer.current = window.setTimeout(expire, secondsLeft * 1000);
       return;
@@ -306,7 +309,7 @@ function CopilotConfig({ record, onPatch }: {
       timer.current = null;
       void pollRef.current(deviceCode, interval, secondsLeft - interval);
     }, interval * 1000);
-  };
+  }, [expire]);
 
   const poll = async (deviceCode: string, interval: number, secondsLeft: number) => {
     const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
@@ -346,7 +349,7 @@ function CopilotConfig({ record, onPatch }: {
     cancelled.current = false;
     if (flow) schedulePoll(flow.device_code, flow.interval, flow.expires_in);
     return () => { cancelled.current = true; stop(); };
-  }, [flow]);
+  }, [flow, schedulePoll]);
 
   const start = async () => {
     stop(); setBusy(true); setError(null);
