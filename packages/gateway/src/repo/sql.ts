@@ -451,9 +451,14 @@ class SqlUsageRepo implements UsageRepo {
     await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
-    const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
-    const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
+  async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {
+    const keyIds = opts.keyIds === undefined ? undefined : [...new Set(opts.keyIds)];
+    const where = keyIds === undefined
+      ? 'hour >= ? AND hour < ?'
+      : 'key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) AND hour >= ? AND hour < ?';
+    const binds = keyIds === undefined
+      ? [opts.start, opts.end]
+      : [JSON.stringify(keyIds), opts.start, opts.end];
     const [{ results: metrics }, { results: requests }] = await Promise.all([
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),

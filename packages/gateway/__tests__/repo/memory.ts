@@ -341,11 +341,12 @@ class MemoryUsageRepo implements UsageRepo {
     return Promise.resolve();
   }
 
-  query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
+  query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {
+    const keyIds = opts.keyIds === undefined ? undefined : new Set(opts.keyIds);
     return Promise.resolve(
       [...this.store.values()]
         .filter(r => {
-          if (opts.keyId && r.keyId !== opts.keyId) return false;
+          if (keyIds !== undefined && !keyIds.has(r.keyId)) return false;
           return r.hour >= opts.start && r.hour < opts.end;
         })
         .map(r => this.toRecord(r))

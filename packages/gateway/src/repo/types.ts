@@ -204,7 +204,7 @@ export interface UsageRepo {
   // first write establishes the unit-price snapshot, including an unpriced
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
-  query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
+  query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;

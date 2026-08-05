@@ -55,11 +55,11 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
-  const rawRecords = await repo.usage.query({ start, end });
-  const scopedRecords = !identity.actor.isAdmin || groupBy === 'keyId'
-    ? rawRecords.filter(record => identity.ownedKeyIds.has(record.keyId))
-    : rawRecords;
-  const partitioned = partitionTelemetryOverviewRecords(scopedRecords, {
+  const keyIds = !identity.actor.isAdmin || groupBy === 'keyId'
+    ? [...identity.ownedKeyIds]
+    : undefined;
+  const records = await repo.usage.query({ keyIds, start, end });
+  const partitioned = partitionTelemetryOverviewRecords(records, {
     keyId: {
       value: record => record.keyId,
       includeFacet: record => identity.ownedKeyIds.has(record.keyId),

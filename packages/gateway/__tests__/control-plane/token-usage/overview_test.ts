@@ -125,12 +125,14 @@ test('/api/token-usage/overview enforces identity filter authorization', async (
   assertEquals(await foreignKey.json(), { error: 'Unknown filter_key_id' });
 });
 
-test('/api/token-usage/overview reads Usage records once for every dashboard axis', async () => {
+test('/api/token-usage/overview reads the actor-owned Usage scope once for every dashboard axis', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
+  let queryOptions: unknown;
   const originalQuery = repo.usage.query.bind(repo.usage);
   repo.usage.query = opts => {
     queryCount++;
+    queryOptions = opts;
     return originalQuery(opts);
   };
   await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: null, hour: '2026-04-30T10', requests: 2 });
@@ -139,4 +141,9 @@ test('/api/token-usage/overview reads Usage records once for every dashboard axi
 
   assertEquals(response.status, 200);
   assertEquals(queryCount, 1);
+  assertEquals(queryOptions, {
+    keyIds: [apiKey.id],
+    start: '2026-04-30T00',
+    end: '2026-05-01T00',
+  });
 });

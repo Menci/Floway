@@ -50,8 +50,11 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     return c.json({ error: 'Unknown key_id' }, 404);
   }
 
-  const rawRecords = await repo.usage.query({ keyId: explicitKeyId, start, end });
-  const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
+  const filtered = await repo.usage.query({
+    keyIds: explicitKeyId === undefined ? [...ownedSet] : [explicitKeyId],
+    start,
+    end,
+  });
   const keyMap = new Map(keys.map(k => [k.id, k]));
   const records = aggregateUsageForDisplay(filtered);
   const withKeyMetadata = records.map(r => {

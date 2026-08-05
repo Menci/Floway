@@ -31,7 +31,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   ...overrides,
 });
 
-const query = (repo: Repo) => repo.usage.query({ keyId: 'key-1', start: '2026-07-12T00', end: '2026-07-12T01' });
+const query = (repo: Repo) => repo.usage.query({ keyIds: ['key-1'], start: '2026-07-12T00', end: '2026-07-12T01' });
 
 test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const db = await createSqlJsDatabase();
@@ -93,6 +93,21 @@ test('0062 rejects malformed legacy usage quantities and prices', async () => {
 });
 
 for (const backend of backends) {
+  test(`${backend.name} usage repo scopes a time window to a set of keys`, async () => {
+    const repo = await backend.make();
+    await Promise.all([
+      repo.usage.record(record({ keyId: 'key-1', requests: 1 })),
+      repo.usage.record(record({ keyId: 'key-2', requests: 2 })),
+      repo.usage.record(record({ keyId: 'key-3', requests: 3 })),
+      repo.usage.record(record({ keyId: 'key-2', hour: '2026-07-12T01', requests: 4 })),
+    ]);
+
+    const scoped = await repo.usage.query({ keyIds: ['key-2', 'key-2', 'key-3'], start: '2026-07-12T00', end: '2026-07-12T01' });
+    assertEquals(scoped.map(row => [row.keyId, row.requests]), [['key-2', 2], ['key-3', 3]]);
+    assertEquals(await repo.usage.query({ keyIds: [], start: '2026-07-12T00', end: '2026-07-12T01' }), []);
+    assertEquals((await repo.usage.query({ start: '2026-07-12T00', end: '2026-07-12T01' })).length, 3);
+  });
+
   test(`${backend.name} usage repo folds the selected input-length pricing entry into per-metric unit prices at write time`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
