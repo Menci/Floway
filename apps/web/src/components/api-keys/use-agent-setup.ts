@@ -35,8 +35,11 @@ const isRetryableStatus = (status: number) =>
 // serializing, the way every other draft in this dashboard does.
 const comparableConfiguration = (configuration: AgentSetupConfiguration): string => JSON.stringify(configuration);
 
+// Privileged mode ignores BASH_ENV and exported shell functions, closing the
+// execution boundary before a downloaded installer assigns any secret.
+// https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html
 export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'
-  ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
+  ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash -p`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
 
 // The lease is external state: a server owns it, timers renew and expire it,

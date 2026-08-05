@@ -24,9 +24,16 @@ const lease = (expiresAt = Date.now() + 120_000) => ({
 describe('Agent Setup install command', () => {
   it('builds origin-scoped Unix and Windows commands', () => {
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
-      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash");
+      .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash -p");
     expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
       .toBe("$SetupEndpoint = 'https://floway.example'; irm \"$SetupEndpoint/api/setup/token/codex.ps1\" | iex");
+  });
+
+  it('starts the Unix installer across a privileged Bash boundary', () => {
+    const command = agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix');
+
+    expect(command.endsWith('| bash -p')).toBe(true);
+    expect(command.endsWith('| bash')).toBe(false);
   });
 });
 
