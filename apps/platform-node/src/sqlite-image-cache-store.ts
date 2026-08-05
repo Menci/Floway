@@ -11,8 +11,11 @@ export class SqliteImageCacheStore implements ImageCacheStore {
     const row = await this.db
       .prepare('SELECT value, expires_at, last_refreshed_at FROM image_cache WHERE key = ?')
       .bind(key)
-      .first<{ value: Uint8Array; expires_at: unknown; last_refreshed_at: unknown }>();
+      .first<{ value: unknown; expires_at: unknown; last_refreshed_at: unknown }>();
     if (!row) return null;
+    if (!(row.value instanceof Uint8Array)) {
+      throw new TypeError(`image_cache.value for key=${JSON.stringify(key)} must be a BLOB`);
+    }
     const expiresAt = parseImageCacheTimestamp(row.expires_at, `image_cache.expires_at for key=${JSON.stringify(key)}`);
     const lastRefreshedAt = parseImageCacheTimestamp(row.last_refreshed_at, `image_cache.last_refreshed_at for key=${JSON.stringify(key)}`);
     if (expiresAt <= now) return null;

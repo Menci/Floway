@@ -134,6 +134,10 @@ test('get exposes corrupt persisted cache timestamps with the key and column', (
     .prepare('INSERT INTO image_cache (key, value, expires_at, last_refreshed_at) VALUES (?, ?, ?, ?)')
     .bind('bad-expiry', new Uint8Array([2]), 'corrupt', Date.now())
     .run();
+  await db
+    .prepare('INSERT INTO image_cache (key, value, expires_at, last_refreshed_at) VALUES (?, ?, ?, ?)')
+    .bind('bad-value', 'not-a-blob', future, Date.now())
+    .run();
 
   await assertRejects(
     () => cache.get('bad-refresh'),
@@ -144,6 +148,11 @@ test('get exposes corrupt persisted cache timestamps with the key and column', (
     () => cache.get('bad-expiry'),
     TypeError,
     'image_cache.expires_at for key="bad-expiry"',
+  );
+  await assertRejects(
+    () => cache.get('bad-value'),
+    TypeError,
+    'image_cache.value for key="bad-value" must be a BLOB',
   );
 }));
 
