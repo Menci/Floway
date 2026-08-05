@@ -418,24 +418,29 @@ test('responsesResultToEvents preserves advanced tool item wire fields', () => {
   assertEquals(done, output);
 });
 
-test('responsesResultToEvents surfaces a missing function_call item id instead of inventing one', () => {
+const childEventItems = [
+  { type: 'message', status: 'completed', role: 'assistant', content: [] },
+  { type: 'reasoning', summary: [] },
+  { type: 'function_call', call_id: 'call_1', name: 'run', arguments: '{}', status: 'completed' },
+  { type: 'custom_tool_call', call_id: 'call_2', name: 'run', input: '{}' },
+  { type: 'web_search_call', status: 'completed' },
+  { type: 'image_generation_call', status: 'completed' },
+] as const;
+
+test.each(childEventItems.flatMap(item => [undefined, '', 1].map(id => ({ id, item }))))(
+  'responsesResultToEvents rejects invalid id $id on child-event item $item.type',
+  ({ id, item }) => {
+    const invalidItem = id === undefined ? item : { ...item, id };
   assertThrows(
     () => responsesResultToEvents({
       ...completedResponse,
-      output: [
-        {
-          type: 'function_call',
-          call_id: 'call_1',
-          name: 'do_thing',
-          arguments: '{}',
-          status: 'completed',
-        },
-      ],
+        output: [invalidItem as unknown as ResponsesOutputItem],
     }),
     Error,
-    'Responses function_call output item is missing its id',
+    `Responses ${item.type} output item is missing its id`,
   );
-});
+  },
+);
 
 test('responsesResultToEvents expands a web_search_call with the full 5-event lifecycle', () => {
   const frames = Array.from(

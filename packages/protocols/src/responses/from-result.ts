@@ -1,4 +1,5 @@
 import { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
+import { requireResponsesItemId } from './item-id.ts';
 import type { ResponsesOutputCustomToolCall, ResponsesOutputFunctionCall, ResponsesOutputImageGenerationCall, ResponsesOutputItem, ResponsesOutputMessage, ResponsesOutputReasoning, ResponsesOutputWebSearchCall, ResponsesResult, ResponsesStreamEvent } from './index.ts';
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
@@ -46,13 +47,8 @@ const responsesStartSnapshot = (response: ResponsesResult): ResponsesResult => {
 // that id; faithfully reusing it keeps the synthesized stream byte-identical to
 // a native one. A carrier that emits child frames therefore has nothing to fall
 // back to if its id is missing, so we surface that rather than invent one.
-const requireItemId = (item: { type: string; id?: string }): string => {
-  if (item.id === undefined) throw new Error(`Responses ${item.type} output item is missing its id`);
-  return item.id;
-};
-
 const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: number): ResponsesStreamEvent[] => {
-  const itemId = requireItemId(item);
+  const itemId = requireResponsesItemId(item);
   const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
@@ -160,13 +156,14 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
 };
 
 const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: number): ResponsesStreamEvent[] => {
+  const itemId = requireResponsesItemId(item);
   const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
       item: {
         type: 'reasoning',
-        id: item.id,
+        id: itemId,
         summary: [],
       },
     },
@@ -175,7 +172,7 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
   item.summary.forEach((part, summaryIndex) => {
     events.push({
       type: 'response.reasoning_summary_part.added',
-      item_id: item.id,
+      item_id: itemId,
       output_index: outputIndex,
       summary_index: summaryIndex,
       part: { type: 'summary_text', text: '' },
@@ -184,7 +181,7 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
     if (part.text.length > 0) {
       events.push({
         type: 'response.reasoning_summary_text.delta',
-        item_id: item.id,
+        item_id: itemId,
         output_index: outputIndex,
         summary_index: summaryIndex,
         delta: part.text,
@@ -193,7 +190,7 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
 
     events.push({
       type: 'response.reasoning_summary_text.done',
-      item_id: item.id,
+      item_id: itemId,
       output_index: outputIndex,
       summary_index: summaryIndex,
       text: part.text,
@@ -201,7 +198,7 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
 
     events.push({
       type: 'response.reasoning_summary_part.done',
-      item_id: item.id,
+      item_id: itemId,
       output_index: outputIndex,
       summary_index: summaryIndex,
       part,
@@ -218,7 +215,7 @@ const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: n
 };
 
 const responsesFunctionCallEvents = (item: ResponsesOutputFunctionCall, outputIndex: number): ResponsesStreamEvent[] => {
-  const itemId = requireItemId(item);
+  const itemId = requireResponsesItemId(item);
   const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
@@ -257,7 +254,7 @@ const responsesFunctionCallEvents = (item: ResponsesOutputFunctionCall, outputIn
 };
 
 const responsesCustomToolCallEvents = (item: ResponsesOutputCustomToolCall, outputIndex: number): ResponsesStreamEvent[] => {
-  const itemId = requireItemId(item);
+  const itemId = requireResponsesItemId(item);
   const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',

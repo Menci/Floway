@@ -1010,7 +1010,7 @@ export type ResponsesOutputItem =
 // https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L44868-L44873
 // https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
 // `id` is schema-required too but stays optional: an upstream item that omits
-// it is surfaced by `requireItemId` rather than given an invented value.
+// it is surfaced by `requireResponsesItemId` rather than given an invented value.
 export interface ResponsesOutputMessage {
   type: 'message';
   id?: string;
