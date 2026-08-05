@@ -23,7 +23,6 @@ export const createTelemetryBucket = ({ bucket, timeZone, timezoneOffsetMinutes 
   });
   return (hour: string): string => {
     if (bucket === 'all') return 'all';
-    if (bucket === 'hour') return hour;
     const utcMs = Date.parse(`${hour}:00:00Z`);
     const local = formatter === null
       ? new Date(utcMs - timezoneOffsetMinutes * 60_000).toISOString().slice(0, 13)
@@ -31,6 +30,7 @@ export const createTelemetryBucket = ({ bucket, timeZone, timezoneOffsetMinutes 
           const parts = formatter.formatToParts(new Date(utcMs));
           return `${part(parts, 'year')}-${part(parts, 'month')}-${part(parts, 'day')}T${part(parts, 'hour')}`;
         })();
+    if (bucket === 'hour') return local;
     if (bucket === 'day') return local.slice(0, 10);
     const hourOfDay = Number(local.slice(11, 13));
     const divisor = bucket === '4h' ? 4 : 8;

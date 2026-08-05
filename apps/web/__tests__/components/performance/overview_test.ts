@@ -17,7 +17,10 @@ describe('performance overview query', () => {
       model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
     }, Date.UTC(2026, 6, 12, 4));
     expect(query).toMatchObject({
+      bucket: 'hour',
       group_by: 'operation',
+      timezone: 'UTC',
+      timezone_offset_minutes: '0',
       filter_model: ['gpt-5', 'claude-opus-4-7'],
       filter_upstream: ['up_1'],
       filter_runtime_location: ['SJC'],
