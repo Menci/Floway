@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decodeStoredJsonPreservingProperties } from './stored-json.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import type { AliasTarget, AnnouncedMetadata } from '@floway-dev/protocols/common';
 
 const reasoningSchema = z.object({
@@ -20,7 +21,7 @@ const rulesSchema = z.object({
 const aliasTargetsSchema = z.array(z.object({
   target_model_id: z.string().min(1),
   rules: rulesSchema,
-}).passthrough()).min(1);
+}).passthrough()).min(1).max(MODEL_ALIAS_TARGET_LIMIT);
 
 const limitsSchema = z.object({
   max_output_tokens: z.number().optional(),

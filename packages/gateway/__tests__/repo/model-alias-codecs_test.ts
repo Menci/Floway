@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { decodeAliasTargets, decodeAnnouncedMetadata } from '../../src/repo/model-alias-codecs.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../../src/shared/model-aliases.ts';
 
 describe('stored model alias targets', () => {
   test.each([
@@ -23,6 +24,16 @@ describe('stored model alias targets', () => {
     const targets = JSON.parse('[{"target_model_id":"model","rules":{"reasoning":{"adaptive":false,"budget_tokens":0,"futureReasoning":7},"futureRule":{"__proto__":{"safe":true}}},"futureTarget":true}]');
 
     expect(decodeAliasTargets(JSON.stringify(targets), 'alias_future')).toEqual(targets);
+  });
+
+  test('rejects a corrupt target list beyond the request-time work limit', () => {
+    const targets = Array.from(
+      { length: MODEL_ALIAS_TARGET_LIMIT + 1 },
+      (_, index) => ({ target_model_id: `model-${index}`, rules: {} }),
+    );
+    expect(() => decodeAliasTargets(JSON.stringify(targets), 'alias_oversized')).toThrow(
+      'model_aliases.targets JSON is invalid for id=alias_oversized',
+    );
   });
 });
 

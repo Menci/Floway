@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { authLoginBody, createUpstreamBody, createUserBody } from '../../src/control-plane/schemas.ts';
+import { authLoginBody, createAliasBody, createUpstreamBody, createUserBody } from '../../src/control-plane/schemas.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../../src/shared/model-aliases.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -220,6 +221,23 @@ describe('upstreamModelSchema rerank', () => {
     const mixed = customRerank();
     (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
+  });
+});
+
+describe('model alias resource limits', () => {
+  const bodyWithTargets = (count: number) => ({
+    name: 'bounded-alias',
+    kind: 'chat' as const,
+    selection: 'first-available' as const,
+    display_name: null,
+    visible_in_models_list: true,
+    targets: Array.from({ length: count }, (_, index) => ({ target_model_id: `model-${index}`, rules: {} })),
+    announced_metadata: null,
+  });
+
+  test('accepts the target limit and rejects one additional candidate', () => {
+    expect(createAliasBody.safeParse(bodyWithTargets(MODEL_ALIAS_TARGET_LIMIT)).success).toBe(true);
+    expect(createAliasBody.safeParse(bodyWithTargets(MODEL_ALIAS_TARGET_LIMIT + 1)).success).toBe(false);
   });
 });
 

@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
+import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
@@ -638,7 +639,7 @@ const aliasBaseShape = {
   selection: z.enum(['random', 'first-available']),
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
-  targets: z.array(aliasTargetSchema).min(1),
+  targets: z.array(aliasTargetSchema).min(1).max(MODEL_ALIAS_TARGET_LIMIT),
   announced_metadata: announcedMetadataSchema.nullable(),
   sort_order: z.number().int().optional(),
 };
