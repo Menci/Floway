@@ -427,7 +427,6 @@ interface CollectionOptions<T> {
   arrayError: string;
   optional?: boolean;
   validateInput?: (value: unknown, index: number, prior: readonly T[]) => string | null;
-  validateRecord?: (record: T, index: number, prior: readonly T[]) => string | null;
 }
 
 // Zod reports every invalid array element in one result. Imports historically
@@ -451,8 +450,6 @@ const parseCollection = <T>(
     if (!result.success) {
       return { type: 'invalid', error: `invalid ${label} at index ${index}: ${result.error.issues[0].message}` };
     }
-    const validationError = options.validateRecord?.(result.data, index, records);
-    if (validationError) return { type: 'invalid', error: `invalid ${label} at index ${index}: ${validationError}` };
     records.push(result.data);
   }
   return { type: 'ok', records };
