@@ -370,7 +370,7 @@ function CopilotConfig({ record, onPatch }: {
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
       <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
       <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
-      <Spinner label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
+      <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
     </>}
   </div>;
 }
