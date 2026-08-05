@@ -137,6 +137,22 @@ export const fetchUpstreamModels = async (
   return models;
 };
 
+export const warmUpstreamModels = async (
+  instance: GatewayProvider,
+  fetcher: Fetcher,
+  loadProvidedModels?: () => Promise<ProviderModel[]>,
+): Promise<ProviderModel[]> => {
+  const key = inFlightKey(instance);
+  const existing = inFlight.get(key);
+  if (existing) {
+    const joined = await existing;
+    return joined ?? instance.modelsCache?.models ?? [];
+  }
+
+  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels));
+  return models ?? instance.modelsCache?.models ?? [];
+};
+
 export const triggerUpstreamModelsFetch = (
   instance: GatewayProvider,
   scheduler: BackgroundScheduler,

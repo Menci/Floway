@@ -8,7 +8,7 @@ import { expect, test, vi } from 'vitest';
 // path's own behavior (upserts, identity validation, etc.) is what the tests
 // exercise — the warm itself has dedicated coverage in models-cache_test.ts.
 vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
-  fetchUpstreamModelsCached: () => Promise.resolve([]),
+  warmUpstreamModels: () => Promise.resolve([]),
 }));
 
 import { exportData, importData } from '../../../src/control-plane/data-transfer/routes.ts';

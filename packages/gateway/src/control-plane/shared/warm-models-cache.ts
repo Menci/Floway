@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { fetchUpstreamModels } from '../../data-plane/providers/models-cache.ts';
+import { warmUpstreamModels } from '../../data-plane/providers/models-cache.ts';
 import { createProvider } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -22,7 +22,7 @@ export const warmModelsCache = async (record: UpstreamRecord, c: Context): Promi
   const provider = createProvider(record);
   const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
-    await fetchUpstreamModels(provider, fetcher);
+    await warmUpstreamModels(provider, fetcher);
   } catch (error) {
     logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(error) });
   }

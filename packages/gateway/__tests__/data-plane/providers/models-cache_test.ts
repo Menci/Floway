@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION, warmUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { SqlRepo } from '../../../src/repo/sql.ts';
@@ -221,6 +221,27 @@ describe('fetchUpstreamModelsCached', () => {
     await expect(fetchUpstreamModelsCached(instance, { scheduler: retry.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
     await expect(retry.promises[0]).rejects.toThrow('boom');
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  test('synchronous warm respects backoff while explicit force bypasses it', async () => {
+    const repo = await setupRepo();
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const failing = stubInstance(async () => { throw new Error('boom'); }, null, CACHE_GENERATION, 'backoff-source');
+    const scheduled = captureScheduled();
+    await fetchUpstreamModelsCached(failing, { scheduler: scheduled.scheduler, fetcher: directFetcher });
+    await expect(scheduled.promises[0]).rejects.toThrow('boom');
+    clearInFlightForTesting();
+
+    const fetchFn = vi.fn(async () => [aModel('recovered')]);
+    const cache = await storedCache(repo);
+    const warming = stubInstance(fetchFn, cache, CACHE_GENERATION, 'warm-during-backoff');
+    await expect(warmUpstreamModels(warming, directFetcher)).resolves.toEqual([]);
+    expect(fetchFn).not.toHaveBeenCalled();
+
+    await expect(fetchUpstreamModelsCached(warming, { scheduler: () => {}, fetcher: directFetcher, force: true }))
+      .resolves.toEqual([aModel('recovered')]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
