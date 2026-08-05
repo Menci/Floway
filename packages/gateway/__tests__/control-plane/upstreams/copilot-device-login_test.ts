@@ -15,8 +15,8 @@ vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
   clearInFlightForTesting: () => {},
 }));
 
-import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const githubUser = {

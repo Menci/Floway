@@ -11,9 +11,9 @@ import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
+import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import {
   normalizeModelPrefix,
   ALL_PROVIDER_KINDS,

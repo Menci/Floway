@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
-import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
+import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ModelsCacheGeneration, Repo } from '../../src/repo/types.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';

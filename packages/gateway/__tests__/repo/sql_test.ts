@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { createSqliteTestDb } from './test-sqlite.ts';
 import { seedModelsCache, seedModelsCacheError } from './models-cache-fixture.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
 import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
