@@ -7,7 +7,7 @@ import { test } from 'vitest';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
 import { SqliteImageCacheStore } from '../src/sqlite-image-cache-store.ts';
 import type { ImageCachePolicy } from '@floway-dev/platform';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const POLICY: ImageCachePolicy = {
   ttlMs: 24 * 60 * 60 * 1000,
@@ -83,6 +83,19 @@ test('get hit older than the refresh threshold rewrites last_refreshed_at and ex
   assertEquals(row!.expires_at - row!.last_refreshed_at, POLICY.ttlMs);
 }));
 
+test('concurrent stale hits share one sliding-expiry refresh', () => withCache(async (cache, db) => {
+  await cache.put('k', new Uint8Array([9]));
+  const aged = Date.now() - 20 * 60 * 60 * 1000;
+  await db.prepare('UPDATE image_cache SET last_refreshed_at = ? WHERE key = ?').bind(aged, 'k').run();
+  const before = await db.prepare('SELECT total_changes() AS count').first<{ count: number }>();
+
+  const hits = await Promise.all(Array.from({ length: 16 }, async () => await cache.get('k')));
+
+  assertEquals(hits.map(hit => [...hit!]), Array.from({ length: 16 }, () => [9]));
+  const after = await db.prepare('SELECT total_changes() AS count').first<{ count: number }>();
+  assertEquals(after!.count - before!.count, 1);
+}));
+
 test('get hit on a legacy row with last_refreshed_at = 0 self-heals into a fresh timestamp', () => withCache(async (cache, db) => {
   // Mirror how migration 0032 backfills pre-existing rows.
   const future = Date.now() + POLICY.ttlMs;
@@ -109,6 +122,29 @@ test('get returns null and skips refresh once an entry has expired', () => withC
 
   const miss = await cache.get('k');
   assertEquals(miss, null);
+}));
+
+test('get exposes corrupt persisted cache timestamps with the key and column', () => withCache(async (cache, db) => {
+  const future = Date.now() + POLICY.ttlMs;
+  await db
+    .prepare('INSERT INTO image_cache (key, value, expires_at, last_refreshed_at) VALUES (?, ?, ?, ?)')
+    .bind('bad-refresh', new Uint8Array([1]), future, 'corrupt')
+    .run();
+  await db
+    .prepare('INSERT INTO image_cache (key, value, expires_at, last_refreshed_at) VALUES (?, ?, ?, ?)')
+    .bind('bad-expiry', new Uint8Array([2]), 'corrupt', Date.now())
+    .run();
+
+  await assertRejects(
+    () => cache.get('bad-refresh'),
+    TypeError,
+    'image_cache.last_refreshed_at for key="bad-refresh"',
+  );
+  await assertRejects(
+    () => cache.get('bad-expiry'),
+    TypeError,
+    'image_cache.expires_at for key="bad-expiry"',
+  );
 }));
 
 test('sweepExpired drops only rows with expires_at <= now', () => withCache(async (cache, db) => {
