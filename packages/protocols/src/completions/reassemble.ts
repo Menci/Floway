@@ -1,10 +1,29 @@
 import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, CompletionsUsage } from './index.ts';
+import { isOpenAIUsageOnlyEventShape } from '../common/openai-stream.ts';
 
 // Fold a /v1/completions streaming chunk sequence back into the
 // single-shot envelope used by the dashboard's dump renderer. The
 // dashboard also surfaces the raw frame stream alongside the reassembled
 // result, so unknown choice / chunk fields fall on the floor here by
 // design — the forensic view is the raw stream.
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const setOwnValue = (object: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(object, key, { configurable: true, enumerable: true, value, writable: true });
+};
+
+const mergeLogprobs = (current: unknown, incoming: unknown): unknown => {
+  if (incoming === null) return current === undefined ? null : current;
+  if (current === undefined || current === null || !isRecord(current) || !isRecord(incoming)) return structuredClone(incoming);
+  for (const [key, value] of Object.entries(incoming)) {
+    const existing = Object.hasOwn(current, key) ? current[key] : undefined;
+    if (Array.isArray(existing) && Array.isArray(value)) existing.push(...structuredClone(value));
+    else setOwnValue(current, key, structuredClone(value));
+  }
+  return current;
+};
 
 export const reassembleCompletionsEvents = async (chunks: AsyncIterable<CompletionsStreamEvent>): Promise<CompletionsResult> => {
   let id = '';
@@ -20,18 +39,6 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
   }
   const choices = new Map<number, ChoiceAccumulator>();
 
-  const mergeLogprobs = (current: unknown, incoming: unknown): unknown => {
-    if (current === undefined) return structuredClone(incoming);
-    if (typeof current !== 'object' || current === null || Array.isArray(current)
-      || typeof incoming !== 'object' || incoming === null || Array.isArray(incoming)) return structuredClone(incoming);
-    return Object.fromEntries(new Set([...Object.keys(current), ...Object.keys(incoming)]).values().map(key => {
-      const left = (current as Record<string, unknown>)[key];
-      const right = (incoming as Record<string, unknown>)[key];
-      const selected = Object.hasOwn(incoming, key) ? right : left;
-      return [key, Array.isArray(left) && Array.isArray(right) ? [...left, ...right] : structuredClone(selected)];
-    }));
-  };
-
   for await (const chunk of chunks) {
     if (!id && chunk.id) {
       id = chunk.id;
@@ -44,6 +51,7 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
     if (chunk.usage) {
       lastUsage = chunk.usage;
     }
+    if (isOpenAIUsageOnlyEventShape(chunk)) continue;
 
     if (!Array.isArray(chunk.choices)) throw new TypeError('Completions chunk choices must be an array');
     for (const choice of chunk.choices) {

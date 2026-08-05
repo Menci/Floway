@@ -131,3 +131,41 @@ test('reassembleCompletionsEvents rejects malformed and post-finish choice state
     choices: [{ index: Number.MAX_SAFE_INTEGER + 1, text: 'bad', finish_reason: null }],
   })]))).rejects.toThrow('non-negative safe integer');
 });
+
+test('reassembleCompletionsEvents accepts an explicit empty usage placeholder after finish', async () => {
+  const result = await reassembleCompletionsEvents(fromArray([
+    chunk('done', 'stop', {
+      choices: [{ index: 0, text: 'done', finish_reason: 'stop', logprobs: { tokens: ['done'] } }],
+    }),
+    {
+      ...usageChunk,
+      choices: [{ index: 0, text: '', finish_reason: null, logprobs: null }],
+    },
+  ]));
+
+  assertEquals(result.choices[0], {
+    index: 0,
+    text: 'done',
+    finish_reason: 'stop',
+    logprobs: { tokens: ['done'] },
+  });
+  assertEquals(result.usage, usageChunk.usage);
+});
+
+test('reassembleCompletionsEvents accumulates many logprob fragments linearly and isolates nested input', async () => {
+  const fragments = Array.from({ length: 512 }, (_, index) => ({
+    ...chunk(String(index), index === 511 ? 'stop' : null),
+    choices: [{
+      index: 0,
+      text: String(index),
+      finish_reason: index === 511 ? 'stop' : null,
+      logprobs: { tokens: [String(index)], top_logprobs: [[{ token: String(index), logprob: -1 }]] },
+    }],
+  } satisfies CompletionsStreamEvent));
+  const result = await reassembleCompletionsEvents(fromArray(fragments));
+  const logprobs = result.choices[0]!.logprobs as { tokens: string[]; top_logprobs: Array<Array<{ token: string }>> };
+
+  fragments[0]!.choices[0]!.logprobs!.top_logprobs[0]![0]!.token = 'mutated';
+  assertEquals(logprobs.tokens.length, 512);
+  assertEquals(logprobs.top_logprobs[0]?.[0]?.token, '0');
+});

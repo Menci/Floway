@@ -46,17 +46,28 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
 
 const accumulateToolCalls = (choice: ChoiceAccumulator, value: ChatCompletionsDelta['tool_calls']): void => {
   if (value == null) return;
+  if (!Array.isArray(value)) throw new TypeError(`Chat Completions choice ${choice.index} tool_calls must be an array or null`);
 
-  for (const toolCall of value) {
-    if (!Number.isSafeInteger(toolCall.index) || toolCall.index < 0) {
-      throw new RangeError(`Chat Completions tool call index must be a non-negative safe integer: ${toolCall.index}`);
+  for (const rawToolCall of value) {
+    if (typeof rawToolCall !== 'object' || rawToolCall === null || Array.isArray(rawToolCall)) throw new TypeError(`Chat Completions choice ${choice.index} tool call must be an object`);
+    const toolCall = rawToolCall as unknown as Record<string, unknown>;
+    if (!Number.isSafeInteger(toolCall.index) || (toolCall.index as number) < 0) {
+      throw new RangeError(`Chat Completions tool call index must be a non-negative safe integer: ${String(toolCall.index)}`);
     }
+    if (toolCall.id !== undefined && (typeof toolCall.id !== 'string' || toolCall.id.length === 0)) throw new TypeError('Chat Completions tool call id must be a non-empty string');
+    if (toolCall.type !== undefined && toolCall.type !== 'function') throw new TypeError('Chat Completions tool call type must be "function"');
     const fn = toolCall.function;
-    const current = choice.toolCalls.get(toolCall.index) ?? { arguments: '' };
-    if (toolCall.id !== undefined) current.id = toolCall.id;
-    if (fn?.name !== undefined) current.name = fn.name;
-    if (fn?.arguments !== undefined) current.arguments += fn.arguments;
-    choice.toolCalls.set(toolCall.index, current);
+    if (fn !== undefined && (typeof fn !== 'object' || fn === null || Array.isArray(fn))) throw new TypeError('Chat Completions tool call function must be an object');
+    const functionRecord = fn as Record<string, unknown> | undefined;
+    if (functionRecord?.name !== undefined && (typeof functionRecord.name !== 'string' || functionRecord.name.length === 0)) throw new TypeError('Chat Completions tool call function.name must be a non-empty string');
+    if (functionRecord?.arguments !== undefined && typeof functionRecord.arguments !== 'string') throw new TypeError('Chat Completions tool call function.arguments must be a string');
+
+    const index = toolCall.index as number;
+    const current = choice.toolCalls.get(index) ?? { arguments: '' };
+    if (typeof toolCall.id === 'string') current.id = toolCall.id;
+    if (typeof functionRecord?.name === 'string') current.name = functionRecord.name;
+    if (typeof functionRecord?.arguments === 'string') current.arguments += functionRecord.arguments;
+    choice.toolCalls.set(index, current);
   }
 };
 
@@ -64,8 +75,8 @@ const finalizedToolCalls = (choice: ChoiceAccumulator): ChatCompletionsToolCall[
   [...choice.toolCalls.entries()]
     .toSorted(([left], [right]) => left - right)
     .map(([index, toolCall]) => {
-      if (toolCall.id === undefined || toolCall.name === undefined) {
-        throw new Error(`Chat Completions tool call ${index} ended without ${toolCall.id === undefined ? 'id' : 'function.name'}`);
+      if (!toolCall.id || !toolCall.name) {
+        throw new Error(`Chat Completions tool call ${index} ended without ${!toolCall.id ? 'id' : 'function.name'}`);
       }
       return {
         id: toolCall.id,
@@ -115,20 +126,25 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
       model = chunk.model;
       created = chunk.created;
     }
-    if ('system_fingerprint' in chunk && (!systemFingerprintObserved || systemFingerprint === null)) {
+    if ('system_fingerprint' in chunk) {
       if (chunk.system_fingerprint !== null && typeof chunk.system_fingerprint !== 'string') throw new TypeError('Chat Completions system_fingerprint must be a string or null');
-      systemFingerprint = chunk.system_fingerprint;
-      systemFingerprintObserved = true;
+      if (!systemFingerprintObserved || systemFingerprint === null) {
+        systemFingerprint = chunk.system_fingerprint;
+        systemFingerprintObserved = true;
+      }
     }
-    if ('service_tier' in chunk && (!serviceTierObserved || serviceTier === null)) {
+    if ('service_tier' in chunk) {
       if (chunk.service_tier !== null && typeof chunk.service_tier !== 'string') throw new TypeError('Chat Completions service_tier must be a string or null');
-      serviceTier = chunk.service_tier;
-      serviceTierObserved = true;
+      if (!serviceTierObserved || serviceTier === null) {
+        serviceTier = chunk.service_tier;
+        serviceTierObserved = true;
+      }
     }
     if (chunk.usage) lastUsage = chunk.usage;
     captureExtras(chunk as unknown as Record<string, unknown>, KNOWN_CHUNK_KEYS, chunkExtras);
     if (isOpenAIUsageOnlyEventShape(chunk)) continue;
 
+    if (!Array.isArray(chunk.choices)) throw new TypeError('Chat Completions chunk choices must be an array');
     for (const streamed of chunk.choices) {
       if (!Number.isSafeInteger(streamed.index) || streamed.index < 0) {
         throw new RangeError(`Chat Completions choice index must be a non-negative safe integer: ${streamed.index}`);
@@ -141,6 +157,12 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
       const delta = streamed.delta;
       if (typeof delta !== 'object' || delta === null || Array.isArray(delta)) throw new TypeError(`Chat Completions choice ${streamed.index} delta must be an object`);
       captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
+      if (delta.role !== undefined && typeof delta.role !== 'string') throw new TypeError(`Chat Completions choice ${streamed.index} role must be a string`);
+      if (delta.content !== undefined && delta.content !== null && typeof delta.content !== 'string') throw new TypeError(`Chat Completions choice ${streamed.index} content must be a string or null`);
+      if (delta.reasoning_text !== undefined && delta.reasoning_text !== null && typeof delta.reasoning_text !== 'string') throw new TypeError(`Chat Completions choice ${streamed.index} reasoning_text must be a string or null`);
+      if (delta.reasoning_opaque !== undefined && delta.reasoning_opaque !== null && typeof delta.reasoning_opaque !== 'string') throw new TypeError(`Chat Completions choice ${streamed.index} reasoning_opaque must be a string or null`);
+      if (delta.refusal !== undefined && delta.refusal !== null && typeof delta.refusal !== 'string') throw new TypeError(`Chat Completions choice ${streamed.index} refusal must be a string or null`);
+      if (delta.reasoning_items !== undefined && delta.reasoning_items !== null && !Array.isArray(delta.reasoning_items)) throw new TypeError(`Chat Completions choice ${streamed.index} reasoning_items must be an array or null`);
       if (typeof delta.content === 'string') {
         choice.content += delta.content;
         choice.sawContent = true;

@@ -712,3 +712,55 @@ test('reassembleChatCompletionsEvents preserves explicit null response metadata'
   assertEquals(result.system_fingerprint, null);
   assertEquals(result.service_tier, null);
 });
+
+test('reassembleChatCompletionsEvents rejects malformed known delta and tool-call fields', async () => {
+  const base = {
+    id: 'cmpl_malformed',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+  };
+  const rejectDelta = async (delta: Record<string, unknown>, message: string) => {
+    await assertRejects(
+      async () => await reassembleChatCompletionsEvents(makeEvents([{
+        data: { ...base, choices: [{ index: 0, delta, finish_reason: 'stop' }] },
+      }])),
+      TypeError,
+      message,
+    );
+  };
+
+  await rejectDelta({ content: 1 }, 'content must be a string or null');
+  await rejectDelta({ tool_calls: [{ index: 0, id: '', function: { name: 'run', arguments: '{}' } }] }, 'id must be a non-empty string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', function: { name: '', arguments: '{}' } }] }, 'function.name must be a non-empty string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', function: { name: 'run', arguments: {} } }] }, 'function.arguments must be a string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', type: 'future', function: { name: 'run', arguments: '{}' } }] }, 'type must be "function"');
+});
+
+test('reassembleChatCompletionsEvents validates every repeated metadata value', async () => {
+  const valid = {
+    id: 'cmpl_metadata',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+    system_fingerprint: 'fp_valid',
+    service_tier: 'priority',
+    choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+  };
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: valid },
+      { data: { ...valid, system_fingerprint: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } },
+    ])),
+    TypeError,
+    'system_fingerprint must be a string or null',
+  );
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: valid },
+      { data: { ...valid, service_tier: {}, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } },
+    ])),
+    TypeError,
+    'service_tier must be a string or null',
+  );
+});
