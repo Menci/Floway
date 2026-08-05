@@ -68,10 +68,12 @@ const runFetch = async (
     if (persisted) instance.modelsCache = entry;
     return models;
   } catch (err) {
-    // A no-op on an upstream with no cached catalog: a brand-new upstream that
-    // fails its first fetch surfaces the error to the caller with nothing
-    // persisted.
-    await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() });
+    const lastError = { message: errorMessage(err), at: Date.now() };
+    const persisted = await getRepo().upstreams.saveModelsCacheError(key, generation, lastError);
+    if (persisted) {
+      if (instance.modelsCache) instance.modelsCache.lastError = lastError;
+      else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
+    }
     throw err;
   }
 };

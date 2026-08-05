@@ -1,5 +1,6 @@
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
+import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import {
@@ -622,15 +623,11 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(true);
   }
 
-  // No-op on a row that has never cached a catalog: the annotation belongs to a
-  // previously-successful fetch.
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
     const existing = this.store.get(id);
-    const cache = existing?.updatedAt === generation.updatedAt && serializeStoredConfig(existing.config) === serializeStoredConfig(generation.config)
-      ? existing.modelsCache
-      : null;
-    if (!cache) return Promise.resolve(false);
-    cache.lastError = error;
+    if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
+    if (existing.modelsCache) existing.modelsCache.lastError = error;
+    else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
     return Promise.resolve(true);
   }
 

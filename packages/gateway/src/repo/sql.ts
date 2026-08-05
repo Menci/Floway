@@ -1,6 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { MODELS_REFRESH_BACKOFF_BASE_MS, MODELS_REFRESH_BACKOFF_CAP_MS, MODELS_REFRESH_BACKOFF_EXPONENT_CAP } from './models-refresh-contract.ts';
@@ -959,17 +960,21 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return (result.meta.changes ?? 0) > 0;
   }
 
-  // Annotates a previously-successful entry, so an upstream that has never
-  // cached a catalog has nothing to annotate. Patched in SQL rather than
-  // read-modify-written: it touches one key of a document whose other keys a
-  // concurrent refresh may be rewriting, and nothing compares this column's
-  // text, so the encoding SQLite produces here is immaterial.
+  // A cold failure persists an empty, immediately-stale catalog so the error
+  // remains visible without making the failed attempt look soft-fresh. An
+  // existing last-known-good catalog keeps its models and fetch timestamp.
   async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
+    const coldFailure = encodeUpstreamModelsCache({
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: 0,
+      models: [],
+      lastError: error,
+    });
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
+      .prepare("UPDATE upstreams SET models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END WHERE id = ? AND updated_at = ? AND config_json = ?")
+      .bind(coldFailure, JSON.stringify(error), id, generation.updatedAt, rawConfig)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }

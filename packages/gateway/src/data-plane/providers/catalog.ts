@@ -93,16 +93,14 @@ const collectProviderModels = async (
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
 
-  // Fan out per-upstream so a slow provider does not stall the rest. The SWR
-  // cache layer dedupes concurrent in-flight fetches per upstream and serves
-  // the SOFT-fresh row without an upstream round trip, so the parallel walk
-  // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
-  // the cold path.
+  // Catalog reads never await upstream I/O. Each result is the persisted
+  // snapshot carried by the provider; a cold or stale snapshot separately
+  // triggers background refresh through the supplied scheduler.
   const fetchOne = (instance: GatewayProvider) =>
     fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstreamId),
-    }).then(models => ({ instance, models }));
+    }).then(models => ({ instance, models, lastError: instance.modelsCache?.lastError ?? null }));
 
   const settled = await Promise.allSettled(providers.map(fetchOne));
 
@@ -121,7 +119,11 @@ const collectProviderModels = async (
       continue;
     }
     sawSuccess = true;
-    const { instance, models: providedModels } = result.value;
+    const { instance, models: providedModels, lastError: cachedError } = result.value;
+    if (cachedError) {
+      lastError = new Error(cachedError.message);
+      failedUpstreams.push(instance.name);
+    }
     // Operator-disabled public model ids vanish entirely for this upstream:
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,

@@ -197,7 +197,7 @@ describe('fetchUpstreamModelsCached', () => {
   });
 
   test('cold failures return empty and retry after the persisted backoff expires', async () => {
-    await setupRepo();
+    const repo = await setupRepo();
     let now = 1_800_000_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
     const fetchFn = vi.fn(async () => { throw new Error('boom'); });
@@ -206,6 +206,7 @@ describe('fetchUpstreamModelsCached', () => {
     const firstScheduled = captureScheduled();
     await expect(fetchUpstreamModelsCached(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
     await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
+    expect(await storedCache(repo)).toMatchObject({ fetchedAt: 0, models: [], lastError: { message: 'boom' } });
 
     clearInFlightForTesting();
     now += 59_999;
