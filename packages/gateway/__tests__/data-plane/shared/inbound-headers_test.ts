@@ -73,6 +73,28 @@ describe('resolveIngressHeaders', () => {
     expect([...first]).toEqual([]);
     expect(first).not.toBe(second);
   });
+
+  test('composes static admissions with dynamic passthrough and replacement rules', () => {
+    const source = new Headers({
+      'x-dynamic': 'dynamic-client',
+      'x-overlap': 'overlap-client',
+      'x-static': 'static-client',
+      'x-unlisted': 'discard',
+    });
+
+    expect(headerRecord(resolveIngressHeaders(
+      source,
+      ['x-static', 'x-overlap'],
+      [
+        { matcher: 'x-dynamic', value: null },
+        { matcher: 'x-overlap', value: 'rule-wins' },
+      ],
+    ))).toEqual({
+      'x-dynamic': 'dynamic-client',
+      'x-overlap': 'rule-wins',
+      'x-static': 'static-client',
+    });
+  });
 });
 
 describe('provider inbound header policies', () => {
