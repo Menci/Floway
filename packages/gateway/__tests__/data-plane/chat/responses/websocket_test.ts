@@ -7,14 +7,16 @@ import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
+import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { EventResult, EventResultMetadata, TelemetryModelIdentity } from '@floway-dev/provider';
-import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, stubModelCandidate, withMockedFetch } from '@floway-dev/test-utils';
 
 type ResponsesFrame = ProtocolFrame<ResponsesStreamEvent>;
 const timeoutSetTimeout = globalThis.setTimeout;
@@ -135,6 +137,7 @@ const mockControlledResponsesTurn = (
     const signal = ctx.abortSignal;
     assertExists(signal);
     const events = createEvents(signal);
+    ctx.affinity.select(stubModelCandidate({ model: { id: 'gpt-direct-responses' } }));
     turnSignal.resolve(signal);
     controlledEvents.resolve(events);
     return controlledEventResult(events.events, () => { metadataRead.resolve(); }, finalMetadata);
@@ -221,14 +224,12 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectResponsesWebSocket = async (
-  apiKey: string,
-  executionCtx: ExecutionContext = {
+const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
+  const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
     props: {},
-  },
-): Promise<TestWorkerWebSocket> => {
+  } satisfies ExecutionContext;
   const response = await app.fetch(new Request('https://example.test/v1/responses', {
     method: 'GET',
     headers: {
@@ -1787,14 +1788,11 @@ test('Responses WebSocket session lifetime joins the active turn and its backgro
     usageRecord.mockRestore();
   });
   const lifetimeCaptured = deferred<Promise<unknown>>();
-  const executionCtx: ExecutionContext = {
-    waitUntil: promise => { lifetimeCaptured.resolve(promise); },
-    passThroughOnException: () => {},
-    props: {},
-  };
+  initBackgroundSchedulerResolver(_c => promise => { lifetimeCaptured.resolve(promise); });
+  onTestFinished(() => { initBackgroundSchedulerResolver(_c => trackBackground); });
 
   await withWorkerWebSocketRuntime(async () => {
-    const client = await connectResponsesWebSocket(apiKey.key, executionCtx);
+    const client = await connectResponsesWebSocket(apiKey.key);
     const lifetime = await promiseWithin(
       lifetimeCaptured.promise,
       'Responses WebSocket did not register its session lifetime',
