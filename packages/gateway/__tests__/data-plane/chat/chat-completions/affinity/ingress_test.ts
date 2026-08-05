@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { prepareChatCompletionsAffinity } from '../../../../../src/data-plane/chat/chat-completions/affinity/ingress.ts';
+import { analyzeChatCompletionsAffinity } from '../../../../../src/data-plane/chat/chat-completions/affinity/ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -25,12 +26,15 @@ test('restores owned opaque state only for its exact candidate', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
   const carrier = await codec.wrap('upstream-signature', targetFor(candidateA), 'chat-completions.reasoning_opaque');
-  const prepared = await prepareChatCompletionsAffinity({
+  const prepared = await analyzeChatCompletionsAffinity({
     model: 'model',
     messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],
   }, codec);
 
-  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
-  expect(prepared.payloadForCandidate(candidateA).messages[0]).toMatchObject({ reasoning_opaque: 'upstream-signature' });
-  expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(true);
+  expect(projectionA.materialize().messages[0]).toMatchObject({ reasoning_opaque: 'upstream-signature' });
+  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });

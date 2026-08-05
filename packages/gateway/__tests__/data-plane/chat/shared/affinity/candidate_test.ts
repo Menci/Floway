@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'vitest';
 
-import { narrowCandidatesByAffinity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { AffinityEvidence, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import {
+  type AffinityRequestAnalysis,
+  type AffinityTarget,
+  candidateSatisfiesAffinityTarget,
+  type DecodedAffinityBlob,
+  defineAffinityRequest,
+  projectOptionalAffinityBlob,
+  projectRequiredAffinityBlob,
+  selectAffinityCandidates,
+} from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
@@ -20,72 +29,155 @@ const targetFor = (value: ReturnType<typeof candidate>): AffinityTarget => ({
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
 });
 
-const evidence = (value: ReturnType<typeof candidate>, mode: AffinityEvidence['mode'] = 'prefer'): AffinityEvidence => ({
-  target: targetFor(value),
-  mode,
+const ownedBlob = (
+  target: AffinityTarget,
+  value?: string,
+): DecodedAffinityBlob => ({
+  kind: 'owned',
+  version: 1,
+  affinity: target,
+  ...(value !== undefined ? { value, origin: 'raw' as const } : {}),
 });
 
-describe('client-carried affinity candidate narrowing', () => {
-  test('treats empty alias rules as the direct no-overlay variant', () => {
-    const direct = candidate('up-a', 'model-a');
-    const alias = candidate('up-a', 'model-a', {});
-    const overridden = candidate('up-a', 'model-a', { reasoning: { effort: 'low' } });
+const affinity = (
+  requiredTargets: readonly AffinityTarget[] = [],
+  degrading: readonly ModelCandidate[] = [],
+): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
+  const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityTarget(candidate, target));
+  return unsatisfiedTargets.length > 0
+    ? { kind: 'rejected' }
+    : { kind: 'accepted', degrades: degrading.includes(candidate), materialize: () => undefined };
+});
 
-    expect(narrowCandidatesByAffinity([alias, direct, overridden], [evidence(direct)])).toEqual([alias, direct, overridden]);
-    expect(narrowCandidatesByAffinity([direct, alias, overridden], [evidence(overridden)])).toEqual([overridden, direct, alias]);
+const selectedCandidates = (
+  candidates: readonly ModelCandidate[],
+  analysis: AffinityRequestAnalysis<undefined>,
+): readonly ModelCandidate[] => {
+  const selection = selectAffinityCandidates(candidates, analysis);
+  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
+  return selection.candidates;
+};
+
+describe('client-carried affinity candidate selection', () => {
+  test('keeps non-degrading candidates in resolver order before degrading fallbacks', () => {
+    const first = candidate('up-a', 'model');
+    const second = candidate('up-b', 'model');
+    const third = candidate('up-c', 'model');
+
+    expect(selectedCandidates(
+      [first, second, third],
+      affinity([], [first, third]),
+    )).toEqual([second, first, third]);
   });
 
-  test('moves the latest available preferred target to the front', () => {
+  test('keeps resolver order when every candidate preserves blobs or every candidate degrades', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(narrowCandidatesByAffinity(
-      [first, second],
-      [evidence(first), evidence(second)],
-    )).toEqual([second, first]);
+    expect(selectedCandidates([first, second], affinity())).toEqual([first, second]);
+    expect(selectedCandidates([first, second], affinity([], [first, second]))).toEqual([first, second]);
   });
 
-  test('keeps normal order when a preferred target is unavailable', () => {
-    const first = candidate('up-a', 'model');
-    const second = candidate('up-b', 'model');
-    const unavailable = candidate('up-c', 'model');
+  test('evaluates requirement eligibility and degradation before materializing selected payloads', () => {
+    const required = candidate('up-a', 'model');
+    const sameTargetAlias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
+    const rejected = candidate('up-b', 'model');
+    const evaluations: ModelCandidate[] = [];
+    let materializations = 0;
+    const analysis = defineAffinityRequest([targetFor(required)], value => {
+      evaluations.push(value);
+      if (!candidateSatisfiesAffinityTarget(value, targetFor(required))) {
+        return { kind: 'rejected' };
+      }
+      return {
+        kind: 'accepted',
+        degrades: value === required,
+        materialize: () => {
+          materializations += 1;
+          return value.model.id;
+        },
+      };
+    });
 
-    expect(narrowCandidatesByAffinity([first, second], [evidence(unavailable)])).toEqual([first, second]);
+    const selection = selectAffinityCandidates([required, sameTargetAlias, rejected], analysis);
+    if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
+    expect(selection.candidates).toEqual([sameTargetAlias, required]);
+    expect(evaluations).toEqual([required, sameTargetAlias, rejected]);
+    expect(materializations).toBe(0);
+    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
+    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
+    expect(materializations).toBe(1);
+    expect(() => selection.payloadFor(rejected)).toThrow('outside the selected set');
   });
 
-  test('uses the latest preferred target that remains available', () => {
-    const first = candidate('up-a', 'model');
-    const second = candidate('up-b', 'model');
-    const unavailable = candidate('up-c', 'model');
-
-    expect(narrowCandidatesByAffinity([second, first], [evidence(first), evidence(unavailable)])).toEqual([first, second]);
-  });
-
-  test('force matches upstream and model without narrowing alias rules', () => {
-    const direct = candidate('up-a', 'model');
-    const alias = candidate('up-a', 'model', {});
-
-    expect(narrowCandidatesByAffinity([direct, alias], [evidence(alias, 'force')])).toEqual([direct, alias]);
-  });
-
-  test('exact preference still orders rule variants inside a shared force target', () => {
+  test('required state matches upstream and model while degradation orders rule variants', () => {
     const direct = candidate('up-a', 'model');
     const alias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
+    const other = candidate('up-b', 'model');
 
-    expect(narrowCandidatesByAffinity(
-      [direct, alias],
-      [evidence(direct, 'force'), evidence(alias, 'force'), evidence(alias)],
+    expect(selectedCandidates(
+      [direct, alias, other],
+      affinity([targetFor(alias)]),
+    )).toEqual([direct, alias]);
+    expect(selectedCandidates(
+      [direct, alias, other],
+      affinity([targetFor(alias)], [direct]),
     )).toEqual([alias, direct]);
   });
 
-  test('fails unavailable and conflicting force affinity', () => {
+  test('fails unavailable and conflicting required affinity', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(narrowCandidatesByAffinity([first], [evidence(second, 'force')])).toMatchObject({ kind: 'routing-unavailable' });
-    expect(narrowCandidatesByAffinity([first, second], [
-      evidence(first, 'force'),
-      evidence(second, 'force'),
-    ])).toMatchObject({ kind: 'routing-unavailable' });
+    expect(selectAffinityCandidates([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
+    expect(selectAffinityCandidates(
+      [first, second],
+      affinity([targetFor(first), targetFor(second)]),
+    )).toMatchObject({ kind: 'routing-unavailable' });
+  });
+
+  test('rejects request analyses whose requirement inventory and candidate evaluation drift apart', () => {
+    const first = candidate('up-a', 'model');
+    const second = candidate('up-b', 'model');
+    const acceptsUnsatisfied = defineAffinityRequest([targetFor(first)], () => ({
+      kind: 'accepted',
+      degrades: false,
+      materialize: () => undefined,
+    }));
+    const rejectsSatisfied = defineAffinityRequest([], () => ({ kind: 'rejected' }));
+
+    expect(() => acceptsUnsatisfied.evaluateCandidate(second)).toThrow('disagrees with the request requirement analysis');
+    expect(() => rejectsSatisfied.evaluateCandidate(first)).toThrow('disagrees with the request requirement analysis');
+  });
+});
+
+describe('affinity blob projection', () => {
+  const exact = candidate('up-a', 'model', { reasoning: { effort: 'high' } });
+  const samePhysicalTarget = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
+  const other = candidate('up-b', 'model');
+
+  test('preserves foreign blobs independently of candidate and policy', () => {
+    const foreign = { kind: 'foreign', value: 'opaque' } as const;
+    expect(projectOptionalAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectRequiredAffinityBlob(foreign, other)).toEqual({ kind: 'preserve', value: 'opaque' });
+  });
+
+  test('removes originless metadata without degradation', () => {
+    const originless = ownedBlob(targetFor(exact));
+    expect(projectOptionalAffinityBlob(originless, exact)).toEqual({ kind: 'remove', degrades: false });
+    expect(projectOptionalAffinityBlob(originless, other)).toEqual({ kind: 'remove', degrades: false });
+    expect(projectRequiredAffinityBlob(originless, samePhysicalTarget)).toEqual({ kind: 'remove', degrades: false });
+  });
+
+  test('degrades optional natural state only when the exact target cannot preserve it', () => {
+    const natural = ownedBlob(targetFor(exact), 'opaque');
+    expect(projectOptionalAffinityBlob(natural, exact)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectOptionalAffinityBlob(natural, samePhysicalTarget)).toEqual({ kind: 'remove', degrades: true });
+  });
+
+  test('rejects required state outside its physical target while accepting every rule variant', () => {
+    const natural = ownedBlob(targetFor(exact), 'opaque');
+    expect(projectRequiredAffinityBlob(natural, samePhysicalTarget)).toEqual({ kind: 'preserve', value: 'opaque' });
+    expect(projectRequiredAffinityBlob(natural, other)).toEqual({ kind: 'reject', requiredTarget: targetFor(exact) });
   });
 });

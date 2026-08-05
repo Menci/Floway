@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './test-policy.ts';
-import { prepareResponsesAffinity } from '../../../../src/data-plane/chat/responses/affinity/ingress.ts';
+import { analyzeResponsesAffinity } from '../../../../src/data-plane/chat/responses/affinity/ingress.ts';
 import { responsesAttempt } from '../../../../src/data-plane/chat/responses/attempt.ts';
 import { hydrateResponsesPayload } from '../../../../src/data-plane/chat/responses/items/hydrate.ts';
 import * as outputModule from '../../../../src/data-plane/chat/responses/items/output.ts';
@@ -11,6 +11,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredResponsesItem } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -569,9 +570,9 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
   await store.loadInputItems(sourcePayload.input, sourcePayload.input);
   const hydrated = hydrateResponsesPayload(sourcePayload, store);
-  const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const result = await responsesAttempt.generate({
-    payload: affinity.payloadForCandidate(candidate),
+    payload: acceptedAffinityEvaluation(affinity, candidate).materialize(),
     sourceState: {
       privatePayloads: hydrated.privatePayloads,
     },

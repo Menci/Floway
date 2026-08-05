@@ -412,9 +412,9 @@ boundary. Locales are `en` and `zh-Hans`; a locale ships only if somebody here
 can review it, and the parity suite requires every plural key to supply the
 `other` form each language actually has.
 
-Client-carried affinity is a source-protocol membrane. Shared codec, candidate
-narrowing, and affinity request context live under
-`data-plane/chat/shared/affinity/`; each chat source protocol owns
+Client-carried affinity is a source-protocol membrane. Carrier authentication,
+candidate evaluation and selection, and request context are separate modules
+under `data-plane/chat/shared/affinity/`; each chat source protocol owns
 `affinity/ingress.ts` and `affinity/egress.ts`. Native Responses state is a
 separate source-edge membrane under `data-plane/chat/responses/items/`.
 Affinity wire behavior and its relationship to Stateful Responses and
