@@ -3,17 +3,44 @@ import { describe, expect, test } from 'vitest';
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import type { Repo, User } from '../../src/repo/types.ts';
+import type { ApiKey, NewUserDefaultKey, Repo, User } from '../../src/repo/types.ts';
 
 const sampleUser = (over: Partial<User> = {}): User => ({
   id: 0,
   username: 'alice',
-  passwordHash: 'pbkdf2-sha256$600000$YQ==$YQ==',
+  passwordHash: 'pbkdf2-sha256$1000$AAECAwQFBgcICQoLDA0ODw==$rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=',
   isAdmin: false,
   upstreamIds: null,
   createdAt: '2026-06-07T00:00:00.000Z',
   deletedAt: null,
   ...over,
+});
+
+const defaultKey = (overrides: Partial<NewUserDefaultKey> = {}): NewUserDefaultKey => ({
+  id: 'key_default',
+  name: 'Default',
+  key: 'raw_default',
+  serverSecret: '11'.repeat(32),
+  createdAt: '2026-06-07T00:00:00.000Z',
+  upstreamIds: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+  ...overrides,
+});
+
+const accountTemplate = (username: string) => ({
+  username,
+  passwordHash: null,
+  isAdmin: false,
+  upstreamIds: null,
+  createdAt: '2026-06-07T00:00:00.000Z',
+});
+
+const storedKey = (userId: number, overrides: Partial<ApiKey> = {}): ApiKey => ({
+  ...defaultKey(),
+  userId,
+  deletedAt: null,
+  ...overrides,
 });
 
 type RepoFactory = () => Promise<Repo>;
@@ -27,6 +54,65 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 ];
 
 describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
+  test('createAccount commits one user and its Default key', async () => {
+    const repo = await makeRepo();
+    const result = await repo.users.createAccount(accountTemplate('alice'), defaultKey());
+    expect(result.status).toBe('created');
+    if (result.status !== 'created') throw new Error('expected account creation');
+    expect(await repo.users.getById(result.user.id)).toEqual(result.user);
+    expect((await repo.apiKeys.listByUserId(result.user.id)).map(key => key.id)).toEqual(['key_default']);
+  });
+
+  test('concurrent duplicate createAccount calls return one account and one username conflict', async () => {
+    const repo = await makeRepo();
+    const results = await Promise.all([
+      repo.users.createAccount(accountTemplate('alice'), defaultKey({ id: 'key_a', key: 'raw_a', serverSecret: 'aa'.repeat(32) })),
+      repo.users.createAccount(accountTemplate('Alice'), defaultKey({ id: 'key_b', key: 'raw_b', serverSecret: 'bb'.repeat(32) })),
+    ]);
+    expect(results.map(result => result.status).toSorted()).toEqual(['created', 'username-taken']);
+    expect((await repo.users.list()).filter(user => user.id !== 1)).toHaveLength(1);
+    expect((await repo.apiKeys.list()).filter(key => key.userId !== 1)).toHaveLength(1);
+  });
+
+  test('a Default-key constraint failure rolls back the new user', async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(storedKey(1, { id: 'existing', key: 'raw_collision', serverSecret: '22'.repeat(32) }));
+    await expect(repo.users.createAccount(
+      accountTemplate('alice'),
+      defaultKey({ id: 'new-key', key: 'raw_collision', serverSecret: '33'.repeat(32) }),
+    )).rejects.toThrow(/api_keys\.key/);
+    expect(await repo.users.findByUsername('alice')).toBeNull();
+    expect(await repo.apiKeys.getById('new-key')).toBeNull();
+  });
+
+  test('concurrent disjoint updateActive calls preserve both fields', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: 2, username: 'alice', isAdmin: false }));
+    const results = await Promise.all([
+      repo.users.updateActive(2, { username: 'renamed' }),
+      repo.users.updateActive(2, { isAdmin: true }),
+    ]);
+    expect(results.map(result => result.status)).toEqual(['updated', 'updated']);
+    expect(await repo.users.getById(2)).toMatchObject({ username: 'renamed', isAdmin: true });
+  });
+
+  test('deleteAccount atomically removes sessions and soft-deletes all active keys', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: 2 }));
+    await repo.apiKeys.save(storedKey(2, { id: 'key_a', key: 'raw_a', serverSecret: 'aa'.repeat(32) }));
+    await repo.apiKeys.save(storedKey(2, { id: 'key_b', key: 'raw_b', serverSecret: 'bb'.repeat(32) }));
+    const session = await repo.sessions.create(2);
+
+    const deletion = await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z');
+    expect(deletion.status).toBe('deleted');
+    if (deletion.status !== 'deleted') throw new Error('expected account deletion');
+    expect(deletion.apiKeyIds.toSorted()).toEqual(['key_a', 'key_b']);
+    expect(await repo.users.getById(2)).toBeNull();
+    expect(await repo.apiKeys.getById('key_a')).toBeNull();
+    expect(await repo.apiKeys.getById('key_b')).toBeNull();
+    expect(await repo.sessions.getByIdAndTouch(session.id)).toBeNull();
+  });
+
   test('save then list returns active users sorted by id (excluding seed admin)', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
@@ -89,4 +175,34 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     await repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z');
     expect(await repo.users.findByUsername('alice')).toBeNull();
   });
+});
+
+test('memory deleteAccount leaves the aggregate untouched when retention scheduling fails', async () => {
+  const repo = new InMemoryRepo();
+  await repo.users.save(sampleUser({ id: 2 }));
+  const key = storedKey(2);
+  await repo.apiKeys.save(key);
+  const session = await repo.sessions.create(2);
+  repo.expirationSweeps.schedule = () => Promise.reject(new Error('scheduler unavailable'));
+
+  await expect(repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z')).rejects.toThrow('scheduler unavailable');
+  expect(await repo.users.getById(2)).not.toBeNull();
+  expect(await repo.apiKeys.getById(key.id)).not.toBeNull();
+  expect(await repo.sessions.getByIdAndTouch(session.id)).not.toBeNull();
+});
+
+test('SQL deleteAccount rolls back keys and user when a middle statement fails', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.users.save(sampleUser({ id: 2 }));
+  const key = storedKey(2);
+  await repo.apiKeys.save(key);
+  const session = await repo.sessions.create(2);
+  await db.exec(`CREATE TRIGGER fail_session_delete BEFORE DELETE ON sessions
+    BEGIN SELECT RAISE(ABORT, 'session deletion failed'); END;`);
+
+  await expect(repo.users.deleteAccount(2, '2026-06-08T00:00:00.000Z')).rejects.toThrow('session deletion failed');
+  expect(await repo.users.getById(2)).not.toBeNull();
+  expect(await repo.apiKeys.getById(key.id)).not.toBeNull();
+  expect(await repo.sessions.getByIdAndTouch(session.id)).not.toBeNull();
 });

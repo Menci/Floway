@@ -16,6 +16,22 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 ];
 
 describe.each(backends)('SessionsRepo (%s)', (_label, makeRepo) => {
+  test('createForActiveUser refuses to attach a session after account deletion', async () => {
+    const repo = await makeRepo();
+    await repo.users.save({
+      id: 2,
+      username: 'alice',
+      passwordHash: null,
+      isAdmin: false,
+      upstreamIds: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      deletedAt: null,
+    });
+    expect(await repo.sessions.createForActiveUser(2)).not.toBeNull();
+    await repo.users.deleteAccount(2, '2026-01-02T00:00:00.000Z');
+    expect(await repo.sessions.createForActiveUser(2)).toBeNull();
+  });
+
   test('create returns a 64-hex token attached to the user', async () => {
     const repo = await makeRepo();
     const session = await repo.sessions.create(1);

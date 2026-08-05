@@ -26,6 +26,43 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
 });
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {
+  test(`[${backend}] request-path insertion requires an active owner`, async () => {
+    const repo = await makeRepo();
+    await repo.users.save({
+      id: 2,
+      username: 'alice',
+      passwordHash: null,
+      isAdmin: false,
+      upstreamIds: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      deletedAt: null,
+    });
+    const inserted = await repo.apiKeys.insertForActiveUser(baseKey({ userId: 2 }));
+    assertEquals(inserted?.id, 'key_dump');
+    await repo.users.deleteAccount(2, '2026-01-02T00:00:00.000Z');
+    assertEquals(await repo.apiKeys.insertForActiveUser(baseKey({
+      id: 'key_after_delete',
+      userId: 2,
+      key: 'raw_after_delete',
+      serverSecret: '22'.repeat(32),
+    })), null);
+  });
+
+  test(`[${backend}] concurrent rotations compare-and-swap the raw key`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey());
+    const results = await Promise.all([
+      repo.apiKeys.rotate('key_dump', 'raw_dump_key', 'raw_first'),
+      repo.apiKeys.rotate('key_dump', 'raw_dump_key', 'raw_second'),
+    ]);
+    assertEquals(results.filter(result => result !== null).length, 1);
+    assertEquals(results.filter(result => result === null).length, 1);
+    const stored = await repo.apiKeys.getById('key_dump');
+    if (stored?.key !== 'raw_first' && stored?.key !== 'raw_second') {
+      throw new Error(`unexpected rotated key: ${stored?.key}`);
+    }
+  });
+
   test(`[${backend}] api keys repo round-trips and updates dumpRetentionSeconds across save/getById`, async () => {
     const repo = await makeRepo();
     await repo.apiKeys.save(baseKey({ dumpRetentionSeconds: 3600 }));

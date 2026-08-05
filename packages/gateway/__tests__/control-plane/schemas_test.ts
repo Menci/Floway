@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { authLoginBody, createUpstreamBody, createUserBody } from '../../src/control-plane/schemas.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -186,5 +186,28 @@ describe('upstreamModelSchema rerank', () => {
     const mixed = customRerank();
     (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
+  });
+});
+
+describe('account password schemas', () => {
+  test.each([
+    ['1024 ASCII bytes', 'a'.repeat(1024)],
+    ['1024 multibyte UTF-8 bytes', 'é'.repeat(512)],
+  ])('accept %s', (_label, password) => {
+    expect(authLoginBody.safeParse({ username: 'alice', password }).success).toBe(true);
+    expect(createUserBody.safeParse({ username: 'alice', password }).success).toBe(true);
+  });
+
+  test.each([
+    ['1025 ASCII bytes', 'a'.repeat(1025)],
+    ['1026 multibyte UTF-8 bytes', 'é'.repeat(513)],
+  ])('reject %s', (_label, password) => {
+    expect(authLoginBody.safeParse({ username: 'alice', password }).success).toBe(false);
+    expect(createUserBody.safeParse({ username: 'alice', password }).success).toBe(false);
+  });
+
+  test('allows the empty ADMIN_KEY login password but rejects an empty account password', () => {
+    expect(authLoginBody.safeParse({ username: '', password: '' }).success).toBe(true);
+    expect(createUserBody.safeParse({ username: 'alice', password: '' }).success).toBe(false);
   });
 });

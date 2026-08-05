@@ -1494,17 +1494,24 @@ test('v20 import rejects malformed users (bad username, bad password_hash)', asy
   assertEquals(badUsername.status, 400);
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
 
-  const badHash = await doImport(app, 'replace', {
-    users: [{ ...USER_BOB, passwordHash: 'argon2$10000$$' }],
-    apiKeys: [],
-    upstreams: [],
-    usage: [],
-    searchUsage: [],
-    performanceIncluded: false,
-    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
-  }, 20);
-  assertEquals(badHash.status, 400);
-  assertEquals(String(badHash.body.error).includes('passwordHash'), true);
+  for (const passwordHash of [
+    'argon2$10000$$',
+    USER_BOB.passwordHash!.replace('$1000$', '$100001$'),
+    USER_BOB.passwordHash!.replace('AAECAwQFBgcICQoLDA0ODw==', 'AAECAwQFBgcICQoLDA0O'),
+    USER_BOB.passwordHash!.replace('rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl/ug=', 'rep5GM+JZ4GSYa/Qxf4tY9KFd/PnYjJdCeYGWosl'),
+  ]) {
+    const badHash = await doImport(app, 'replace', {
+      users: [{ ...USER_BOB, passwordHash }],
+      apiKeys: [],
+      upstreams: [],
+      usage: [],
+      searchUsage: [],
+      performanceIncluded: false,
+      searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+    }, 20);
+    assertEquals(badHash.status, 400);
+    assertEquals(String(badHash.body.error).includes('passwordHash'), true);
+  }
 });
 
 test('import rejects a pre-accounts v3 export instead of coercing its legacy api_keys', async () => {

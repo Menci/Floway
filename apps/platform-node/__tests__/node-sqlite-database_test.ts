@@ -88,6 +88,19 @@ test('batch rolls back on mid-batch failure', () => withTempDb(async path => {
   assertEquals(rows.results, [{ id: 1 }]);
 }));
 
+test('batch preserves rows produced by RETURNING statements', () => withTempDb(async path => {
+  const db = createNodeSqliteDatabase(path);
+  await db.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)').run();
+
+  const results = await db.batch!([
+    db.prepare('INSERT INTO t (id, name) VALUES (?, ?) RETURNING id, name').bind(1, 'a'),
+    db.prepare('UPDATE t SET name = ? WHERE id = ? RETURNING id, name').bind('A', 1),
+  ]);
+
+  assertEquals(results[0].results, [{ id: 1, name: 'a' }]);
+  assertEquals(results[1].results, [{ id: 1, name: 'A' }]);
+}));
+
 test('concurrent batch calls do not interleave transactions', () => withTempDb(async path => {
   // Regression: an `await` between BEGIN and COMMIT used to yield a microtask,
   // letting a second batch call's BEGIN run while the first transaction was
