@@ -10,6 +10,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
+  headersForMessagesCall,
   resolveEffectiveFlags,
   type ProviderInstance,
   type Provider,
@@ -58,7 +59,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       // supplies the provider-owned OAuth auth, and restamps the resolved model
       // id.
       const looksShaped = isClaudeCodeShapedRequest({
-        headers: opts.headers,
+        headers: headersForMessagesCall(opts.headers, opts.anthropicBeta),
         body: ctx.payload,
       });
 

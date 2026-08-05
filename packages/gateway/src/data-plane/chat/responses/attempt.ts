@@ -180,7 +180,7 @@ const dispatchResponses = async (
         loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
       translated => messagesAttempt.generate({
-        payload: translated, ctx, candidate, headers: invocation.headers,
+        payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       }),
     );
   case 'chat-completions':

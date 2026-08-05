@@ -7,7 +7,7 @@ import { narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { parseAnthropicBetaHeader, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 export interface MessagesServeGenerateArgs {
@@ -25,6 +25,7 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, headers } = args;
+    const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const prepared = await prepareMessagesAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
@@ -50,7 +51,7 @@ export const messagesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await messagesAttempt.generate({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers });
+        const result = await messagesAttempt.generate({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers, anthropicBeta });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
@@ -59,6 +60,7 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, headers } = args;
+    const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
     const prepared = await prepareMessagesAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
@@ -77,7 +79,7 @@ export const messagesServe = {
       'messagesServe.countTokens',
       ctx,
       'chat',
-      candidate => messagesAttempt.countTokens({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers }),
+      candidate => messagesAttempt.countTokens({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers, anthropicBeta }),
     );
   },
 };

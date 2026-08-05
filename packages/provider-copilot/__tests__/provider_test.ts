@@ -961,9 +961,7 @@ const betaModelCatalog = () => copilotModels([
   { id: 'claude-opus-4.6-1m', supported_endpoints: ['/v1/messages'], maxContextWindowTokens: 1_000_000 },
 ]);
 
-const betaIntentHeaders = () => new Headers({
-  'anthropic-beta': 'context-1m-2025-08-07,advanced-tool-use-2025-11-20,unknown-beta',
-});
+const betaIntent = ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20', 'unknown-beta'];
 
 test('Copilot consumes Messages beta intent before serializing its supported wire subset', async () => {
   const { copilotUpstream } = await setupCopilotTest();
@@ -994,9 +992,7 @@ test('Copilot consumes Messages beta intent before serializing its supported wir
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({
-          headers: betaIntentHeaders(),
-        }),
+        noopUpstreamCallOptions({ anthropicBeta: betaIntent }),
       );
       assertEquals(result.modelKey, 'claude-opus-4.6-1m');
     },
@@ -1033,7 +1029,7 @@ test('Copilot count_tokens consumes and serializes the same Messages beta intent
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ headers: betaIntentHeaders() }),
+        noopUpstreamCallOptions({ anthropicBeta: betaIntent }),
       );
       assertEquals(result.modelKey, 'claude-opus-4.6-1m');
     },

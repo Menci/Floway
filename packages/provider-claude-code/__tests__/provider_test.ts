@@ -4,7 +4,7 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
-import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
@@ -84,14 +84,14 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
-const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
+const cliClientCallOpts = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
   ...noopUpstreamCallOptions(),
   headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
-    'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
   }),
+  anthropicBeta: ['oauth-2025-04-20'],
   ...overrides,
 });
 

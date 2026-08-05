@@ -52,11 +52,13 @@ export type {
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
+  MessagesUpstreamCallOptions,
   ProviderResponsesResult,
   ProviderStreamResult,
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
+export { headersForMessagesCall } from './messages.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';

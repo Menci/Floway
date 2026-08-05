@@ -13,10 +13,11 @@ import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
+  headersForMessagesCall,
   streamingProviderCall,
+  type MessagesUpstreamCallOptions,
   type ProviderModel,
   type ProviderStreamResult,
-  type UpstreamCallOptions,
 } from '@floway-dev/provider';
 
 const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
@@ -26,16 +27,16 @@ export interface CallClaudeCodeMessagesOptions {
   model: ProviderModel;
   body: Omit<MessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
-  // traffic. The gateway has reduced `opts.call.headers` to the provider
-  // module's allowlist, so the wire path preserves that genuine X-Stainless-* /
-  // anthropic-beta / x-claude-code-session-id fingerprint. The wire path
-  // supplies a default Content-Type when absent and sets cached OAuth auth.
+  // traffic. The gateway has reduced ordinary headers to the provider module's
+  // allowlist and carries anthropic-beta as typed Messages metadata, so the
+  // wire path preserves the complete genuine fingerprint. It supplies a
+  // default Content-Type when absent and sets cached OAuth auth.
   // `shaped: false` means the gateway's re-mimicry chain rebuilt the
   // payload's system blocks / metadata / model id — replace headers with
   // the pinned CC set so the wire shape matches end-to-end.
   shaped: boolean;
   signal?: AbortSignal;
-  call: UpstreamCallOptions;
+  call: MessagesUpstreamCallOptions;
 }
 
 const synthetic503 = (message: string): Response =>
@@ -364,17 +365,21 @@ const performUpstreamCall = async (
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
-    // The gateway already reduced this bag to the Claude Code module's
-    // allowlist. This path preserves that fingerprint, fills Content-Type
-    // when absent, and sets provider-owned OAuth auth.
-    const passthrough = Object.fromEntries(opts.call.headers);
+    // The gateway already reduced ordinary headers to the Claude Code module's
+    // allowlist. This path restores typed Messages metadata, preserves the
+    // resulting fingerprint, fills Content-Type when absent, and sets
+    // provider-owned OAuth auth.
+    const passthrough = Object.fromEntries(headersForMessagesCall(opts.call.headers, opts.call.anthropicBeta));
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream
     // never receives a body-bearing request without a media type.
     if (!('content-type' in passthrough)) passthrough['content-type'] = 'application/json';
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = { ...pickClaudeCodeHeaders(upstreamModelId), authorization: `Bearer ${accessToken.entry.token}` };
+    headers = {
+      ...Object.fromEntries(headersForMessagesCall(new Headers(pickClaudeCodeHeaders(upstreamModelId)), opts.call.anthropicBeta)),
+      authorization: `Bearer ${accessToken.entry.token}`,
+    };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is

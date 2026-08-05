@@ -8,7 +8,7 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
-import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
@@ -183,11 +183,11 @@ describe('callClaudeCodeMessages — header surface', () => {
           'user-agent': 'claude-cli/2.1.181 (external, cli)',
           'x-app': 'cli',
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
           'x-stainless-package-version': '0.94.0',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
         }),
+        anthropicBeta: ['oauth-2025-04-20', 'claude-code-20250219'],
       },
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -383,7 +383,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    const call: UpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
+    const call: MessagesUpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
     const result = await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
