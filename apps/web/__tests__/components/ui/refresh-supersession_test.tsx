@@ -119,3 +119,62 @@ test('query-driven refresh keeps the displayed query after a failed response', a
   await act(async () => { void result.current.refresh(); });
   expect(runs).toHaveLength(2);
 });
+
+test.each(['superseded-first', 'newest-first'] as const)(
+  'query-driven refresh commits only the newest response when requests settle %s',
+  async (settlementOrder) => {
+    const runs: Array<{
+      query: { groupBy: string };
+      requestedAt: number;
+      settle: (succeeded: boolean) => void;
+      signal: AbortSignal;
+    }> = [];
+    const responses: string[] = [];
+    const restore = vi.fn();
+    const onCommit = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ query }) => useRefreshOnChange(
+        query,
+        100,
+        async (signal, { requestedAt }) => {
+          const succeeded = await new Promise<boolean>(resolve => {
+            runs.push({ query, requestedAt, settle: resolve, signal });
+          });
+          if (signal.aborted) return false;
+          if (succeeded) responses.push(query.groupBy);
+          return succeeded;
+        },
+        restore,
+        onCommit,
+      ),
+      { initialProps: { query: { groupBy: 'model' } } },
+    );
+
+    rerender({ query: { groupBy: 'upstream' } });
+    await waitFor(() => expect(runs).toHaveLength(1));
+    rerender({ query: { groupBy: 'keyId' } });
+    await waitFor(() => expect(runs).toHaveLength(2));
+
+    expect(runs[0]!.signal.aborted).toBe(true);
+    expect(runs[1]!.signal.aborted).toBe(false);
+    const first = settlementOrder === 'superseded-first' ? runs[0]! : runs[1]!;
+    const second = settlementOrder === 'superseded-first' ? runs[1]! : runs[0]!;
+    await act(async () => { first.settle(true); });
+
+    if (settlementOrder === 'superseded-first') {
+      expect(responses).toEqual([]);
+      expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
+      expect(result.current.loadedAt).toBe(100);
+      expect(onCommit).not.toHaveBeenCalled();
+    }
+
+    await act(async () => { second.settle(true); });
+
+    expect(responses).toEqual(['keyId']);
+    expect(result.current.loadedQuery).toEqual({ groupBy: 'keyId' });
+    expect(result.current.loadedAt).toBe(runs[1]!.requestedAt);
+    expect(restore).not.toHaveBeenCalled();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'keyId' });
+  },
+);
