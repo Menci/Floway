@@ -1,6 +1,6 @@
 // GET /api/performance/overview — dashboard aggregate: chart series, summary,
-// six per-dimension breakdown tables, and dropdown menus, all built from a
-// single raw record query.
+// six per-dimension breakdown tables, and dropdown menus, all built by the
+// database overview aggregate.
 //
 // The requested breakdown decides the scope. `group_by=keyId` is inherently a
 // question about the actor's own traffic, so it aggregates the actor's keys
@@ -15,12 +15,12 @@
 // scoped to the actor's own keys in every breakdown, so other users' key ids
 // never surface either.
 
-import { aggregatePerformanceForDisplay, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { PerformanceOverviewGroupBy } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import type { TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { loadTelemetryOverviewIdentity, partitionTelemetryOverviewRecords, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata } from '../shared/telemetry-overview.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -37,7 +37,7 @@ interface PerformanceQueryParams {
   start: string;
   end: string;
   bucket: TelemetryBucketGranularity;
-  groupBy: PerformanceGroupBy;
+  groupBy: PerformanceOverviewGroupBy;
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: PerformanceFilters;
@@ -77,56 +77,30 @@ export const performanceOverview = async (c: Ctx) => {
   const identityError = telemetryIdentityError(identity, groupBy, filters.userId, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
-  const rawRecords = await repo.performance.query({ start, end });
-  const scopedRecords = groupBy === 'keyId'
-    ? rawRecords.filter(r => identity.ownedKeyIds.has(r.keyId))
-    : rawRecords;
-
-  const partitioned = partitionTelemetryOverviewRecords(scopedRecords, {
-    model: { value: record => record.model },
-    upstream: { value: record => record.upstream },
-    operation: { value: record => record.operation },
-    runtimeLocation: { value: record => record.runtimeLocation },
-    userId: {
-      value: record => identity.keyToUser.get(record.keyId)?.toString() ?? null,
-      includeFacet: () => identity.actor.isAdmin,
+  const overview = await repo.performance.queryOverview({
+    actorUserId: identity.actor.id,
+    isAdmin: identity.actor.isAdmin,
+    start,
+    end,
+    groupBy,
+    filters: {
+      keyIds: [...filters.keyId],
+      userIds: [...filters.userId].map(Number),
+      models: [...filters.model],
+      upstreams: [...filters.upstream],
+      operations: [...filters.operation],
+      runtimeLocations: [...filters.runtimeLocation],
     },
-    keyId: {
-      value: record => record.keyId,
-      includeFacet: record => identity.ownedKeyIds.has(record.keyId),
-    },
-  }, filters);
-  const { filtered } = partitioned;
-  const dimensionValues = {
-    models: partitioned.dimensionValues.model,
-    upstreams: partitioned.dimensionValues.upstream,
-    operations: partitioned.dimensionValues.operation,
-    runtimeLocations: partitioned.dimensionValues.runtimeLocation,
-    userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
-    keyIds: partitioned.dimensionValues.keyId,
-  };
-
-  const tzOnly = { timeZone: params.value.timeZone, timezoneOffsetMinutes };
-  const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
-    series: { ...tzOnly, bucket, groupBy },
-    // 'none' axis carries the summary row.
-    none: { ...tzOnly, bucket: 'all', groupBy: 'none' as const },
-    model: { ...tzOnly, bucket: 'all', groupBy: 'model' as const },
-    upstream: { ...tzOnly, bucket: 'all', groupBy: 'upstream' as const },
-    runtimeLocation: { ...tzOnly, bucket: 'all', groupBy: 'runtimeLocation' as const },
-    operation: { ...tzOnly, bucket: 'all', groupBy: 'operation' as const },
-    keyId: { ...tzOnly, bucket: 'all', groupBy: 'keyId' as const },
-    userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' as const },
-  }, identity.keyToUser, identity.ownedKeyIds);
+    bucketForHour: createTelemetryBucket({
+      bucket,
+      timeZone: params.value.timeZone,
+      timezoneOffsetMinutes,
+    }),
+  });
   const metadata = telemetryIdentityMetadata(identity);
 
   return c.json({
-    series,
-    axes: {
-      ...axes,
-      userId: identity.actor.isAdmin ? axes.userId : [],
-    },
-    dimensionValues,
+    ...overview,
     ...metadata,
   });
 };

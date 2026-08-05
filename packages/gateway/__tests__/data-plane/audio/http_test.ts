@@ -394,14 +394,16 @@ test('/v1/audio/transcriptions preserves a terminal stream event with malformed 
   assertEquals(performance.errorsNoOutput, 0);
 });
 
-test('/v1/audio/transcriptions completes and cancels an upstream kept open after transcript.text.done', async () => {
+test('/v1/audio/transcriptions completes and drains an upstream kept open after transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   let upstreamCancelled = false;
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   const encoder = new TextEncoder();
   await withMockedFetch(
     () => new Response(new ReadableStream<Uint8Array>({
       start(controller) {
+        upstreamController = controller;
         controller.enqueue(encoder.encode('data: {"type":"transcript.text.delta","delta":"hel"}\n\n'));
         controller.enqueue(encoder.encode('data: {"type":"transcript.text.done","text":"hello"}\n\n'));
       },
@@ -416,9 +418,10 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
       const text = await response.text();
       assertEquals(text.includes('transcript.text.done'), true);
       assertEquals(text.includes('[DONE]'), false);
+      upstreamController.close();
     },
   );
-  assertEquals(upstreamCancelled, true);
+  assertEquals(upstreamCancelled, false);
 });
 
 test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {

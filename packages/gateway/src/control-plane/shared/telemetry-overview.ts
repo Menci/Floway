@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { buildKeyToUserMap } from './key-to-user.ts';
 import type { TelemetryBucketGranularity } from './telemetry-bucket.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -56,23 +55,20 @@ export interface TelemetryOverviewIdentity {
   actor: ReturnType<typeof userFromContext>;
   ownedKeys: ApiKey[];
   ownedKeyIds: ReadonlySet<string>;
-  keyToUser: ReadonlyMap<string, number>;
   users: User[];
 }
 
 export const loadTelemetryOverviewIdentity = async (c: Context): Promise<TelemetryOverviewIdentity> => {
   const actor = userFromContext(c);
   const repo = getRepo();
-  const [allKeys, users] = await Promise.all([
-    repo.apiKeys.listIncludingDeleted(),
+  const [ownedKeys, users] = await Promise.all([
+    repo.apiKeys.listByUserIdIncludingDeleted(actor.id),
     actor.isAdmin ? repo.users.listIncludingDeleted() : Promise.resolve([]),
   ]);
-  const ownedKeys = allKeys.filter(key => key.userId === actor.id);
   return {
     actor,
     ownedKeys,
     ownedKeyIds: new Set(ownedKeys.map(key => key.id)),
-    keyToUser: buildKeyToUserMap(allKeys),
     users,
   };
 };
@@ -101,37 +97,3 @@ export const telemetryIdentityMetadata = (identity: TelemetryOverviewIdentity) =
     .map(key => ({ id: key.id, name: key.name, createdAt: key.createdAt }))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)),
 });
-
-export interface TelemetryDimensionSpec<Row> {
-  value: (row: Row) => string | null;
-  includeFacet?: (row: Row, value: string) => boolean;
-}
-
-// Facets come from unfiltered rows so applying one constraint never narrows a
-// filter menu. Values within a dimension are OR'd; dimensions are AND'd.
-export const partitionTelemetryOverviewRecords = <Row, Dimension extends string>(
-  rows: readonly Row[],
-  dimensions: Record<Dimension, TelemetryDimensionSpec<Row>>,
-  filters: Record<Dimension, ReadonlySet<string>>,
-): { filtered: Row[]; dimensionValues: Record<Dimension, string[]> } => {
-  const entries = Object.entries(dimensions) as Array<[Dimension, TelemetryDimensionSpec<Row>]>;
-  const values = Object.fromEntries(entries.map(([dimension]) => [dimension, new Set<string>()])) as Record<Dimension, Set<string>>;
-  const filtered: Row[] = [];
-  for (const row of rows) {
-    let matches = true;
-    for (const [dimension, spec] of entries) {
-      const value = spec.value(row);
-      if (value !== null && (spec.includeFacet?.(row, value) ?? true)) values[dimension].add(value);
-      const filter = filters[dimension];
-      if (filter.size > 0 && (value === null || !filter.has(value))) matches = false;
-    }
-    if (matches) filtered.push(row);
-  }
-  return {
-    filtered,
-    dimensionValues: Object.fromEntries(entries.map(([dimension]) => [
-      dimension,
-      [...values[dimension]].sort(),
-    ])) as Record<Dimension, string[]>,
-  };
-};

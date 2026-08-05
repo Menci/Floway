@@ -3,6 +3,7 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
+import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -26,6 +27,8 @@ import type {
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
+  PerformanceOverviewQueryOptions,
+  PerformanceOverviewResult,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -43,6 +46,8 @@ import type {
   SessionsRepo,
   UpstreamRepo,
   UsageRecord,
+  UsageOverviewQueryOptions,
+  UsageOverviewResult,
   UsageRepo,
   User,
   UsersRepo,
@@ -60,6 +65,7 @@ import {
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
+import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
@@ -466,14 +472,23 @@ class SqlUsageRepo implements UsageRepo {
     await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
-    const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
-    const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
+  async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {
+    const keyIds = opts.keyIds === undefined ? undefined : [...new Set(opts.keyIds)];
+    const where = keyIds === undefined
+      ? 'hour >= ? AND hour < ?'
+      : 'key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) AND hour >= ? AND hour < ?';
+    const binds = keyIds === undefined
+      ? [opts.start, opts.end]
+      : [JSON.stringify(keyIds), opts.start, opts.end];
     const [{ results: metrics }, { results: requests }] = await Promise.all([
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(metrics, requests);
+  }
+
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+    return querySqlUsageOverview(this.db, opts);
   }
 
   async listAll(): Promise<UsageRecord[]> {
@@ -687,12 +702,12 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await this.upsertSummary(dims, { requests: 1, neutral: 1 }, 'add').run();
   }
 
-  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFor(opts);
+  queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
+    return querySqlPerformanceOverview(this.db, opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFor({});
+    return await this.rowsFor();
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
@@ -755,27 +770,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
     ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
   }
 
-  private async rowsFor(opts: { keyId?: string; start?: string; end?: string }): Promise<PerformanceTelemetryRecord[]> {
-    const clauses: string[] = [];
-    const binds: SqlBindValue[] = [];
-    if (opts.start !== undefined) {
-      clauses.push('hour >= ?');
-      binds.push(opts.start);
-    }
-    if (opts.end !== undefined) {
-      clauses.push('hour < ?');
-      binds.push(opts.end);
-    }
-    if (opts.keyId !== undefined) {
-      clauses.push('key_id = ?');
-      binds.push(opts.keyId);
-    }
-    const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-
+  private async rowsFor(): Promise<PerformanceTelemetryRecord[]> {
     const { results: summaryRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
-       FROM performance_summary${whereClause} ORDER BY hour`,
-    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+       FROM performance_summary ORDER BY hour`,
+    ).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
     for (const row of summaryRows) {
@@ -796,8 +795,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
     const { results: bucketRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
-       FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
-    ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
+       FROM performance_buckets ORDER BY hour, metric, lower`,
+    ).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
     for (const row of bucketRows) {
       const dims = performanceDimensionsFromRow(row);
       const key = performanceRecordKey(dims);

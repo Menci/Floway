@@ -157,7 +157,7 @@ const dispatchResponses = async (
       providerModelOf(candidate),
       body,
       invocation.action,
-      ctx.abortSignal,
+      undefined,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
     return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
@@ -177,7 +177,10 @@ const dispatchResponses = async (
       p => translateResponsesViaMessages(p, {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-        loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
+        loadRemoteImage: createExternalImageLoader({
+          clientDisconnectSignal: ctx.clientDisconnectSignal,
+          backgroundScheduler: ctx.backgroundScheduler,
+        }),
       }),
       translated => messagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

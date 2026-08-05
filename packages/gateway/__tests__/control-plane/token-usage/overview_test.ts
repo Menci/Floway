@@ -125,18 +125,36 @@ test('/api/token-usage/overview enforces identity filter authorization', async (
   assertEquals(await foreignKey.json(), { error: 'Unknown filter_key_id' });
 });
 
-test('/api/token-usage/overview reads Usage records once for every dashboard axis', async () => {
+test('/api/token-usage/overview delegates every dashboard axis to one overview read', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
-  const originalQuery = repo.usage.query.bind(repo.usage);
-  repo.usage.query = opts => {
+  let queryOptions: import('../../../src/repo/types.ts').UsageOverviewQueryOptions | undefined;
+  const originalQueryOverview = repo.usage.queryOverview.bind(repo.usage);
+  repo.usage.queryOverview = opts => {
     queryCount++;
-    return originalQuery(opts);
+    queryOptions = opts;
+    return originalQueryOverview(opts);
   };
+  repo.usage.query = () => Promise.reject(new Error('overview must not hydrate raw Usage records'));
   await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: null, hour: '2026-04-30T10', requests: 2 });
 
   const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   assertEquals(queryCount, 1);
+  assertEquals(queryOptions && {
+    actorUserId: queryOptions.actorUserId,
+    isAdmin: queryOptions.isAdmin,
+    start: queryOptions.start,
+    end: queryOptions.end,
+    groupBy: queryOptions.groupBy,
+    filters: queryOptions.filters,
+  }, {
+    actorUserId: 2,
+    isAdmin: false,
+    start: '2026-04-30T00',
+    end: '2026-05-01T00',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+  });
 });

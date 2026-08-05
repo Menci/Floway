@@ -105,8 +105,14 @@ pnpm run db:migrate
 pnpm run dev
 ```
 
-The local dashboard runs at <http://localhost:5174>. For production, configure
-the admin secret, apply the remote migrations, and deploy:
+The local dashboard runs at <http://localhost:5174>. For an agent-assisted
+production deployment, invoke `$deploy-to-cloudflare`. It uses the established
+update and rollback flow by default. A deployment named as new first runs an
+isolated binding-probe bootstrap and requires its `Hello World` response before
+publishing Floway.
+
+For a manual production update, configure the admin secret, apply the remote
+migrations, and deploy:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY

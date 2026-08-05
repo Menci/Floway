@@ -1,5 +1,6 @@
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
+import { retainUpstreamFetcher } from '../../../shared/retained-response.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
@@ -11,11 +12,13 @@ export const resolveAlphaSearchDispatcher = async ({
   upstreamIds,
   scheduler,
   runtimeLocation,
+  clientDisconnectSignal,
 }: {
   config: Pick<WebSearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
+  clientDisconnectSignal?: AbortSignal;
 }): Promise<AlphaSearchDispatcher> => {
   if (upstreamIds !== null && !upstreamIds.includes(config.upstreamId)) {
     throw new Error('Selected OpenAI search upstream is outside this API key scope');
@@ -26,6 +29,7 @@ export const resolveAlphaSearchDispatcher = async ({
     kind: 'chat',
     scheduler,
     runtimeLocation,
+    clientDisconnectSignal,
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
   if (candidate === undefined) {
@@ -42,9 +46,11 @@ export const resolveAlphaSearchDispatcher = async ({
     const result = await candidate.provider.instance.callAlphaSearch(
       providerModelOf(candidate),
       request,
-      signal,
+      undefined,
       {
-        fetcher: candidate.fetcher,
+        fetcher: signal === undefined
+          ? candidate.fetcher
+          : retainUpstreamFetcher(candidate.fetcher, signal, scheduler),
         waitUntil: scheduler,
         headers: filterInboundHeadersForProvider(headers, candidate.provider),
         wrapUpstreamCall: identityWrapUpstreamCall,

@@ -15,6 +15,7 @@ export const fetchWithRetry = async (
     const response = await doFetch();
     if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
     if (attempt >= RETRY_DELAYS_MS.length) return response;
+    await response.body?.cancel();
     await sleep(RETRY_DELAYS_MS[attempt], signal);
     attempt += 1;
   }
