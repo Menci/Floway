@@ -400,3 +400,220 @@ test('/v1/images/edits forwards JSON image references through a custom provider'
     quality: 'high',
   });
 });
+
+test('/v1/images/generations streams before upstream EOF and settles completed-event usage after EOF', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  const eofGate = deferred();
+  const encoder = new TextEncoder();
+  let forwarded: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      forwarded = await request.json() as Record<string, unknown>;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode([
+            imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==', partial_image_index: 0 }),
+            imageSseFrame({ type: 'image_generation.completed', b64_json: 'ZmluYWw=', usage: IMAGE_USAGE }),
+          ].join('')));
+        },
+        async pull(controller) {
+          await eofGate.promise;
+          controller.close();
+        },
+      });
+      return imageSseResponse(body);
+    },
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-provider-trace'), 'image-trace');
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      try {
+        while (!text.includes('image_generation.completed')) {
+          const chunk = await reader.read();
+          assertEquals(chunk.done, false, 'stream closed before the completed event');
+          text += decoder.decode(chunk.value, { stream: true });
+        }
+        assertEquals(text.includes('image_generation.partial_image'), true);
+        assertEquals(await repo.usage.listAll(), []);
+
+        eofGate.resolve();
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          text += decoder.decode(chunk.value, { stream: true });
+        }
+        text += decoder.decode();
+      } finally {
+        eofGate.resolve();
+        await reader.cancel().catch(() => {});
+      }
+
+      assertEquals(text.includes('[DONE]'), false);
+      await flushBackground();
+    },
+  );
+
+  assertExists(forwarded);
+  assertEquals(forwarded.stream, true);
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 6, input_image: 4, output_image: 50 });
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.neutral, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
+});
+
+test('/v1/images/edits streams multipart text true and preserves image and mask files', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  let upstreamForm: FormData | undefined;
+  let upstreamSignal: AbortSignal | undefined;
+
+  await withMockedFetch(
+    async request => {
+      upstreamSignal = request.signal;
+      upstreamForm = await request.formData();
+      return imageSseResponse(imageSseFrame({ type: 'image_edit.completed', b64_json: 'ZWRpdGVk', usage: IMAGE_USAGE }));
+    },
+    async () => {
+      const form = new FormData();
+      form.append('model', 'gpt-image-2');
+      form.append('prompt', 'replace the sky');
+      form.append('quality', 'high');
+      form.append('stream', 'true');
+      form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'source.png');
+      form.append('mask', new Blob([new Uint8Array([4, 5])], { type: 'image/webp' }), 'mask.webp');
+      const response = await requestApp('/v1/images/edits', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: form,
+      });
+      assertEquals(response.status, 200);
+      assertEquals((await response.text()).includes('image_edit.completed'), true);
+      await flushBackground();
+    },
+  );
+
+  assertExists(upstreamSignal);
+  assertEquals(upstreamSignal.aborted, false);
+  assertExists(upstreamForm);
+  assertEquals(upstreamForm.get('model'), 'gpt-image-2');
+  assertEquals(upstreamForm.get('prompt'), 'replace the sky');
+  assertEquals(upstreamForm.get('quality'), 'high');
+  assertEquals(upstreamForm.get('stream'), 'true');
+  const image = upstreamForm.get('image');
+  const mask = upstreamForm.get('mask');
+  assert(image instanceof File);
+  assert(mask instanceof File);
+  assertEquals({ name: image.name, type: image.type, bytes: [...new Uint8Array(await image.arrayBuffer())] }, {
+    name: 'source.png', type: 'image/png', bytes: [1, 2, 3],
+  });
+  assertEquals({ name: mask.name, type: mask.type, bytes: [...new Uint8Array(await mask.arrayBuffer())] }, {
+    name: 'mask.webp', type: 'image/webp', bytes: [4, 5],
+  });
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 6, input_image: 4, output_image: 50 });
+});
+
+test.each([
+  {
+    name: 'EOF without completed',
+    body: () => imageSseResponse(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==', partial_image_index: 0 })),
+  },
+  {
+    name: 'malformed event JSON',
+    body: () => imageSseResponse('event: image_generation.partial_image\ndata: {not-json}\n\n'),
+  },
+  {
+    name: 'upstream body read error',
+    body: () => {
+      const encoder = new TextEncoder();
+      let pulled = false;
+      return imageSseResponse(new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (!pulled) {
+            pulled = true;
+            controller.enqueue(encoder.encode(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==' })));
+            return;
+          }
+          controller.error(new Error('upstream image stream failed'));
+        },
+      }));
+    },
+  },
+])('/v1/images/generations records $name as a failed request-only stream', async ({ body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  await withMockedFetch(
+    () => body(),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.status, 200);
+      await response.text();
+    },
+  );
+  await assertFailedStreamSettlement(repo);
+});
+
+test('/v1/images/generations returns 502 and records failure for a bodyless stream response', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  await withMockedFetch(
+    () => imageSseResponse(null),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(response.status, 502);
+      assertEquals(response.headers.get('x-provider-trace'), 'image-trace');
+      assertEquals(await response.json(), { error: { message: 'Upstream returned a streaming response with no body.', type: 'api_error' } });
+    },
+  );
+  await assertFailedStreamSettlement(repo);
+});
+
+test('/v1/images/generations downstream cancellation aborts the provider signal and upstream body', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  const providerAborted = deferred();
+  const upstreamCanceled = deferred();
+  const encoder = new TextEncoder();
+  let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+
+  await withMockedFetch(
+    request => {
+      request.signal.addEventListener('abort', providerAborted.resolve, { once: true });
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          upstreamController = controller;
+          controller.enqueue(encoder.encode(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==' })));
+        },
+        cancel() {
+          upstreamCanceled.resolve();
+        },
+      });
+      return imageSseResponse(body);
+    },
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      const reader = response.body!.getReader();
+      try {
+        const first = await reader.read();
+        assertEquals(new TextDecoder().decode(first.value).includes('image_generation.partial_image'), true);
+        await Promise.all([reader.cancel(), providerAborted.promise, upstreamCanceled.promise]);
+      } finally {
+        try {
+          upstreamController?.close();
+        } catch {
+          // The cancellation path already owns the stream.
+        }
+        await reader.cancel().catch(() => {});
+      }
+    },
+  );
+
+  await assertFailedStreamSettlement(repo);
+});
