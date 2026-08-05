@@ -183,20 +183,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ['ttftP99', formatDuration(summary?.ttftMsP99 ?? null)],
     ['speedP99', formatTokenRateFromTpot(summary?.tpotUsP99 ?? null)],
   ] as const;
-  const breakdowns = overview === null ? [] : groupByValues
-    .filter(key => key !== 'userId' || view === 'all-by-user')
-    .map(key => ({ key, rows: overview.axes[key] }));
-  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
-  const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> | null = overview === null || labels === null ? null : [
-    { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
-    { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
-    { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
-    { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
-    { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
-    { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
-  ];
-  const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user') ?? null;
-
   return <section className="dashboard-page">
     <DashboardPageHeader
       actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.performance.actions.refresh')} refreshing={refreshing} />}
@@ -204,7 +190,23 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
-    {overview === null || chart === null || labels === null || activeBreakdown === undefined || availableDimensions === null ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+    {(() => {
+      if (overview === null || chart === null || labels === null) return <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>;
+      const breakdowns = groupByValues
+        .filter(key => key !== 'userId' || view === 'all-by-user')
+        .map(key => ({ key, rows: overview.axes[key] }));
+      const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
+      if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
+      const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
+        { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
+        { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
+        { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
+        { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
+        { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
+        { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
+      ];
+      const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
+      return <>
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <TelemetryDimensionControls
           disabled={refreshing}
@@ -253,6 +255,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         </TabList></ScrollArea>
         <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} />
       </Panel>
-    </>}
+      </>;
+    })()}
   </section>;
 }

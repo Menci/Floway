@@ -199,6 +199,10 @@ export function ChoiceGroup({
     const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
       : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
     if (step === 0) return;
+    if (disabled) {
+      event.preventDefault();
+      return;
+    }
     const choices = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>('[role="radio"]:not([aria-disabled="true"])')];
     if (choices.length === 0) return;
     event.preventDefault();
@@ -232,7 +236,8 @@ export function ChoiceGroup({
         : <AddressedChoice
             checked={value === item.value}
             className={styles.item}
-            item={{ ...item, disabled: itemDisabled }}
+            disabled={itemDisabled}
+            item={item}
             key={item.value}
             onChange={onChange}
             to={item.to}
@@ -242,9 +247,10 @@ export function ChoiceGroup({
   </div>;
 }
 
-function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
+function AddressedChoice({ checked, className, disabled, item, onChange, tabIndex, to }: {
   checked: boolean;
   className: string;
+  disabled: boolean;
   item: ChoiceGroupItem;
   onChange: (value: string) => void;
   tabIndex: number;
@@ -253,22 +259,20 @@ function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
   // The page owns the transition, holding the view in state and writing the URL
   // after it, so the address only has to say where the view lives.
   const address = useRouteAddress(to, () => onChange(item.value));
-  const disabled = item.disabled === true;
   return <a
     href={disabled ? undefined : address.href}
     onClick={disabled ? event => event.preventDefault() : address.onClick}
     aria-checked={checked}
-    aria-disabled={item.disabled === true ? true : undefined}
+    aria-disabled={disabled ? true : undefined}
     className={className}
     data-checked={checked ? '' : undefined}
-    data-disabled={item.disabled === true ? '' : undefined}
+    data-disabled={disabled ? '' : undefined}
     // An anchor answers Enter on its own; Space is the radio's key and has to
     // be given back, and its default is the page scroll.
     onKeyDown={event => {
-      if (disabled) return;
       if (event.key !== ' ') return;
       event.preventDefault();
-      event.currentTarget.click();
+      if (!disabled) event.currentTarget.click();
     }}
     role="radio"
     tabIndex={disabled ? -1 : tabIndex}

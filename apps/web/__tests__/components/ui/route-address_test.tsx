@@ -79,6 +79,9 @@ describe('addressed controls', () => {
     const sevenDays = getByRole('radio', { name: '7 days' });
     expect(sevenDays.getAttribute('href')).toBeNull();
     await act(async () => { fireEvent.click(sevenDays, { button: 0 }); });
+    const space = createEvent.keyDown(sevenDays, { key: ' ' });
+    fireEvent(sevenDays, space);
+    expect(space.defaultPrevented).toBe(true);
     expect(onChange).not.toHaveBeenCalled();
     expect(router.state.location.search).toBe('');
   });

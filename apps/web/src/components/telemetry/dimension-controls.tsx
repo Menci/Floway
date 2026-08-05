@@ -15,7 +15,7 @@ export interface TelemetryDimension<Key extends string> {
 }
 
 export function TelemetryDimensionControls<Key extends string>({
-  disabled = false,
+  disabled,
   dimensions,
   filters,
   groupBy,
@@ -25,7 +25,7 @@ export function TelemetryDimensionControls<Key extends string>({
   onGroupByChange,
   selectedLabel,
 }: {
-  disabled?: boolean;
+  disabled: boolean;
   dimensions: readonly TelemetryDimension<Key>[];
   filters: Record<Key, readonly string[]>;
   groupBy: Key;
