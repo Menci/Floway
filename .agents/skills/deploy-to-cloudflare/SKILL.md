@@ -32,7 +32,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
    ```bash
    pnpm wrangler deploy .agents/skills/deploy-to-cloudflare/assets/binding-probe.js \
      --config wrangler.jsonc --strict \
-     --message "Initial binding bootstrap before $(git rev-parse --short HEAD)"
+     --message "Initial binding bootstrap before $(git rev-parse HEAD)"
    ```
 
 8. Publish the same probe a second time after the Durable Object migration exists. This creates the version used for end-to-end binding verification:
@@ -40,7 +40,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
    ```bash
    pnpm wrangler deploy .agents/skills/deploy-to-cloudflare/assets/binding-probe.js \
      --config wrangler.jsonc --strict \
-     --message "Initial binding verification before $(git rev-parse --short HEAD)"
+     --message "Initial binding verification before $(git rev-parse HEAD)"
    ```
 
    The bootstrap upload establishes the Worker service and atomically applies its initial Durable Object class migration. Re-uploading the same probe through Wrangler's existing-Worker/no-pending-migration path makes the same-worker namespace callable before it is used as evidence. This is Floway's experimentally validated workaround for current upstream behavior, not a documented platform requirement. Wrangler 4.81 selects those two upload paths from Worker existence and pending migrations: [deployment branch](https://github.com/cloudflare/workers-sdk/blob/36c2c130b991743ff203a31aff007850f08acb95/packages/wrangler/src/deploy/deploy.ts#L924-L939), [legacy migration upload](https://github.com/cloudflare/workers-sdk/blob/36c2c130b991743ff203a31aff007850f08acb95/packages/wrangler/src/deploy/deploy.ts#L1091-L1115), and [existing-Worker version upload](https://github.com/cloudflare/workers-sdk/blob/36c2c130b991743ff203a31aff007850f08acb95/packages/wrangler/src/deploy/deploy.ts#L1033-L1058).
@@ -67,7 +67,7 @@ pnpm wrangler d1 execute <DB_NAME> --remote --json \
   --command 'SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1'
 ```
 
-For a routine update, read the active version id, active deployment timestamp, and `workers/message` deploy annotation from the status JSON. The deploy message is normally the short commit revision stamped by `pnpm run deploy`.
+For a routine update, read the active version id, active deployment timestamp, and `workers/message` deploy annotation from the status JSON. The deploy message is normally the full commit revision stamped by `pnpm run deploy`, so fetch that object directly when the revision is not available locally.
 
 Read every pending migration from `migrations list` and the latest applied migration from the `d1_migrations` query. An empty query result means no migration has been applied.
 
