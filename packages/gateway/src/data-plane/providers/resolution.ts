@@ -59,11 +59,10 @@ const enumerateOneUpstreamCandidates = async (
 };
 
 // Walk every visible upstream, in configured order, and collect every
-// (provider, model, fetcher) candidate the inbound id resolves against
-// at the requested kind. Per-upstream catalog fetches fan out concurrently
-// so a slow upstream cannot stall the rest. Cancellation (`AbortError`)
-// propagates so the per-request abort signal cannot be masked by a slow
-// upstream's rejection.
+// (provider, model, fetcher) candidate the inbound id resolves against at the
+// requested kind. Each lookup reads only the provider's persisted catalog;
+// cold and stale rows schedule refresh separately, so upstream model-list I/O
+// cannot delay resolution.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller

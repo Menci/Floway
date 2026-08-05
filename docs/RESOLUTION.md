@@ -21,8 +21,29 @@ candidate result returned to the client. The stages are deliberately separate:
 
 `data-plane/providers/registry.ts` constructs enabled provider instances.
 `catalog.ts` assembles their models, while `resolution.ts` performs request-time
-matching. Both paths use each upstream's SWR-cached `getProvidedModels` result
-and an upstream-scoped proxy-aware fetcher.
+matching. Both paths read each upstream's persisted `getProvidedModels`
+projection and carry an upstream-scoped proxy-aware fetcher for background
+refresh and eventual inference.
+
+Catalog access never waits for an upstream model-list request. A row is
+soft-fresh for ten minutes. After that point the last-known-good catalog remains
+usable without any hard expiration; every access returns it immediately and
+triggers a background refresh. A cold row returns an empty catalog immediately
+and triggers the same work. The hourly maintenance driver triggers every
+enabled upstream as well.
+
+Every automatic trigger enters one persisted per-upstream coordinator before
+upstream I/O. Its atomic claim coalesces Workers, Node processes, and restarts;
+a fifteen-minute lease recovers an abandoned attempt. Failures advance a
+one-minute exponential backoff capped at one hour, while success clears the
+coordinator and replaces the catalog under the upstream generation fence. A
+first failure persists an empty catalog with `fetchedAt: 0` and `lastError`, so
+the error stays observable without making the empty result soft-fresh.
+
+Two control-plane paths deliberately perform synchronous fetches: the explicit
+**Fetch models** action, and the warm after create, update, import, or OAuth
+credential changes. They share cache persistence and in-flight coordination
+with automatic refreshes but bypass automatic-trigger backoff.
 
 For every provider model, `modelPrefix.listed` determines its public catalog
 surface:
@@ -408,7 +429,8 @@ coordinate boundary.
 
 - Disabling an id on one upstream does not hide the same id on another.
 - The `-\d{8}` retry is the only request-time model-id normalization.
-- Catalogs are SWR-cached per upstream. Soft-fresh reads do not block on refresh.
+- Catalogs are persisted per upstream. Soft-fresh reads return directly; every
+  older read remains SWR forever and schedules a backoff-governed refresh.
 - Dual-addressable forms intentionally remain separate candidates. Their order
   follows the configured `addressable` array.
 - A listing row's unioned endpoint map must never be used for dispatch; attempt

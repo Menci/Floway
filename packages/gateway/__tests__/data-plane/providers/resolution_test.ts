@@ -235,10 +235,9 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
   assertEquals(disabled.candidates.length, 0);
 });
 
-// Regression: when an upstream's force re-fetch rejects past HARD, the call
-// site asking for a model belonging to one of the *healthy* upstreams must
-// still resolve. The broken upstream's display name flows back via
-// `failedUpstreams` so the eventual error renderer can mention it.
+// A persisted refresh error must not hide healthy siblings. The broken
+// upstream's display name flows back via `failedUpstreams` while its empty
+// or last-known-good snapshot stays independent of the current request.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();

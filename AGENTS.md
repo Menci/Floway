@@ -295,8 +295,9 @@ repositories, model catalog/resolution, proxy-bound fetchers, protocol routes,
 Stateful Responses, affinity, telemetry, and scheduled work. Shared data-plane
 request context and candidate iteration live under `data-plane/shared/`;
 provider composition, catalog assembly, and request-time resolution live under
-`data-plane/providers/{registry,catalog,resolution}.ts`; scheduled expiration
-and spilled-file workers live under `scheduled/`. The package exports the
+`data-plane/providers/{registry,catalog,resolution}.ts`; scheduled model-cache
+refresh, expiration, and spilled-file workers live under `scheduled/`. The
+package exports the
 migration corpus location through `@floway-dev/gateway/migrations-dir` and the
 dashboard's dump contracts through the types-only `./dump-types` subpath.
 

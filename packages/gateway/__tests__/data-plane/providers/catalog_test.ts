@@ -250,11 +250,11 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-// Per-upstream catalog fetches fan out in parallel: total wall-clock time
+// Per-upstream catalog refresh triggers fan out in parallel: total wall-clock time
 // tracks the slowest upstream, not the sum. The bound is loose because CI
 // timer noise eats into a tight `< sum` comparison; what matters is the
 // ratio.
-test('catalog assembly fans out per-upstream catalog fetches in parallel', async () => {
+test('catalog refresh triggers fan out per upstream in parallel', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -274,7 +274,7 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
     }));
   }
 
-  await withMockedFetch(
+  await withMockedFetchRaw(
     async request => {
       const url = new URL(request.url);
       const match = upstreams.find(u => url.hostname === u.host);
@@ -286,6 +286,7 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
     },
     async () => {
       const start = Date.now();
+      await warmModelsForTest();
       const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler)).models;
       const elapsed = Date.now() - start;
 
