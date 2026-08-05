@@ -141,11 +141,13 @@ describe('ensureCodexAccessToken', () => {
   });
 
   test('refuses to mint into a terminal credential', async () => {
-    current = makeRecord({ accounts: [{
-      ...baseAccount,
-      state: 'session_terminated',
-      state_message: 'old session ended',
-    }] });
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        state: 'session_terminated',
+        state_message: 'old session ended',
+      }],
+    });
     const mint = vi.fn();
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint))
       .rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);

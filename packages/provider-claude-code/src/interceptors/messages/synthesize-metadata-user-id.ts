@@ -2,8 +2,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { v4 } from 'uuid';
 
-import { parseMetadataUserID } from '../../detection.ts';
 import type { MessagesBoundaryCtx } from './types.ts';
+import { parseMetadataUserID } from '../../detection.ts';
 import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
