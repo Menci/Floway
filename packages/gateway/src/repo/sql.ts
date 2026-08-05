@@ -368,7 +368,8 @@ class SqlUsersRepo implements UsersRepo {
     const insertUser = this.db
       .prepare(
         `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
-         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, NULL FROM users`,
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, NULL FROM users
+         RETURNING ${USER_COLUMNS}`,
       )
       .bind(
         template.username,
@@ -397,23 +398,16 @@ class SqlUsersRepo implements UsersRepo {
       );
 
     try {
-      await this.atomicBatch([insertUser, insertDefaultKey]);
+      const results = await this.atomicBatch([insertUser, insertDefaultKey]);
+      const [userRow] = results[0].results as unknown as UserRow[];
+      if (!userRow || results[0].results.length !== 1) {
+        throw new Error('createAccount: atomic user insert did not return exactly one row');
+      }
+      return { status: 'created', user: toUser(userRow) };
     } catch (error) {
       if (isUsernameTakenError(error)) return { status: 'username-taken' };
       throw error;
     }
-
-    const userRow = await this.db
-      .prepare(
-        `SELECT users.${USER_COLUMNS.replaceAll(', ', ', users.')}
-         FROM users JOIN api_keys ON api_keys.user_id = users.id
-         WHERE api_keys.id = ?`,
-      )
-      .bind(defaultKey.id)
-      .first<UserRow>();
-    const user = userRow ? toUser(userRow) : null;
-    if (!user) throw new Error(`createAccount: committed user is missing for default key ${defaultKey.id}`);
-    return { status: 'created', user };
   }
 
   async updateActive(id: number, patch: UserUpdate): Promise<UpdateActiveUserResult> {
@@ -454,25 +448,22 @@ class SqlUsersRepo implements UsersRepo {
       this.db
         .prepare(
           `UPDATE api_keys SET deleted_at = ?, responses_retention_seconds = 0
-           WHERE user_id = ? AND deleted_at IS NULL AND ${onlyWhileUserIsActive}`,
+           WHERE user_id = ? AND deleted_at IS NULL AND ${onlyWhileUserIsActive}
+           RETURNING id`,
         )
         .bind(deletedAt, id, id),
       this.db
         .prepare(`DELETE FROM sessions WHERE user_id = ? AND ${onlyWhileUserIsActive}`)
         .bind(id, id),
       this.db
-        .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+        .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING id')
         .bind(deletedAt, id),
     ]);
 
-    const userChanges = results.at(-1)?.meta.changes;
-    if (userChanges === undefined) throw new Error('deleteAccount: atomic batch omitted the user deletion change count');
-    if (userChanges === 0) return { status: 'missing' };
-    const { results: keyRows } = await this.db
-      .prepare('SELECT id FROM api_keys WHERE user_id = ? AND deleted_at = ? ORDER BY created_at')
-      .bind(id, deletedAt)
-      .all<{ id: string }>();
-    return { status: 'deleted', apiKeyIds: keyRows.map(row => row.id) };
+    const userRows = results[2].results as Array<{ id: number }>;
+    if (userRows.length === 0) return { status: 'missing' };
+    if (userRows.length !== 1) throw new Error(`deleteAccount: atomic user deletion returned ${userRows.length} rows`);
+    return { status: 'deleted', apiKeyIds: (results[0].results as Array<{ id: string }>).map(row => row.id) };
   }
 
   async save(user: User): Promise<void> {

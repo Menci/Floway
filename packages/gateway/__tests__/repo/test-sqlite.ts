@@ -96,6 +96,15 @@ class SqlJsPreparedStatement implements SqlPreparedStatement {
   run(): Promise<SqlResult> {
     return Promise.resolve(this.runSync());
   }
+
+  executeForBatchSync(): SqlResult {
+    const [result] = this.db.exec(this.query, this.bound as unknown[]);
+    const results = result
+      ? result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]])))
+      : [];
+    const [changesResult] = this.db.exec('SELECT changes() AS changes');
+    return { results, success: true, meta: { changes: Number(changesResult.values[0][0]) } };
+  }
 }
 
 class SqlJsSqlDatabase implements SqlDatabase {
@@ -112,7 +121,7 @@ class SqlJsSqlDatabase implements SqlDatabase {
         if (!(statement instanceof SqlJsPreparedStatement)) {
           throw new Error('SqlJsSqlDatabase.batch received a statement from a different database adapter');
         }
-        return statement.runSync();
+        return statement.executeForBatchSync();
       });
       this.db.run('COMMIT');
       return Promise.resolve(results);
