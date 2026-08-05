@@ -35,21 +35,21 @@ const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string 
   return new TextDecoder().decode(bytes);
 };
 
-const readErrorBody = async (response: Response, maxBytes: number): Promise<{ body: string; truncated: boolean }> => {
-  if (!response.body) return { body: '', truncated: false };
+const readErrorBody = async (response: Response, maxBytes: number): Promise<string> => {
+  if (!response.body) return '';
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return { body: bytesToText(chunks, totalBytes), truncated: false };
+      if (done) return bytesToText(chunks, totalBytes);
       const remaining = maxBytes - totalBytes;
       if (value.byteLength > remaining) {
         if (remaining > 0) chunks.push(value.slice(0, remaining));
         totalBytes += Math.max(remaining, 0);
         void reader.cancel().catch(() => undefined);
-        return { body: `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`, truncated: true };
+        return `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`;
       }
       chunks.push(value);
       totalBytes += value.byteLength;
@@ -136,9 +136,8 @@ export const fetchUpstreamModels = async <T>(
       body: '',
     };
     try {
-      const captured = await readErrorBody(response, maxErrorResponseBytes);
-      httpResponse.body = captured.body;
-      if (captured.truncated) stripRewrittenBodyHeaders(httpResponse.headers);
+      httpResponse.body = await readErrorBody(response, maxErrorResponseBytes);
+      stripRewrittenBodyHeaders(httpResponse.headers);
     } catch (cause) {
       stripRewrittenBodyHeaders(httpResponse.headers);
       throw new ProviderModelsUnavailableError(httpResponse, cause);

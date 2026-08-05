@@ -76,3 +76,18 @@ test('fetchUpstreamModels bounds non-2xx bodies while preserving status and head
   expect(await reconstructed?.text()).toBe('rate-lim...[truncated]');
   expect(cancelled).toBe(true);
 });
+
+test('fetchUpstreamModels removes representation headers from untruncated captured errors', async () => {
+  const result = fetchUpstreamModels(
+    () => Promise.resolve(new Response('small', {
+      status: 500,
+      headers: { 'content-encoding': 'gzip', 'content-length': '5', 'repr-digest': 'sha-256=:stale:' },
+    })),
+    value => value,
+  );
+  const error = await result.catch(cause => cause as ProviderModelsUnavailableError);
+  expect(error.httpResponse?.body).toBe('small');
+  expect(error.httpResponse?.headers.get('content-encoding')).toBeNull();
+  expect(error.httpResponse?.headers.get('content-length')).toBeNull();
+  expect(error.httpResponse?.headers.get('repr-digest')).toBeNull();
+});
