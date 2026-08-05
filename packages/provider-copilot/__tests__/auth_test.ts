@@ -265,11 +265,14 @@ test('concurrent cache misses share one Copilot token exchange', async () => {
   await installRepoAndClearCache();
   let releaseExchange: (() => void) | undefined;
   const exchangeGate = new Promise<void>(resolve => { releaseExchange = resolve; });
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
   let tokenAttempts = 0;
   let dataPlaneAttempts = 0;
   const fetcher: Fetcher = async url => {
     if (new URL(url).pathname === '/copilot_internal/v2/token') {
       tokenAttempts += 1;
+      notifyExchangeStarted?.();
       await exchangeGate;
       return tokenResponse();
     }
@@ -285,7 +288,8 @@ test('concurrent cache misses share one Copilot token exchange', async () => {
 
   const first = call();
   const second = call();
-  await vi.waitFor(() => expect(tokenAttempts).toBe(1));
+  await exchangeStarted;
+  expect(tokenAttempts).toBe(1);
   releaseExchange?.();
 
   await expect(Promise.all([first, second])).resolves.toHaveLength(2);
@@ -297,11 +301,14 @@ test('one cancelled waiter does not abort a token refresh another request still 
   await installRepoAndClearCache();
   let releaseExchange: (() => void) | undefined;
   const exchangeGate = new Promise<void>(resolve => { releaseExchange = resolve; });
+  let notifyExchangeStarted: (() => void) | undefined;
+  const exchangeStarted = new Promise<void>(resolve => { notifyExchangeStarted = resolve; });
   let tokenAttempts = 0;
   let dataPlaneAttempts = 0;
   const fetcher: Fetcher = async url => {
     if (new URL(url).pathname === '/copilot_internal/v2/token') {
       tokenAttempts += 1;
+      notifyExchangeStarted?.();
       await exchangeGate;
       return tokenResponse();
     }
@@ -318,7 +325,8 @@ test('one cancelled waiter does not abort a token refresh another request still 
 
   const first = call(firstController.signal);
   const second = call();
-  await vi.waitFor(() => expect(tokenAttempts).toBe(1));
+  await exchangeStarted;
+  expect(tokenAttempts).toBe(1);
   const reason = new DOMException('first caller left', 'AbortError');
   firstController.abort(reason);
   await expect(first).rejects.toBe(reason);
