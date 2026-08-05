@@ -37,7 +37,7 @@ export interface HttpRequest {
  * Wire-faithful parse of an HTTP/1.1 response head + framed body. This is
  * the raw shape returned by `parseHttpResponse`. The Web `Response`
  * constructor refuses status codes outside 200..599 and refuses a non-null
- * body for 204/304 — both legal on the wire — so the parser hands back
+ * body for 204/205/304 — all legal on the wire — so the parser hands back
  * this struct and lets the caller decide how to bridge to a Response (or
  * not). Use `toWebResponse` for the standard bridge.
  */

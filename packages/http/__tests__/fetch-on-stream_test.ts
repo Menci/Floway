@@ -54,6 +54,32 @@ describe('fetchOnStream — request line and headers', () => {
     expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
   });
 
+  it('preserves a valid __proto__ header as an ordinary field', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'GET', path: '/', headers: { Host: 'h', ['__proto__']: 'sentinel' } },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('__proto__: sentinel\r\n');
+  });
+
+  it('rejects a missing or case-duplicated Host header before writing', async () => {
+    for (const headers of [
+      { Authorization: 'Bearer x' },
+      { Host: 'a.example', host: 'b.example' },
+    ]) {
+      const fake = makeFakeDuplex();
+      await expect(fetchOnStream(
+        { readable: fake.readable, writable: fake.writable },
+        { method: 'GET', path: '/', headers },
+      )).rejects.toMatchObject({ code: 'BAD_HEADERS' });
+      expect(fake.written()).toHaveLength(0);
+    }
+  });
+
   it('coalesces an opt.prefix into the same write as the request head', async () => {
     const fake = makeFakeDuplex();
     let firstChunk: Uint8Array | null = null;
