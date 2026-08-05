@@ -11,6 +11,11 @@ describe('base codecs', () => {
     expect(hexDecode('00ABff')).toEqual(new Uint8Array([0x00, 0xab, 0xff]));
   });
 
+  test('preserves forgiving-base64 trailing-bit acceptance for legacy and SS-2022 values', () => {
+    expect(new TextDecoder().decode(base64DecodeBytes('YWVzLTEyOC1nY206cB=='))).toBe('aes-128-gcm:p');
+    expect(new TextDecoder().decode(base64DecodeBytes('MDEyMzQ1Njc4OWFiY2RlZh=='))).toBe('0123456789abcdef');
+  });
+
   test('round-trips a large byte buffer without binary-string conversion', () => {
     const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
     expect(base64DecodeBytes(base64EncodeBytes(bytes))).toEqual(bytes);

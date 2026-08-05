@@ -6,6 +6,7 @@
 import { base64, hex } from '@scure/base';
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any
@@ -94,14 +95,31 @@ export const base64EncodeBytes = (bytes: Uint8Array): string => base64.encode(by
  * accept the Web `atob` input policy: ASCII whitespace and omitted padding.
  */
 export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
-  const normalized = s.replace(ASCII_WHITESPACE, '');
-  return new Uint8Array(base64.decode(
-    normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '='),
-  ));
+  return new Uint8Array(base64.decode(normalizeForgivingBase64(s)));
 };
 
 export const base64UrlDecodeBytes = (s: string): Uint8Array<ArrayBuffer> =>
   base64DecodeBytes(s.replaceAll('-', '+').replaceAll('_', '/'));
+
+const normalizeForgivingBase64 = (value: string): string => {
+  let normalized = value.replace(ASCII_WHITESPACE, '');
+  if (normalized.length % 4 === 0) {
+    normalized = normalized.endsWith('==')
+      ? normalized.slice(0, -2)
+      : normalized.endsWith('=') ? normalized.slice(0, -1) : normalized;
+  }
+  const remainder = normalized.length % 4;
+  if (remainder === 1) throw new Error('Invalid base64 length');
+  for (const character of normalized) {
+    if (!BASE64_ALPHABET.includes(character)) throw new Error('Invalid base64 character');
+  }
+  if (remainder === 2 || remainder === 3) {
+    const index = BASE64_ALPHABET.indexOf(normalized.at(-1)!);
+    const canonical = BASE64_ALPHABET[index & (remainder === 2 ? 0x30 : 0x3c)]!;
+    normalized = `${normalized.slice(0, -1)}${canonical}`;
+  }
+  return normalized.padEnd(normalized.length + (4 - remainder) % 4, '=');
+};
 
 /**
  * Parse an IPv4 dotted-quad literal into 4 octets, or return null if `s`

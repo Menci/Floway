@@ -25,6 +25,10 @@ describe('base encoding', () => {
     expect(decodeWebBase64url(' -_8=\r\n')).toEqual(new Uint8Array([0xfb, 0xff]));
   });
 
+  test('preserves forgiving-base64 decoding of non-zero trailing padding bits', () => {
+    expect(new TextDecoder().decode(decodeWebBase64('YWVzLTEyOC1nY206cB=='))).toBe('aes-128-gcm:p');
+  });
+
   test('round-trips a buffer larger than JavaScript argument-count limits', () => {
     const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
     expect(decodeWebBase64(encodeBase64(bytes))).toEqual(bytes);

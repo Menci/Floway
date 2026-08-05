@@ -101,6 +101,11 @@ describe('parseProxyUri', () => {
       });
   });
 
+  it('parses forgiving-base64 Shadowsocks userinfo with non-zero trailing padding bits', () => {
+    expect(parseProxyUri('ss://YWVzLTEyOC1nY206cB==@h:8388'))
+      .toMatchObject({ kind: 'ss', method: 'aes-128-gcm', password: 'p' });
+  });
+
   it('parses Shadowsocks 2022', () => {
     // userinfo = '2022-blake3-aes-128-gcm:<base64key>'
     expect(parseProxyUri(

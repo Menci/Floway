@@ -1,13 +1,13 @@
 import { base64, base64urlnopad, hex } from '@scure/base';
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 // Web `atob` historically accepted ASCII whitespace and omitted padding.
 // Persisted password hashes and Responses payloads, plus external image data,
 // already depend on that input policy. Canonical output remains RFC 4648.
 export const decodeWebBase64 = (value: string): Uint8Array => {
-  const normalized = value.replace(ASCII_WHITESPACE, '');
-  return base64.decode(normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '='));
+  return base64.decode(normalizeForgivingBase64(value));
 };
 
 export const encodeBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
@@ -20,3 +20,23 @@ export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.enc
 export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
 
 export const decodeHex = (value: string): Uint8Array => hex.decode(value);
+
+const normalizeForgivingBase64 = (value: string): string => {
+  let normalized = value.replace(ASCII_WHITESPACE, '');
+  if (normalized.length % 4 === 0) {
+    normalized = normalized.endsWith('==')
+      ? normalized.slice(0, -2)
+      : normalized.endsWith('=') ? normalized.slice(0, -1) : normalized;
+  }
+  const remainder = normalized.length % 4;
+  if (remainder === 1) throw new Error('Invalid base64 length');
+  for (const character of normalized) {
+    if (!BASE64_ALPHABET.includes(character)) throw new Error('Invalid base64 character');
+  }
+  if (remainder === 2 || remainder === 3) {
+    const index = BASE64_ALPHABET.indexOf(normalized.at(-1)!);
+    const canonical = BASE64_ALPHABET[index & (remainder === 2 ? 0x30 : 0x3c)]!;
+    normalized = `${normalized.slice(0, -1)}${canonical}`;
+  }
+  return normalized.padEnd(normalized.length + (4 - remainder) % 4, '=');
+};

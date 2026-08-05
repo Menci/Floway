@@ -86,6 +86,10 @@ describe('image base64 helpers', () => {
     expect(base64ToBytes(' AQID\nBA\t')).toEqual(new Uint8Array([1, 2, 3, 4]));
   });
 
+  test('preserves forgiving-base64 trailing-bit acceptance', () => {
+    expect(new TextDecoder().decode(base64ToBytes('YWVzLTEyOC1nY206cB=='))).toBe('aes-128-gcm:p');
+  });
+
   test('round-trips large image buffers', () => {
     const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
     expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes);
