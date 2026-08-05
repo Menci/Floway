@@ -439,6 +439,8 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
   const plan = results.map(row => row.detail).join('\n');
   const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM performance_summary) + (SELECT COUNT(*) FROM performance_buckets) AS count')
     .first<{ count: number }>();
+  expect(plan).toContain('idx_api_keys_user_all');
+  expect(plan).toContain('idx_performance_buckets_key_hour');
   expect(plan).toContain('idx_performance_summary_key_hour');
   expect(rawRows?.count).toBe(120);
   expect(aggregates).toHaveLength(1);
