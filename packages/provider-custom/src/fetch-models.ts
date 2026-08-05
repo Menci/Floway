@@ -49,6 +49,7 @@ export interface CustomModelsResponse {
 }
 
 interface CustomModelsPage extends CustomModelsResponse {
+  modelLimitExceeded?: true;
   nextAfterId?: string;
 }
 
@@ -141,6 +142,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
 
 const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
   if (!isRecord(value) || !Array.isArray(value.data)) return null;
+  if (value.data.length > MAX_CUSTOM_MODELS) return { data: [], modelLimitExceeded: true };
   const data: CustomRawModel[] = [];
   for (const item of value.data) {
     const model = parseRawModel(item);
@@ -169,6 +171,9 @@ export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: F
       () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, afterId),
       parseCustomModelsPage,
     );
+    if (page.modelLimitExceeded) {
+      throw paginationError(`Custom /models catalog exceeded ${MAX_CUSTOM_MODELS} models`);
+    }
     for (const model of page.data) {
       if (seenModelIds.has(model.id)) continue;
       if (seenModelIds.size >= MAX_CUSTOM_MODELS) {
