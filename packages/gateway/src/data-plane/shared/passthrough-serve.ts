@@ -17,6 +17,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { PassthroughServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
+import { observeJsonResponse } from './json-response.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { type StreamCompletion, writeSSEFrames } from './sse.ts';
@@ -168,20 +169,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     if (responseHandling.format === 'json') {
-      // A 2xx body that fails to parse must not 502 a client whose
-      // upstream call already succeeded; we skip usage extraction and
-      // log so missing rows stay traceable.
-      let parsed: unknown;
-      try {
-        parsed = await response.clone().json();
-      } catch (e) {
-        console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
-        parsed = undefined;
-      }
-      const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
-      ctx.dump?.success(identity, usage);
-      settle(ctx, performanceContext, identity, usage, false);
-      return forwardUpstreamResponse(response);
+      return observeJsonResponse({
+        ctx,
+        response,
+        performance: performanceContext,
+        identity,
+        sourceApi,
+        extractBilling: responseHandling.extractBilling,
+      });
     }
 
     // Hono's streamSSE owns the response — forwardable upstream

@@ -2,6 +2,7 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { TokenUsage } from '../../repo/types.ts';
+import { observeJsonResponse } from '../shared/json-response.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
@@ -25,21 +26,8 @@ const eventType = (event: unknown): unknown =>
     ? (event as { type?: unknown }).type
     : undefined;
 
-const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
-  let parsed: unknown;
-  try {
-    parsed = await response.clone().json();
-  } catch (error) {
-    console.warn(
-      `images: failed to parse 2xx upstream body for ${sourceApi}; usage row will be request-only`,
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-  const usage = parsed === undefined ? null : tokenUsageFromImagesBody(parsed);
-  ctx.dump?.success(identity, usage);
-  settle(ctx, performance, identity, usage, false);
-  return forwardUpstreamResponse(response);
-};
+const respondNonStreaming = ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response =>
+  observeJsonResponse({ ctx, sourceApi, response, performance, identity, extractBilling: tokenUsageFromImagesBody });
 
 const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
   const upstreamBody = response.body;
