@@ -131,7 +131,7 @@ pointing them back to their canonical listed row.
   unrestricted, an empty list means no provider is visible);
 - `kind`, derived from the source route: `chat`, `embedding`, `image`, `rerank`,
   or `transcription`;
-- the background scheduler and runtime-location tag needed by catalog fetch and
+- the background scheduler and runtime-location tag needed by catalog refresh and
   proxy selection.
 
 `/v1/completions` and `/completions` deliberately use `kind: 'chat'`, then
