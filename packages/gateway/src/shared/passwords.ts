@@ -33,7 +33,7 @@ export const verifyPassword = async (plaintext: string, encoded: string): Promis
   const parts = encoded.split('$');
   if (parts.length !== 4 || parts[0] !== PASSWORD_HASH_SCHEME) return false;
   const iters = Number(parts[1]);
-  if (!Number.isFinite(iters) || iters < 1000 || iters > 10_000_000) return false;
+  if (!Number.isSafeInteger(iters) || iters < 1000 || iters > ITERATIONS) return false;
   let salt: Uint8Array;
   let expected: Uint8Array;
   try {

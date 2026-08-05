@@ -12,8 +12,9 @@ import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../s
 import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
+  if (!/^[1-9]\d*$/.test(raw)) return null;
   const n = Number(raw);
-  return Number.isInteger(n) && n >= 1 ? n : null;
+  return Number.isSafeInteger(n) ? n : null;
 };
 
 export const listUsers = async (c: AuthedContext) => {

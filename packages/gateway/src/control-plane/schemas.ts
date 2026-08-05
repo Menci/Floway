@@ -218,14 +218,20 @@ const ollamaConfigSchema = z.object({
 // CPU cost dependency on length is sub-linear past SHA-256's 64-byte block
 // (oversize keys are pre-hashed once before the iteration loop), but the
 // JSON-parse + zod + pre-hash work is still worth bounding.
-const passwordSchema = z.string().min(1).max(1024);
+const PASSWORD_MAX_BYTES = 1024;
+const utf8 = new TextEncoder();
+const passwordWithinByteLimitSchema = z.string().refine(
+  value => utf8.encode(value).byteLength <= PASSWORD_MAX_BYTES,
+  { message: `password must be at most ${PASSWORD_MAX_BYTES} UTF-8 bytes` },
+);
+const passwordSchema = passwordWithinByteLimitSchema.refine(value => value.length > 0, { message: 'password must not be empty' });
 
 // Both fields are allowed empty so the blank-username login path (ADMIN_KEY
 // match, or the dev-only passwordless shortcut when ADMIN_KEY is unset)
 // passes validation; the login handler dispatches on the empty values.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
-  password: z.string().max(1024),
+  password: passwordWithinByteLimitSchema,
 });
 
 // --- users ---
