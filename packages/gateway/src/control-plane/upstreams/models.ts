@@ -5,6 +5,7 @@ import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../..
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProvider } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
+import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { listModelsBody } from '../schemas.ts';
@@ -47,6 +48,8 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
   }
   const kind = record.kind;
+  const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
+  if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
 
   const scheduler = backgroundSchedulerFromContext(c);
   const now = new Date().toISOString();
@@ -57,7 +60,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     enabled: true,
     sortOrder: 0,
     createdAt: now,
-    updatedAt: now,
+    updatedAt: persisted?.updatedAt ?? now,
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
