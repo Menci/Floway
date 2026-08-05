@@ -4,14 +4,19 @@ import { onTestFinished, test, vi } from 'vitest';
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
+import {
+  RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+  RESPONSES_WEBSOCKET_LIMITS,
+  RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+} from '../../../../src/data-plane/chat/responses/websocket-policy.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -147,6 +152,7 @@ const mockControlledResponsesTurn = (
   onTestFinished(() => generate.mockRestore());
 
   return {
+    calls: () => generate.mock.calls.length,
     signal: turnSignal.promise,
     events: controlledEvents.promise,
     metadataRead: metadataRead.promise,
@@ -733,8 +739,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
 
         await tickKeepAliveIntervals(1);
 
-        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 1 });
-        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
+        enqueueSseEvent('response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: reasoning, sequence_number: 1 });
+        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 2 });
+        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 3 });
         upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
         upstreamController.close();
         assert(
@@ -747,8 +754,9 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
           [
             ['response.created', 0],
             [KEEP_ALIVE_EVENT_TYPE, 1],
-            ['response.output_item.done', 2],
-            ['response.completed', 3],
+            ['response.output_item.added', 2],
+            ['response.output_item.done', 3],
+            ['response.completed', 4],
           ],
           'expected the keep-alive to take a slot and shift every later event past it',
         );
@@ -1697,6 +1705,117 @@ test('Responses WebSocket close interrupts an idle frame wait before the keep-al
       events.iteratorReturned,
       'Responses WebSocket did not finish queued iterator cleanup after the idle read settled',
     );
+  });
+});
+
+test('Responses WebSocket expires an active connection at exactly 60 minutes', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+  const time = new FakeTime();
+
+  try {
+    await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const received = waitForMessages(
+        client,
+        messages => messages.some(message => message.type === 'error'),
+        RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs + 1,
+      );
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'run until connection expiry' },
+      }));
+      const events = await promiseWithin(turn.events, 'Responses WebSocket did not start the expiring turn');
+      await promiseWithin(events.firstNextStarted, 'Responses WebSocket did not begin its expiring frame wait');
+
+      await time.tickAsync(RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs - 1);
+      assertEquals(client.readyState, WebSocket.OPEN);
+      await time.tickAsync(1);
+
+      assertEquals(await received, [{
+        type: 'error',
+        status: 400,
+        error: RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
+      }]);
+      assertEquals(client.readyState, WebSocket.CLOSED);
+      assertEquals(client.closeCode, 1000);
+      assertEquals(client.closeReason, RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code);
+      assertEquals((await turn.signal).aborted, true);
+
+      events.resolvePendingFrame(responseCreatedFrame());
+      await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the expired turn');
+      await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its expired iterator');
+    });
+  } finally {
+    time.restore();
+  }
+});
+
+test('Responses WebSocket close clears its lifetime timer and reciprocates the close', async () => {
+  const { apiKey } = await setupAppTest();
+  const time = new FakeTime();
+
+  try {
+    await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const pair = activeRuntime().pairs.at(-1);
+      assertExists(pair);
+      assertEquals(pair.server.binaryType, 'arraybuffer');
+      assertEquals(vi.getTimerCount(), 1);
+
+      client.close(1000, 'client done');
+      await time.tickAsync(0);
+
+      assertEquals(vi.getTimerCount(), 0);
+      assertEquals(pair.server.readyState, WebSocket.CLOSED);
+    });
+  } finally {
+    time.restore();
+  }
+});
+
+test('Responses WebSocket bounds pipelined response.create retention and aborts on overflow', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'active turn' },
+    }));
+    const events = await promiseWithin(turn.events, 'Responses WebSocket did not start the active queued turn');
+    await promiseWithin(events.firstNextStarted, 'Responses WebSocket did not begin its active queued frame wait');
+
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'one queued turn' },
+    }));
+    const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'overflow' },
+    }));
+
+    assertEquals(await received, [{
+      type: 'error',
+      status: 429,
+      error: {
+        type: 'rate_limit_error',
+        code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+        message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
+      },
+    }]);
+    assertEquals(client.readyState, WebSocket.CLOSED);
+    assertEquals(client.closeCode, 1008);
+    assertEquals(client.closeReason, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+    assertEquals((await turn.signal).aborted, true);
+
+    events.resolvePendingFrame(responseCreatedFrame());
+    await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle its overflow-aborted turn');
+    await promiseWithin(events.iteratorReturned, 'Responses WebSocket did not release its overflow-aborted iterator');
+    await flushAsyncWork();
+    assertEquals(turn.calls(), 1);
   });
 });
 

@@ -6,4 +6,5 @@ export { MODEL_CATALOG_REVISION } from './repo/models-cache-contract.ts';
 export { initBackgroundSchedulerResolver } from './runtime/background.ts';
 export { initDumpBroker, initDumpStore } from './dump/registry.ts';
 export { initResponsesWebSocketUpgradeResolver } from './data-plane/chat/responses/websocket.ts';
+export { RESPONSES_WEBSOCKET_LIMITS } from './data-plane/chat/responses/websocket-policy.ts';
 export { runScheduledMaintenance } from './scheduled.ts';
