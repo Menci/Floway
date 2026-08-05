@@ -120,17 +120,6 @@ describe('blendHex', () => {
 });
 
 describe('readableTone on a mid surface', () => {
-  it('never returns a malformed hex when saturation runs out', () => {
-    // A grey surface is the case that exhausts the search: neither direction
-    // clears the floor at full saturation, so the loop runs to its last pass,
-    // where a saturation off by one step would overflow a channel past 255.
-    for (const surface of ['#787878', '#808080', '#6E6E6E', '#949494']) {
-      for (const hue of ['#0000FF', '#00FF00', '#FF0000', '#FFFF00']) {
-        expect(readableTone(hue, surface)).toMatch(/^#[0-9A-F]{6}$/);
-      }
-    }
-  });
-
   it('is total: every hue against every grey surface yields a well-formed hex', () => {
     // The search moves in two directions and gives up saturation in a loop, so
     // the property worth holding is that no input escapes it malformed.
