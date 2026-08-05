@@ -52,4 +52,4 @@ export const setupControlPlaneTest = async (options: SetupOptions = {}) => {
   return { repo, adminKey: adminKey ?? '', adminSession, apiKey };
 };
 
-export const requestControlPlane = (path: string, init: RequestInit = {}): Promise<Response> => app.request(path, init);
+export const requestControlPlane = async (path: string, init: RequestInit = {}): Promise<Response> => await app.request(path, init);
