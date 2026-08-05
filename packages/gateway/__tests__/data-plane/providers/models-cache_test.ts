@@ -283,6 +283,30 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await warming).map(model => model.id)).toEqual(['forced-model']);
   });
 
+  test('a warm superseded during I/O waits for the forced owner to finalize', async () => {
+    await setupRepo();
+    let resolveWarm: ((models: ProviderModel[]) => void) | null = null;
+    let resolveForce: ((models: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn()
+      .mockImplementationOnce(() => new Promise<ProviderModel[]>(resolve => { resolveWarm = resolve; }))
+      .mockImplementationOnce(() => new Promise<ProviderModel[]>(resolve => { resolveForce = resolve; }));
+    const instance = stubInstance(fetchFn, null, CACHE_GENERATION, 'warm-force-race');
+    const warming = warmUpstreamModels(instance, directFetcher);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    const forced = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true });
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+
+    let warmSettled = false;
+    void warming.finally(() => { warmSettled = true; });
+    resolveWarm!([aModel('superseded-warm-model')]);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(warmSettled).toBe(false);
+
+    resolveForce!([aModel('forced-winner-model')]);
+    expect((await forced).map(model => model.id)).toEqual(['forced-winner-model']);
+    expect((await warming).map(model => model.id)).toEqual(['forced-winner-model']);
+  });
+
   test('an atomic success-finalize failure does not install upstream failure backoff', async () => {
     const repo = await setupRepo();
     const finalizeFailure = vi.spyOn(repo.upstreams, 'finalizeModelsRefreshFailure');

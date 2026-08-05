@@ -76,10 +76,11 @@ const runClaimedFetch = async (
   fetcher: Fetcher,
   mode: RefreshMode,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
+  initialObservedActiveToken: string | null = null,
 ): Promise<ProviderModel[] | null> => {
   const repo = getRepo();
   const token = crypto.randomUUID();
-  let observedActiveToken: string | null = null;
+  let observedActiveToken = initialObservedActiveToken;
   let claimed: Extract<Awaited<ReturnType<typeof repo.upstreams.claimModelsRefresh>>, { kind: 'claimed' }>;
   while (true) {
     const now = Date.now();
@@ -128,6 +129,10 @@ const runClaimedFetch = async (
         if (instance.modelsCache) instance.modelsCache.lastError = lastError;
         else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
       }
+      if (!finalized && mode === 'warm') {
+        const winner = await runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels, token);
+        return winner ?? instance.modelsCache?.models ?? [];
+      }
     } catch (backoffError) {
       throw new AggregateError([error, backoffError], errorMessage(error));
     }
@@ -143,6 +148,10 @@ const runClaimedFetch = async (
   // The instance is reused across alias targets in one request, so publish the
   // finalized snapshot locally as well as durably.
   if (finalized) instance.modelsCache = entry;
+  else if (mode === 'warm') {
+    const winner = await runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels, token);
+    return winner ?? instance.modelsCache?.models ?? [];
+  }
   return models;
 };
 
