@@ -266,8 +266,8 @@ const en = {
           administrator: 'Administrator',
           administratorDescription:
               'Can manage users, upstreams, search configuration, and data transfer',
-          userOneLocked: 'The seed administrator cannot be demoted.',
-          selfLocked: 'You cannot demote your own account.',
+          userOneLocked: 'The seed administrator cannot be demoted',
+          selfLocked: 'You cannot demote your own account',
         },
         validation: {
           username: 'Use 1-64 letters, numbers, underscores, dots, or hyphens.',
@@ -284,7 +284,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope.',
+        description: 'When off, access inherits every upstream from its parent scope',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -362,7 +362,7 @@ const en = {
           responsesRetention: 'Stateful Responses retention',
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
-              'When enabled, model-invoking requests through this key are captured for the configured window.',
+              'When enabled, model-invoking requests through this key are captured for the configured window',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -1102,7 +1102,7 @@ const en = {
         },
         passthrough: {
           title: 'Passthrough OpenAI search',
-          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream.',
+          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream',
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',

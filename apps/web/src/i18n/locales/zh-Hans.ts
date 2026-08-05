@@ -253,8 +253,8 @@ const zhHansCN = {
           confirmPassword: '确认新密码',
           administrator: '管理员',
           administratorDescription: '可以管理用户、上游、搜索配置和数据迁移',
-          userOneLocked: '初始管理员不能被降级。',
-          selfLocked: '不能降级自己的账号。',
+          userOneLocked: '初始管理员不能被降级',
+          selfLocked: '不能降级自己的账号',
         },
         validation: {
           username: '用户名须为 1-64 位字母、数字、下划线、点或连字符。',
@@ -271,7 +271,7 @@ const zhHansCN = {
       },
       upstreamAccess: {
         title: '限制可用上游',
-        description: '关闭时，访问权限会继承上一级范围内的全部上游。',
+        description: '关闭时，访问权限会继承上一级范围内的全部上游',
         tableLabel: '可用上游',
         enabled: '启用',
         order: '顺序',
@@ -348,7 +348,7 @@ const zhHansCN = {
           responsesRetention: 'Stateful Responses 保留',
           responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
-              '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录。',
+              '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -1044,7 +1044,7 @@ const zhHansCN = {
           microsoftWebIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
-        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游。', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
+        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
         unavailable: '{{id}}（不可用）',
         getKeyLink: '获取 API 密钥',
         apiKeyLabel: 'API 密钥',
