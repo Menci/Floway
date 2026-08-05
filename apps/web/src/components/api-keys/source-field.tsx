@@ -1,8 +1,8 @@
 import { useId } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { KeySource } from './source';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { useDangerTextClass } from '../ui/danger';
 import { Input } from '../ui/fluent-form-controls';

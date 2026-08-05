@@ -32,6 +32,8 @@ const en = {
         unexpectedTitle: 'Something went wrong',
         unexpectedDescription: 'An unexpected error occurred',
         notFound: 'The requested page could not be found',
+        sourceMapLoading: 'Loading source maps…',
+        sourceMapFailed: 'Source maps could not be loaded',
       },
     },
     auth: {
@@ -134,6 +136,8 @@ const en = {
         errors: {
           imageUnsupported: 'This model does not support image input.',
           imageUrl: 'Enter a valid absolute image URL.',
+          customInvalid: 'Enter valid JSON.',
+          customObject: 'Enter a JSON object.',
           customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },
@@ -971,7 +975,18 @@ const en = {
         breakdown: 'Performance breakdown dimension',
         metric: { label: 'Performance metric', ttft: 'TTFT', outputSpeed: 'Output speed' },
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', operation: 'By Operation', runtimeLocation: 'By Region', userId: 'By User', keyId: 'By API Key' },
-        filters: { label: 'Filters', all: { model: 'All models', upstream: 'All upstreams', operation: 'All operations', runtimeLocation: 'All regions', userId: 'All users', keyId: 'All API keys' }, model: 'Model', upstream: 'Upstream', operation: 'Operation', runtimeLocation: 'Region', userId: 'User', keyId: 'API Key' },
+        filters: {
+          label: 'Filters',
+          all: { model: 'All models', upstream: 'All upstreams', operation: 'All operations', runtimeLocation: 'All regions', userId: 'All users', keyId: 'All API keys' },
+          selected_one: '{{count, number}} selected',
+          selected_other: '{{count, number}} selected',
+          model: 'Model',
+          upstream: 'Upstream',
+          operation: 'Operation',
+          runtimeLocation: 'Region',
+          userId: 'User',
+          keyId: 'API Key',
+        },
         range: {
           label: 'Performance range',
           today: 'Last Day',

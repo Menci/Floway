@@ -403,9 +403,14 @@ declares its axes through `ScrollArea`; it enables OverlayScrollbars only where
 native scrollbars consume layout space, and otherwise retains native overlay
 scrolling inside the same explicit viewport.
 
-User-visible strings go through `react-i18next` in `en` and `zh-Hans`; a locale
-ships only if somebody here can review it, and the parity suite requires every
-plural key to supply the `other` form each language actually has.
+User-visible strings go through `src/i18n/translation.tsx`, the dashboard's
+typed `react-i18next` boundary. It derives keys and interpolation value types
+from the literal `en` resource and the number-format table; statically
+resolvable keys receive those checks, while keys widened to `string` at a real
+dynamic boundary remain permissive. ESLint keeps React consumers on the typed
+boundary. Locales are `en` and `zh-Hans`; a locale ships only if somebody here
+can review it, and the parity suite requires every plural key to supply the
+`other` form each language actually has.
 
 Client-carried affinity is a source-protocol membrane. Shared codec, candidate
 narrowing, and affinity request context live under

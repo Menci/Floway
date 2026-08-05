@@ -1,6 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
@@ -13,11 +12,12 @@ import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
-import { TagCombobox } from '../ui/tag-combobox';
 import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
 
 const {
@@ -206,7 +206,7 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
-function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
+function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: TFunction }) {
   const supported = effort.supported;
   const setSupported = (values: readonly string[]) => onChange({
     supported: [...values],
@@ -214,12 +214,12 @@ function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; ef
   });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
-      <TagCombobox
+      <MultiselectCombobox
         closedLabel={supported.join(', ')}
         freeform
         normalizeValue={level => level.trim()}
         onChange={setSupported}
-        options={[...new Set([...reasoningPresets, ...supported])]}
+        options={valuesAsOptions([...new Set([...reasoningPresets, ...supported])])}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
         readOnly={readOnly}
         value={supported}
@@ -252,7 +252,7 @@ const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   return null;
 };
 
-const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
+const modelValidationError = (model: UpstreamModelConfig, t: TFunction): string | null => {
   const issue = editorFieldIssue(model);
   if (issue) return t(issue);
   try {

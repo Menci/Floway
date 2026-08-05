@@ -1,12 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { Trans, useTranslation } from 'react-i18next';
 import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
+import { Trans, useTranslation } from '../i18n/translation';
 import { Input } from './ui/fluent-form-controls';
 import { CONTROL_ROW_CLASS } from './ui/layout';
 import { OutcomeMessageBar } from './ui/outcome-message-bar';
