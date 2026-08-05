@@ -14,9 +14,8 @@ interface ProviderModelsResult {
   upstreamsByPublicId: Map<string, Provider[]>;
   sawSuccess: boolean;
   lastError: unknown;
-  // Upstream names whose catalog fetch rejected this round, in the same
-  // order as the input `providers` list so the model-missing renderer can
-  // surface a stable, dashboard-aligned list.
+  // Upstreams carrying a persisted catalog-refresh error, plus any provider
+  // whose snapshot access failed synchronously, in provider order.
   failedUpstreams: string[];
 }
 
@@ -106,12 +105,8 @@ const collectProviderModels = async (
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate. Burying it in lastError
-      // and letting an earlier sawSuccess return a partially-populated
-      // model list would mask the abort and let the rest of the data-plane
-      // request build a Response against a stale catalog. `isAbortError`
-      // walks the cause chain so an AbortError wrapped inside
-      // ProviderModelsUnavailableError still surfaces here.
+      // Snapshot setup failures stay isolated per provider. Cancellation is
+      // the exception because the caller has withdrawn the whole operation.
       const error = result.reason;
       if (isAbortError(error)) throw error;
       lastError = error;

@@ -6,7 +6,6 @@
 import type { Context } from 'hono';
 
 import { loadModels } from './load.ts';
-import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -15,7 +14,6 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { isCodexUserAgent } from '../codex/catalog.ts';
 import { loadCodexCatalog } from '../codex/models.ts';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 // Anthropic's official /v1/models shape — `{data, first_id, has_more,
 // last_id}` with `ModelInfo` rows — served to Claude Code CLI's `/model`
@@ -95,13 +93,7 @@ export const serveModels = async (c: Context): Promise<Response> => {
       ? toClaudeCodeCatalog(publicCatalog)
       : publicCatalog);
   } catch (e) {
-    // Upstream HTTP/parse failures squash to a generic message so we do not
-    // leak upstream identity. Other registry-thrown errors (e.g. the "no
-    // upstream configured" hint) carry actionable operator guidance and
-    // surface verbatim with the same 502.
-    const message = e instanceof ProviderModelsUnavailableError
-      ? MODEL_LISTING_FAILURE_MESSAGE
-      : (e instanceof Error ? e.message : String(e));
+    const message = e instanceof Error ? e.message : String(e);
     return Response.json({ error: { message, type: 'api_error' } }, { status: 502 });
   }
 };

@@ -17,7 +17,8 @@ const errorMessage = (error: unknown): string => error instanceof Error ? error.
 //
 // Returns what the row holds afterwards so the caller can answer with the
 // freshness this warm produced rather than the snapshot it read before saving.
-// Null when the upstream fetch failed and left the row with nothing to report.
+// A persisted cold failure is an empty error-bearing cache; null means the row
+// disappeared or its generation was superseded before readback.
 export const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<UpstreamModelsCache | null> => {
   const provider = createProvider(record);
   const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);

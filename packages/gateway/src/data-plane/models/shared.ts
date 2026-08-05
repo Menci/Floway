@@ -1,12 +1,11 @@
-// Squash genuine upstream HTTP/parse failures (ProviderModelsUnavailableError)
-// to a generic 502 so we do not leak upstream identity. Other errors (e.g.
-// the registry's "no upstream configured" hint) carry actionable operator
-// guidance and surface verbatim.
+// The synchronous control-plane Fetch Models action squashes upstream
+// HTTP/parse failures to this generic message so provider identity stays
+// private. Ordinary listing routes read persisted snapshots and never observe
+// the triggered upstream failure in their request lifecycle.
 export const MODEL_LISTING_FAILURE_MESSAGE = 'Upstream model listing failed';
 
 // The message says nothing about the upstream and is prose, so the upstream
 // list-models route pairs it with this code and the dashboard tells that
 // failure apart from an arbitrary one without matching English. The model-list
-// endpoints stay message-only: /v1/models, /models and /api/models answer a
-// listing failure identically.
+// snapshot listing routes do not use this action-specific discriminator.
 export const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';

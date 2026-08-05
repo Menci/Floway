@@ -40,10 +40,11 @@ coordinator and replaces the catalog under the upstream generation fence. A
 first failure persists an empty catalog with `fetchedAt: 0` and `lastError`, so
 the error stays observable without making the empty result soft-fresh.
 
-Two control-plane paths deliberately perform synchronous fetches: the explicit
-**Fetch models** action, and the warm after create, update, import, or OAuth
-credential changes. They share cache persistence and in-flight coordination
-with automatic refreshes but bypass automatic-trigger backoff.
+Two control-plane paths deliberately wait for refresh coordination: the
+explicit **Fetch models** action and the warm after create, update, import, or
+OAuth credential changes. Only the explicit action force-claims through an
+active cooldown. A warm joins an existing refresh or respects its persisted
+backoff, returning the current snapshot when no new attempt is eligible.
 
 For every provider model, `modelPrefix.listed` determines its public catalog
 surface:
@@ -75,10 +76,11 @@ upstream id. Consequently:
 
 `getModelsFromProviders` returns the merged `InternalModel[]` and
 `upstreamsByPublicId`, preserving provider enumeration order in the reverse
-index. Per-upstream fetches fan out concurrently. `AbortError` propagates;
-other failures are collected while healthy upstreams still contribute rows. If
-all catalog fetches fail, the last error surfaces. Listing currently does not
-expose the partial-failure names.
+index. Assembly reads persisted snapshots immediately. Cold or stale reads
+submit background refresh work through the runtime scheduler; upstream HTTP,
+parse, and transport failures therefore cannot reject the listing request.
+Persisted `lastError` values identify affected upstreams while healthy and
+last-known-good snapshots continue to contribute rows.
 
 ### Listing surfaces
 
@@ -98,9 +100,9 @@ catalog feeds:
 
 `toPublicModel` projects an `InternalModel` onto the public DTO. Gemini uses its
 own projection, Codex synthesizes its client-catalog shape, and the control plane
-adds dashboard-only fields. The listing paths and request resolver are separate
-consumers of the same SWR cache; listing failures do not feed state into
-resolution.
+adds dashboard-only fields. Listing and request resolution are separate
+consumers of the same persisted snapshots and both report recorded refresh
+failures from `modelsCache.lastError`.
 
 ## Addressable surfaces
 

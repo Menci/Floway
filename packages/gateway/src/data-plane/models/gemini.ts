@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -12,7 +11,6 @@ import { enumerateAddressableModelIds, listedRealModels } from '../shared/listin
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
@@ -58,12 +56,8 @@ const geminiError = (status: number, message: string): Response =>
     { status: status as 400 | 404 | 500 | 502 },
   );
 
-const geminiModelLoadError = (error: unknown): Response => {
-  if (error instanceof ProviderModelsUnavailableError) {
-    return geminiError(502, MODEL_LISTING_FAILURE_MESSAGE);
-  }
-  return geminiError(502, error instanceof Error ? error.message : String(error));
-};
+const geminiModelLoadError = (error: unknown): Response =>
+  geminiError(502, error instanceof Error ? error.message : String(error));
 
 // Real chat models plus chat-kind alias entries; collision and dedupe ride
 // on the shared `mergeAliasesIntoModels` helper so /v1beta/models stays in

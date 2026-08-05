@@ -104,8 +104,8 @@ export const enumerateRealModelCandidates = async (
 // (`claude-sonnet-4-5-20250929`) even though the gateway's merged catalog
 // only carries the undated alias. When the inbound id matches no catalog
 // entry, strip an 8-digit `-YYYYMMDD` suffix and try once more — failed
-// catalog fetches across the two attempts dedupe into a single
-// `failedUpstreams` list for the caller's renderer.
+// providers carrying a recorded catalog-refresh error across the two snapshot
+// lookups dedupe into one `failedUpstreams` list.
 const DATED_SUFFIX = /-\d{8}$/;
 
 // Real-catalog resolution with the dated-suffix retry baked in. Used both

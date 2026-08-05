@@ -79,16 +79,9 @@ export const enumerateAddressableModelIds = async (
     push({ id: model.id, unlisted: undefined, model, upstreams: upstreamsByPublicId.get(model.id) ?? [] });
   }
 
-  // Per-upstream walk for the prefix-addressable alternates the listed
-  // surface chose not to publish. The catalog round-trip is the same SWR
-  // cache the listed surface just consumed, so this loop never pays a
-  // second upstream hit.
-  //
-  // A rejected per-upstream catalog refresh collapses to no addressable-
-  // only contribution from THAT upstream — its listed rows already came
-  // (or were dropped) through `getModelsFromProviders`. Mirrors the `Promise.allSettled`
-  // tolerance there so a transiently-down upstream cannot tank /v1/models
-  // on a cold-start gateway.
+  // Prefix alternates reuse the same persisted provider snapshots as the
+  // listed surface. Repeated access may join the same L1 refresh trigger, but
+  // never performs upstream model-list I/O in this request.
   const perUpstream = await Promise.allSettled(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
@@ -122,11 +115,8 @@ export const enumerateAddressableModelIds = async (
 
   for (const result of perUpstream) {
     if (result.status === 'rejected') {
-      // Cancellation must propagate even from this tolerant fanout — the
-      // per-request abort signal cannot be masked by an upstream's slow
-      // rejection. Other failures (catalog 5xx, parse, transport) collapse
-      // to no addressable-only contribution from that upstream per the
-      // contract above.
+      // Snapshot setup failures omit only that provider; cancellation still
+      // withdraws the whole caller operation.
       if (isAbortError(result.reason)) throw result.reason;
       continue;
     }
