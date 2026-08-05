@@ -240,6 +240,7 @@ export function ChoiceGroup({
             item={item}
             key={item.value}
             onChange={onChange}
+            readOnly={readOnly === true}
             to={item.to}
             tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
           />;
@@ -247,12 +248,13 @@ export function ChoiceGroup({
   </div>;
 }
 
-function AddressedChoice({ checked, className, disabled, item, onChange, tabIndex, to }: {
+function AddressedChoice({ checked, className, disabled, item, onChange, readOnly, tabIndex, to }: {
   checked: boolean;
   className: string;
   disabled: boolean;
   item: ChoiceGroupItem;
   onChange: (value: string) => void;
+  readOnly: boolean;
   tabIndex: number;
   to: string;
 }) {
@@ -260,8 +262,8 @@ function AddressedChoice({ checked, className, disabled, item, onChange, tabInde
   // after it, so the address only has to say where the view lives.
   const address = useRouteAddress(to, () => onChange(item.value));
   return <a
-    href={disabled ? undefined : address.href}
-    onClick={disabled ? event => event.preventDefault() : address.onClick}
+    href={disabled || readOnly ? undefined : address.href}
+    onClick={disabled || readOnly ? event => event.preventDefault() : address.onClick}
     aria-checked={checked}
     aria-disabled={disabled ? true : undefined}
     className={className}
@@ -272,7 +274,7 @@ function AddressedChoice({ checked, className, disabled, item, onChange, tabInde
     onKeyDown={event => {
       if (event.key !== ' ') return;
       event.preventDefault();
-      if (!disabled) event.currentTarget.click();
+      if (!disabled && !readOnly) event.currentTarget.click();
     }}
     role="radio"
     tabIndex={disabled ? -1 : tabIndex}

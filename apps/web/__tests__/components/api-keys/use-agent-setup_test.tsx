@@ -129,6 +129,42 @@ describe('Agent Setup lease lifecycle', () => {
     expect(saves.map(save => save.configuration.codex.model)).toEqual(['gpt-early']);
   });
 
+  it('carries an unsaved edit across a key switch before the debounce elapses', async () => {
+    const saves: Array<{ configuration: { apiKeyId: string; codex: { model: string | null } } }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        apiKeyId?: string;
+        configuration?: { apiKeyId: string; codex: { model: string | null } };
+      };
+      if (init?.method === 'PUT' && body.configuration) saves.push({ configuration: body.configuration });
+      const keyId = body.apiKeyId ?? body.configuration?.apiKeyId ?? 'key-1';
+      const configuration = body.configuration ?? { ...lease().configuration, apiKeyId: keyId };
+      return Response.json({
+        ...lease(),
+        token: `lease-${keyId}`,
+        configuration,
+      });
+    }));
+    mount('key-1');
+    await settle();
+    await act(async () => current().updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-unsaved' },
+    })));
+
+    view.rerender({ apiKeyId: 'key-2' });
+    await settle();
+
+    expect(current().draft.apiKeyId).toBe('key-2');
+    expect(current().draft.codex.model).toBe('gpt-unsaved');
+    await advance(400);
+    await settle();
+    expect(saves.map(save => save.configuration)).toEqual([expect.objectContaining({
+      apiKeyId: 'key-2',
+      codex: expect.objectContaining({ model: 'gpt-unsaved' }),
+    })]);
+  });
+
   it('leaves a saved edit behind when the next key answers with its own configuration', async () => {
     const saves: { configuration: { codex: { model: string | null } } }[] = [];
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

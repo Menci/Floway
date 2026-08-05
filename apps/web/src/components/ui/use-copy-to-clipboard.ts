@@ -1,5 +1,5 @@
 import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
-import { createElement, useCallback, useState } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 import { copyToClipboard } from './copy-to-clipboard';
@@ -42,16 +42,26 @@ export interface ClipboardCopy {
 }
 
 export const useCopyToClipboard = (): ClipboardCopy => {
-  const [result, setResult] = useState<{ outcome: Exclude<CopyOutcome, 'idle'>; tag: string } | null>(null);
+  const [result, setResult] = useState<{ attempt: number; outcome: Exclude<CopyOutcome, 'idle'>; tag: string } | null>(null);
+  const latestAttemptRef = useRef(0);
+  const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (expiryTimerRef.current !== null) window.clearTimeout(expiryTimerRef.current);
+  }, []);
 
   const copy = useCallback((text: string, tag = '') => {
+    const attempt = ++latestAttemptRef.current;
     // Synchronous up to the first await, so the legacy copy path inside still
     // runs within the click that asked for it.
     void copyToClipboard(text).then(copied => {
+      if (attempt !== latestAttemptRef.current) return;
       const outcome = copied ? 'copied' : 'failed';
-      setResult({ outcome, tag });
-      window.setTimeout(() => {
-        setResult(current => (current?.tag === tag && current.outcome === outcome ? null : current));
+      setResult({ attempt, outcome, tag });
+      if (expiryTimerRef.current !== null) window.clearTimeout(expiryTimerRef.current);
+      expiryTimerRef.current = window.setTimeout(() => {
+        expiryTimerRef.current = null;
+        setResult(current => current?.attempt === attempt ? null : current);
       }, copied ? COPIED_MS : FAILED_MS);
     });
   }, []);

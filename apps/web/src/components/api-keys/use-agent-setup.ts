@@ -170,14 +170,15 @@ export const useAgentSetup = (
 
   // A lease answers with the configuration the account last stored. The fields
   // the draft still holds unsaved survive it and are unsaved against it; every
-  // other field takes the server's value, and the draft becomes the baseline
-  // the next lease is measured from.
+  // other field takes the server's value. The server answer remains the baseline
+  // so an edit that has not been saved yet stays distinguishable across a key
+  // switch.
   const seedDraft = useCallback((configuration: AgentSetupConfiguration) => {
     store.setState(current => {
       const draft = applyLocalAgentSetupChanges(configuration, current.draft, current.baseline);
       return {
         draft,
-        baseline: draft,
+        baseline: cloneAgentSetupConfiguration(configuration),
         generation: comparableConfiguration(draft) === comparableConfiguration(configuration) ? 0 : 1,
         confirmedGeneration: 0,
       };
