@@ -116,6 +116,18 @@ const drainSSEFrames = async (
   });
   let pendingNext = pendingFrameResult(iterator.next());
   let completed = false;
+  const writeFrame = async (frame: SseWritableFrame): Promise<void> => {
+    if (clientDisconnected) return;
+    try {
+      await writeSSEFrame(stream, frame);
+    } catch (error) {
+      if (stream.aborted || stream.closed || clientDisconnectController?.signal.aborted) {
+        recordClientDisconnect();
+      } else {
+        throw error;
+      }
+    }
+  };
 
   try {
     while (true) {
@@ -133,7 +145,7 @@ const drainSSEFrames = async (
       }
       if (next.type === 'keep-alive') {
         if (!keepAlive) continue;
-        await writeSSEFrame(stream, keepAlive.frame);
+        await writeFrame(keepAlive.frame);
         continue;
       }
       if (next.type === 'next-error') {
@@ -145,14 +157,7 @@ const drainSSEFrames = async (
         return clientDisconnected ? 'cancel' : 'eof';
       }
 
-      if (!clientDisconnected) {
-        try {
-          await writeSSEFrame(stream, next.result.value);
-        } catch (error) {
-          if (stream.aborted || stream.closed) recordClientDisconnect();
-          else throw error;
-        }
-      }
+      await writeFrame(next.result.value);
       pendingNext = pendingFrameResult(iterator.next());
     }
   } finally {

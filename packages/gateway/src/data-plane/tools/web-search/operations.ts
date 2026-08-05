@@ -9,6 +9,7 @@ import { fetchPageAndRecordUsage } from './fetch-page.ts';
 import { runWebSearchAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { isAbortError } from '@floway-dev/provider';
 
@@ -279,12 +280,13 @@ export interface WebSearchExecutionSession {
   getProvider: () => Promise<ConfiguredWebSearchProvider>;
   filters: WebSearchFilters;
   apiKeyId: string;
+  backgroundScheduler: BackgroundScheduler;
   pageCache: Map<string, PageCacheEntry>;
   // Whether to populate `action.sources` on search IRs. Native Responses
   // gates the field on `include: ["web_search_call.action.sources"]`; the
   // Codex path leaves it off (its output is plain text).
   includeSearchActionSources: boolean;
-  clientDisconnectSignal?: AbortSignal;
+  clientDisconnectSignal: AbortSignal;
 }
 
 // ── IR construction ──
@@ -559,6 +561,10 @@ const runOneSearchQuery = async (
       allowedDomains: session.filters.allowedDomains,
       blockedDomains: session.filters.blockedDomains,
       userLocation: session.filters.userLocation,
+      lifecycle: {
+        clientDisconnectSignal: session.clientDisconnectSignal,
+        backgroundScheduler: session.backgroundScheduler,
+      },
     };
     const result = await runWebSearchAndRecordUsage({
       provider: active.provider,
@@ -654,6 +660,10 @@ const runBatchFetch = async (
     session.clientDisconnectSignal?.throwIfAborted();
     const fetchRequest = {
       urls: needFetch,
+      lifecycle: {
+        clientDisconnectSignal: session.clientDisconnectSignal,
+        backgroundScheduler: session.backgroundScheduler,
+      },
     };
     const result = await fetchPageAndRecordUsage({
       provider: active.provider,

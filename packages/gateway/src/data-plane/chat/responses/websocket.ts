@@ -112,7 +112,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
   let closed = false;
-  let activeAbortController: AbortController | undefined;
+  let activeClientDisconnectController: AbortController | undefined;
   let queue = Promise.resolve();
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
@@ -156,25 +156,25 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     }
   })());
 
-  const closeActiveRequest = (): void => {
+  const recordClientDisconnect = (): void => {
     closed = true;
-    activeAbortController?.abort();
+    activeClientDisconnectController?.abort();
     sessionClosedResolve?.();
   };
 
   return {
-    onClose: closeActiveRequest,
-    onError: closeActiveRequest,
+    onClose: recordClientDisconnect,
+    onError: recordClientDisconnect,
     onMessage: (event, socket) => {
       queue = queue
         .then(async () => {
           if (closed) return;
-          const abortController = new AbortController();
-          activeAbortController = abortController;
+          const clientDisconnectController = new AbortController();
+          activeClientDisconnectController = clientDisconnectController;
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, clientDisconnectController, () => closed, sessionScheduler);
           } finally {
-            if (activeAbortController === abortController) activeAbortController = undefined;
+            if (activeClientDisconnectController === clientDisconnectController) activeClientDisconnectController = undefined;
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off

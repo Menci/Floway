@@ -1,4 +1,5 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
 
 export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
@@ -10,6 +11,11 @@ export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 // model-visible tool output bounded regardless of upstream page size. Same cap
 // for every provider so the shim's truncation handling is provider-agnostic.
 export const MAX_FETCH_PAGE_BYTES = 10_240;
+
+export interface WebSearchProviderLifecycle {
+  clientDisconnectSignal: AbortSignal;
+  backgroundScheduler: BackgroundScheduler;
+}
 
 export type WebSearchProviderErrorCode = Exclude<MessagesWebSearchErrorCode, 'max_uses_exceeded'>;
 
@@ -26,11 +32,11 @@ export interface WebSearchProviderRequest {
   // When undefined, the provider applies its own default count. The Responses
   // shim populates this from the client tool's `search_context_size` field.
   maxResults?: number;
-  // Aborted when the downstream client disconnects. Providers MUST
-  // pass this through to the underlying HTTP fetch so a cancelled
-  // request stops generating upstream load instead of running to
-  // completion.
+  // Explicit caller-controlled cancellation. Providers pass it through to
+  // their underlying HTTP fetch; gateway client lifecycle is enforced before
+  // dispatch and is not supplied here.
   signal?: AbortSignal;
+  lifecycle?: WebSearchProviderLifecycle;
 }
 
 export type WebSearchProviderResult =
@@ -58,10 +64,10 @@ export interface WebSearchPreviewResult {
 
 export interface WebSearchFetchPageRequest {
   urls: string[];
-  // See WebSearchProviderRequest.signal — same semantics: providers
-  // must thread this into their underlying fetch / sleep so a
-  // disconnected client cancels in-flight upstream work.
+  // See WebSearchProviderRequest.signal — providers pass explicit caller
+  // cancellation through to their underlying fetch and sleep operations.
   signal?: AbortSignal;
+  lifecycle?: WebSearchProviderLifecycle;
 }
 
 export type WebSearchFetchPageResult =

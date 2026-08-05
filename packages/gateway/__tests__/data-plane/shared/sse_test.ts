@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
+import { streamSSE, type SSEStreamingApi } from 'hono/streaming';
 import { test } from 'vitest';
 
 import { writeSSEFrames } from '../../../src/data-plane/shared/sse.ts';
@@ -158,6 +158,37 @@ test('writeSSEFrames emits Messages ping keepalive frames while idle', async () 
     assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {"type":"ping"}\n\n');
 
     await reader.cancel();
+  } finally {
+    time.restore();
+  }
+});
+
+test('writeSSEFrames enters discard mode when a keepalive write observes disconnect', async () => {
+  const time = new FakeTime();
+  const idle = createIdleSSEEvents();
+  let aborted = false;
+  const stream = {
+    get aborted() { return aborted; },
+    closed: false,
+    onAbort() {},
+    writeSSE() {
+      aborted = true;
+      return Promise.reject(new Error('client disconnected during keepalive'));
+    },
+  } as unknown as SSEStreamingApi;
+
+  try {
+    const completion = writeSSEFrames(stream, idle.events, {
+      keepAlive: { intervalMs: 1_000, frame: sseFrame('{}', 'ping') },
+    });
+    await waitForIteratorStart(idle);
+    await time.tickAsync(1_000);
+    idle.emit(sseFrame('{"usage":1}'));
+    await waitForIteratorStart(idle);
+    idle.close();
+
+    assertEquals(await completion, 'cancel');
+    assertEquals(idle.returnCalled(), false);
   } finally {
     time.restore();
   }

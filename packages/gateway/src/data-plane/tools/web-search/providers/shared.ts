@@ -1,10 +1,24 @@
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { sleep } from '../../../../shared/sleep.ts';
-import type { WebSearchProviderErrorCode, WebSearchProviderResult } from '../types.ts';
+import { retainResponse } from '../../../shared/retained-response.ts';
+import type { WebSearchProviderErrorCode, WebSearchProviderLifecycle, WebSearchProviderResult } from '../types.ts';
 
 const MAX_WEB_SEARCH_QUERY_LENGTH = 1000;
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
 const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
+
+export const dispatchWebSearchFetch = async (
+  dispatch: () => Promise<Response>,
+  lifecycle?: WebSearchProviderLifecycle,
+): Promise<Response> => {
+  lifecycle?.clientDisconnectSignal.throwIfAborted();
+  const pendingResponse = dispatch();
+  lifecycle?.backgroundScheduler(pendingResponse.then(() => {}, () => {}));
+  const response = await pendingResponse;
+  return lifecycle === undefined
+    ? response
+    : retainResponse(response, lifecycle.backgroundScheduler);
+};
 
 export const fetchWithRetry = async (
   doFetch: () => Promise<Response>,
@@ -15,6 +29,7 @@ export const fetchWithRetry = async (
     const response = await doFetch();
     if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
     if (attempt >= RETRY_DELAYS_MS.length) return response;
+    await response.body?.cancel();
     await sleep(RETRY_DELAYS_MS[attempt], signal);
     attempt += 1;
   }

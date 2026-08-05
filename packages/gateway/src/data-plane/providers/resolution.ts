@@ -6,6 +6,7 @@ import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
@@ -76,13 +77,16 @@ export const enumerateRealModelCandidates = async (
   providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const settled = await Promise.allSettled(providers.map(provider =>
-    enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler)));
+  const settled = await Promise.allSettled(providers.map(provider => {
+    clientDisconnectSignal?.throwIfAborted();
+    return enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler);
+  }));
 
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
@@ -90,6 +94,7 @@ export const enumerateRealModelCandidates = async (
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
       const error = result.reason;
+      clientDisconnectSignal?.throwIfAborted();
       if (isAbortError(error)) throw error;
       failedUpstreams.push(providers[index].name);
       continue;
@@ -118,17 +123,18 @@ const resolveRealCandidates = async (
   providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler);
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler);
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -186,7 +192,7 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation,
+  upstreamIds, model, kind, scheduler, runtimeLocation, clientDisconnectSignal,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
@@ -200,17 +206,24 @@ export const enumerateModelCandidates = async ({
   // Threaded into the per-request fetcher so colo-scoped fallback entries
   // can be honoured at dial time.
   runtimeLocation: string;
+  clientDisconnectSignal?: AbortSignal;
 }): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
+  const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
+  const fetcherForUpstream = (upstreamId: string): Fetcher => {
+    const fetcher = createFetcherForUpstream(upstreamId);
+    return clientDisconnectSignal === undefined
+      ? fetcher
+      : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
+  };
   const providers = await listModelProviders(upstreamIds);
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
+    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -222,7 +235,7 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {

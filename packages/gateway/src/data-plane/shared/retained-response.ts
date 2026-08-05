@@ -1,4 +1,16 @@
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { Fetcher } from '@floway-dev/provider';
+
+export const retainUpstreamFetcher = (
+  fetcher: Fetcher,
+  clientDisconnectSignal: AbortSignal,
+  backgroundScheduler: BackgroundScheduler,
+): Fetcher => async (url, init) => {
+  clientDisconnectSignal.throwIfAborted();
+  const pendingResponse = fetcher(url, init);
+  backgroundScheduler(pendingResponse.then(() => {}, () => {}));
+  return retainResponse(await pendingResponse, backgroundScheduler);
+};
 
 export const retainResponse = (
   response: Response,

@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { dispatchWebSearchFetch, extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -8,6 +8,7 @@ import {
   type WebSearchFetchPageRequest,
   type WebSearchFetchPageResult,
   type WebSearchProvider,
+  type WebSearchProviderLifecycle,
   type WebSearchProviderRequest,
   type WebSearchProviderResult,
 } from '../types.ts';
@@ -108,10 +109,10 @@ type ReadOutcome =
   | { kind: 'ok'; url: string; title?: string; content: string }
   | { kind: 'fail'; url: string; httpStatus: number; message: string };
 
-const readOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal): Promise<ReadOutcome> => {
+const readOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal, lifecycle?: WebSearchProviderLifecycle): Promise<ReadOutcome> => {
   try {
     const response = await fetchWithRetry(
-      () => httpFetch(JINA_READER_URL, {
+      () => dispatchWebSearchFetch(() => httpFetch(JINA_READER_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -120,7 +121,7 @@ const readOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, 
         },
         body: JSON.stringify({ url }),
         ...(signal !== undefined ? { signal } : {}),
-      }),
+      }), lifecycle),
       signal,
     );
 
@@ -188,11 +189,11 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
     // call it could have used.
 
     try {
-      const response = await httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
+      const response = await dispatchWebSearchFetch(() => httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
         method: 'GET',
         headers,
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+      }), request.lifecycle);
 
       const payload = await response.json().catch(() => null);
       const envelope = parseEnvelope(payload);
@@ -240,7 +241,7 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
       return { type: 'ok', pages: [], failures: [] };
     }
 
-    const outcomes = await Promise.all(request.urls.map(url => readOneUrl(httpFetch, apiKey, url, request.signal)));
+    const outcomes = await Promise.all(request.urls.map(url => readOneUrl(httpFetch, apiKey, url, request.signal, request.lifecycle)));
 
     // Whole-batch transport / 5xx failure collapses into one envelope —
     // mirrors Microsoft Web IQ's policy. Per-URL 4xx stays granular so

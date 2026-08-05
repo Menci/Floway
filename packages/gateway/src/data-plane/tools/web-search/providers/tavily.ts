@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { dispatchWebSearchFetch, extractWebSearchProviderErrorMessage, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -78,7 +78,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
     }
 
     try {
-      const response = await httpFetch(TAVILY_SEARCH_URL, {
+      const response = await dispatchWebSearchFetch(() => httpFetch(TAVILY_SEARCH_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -86,7 +86,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
         },
         body: JSON.stringify(body),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+      }), request.lifecycle);
 
       if (!response.ok) {
         const message = await extractWebSearchProviderErrorMessage(response);
@@ -149,7 +149,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
 
   const fetchPage = async (request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult> => {
     try {
-      const response = await httpFetch(TAVILY_EXTRACT_URL, {
+      const response = await dispatchWebSearchFetch(() => httpFetch(TAVILY_EXTRACT_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -161,7 +161,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
           format: 'markdown',
         }),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+      }), request.lifecycle);
 
       if (!response.ok) {
         const message = await extractWebSearchProviderErrorMessage(response);

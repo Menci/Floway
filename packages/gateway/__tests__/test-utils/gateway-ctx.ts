@@ -9,7 +9,6 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 // `overrides` to nudge what each test cares about. Callers that need a
 // client-disconnect controller should construct one and override both
 // lifecycle fields with its signal and controller.
-// into the overrides.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
   const clientDisconnectController = overrides.clientDisconnectController ?? new AbortController();
   return {

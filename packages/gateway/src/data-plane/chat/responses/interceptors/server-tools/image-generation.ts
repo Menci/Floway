@@ -2,9 +2,9 @@ import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
+import { retainUpstreamFetcher } from '../../../../shared/retained-response.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
-import { retainUpstreamFetcher } from '../../../../shared/upstream-call-options.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
@@ -604,8 +604,8 @@ const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
-  const fetchImage = createExternalImageFetcher(requestSignal);
+const createRemoteImageMaterializer = (requestSignal: AbortSignal, backgroundScheduler: BackgroundScheduler) => {
+  const fetchImage = createExternalImageFetcher(requestSignal, backgroundScheduler);
   const materialized = new Map<string, ImageSource>();
   const materializedByData = new Map<Uint8Array, ImageSource>();
   let materializedBytes = 0;
@@ -994,6 +994,7 @@ const resolveImageCandidate = async (
       kind: 'image',
       scheduler: state.backgroundScheduler,
       runtimeLocation: state.runtimeLocation,
+      clientDisconnectSignal: state.clientDisconnectSignal,
     });
   } catch (e) {
     return { ok: false, error: serverError(e) };
@@ -1429,7 +1430,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     };
   }
 
-  const materializer = createRemoteImageMaterializer(gatewayCtx.clientDisconnectSignal);
+  const materializer = createRemoteImageMaterializer(gatewayCtx.clientDisconnectSignal, gatewayCtx.backgroundScheduler);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
   const materializedInputs = await materializer.inputs(remoteInputs);
   if (!materializedInputs.ok) {

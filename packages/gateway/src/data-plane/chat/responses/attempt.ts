@@ -177,7 +177,7 @@ const dispatchResponses = async (
       p => translateResponsesViaMessages(p, {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-        loadRemoteImage: createExternalImageLoader(ctx.clientDisconnectSignal),
+        loadRemoteImage: createExternalImageLoader(ctx.clientDisconnectSignal, ctx.backgroundScheduler),
       }),
       translated => messagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

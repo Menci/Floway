@@ -5,7 +5,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
-import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
+import type { WebSearchProvider, WebSearchProviderLifecycle, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   MessagesAssistantContentBlock,
@@ -637,6 +637,7 @@ const runWebSearchStopHandler = async function* (
   shimState: ShimStreamingState,
   state: Extract<MessagesWebSearchShimState, { mode: 'active' }>,
   provider: ActiveMessagesWebSearchProvider,
+  lifecycle?: WebSearchProviderLifecycle,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
@@ -675,12 +676,14 @@ const runWebSearchStopHandler = async function* (
     shimState.executedSearchCount += 1;
     shimState.currentSearchUseCount += 1;
 
+    lifecycle?.clientDisconnectSignal.throwIfAborted();
     try {
       const request: WebSearchProviderRequest = {
         query,
         allowedDomains: state.allowedDomains,
         blockedDomains: state.blockedDomains,
         userLocation: state.userLocation,
+        ...(lifecycle === undefined ? {} : { lifecycle }),
       };
       const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
       return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
@@ -708,6 +711,7 @@ export const rewriteMessagesWebSearchEventsToNative = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: MessagesWebSearchShimState,
   provider?: ActiveMessagesWebSearchProvider,
+  lifecycle?: WebSearchProviderLifecycle,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   if (state.mode === 'inactive') {
     yield* frames;
@@ -800,7 +804,7 @@ export const rewriteMessagesWebSearchEventsToNative = async function* (
           throw new Error('web-search shim entered intercept path without active state.');
         }
 
-        yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!);
+        yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!, lifecycle);
         activeBlock = undefined;
         continue;
       }
@@ -931,7 +935,10 @@ export const withMessagesWebSearchShim: MessagesInterceptor = async (ctx, gatewa
 
   return {
     ...result,
-    events: rewriteMessagesWebSearchEventsToNative(result.events, prepared.state, provider.provider),
+    events: rewriteMessagesWebSearchEventsToNative(result.events, prepared.state, provider.provider, {
+      clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
+      backgroundScheduler: gatewayCtx.backgroundScheduler,
+    }),
   };
 };
 

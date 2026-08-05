@@ -113,6 +113,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       kind,
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
