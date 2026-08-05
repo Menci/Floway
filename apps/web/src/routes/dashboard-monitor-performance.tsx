@@ -207,54 +207,54 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       ];
       const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
       return <>
-      <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-        <TelemetryDimensionControls
-          disabled={refreshing}
-          dimensions={availableDimensions}
-          filters={loadedQuery.filters}
-          groupBy={loadedQuery.groupBy}
-          groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-            <Button
-              appearance="subtle"
-              aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-              className={CONTROL_ROW_CLASS}
-              icon={<InfoRegular />}
-            />
-          </Tooltip>}
-          groupByLabel={t('dashboard.performance.groupBy.label')}
-          onFilterChange={setFilter}
-          onGroupByChange={changeGroupBy}
-          selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
-        />
-        <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
-          {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
-            <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
-            <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
-          </div>)}
-        </div>
-        <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
-          <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-            { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
-            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
-          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} disabled={refreshing} items={[
-            { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
-          ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
-        </div>
-      </Panel>
-      <Panel className="min-w-0">
-        <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`), percentile })} />
-      </Panel>
-      <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-        {/* The scrollport clips the 2px ring a focused tab paints, so it takes
+        <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+          <TelemetryDimensionControls
+            disabled={refreshing}
+            dimensions={availableDimensions}
+            filters={loadedQuery.filters}
+            groupBy={loadedQuery.groupBy}
+            groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+              <Button
+                appearance="subtle"
+                aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                className={CONTROL_ROW_CLASS}
+                icon={<InfoRegular />}
+              />
+            </Tooltip>}
+            groupByLabel={t('dashboard.performance.groupBy.label')}
+            onFilterChange={setFilter}
+            onGroupByChange={changeGroupBy}
+            selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
+          />
+          <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
+            {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
+              <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
+              <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
+            </div>)}
+          </div>
+          <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+            <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+              { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
+              { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
+            ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
+            <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+            <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} disabled={refreshing} items={[
+              { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
+            ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
+          </div>
+        </Panel>
+        <Panel className="min-w-0">
+          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`), percentile })} />
+        </Panel>
+        <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+          {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}
-        <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
-          {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
-        </TabList></ScrollArea>
-        <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} />
-      </Panel>
+          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
+            {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
+          </TabList></ScrollArea>
+          <PerformanceTable groupBy={activeBreakdown.key} labels={labels} rows={activeBreakdown.rows} />
+        </Panel>
       </>;
     })()}
   </section>;
