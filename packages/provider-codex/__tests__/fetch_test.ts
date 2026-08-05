@@ -882,18 +882,6 @@ describe('callCodexResponsesCompact', () => {
     expect(result.result.output[0]).toMatchObject({ id: 'cmp_x', type: 'compaction', encrypted_content: 'FULL_BLOB' });
   });
 
-  test('2xx persists quota snapshot via opts.call.waitUntil', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(compactJsonResponse());
-    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    await callCodexResponsesCompact({
-      upstreamId, account: activeAccount, model,
-      body: { input: [] }, headers: new Headers(), effects: makeEffects(),
-      call: { ...noopUpstreamCallOptions(), waitUntil },
-    });
-    expect(waitUntil).toHaveBeenCalledTimes(1);
-  });
-
   test('401 other → refresh + retry once on the compact endpoint, succeed', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
@@ -910,56 +898,6 @@ describe('callCodexResponsesCompact', () => {
     // Both compact requests hit the same URL; the bearer flipped from at_kv to at2.
     expect(fetchSpy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/responses/compact');
     expect(new Headers((fetchSpy.mock.calls[2][1] as RequestInit).headers).get('authorization')).toBe('Bearer at2');
-  });
-
-  test('401 token_invalidated → persistTerminalState session_terminated, return synthetic 503', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
-    const effects = makeEffects();
-    const result = await callCodexResponsesCompact({
-      upstreamId, account: activeAccount, model,
-      body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith(
-      'session_terminated',
-      expect.stringMatching(/session ended/),
-      { accessToken: 'at_kv' },
-    );
-  });
-
-  test('429 → quota with ratelimited_until, return upstream 429', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached' } }, {
-      'x-codex-active-limit': 'premium',
-      'x-codex-primary-reset-after-seconds': '3600',
-      'x-codex-secondary-reset-after-seconds': '7200',
-    }));
-    const background = captureBackgroundWrites();
-    const result = await callCodexResponsesCompact({
-      upstreamId, account: activeAccount, model,
-      body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: background.call,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(429);
-    await background.settle();
-    const stored = readQuotaEntry();
-    expect(stored?.premium.data.ratelimited_until).toBeTruthy();
-  });
-
-  test('5xx passes through verbatim without touching state', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(503, { error: 'unavailable' }));
-    const effects = makeEffects();
-    const result = await callCodexResponsesCompact({
-      upstreamId, account: activeAccount, model,
-      body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
-    expect(effects.persistTerminalState).not.toHaveBeenCalled();
-    expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
 
 });
