@@ -117,6 +117,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   modelsCache: null,
   hue: 210,
   config: {
+    githubHost: 'github.com',
     githubToken: 'ghu-alice',
     user: {
       id: 100,
@@ -440,6 +441,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.upstreams.save(CUSTOM_UPSTREAM);
 
   const VERSION_ERROR = 'version must be 20 — older export formats are not supported; re-export from the current deployment';
+  const previousV19 = await doImport(app, 'replace', latestImportData(), 19);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
   const missingVersionResponse = await app.request('/import', {
@@ -449,6 +451,8 @@ test('import rejects any version other than the current one before deleting data
   });
   const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
+  assertEquals(previousV19.status, 400);
+  assertEquals(previousV19.body.error, VERSION_ERROR);
   assertEquals(previousV11.status, 400);
   assertEquals(previousV11.body.error, VERSION_ERROR);
   assertEquals(ancientVersion.status, 400);
@@ -971,7 +975,7 @@ test('import trims every formerly normalized non-empty string field', async () =
   assertEquals(whitespaceOnly.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
 });
 
-test('import retains optional defaults from the v19 wire contract', async () => {
+test('import retains optional defaults from the v20 wire contract', async () => {
   const { app, repo } = setup();
   const { disabled_public_model_ids: _disabled, model_prefix: _prefix, ...upstream } = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
   const result = await doImport(app, 'replace', latestImportData({

@@ -801,8 +801,8 @@ const en = {
             observed: 'Observed {{time}}',
             empty: 'No quota observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
           },
-          description:
-              'Connect a GitHub Copilot subscription using GitHub device authorization.',
+          githubHost: 'GitHub host',
+          githubHostHint: 'For a GHE.com account, enter your hostname, such as octocorp.ghe.com.',
           connect: 'Connect GitHub',
           deviceCode: 'Device code',
           waiting: 'Waiting for authorization…',

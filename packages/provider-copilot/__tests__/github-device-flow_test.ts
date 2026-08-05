@@ -30,7 +30,7 @@ test('startGitHubDeviceFlow sends the OAuth form request through the supplied fe
     });
   };
 
-  assertEquals(await startGitHubDeviceFlow(fetcher), {
+  assertEquals(await startGitHubDeviceFlow('github.com', fetcher), {
     ok: true,
     data: {
       device_code: 'device-live',
@@ -45,7 +45,7 @@ test('startGitHubDeviceFlow sends the OAuth form request through the supplied fe
 
 test('startGitHubDeviceFlow preserves the existing HTTP error result', async () => {
   const fetcher: Fetcher = async () => new Response('temporarily unavailable', { status: 503 });
-  assertEquals(await startGitHubDeviceFlow(fetcher), {
+  assertEquals(await startGitHubDeviceFlow('github.com', fetcher), {
     ok: false,
     error: 'GitHub error: temporarily unavailable',
   });
@@ -53,12 +53,12 @@ test('startGitHubDeviceFlow preserves the existing HTTP error result', async () 
 
 test('startGitHubDeviceFlow rejects malformed and incomplete success bodies', async () => {
   await assertRejects(
-    () => startGitHubDeviceFlow(async () => jsonResponse({ user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })),
+    () => startGitHubDeviceFlow('github.com', async () => jsonResponse({ user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })),
     Error,
     'device_code',
   );
   await assertRejects(
-    () => startGitHubDeviceFlow(async () => jsonResponse({ device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900 })),
+    () => startGitHubDeviceFlow('github.com', async () => jsonResponse({ device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900 })),
     Error,
     'missing interval',
   );
@@ -76,7 +76,7 @@ test('pollGitHubDeviceFlow sends the device grant through the supplied fetcher',
     return jsonResponse({ access_token: 'ghu_live', token_type: 'bearer', scope: 'read:user' });
   };
 
-  assertEquals(await pollGitHubDeviceFlow('device-live', fetcher), {
+  assertEquals(await pollGitHubDeviceFlow('github.com', 'device-live', fetcher), {
     access_token: 'ghu_live',
     token_type: 'bearer',
     scope: 'read:user',
@@ -93,22 +93,22 @@ test.each([
   },
   { error: 'access_denied', error_description: 'The user has rejected authorization.' },
 ])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async body => {
-  assertEquals(await pollGitHubDeviceFlow('device', async () => jsonResponse(body)), body);
+  assertEquals(await pollGitHubDeviceFlow('github.com', 'device', async () => jsonResponse(body)), body);
 });
 
 test('pollGitHubDeviceFlow preserves conforming HTTP 400 OAuth errors', async () => {
   const body = { error: 'expired_token', error_description: 'The device code has expired.' };
-  assertEquals(await pollGitHubDeviceFlow('device', async () => jsonResponse(body, 400)), body);
+  assertEquals(await pollGitHubDeviceFlow('github.com', 'device', async () => jsonResponse(body, 400)), body);
 });
 
 test('pollGitHubDeviceFlow rejects malformed token and HTTP responses', async () => {
   await assertRejects(
-    () => pollGitHubDeviceFlow('device', async () => jsonResponse({ access_token: 'ghu_missing_type' })),
+    () => pollGitHubDeviceFlow('github.com', 'device', async () => jsonResponse({ access_token: 'ghu_missing_type' })),
     Error,
     'token_type',
   );
   await assertRejects(
-    () => pollGitHubDeviceFlow('device', async () => new Response('bad gateway', { status: 502 })),
+    () => pollGitHubDeviceFlow('github.com', 'device', async () => new Response('bad gateway', { status: 502 })),
     Error,
     'unexpected HTTP status code',
   );

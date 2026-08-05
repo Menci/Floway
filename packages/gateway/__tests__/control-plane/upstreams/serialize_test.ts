@@ -87,6 +87,7 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
     id: 'up_copilot_test',
     kind: 'copilot',
     config: {
+      githubHost: 'github.com',
       githubToken: 'ghu_secret',
       user: {
         id: 100,
@@ -121,6 +122,7 @@ test('upstreamRecordToJson serializes a Copilot row with state=null without thro
     id: 'up_copilot_fresh',
     kind: 'copilot',
     config: {
+      githubHost: 'github.com',
       githubToken: 'ghu_secret',
       user: { id: 200, login: 'fresh', name: null, avatar_url: 'https://example.com/fresh.png' },
     },
@@ -140,6 +142,7 @@ test('upstreamRecordToJson serializes a Copilot row whose state lacks copilotTok
     id: 'up_copilot_no_token',
     kind: 'copilot',
     config: {
+      githubHost: 'github.com',
       githubToken: 'ghu_secret',
       user: { id: 201, login: 'no-token', name: null, avatar_url: 'https://example.com/n.png' },
     },

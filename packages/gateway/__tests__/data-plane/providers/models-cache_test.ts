@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
+import { serializeStoredConfig } from '../../../src/repo/upstream-json.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import { directFetcher, type Provider, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
+import { directFetcher, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_a';
+const CACHE_GENERATION = vi.hoisted<ModelsCacheGeneration>(() => ({
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  config: { identity: 'old' },
+}));
 
 const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 
@@ -16,7 +23,9 @@ const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
-): Provider => ({
+  generation: ModelsCacheGeneration = CACHE_GENERATION,
+  fetchIdentity = serializeStoredConfig(generation.config),
+): GatewayProvider => ({
   upstreamId: UPSTREAM_ID,
   kind: 'custom',
   name: UPSTREAM_ID,
@@ -25,6 +34,8 @@ const stubInstance = (
   modelPrefix: null,
   modelsCache,
   instance: stubProvider({ getProvidedModels: fetchFn }),
+  modelsCacheGeneration: generation,
+  modelsFetchIdentity: fetchIdentity,
 });
 
 // The cache lives on the upstream row, so every write needs a row to
@@ -39,8 +50,8 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: '2026-08-01T00:00:00.000Z',
-    config: {},
+    updatedAt: CACHE_GENERATION.updatedAt,
+    config: CACHE_GENERATION.config,
     state: null,
     modelsCache: null,
     flagOverrides: {},
@@ -56,7 +67,7 @@ const seedCache = async (
   repo: InMemoryRepo,
   cache: { revision: number; fetchedAt: number; models: ProviderModel[] },
 ): Promise<UpstreamModelsCache> => {
-  await repo.upstreams.saveModelsCache(UPSTREAM_ID, cache);
+  await repo.upstreams.saveModelsCache(UPSTREAM_ID, CACHE_GENERATION, cache);
   const stored = (await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache;
   if (!stored) throw new Error('the seeded catalog did not land on the upstream row');
   return stored;
@@ -181,6 +192,50 @@ describe('fetchUpstreamModelsCached', () => {
     expect(r1.map(m => m.id)).toEqual(['m1']);
     expect(r2.map(m => m.id)).toEqual(['m1']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a superseded generation neither joins nor overwrites the current catalog', async () => {
+    const repo = await setupRepo();
+    let resolveOld: ((models: ProviderModel[]) => void) | null = null;
+    const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
+    const oldRequest = fetchUpstreamModelsCached(
+      stubInstance(oldFetch, null, CACHE_GENERATION, 'same-fetch'),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    await Promise.resolve();
+
+    const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, config: { identity: 'new' } };
+    const current = await repo.upstreams.getById(UPSTREAM_ID);
+    if (!current) throw new Error('upstream row missing');
+    await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration.updatedAt, config: nextGeneration.config });
+    const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
+    const newRequest = fetchUpstreamModelsCached(
+      stubInstance(newFetch, null, nextGeneration, 'same-fetch'),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+
+    expect((await newRequest).map(model => model.id)).toEqual(['new-tenant-model']);
+    resolveOld!([aModel('old-tenant-model')]);
+    expect((await oldRequest).map(model => model.id)).toEqual(['old-tenant-model']);
+    expect(oldFetch).toHaveBeenCalledTimes(1);
+    expect(newFetch).toHaveBeenCalledTimes(1);
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['new-tenant-model']);
+  });
+
+  test('drafts with one persistence generation but different fetch identities do not join', async () => {
+    await setupRepo();
+    const firstFetch = vi.fn(async () => [aModel('first-draft-model')]);
+    const secondFetch = vi.fn(async () => [aModel('second-draft-model')]);
+
+    const [first, second] = await Promise.all([
+      fetchUpstreamModelsCached(stubInstance(firstFetch, null, CACHE_GENERATION, 'first-draft'), { scheduler: () => {}, fetcher: directFetcher, force: true }),
+      fetchUpstreamModelsCached(stubInstance(secondFetch, null, CACHE_GENERATION, 'second-draft'), { scheduler: () => {}, fetcher: directFetcher, force: true }),
+    ]);
+
+    expect(first.map(model => model.id)).toEqual(['first-draft-model']);
+    expect(second.map(model => model.id)).toEqual(['second-draft-model']);
+    expect(firstFetch).toHaveBeenCalledTimes(1);
+    expect(secondFetch).toHaveBeenCalledTimes(1);
   });
 
   test('background revalidate failure preserves stored row and writes lastError', async () => {
