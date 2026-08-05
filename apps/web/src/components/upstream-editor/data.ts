@@ -10,7 +10,7 @@ import type {
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import { kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
@@ -323,14 +323,16 @@ export const discoveredModelsFromResponse = (
   if (response.kind !== 'custom') return response.data;
   return response.data.map(model => {
     const kind = model.kind ?? 'chat';
+    const shape = kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints });
     return {
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind,
-      ...(kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints })),
+      ...shape,
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),
+      ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
     };
   });
 };
