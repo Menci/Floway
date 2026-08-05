@@ -49,43 +49,61 @@ const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   GROUP BY performance_summary.hour
   ORDER BY performance_summary.hour`;
 
-interface PerformanceAxisSql {
-  axis: PerformanceOverviewAxis;
-  bucket: string;
-  group: string;
-  where: string;
+type PerformanceBreakdownAxis = Exclude<PerformanceOverviewAxis, 'series'>;
+
+interface PerformanceBreakdownSql {
+  axis: PerformanceBreakdownAxis;
+  group: (source: string) => string;
+  where?: (source: string) => string;
 }
 
-const seriesGroupSql = `CASE settings.series_group_by
-  WHEN 'keyId' THEN filtered_summary.key_id
-  WHEN 'userId' THEN CAST(filtered_summary.user_id AS TEXT)
-  WHEN 'model' THEN filtered_summary.model
-  WHEN 'upstream' THEN filtered_summary.upstream
-  WHEN 'operation' THEN filtered_summary.operation
-  WHEN 'runtimeLocation' THEN filtered_summary.runtime_location
+const seriesGroupSql = (source: string) => `CASE settings.series_group_by
+  WHEN 'keyId' THEN ${source}.key_id
+  WHEN 'userId' THEN CAST(${source}.user_id AS TEXT)
+  WHEN 'model' THEN ${source}.model
+  WHEN 'upstream' THEN ${source}.upstream
+  WHEN 'operation' THEN ${source}.operation
+  WHEN 'runtimeLocation' THEN ${source}.runtime_location
 END`;
 
-const performanceAxisSql: readonly PerformanceAxisSql[] = [
-  { axis: 'series', bucket: 'bucket_map.bucket', group: seriesGroupSql, where: "settings.series_group_by != 'userId' OR filtered_summary.user_id IS NOT NULL" },
-  { axis: 'none', bucket: "'all'", group: "'all'", where: '1' },
-  { axis: 'keyId', bucket: "'all'", group: 'filtered_summary.key_id', where: 'filtered_summary.owned = 1' },
-  { axis: 'userId', bucket: "'all'", group: 'CAST(filtered_summary.user_id AS TEXT)', where: 'settings.is_admin = 1 AND filtered_summary.user_id IS NOT NULL' },
-  { axis: 'model', bucket: "'all'", group: 'filtered_summary.model', where: '1' },
-  { axis: 'upstream', bucket: "'all'", group: 'filtered_summary.upstream', where: '1' },
-  { axis: 'operation', bucket: "'all'", group: 'filtered_summary.operation', where: '1' },
-  { axis: 'runtimeLocation', bucket: "'all'", group: 'filtered_summary.runtime_location', where: '1' },
+const performanceBreakdownSql: readonly PerformanceBreakdownSql[] = [
+  { axis: 'none', group: () => "'all'" },
+  { axis: 'keyId', group: source => `${source}.key_id`, where: source => `${source}.owned = 1` },
+  {
+    axis: 'userId',
+    group: source => `CAST(${source}.user_id AS TEXT)`,
+    where: source => `settings.is_admin = 1 AND ${source}.user_id IS NOT NULL`,
+  },
+  { axis: 'model', group: source => `${source}.model` },
+  { axis: 'upstream', group: source => `${source}.upstream` },
+  { axis: 'operation', group: source => `${source}.operation` },
+  { axis: 'runtimeLocation', group: source => `${source}.runtime_location` },
 ];
 
-const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }, index) => {
-  const source = index === 0 ? 'filtered_summary' : 'summary_cube';
-  const sourceBucket = index === 0 ? bucket : bucket.replaceAll('filtered_summary', source);
-  const sourceGroup = group.replaceAll('filtered_summary', source);
-  const sourceWhere = where.replaceAll('filtered_summary', source);
+const summarySeriesSql = `
+  SELECT
+    'series' AS axis,
+    bucket_map.bucket,
+    ${seriesGroupSql('filtered_summary')} AS group_value,
+    SUM(filtered_summary.requests) AS requests,
+    SUM(filtered_summary.errors_with_output) + SUM(filtered_summary.errors_no_output) AS errors,
+    SUM(filtered_summary.ttft_samples_ok) + SUM(filtered_summary.errors_with_output) AS ttft_samples,
+    SUM(filtered_summary.tpot_samples) AS tpot_samples,
+    SUM(filtered_summary.neutral) AS neutral
+  FROM filtered_summary
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
+  WHERE settings.series_group_by != 'userId' OR filtered_summary.user_id IS NOT NULL
+  GROUP BY bucket_map.bucket, group_value`;
+
+const summaryBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
+  const source = 'summary_cube';
+  const groupSql = group(source);
   return `
   SELECT
     '${axis}' AS axis,
-    ${sourceBucket} AS bucket,
-    ${sourceGroup} AS group_value,
+    'all' AS bucket,
+    ${groupSql} AS group_value,
     SUM(${source}.requests) AS requests,
     SUM(${source}.errors_with_output) + SUM(${source}.errors_no_output) AS errors,
     SUM(${source}.ttft_samples_ok) + SUM(${source}.errors_with_output) AS ttft_samples,
@@ -93,31 +111,53 @@ const summaryAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where
     SUM(${source}.neutral) AS neutral
   FROM ${source}
   CROSS JOIN settings
-  ${index === 0 ? 'JOIN bucket_map ON bucket_map.hour = filtered_summary.hour' : ''}
-  WHERE ${sourceWhere}
-  GROUP BY ${sourceBucket}, ${sourceGroup}`;
+  ${where === undefined ? '' : `WHERE ${where(source)}`}
+  GROUP BY ${groupSql}`;
 }).join('\n  UNION ALL');
 
-const histogramAggregateSql = performanceAxisSql.map(({ axis, bucket, group, where }, index) => {
-  const source = index === 0 ? 'filtered_histogram' : 'histogram_cube';
-  const histogramBucket = index === 0 ? bucket : bucket.replaceAll('filtered_summary', source);
-  const histogramGroup = group.replaceAll('filtered_summary', source);
-  const histogramWhere = where.replaceAll('filtered_summary', source);
+const summaryAggregateSql = `${summarySeriesSql}
+  UNION ALL${summaryBreakdownSql}`;
+
+const histogramSeriesSql = `
+  SELECT
+    'series' AS axis,
+    bucket_map.bucket,
+    ${seriesGroupSql('filtered_histogram')} AS group_value,
+    filtered_histogram.metric,
+    filtered_histogram.lower,
+    MAX(filtered_histogram.upper) AS upper,
+    SUM(filtered_histogram.count) AS count
+  FROM filtered_histogram
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
+  WHERE settings.series_group_by != 'userId' OR filtered_histogram.user_id IS NOT NULL
+  GROUP BY bucket_map.bucket, group_value, filtered_histogram.metric, filtered_histogram.lower`;
+
+const histogramBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
+  const source = 'histogram_cube';
+  const groupSql = group(source);
   return `
   SELECT
     '${axis}' AS axis,
-    ${histogramBucket} AS bucket,
-    ${histogramGroup} AS group_value,
+    'all' AS bucket,
+    ${groupSql} AS group_value,
     ${source}.metric,
     ${source}.lower,
     MAX(${source}.upper) AS upper,
     SUM(${source}.count) AS count
   FROM ${source}
   CROSS JOIN settings
-  ${index === 0 ? 'JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour' : ''}
-  WHERE ${histogramWhere}
-  GROUP BY ${histogramBucket}, ${histogramGroup}, ${source}.metric, ${source}.lower`;
+  ${where === undefined ? '' : `WHERE ${where(source)}`}
+  GROUP BY ${groupSql}, ${source}.metric, ${source}.lower`;
 }).join('\n  UNION ALL');
+
+const histogramAggregateSql = `${histogramSeriesSql}
+  UNION ALL${histogramBreakdownSql}`;
+
+const performanceCubeDimensions = [
+  'key_id', 'user_id', 'owned', 'model', 'upstream', 'operation', 'runtime_location',
+] as const;
+const performanceCubeCoordinateSql = performanceCubeDimensions.join(', ');
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
@@ -198,7 +238,7 @@ filtered_histogram AS MATERIALIZED (
 ),
 summary_cube AS MATERIALIZED (
   SELECT
-    key_id, user_id, owned, model, upstream, operation, runtime_location,
+    ${performanceCubeCoordinateSql},
     SUM(requests) AS requests,
     SUM(ttft_samples_ok) AS ttft_samples_ok,
     SUM(errors_with_output) AS errors_with_output,
@@ -206,14 +246,14 @@ summary_cube AS MATERIALIZED (
     SUM(neutral) AS neutral,
     SUM(tpot_samples) AS tpot_samples
   FROM filtered_summary
-  GROUP BY key_id, user_id, owned, model, upstream, operation, runtime_location
+  GROUP BY ${performanceCubeCoordinateSql}
 ),
 histogram_cube AS MATERIALIZED (
   SELECT
-    key_id, user_id, owned, model, upstream, operation, runtime_location,
+    ${performanceCubeCoordinateSql},
     metric, lower, MAX(upper) AS upper, SUM(count) AS count
   FROM filtered_histogram
-  GROUP BY key_id, user_id, owned, model, upstream, operation, runtime_location, metric, lower
+  GROUP BY ${performanceCubeCoordinateSql}, metric, lower
 ),
 summary_aggregates AS MATERIALIZED (
   ${summaryAggregateSql}
