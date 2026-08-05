@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import {
   tokenBasePricing,
@@ -12,6 +12,7 @@ import {
   priceRequest,
   validateModelPricing,
   type ModelPricing,
+  type PriceVector,
   type PricingSelector,
 } from '../../src/common/pricing.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
@@ -32,6 +33,16 @@ test('price vectors reject unknown billing metrics even alongside valid rates', 
     'unknown billing metric: input_token',
   );
   assertEquals(collectModelPricingIssues({ entries: [{ rates: pricing }] }).map(issue => issue.code), ['unknown-rate-metric']);
+});
+
+test('price vectors never treat inherited properties as declared rates', () => {
+  const inherited = Object.create({ input_tokens: '1' }) as { input_tokens: string };
+  assertThrows(() => modelPricing({ rates: inherited }), Error, 'must contain at least one rate');
+  assertEquals(collectModelPricingIssues({ entries: [{ rates: inherited }] }).map(issue => issue.code), ['empty-rates']);
+
+  const mixed = Object.assign(Object.create({ output_tokens: '999' }) as object, { input_tokens: '1' }) as PriceVector;
+  const pricing = modelPricing({ rates: mixed });
+  assertEquals(priceRequest(pricing, {}).rates, { input_tokens: '1' });
 });
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
@@ -272,16 +283,35 @@ test('priceRequest preserves equality facts only when model pricing is unavailab
   });
 });
 
-test('priceRequest never reuses a compilation after mutable JSON pricing changes', () => {
+test('priceRequest freezes its validated pricing graph before caching it', () => {
   const pricing: ModelPricing = {
     entries: [{ rates: { input_tokens: '1' } }],
   };
   assertEquals(priceRequest(pricing, { inputTokens: 11 }).rates, { input_tokens: '1' });
-  (pricing.entries as Array<ModelPricing['entries'][number]>).push({
-    selector: { inputTokens: { operator: 'gt', value: 10 } },
+  assertThrows(() => (pricing.entries as Array<ModelPricing['entries'][number]>).push({
     rates: { input_tokens: '2' },
-  });
-  assertEquals(priceRequest(pricing, { inputTokens: 11 }).rates, { input_tokens: '2' });
+  }), TypeError);
+  assertThrows(() => {
+    (pricing.entries[0]!.rates as { input_tokens: string }).input_tokens = '2';
+  }, TypeError);
+  assertEquals(priceRequest(pricing, { inputTokens: 11 }).rates, { input_tokens: '1' });
+});
+
+test('cached priceRequest lookup never serializes the full catalog', () => {
+  const pricing = modelPricing(
+    tokenPricingEntry({ input_tokens: '1' }),
+    ...Array.from({ length: 128 }, (_, index) => tokenPricingEntry(
+      { input_tokens: String(index + 2) },
+      { serviceTier: `tier-${index}` },
+    )),
+  );
+  const stringify = vi.spyOn(JSON, 'stringify');
+  try {
+    for (let index = 0; index < 16; index++) priceRequest(pricing, { serviceTier: 'tier-127' });
+    assertEquals(stringify.mock.calls.some(([value]) => value === pricing), false);
+  } finally {
+    stringify.mockRestore();
+  }
 });
 
 test('priceRequest rejects malformed runtime facts', () => {

@@ -106,7 +106,7 @@ export type ModelPricingIssue =
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const unknownMetrics = Object.keys(pricing).filter(metric => !(BILLING_METRICS as readonly string[]).includes(metric));
   if (unknownMetrics.length > 0) throw new RangeError(`${path} has unknown billing metrics: ${unknownMetrics.join(', ')}`);
-  const metrics = BILLING_METRICS.filter(metric => pricing[metric] !== undefined);
+  const metrics = BILLING_METRICS.filter(metric => Object.hasOwn(pricing, metric) && pricing[metric] !== undefined);
   if (metrics.length === 0) throw new Error(`${path} must contain at least one rate`);
   for (const metric of metrics) {
     const rate = pricing[metric]!;
@@ -161,7 +161,7 @@ const equalityScopeKey = (selector: PricingSelector): string =>
   JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
 
 const pricingMetrics = (rates: PriceVector): readonly BillingMetric[] =>
-  BILLING_METRICS.filter(metric => rates[metric] !== undefined);
+  BILLING_METRICS.filter(metric => Object.hasOwn(rates, metric) && rates[metric] !== undefined);
 
 export const collectModelPricingIssues = (pricing: ModelPricing): readonly ModelPricingIssue[] => {
   const issues: ModelPricingIssue[] = [];
@@ -316,28 +316,43 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
 };
 
 interface CompiledModelPricing {
-  sourceSnapshot: string;
   ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
   thresholdBandsByAxisAndEqualityScope: ReadonlyMap<string, ReadonlyMap<string, readonly PricingThresholdCoordinate[]>>;
 }
 
 const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
 
-// Provider-owned tables are normally stable, while control-plane and compatible
-// upstream values can be ordinary mutable JSON objects. The serialized snapshot
-// keeps the identity cache honest without trusting TypeScript's compile-time
-// readonly marker as a runtime immutability guarantee.
+const freezeModelPricing = (pricing: ModelPricing): void => {
+  for (const entry of pricing.entries) {
+    Object.freeze(entry.rates);
+    if (entry.selector !== undefined) {
+      for (const coordinate of Object.values(entry.selector)) {
+        if (typeof coordinate === 'object') Object.freeze(coordinate);
+      }
+      Object.freeze(entry.selector);
+    }
+    Object.freeze(entry);
+  }
+  Object.freeze(pricing.entries);
+  Object.freeze(pricing);
+};
+
+// Compilation validates and freezes the whole pricing graph. The runtime
+// immutability guarantee makes the identity cache constant-time and prevents a
+// caller from invalidating compiled selectors behind the cache.
 const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
-  const sourceSnapshot = JSON.stringify(pricing);
-  if (sourceSnapshot === undefined) throw new TypeError('model pricing must be JSON-serializable');
   const existing = compiledPricing.get(pricing);
-  if (existing?.sourceSnapshot === sourceSnapshot) return existing;
+  if (existing !== undefined) return existing;
   validateModelPricing(pricing);
+  freezeModelPricing(pricing);
   const ratesBySelectorKey = new Map<string, PriceVector>();
   const bandsByAxisAndEqualityScope = new Map<string, Map<string, Map<number, PricingThresholdCoordinate>>>();
   for (const entry of pricing.entries) {
     const selector = canonicalizePricingSelector(entry.selector);
-    ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
+    const ownRates = Object.freeze(Object.fromEntries(
+      pricingMetrics(entry.rates).map(metric => [metric, entry.rates[metric]]),
+    ) as PriceVector);
+    ratesBySelectorKey.set(JSON.stringify(selector), ownRates);
     for (const axis of PRICING_AXES) {
       if (axis.kind !== 'threshold') continue;
       const coordinate = selector[axis.id];
@@ -357,7 +372,7 @@ const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
         [scopeKey, [...bands.values()].toSorted((a, b) => b.value - a.value)] as const)),
     ] as const),
   );
-  const compiled = { sourceSnapshot, ratesBySelectorKey, thresholdBandsByAxisAndEqualityScope };
+  const compiled = { ratesBySelectorKey, thresholdBandsByAxisAndEqualityScope };
   compiledPricing.set(pricing, compiled);
   return compiled;
 };

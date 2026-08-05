@@ -39,15 +39,41 @@ const setOwnValue = (object: Record<string, unknown>, key: string, value: unknow
 
 const cloneExtra = <T>(value: T): T => structuredClone(value);
 
+const indexedObjectPositions = new WeakMap<Record<string, unknown>[], Map<number, number>>();
+
+const mergeObjectFields = (target: Record<string, unknown>, source: Record<string, unknown>): void => {
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'index' || value === undefined || value === null) continue;
+    const current = ownValue(target, key);
+    if (typeof current === 'string' && typeof value === 'string') {
+      setOwnValue(target, key, current + value);
+    } else if (isPlainObject(current) && isPlainObject(value)) {
+      setOwnValue(target, key, { ...current, ...cloneExtra(value) });
+    } else {
+      setOwnValue(target, key, cloneExtra(value));
+    }
+  }
+};
+
 const mergeIndexedObjects = (
-  existing: readonly Record<string, unknown>[],
+  existing: Record<string, unknown>[],
   incoming: readonly Record<string, unknown>[],
 ): Record<string, unknown>[] => {
-  const merged = existing.map(entry => cloneExtra(entry));
-  const positionByIndex = new Map<number, number>();
-  for (let position = 0; position < merged.length; position++) {
-    const index = merged[position]!.index;
-    if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, position);
+  let positionByIndex = indexedObjectPositions.get(existing);
+  if (positionByIndex === undefined) {
+    positionByIndex = new Map();
+    const initial = existing.splice(0);
+    for (const source of initial) {
+      const index = source.index;
+      const position = typeof index === 'number' && Number.isFinite(index) ? positionByIndex.get(index) : undefined;
+      if (position === undefined) {
+        existing.push(cloneExtra(source));
+        if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, existing.length - 1);
+      } else {
+        mergeObjectFields(existing[position]!, source);
+      }
+    }
+    indexedObjectPositions.set(existing, positionByIndex);
   }
 
   for (const source of incoming) {
@@ -57,25 +83,13 @@ const mergeIndexedObjects = (
       : undefined;
     if (position === undefined) {
       const appended = cloneExtra(source);
-      merged.push(appended);
-      if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, merged.length - 1);
+      existing.push(appended);
+      if (typeof index === 'number' && Number.isFinite(index)) positionByIndex.set(index, existing.length - 1);
       continue;
     }
-
-    const target = merged[position]!;
-    for (const [key, value] of Object.entries(source)) {
-      if (key === 'index' || value === undefined || value === null) continue;
-      const current = ownValue(target, key);
-      if (typeof current === 'string' && typeof value === 'string') {
-        setOwnValue(target, key, current + value);
-      } else if (isPlainObject(current) && isPlainObject(value)) {
-        setOwnValue(target, key, { ...current, ...cloneExtra(value) });
-      } else {
-        setOwnValue(target, key, cloneExtra(value));
-      }
-    }
+    mergeObjectFields(existing[position]!, source);
   }
-  return merged;
+  return existing;
 };
 
 const accumulate = (acc: Record<string, unknown>, key: string, value: unknown): void => {
@@ -87,8 +101,12 @@ const accumulate = (acc: Record<string, unknown>, key: string, value: unknown): 
     return;
   }
 
-  if (isPlainArray(existing) && isPlainArray(value) && existing.every(isPlainObject) && value.every(isPlainObject)) {
-    setOwnValue(acc, key, mergeIndexedObjects(existing as Record<string, unknown>[], value as Record<string, unknown>[]));
+  if (isPlainArray(value) && value.every(isPlainObject)) {
+    const indexedExisting = isPlainArray(existing)
+      && (indexedObjectPositions.has(existing as Record<string, unknown>[]) || existing.every(isPlainObject))
+      ? existing as Record<string, unknown>[]
+      : [];
+    setOwnValue(acc, key, mergeIndexedObjects(indexedExisting, value));
     return;
   }
 

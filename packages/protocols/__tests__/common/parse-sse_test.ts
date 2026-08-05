@@ -118,6 +118,42 @@ test('parseSSEStream rejects invalid UTF-8 rather than replacing upstream bytes'
   await expect(collectAsync(parseSSEStream(byteStream(invalid)))).rejects.toThrow(TypeError);
 });
 
+test('parseSSEStream preserves a decode failure when reader cancellation also fails', async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([0xff]));
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+
+  const error = await collectAsync(parseSSEStream(body)).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(TypeError);
+  expect((error as Error).cause).toEqual(new Error('cancel failed'));
+});
+
+test('parseSSEStream preserves a frozen stream failure when cancellation also fails', async () => {
+  const primary = Object.freeze(new Error('read failed'));
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      throw primary;
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+
+  const error = await collectAsync(parseSSEStream(body)).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBe(primary);
+});
+
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {
   const upstreamCanceled = deferred<void>();
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
