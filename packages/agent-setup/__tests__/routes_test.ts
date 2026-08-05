@@ -601,6 +601,9 @@ test.each([
     Object.defineProperty(error, 'stack', { value: 42 });
     return error;
   }],
+  ['a hostile error proxy', (token: string, secret: string) => new Proxy(new Error('hidden'), {
+    getPrototypeOf: () => { throw new Error(`${token}:${secret}`); },
+  })],
 ] satisfies readonly [name: string, makeError: (token: string, secret: string) => Error][])('pathological public errors with %s remain sealed', async (_case, makeError) => {
   const token = 'g'.repeat(43);
   const secret = 'INJECTED-PATHOLOGICAL-SECRET';
@@ -611,6 +614,10 @@ test.each([
     const response = await h.request(`/api/setup/${token}/claude.sh`);
     expect(response.status).toBe(500);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('pragma')).toBe('no-cache');
+    expect(response.headers.get('expires')).toBe('0');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(await response.json()).toEqual({ error: { type: 'internal_error' } });
   } finally {
     errorSpy.mockRestore();

@@ -337,7 +337,7 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 
 type ModelServerMode =
   | 'ok'
-  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-oversized-ps1' | 'installer-html'
+  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-oversized-ps1' | 'installer-html' | 'installer-banner-html'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 interface ModelServer {
   url: string;
@@ -435,6 +435,11 @@ const startModelServer = async (): Promise<ModelServer> => {
       if (state.mode === 'installer-html') {
         res.writeHead(200, { 'content-type': 'text/html' });
         res.end(HTML_BODY);
+        return;
+      }
+      if (state.mode === 'installer-banner-html') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(`\ufeffregional access notice\nproxy banner\n${HTML_BODY}`);
         return;
       }
       if (state.mode === 'installer-ps1') {
@@ -1703,6 +1708,15 @@ test('claude', 'local PowerShell installer accepts script content and rejects HT
   });
   t.ok(failure.code !== 0, 'HTML installer response must be rejected');
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
+
+  const disguised = makeWorkspace();
+  modelServer.mode = 'installer-banner-html';
+  const disguisedFailure = await runPowerShellInstaller({
+    workspace: disguised, configuration: claudeConfig(), baseUrl: modelServer.url,
+    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`,
+  });
+  t.ok(disguisedFailure.code !== 0, 'a banner before an HTML response must still be rejected');
+  t.ok(!existsSync(installerMarker(disguised)), 'bannered HTML never executes');
 });
 
 test('claude', 'PowerShell rejects an oversized installer before execution', async t => {

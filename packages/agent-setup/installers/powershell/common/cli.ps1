@@ -147,7 +147,11 @@ function Invoke-SetupRemoteInstaller {
   $response = Get-SetupRemoteInstaller $Uri
   $body = $response.Body
   $contentType = $response.ContentType
-  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
+  $lines = $body -split '\r?\n'
+  $previewCount = [Math]::Min(20, $lines.Length)
+  $preview = if ($previewCount -eq 0) { '' } else { [string]::Join("`n", $lines[0..($previewCount - 1)]) }
+  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or
+    $preview -match '(?im)^\s*(?:<!doctype\s+html|<html(?:\s|>)|<head(?:\s|>)|<body(?:\s|>))'
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
