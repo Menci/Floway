@@ -124,7 +124,7 @@ test('get returns null and skips refresh once an entry has expired', () => withC
   assertEquals(miss, null);
 }));
 
-test('get exposes corrupt persisted cache timestamps with the key and column', () => withCache(async (cache, db) => {
+test('get exposes corrupt persisted cache fields with the key and column', () => withCache(async (cache, db) => {
   const future = Date.now() + POLICY.ttlMs;
   await db
     .prepare('INSERT INTO image_cache (key, value, expires_at, last_refreshed_at) VALUES (?, ?, ?, ?)')
