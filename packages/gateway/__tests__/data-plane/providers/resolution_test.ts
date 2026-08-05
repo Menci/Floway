@@ -3,9 +3,17 @@ import { describe, expect, test } from 'vitest';
 import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
-import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
+
+const withMockedFetch = <T>(
+  handler: Parameters<typeof withMockedFetchRaw>[0],
+  fn: () => Promise<T>,
+): Promise<T> => withMockedFetchRaw(handler, async () => {
+  await warmModelsForTest();
+  return await fn();
+});
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
   if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);

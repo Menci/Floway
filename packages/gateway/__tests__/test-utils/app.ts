@@ -1,12 +1,15 @@
-import { trackBackground } from './background-tracker.ts';
+import { flushBackground, trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
-import { clearInFlightForTesting } from '../../src/data-plane/providers/models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModelsCached } from '../../src/data-plane/providers/models-cache.ts';
+import { listModelProviders } from '../../src/data-plane/providers/registry.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
+import { createPerRequestFetcher } from '../../src/dial/per-request.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -297,8 +300,33 @@ export function sseResponsesResponse(response: Record<string, unknown>): Respons
 }
 
 export async function requestApp(path: string, init: RequestInit): Promise<Response> {
+  const method = init.method?.toUpperCase() ?? 'GET';
+  const pathname = new URL(path, 'http://localhost').pathname;
+  const isModelConsumer = pathname === '/api/models' || Object.values(PUBLIC_DATA_PLANE_ROUTES).some(route =>
+    route.method === method && route.paths.some(template => {
+      const parameter = template.indexOf('/:');
+      return parameter === -1 ? pathname === template : pathname.startsWith(template.slice(0, parameter + 1));
+    }));
+  if (isModelConsumer) await warmModelsForTest();
   return await app.request(path, init);
 }
+
+// App fixtures write upstream rows directly because their fetch mocks are not
+// installed until the test body runs. Production create/update/OAuth flows
+// synchronously warm before returning; reproduce that lifecycle immediately
+// before a model-consuming request while leaving repository/cache unit tests
+// free to exercise genuinely cold reads.
+export const warmModelsForTest = async (): Promise<void> => {
+  const providers = await listModelProviders(null);
+  const fetcherForUpstream = await createPerRequestFetcher('TEST');
+  await Promise.all(providers.map(async provider => {
+    await fetchUpstreamModelsCached(provider, {
+      scheduler: trackBackground,
+      fetcher: fetcherForUpstream(provider.upstreamId),
+    });
+  }));
+  await flushBackground();
+};
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {
   const blocks = text
