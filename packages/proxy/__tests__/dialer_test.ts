@@ -91,6 +91,16 @@ describe('dial dispatch', () => {
 });
 
 describe('dial deadline', () => {
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 0x80000000])(
+    'rejects an unrepresentable timer delay %s before dispatch',
+    async dialTimeoutMs => {
+      const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+      await expect(dial(config, target, { ...baseOptions(), dialTimeoutMs }))
+        .rejects.toMatchObject({ stage: 'config' });
+      expect(dialSocks5).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects with a tcp-connect ProxyDialError when the per-call timeout fires', async () => {
     vi.useFakeTimers();
     // Wire socks5 to a dialer that never resolves so only the deadline can
@@ -282,6 +292,36 @@ describe('runDirectConnectRequest', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it.each([
+    [{ host: '', port: 443, tls: true }, 'host'],
+    [{ host: 'api.example.com', port: 0, tls: true }, 'port'],
+  ] as const)('rejects an invalid direct target %s before connecting', async (invalidTarget, field) => {
+    let connects = 0;
+    const socketDial: SocketDial = {
+      connect: async () => {
+        connects++;
+        throw new Error('unexpected connect');
+      },
+    };
+    await expect(runDirectConnectRequest(
+      invalidTarget,
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial },
+    )).rejects.toMatchObject({ stage: 'config', message: expect.stringContaining(field) });
+    expect(connects).toBe(0);
+  });
+});
+
+describe('dial proxy endpoint validation', () => {
+  it.each([
+    [{ kind: 'socks5', host: '', port: 1080, name: 'bad' }, 'host'],
+    [{ kind: 'socks5', host: 'proxy.example', port: 0, name: 'bad' }, 'port'],
+  ] as const)('rejects invalid proxy config %s before dispatch', async (config, field) => {
+    await expect(dial(config, target, baseOptions()))
+      .rejects.toMatchObject({ stage: 'config', message: expect.stringContaining(field) });
+    expect(dialSocks5).not.toHaveBeenCalled();
   });
 });
 
