@@ -1,7 +1,7 @@
-import { expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { responsesItemId } from '../../../../../src/data-plane/chat/responses/items/identity.ts';
-import { wrapResponsesClientOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
+import { wrapResponsesClientOutput, wrapResponsesObservedOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -34,6 +34,65 @@ const memoryOutputHarness = () => {
   });
   return { repo, store: createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true) };
 };
+
+const responseFor = (output: ResponsesResult['output']): ResponsesResult => ({
+  id: 'resp_upstream',
+  object: 'response',
+  model: 'model',
+  status: 'completed',
+  output,
+  error: null,
+  incomplete_details: null,
+});
+
+describe('terminal output authority', () => {
+  const reasoningItem = { type: 'reasoning' as const, id: 'rs_1', summary: [] };
+  const messageItem = {
+    type: 'message' as const,
+    id: 'msg_1',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'hi', annotations: [] }],
+  };
+
+  const terminalOutputOf = async (source: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<string[]> => {
+    const seen: ResponsesStreamEvent[] = [];
+    for await (const frame of wrapResponsesObservedOutput(source)) {
+      if (frame.type === 'event') seen.push(frame.event);
+    }
+    const terminal = seen.at(-1);
+    if (terminal?.type !== 'response.completed') throw new Error('expected a completed terminal');
+    return terminal.response.output.map(item => item.type);
+  };
+
+  test('states the items the turn closed, not the output the envelope stated', async () => {
+    const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoningItem });
+      yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: messageItem });
+      yield eventFrame({ type: 'response.completed', response: { ...responseFor([reasoningItem]), output: [messageItem] } });
+    };
+
+    expect(await terminalOutputOf(source())).toEqual(['reasoning', 'message']);
+  });
+
+  test('orders the stated items by output_index, not by the order they closed', async () => {
+    const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: messageItem });
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoningItem });
+      yield eventFrame({ type: 'response.completed', response: responseFor([]) });
+    };
+
+    expect(await terminalOutputOf(source())).toEqual(['reasoning', 'message']);
+  });
+
+  test('leaves a terminal reached without a closed item exactly as it arrived', async () => {
+    const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.completed', response: responseFor([messageItem]) });
+    };
+
+    expect(await terminalOutputOf(source())).toEqual(['message']);
+  });
+});
 
 test('client output rewrites only the response id inside queued envelopes', async () => {
   const { store } = memoryOutputHarness();

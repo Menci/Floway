@@ -21,12 +21,7 @@ export interface MessagesUsageIteration {
 // isolated opaque snapshot, not a closed projection of those variants.
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
 export const cloneMessagesUsageIterations = (iterations: MessagesUsageIteration[] | null): MessagesUsageIteration[] | null =>
-  iterations?.map(iteration => ({
-    ...iteration,
-    ...(iteration.cache_creation === undefined || iteration.cache_creation === null
-      ? {}
-      : { cache_creation: { ...iteration.cache_creation } }),
-  })) ?? null;
+  iterations === null ? null : structuredClone(iterations);
 
 export interface MessagesUsage {
   input_tokens: number;

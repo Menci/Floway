@@ -32,6 +32,7 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; targ
 const invocation = (payload: MessagesPayload, upstreamModelId = 'claude-test'): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
+  anthropicBeta: [],
   model: stubProviderModel({ id: upstreamModelId, endpoints: { messages: {} } }),
 });
 

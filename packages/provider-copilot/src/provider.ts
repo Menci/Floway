@@ -20,9 +20,9 @@ import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
-import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForMessagesCall, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -114,13 +114,27 @@ const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string |
 
 const responsesReasoningEffort = (body: Omit<CanonicalResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
+const messagesBoundaryContext = (
+  body: Omit<MessagesPayload, 'model'>,
+  model: ProviderModel,
+  headers: Headers,
+  anthropicBeta: readonly string[],
+): MessagesBoundaryCtx => {
+  return {
+    payload: { ...body, model: model.id },
+    headers: new Headers(headers),
+    anthropicBeta: [...anthropicBeta],
+    model,
+  };
+};
+
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
   Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
 
 const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
-  // variant selection is derived from request fields such as reasoning effort
-  // and anthropic-beta, not from the client's original model alias string.
+  // variant selection is derived from request body fields and parsed Messages
+  // beta intent, not from the client's original model alias string.
   const rawModels = (model.providerData as CopilotProviderData).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
   if (rawModels.length === 0) {
     throw new Error(`Copilot provider exposed ${endpoint} for ${model.id}, but no raw variant supports that endpoint`);
@@ -414,43 +428,30 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
 
       // Both the native Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
-      // Variant selection runs BEFORE the boundary chain's allow-list filter
-      // mutates `anthropic-beta` on the wire, so we read the caller's
-      // untouched intent here.
-      const betas = parseAnthropicBetaHeader(opts.headers.get('anthropic-beta'));
+      const ctx = messagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
       const rawModel = rawModelFor(model, 'messages', {
-        context1m: betas.includes(CONTEXT_1M_BETA),
+        context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
-      const ctx: MessagesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-      };
       const result = await runInterceptors<MessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
         ctx, {}, COPILOT_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, ctx.headers, parseMessagesStream, opts));
+          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, headersForMessagesCall(ctx.headers, ctx.anthropicBeta), parseMessagesStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
     },
     callMessagesCountTokens: async (model, body, signal, opts) => {
-      const betas = parseAnthropicBetaHeader(opts.headers.get('anthropic-beta'));
+      const ctx = messagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
       const rawModel = rawModelFor(model, 'messages', {
-        context1m: betas.includes(CONTEXT_1M_BETA),
+        context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
       });
-      const ctx: MessagesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-      };
       const response = await runInterceptors<MessagesBoundaryCtx, object, Response>(
         ctx, {}, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, ctx.headers, opts);
+          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, headersForMessagesCall(ctx.headers, ctx.anthropicBeta), opts);
           return response;
         },
       );

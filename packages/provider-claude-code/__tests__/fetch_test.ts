@@ -8,8 +8,8 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
-import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 
@@ -171,7 +171,7 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
 });
 
 describe('callClaudeCodeMessages — header surface', () => {
-  test('shaped:true forwards inbound client headers through the whitelist and swaps Authorization', async () => {
+  test('shaped:true forwards the gateway-allowlisted fingerprint and sets Authorization', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
@@ -183,15 +183,11 @@ describe('callClaudeCodeMessages — header surface', () => {
           'user-agent': 'claude-cli/2.1.181 (external, cli)',
           'x-app': 'cli',
           'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
           'x-stainless-package-version': '0.94.0',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
-          // Authorization is dropped by the whitelist; ours replaces it.
-          authorization: 'Bearer client-side-token',
-          // Not on the whitelist; must not reach the wire.
-          'x-leaky-debug': 'should-be-dropped',
         }),
+        anthropicBeta: ['oauth-2025-04-20', 'claude-code-20250219'],
       },
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -204,7 +200,6 @@ describe('callClaudeCodeMessages — header surface', () => {
     expect(wireHeaders.get('x-stainless-package-version')).toBe('0.94.0');
     expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
-    expect(wireHeaders.get('x-leaky-debug')).toBeNull();
   });
 
   test('shaped:true defaults Content-Type to application/json when the inbound omits it', async () => {
@@ -256,7 +251,7 @@ describe('callClaudeCodeMessages — header surface', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody,
-      shaped: false, call: noopUpstreamCallOptions(),
+      shaped: false, call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
@@ -269,7 +264,8 @@ describe('callClaudeCodeMessages — header surface', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
-      upstreamId, model: haikuModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: haikuModel, body: minimalBody, shaped: false,
+      call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect(new Headers(init.headers).get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_HAIKU['anthropic-beta']);
@@ -388,7 +384,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    const call: UpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
+    const call: MessagesUpstreamCallOptions = { ...noopUpstreamCallOptions(), waitUntil };
     const result = await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });

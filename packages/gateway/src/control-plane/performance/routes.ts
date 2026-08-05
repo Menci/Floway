@@ -26,12 +26,12 @@ import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
 interface PerformanceFilters {
-  model: string | undefined;
-  upstream: string | undefined;
-  operation: string | undefined;
-  runtimeLocation: string | undefined;
-  userId: number | undefined;
-  keyId: string | undefined;
+  model: ReadonlySet<string>;
+  upstream: ReadonlySet<string>;
+  operation: ReadonlySet<string>;
+  runtimeLocation: ReadonlySet<string>;
+  userId: ReadonlySet<number>;
+  keyId: ReadonlySet<string>;
 }
 
 interface PerformanceQueryParams {
@@ -56,8 +56,6 @@ const readPerformanceQuery = (
     return { type: 'error', error: 'timezone_offset_minutes must be between -1440 and 1440' };
   }
 
-  const blank = (v: string | undefined): string | undefined => (v === undefined || v === '' ? undefined : v);
-
   return {
     type: 'ok',
     value: {
@@ -67,12 +65,12 @@ const readPerformanceQuery = (
       groupBy: query.group_by ?? 'model',
       timezoneOffsetMinutes,
       filters: {
-        model: blank(query.filter_model),
-        upstream: blank(query.filter_upstream),
-        operation: blank(query.filter_operation),
-        runtimeLocation: blank(query.filter_runtime_location),
-        userId: blank(query.filter_user_id) === undefined ? undefined : Number(query.filter_user_id),
-        keyId: blank(query.filter_key_id),
+        model: new Set(query.filter_model),
+        upstream: new Set(query.filter_upstream),
+        operation: new Set(query.filter_operation),
+        runtimeLocation: new Set(query.filter_runtime_location),
+        userId: new Set(query.filter_user_id?.map(Number)),
+        keyId: new Set(query.filter_key_id),
       },
     },
   };
@@ -96,12 +94,13 @@ interface DimensionValues {
 // One traversal produces two outputs: the filtered record set that feeds
 // every downstream aggregation (chart series, summary, per-dimension
 // breakdowns), and the dimension-value dropdown menus collected from the
-// UNFILTERED rows so filters never narrow the menu. Filters AND together;
-// `filter_user_id` resolves via the key→user map because userId is not a
-// native record column, and orphan rows (hard-deleted key → keyToUser
-// miss) never match a numeric user filter — matching the aggregation
-// path's By-User grouping that also drops them rather than coercing
-// undefined to 0.
+// UNFILTERED rows so filters never narrow the menu. Values within one filter
+// are OR'd and the filters AND together; an empty filter is the absence of a
+// constraint on its dimension. `filter_user_id` resolves via the key→user map
+// because userId is not a native record column, and orphan rows (hard-deleted
+// key → keyToUser miss) never match a numeric user filter — matching the
+// aggregation path's By-User grouping that also drops them rather than
+// coercing undefined to 0.
 const partitionRecords = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
@@ -125,12 +124,12 @@ const partitionRecords = (
     const uid = keyToUser.get(r.keyId);
     if (uid !== undefined && includeUserIds) userIds.add(uid);
 
-    if (filters.model !== undefined && r.model !== filters.model) continue;
-    if (filters.upstream !== undefined && r.upstream !== filters.upstream) continue;
-    if (filters.operation !== undefined && r.operation !== filters.operation) continue;
-    if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) continue;
-    if (filters.keyId !== undefined && r.keyId !== filters.keyId) continue;
-    if (filters.userId !== undefined && uid !== filters.userId) continue;
+    if (filters.model.size > 0 && !filters.model.has(r.model)) continue;
+    if (filters.upstream.size > 0 && !filters.upstream.has(r.upstream)) continue;
+    if (filters.operation.size > 0 && !filters.operation.has(r.operation)) continue;
+    if (filters.runtimeLocation.size > 0 && !filters.runtimeLocation.has(r.runtimeLocation)) continue;
+    if (filters.keyId.size > 0 && !filters.keyId.has(r.keyId)) continue;
+    if (filters.userId.size > 0 && (uid === undefined || !filters.userId.has(uid))) continue;
     filtered.push(r);
   }
   return {
@@ -154,14 +153,15 @@ export const performanceOverview = async (c: Ctx) => {
   const actor = userFromContext(c);
   if (!actor.isAdmin) {
     if (groupBy === 'userId') return c.json({ error: 'group_by=userId requires administrator privileges' }, 403);
-    if (filters.userId !== undefined) return c.json({ error: 'filter_user_id requires administrator privileges' }, 403);
+    if (filters.userId.size > 0) return c.json({ error: 'filter_user_id requires administrator privileges' }, 403);
   }
 
   const repo = getRepo();
   const allKeys = await repo.apiKeys.listIncludingDeleted();
   const ownedKeys = allKeys.filter(key => key.userId === actor.id);
   const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  if (filters.keyId !== undefined && !ownedKeyIds.has(filters.keyId)) {
+  const unknownKeyId = [...filters.keyId].find(keyId => !ownedKeyIds.has(keyId));
+  if (unknownKeyId !== undefined) {
     return c.json({ error: 'Unknown filter_key_id' }, 404);
   }
 

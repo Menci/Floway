@@ -1,5 +1,5 @@
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
-import { wrapResponsesClientOutput } from './items/output.ts';
+import { wrapResponsesClientOutput, wrapResponsesObservedOutput } from './items/output.ts';
 import { createResponsesResponseId } from './response-id.ts';
 import { wrapResponseResourceCompletion } from './response-resource.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
@@ -12,15 +12,17 @@ import type { CanonicalResponsesPayload, ClientResponsesStreamEvent, ResponsesSt
 // date a turn the same way.
 export const responsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(ctx.requestStartedAt / 1000);
 
-// Affinity wraps routing metadata first; the client-output boundary then stores
-// each complete emitted item under its exact ID and applies one generated
-// response ID to the downstream stream and snapshot. Every native Responses
-// turn goes through this half, whichever resource it answers with.
+// The item lifecycle first resolves any partial terminal restatement. Affinity
+// then wraps routing metadata, and the client-output boundary stores each
+// complete emitted item under its exact ID and applies one generated response
+// ID to the downstream stream and snapshot. Every native Responses turn goes
+// through this half, whichever resource it answers with.
 export const wrapResponsesStatefulOutput = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   ctx: ChatGatewayCtx,
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
-  const withAffinity = wrapResponsesAffinityEgress(frames, affinityEgressOptions(ctx));
+  const withObservedOutput = wrapResponsesObservedOutput(frames);
+  const withAffinity = wrapResponsesAffinityEgress(withObservedOutput, affinityEgressOptions(ctx));
   return wrapResponsesClientOutput(withAffinity, {
     store: ctx.store,
     responseId: createResponsesResponseId(),

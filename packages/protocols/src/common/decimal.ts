@@ -1,3 +1,5 @@
+import Big from 'big.js';
+
 export type DecimalString = string;
 
 interface DecimalLimits {
@@ -25,26 +27,11 @@ const ARITHMETIC_LIMITS: DecimalLimits = {
 const DIVISION_SCALE = 100;
 const DECIMAL_PATTERN = /^([+-]?)(\d+)(?:[.](\d+))?(?:[eE]([+-]?\d+))?$/;
 
-interface FixedDecimal {
-  coefficient: bigint;
-  scale: number;
-}
+const Decimal = Big();
+Decimal.DP = DIVISION_SCALE;
+Decimal.RM = Decimal.roundHalfUp;
 
-const pow10 = (exponent: number): bigint => 10n ** BigInt(exponent);
-
-const formatFixedDecimal = ({ coefficient, scale }: FixedDecimal): DecimalString => {
-  if (coefficient === 0n) return '0';
-  const negative = coefficient < 0n;
-  let digits = (negative ? -coefficient : coefficient).toString();
-  if (scale > 0) {
-    digits = digits.padStart(scale + 1, '0');
-    const split = digits.length - scale;
-    digits = `${digits.slice(0, split)}.${digits.slice(split)}`.replace(/[.]?0+$/, '');
-  }
-  return negative ? `-${digits}` : digits;
-};
-
-const parseFixedDecimal = (value: string, label: string, limits: DecimalLimits): FixedDecimal => {
+const validateDecimalString = (value: string, label: string, limits: DecimalLimits): string => {
   if (value.length === 0 || value.length > limits.inputLength) {
     throw new TypeError(`${label} must be a decimal string of at most ${limits.inputLength} characters: ${JSON.stringify(value)}`);
   }
@@ -58,7 +45,7 @@ const parseFixedDecimal = (value: string, label: string, limits: DecimalLimits):
 
   const integer = rawInteger.replace(/^0+(?=\d)/, '');
   let digits = `${integer}${rawFraction}`.replace(/^0+/, '');
-  if (digits === '') return { coefficient: 0n, scale: 0 };
+  if (digits === '') return value.startsWith('+') ? value.slice(1) : value;
   const significantDigits = digits.replace(/0+$/, '').length;
   if (significantDigits > limits.significantDigits) {
     throw new RangeError(`${label} must have at most ${limits.significantDigits} significant digits: ${JSON.stringify(value)}`);
@@ -77,56 +64,46 @@ const parseFixedDecimal = (value: string, label: string, limits: DecimalLimits):
   if (integerDigits > limits.integerDigits || scale > limits.scale) {
     throw new RangeError(`${label} exceeds the supported ${limits.integerDigits}-digit integer or ${limits.scale}-digit scale: ${JSON.stringify(value)}`);
   }
-  const coefficient = BigInt(digits) * (sign === '-' ? -1n : 1n);
-  return { coefficient, scale };
+  return sign === '+' ? value.slice(1) : value;
 };
 
+const parseDecimal = (value: string, label: string, limits: DecimalLimits) =>
+  new Decimal(validateDecimalString(value, label, limits));
+
 export const parseDecimalString = (value: string, label = 'decimal'): DecimalString =>
-  formatFixedDecimal(parseFixedDecimal(value, label, PUBLIC_LIMITS));
+  parseDecimal(value, label, PUBLIC_LIMITS).toFixed();
 
 export const parseNonNegativeDecimalString = (value: unknown, label = 'decimal'): DecimalString => {
   if (typeof value !== 'string') throw new TypeError(`${label} must be a decimal string: ${JSON.stringify(value)}`);
-  const parsed = parseFixedDecimal(value, label, PUBLIC_LIMITS);
-  if (parsed.coefficient < 0n) throw new RangeError(`${label} must be non-negative: ${JSON.stringify(value)}`);
-  return formatFixedDecimal(parsed);
+  const parsed = parseDecimal(value, label, PUBLIC_LIMITS);
+  if (parsed.lt(0)) throw new RangeError(`${label} must be non-negative: ${JSON.stringify(value)}`);
+  return parsed.toFixed();
 };
 
 export const addDecimalStrings = (left: DecimalString, right: DecimalString): DecimalString => {
-  const a = parseFixedDecimal(left, 'left decimal', ARITHMETIC_LIMITS);
-  const b = parseFixedDecimal(right, 'right decimal', ARITHMETIC_LIMITS);
-  const scale = Math.max(a.scale, b.scale);
-  return formatFixedDecimal({
-    coefficient: a.coefficient * pow10(scale - a.scale) + b.coefficient * pow10(scale - b.scale),
-    scale,
-  });
+  const a = parseDecimal(left, 'left decimal', ARITHMETIC_LIMITS);
+  const b = parseDecimal(right, 'right decimal', ARITHMETIC_LIMITS);
+  return a.plus(b).toFixed();
 };
 
 export const multiplyDecimalStrings = (left: DecimalString, right: DecimalString): DecimalString => {
-  const a = parseFixedDecimal(left, 'left decimal', ARITHMETIC_LIMITS);
-  const b = parseFixedDecimal(right, 'right decimal', ARITHMETIC_LIMITS);
-  return formatFixedDecimal({ coefficient: a.coefficient * b.coefficient, scale: a.scale + b.scale });
+  const a = parseDecimal(left, 'left decimal', ARITHMETIC_LIMITS);
+  const b = parseDecimal(right, 'right decimal', ARITHMETIC_LIMITS);
+  return a.times(b).toFixed();
 };
 
 // Division is the sole non-exact operation: repeating results are rounded
 // half-up to 100 fractional digits. Prices, quantities, sums, and products
 // remain exact finite decimals.
 export const divideDecimalString = (value: DecimalString, divisor: DecimalString): DecimalString => {
-  const numeratorValue = parseFixedDecimal(value, 'decimal dividend', ARITHMETIC_LIMITS);
-  const divisorValue = parseFixedDecimal(divisor, 'decimal divisor', ARITHMETIC_LIMITS);
-  if (divisorValue.coefficient === 0n) throw new RangeError('decimal divisor must not be zero');
-
-  const numerator = numeratorValue.coefficient * pow10(divisorValue.scale + DIVISION_SCALE);
-  const denominator = divisorValue.coefficient * pow10(numeratorValue.scale);
-  let quotient = numerator / denominator;
-  const remainder = numerator % denominator;
-  const absRemainder = remainder < 0n ? -remainder : remainder;
-  const absDenominator = denominator < 0n ? -denominator : denominator;
-  if (absRemainder * 2n >= absDenominator) quotient += numerator * denominator < 0n ? -1n : 1n;
-  return formatFixedDecimal({ coefficient: quotient, scale: DIVISION_SCALE });
+  const dividend = parseDecimal(value, 'decimal dividend', ARITHMETIC_LIMITS);
+  const denominator = parseDecimal(divisor, 'decimal divisor', ARITHMETIC_LIMITS);
+  if (denominator.eq(0)) throw new RangeError('decimal divisor must not be zero');
+  return dividend.div(denominator).toFixed();
 };
 
 export const decimalStringIsZero = (value: DecimalString): boolean =>
-  parseFixedDecimal(value, 'decimal', ARITHMETIC_LIMITS).coefficient === 0n;
+  parseDecimal(value, 'decimal', ARITHMETIC_LIMITS).eq(0);
 
 export const decimalStringToNumber = (value: DecimalString): number =>
-  Number(formatFixedDecimal(parseFixedDecimal(value, 'decimal', ARITHMETIC_LIMITS)));
+  Number(parseDecimal(value, 'decimal', ARITHMETIC_LIMITS).toFixed());

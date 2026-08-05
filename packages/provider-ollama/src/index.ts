@@ -4,6 +4,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 
 export const ollamaProviderModule: ProviderModule = {
   create: createOllamaProvider,
+  inboundHeaderAllowlist: [],
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
 };
 
