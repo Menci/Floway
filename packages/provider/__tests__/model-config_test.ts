@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { chatField, modelsField, pricingField } from '../src/model-config.ts';
+import { chatField, modelsField, pricingField, publicModelId } from '../src/model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('pricingField parses explicit flat entries', () => {
@@ -213,16 +213,18 @@ describe('modelsField metadata integration', () => {
     expect(model.endpoints).toEqual({ audioTranscriptions: {} });
   });
 
-  test('rejects chat on non-chat kind', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'm',
-      kind: 'embedding',
-      endpoints: { embeddings: {} },
-      chat: { modalities: { input: ['text'], output: ['text'] } },
-    }], 'p')).toThrow(/endpoint-derived kind is chat/);
+  test('rejects chat when no chat endpoint is present', () => {
+    for (const kind of [undefined, 'embedding', 'chat']) {
+      expect(() => modelsField([{
+        upstreamModelId: 'm',
+        kind,
+        endpoints: { embeddings: {} },
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      }], 'p')).toThrow(/chat field requires at least one chat endpoint/);
+    }
   });
 
-  test('accepts chat on chat kind', () => {
+  test('accepts chat whenever a chat endpoint is present, including mixed primary kinds', () => {
     const [m] = modelsField([{
       upstreamModelId: 'm',
       kind: 'chat',
@@ -230,6 +232,15 @@ describe('modelsField metadata integration', () => {
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p');
     expect(m.chat?.modalities?.input).toEqual(['text']);
+
+    const [mixed] = modelsField([{
+      upstreamModelId: 'mixed',
+      kind: 'embedding',
+      endpoints: { embeddings: {}, chatCompletions: {} },
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+    }], 'p');
+    expect(mixed.kind).toBe('embedding');
+    expect(mixed.chat?.modalities?.input).toEqual(['text', 'image']);
   });
 
   test('accepts chat when chat endpoints derive an omitted kind', () => {
@@ -242,27 +253,6 @@ describe('modelsField metadata integration', () => {
     expect(model.chat?.modalities?.input).toEqual(['text']);
   });
 
-  test('accepts chat when chat endpoints override a stale explicit non-chat kind', () => {
-    const [model] = modelsField([{
-      upstreamModelId: 'm',
-      kind: 'embedding',
-      endpoints: { responses: {} },
-      chat: { modalities: { input: ['text'], output: ['text'] } },
-    }], 'p');
-    expect(model.kind).toBe('embedding');
-    expect(model.chat?.modalities?.input).toEqual(['text']);
-  });
-
-  test('rejects chat when endpoints derive a non-chat kind despite an omitted or chat declaration', () => {
-    for (const kind of [undefined, 'chat'] as const) {
-      expect(() => modelsField([{
-        upstreamModelId: 'm',
-        ...(kind === undefined ? {} : { kind }),
-        endpoints: { embeddings: {} },
-        chat: { modalities: { input: ['text'], output: ['text'] } },
-      }], 'p')).toThrow(/endpoint-derived kind is chat/);
-    }
-  });
 });
 
 describe('modelsField rerank targets', () => {
@@ -472,4 +462,17 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
     Error,
     'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
+});
+
+test('modelsField rejects duplicate effective public ids but allows distinct aliases for one upstream id', () => {
+  expect(() => modelsField([
+    { upstreamModelId: 'raw-a', publicModelId: 'same', endpoints: { chatCompletions: {} } },
+    { upstreamModelId: 'raw-b', publicModelId: ' same ', endpoints: { embeddings: {} } },
+  ], 'custom')).toThrow(/duplicate effective public model id "same".*models\[0\]/);
+
+  const models = modelsField([
+    { upstreamModelId: 'raw', publicModelId: 'first', endpoints: { chatCompletions: {} } },
+    { upstreamModelId: 'raw', publicModelId: 'second', endpoints: { chatCompletions: {} } },
+  ], 'custom');
+  expect(models.map(publicModelId)).toEqual(['first', 'second']);
 });

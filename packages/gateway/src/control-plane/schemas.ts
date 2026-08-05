@@ -60,6 +60,12 @@ const modelEndpointsSchema = z.object({
   rerank: z.object({}).optional(),
 });
 
+const hasChatEndpoint = (endpoints: z.infer<typeof modelEndpointsSchema>): boolean =>
+  endpoints.completions !== undefined
+  || endpoints.chatCompletions !== undefined
+  || endpoints.responses !== undefined
+  || endpoints.messages !== undefined;
+
 const priceSchema = z.string().transform((value, ctx) => {
   try {
     return parseNonNegativeDecimalString(value, 'price');
@@ -161,8 +167,8 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || kindForEndpoints(m.endpoints) === 'chat',
-  { message: 'chat metadata only allowed when endpoint-derived kind is chat', path: ['chat'] },
+  m => m.chat === undefined || hasChatEndpoint(m.endpoints),
+  { message: 'chat metadata requires at least one chat endpoint', path: ['chat'] },
 ).refine(
   m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
   { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },

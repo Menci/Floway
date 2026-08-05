@@ -137,11 +137,17 @@ const baseUrlField = (value: unknown): string => {
   const baseUrl = nonEmptyStringField(value, 'baseUrl').trim();
   try {
     const parsed = new URL(baseUrl);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    if (
+      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+      || parsed.search !== ''
+      || parsed.hash !== ''
+      || baseUrl.includes('?')
+      || baseUrl.includes('#')
+    ) {
       throw new Error('invalid protocol');
     }
   } catch {
-    throw new Error('Malformed custom upstream config: baseUrl must be an http(s) URL');
+    throw new Error('Malformed custom upstream config: baseUrl must be an http(s) URL without query or fragment');
   }
   return baseUrl;
 };
@@ -179,6 +185,10 @@ const modelsFetchField = (value: unknown): CustomModelsFetch => {
   }
   const validPath = validateUpstreamPath(value.endpoint, 'modelsFetch.endpoint');
   if (!validPath.ok) throw new Error(`Malformed custom upstream config: ${validPath.error}`);
+  const query = new URL(validPath.value, 'https://floway.invalid').searchParams;
+  if (query.has('before_id') || query.has('after_id')) {
+    throw new Error('Malformed custom upstream config: modelsFetch.endpoint must not set reserved pagination parameters before_id or after_id');
+  }
   return { enabled: value.enabled, endpoint: validPath.value };
 };
 
@@ -194,7 +204,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
-    models: modelsField(raw.models ?? [], 'custom'),
+    models: raw.models === undefined ? [] : modelsField(raw.models, 'custom'),
   };
 
   if (authStyle === 'none') {
@@ -209,5 +219,8 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
   }
 
   const apiKey = nonEmptyStringField(raw.apiKey, 'apiKey');
+  if (!isCustomIngressHeaderValue(apiKey)) {
+    throw new Error('Malformed custom upstream config: apiKey is not a valid HTTP header value');
+  }
   return { ...record, kind: 'custom', config: { ...base, authStyle, apiKey } };
 };

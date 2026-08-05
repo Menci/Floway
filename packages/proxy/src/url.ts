@@ -18,7 +18,7 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // and percent-encoding may vary.
 
-import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
+import { base64UrlDecodeBytes, base64UrlEncodeBytes, formatHostForUri, utf8Bytes } from './bytes.ts';
 import { ProxyUriError } from './errors.ts';
 import {
   type HttpProxyConfig,
@@ -64,16 +64,19 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   } catch (cause) {
     throw new ProxyUriError(`malformed proxy URI: ${uri}`, { cause });
   }
-  const host = url.hostname;
+  const host = url.hostname.startsWith('[') && url.hostname.endsWith(']')
+    ? url.hostname.slice(1, -1)
+    : url.hostname;
   const port = resolvePort(url, uri);
   const name = url.hash
     ? pctDecode(url.hash.slice(1), 'fragment')
-    : `${host}:${port}`;
+    : `${formatHostForUri(host)}:${port}`;
+  const rawUserinfo = readRawUserinfo(uri);
 
   switch (url.protocol) {
-  case 'http:': return parseHttp(url, host, port, name, false);
-  case 'https:': return parseHttp(url, host, port, name, true);
-  case 'socks5:': return parseSocks5(url, host, port, name);
+  case 'http:': return parseHttp(url, host, port, name, false, rawUserinfo);
+  case 'https:': return parseHttp(url, host, port, name, true, rawUserinfo);
+  case 'socks5:': return parseSocks5(url, host, port, name, rawUserinfo);
   case 'ss:': return parseSs(url, host, port, name);
   case 'trojan:': return parseTrojan(url, host, port, name);
   case 'vless:': return parseVless(url, host, port, name);
@@ -108,13 +111,8 @@ const readRawPort = (url: URL, uri: string): number => {
 };
 
 const explicitAuthorityPort = (uri: string): number | null => {
-  const schemeEnd = uri.indexOf('://');
-  if (schemeEnd < 0) return null;
-  let authority = uri.slice(schemeEnd + 3);
-  for (const sep of '/?#') {
-    const i = authority.indexOf(sep);
-    if (i >= 0) authority = authority.slice(0, i);
-  }
+  let authority = readRawAuthority(uri);
+  if (authority === null) return null;
   const at = authority.lastIndexOf('@');
   if (at >= 0) authority = authority.slice(at + 1);
   // Skip the IPv6 literal envelope (`[::1]`) before scanning for the port
@@ -127,16 +125,35 @@ const explicitAuthorityPort = (uri: string): number | null => {
   return Number(portStr);
 };
 
+const readRawAuthority = (uri: string): string | null => {
+  const schemeEnd = uri.indexOf('://');
+  if (schemeEnd < 0) return null;
+  let authority = uri.slice(schemeEnd + 3);
+  for (const sep of '/?#') {
+    const i = authority.indexOf(sep);
+    if (i >= 0) authority = authority.slice(0, i);
+  }
+  return authority;
+};
+
+const readRawUserinfo = (uri: string): string | null => {
+  const authority = readRawAuthority(uri);
+  if (authority === null) return null;
+  const at = authority.lastIndexOf('@');
+  return at < 0 ? null : authority.slice(0, at);
+};
+
 const parseHttp = (
   url: URL,
   host: string,
   port: number,
   name: string,
   tls: boolean,
+  rawUserinfo: string | null,
 ): HttpProxyConfig => {
   const config: HttpProxyConfig = { kind: 'http', tls, host, port, name };
-  if (url.username) config.username = pctDecode(url.username, 'http username');
-  if (url.password) config.password = pctDecode(url.password, 'http password');
+  if (rawUserinfo !== null) config.username = pctDecode(url.username, 'http username');
+  if (rawUserinfo?.includes(':')) config.password = pctDecode(url.password, 'http password');
   return config;
 };
 
@@ -145,10 +162,11 @@ const parseSocks5 = (
   host: string,
   port: number,
   name: string,
+  rawUserinfo: string | null,
 ): Socks5ProxyConfig => {
   const config: Socks5ProxyConfig = { kind: 'socks5', host, port, name };
-  if (url.username) config.username = pctDecode(url.username, 'socks5 username');
-  if (url.password) config.password = pctDecode(url.password, 'socks5 password');
+  if (rawUserinfo !== null) config.username = pctDecode(url.username, 'socks5 username');
+  if (rawUserinfo?.includes(':')) config.password = pctDecode(url.password, 'socks5 password');
   return config;
 };
 
@@ -319,14 +337,12 @@ const formatAuthority = (
   port: number,
 ): string => {
   let userinfo = '';
-  if (username !== undefined && username !== '') {
-    userinfo = encodeURIComponent(username);
-    if (password !== undefined && password !== '') {
-      userinfo += `:${encodeURIComponent(password)}`;
-    }
+  if (username !== undefined || password !== undefined) {
+    userinfo = encodeURIComponent(username ?? '');
+    if (password !== undefined) userinfo += `:${encodeURIComponent(password)}`;
     userinfo += '@';
   }
-  return `${scheme}://${userinfo}${host}:${port}`;
+  return `${scheme}://${userinfo}${formatHostForUri(host)}:${port}`;
 };
 
 const formatFragment = (name: string, host: string, port: number): string => {
@@ -335,7 +351,7 @@ const formatFragment = (name: string, host: string, port: number): string => {
   // fragment was present on the original URL. Either way emitting a bare
   // `#` would break the round trip and surface as trailing punctuation in
   // any rendered URL.
-  if (name === '' || name === `${host}:${port}`) return '';
+  if (name === '' || name === `${formatHostForUri(host)}:${port}`) return '';
   return `#${encodeURIComponent(name)}`;
 };
 
@@ -365,7 +381,7 @@ const formatSocks5 = (config: Socks5ProxyConfig): string => {
 
 const formatSs = (config: ShadowsocksProxyConfig): string => {
   const userinfo = base64UrlEncodeBytes(utf8Bytes(`${config.method}:${config.password}`));
-  return `ss://${userinfo}@${config.host}:${config.port}${
+  return `ss://${userinfo}@${formatHostForUri(config.host)}:${config.port}${
     formatFragment(config.name, config.host, config.port)}`;
 };
 

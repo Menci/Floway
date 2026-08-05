@@ -1,6 +1,8 @@
 // Buffered "read exactly N bytes" helper over a Web Streams reader.
 // `label` only flavours the EOF error message.
 
+import { copy } from './bytes.ts';
+
 export const makeExactReader = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   label: string,
@@ -24,7 +26,9 @@ export const makeExactReader = (
         got += r.value.byteLength;
       } else {
         out.set(r.value.subarray(0, need), got);
-        leftover = r.value.subarray(need);
+        // Transport chunks may come from a reusable runtime pool. The tail
+        // survives this read call, so detach it before retaining it.
+        leftover = copy(r.value.subarray(need));
         got += need;
       }
     }

@@ -243,10 +243,8 @@ describe('dialShadowsocks2022 — request header layout', () => {
     // Fixed sealed = 11 (plain) + tag = 27 bytes. Variable plain length is
     // 1+1+14+2+2+16 = 36; sealed = 36 + tag = 52 bytes.
     const total = KEY_LEN + (11 + TAG) + (36 + TAG);
-    // The dialer should have buffered everything up; allow up to a few
-    // microticks for the WritableStream to flush.
-    await new Promise(r => setTimeout(r, 0));
-    expect(srv.peekWritten().byteLength).toBe(total);
+    await srv.read(total);
+    expect(srv.writtenChunks()).toEqual([total]);
   });
 
   it('encodes type=0x00 (REQUEST) in the fixed header', async () => {
@@ -368,7 +366,12 @@ const runWithServerHandshakeOptions = async (
 
   const result = await dialPromise;
   const reader = result.readable.getReader();
-  return await reader.read();
+  try {
+    return await reader.read();
+  } catch (error) {
+    expect(srv.closed()).toBe(true);
+    throw error;
+  }
 };
 
 const sendServerHandshake = (

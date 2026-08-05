@@ -113,13 +113,7 @@ describe('dialHttpConnect — failure modes', () => {
     while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
 
     srv.respond('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n');
-    const result = await promise;
-    // The CONNECT error rides through the post-CONNECT readable as an error
-    // — assert on the readable rather than the dial promise (the dial
-    // resolves once the CONNECT request is sent; the error surfaces when
-    // the orchestrator's next consumer pulls).
-    const reader = result.readable.getReader();
-    await expect(reader.read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringContaining('407'),
@@ -128,14 +122,11 @@ describe('dialHttpConnect — failure modes', () => {
 
   it('surfaces 502 Bad Gateway as a typed proxy-handshake error', async () => {
     const fake = makeFakeSocketDial();
-    const result = await (async () => {
-      const p = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
-      const srv = await fake.awaitConnect();
-      while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
-      srv.respond('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-      return await p;
-    })();
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
+    srv.respond('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringContaining('502'),
@@ -149,8 +140,7 @@ describe('dialHttpConnect — failure modes', () => {
     while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
 
     srv.respond('NOT-HTTP whatsoever\r\n\r\n');
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringContaining('bad status line'),
@@ -167,11 +157,23 @@ describe('dialHttpConnect — failure modes', () => {
     const garbage = new Uint8Array(70 * 1024);
     garbage.fill(0x41);
     srv.respond(garbage);
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringMatching(/exceeded.*without a header terminator/),
+    });
+  });
+
+  it('enforces the header cap when an oversized terminated head arrives at once', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
+    srv.respond(`HTTP/1.1 200 OK\r\nX-Big: ${'a'.repeat(70 * 1024)}\r\n\r\n`);
+    await expect(promise).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('exceeded'),
     });
   });
 
@@ -182,8 +184,7 @@ describe('dialHttpConnect — failure modes', () => {
     while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
 
     srv.endResponse();
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toBeInstanceOf(ProxyDialError);
+    await expect(promise).rejects.toBeInstanceOf(ProxyDialError);
   });
 });
 
@@ -408,8 +409,7 @@ describe('dialHttpConnect — response status code matrix', () => {
     const srv = await fake.awaitConnect();
     await drainCONNECTRequest(srv);
     srv.respond(`${statusLine}\r\n\r\n`);
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringContaining(contains),
@@ -485,8 +485,7 @@ describe('dialHttpConnect — malformed status lines', () => {
     const srv = await fake.awaitConnect();
     await drainCONNECTRequest(srv);
     srv.respond('GET / HTTP/1.1\r\n\r\n');
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
     });
@@ -498,8 +497,7 @@ describe('dialHttpConnect — malformed status lines', () => {
     const srv = await fake.awaitConnect();
     await drainCONNECTRequest(srv);
     srv.respond('HTTP/1.1 20 OK\r\n\r\n');
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
     });

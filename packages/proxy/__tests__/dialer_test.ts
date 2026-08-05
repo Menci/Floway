@@ -91,7 +91,18 @@ describe('dial dispatch', () => {
 });
 
 describe('dial deadline', () => {
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 0x80000000])(
+    'rejects an unrepresentable timer delay %s before dispatch',
+    async dialTimeoutMs => {
+      const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+      await expect(dial(config, target, { ...baseOptions(), dialTimeoutMs }))
+        .rejects.toMatchObject({ stage: 'config' });
+      expect(dialSocks5).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects with a tcp-connect ProxyDialError when the per-call timeout fires', async () => {
+    vi.useFakeTimers();
     // Wire socks5 to a dialer that never resolves so only the deadline can
     // unstick the call. The dial wrapper's combined controller signals abort
     // through to dispatch on timeout.
@@ -104,17 +115,25 @@ describe('dial deadline', () => {
       throw new Error('unreachable');
     });
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
-    await expect(
-      dial(config, target, { ...baseOptions(), dialTimeoutMs: 50 }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('exceeded deadline'),
-    });
+    try {
+      const outcome = dial(config, target, { ...baseOptions(), dialTimeoutMs: 50 })
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await outcome).toMatchObject({
+        name: 'ProxyDialError',
+        stage: 'tcp-connect',
+        message: expect.stringContaining('exceeded deadline'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rethrows the caller-driven AbortError when the external signal aborts mid-dial', async () => {
+    let startedResolve!: () => void;
+    const started = new Promise<void>(resolve => { startedResolve = resolve; });
     vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
+      startedResolve();
       await new Promise<DialResult>((_, reject) => {
         opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
       });
@@ -122,10 +141,10 @@ describe('dial deadline', () => {
     });
     const ac = new AbortController();
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
-    setTimeout(() => ac.abort(new DOMException('client gone', 'AbortError')), 30);
-    await expect(
-      dial(config, target, { ...baseOptions(), signal: ac.signal, dialTimeoutMs: 5_000 }),
-    ).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
+    const promise = dial(config, target, { ...baseOptions(), signal: ac.signal, dialTimeoutMs: 5_000 });
+    await started;
+    ac.abort(new DOMException('client gone', 'AbortError'));
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
   });
 
   it('refuses to dial when the caller signal is already aborted', async () => {
@@ -249,6 +268,7 @@ describe('runDirectConnectRequest', () => {
   });
 
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
+    vi.useFakeTimers();
     const socketDial: SocketDial = {
       connect: async (_host, _port, options) => {
         return await new Promise<never>((_, reject) => {
@@ -257,15 +277,55 @@ describe('runDirectConnectRequest', () => {
       },
     };
 
+    try {
+      const outcome = runDirectConnectRequest(
+        { host: 'api.example.com', port: 443, tls: true },
+        { method: 'GET', path: '/', headers: {} },
+        { socketDial, dialTimeoutMs: 20 },
+      ).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(await outcome).toMatchObject({
+        name: 'ProxyDialError',
+        stage: 'tcp-connect',
+        message: expect.stringContaining('direct-connect'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [{ host: '', port: 443, tls: true }, 'host'],
+    [{ host: 'api.example.com', port: 0, tls: true }, 'port'],
+  ] as const)('rejects an invalid direct target %s before connecting', async (invalidTarget, field) => {
+    let connects = 0;
+    const socketDial: SocketDial = {
+      connect: async () => {
+        connects++;
+        throw new Error('unexpected connect');
+      },
+    };
     await expect(runDirectConnectRequest(
-      { host: 'api.example.com', port: 443, tls: true },
+      invalidTarget,
       { method: 'GET', path: '/', headers: {} },
-      { socketDial, dialTimeoutMs: 20 },
-    )).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('direct-connect'),
-    });
+      { socketDial },
+    )).rejects.toMatchObject({ stage: 'config', message: expect.stringContaining(field) });
+    expect(connects).toBe(0);
+  });
+});
+
+describe('dial proxy endpoint validation', () => {
+  beforeEach(() => {
+    for (const mock of allDialerMocks) mock.mockClear();
+  });
+
+  it.each([
+    [{ kind: 'socks5', host: '', port: 1080, name: 'bad' }, 'host'],
+    [{ kind: 'socks5', host: 'proxy.example', port: 0, name: 'bad' }, 'port'],
+  ] as const)('rejects invalid proxy config %s before dispatch', async (config, field) => {
+    await expect(dial(config, target, baseOptions()))
+      .rejects.toMatchObject({ stage: 'config', message: expect.stringContaining(field) });
+    expect(dialSocks5).not.toHaveBeenCalled();
   });
 });
 

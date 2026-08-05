@@ -119,6 +119,24 @@ describe('playground wire requests', () => {
     }))).rejects.toThrow('upstream refused');
   });
 
+  it('surfaces a malformed stream frame instead of silently returning an empty answer', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      sseBody(['{']),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ));
+
+    await expect(collect(streamPlaygroundText({
+      api: 'chatCompletions',
+      apiKey: 'secret',
+      model: 'test-model',
+      system: '',
+      messages: [{ id: '1', role: 'user', text: 'hello' }],
+      options: {},
+      signal: new AbortController().signal,
+      fetchImpl: createWireFetch({}, 'chatCompletions'),
+    }))).rejects.toThrow('Playground received a malformed chatCompletions stream frame.');
+  });
+
   it('surfaces a Responses failed envelope instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{

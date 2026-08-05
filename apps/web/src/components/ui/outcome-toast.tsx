@@ -1,9 +1,11 @@
+import { DismissRegular } from '@fluentui/react-icons';
 import { createContext, useCallback, useContext, useId, useMemo, useRef } from 'react';
 import type { PropsWithChildren } from 'react';
 
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
-const { Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
+const { Button, Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
 // Success only: a failure carries the server's own words and belongs in a hand-dismissed surface next to what failed.
 
@@ -24,20 +26,28 @@ export interface OutcomeToasts {
 const OutcomeToastContext = createContext<OutcomeToasts | null>(null);
 
 export function OutcomeToastProvider({ children }: PropsWithChildren) {
+  const { t } = useTranslation();
   const toasterId = useId();
   const sequence = useRef(0);
   const { dispatchToast, dismissToast, updateToast } = useToastController(toasterId);
 
-  // Clicking dismisses: Fluent's Toast ships no close button, and waiting out the timeout is the only other exit.
-  //
   // A settled toast leaves the media slot unset and carries an intent, which is what makes the appearance layer
   // fill the slot with the InfoBar severity mark. We keep that mark: a surface that dismisses itself in seconds
   // should carry its state without being read.
   const toastFor = useCallback((toastId: string, message: string, pending: boolean) => (
-    <Toast className="cursor-pointer" onClick={() => dismissToast(toastId)}>
-      <ToastTitle media={pending ? <Spinner size="tiny" /> : undefined}>{message}</ToastTitle>
+    <Toast>
+      <ToastTitle
+        action={<Button
+          appearance="transparent"
+          aria-label={t('common.dismiss')}
+          icon={<DismissRegular />}
+          onClick={() => dismissToast(toastId)}
+          size="small"
+        />}
+        media={pending ? <Spinner size="tiny" /> : undefined}
+      >{message}</ToastTitle>
     </Toast>
-  ), [dismissToast]);
+  ), [dismissToast, t]);
 
   const nextToastId = useCallback(() => `${toasterId}-${sequence.current++}`, [toasterId]);
 

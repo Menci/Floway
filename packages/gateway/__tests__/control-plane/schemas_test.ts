@@ -44,10 +44,11 @@ describe('upstreamModelSchema chat', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
-  test('accepts chat metadata when chat endpoints override a stale explicit non-chat kind', () => {
+  test('accepts chat metadata when any chat endpoint accompanies a stale non-chat primary kind', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'embedding';
+    model.endpoints = { embeddings: {}, chatCompletions: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });

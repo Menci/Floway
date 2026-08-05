@@ -1,6 +1,6 @@
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
-import { connectOrDialError } from './dial-target.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from './dial-target.ts';
 import { ProxyDialError } from './errors.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
 import { dialReality } from './protocols/reality.ts';
@@ -23,8 +23,10 @@ export const dial = async (
   config: ProxyConfig,
   target: DialTarget,
   options: DialOptions,
-): Promise<DialResult> =>
-  await withDialDeadline(
+): Promise<DialResult> => {
+  assertValidTargetHost(config.host, `${config.kind} proxy`);
+  assertValidTargetPort(config.port, `${config.kind} proxy`);
+  return await withDialDeadline(
     options,
     () => new ProxyDialError(
       `${config.kind}: dial to ${config.host}:${config.port} → ${target.host}:${target.port} exceeded deadline of ${options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS}ms`,
@@ -32,6 +34,7 @@ export const dial = async (
     ),
     innerOptions => dispatchDial(config, target, innerOptions),
   );
+};
 
 const withDialDeadline = async <T>(
   options: DialOptions,
@@ -39,6 +42,12 @@ const withDialDeadline = async <T>(
   run: (options: DialOptions) => Promise<T>,
 ): Promise<T> => {
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
+  if (!Number.isFinite(deadlineMs) || deadlineMs < 0 || deadlineMs > 0x7fffffff) {
+    throw new ProxyDialError(
+      `dial timeout must be a finite value between 0 and 2147483647ms, got ${deadlineMs}`,
+      'config',
+    );
+  }
   const callerSignal = options.signal;
   if (callerSignal?.aborted) {
     throw signalAbortReason(callerSignal);
@@ -133,6 +142,8 @@ export const runDirectConnectRequest = async (
   request: HttpRequest,
   options: RunDirectConnectRequestOptions,
 ): Promise<Response> => {
+  assertValidTargetHost(target.host, 'direct-connect');
+  assertValidTargetPort(target.port, 'direct-connect');
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   const socket = await withDialDeadline(
     options,

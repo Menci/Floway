@@ -55,7 +55,7 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
   return new Response('unexpected', { status: 500 });
 };
 
-test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-compat endpoints', async () => {
+test('getProvidedModels projects catalog capabilities, metadata, and pricing', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.instance.getProvidedModels(directFetcher);
@@ -68,16 +68,13 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     // the ProviderModel on the auto path.
     assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
     assertEquals(gptoss.pricing?.entries[0]?.rates.output_tokens, '0.0000006');
-  });
-});
-
-test('getProvidedModels routes embedding-capability models to kind=embedding with only the embeddings endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    assertEquals(gptoss.chat, {
+      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
+    });
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
     assertEquals(Object.keys(embed.endpoints), ['embeddings']);
+    assertEquals(embed.chat, undefined);
   });
 });
 
@@ -241,19 +238,5 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
   assertEquals(betas, {
     '/v1/messages': 'context-1m,advanced-tool-use',
     '/v1/messages/count_tokens': 'context-1m,advanced-tool-use',
-  });
-});
-
-test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
-    const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
-    assertEquals(gptoss.chat, {
-      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-    });
-    // Embedding model has no thinking/vision → no chat field.
-    const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
-    assertEquals(embed.chat, undefined);
   });
 });

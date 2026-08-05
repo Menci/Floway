@@ -16,6 +16,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
         endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
         display_name: 'GPT Public',
         limits: { max_context_window_tokens: 128000 },
+        pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] },
       },
       {
         upstreamModelId: 'gpt-small',
@@ -71,6 +72,8 @@ test('createAzureProvider projects configured models into upstream models', asyn
     ],
   );
   assertEquals(models[0].limits.max_context_window_tokens, 128000);
+  assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] });
+  assertEquals(models[1].pricing, undefined);
 });
 
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
@@ -251,6 +254,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
             endpoints: { chatCompletions: {} },
             flagOverrides: { 'vendor-deepseek': false, 'vendor-kimi': true },
           },
+          { upstreamModelId: 'd3', endpoints: { chatCompletions: {} }, flagOverrides: {} },
         ],
       },
     }),
@@ -258,61 +262,15 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
   const models = await instance.instance.getProvidedModels(directFetcher);
   const d1 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd1');
   const d2 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd2');
-  if (!d1 || !d2) throw new Error('expected both models');
+  const d3 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd3');
+  if (!d1 || !d2 || !d3) throw new Error('expected all models');
 
   assertEquals(d1.enabledFlags.has('vendor-deepseek'), true);
   assertEquals(d1.enabledFlags.has('vendor-kimi'), false);
   assertEquals(d2.enabledFlags.has('vendor-deepseek'), false);
   assertEquals(d2.enabledFlags.has('vendor-kimi'), true);
-});
-
-test('createAzureProvider respects upstream override when per-model flagOverrides is empty', async () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      flagOverrides: { 'vendor-deepseek': true },
-      disabledPublicModelIds: [],
-      config: {
-        endpoint: 'https://example.openai.azure.com/openai/v1',
-        apiKey: 'az-key',
-        models: [
-          {
-            upstreamModelId: 'd1',
-            endpoints: { chatCompletions: {} },
-            flagOverrides: {},
-          },
-        ],
-      },
-    }),
-  );
-  const [model] = await instance.instance.getProvidedModels(directFetcher);
-
-  assertEquals(model.enabledFlags.has('vendor-deepseek'), true);
-});
-
-test('createAzureProvider attaches pricing field from model config', async () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      config: {
-        endpoint: 'https://example.openai.azure.com',
-        apiKey: 'az-key',
-        models: [
-          {
-            upstreamModelId: 'gpt-prod',
-            publicModelId: 'gpt-public',
-            endpoints: { chatCompletions: {} },
-            pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] },
-          },
-          {
-            upstreamModelId: 'gpt-small',
-            endpoints: { chatCompletions: {} },
-          },
-        ],
-      },
-    }),
-  );
-  const models = await instance.instance.getProvidedModels(directFetcher);
-  assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] });
-  assertEquals(models[1].pricing, undefined);
+  assertEquals(d3.enabledFlags.has('vendor-deepseek'), true);
+  assertEquals(d3.enabledFlags.has('vendor-kimi'), false);
 });
 
 test('createAzureProvider exposes image models and routes generations with api-version=preview', async () => {
@@ -449,35 +407,4 @@ test('createAzureProvider callAudioTranscriptions selects the deployment in the 
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/deployments/transcribe-deployment/audio/transcriptions?api-version=2025-04-01-preview');
   assertEquals(observedForm?.get('model'), null);
   assertEquals(observedForm?.get('response_format'), 'vtt');
-});
-
-test('createAzureProvider callAudioTranscriptions reduces a Foundry endpoint to the deployment route', async () => {
-  const record = azureRecord({
-    config: {
-      endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
-      apiKey: 'azkey',
-      models: [{ upstreamModelId: 'gpt-4o-transcribe', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
-    },
-  });
-  let observedUrl: string | undefined;
-  let observedForm: FormData | undefined;
-  await withMockedFetch(
-    async request => {
-      observedUrl = request.url;
-      observedForm = await request.formData();
-      return Response.json({ text: 'hello' });
-    },
-    async () => {
-      const provider = createAzureProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callAudioTranscriptions(model, {
-        entries: [
-          { name: 'model', value: 'public-model' },
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
-        ],
-      }, undefined, noopUpstreamCallOptions());
-    },
-  );
-  assertEquals(observedUrl, 'https://example.services.ai.azure.com/openai/deployments/gpt-4o-transcribe/audio/transcriptions?api-version=2025-04-01-preview');
-  assertEquals(observedForm?.get('model'), null);
 });

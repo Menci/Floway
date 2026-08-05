@@ -1,13 +1,14 @@
 import { test } from 'vitest';
 
 import { createCustomProvider } from '../src/provider.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
+  endpoints?: ModelEndpoints;
   ingressHeadersRules?: { key: string; value: string | null }[];
   modelsFetchEnabled?: boolean;
   models?: UpstreamModelConfig[];
@@ -32,7 +33,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: options.endpoints ?? { chatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
@@ -84,10 +85,13 @@ test('getProvidedModels returns only manual models and never fetches when models
     modelsFetchEnabled: false,
     models: [
       {
-        upstreamModelId: 'manual-only',
+        upstreamModelId: 'pinned-chat',
+        publicModelId: 'pinned',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
-        display_name: 'Manual Only',
+        display_name: 'Pinned Chat',
+        limits: { max_output_tokens: 4096 },
+        pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
       },
     ],
   });
@@ -102,7 +106,12 @@ test('getProvidedModels returns only manual models and never fetches when models
     async () => {
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
-      assertEquals(models[0].id, 'manual-only');
+      assertEquals(models[0].id, 'pinned');
+      assertEquals(models[0].kind, 'chat');
+      assertEquals(models[0].endpoints, { chatCompletions: {} });
+      assertEquals(models[0].display_name, 'Pinned Chat');
+      assertEquals(models[0].limits.max_output_tokens, 4096);
+      assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
     },
   );
   assertEquals(fetchCalls, 0);
@@ -131,7 +140,9 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
 });
 
 test('getProvidedModels rethrows when the upstream fetch fails — no fallback inside the provider', async () => {
-  const record = buildCustomUpstream();
+  const record = buildCustomUpstream({
+    models: [{ upstreamModelId: 'manual', kind: 'chat', endpoints: { chatCompletions: {} } }],
+  });
   const instance = createCustomProvider(record);
 
   await withMockedFetch(
@@ -142,30 +153,13 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
   );
 });
 
-test('getProvidedModels carries pricing on auto models', async () => {
-  const record = buildCustomUpstream();
-  const instance = createCustomProvider(record);
-
-  const upstreamPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
-  const models = await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [{ id: 'priced-model', pricing: upstreamPricing }],
-    }),
-    async () => {
-      return await instance.instance.getProvidedModels(directFetcher);
-    },
-  );
-
-  assertEquals(models[0]?.pricing, upstreamPricing);
-});
-
-test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
+test('a manual model whose effective public id matches an auto-fetched id overrides the auto entry', async () => {
   const manualPricing: ModelPricing = { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] };
   const record = buildCustomUpstream({
     models: [
       {
-        upstreamModelId: 'shared-id',
+        upstreamModelId: 'manual-raw',
+        publicModelId: 'shared-id',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Manual Override',
@@ -188,6 +182,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
       assertEquals(models.map(m => m.id), ['shared-id', 'auto-only']);
       assertEquals(models[0].display_name, 'Manual Override');
       assertEquals(models[0].pricing, manualPricing);
+      assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
     },
   );
 });
@@ -219,6 +214,43 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
     async () => await instance.instance.getProvidedModels(directFetcher),
   );
   assertEquals(models.map(model => model.id), ['chat-model']);
+});
+
+test('auto-fetched non-chat models omit contradictory chat metadata', async () => {
+  const chat = { reasoning: { effort: { supported: ['low'], default: 'low' } } };
+  const instance = createCustomProvider(buildCustomUpstream());
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'embedding', kind: 'embedding', chat }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models[0].kind, 'embedding');
+  assertEquals(models[0].chat, undefined);
+});
+
+test('auto-fetched mixed models retain chat metadata when a chat endpoint is present', async () => {
+  const chat = { reasoning: { effort: { supported: ['low'], default: 'low' } } };
+  const instance = createCustomProvider(buildCustomUpstream({
+    endpoints: { embeddings: {}, chatCompletions: {} },
+  }));
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'mixed', kind: 'chat', chat }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models[0].kind, 'embedding');
+  assertEquals(models[0].chat, chat);
+});
+
+test('auto-fetched models without a resolved endpoint stay out of the routable catalog', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({ endpoints: {} }));
+  const models = await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'unknown' }, { id: 'embedding', kind: 'embedding' }],
+    }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models.map(model => model.id), ['embedding']);
+  assertEquals(models[0].endpoints, { embeddings: {} });
 });
 
 test('manual runtime kind follows rerank endpoints when stored kind is stale', async () => {
@@ -373,7 +405,11 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
   );
 });
 
-test('Custom provider projects display_name / created / limits / pricing from a Floway-shaped /models response', async () => {
+test('Custom provider projects display_name / created / limits / pricing / chat from a Floway-shaped /models response', async () => {
+  const chat = {
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    reasoning: { effort: { supported: ['low', 'high'], default: 'low' } },
+  } as const;
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -384,6 +420,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
         pricing: { entries: [{ rates: { input_tokens: '3', output_tokens: '15', input_cache_read_tokens: '0.3' } }] },
+        chat,
       }],
     }),
     async () => {
@@ -395,6 +432,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
       assertEquals(model.pricing?.entries[0]?.rates.input_tokens, '3');
       assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '15');
       assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.3');
+      assertEquals(model.chat, chat);
     },
   );
 });
@@ -467,70 +505,4 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
       model: 'gpt-search',
     },
   });
-});
-
-test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
-  const provider = createCustomProvider(buildCustomUpstream({
-    modelsFetchEnabled: false,
-    models: [{
-      upstreamModelId: 'pinned-chat',
-      publicModelId: 'pinned',
-      kind: 'chat',
-      endpoints: { chatCompletions: {} },
-      display_name: 'Pinned Chat',
-      limits: { max_output_tokens: 4096 },
-      pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
-    }],
-  })).instance;
-
-  await withMockedFetch(
-    () => { throw new Error('upstream /models must not be fetched when modelsFetch is disabled'); },
-    async () => {
-      const models = await provider.getProvidedModels(directFetcher);
-      assertEquals(models.length, 1);
-      assertEquals(models[0].id, 'pinned');
-      assertEquals(models[0].kind, 'chat');
-      assertEquals(models[0].endpoints, { chatCompletions: {} });
-      assertEquals(models[0].display_name, 'Pinned Chat');
-      assertEquals(models[0].limits.max_output_tokens, 4096);
-      assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
-    },
-  );
-});
-
-test('Custom provider with a manual override sharing an upstream id wins over the auto copy', async () => {
-  const provider = createCustomProvider(buildCustomUpstream({
-    models: [{
-      upstreamModelId: 'shared',
-      kind: 'chat',
-      endpoints: { chatCompletions: {} },
-      display_name: 'Manual Shared',
-      pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
-    }],
-  })).instance;
-
-  await withMockedFetch(
-    request => {
-      if (new URL(request.url).pathname === '/v1/models') {
-        return jsonResponse({
-          object: 'list',
-          data: [
-            { id: 'shared', pricing: { entries: [{ rates: { input_tokens: '9', output_tokens: '9' } }] } },
-            { id: 'auto-only' },
-          ],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const models = await provider.getProvidedModels(directFetcher);
-      assertEquals(models.map(model => model.id), ['shared', 'auto-only']);
-      const shared = models.find(model => model.id === 'shared');
-      assertExists(shared);
-      assertEquals(shared.display_name, 'Manual Shared');
-      assertEquals(shared.pricing?.entries[0]?.rates.input_tokens, '1');
-      assertEquals(shared.pricing?.entries[0]?.rates.output_tokens, '2');
-      assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
-    },
-  );
 });
