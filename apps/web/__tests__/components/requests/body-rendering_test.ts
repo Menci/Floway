@@ -6,6 +6,21 @@ import { contentTypeOf, EMPTY_BODY, renderBody } from '../../../src/components/r
 // built from bytes rather than from a string literal.
 const base64 = (bytes: string) => btoa(bytes);
 
+const withoutTypedArrayBase64 = <T>(run: () => T): T => {
+  const fromBase64 = Object.getOwnPropertyDescriptor(Uint8Array, 'fromBase64');
+  const toBase64 = Object.getOwnPropertyDescriptor(Uint8Array.prototype, 'toBase64');
+  Object.defineProperty(Uint8Array, 'fromBase64', { configurable: true, value: undefined });
+  Object.defineProperty(Uint8Array.prototype, 'toBase64', { configurable: true, value: undefined });
+  try {
+    return run();
+  } finally {
+    if (fromBase64) Object.defineProperty(Uint8Array, 'fromBase64', fromBase64);
+    else Reflect.deleteProperty(Uint8Array, 'fromBase64');
+    if (toBase64) Object.defineProperty(Uint8Array.prototype, 'toBase64', toBase64);
+    else Reflect.deleteProperty(Uint8Array.prototype, 'toBase64');
+  }
+};
+
 describe('content type lookup', () => {
   it('finds the header however it was capitalized, and says nothing when it is absent', () => {
     expect(contentTypeOf([['Content-Type', 'application/json']])).toBe('application/json');
@@ -88,6 +103,13 @@ describe('multipart body rendering', () => {
     expect(rendered.text).toContain('[binary, 3 bytes, content-type=image/png]');
     expect(rendered.text).toContain(base64(image));
     expect(rendered.text).not.toContain(image);
+  });
+
+  it('renders binary parts directly through the legacy-browser fallback', () => {
+    const rendered = withoutTypedArrayBase64(() => render(binaryWire));
+
+    expect(rendered.text).toContain('[binary, 3 bytes, content-type=image/png]');
+    expect(rendered.text).toContain(base64(image));
   });
 
   it('copies the body as it arrived rather than as it is shown', () => {

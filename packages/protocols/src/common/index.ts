@@ -1,4 +1,5 @@
 export * from './aliases.ts';
+export * from './base-encoding.ts';
 export * from './endpoints.ts';
 export * from './decimal.ts';
 export * from './data-plane-routes.ts';

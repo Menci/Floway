@@ -400,6 +400,9 @@ importers:
       '@reclaimprotocol/tls':
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
 
   packages/interceptor:
     devDependencies:
@@ -409,6 +412,9 @@ importers:
 
   packages/platform:
     dependencies:
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
       image-size:
         specifier: ^2.0.2
         version: 2.0.2
@@ -419,6 +425,9 @@ importers:
 
   packages/protocols:
     dependencies:
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
       big.js:
         specifier: ^7.0.1
         version: 7.0.1
@@ -568,6 +577,9 @@ importers:
       '@reclaimprotocol/tls':
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
@@ -2473,6 +2485,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@scure/base@2.2.0':
+    resolution: {integrity: sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==}
 
   '@sindresorhus/is@7.2.0':
     resolution: {integrity: sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw==}
@@ -7456,6 +7471,8 @@ snapshots:
   '@rolldown/pluginutils@1.0.1': {}
 
   '@rtsao/scc@1.1.0': {}
+
+  '@scure/base@2.2.0': {}
 
   '@sindresorhus/is@7.2.0': {}
 
