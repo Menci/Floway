@@ -101,6 +101,11 @@ describe('parseProxyUri', () => {
       });
   });
 
+  it('parses SIP002 UTF-8 Base64URL userinfo', () => {
+    expect(parseProxyUri('ss://YWVzLTI1Ni1nY2065a-G56K8@h:8388'))
+      .toMatchObject({ kind: 'ss', method: 'aes-256-gcm', password: '密碼' });
+  });
+
   it('parses forgiving-base64 Shadowsocks userinfo with non-zero trailing padding bits', () => {
     expect(parseProxyUri('ss://YWVzLTEyOC1nY206cB==@h:8388'))
       .toMatchObject({ kind: 'ss', method: 'aes-128-gcm', password: 'p' });
@@ -254,5 +259,27 @@ describe('formatProxyUri', () => {
     const config = parseProxyUri(uri);
     const formatted = formatProxyUri(config);
     expect(parseProxyUri(formatted)).toEqual(config);
+  });
+
+  it('formats legacy Shadowsocks as UTF-8 unpadded Base64URL', () => {
+    expect(formatProxyUri({
+      kind: 'ss',
+      method: 'aes-256-gcm',
+      password: '密碼',
+      host: 'h',
+      port: 8388,
+      name: '',
+    })).toBe('ss://YWVzLTI1Ni1nY2065a-G56K8@h:8388');
+  });
+
+  it('percent-encodes the standard Base64 PSK in Shadowsocks 2022 userinfo', () => {
+    expect(formatProxyUri({
+      kind: 'ss2022',
+      method: '2022-blake3-aes-256-gcm',
+      passwordBase64: 't7XRzLCvgsH4r4r669cyqPnVNFG2c/HC5Tt+MjINJB0=',
+      host: 'h',
+      port: 8388,
+      name: '',
+    })).toBe('ss://2022-blake3-aes-256-gcm:t7XRzLCvgsH4r4r669cyqPnVNFG2c%2FHC5Tt%2BMjINJB0%3D@h:8388');
   });
 });

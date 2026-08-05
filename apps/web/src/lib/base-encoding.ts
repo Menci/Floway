@@ -5,12 +5,27 @@ const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const BASE64_BODY = /^[A-Za-z0-9+/]*$/;
 
 export const decodeWebBase64 = (value: string): Uint8Array => {
-  return base64.decode(normalizeForgivingBase64(value));
+  const normalized = normalizeForgivingBase64(value);
+  if (hasTypedArrayBase64()) return base64.decode(normalized);
+  const binary = atob(normalized);
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
 };
 
-export const encodeBase64 = (bytes: Uint8Array): string => base64.encode(bytes);
+export const encodeBase64 = (bytes: Uint8Array): string => {
+  if (hasTypedArrayBase64()) return base64.encode(bytes);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+};
 
 export const encodeBase64url = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
+
+const hasTypedArrayBase64 = (): boolean =>
+  typeof (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64 === 'function'
+  && typeof (Uint8Array.prototype as unknown as { toBase64?: unknown }).toBase64 === 'function';
 
 const normalizeForgivingBase64 = (value: string): string => {
   // https://infra.spec.whatwg.org/#forgiving-base64-decode

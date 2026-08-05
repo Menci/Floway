@@ -18,7 +18,7 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // percent-encoding, and SS-2022 base64 padding may vary.
 
-import { base64DecodeBytes, base64EncodeBytes } from './bytes.ts';
+import { base64UrlDecodeBytes, base64UrlEncodeBytes, utf8Bytes } from './bytes.ts';
 import { ProxyUriError } from './errors.ts';
 import {
   type HttpProxyConfig,
@@ -175,14 +175,12 @@ const parseSs = (
     };
   }
 
-  // Legacy: the entire userinfo is base64(method:password). The base64
-  // alphabet contains no ':' so the URL parser leaves the whole blob in
-  // url.username and never splits it across username/password. Decode
-  // through the pctDecoded `username` so `=` padding (which the WHATWG
-  // URL constructor percent-encodes inside userinfo) reaches the decoder raw.
+  // SIP002 encodes UTF-8 `method:password` as Base64URL. The decoder retains
+  // padded and standard-alphabet input compatibility used by older clients.
+  // https://github.com/shadowsocks/shadowsocks-org/blob/34598d65054dad975d330ff9d7317b0d41cf1efd/docs/doc/sip002.md#L3-L13
   let decoded: string;
   try {
-    decoded = latin1StringFromBytes(base64DecodeBytes(username));
+    decoded = new TextDecoder('utf-8', { fatal: true }).decode(base64UrlDecodeBytes(username));
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
@@ -366,37 +364,17 @@ const formatSocks5 = (config: Socks5ProxyConfig): string => {
 };
 
 const formatSs = (config: ShadowsocksProxyConfig): string => {
-  // Legacy SS userinfo is the entire base64-encoded `method:password`;
-  // its wire text is Latin-1, which matches every byte SS allows in either
-  // field.
-  const userinfo = base64EncodeBytes(latin1Bytes(`${config.method}:${config.password}`));
+  const userinfo = base64UrlEncodeBytes(utf8Bytes(`${config.method}:${config.password}`));
   return `ss://${userinfo}@${config.host}:${config.port}${
     formatFragment(config.name, config.host, config.port)}`;
 };
 
-const latin1Bytes = (value: string): Uint8Array => {
-  const bytes = new Uint8Array(value.length);
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit > 0xff) throw new TypeError('Legacy Shadowsocks userinfo must contain only Latin-1 characters');
-    bytes[index] = codeUnit;
-  }
-  return bytes;
-};
-
-const latin1StringFromBytes = (bytes: Uint8Array): string => {
-  let value = '';
-  for (const byte of bytes) value += String.fromCharCode(byte);
-  return value;
-};
-
 const formatSs2022 = (config: Shadowsocks2022ProxyConfig): string => {
-  // SS-2022 keeps userinfo as plaintext `method:base64key`. We emit the
-  // base64 padding (`=`) raw — `parseProxyUri` decodes via
-  // `decodeURIComponent`, which accepts both raw and percent-encoded `=`.
-  return `ss://${config.method}:${config.passwordBase64}`
-    + `@${config.host}:${config.port}${
-      formatFragment(config.name, config.host, config.port)}`;
+  // AEAD-2022 keeps userinfo plaintext and percent-encodes both components;
+  // its PSK remains padded standard Base64.
+  // https://github.com/Shadowsocks-NET/shadowsocks-specs/blob/20b4952e8a54e696ebcabc5f91b5dad7f322f2da/2022-3-shadowsocks-url.md#L1-L18
+  return `${formatAuthority('ss', config.method, config.passwordBase64, config.host, config.port)}${
+    formatFragment(config.name, config.host, config.port)}`;
 };
 
 const formatTrojan = (config: TrojanProxyConfig): string => {

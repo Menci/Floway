@@ -3,7 +3,7 @@
 // Buffers read from a transport-owned ReadableStream may be pooled or reused
 // by the runtime, so retained or downstream-enqueued bytes must own their memory.
 
-import { base64, hex } from '@scure/base';
+import { base64, base64urlnopad, hex } from '@scure/base';
 import ipaddr from 'ipaddr.js';
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
@@ -91,6 +91,8 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
 };
 
 export const base64EncodeBytes = (bytes: Uint8Array): string => base64.encode(bytes);
+
+export const base64UrlEncodeBytes = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 
 /**
  * Base64-decode the inverse of {@link base64EncodeBytes}. Existing proxy URIs

@@ -44,6 +44,8 @@ export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity =
 };
 
 const decodeBase64UrlToUtf8 = (value: string): string => {
+  // JOSE compact serialization uses canonical unpadded Base64URL.
+  // https://www.rfc-editor.org/rfc/rfc7515.html#section-2
   return new TextDecoder().decode(base64urlnopad.decode(value));
 };
 
