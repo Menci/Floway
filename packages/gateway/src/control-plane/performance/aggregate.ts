@@ -1,7 +1,8 @@
 import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
+import { telemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
 
-export type PerformanceBucketGranularity = 'hour' | '4h' | '8h' | 'day' | 'all';
+export type PerformanceBucketGranularity = TelemetryBucketGranularity;
 export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
 // One aggregated row in the shape the dashboard consumes. `ttftMs*` render as
@@ -42,19 +43,6 @@ interface MutableAggregate {
   bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
 }
 
-const displayBucket = (hour: string, options: Pick<AggregateOptions, 'bucket' | 'timezoneOffsetMinutes'>): string => {
-  if (options.bucket === 'all') return 'all';
-  const utcMs = Date.parse(`${hour}:00:00Z`);
-  const localMs = utcMs - options.timezoneOffsetMinutes * 60_000;
-  const localIso = new Date(localMs).toISOString();
-  if (options.bucket === 'hour') return localIso.slice(0, 13);
-  if (options.bucket === 'day') return localIso.slice(0, 10);
-  const hourOfDay = Number(localIso.slice(11, 13));
-  const divisor = options.bucket === '4h' ? 4 : 8;
-  const aligned = hourOfDay - (hourOfDay % divisor);
-  return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
-};
-
 const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): string | null => {
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
@@ -68,7 +56,7 @@ const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOpti
 };
 
 const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): void => {
-  const bucket = displayBucket(record.hour, options);
+  const bucket = telemetryBucket(record.hour, options.bucket, options.timezoneOffsetMinutes);
   const group = displayGroup(record, options, keyToUser);
   if (group === null) return;
   const key = `${bucket}\0${group}`;
