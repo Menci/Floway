@@ -3,6 +3,7 @@ import { useRef } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { fluentComponents } from '../../src/fluent';
+import { stubMatchMedia } from '../match-media-stub';
 import { renderInApp } from '../render';
 
 const { Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
@@ -34,6 +35,8 @@ const QueueHarness = () => {
 };
 
 describe('winui toaster queue', () => {
+  stubMatchMedia(query => query === '(prefers-reduced-motion: reduce)');
+
   it('holds a toast dispatched past the limit until a slot frees instead of removing it', async () => {
     renderInApp(<QueueHarness />);
 
