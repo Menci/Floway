@@ -114,8 +114,6 @@ const translateToolOutput = async (output: string | ResponsesToolOutputContent[]
       if (image) blocks.push(image);
     } else if (part.type === 'input_file') {
       throw new TranslatorInputError('Cannot translate input_file tool output to Messages.');
-    } else if (part.type === 'refusal') {
-      throw new TranslatorInputError('Cannot translate refusal content in a tool output to Messages.');
     } else {
       blocks.push({ type: 'text', text: part.text });
     }
