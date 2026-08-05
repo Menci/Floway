@@ -33,6 +33,8 @@ describe('base encoding', () => {
 
   test('round-trips a large byte buffer', () => {
     const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
-    expect(decodeForgivingBase64(encodeBase64(bytes))).toEqual(bytes);
+    const decoded = decodeForgivingBase64(encodeBase64(bytes));
+    expect(decoded).toHaveLength(bytes.length);
+    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
   });
 });
