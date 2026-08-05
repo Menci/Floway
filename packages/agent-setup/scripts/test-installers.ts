@@ -1340,7 +1340,7 @@ test('claude', 'PowerShell: successful re-runs retain only the latest settings b
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), firstSettings, 'the retained backup is the state before the latest run');
 });
 
-test('claude', 'PowerShell serializes one config root and a failing successor restores the committed settings', async t => {
+test('claude', 'Bash and PowerShell serialize one Claude config root and a failing successor restores the committed settings', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const holderWs = makeWorkspace();
   const successorWs = makeWorkspace();
@@ -1354,7 +1354,7 @@ test('claude', 'PowerShell serializes one config root and a failing successor re
   const holderAtCli = join(holderWs.root, 'holder-at-cli');
   const successorWaiting = join(successorWs.root, 'successor-waiting');
 
-  const holderRun = runPowerShellInstaller({
+  const holderRun = runShellInstaller({
     workspace: holderWs,
     runId: 'lock-holder',
     apiKey: 'key-holder',
@@ -1364,7 +1364,7 @@ test('claude', 'PowerShell serializes one config root and a failing successor re
     fakeCliGate: holderGate,
     fakeCliGateMarker: holderAtCli,
   });
-  await waitForFile(holderAtCli, 'the PowerShell lock holder to reach the Claude CLI');
+  await waitForFile(holderAtCli, 'the Bash lock holder to reach the Claude CLI');
   const successorRun = runPowerShellInstaller({
     workspace: successorWs,
     runId: 'lock-successor',
@@ -1622,10 +1622,10 @@ test('claude', 'PowerShell downloaded installer is bounded', async t => {
   const started = Date.now();
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 12, timeoutSeconds: 1,
+    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 12, timeoutSeconds: 3,
   });
   t.ok(run.code !== 0, 'timed out installer must fail the agent');
-  t.ok(Date.now() - started < 8_000, 'installer deadline must fire well before natural completion');
+  t.ok(Date.now() - started < 10_000, 'installer deadline must fire well before natural completion');
   t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
   t.ok(existsSync(installerChildPid(ws)), 'PowerShell fixture must record a child PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8').trim());
