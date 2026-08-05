@@ -1,6 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
 import { useId } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
@@ -13,6 +12,7 @@ import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
@@ -206,7 +206,7 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
-function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
+function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: TFunction }) {
   const supported = effort.supported;
   const setSupported = (values: readonly string[]) => onChange({
     supported: [...values],
@@ -252,7 +252,7 @@ const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   return null;
 };
 
-const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
+const modelValidationError = (model: UpstreamModelConfig, t: TFunction): string | null => {
   const issue = editorFieldIssue(model);
   if (issue) return t(issue);
   try {

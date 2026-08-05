@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-proxy';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';

@@ -1,10 +1,10 @@
 import { LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useMemo } from 'react';
 import type { ReactElement } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { PerformancePlot, PerformanceChartPointDetails } from './plot';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
 import { formatTokenRate } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
