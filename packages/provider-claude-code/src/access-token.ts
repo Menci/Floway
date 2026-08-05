@@ -207,7 +207,7 @@ const ensureClaudeCodeAccessTokenInner = async (
     rotationApplied = false;
     const storedState = readClaudeCodeUpstreamState(current);
     const stored = storedState.accounts[0];
-    if (stored.state !== 'active' || !sameCredentialGeneration(stored, account)) return storedState;
+    if (stored.state !== 'active' || stored.tokenKind !== 'oauth' || !sameCredentialGeneration(stored, account)) return storedState;
     rotationApplied = true;
     return replaceSoleAccount(storedState, () => ({
       ...stored,
