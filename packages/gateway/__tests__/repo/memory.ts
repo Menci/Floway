@@ -24,6 +24,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceDimensions,
@@ -52,7 +53,7 @@ import type {
   User,
   UsersRepo,
 } from '../../src/repo/types.ts';
-import { serializeStoredState } from '../../src/repo/upstream-json.ts';
+import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
 import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
@@ -609,18 +610,20 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, generation: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const existing = this.store.get(id);
-    if (!existing || existing.updatedAt !== generation) return Promise.resolve(false);
+    if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
 
   // No-op on a row that has never cached a catalog: the annotation belongs to a
   // previously-successful fetch.
-  saveModelsCacheError(id: string, generation: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
     const existing = this.store.get(id);
-    const cache = existing?.updatedAt === generation ? existing.modelsCache : null;
+    const cache = existing?.updatedAt === generation.updatedAt && serializeStoredConfig(existing.config) === serializeStoredConfig(generation.config)
+      ? existing.modelsCache
+      : null;
     if (!cache) return Promise.resolve(false);
     cache.lastError = error;
     return Promise.resolve(true);

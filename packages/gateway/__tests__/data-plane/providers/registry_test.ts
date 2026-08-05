@@ -95,7 +95,7 @@ test('listModelProviders carries each row cached catalog onto its instance', asy
   const cachedRecord = buildCustomUpstreamRecord({ id: 'up_cached', name: 'Cached', sortOrder: 10 });
   await repo.upstreams.save(cachedRecord);
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_cold', name: 'Cold', sortOrder: 20 }));
-  await repo.upstreams.saveModelsCache('up_cached', cachedRecord.updatedAt, {
+  await repo.upstreams.saveModelsCache('up_cached', { updatedAt: cachedRecord.updatedAt, config: cachedRecord.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],

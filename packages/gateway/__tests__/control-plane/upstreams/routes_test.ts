@@ -264,7 +264,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // Plant a stale row so the post-PATCH read can verify the warm overwrote
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
-  await repo.upstreams.saveModelsCache(created.id, (await getRecord(repo, created.id)).updatedAt, {
+  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
@@ -416,17 +416,17 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
-  await repo.upstreams.saveModelsCache('up_warm', baseRow.updatedAt, {
+  await repo.upstreams.saveModelsCache('up_warm', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.upstreams.saveModelsCache('up_failed', baseRow.updatedAt, {
+  await repo.upstreams.saveModelsCache('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await repo.upstreams.saveModelsCacheError('up_failed', baseRow.updatedAt, { message: 'boom', at: 1_700_000_500_000 });
+  await repo.upstreams.saveModelsCacheError('up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -463,7 +463,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
   // comes from the catalog it stored while it was on.
-  await repo.upstreams.saveModelsCache('up_disabled_custom', (await getRecord(repo, 'up_disabled_custom')).updatedAt, {
+  await repo.upstreams.saveModelsCache('up_disabled_custom', await getCacheGeneration(repo, 'up_disabled_custom'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
@@ -720,14 +720,14 @@ test('PATCH /api/upstreams warms the models cache before responding', async () =
   // Overwrite whatever the create-time warm landed on the row with a marker
   // catalog, so the assertion below can only pass if the PATCH-time warm wrote
   // over it.
-  await repo.upstreams.saveModelsCache(created.id, (await getRecord(repo, created.id)).updatedAt, {
+  await repo.upstreams.saveModelsCache(created.id, await getCacheGeneration(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
   // …and annotate it with an error the successful PATCH-time warm must clear,
   // so the response body cannot pass by echoing the pre-warm row.
-  await repo.upstreams.saveModelsCacheError(created.id, (await getRecord(repo, created.id)).updatedAt, { message: 'stale failure', at: 1 });
+  await repo.upstreams.saveModelsCacheError(created.id, await getCacheGeneration(repo, created.id), { message: 'stale failure', at: 1 });
 
   const patched = await withMockedFetch(
     async request => {
@@ -838,6 +838,11 @@ const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<U
   const record = await repo.upstreams.getById(id);
   if (!record) throw new Error(`Expected upstream ${id} to exist`);
   return record;
+};
+
+const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string) => {
+  const record = await getRecord(repo, id);
+  return { updatedAt: record.updatedAt, config: record.config };
 };
 
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {

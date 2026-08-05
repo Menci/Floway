@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type Provider, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_a';
-const CACHE_GENERATION = vi.hoisted(() => '2026-08-01T00:00:00.000Z');
-const generationByProvider = vi.hoisted(() => new WeakMap<object, string>());
+const CACHE_GENERATION = vi.hoisted<ModelsCacheGeneration>(() => ({
+  updatedAt: '2026-08-01T00:00:00.000Z',
+  config: { identity: 'old' },
+}));
+const generationByProvider = vi.hoisted(() => new WeakMap<object, ModelsCacheGeneration>());
 
 vi.mock('../../../src/data-plane/providers/registry.ts', () => ({
   modelsCacheGenerationFor: (provider: object) => {
@@ -26,7 +30,7 @@ const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
-  generation = CACHE_GENERATION,
+  generation: ModelsCacheGeneration = CACHE_GENERATION,
 ): Provider => {
   const provider: Provider = {
     upstreamId: UPSTREAM_ID,
@@ -53,8 +57,8 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: CACHE_GENERATION,
-    config: {},
+    updatedAt: CACHE_GENERATION.updatedAt,
+    config: CACHE_GENERATION.config,
     state: null,
     modelsCache: null,
     flagOverrides: {},
@@ -207,10 +211,10 @@ describe('fetchUpstreamModelsCached', () => {
     );
     await Promise.resolve();
 
-    const nextGeneration = '2026-08-01T00:00:00.001Z';
+    const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, config: { identity: 'new' } };
     const current = await repo.upstreams.getById(UPSTREAM_ID);
     if (!current) throw new Error('upstream row missing');
-    await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration });
+    await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration.updatedAt, config: nextGeneration.config });
     const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
     const newRequest = fetchUpstreamModelsCached(
       stubInstance(newFetch, null, nextGeneration),

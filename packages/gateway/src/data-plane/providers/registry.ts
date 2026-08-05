@@ -1,4 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
+import type { ModelsCacheGeneration } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
@@ -16,15 +17,15 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProviderModule,
 };
 
-const cacheGenerationByProvider = new WeakMap<Provider, string>();
+const cacheGenerationByProvider = new WeakMap<Provider, ModelsCacheGeneration>();
 
 export const createProvider = (record: UpstreamRecord): Provider => {
   const provider = providersByKind[record.kind].create(record);
-  cacheGenerationByProvider.set(provider, record.updatedAt);
+  cacheGenerationByProvider.set(provider, { updatedAt: record.updatedAt, config: record.config });
   return provider;
 };
 
-export const modelsCacheGenerationFor = (provider: Provider): string => {
+export const modelsCacheGenerationFor = (provider: Provider): ModelsCacheGeneration => {
   const generation = cacheGenerationByProvider.get(provider);
   if (generation === undefined) throw new Error(`Provider ${provider.upstreamId} has no model-cache generation`);
   return generation;

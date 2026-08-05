@@ -16,6 +16,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -945,10 +946,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // Written only here and never by save(): an operator edit carries whatever
   // catalog the request happened to read, and folding that back in would let a
   // rename race a refresh.
-  async saveModelsCache(id: string, generation: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const result = await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ?')
-      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id, generation)
+      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
+      .bind(JSON.stringify({ ...cache, lastError: null }, modelsReplacer), id, generation.updatedAt, serializeStoredConfig(generation.config))
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -958,10 +959,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // read-modify-written: it touches one key of a document whose other keys a
   // concurrent refresh may be rewriting, and nothing compares this column's
   // text, so the encoding SQLite produces here is immaterial.
-  async saveModelsCacheError(id: string, generation: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id, generation)
+      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
+      .bind(JSON.stringify(error), id, generation.updatedAt, serializeStoredConfig(generation.config))
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
