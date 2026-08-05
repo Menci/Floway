@@ -38,7 +38,7 @@ function Main {
   # Detection sites rethrow reported failures as the `setup-handled` sentinel;
   # only unexpected exceptions are reported again here after redaction.
   try {
-    Set-SetupAgent
+    try { Set-SetupAgent } finally { Exit-SetupLock }
   } catch {
     if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
     return 1

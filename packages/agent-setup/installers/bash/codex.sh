@@ -356,6 +356,12 @@ codex_write_version() {
 # Install, then configure Codex as one transactional config/token write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 configure_agent() {
+  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
+  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
+  if ! _acquire_setup_lock "$CODEX_HOME_DIR"; then
+    return 1
+  fi
   out_agent_notice 'Installing' 'Codex'
   if ! codex_ensure_installed; then
     out_error 'Codex CLI is unavailable and could not be installed.'
@@ -368,13 +374,6 @@ configure_agent() {
   out_agent_notice 'Configuring' 'Codex'
   if ! ensure_jq; then
     out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
-    return 1
-  fi
-  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
-  if ! mkdir -p "$CODEX_HOME_DIR"; then
-    out_error "could not create $CODEX_HOME_DIR"
     return 1
   fi
   if ! codex_backup_files; then

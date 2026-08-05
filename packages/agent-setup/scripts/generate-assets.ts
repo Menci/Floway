@@ -37,6 +37,7 @@ const scriptSources = {
       { name: 'SETUP_BASH_COMMON_MAIN', file: 'installers/bash/common/main.sh', end: '# --- run' },
       { name: 'SETUP_BASH_COMMON_PROCESS', file: 'installers/bash/common/process.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_JQ', file: 'installers/bash/common/jq.sh', append: '\n' },
+      { name: 'SETUP_BASH_COMMON_LOCK', file: 'installers/bash/common/lock.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_CLI', file: 'installers/bash/common/cli.sh', end: '_install_brew_cask() {' },
       { name: 'SETUP_BASH_COMMON_MANAGED_FILE', file: 'installers/bash/common/managed-file.sh', append: '\n' },
       { name: 'SETUP_BASH_COMMON_CLI', file: 'installers/bash/common/cli.sh', start: '_install_brew_cask() {' },
@@ -54,6 +55,7 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_JSON_DOCUMENT', file: 'installers/powershell/common/json-document.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', end: '# --- run' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', end: '# Rollback retains' },
+      { name: 'SETUP_POWERSHELL_COMMON_LOCK', file: 'installers/powershell/common/lock.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Run a fixed package-manager' },
       { name: 'SETUP_POWERSHELL_COMMON_PLATFORM', file: 'installers/powershell/common/platform.ps1', start: 'function Get-SetupPlatform', append: '\n' },
       {

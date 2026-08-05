@@ -106,7 +106,7 @@ claude_rollback_settings() {
 
 # Same-directory staging keeps the mode-0600 replacement rename atomic.
 claude_write_settings() {
-  _cw_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  _cw_dir=$CLAUDE_CONFIG_DIR_PATH
   CLAUDE_SETTINGS_PATH="$_cw_dir/settings.json"
   CLAUDE_SETTINGS_BACKUP=""
   CLAUDE_SETTINGS_EXISTED=0
@@ -180,6 +180,11 @@ claude_write_settings() {
     claude_rollback_settings
     return 1
   fi
+  if [ -n "${AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE:-}" ]; then
+    out_error 'test-injected failure after replacing Claude settings.'
+    claude_rollback_settings
+    return 1
+  fi
   if ! _prune_managed_backups "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
     claude_rollback_settings
     return 1
@@ -206,6 +211,10 @@ claude_write_version() {
 # Install, then configure Claude Code as one transactional settings write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 configure_agent() {
+  CLAUDE_CONFIG_DIR_PATH="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  if ! _acquire_setup_lock "$CLAUDE_CONFIG_DIR_PATH"; then
+    return 1
+  fi
   out_agent_notice 'Installing' 'Claude Code'
   if ! claude_ensure_installed; then
     out_error 'Claude Code CLI is unavailable and could not be installed.'

@@ -61,7 +61,7 @@ function Install-SetupClaude {
 # existing document, back it up, construct and validate the replacement in the
 # same directory, then atomically rename it into place with owner-only access.
 function Write-SetupClaudeSettings {
-  $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+  $configDir = $script:ClaudeConfigDir
   $script:ClaudeSettingsPath = Join-Path $configDir 'settings.json'
   $script:ClaudeSettingsBackup = $null
   $script:ClaudeSettingsExisted = $false
@@ -157,10 +157,11 @@ function Write-SetupClaudeSettings {
       # target on Windows. Windows replacing an existing target uses File.Replace.
       Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
     }
+    if ($env:AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE) { throw 'test-injected failure after replacing Claude settings' }
     Remove-SetupOlderBackups -Path $script:ClaudeSettingsPath -Keep $script:ClaudeSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
-    Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
+    $null = Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
     throw
   }
 }
@@ -176,6 +177,8 @@ function Write-SetupClaudeVersion {
 # Install, then configure Claude Code as one transactional settings write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
+  $script:ClaudeConfigDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
+  Enter-SetupLock $script:ClaudeConfigDir
   Write-SetupAgentNotice 'Installing' 'Claude Code'
   # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
   $candidates = @(
