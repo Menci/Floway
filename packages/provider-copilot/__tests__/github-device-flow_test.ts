@@ -92,7 +92,7 @@ test.each([
     interval: 10,
   },
   { error: 'access_denied', error_description: 'The user has rejected authorization.' },
-])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async (body) => {
+])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async body => {
   assertEquals(await pollGitHubDeviceFlow('device', async () => jsonResponse(body)), body);
 });
 
