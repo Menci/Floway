@@ -298,11 +298,11 @@ const registerTwoEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof se
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_a', name: 'Upstream A', sortOrder: 100,
-    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {} },
+    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_b', name: 'Upstream B', sortOrder: 200,
-    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {} },
+    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
   }));
 };
 
