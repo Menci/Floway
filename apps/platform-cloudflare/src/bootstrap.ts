@@ -1,8 +1,13 @@
-import { DurableObjectChannelBroker, type BroadcastNamespace } from './durable-object-channel-broker.ts';
+import {
+  assertRequiredCloudflareBindings,
+  cloudflareEnvGetter,
+  type CloudflareEnv,
+} from './cloudflare-env.ts';
+import { DurableObjectChannelBroker } from './durable-object-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
-import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
-import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
-import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
+import { createCloudflareImageProcessor } from './image-processor.ts';
+import { KvImageCacheStore } from './kv-image-cache-store.ts';
+import { R2FileStore } from './r2-file-store.ts';
 import { cloudflareRuntimeRootCAs } from './runtime-root-cas.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
@@ -23,36 +28,14 @@ import {
   type SqlDatabase,
 } from '@floway-dev/platform';
 
-export interface CloudflareEnv {
-  DB: SqlDatabase;
-  FILES: R2BucketLike;
-  IMAGES: ImagesBinding;
-  KV: KvNamespace;
-  BROADCAST_DO: BroadcastNamespace;
-  [key: string]: unknown;
-}
-
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 stores file-backed response payloads and dump bodies,
 // Images re-encodes images, and KV memoises the results. A missing binding means
 // wrangler.jsonc drifted from the code, so we refuse to initialise rather
 // than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
-
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
-  const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined);
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required Cloudflare bindings: ${missing.join(', ')}. `
-      + 'Declare them in wrangler.jsonc; see wrangler.example.jsonc.',
-    );
-  }
-
-  initEnv(name => {
-    const value = env[name];
-    if (typeof value !== 'string') return undefined;
-    return value;
-  });
+  assertRequiredCloudflareBindings(env);
+  initEnv(cloudflareEnvGetter(env));
   initRuntimeKind('cloudflare');
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
@@ -66,3 +49,5 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initDumpBroker(new DurableObjectChannelBroker<DumpMetadata>(env.BROADCAST_DO, dumpCodec));
   return { db: env.DB };
 };
+
+export type { CloudflareEnv } from './cloudflare-env.ts';
