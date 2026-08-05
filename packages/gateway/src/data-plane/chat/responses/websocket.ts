@@ -12,6 +12,7 @@ import {
   RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
   RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
   ResponsesWebSocketIngressBudget,
+  responsesWebSocketMessageByteLength,
   type PreparedResponsesWebSocketMessage,
   type ResponsesWebSocketIngressReservation,
 } from './websocket-policy.ts';
@@ -250,20 +251,12 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
       });
   };
 
-  const enqueue = (prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>, socket: ResponsesWebSocketSocket): void => {
-    const byteLength = prepared.kind === 'ready' ? prepared.bytes.byteLength : 0;
-    const decision = ingressBudget.reserve(byteLength);
-    if (decision.kind === 'message-too-large') throw new Error('prepared WebSocket message exceeded its preflight byte limit');
-    if (decision.kind === 'queue-full') {
-      closeWithError(socket, 429, {
-        type: 'rate_limit_error',
-        code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
-        message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
-      }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
-      return;
-    }
-
-    const turn = { prepared, reservation: decision.reservation, socket };
+  const enqueue = (
+    prepared: Exclude<PreparedResponsesWebSocketMessage, { readonly kind: 'message-too-large' }>,
+    reservation: ResponsesWebSocketIngressReservation,
+    socket: ResponsesWebSocketSocket,
+  ): void => {
+    const turn = { prepared, reservation, socket };
     if (activeTurn === undefined) runQueuedTurn(turn);
     else queuedTurns.push(turn);
   };
@@ -292,8 +285,9 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     onError: event => { closeActiveRequest(event); },
     onMessage: (event, socket) => {
       if (closed) return;
-      const prepared = prepareResponsesWebSocketMessage(event.data);
-      if (prepared.kind === 'message-too-large') {
+      const byteLength = responsesWebSocketMessageByteLength(event.data);
+      const decision = ingressBudget.reserve(byteLength);
+      if (decision.kind === 'message-too-large') {
         closeWithError(socket, 413, {
           type: 'invalid_request_error',
           code: RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE,
@@ -301,7 +295,18 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
         }, 1009, RESPONSES_WEBSOCKET_MESSAGE_TOO_LARGE_CODE);
         return;
       }
-      enqueue(prepared, socket);
+      if (decision.kind === 'queue-full') {
+        closeWithError(socket, 429, {
+          type: 'rate_limit_error',
+          code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
+          message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
+        }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+        return;
+      }
+
+      const prepared = prepareResponsesWebSocketMessage(event.data, RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes, byteLength);
+      if (prepared.kind === 'message-too-large') throw new Error('WebSocket message size changed after ingress reservation');
+      enqueue(prepared, decision.reservation, socket);
     },
   };
 };

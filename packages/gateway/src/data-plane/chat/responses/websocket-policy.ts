@@ -73,29 +73,36 @@ export type PreparedResponsesWebSocketMessage =
   | { readonly kind: 'unsupported'; readonly description: string }
   | { readonly kind: 'message-too-large'; readonly byteLength: number };
 
+export const responsesWebSocketMessageByteLength = (data: unknown): number => {
+  if (typeof data === 'string') return utf8ByteLength(data);
+  if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return data.byteLength;
+  if (typeof Blob !== 'undefined' && data instanceof Blob) return data.size;
+  return 0;
+};
+
 export const prepareResponsesWebSocketMessage = (
   data: unknown,
   maxMessageBytes: number = RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes,
+  byteLength: number = responsesWebSocketMessageByteLength(data),
 ): PreparedResponsesWebSocketMessage => {
   if (typeof data === 'string') {
-    const byteLength = utf8ByteLength(data);
     return byteLength > maxMessageBytes
       ? { kind: 'message-too-large', byteLength }
       : { kind: 'ready', bytes: new TextEncoder().encode(data) };
   }
   if (data instanceof ArrayBuffer) {
-    return data.byteLength > maxMessageBytes
-      ? { kind: 'message-too-large', byteLength: data.byteLength }
+    return byteLength > maxMessageBytes
+      ? { kind: 'message-too-large', byteLength }
       : { kind: 'ready', bytes: new Uint8Array(data.slice(0)) };
   }
   if (ArrayBuffer.isView(data)) {
-    return data.byteLength > maxMessageBytes
-      ? { kind: 'message-too-large', byteLength: data.byteLength }
+    return byteLength > maxMessageBytes
+      ? { kind: 'message-too-large', byteLength }
       : { kind: 'ready', bytes: new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice() };
   }
   if (typeof Blob !== 'undefined' && data instanceof Blob) {
-    return data.size > maxMessageBytes
-      ? { kind: 'message-too-large', byteLength: data.size }
+    return byteLength > maxMessageBytes
+      ? { kind: 'message-too-large', byteLength }
       : { kind: 'unsupported', description: 'Blob' };
   }
   return { kind: 'unsupported', description: typeof data };
