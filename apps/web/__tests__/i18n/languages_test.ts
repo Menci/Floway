@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { htmlLanguageFor, localeForLanguage, normalizeLanguage } from '../../src/i18n/languages';
+import { browserLanguage, htmlLanguageFor, localeForLanguage, normalizeLanguage } from '../../src/i18n/languages';
+
+const browserLanguages = Object.getOwnPropertyDescriptor(window.navigator, 'languages');
+afterEach(() => {
+  if (browserLanguages) Object.defineProperty(window.navigator, 'languages', browserLanguages);
+  else Reflect.deleteProperty(window.navigator, 'languages');
+});
 
 describe('normalizeLanguage', () => {
   it.each([
@@ -36,6 +42,15 @@ describe('normalizeLanguage', () => {
 });
 
 describe('language locales', () => {
+  it('takes the first supported language in the browser preference list', () => {
+    Object.defineProperty(window.navigator, 'languages', {
+      configurable: true,
+      value: ['ja-JP', 'zh-CN', 'en-US'],
+    });
+
+    expect(browserLanguage()).toBe('zh-Hans');
+  });
+
   it('uses the matching regional locale', () => {
     expect(localeForLanguage('zh-Hans')).toBe('zh-CN');
     expect(localeForLanguage('en')).toBe('en-US');

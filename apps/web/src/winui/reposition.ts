@@ -7,6 +7,7 @@
 // Offsets are read with offsetTop rather than a bounding rect, because a rect
 // includes the transform an unfinished reposition is still applying and would
 // feed its own output back in as the next measurement.
+import { prefersReducedMotion } from '../lib/reduced-motion';
 import { REPOSITION_ANIMATION_MS, REPOSITION_DELETE_DELAY_MS, REPOSITION_EASING } from './motion';
 
 /**
@@ -37,6 +38,12 @@ export const createReposition = () => {
       offsets.delete(element);
       running.delete(element);
       departed = true;
+    }
+
+    if (prefersReducedMotion()) {
+      running.forEach(animation => animation.cancel());
+      running.clear();
+      return;
     }
 
     for (const [element, delta] of moved) {

@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { fluentComponents } from '../../src/fluent';
 import { winuiAppearanceAttribute, winuiCheckedAttribute } from '../../src/winui/appearance';
 import { renderInApp } from '../render';
+import '../components/ui/outcome-toast.cases';
 import './field-atoms.cases';
 import './motion.cases';
+import './switch-drag.cases';
 import './toast-queue.cases';
 
 const {

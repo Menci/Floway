@@ -25,8 +25,14 @@ export const normalizeLanguage = (value: string | null | undefined): SupportedLa
 
 // The prerender renders one index.html for every visitor and has no navigator
 // to ask, so it answers with the default language.
-export const browserLanguage = (): SupportedLanguage =>
-  (typeof window === 'undefined' ? null : normalizeLanguage(window.navigator.language)) ?? defaultLanguage;
+export const browserLanguage = (): SupportedLanguage => {
+  if (typeof window === 'undefined') return defaultLanguage;
+  for (const language of window.navigator.languages) {
+    const supported = normalizeLanguage(language);
+    if (supported !== null) return supported;
+  }
+  return normalizeLanguage(window.navigator.language) ?? defaultLanguage;
+};
 
 export const localeForLanguage = (language: string | null | undefined): string => {
   const normalized = normalizeLanguage(language) ?? defaultLanguage;
