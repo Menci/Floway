@@ -1,6 +1,7 @@
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
+import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import {
   assertSameStoredResponsesItem,
   cloneStoredResponsesItem,
@@ -557,6 +558,7 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, UpstreamRecord>();
+  private modelsRefreshes = new Map<string, { failCount: number; retryAt: number; claimToken: string | null; claimedAt: number | null }>();
 
   list(): Promise<UpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
@@ -585,15 +587,18 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       ? { ...upstream, createdAt: existing.createdAt, modelsCache: null }
       : { ...upstream, modelsCache: null };
     this.store.set(next.id, cloneUpstreamRecord(next));
+    this.modelsRefreshes.delete(next.id);
     return Promise.resolve();
   }
 
   delete(id: string): Promise<boolean> {
+    this.modelsRefreshes.delete(id);
     return Promise.resolve(this.store.delete(id));
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.modelsRefreshes.clear();
     return Promise.resolve();
   }
 
@@ -627,6 +632,39 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     if (!cache) return Promise.resolve(false);
     cache.lastError = error;
     return Promise.resolve(true);
+  }
+
+  claimModelsRefresh(id: string, generation: ModelsCacheGeneration, token: string, now: number, staleClaimedBefore: number, force: boolean): Promise<boolean> {
+    if (this.store.get(id)?.updatedAt !== generation.updatedAt) return Promise.resolve(false);
+    const existing = this.modelsRefreshes.get(id);
+    const eligible = force
+      || existing === undefined
+      || (existing.retryAt <= now && (existing.claimToken === null || existing.claimedAt! <= staleClaimedBefore));
+    if (!eligible) return Promise.resolve(false);
+    this.modelsRefreshes.set(id, {
+      failCount: existing?.failCount ?? 0,
+      retryAt: existing?.retryAt ?? 0,
+      claimToken: token,
+      claimedAt: now,
+    });
+    return Promise.resolve(true);
+  }
+
+  completeModelsRefreshSuccess(id: string, token: string): Promise<void> {
+    if (this.modelsRefreshes.get(id)?.claimToken === token) this.modelsRefreshes.delete(id);
+    return Promise.resolve();
+  }
+
+  completeModelsRefreshFailure(id: string, token: string, now: number): Promise<void> {
+    const existing = this.modelsRefreshes.get(id);
+    if (existing?.claimToken !== token) return Promise.resolve();
+    this.modelsRefreshes.set(id, {
+      failCount: existing.failCount + 1,
+      retryAt: modelsRefreshRetryAt(now, existing.failCount),
+      claimToken: null,
+      claimedAt: null,
+    });
+    return Promise.resolve();
   }
 }
 

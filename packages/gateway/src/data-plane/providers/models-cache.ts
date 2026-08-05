@@ -1,28 +1,23 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
+import { MODELS_REFRESH_CLAIM_LEASE_MS } from '../../repo/models-refresh-contract.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
 
-// Soft TTL: a fetched row is served verbatim within this window with no
-// upstream call. Past SOFT but within HARD, the stored row is still served
-// while a background revalidate refreshes it. Past HARD a fresh fetch is
-// required and blocks the caller; a failed background revalidate within
-// HARD leaves the row in place and only annotates the entry's `lastError`,
-// which is also the rationale for treating SOFT/HARD as a single SWR window
-// rather than introducing a separate fail-back tier.
+// Soft-fresh rows need no refresh. Every older row remains usable forever;
+// access only triggers a background attempt guarded by the persisted refresh
+// claim/backoff state.
 const SOFT_MS = 10 * 60 * 1000;
-const HARD_MS = 24 * 60 * 60 * 1000;
 
 export { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 
 export interface ModelsCacheFetchOptions {
   scheduler: BackgroundScheduler;
   fetcher: Fetcher;
-  // Skip the SOFT/HARD cache check and always trigger a fresh fetch. The
-  // call still joins the L1 in-flight map when both fetch identity and cache
-  // ownership match. Failure throws; no fall-back to the stored row.
+  // The upstream editor's explicit Fetch Models action is the sole caller of
+  // this option. It waits for an actual fetch and bypasses refresh backoff.
   force?: boolean;
   // Some control-plane callers also need the upstream's raw catalog shape.
   // Their loader projects that already-fetched response into the exact
@@ -36,12 +31,12 @@ export interface ModelsCacheFetchOptions {
 // and superseded rows remain isolated. Not a TTL cache — the entry is removed
 // when the promise settles. The conditional delete defends against a stale
 // removal racing a later replacement.
-const inFlight = new Map<string, Promise<ProviderModel[]>>();
+const inFlight = new Map<string, Promise<ProviderModel[] | null>>();
 
 const memoInFlight = (
   key: string,
-  fn: () => Promise<ProviderModel[]>,
-): Promise<ProviderModel[]> => {
+  fn: () => Promise<ProviderModel[] | null>,
+): Promise<ProviderModel[] | null> => {
   const existing = inFlight.get(key);
   if (existing) return existing;
   const promise = fn();
@@ -81,39 +76,91 @@ const runFetch = async (
   }
 };
 
+const runClaimedFetch = async (
+  instance: GatewayProvider,
+  fetcher: Fetcher,
+  force: boolean,
+  loadProvidedModels?: () => Promise<ProviderModel[]>,
+): Promise<ProviderModel[] | null> => {
+  const repo = getRepo();
+  const now = Date.now();
+  const token = crypto.randomUUID();
+  const claimed = await repo.upstreams.claimModelsRefresh(
+    instance.upstreamId,
+    instance.modelsCacheGeneration,
+    token,
+    now,
+    now - MODELS_REFRESH_CLAIM_LEASE_MS,
+    force,
+  );
+  if (!claimed) return null;
+
+  try {
+    const models = await runFetch(instance, fetcher, instance.upstreamId, loadProvidedModels);
+    await repo.upstreams.completeModelsRefreshSuccess(instance.upstreamId, token);
+    return models;
+  } catch (error) {
+    try {
+      await repo.upstreams.completeModelsRefreshFailure(instance.upstreamId, token, Date.now());
+    } catch (backoffError) {
+      throw new AggregateError([error, backoffError], errorMessage(error));
+    }
+    throw error;
+  }
+};
+
+const inFlightKey = (instance: GatewayProvider): string => {
+  const generation = instance.modelsCacheGeneration;
+  return `${instance.upstreamId}\0${instance.modelsFetchIdentity}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
+};
+
+export const fetchUpstreamModels = async (
+  instance: GatewayProvider,
+  fetcher: Fetcher,
+  loadProvidedModels?: () => Promise<ProviderModel[]>,
+): Promise<ProviderModel[]> => {
+  const key = inFlightKey(instance);
+  const existing = inFlight.get(key);
+  if (existing) {
+    const joined = await existing;
+    if (joined !== null) return joined;
+    if (inFlight.get(key) === existing) inFlight.delete(key);
+  }
+
+  const models = await memoInFlight(key, () => runClaimedFetch(instance, fetcher, true, loadProvidedModels));
+  if (models === null) throw new Error(`Failed to force-claim models refresh for ${instance.upstreamId}`);
+  return models;
+};
+
+export const triggerUpstreamModelsFetch = (
+  instance: GatewayProvider,
+  scheduler: BackgroundScheduler,
+  fetcher: Fetcher,
+  loadProvidedModels?: () => Promise<ProviderModel[]>,
+): void => {
+  const key = inFlightKey(instance);
+  scheduler(memoInFlight(key, () => runClaimedFetch(instance, fetcher, false, loadProvidedModels)));
+};
+
 export const fetchUpstreamModelsCached = async (
   instance: GatewayProvider,
   opts: ModelsCacheFetchOptions,
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
-  const key = instance.upstreamId;
-  const generation = instance.modelsCacheGeneration;
-  const inFlightKey = `${key}\0${instance.modelsFetchIdentity}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
   const now = Date.now();
 
   if (force) {
-    return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key, loadProvidedModels));
+    return await fetchUpstreamModels(instance, fetcher, loadProvidedModels);
   }
 
   // Read off the instance rather than queried: the row that produced this
   // provider carried its catalog, so the SWR check costs nothing.
   const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
 
-  if (cached && now - cached.fetchedAt < SOFT_MS) {
-    return cached.models;
-  }
+  if (cached && now - cached.fetchedAt < SOFT_MS) return cached.models;
 
-  if (cached && now - cached.fetchedAt < HARD_MS) {
-    // Joining L1 here means a second request arriving mid-flight does
-    // not enqueue a second background task. The trailing `.catch` is the
-    // sink for the background branch only — `runFetch` already persists
-    // the failure via `saveModelsCacheError` before rethrowing, so the SWR
-    // caller who got `cached.models` does not need to learn about it.
-    scheduler(memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key)).catch(() => {}));
-    return cached.models;
-  }
-
-  return await memoInFlight(inFlightKey, () => runFetch(instance, fetcher, key));
+  triggerUpstreamModelsFetch(instance, scheduler, fetcher, loadProvidedModels);
+  return cached?.models ?? [];
 };
 
 // Test-only: drop the L1 map so a test's setup is independent of any
