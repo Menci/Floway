@@ -1263,6 +1263,37 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');
 });
 
+test('claude', 'PowerShell: deep and case-distinct settings survive managed updates', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  let deep: Record<string, unknown> = { sentinel: 'preserved-at-depth' };
+  for (let depth = 0; depth < 105; depth++) deep = { next: deep };
+  writeFileSync(settingsPathFor(ws), JSON.stringify({
+    __type: 7,
+    Env: { ANTHROPIC_BASE_URL: 'upper-case-object' },
+    env: { anthropic_base_url: 'lower-case-property', deep },
+  }));
+
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+
+  t.equal(run.code, 0, `deep settings should remain writable:\n${run.combined}`);
+  const settings = readSettings(settingsPathFor(ws)) as {
+    __type: number;
+    Env: { ANTHROPIC_BASE_URL: string };
+    env: Record<string, unknown>;
+  };
+  t.equal(settings.__type, 7, 'a first __type property remains ordinary JSON data');
+  t.equal(settings.Env.ANTHROPIC_BASE_URL, 'upper-case-object', 'case-distinct Env remains untouched');
+  t.equal(settings.env.anthropic_base_url, 'lower-case-property', 'case-distinct nested property remains untouched');
+  t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'the exact managed property is written separately');
+  let cursor = settings.env.deep as Record<string, unknown>;
+  for (let depth = 0; depth < 105; depth++) cursor = cursor.next as Record<string, unknown>;
+  t.equal(cursor.sentinel, 'preserved-at-depth', 'data beyond the old depth-100 ceiling remains structured');
+});
+
 test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
