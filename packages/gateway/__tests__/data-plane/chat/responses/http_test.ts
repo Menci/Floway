@@ -135,7 +135,6 @@ const makeCandidate = (overrides: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
-      additionalInboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,

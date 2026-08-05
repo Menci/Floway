@@ -90,7 +90,8 @@ const authStyleField = (value: unknown): CustomAuthStyle => {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2
-const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+export const CUSTOM_INBOUND_HEADER_ALLOWLIST = [/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/] as const;
+const HTTP_FIELD_NAME_PATTERN = CUSTOM_INBOUND_HEADER_ALLOWLIST[0];
 
 // Field values admit HTAB, visible ASCII, and obs-text bytes. Fetch rejects
 // every other control byte and values that cannot undergo ByteString

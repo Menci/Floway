@@ -1,5 +1,5 @@
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
-import { resolveIngressHeadersForProvider } from '../../../shared/inbound-headers.ts';
+import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
@@ -46,7 +46,7 @@ export const resolveAlphaSearchDispatcher = async ({
       {
         fetcher: candidate.fetcher,
         waitUntil: scheduler,
-        headers: resolveIngressHeadersForProvider(headers, candidate.provider),
+        headers: filterInboundHeadersForProvider(headers, candidate.provider.kind),
         wrapUpstreamCall: identityWrapUpstreamCall,
       },
     );

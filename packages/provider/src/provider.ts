@@ -25,8 +25,9 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export type InboundHeaderMatcher = string | RegExp;
 
-interface ProviderBase {
+export interface Provider {
   upstreamId: string;
+  kind: UpstreamProviderKind;
   name: string;
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
@@ -39,19 +40,6 @@ interface ProviderBase {
   modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
-
-export interface CustomProvider extends ProviderBase {
-  kind: 'custom';
-  // Every configured rule name joins this instance's ordinary-header
-  // allowlist. Rule values remain private to the Custom provider.
-  additionalInboundHeaderAllowlist: readonly InboundHeaderMatcher[];
-}
-
-export interface StandardProvider extends ProviderBase {
-  kind: Exclude<UpstreamProviderKind, 'custom'>;
-}
-
-export type Provider = CustomProvider | StandardProvider;
 
 export interface ProviderCallResult {
   response: Response;
@@ -109,13 +97,12 @@ export type ProviderResponsesResult =
 // already stopped waiting on.
 //
 // `headers` is the ordinary inbound-headers conduit from gateway to provider.
-// The gateway applies the provider module's `inboundHeaderAllowlist` before
-// constructing this bag. Custom additionally admits the exact names configured
-// on that instance, then owns any empty/custom replacement at its call boundary.
-// Protocol-owned metadata is carried by its owning invocation boundary and does
-// not widen this policy. A provider may clone and mutate the bag for
-// request-specific wire shaping, but must not retain the gateway-owned reference
-// past the call.
+// The gateway filters the source request through the provider module's
+// `inboundHeaderAllowlist` before constructing this bag. Protocol-owned
+// metadata is carried by its owning invocation boundary and does not widen
+// this provider-level policy. A provider may clone and mutate the bag for
+// request-specific wire shaping, but must not retain the gateway-owned
+// reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;

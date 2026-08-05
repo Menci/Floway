@@ -13,7 +13,6 @@ test('passthroughAttempt applies the selected provider ingress policy', async ()
     provider: {
       ...base.provider,
       kind: 'custom',
-      additionalInboundHeaderAllowlist: [],
       instance: stubProvider({
         callEmbeddings: async (_model, _body, _signal, opts) => {
           observed = opts.headers;

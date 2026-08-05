@@ -88,7 +88,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstreamId: upstream, kind: 'custom', name: upstream, additionalInboundHeaderAllowlist: [],
+      upstreamId: upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),

@@ -61,7 +61,6 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
       upstreamId: 'test-upstream',
       kind: 'custom',
       name: 'Test Upstream',
-      additionalInboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,

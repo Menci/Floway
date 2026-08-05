@@ -1,10 +1,11 @@
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { createCustomProvider } from './provider.ts';
+import { CUSTOM_INBOUND_HEADER_ALLOWLIST } from './config.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const customProviderModule: ProviderModule = {
   create: createCustomProvider,
-  inboundHeaderAllowlist: [],
+  inboundHeaderAllowlist: CUSTOM_INBOUND_HEADER_ALLOWLIST,
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 
