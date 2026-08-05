@@ -339,7 +339,6 @@ function CopilotConfig({ record, onPatch }: {
 
   const hostField = <Field
     label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.copilot.githubHost'), t('dashboard.upstreamEditor.copilot.githubHostHint')) }}
-    required
   >
     <Controller
       control={control}
