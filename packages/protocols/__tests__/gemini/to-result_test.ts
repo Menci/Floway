@@ -85,14 +85,15 @@ test('collectGeminiProtocolEventsToResult waits for every candidate in a stagger
     } satisfies GeminiStreamEvent);
     consumed++;
     yield eventFrame({
-      candidates: [
-        { index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' },
-        { index: 1, content: { role: 'model', parts: [{ text: 'B' }] }, finishReason: 'STOP' },
-      ],
+      candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' }],
+    } satisfies GeminiStreamEvent);
+    consumed++;
+    yield eventFrame({
+      candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'B' }] }, finishReason: 'STOP' }],
     } satisfies GeminiStreamEvent);
   })();
 
   const result = await collectGeminiProtocolEventsToResult(frames);
-  assertEquals(consumed, 2);
+  assertEquals(consumed, 3);
   assertEquals(result.candidates?.[1]?.content.parts, [{ text: 'AB' }]);
 });

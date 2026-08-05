@@ -6,20 +6,26 @@ export const GEMINI_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a te
 
 export const isGeminiErrorEvent = (event: GeminiStreamEvent): event is GeminiErrorResponse => 'error' in event;
 
-const isGeminiFinishedEvent = (event: GeminiStreamEvent): boolean =>
-  'candidates' in event
-  && event.candidates !== undefined
-  && event.candidates.length > 0
-  && event.candidates.every(candidate => candidate.finishReason !== undefined);
-
-export const isGeminiTerminalEvent = (event: GeminiStreamEvent): boolean => isGeminiErrorEvent(event) || isGeminiFinishedEvent(event);
+export const createGeminiTerminalDetector = (): ((event: GeminiStreamEvent) => boolean) => {
+  const seenCandidates = new Set<number>();
+  const finishedCandidates = new Set<number>();
+  return event => {
+    if (isGeminiErrorEvent(event)) return true;
+    for (const candidate of event.candidates ?? []) {
+      seenCandidates.add(candidate.index);
+      if (candidate.finishReason !== undefined) finishedCandidates.add(candidate.index);
+    }
+    return seenCandidates.size > 0 && seenCandidates.size === finishedCandidates.size;
+  };
+};
 
 const geminiEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): AsyncGenerator<GeminiStreamEvent> {
+  const isTerminal = createGeminiTerminalDetector();
   for await (const frame of frames) {
     if (frame.type === 'done') return;
 
     yield frame.event;
-    if (isGeminiTerminalEvent(frame.event)) return;
+    if (isTerminal(frame.event)) return;
   }
 
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
