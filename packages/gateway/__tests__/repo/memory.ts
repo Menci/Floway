@@ -730,7 +730,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     options: { clearModelsCache?: boolean } = {},
   ): Promise<UpstreamRecord | null> {
     const existing = this.store.get(id);
-    if (!existing || existing.kind !== expectedKind) return Promise.resolve(null);
+    if (existing?.kind !== expectedKind) return Promise.resolve(null);
     const next = {
       ...existing,
       ...patch,
