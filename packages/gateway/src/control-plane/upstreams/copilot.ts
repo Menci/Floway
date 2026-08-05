@@ -1,20 +1,20 @@
-import type { Context } from 'hono';
-
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import type { copilotOAuthDeviceLoginPollBody, copilotQuotaBody } from '../schemas.ts';
+import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
+  assertCopilotUpstreamRecord,
   clearInProcessCopilotTokenCache,
   emptyCopilotUpstreamState,
   exchangeCopilotToken,
   fetchCopilotUsage,
   fetchGitHubUser,
+  normalizeGitHubHost,
   pollGitHubDeviceFlow,
   projectCopilotUsageResponse,
   putCopilotQuota,
@@ -27,9 +27,28 @@ import {
   type CopilotUsageResponse,
 } from '@floway-dev/provider-copilot';
 
-export const copilotOAuthDeviceLoginStart = async (c: Context) => {
+const githubHostFromConfig = (config: unknown): string => {
+  if (!isRecord(config) || typeof config.githubHost !== 'string') {
+    throw new Error('Copilot config must include a GitHub host');
+  }
+  return normalizeGitHubHost(config.githubHost);
+};
+
+export const copilotOAuthDeviceLoginStart = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginStartBody>) => {
+  const { record } = c.req.valid('json');
+  if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+
+  let githubHost: string;
+  let fetcher: Fetcher;
   try {
-    const result = await startGitHubDeviceFlow();
+    githubHost = githubHostFromConfig(record.config);
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
+  } catch (e: unknown) {
+    return c.json({ error: errorMessage(e) }, 400);
+  }
+
+  try {
+    const result = await startGitHubDeviceFlow(githubHost, fetcher);
     if (!result.ok) return c.json({ error: result.error }, 502);
     return c.json(result.data);
   } catch (e: unknown) {
@@ -47,11 +66,14 @@ export const copilotOAuthDeviceLoginStart = async (c: Context) => {
 // picks up the fresh credential immediately.
 export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOAuthDeviceLoginPollBody>) => {
   const { record, deviceCode } = c.req.valid('json');
+  if (record.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
 
   // Config-validation errors (e.g. unknown proxy id in the override) surface
   // as 400 — they belong to the caller, not to the upstream.
   let fetcher: Fetcher;
+  let githubHost: string;
   try {
+    githubHost = githubHostFromConfig(record.config);
     fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
@@ -65,7 +87,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   type UpstreamCred = { user: CopilotUpstreamUser; tokenEntry: CopilotTokenEntry; accessToken: string };
   let cred: UpstreamCred;
   try {
-    const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
+    const data = await pollGitHubDeviceFlow(githubHost, deviceCode, fetcher);
 
     if (data.error === 'authorization_pending') return c.json({ status: 'pending' as const });
     if (data.error === 'slow_down') return c.json({ status: 'slow_down' as const });
@@ -75,14 +97,14 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     // Validates the PAT + seeds a fresh Copilot access token so the data
     // plane and dashboard `endpoints.api` calls work immediately without
     // a follow-up exchange round trip.
-    const user = await fetchGitHubUser(data.access_token, fetcher);
-    const tokenEntry = await exchangeCopilotToken(data.access_token, fetcher);
+    const user = await fetchGitHubUser(githubHost, data.access_token, fetcher);
+    const tokenEntry = await exchangeCopilotToken(githubHost, data.access_token, fetcher);
     cred = { user, tokenEntry, accessToken: data.access_token };
   } catch (e: unknown) {
     return c.json({ status: 'error' as const, error: errorMessage(e) }, 502);
   }
 
-  const configPatch: CopilotUpstreamConfig = { githubToken: cred.accessToken, user: cred.user };
+  const configPatch: CopilotUpstreamConfig = { githubHost, githubToken: cred.accessToken, user: cred.user };
 
   // Return the fully-merged state slot instead of a partial `{ copilotToken }`
   // patch. Frontend `applyPatch` does whole-slot replacement on state, so a
@@ -95,7 +117,9 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const dbRecord = await getRepo().upstreams.getById(record.id);
     if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
     if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
-    const prevState = readCopilotUpstreamState(dbRecord.state);
+    const previous = assertCopilotUpstreamRecord(dbRecord);
+    const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
+    const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord.state) : emptyCopilotUpstreamState();
     nextState = { ...prevState, copilotToken: cred.tokenEntry };
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
     await getRepo().upstreams.save(next);
@@ -130,11 +154,12 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const { record } = c.req.valid('json');
     if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
     const config = isRecord(record.config) ? record.config : null;
+    const githubHost = githubHostFromConfig(record.config);
     const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
     if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
 
     const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
-    const resp = await fetchCopilotUsage(githubToken, fetcher);
+    const resp = await fetchCopilotUsage(githubHost, githubToken, fetcher);
 
     if (!resp.ok) {
       const text = await resp.text();

@@ -407,6 +407,8 @@ export const upstreamRecordEnvelope = z.object({
 // beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
+export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
+
 export const copilotOAuthDeviceLoginPollBody = z.object({
   record: upstreamRecordEnvelope,
   deviceCode: z.string().min(1),
