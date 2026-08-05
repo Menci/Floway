@@ -516,6 +516,29 @@ test('web_search_result_location citation_delta becomes one url_citation annotat
   });
 });
 
+test('nullable Messages citation titles are omitted when Responses cannot represent them', () => {
+  const state = createMessagesToResponsesStreamState('resp_cite', 'claude-test');
+  startTextBlockWithMessage(state);
+  pushTextDelta(state, 'quoted');
+  const events = translateMessagesEventToResponsesEvents({
+    type: 'content_block_delta',
+    index: 0,
+    delta: {
+      type: 'citations_delta',
+      citation: {
+        type: 'search_result_location',
+        url: 'https://example.com',
+        title: null,
+        search_result_index: 0,
+        start_block_index: 0,
+        end_block_index: 1,
+        cited_text: 'quoted',
+      },
+    },
+  }, state);
+  assertEquals(events, []);
+});
+
 test('citation_delta without cited_text is skipped', () => {
   const state = createMessagesToResponsesStreamState('resp_cite', 'claude-test');
   startTextBlockWithMessage(state);

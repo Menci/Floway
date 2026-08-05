@@ -1,9 +1,13 @@
+import { assertGeminiCandidateIndex } from './candidate-index.ts';
 import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
 import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
+const MERGEABLE_TEXT_PART_KEYS = new Set(['text', 'thought']);
+
 const isMergeableTextPart = (part: GeminiPart): boolean =>
   part.text !== undefined
+  && Object.keys(part).every(key => MERGEABLE_TEXT_PART_KEYS.has(key))
   && part.thought !== true
   && part.thoughtSignature === undefined
   && part.inlineData === undefined
@@ -17,6 +21,7 @@ const appendPart = (parts: GeminiPart[], part: GeminiPart): void => {
   const previous = parts.at(-1);
   if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) {
     previous.text = `${previous.text}${part.text}`;
+    if (part.thought !== undefined) previous.thought = part.thought;
     return;
   }
 
@@ -28,6 +33,7 @@ interface GeminiCandidateWithExtras extends GeminiCandidate {
 }
 
 const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, incoming: GeminiCandidate): void => {
+  assertGeminiCandidateIndex(incoming.index);
   const existing = candidates.get(incoming.index);
   if (!existing) {
     const candidate: GeminiCandidateWithExtras = {

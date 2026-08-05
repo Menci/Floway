@@ -652,3 +652,16 @@ test('translateChatCompletionsChunkToMessagesEvents omits usage.speed when servi
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertFalse('speed' in (messageDelta as { usage: Record<string, unknown> }).usage);
 });
+
+test.each(['future-finish-reason', ''])('translateChatCompletionsChunkToMessagesEvents preserves open finish reason %j', finishReason => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', content: 'hi' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, finishReason), state),
+    ...translateChatCompletionsChunkToMessagesEvents(usageChunk(), state),
+    ...flushChatCompletionsToMessagesEvents(state),
+  ];
+
+  const messageDelta = events.find(event => event.type === 'message_delta');
+  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, finishReason);
+});

@@ -19,6 +19,11 @@ const generatedItemPrefixes = {
 
 export type GeneratedResponsesItemType = keyof typeof generatedItemPrefixes;
 
+export const requireResponsesItemId = (item: { type: string; id?: unknown }): string => {
+  if (typeof item.id !== 'string' || item.id.length === 0) throw new Error(`Responses ${item.type} output item is missing its id`);
+  return item.id;
+};
+
 export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): string => {
   if (!Object.hasOwn(generatedItemPrefixes, type)) {
     throw new TypeError(`Unknown generated Responses item type: ${type as string}`);

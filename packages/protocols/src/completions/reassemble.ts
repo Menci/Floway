@@ -1,10 +1,29 @@
 import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, CompletionsUsage } from './index.ts';
+import { isOpenAIUsageOnlyEventShape } from '../common/openai-stream.ts';
 
 // Fold a /v1/completions streaming chunk sequence back into the
 // single-shot envelope used by the dashboard's dump renderer. The
 // dashboard also surfaces the raw frame stream alongside the reassembled
 // result, so unknown choice / chunk fields fall on the floor here by
 // design — the forensic view is the raw stream.
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const setOwnValue = (object: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(object, key, { configurable: true, enumerable: true, value, writable: true });
+};
+
+const mergeLogprobs = (current: unknown, incoming: unknown): unknown => {
+  if (incoming === null) return current === undefined ? null : current;
+  if (current === undefined || current === null || !isRecord(current) || !isRecord(incoming)) return structuredClone(incoming);
+  for (const [key, value] of Object.entries(incoming)) {
+    const existing = Object.hasOwn(current, key) ? current[key] : undefined;
+    if (Array.isArray(existing) && Array.isArray(value)) existing.push(...structuredClone(value));
+    else setOwnValue(current, key, structuredClone(value));
+  }
+  return current;
+};
 
 export const reassembleCompletionsEvents = async (chunks: AsyncIterable<CompletionsStreamEvent>): Promise<CompletionsResult> => {
   let id = '';
@@ -32,16 +51,27 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
     if (chunk.usage) {
       lastUsage = chunk.usage;
     }
+    if (isOpenAIUsageOnlyEventShape(chunk)) continue;
 
-    if (!Array.isArray(chunk.choices)) continue;
+    if (!Array.isArray(chunk.choices)) throw new TypeError('Completions chunk choices must be an array');
     for (const choice of chunk.choices) {
       // Placeholder choices (only `index`, no `text` / `finish_reason`)
       // appear in the Zhipu/GLM vLLM fork's final usage chunk; they
       // contribute nothing here.
+      if (!Number.isSafeInteger(choice.index) || choice.index < 0) throw new RangeError(`Completions choice index must be a non-negative safe integer: ${choice.index}`);
       const accumulator = choices.get(choice.index) ?? { text: '', finishReason: null, logprobs: undefined };
-      if (choice.text !== undefined) accumulator.text += choice.text;
-      if (choice.finish_reason) accumulator.finishReason = choice.finish_reason;
-      if (choice.logprobs !== undefined) accumulator.logprobs = choice.logprobs;
+      if (accumulator.finishReason !== null && (choice.text !== undefined || choice.finish_reason !== undefined || choice.logprobs !== undefined)) {
+        throw new Error(`Completions choice ${choice.index} emitted data after finish_reason`);
+      }
+      if (choice.text !== undefined) {
+        if (typeof choice.text !== 'string') throw new TypeError(`Completions choice ${choice.index} text must be a string`);
+        accumulator.text += choice.text;
+      }
+      if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
+        if (typeof choice.finish_reason !== 'string') throw new TypeError(`Completions choice ${choice.index} finish_reason must be a string or null`);
+        accumulator.finishReason = choice.finish_reason;
+      }
+      if (choice.logprobs !== undefined) accumulator.logprobs = mergeLogprobs(accumulator.logprobs, choice.logprobs);
       choices.set(choice.index, accumulator);
     }
   }

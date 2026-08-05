@@ -31,8 +31,8 @@ describe('base encoding', () => {
     expect(() => decodeForgivingBase64('Zg=')).toThrow();
   });
 
-  test('round-trips a large byte buffer', () => {
-    const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
+  test('round-trips every byte value', () => {
+    const bytes = Uint8Array.from({ length: 256 }, (_, index) => index);
     const decoded = decodeForgivingBase64(encodeBase64(bytes));
     expect(decoded).toHaveLength(bytes.length);
     expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);

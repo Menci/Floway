@@ -1,8 +1,28 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, serializeRerankRequest } from '../../src/rerank/translate.ts';
 
 describe('rerank request ingress', () => {
+  test('rejects unsupported runtime protocol discriminators', () => {
+    expect(() => parseRerankRequest('future' as never, {
+      model: 'rerank', query: 'query', documents: ['one'],
+    })).toThrow('Unsupported rerank protocol for request parsing');
+
+    const request = parseRerankRequest('cohere-v1', {
+      model: 'rerank', query: 'query', documents: ['one'],
+    }).request;
+    expect(() => serializeRerankRequest('future' as never, 'raw', { ...request, sourceProtocol: 'future' as never }))
+      .toThrow('Unsupported rerank protocol for request serialization');
+    expect(() => parseRerankUsage('future' as never, null)).toThrow('Unsupported rerank protocol for usage parsing');
+    expect(() => rerankRequestIncompatibility('future' as never, request)).toThrow('Unsupported rerank protocol for compatibility checking');
+    expect(() => renderRerankResponse('future' as never, 'future' as never, {
+      raw: {}, results: [],
+    }, { ...request, sourceProtocol: 'future' as never })).toThrow('Unsupported rerank protocol for response rendering');
+    expect(() => renderRerankResponse('cohere-v1', 'future' as never, {
+      raw: {}, results: [],
+    }, request)).toThrow('Unsupported rerank protocol for response rendering');
+  });
+
   test('Cohere v1 retains structured documents and v1-only options', () => {
     const parsed = parseRerankRequest('cohere-v1', {
       model: 'rerank-v3.5',
@@ -227,6 +247,12 @@ describe('rerank response translation', () => {
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: [] } })).toThrow('meta.tokens must be an object or null');
     expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units: '2' } } })).toThrow('meta.billed_units.search_units must be a finite number');
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens: '3' } } })).toThrow('meta.tokens.input_tokens must be a finite number');
+    for (const input_tokens of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens } } })).toThrow('non-negative safe integer');
+    }
+    for (const search_units of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units } } })).toThrow('non-negative safe integer');
+    }
   });
 
   test('normalizes Voyage and both DashScope response envelopes', () => {
@@ -251,7 +277,7 @@ describe('rerank response translation', () => {
     for (const [protocol, response] of responses) {
       expect(parseRerankUsage(protocol, response)).toEqual({});
       expect(parseRerankResponse(protocol, response).totalTokens).toBeUndefined();
-      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a finite number');
+      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a non-negative safe integer');
     }
   });
 
@@ -277,5 +303,19 @@ describe('rerank response translation', () => {
       model: 'public',
       data: [{ index: 1, relevance_score: 0.9, document: 'two' }],
     });
+  });
+
+  test('rejects fractional and unsafe integer coordinates and usage', () => {
+    const request = { model: 'rerank', query: 'query', documents: ['one'] };
+    for (const top_n of [1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseRerankRequest('cohere-v2', { ...request, top_n })).toThrow('positive integer in the safe range');
+    }
+    expect(() => parseRerankRequest('cohere-v2', { ...request, top_n: Number.POSITIVE_INFINITY })).toThrow('finite number');
+    for (const total_tokens of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY]) {
+      expect(() => parseRerankUsage('jina-v1', { usage: { total_tokens } })).toThrow('non-negative safe integer');
+    }
+    expect(() => parseRerankResponse('cohere-v2', {
+      results: [{ index: Number.MAX_SAFE_INTEGER + 1, relevance_score: 0.5 }],
+    })).toThrow('non-negative safe integer');
   });
 });

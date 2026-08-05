@@ -27,6 +27,20 @@ const choiceChunk = (index: number, delta: ChatCompletionsStreamEvent['choices']
   choices: [{ index, delta, finish_reason: finishReason }],
 });
 
+test.each(['future-finish-reason', ''])('unknown Chat finish reason %j terminates Gemini as OTHER', async finishReason => {
+  const frames = await collect([eventFrame(chunk({}, finishReason)), doneFrame()]);
+  const event = frames[0]?.type === 'event' ? frames[0].event : undefined;
+  assertEquals(event && 'candidates' in event ? event.candidates?.[0]?.finishReason : undefined, 'OTHER');
+});
+
+test('omitted malformed Chat finish_reason does not invent a Gemini terminal', async () => {
+  const malformed = {
+    ...chunk({}),
+    choices: [{ index: 0, delta: {} }],
+  } as unknown as ChatCompletionsStreamEvent;
+  assertEquals(await collect([eventFrame(malformed), doneFrame()]), []);
+});
+
 const collect = async (input: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiStreamEvent>[] = [];
 

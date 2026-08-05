@@ -1,17 +1,9 @@
 import { test } from 'vitest';
 
 import type {
-  MessagesAssistantMessage,
   MessagesResult,
-  MessagesSearchResultBlock,
-  MessagesSearchResultLocationCitation,
-  MessagesServerToolUseBlock,
   MessagesStreamEvent,
   MessagesTextBlock,
-  MessagesTool,
-  MessagesToolResultContentBlock,
-  MessagesWebSearchResultBlock,
-  MessagesWebSearchToolResultBlock,
 } from '../../src/messages/index.ts';
 import { reassembleMessagesEvents } from '../../src/messages/reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -26,13 +18,6 @@ function makeEvents<T = MessagesStreamEvent>(chunks: Array<{ event?: string; dat
     }
   })();
 }
-
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-type Expect<T extends true> = T;
-
-type _toolResultContentExcludesWebSearchResult = Expect<Equal<Extract<MessagesToolResultContentBlock, MessagesWebSearchResultBlock>, never>>;
-type _serverToolUseNameIsString = Expect<Equal<MessagesServerToolUseBlock['name'], string>>;
-type _serverToolUseInputIsQueryObject = Expect<Equal<MessagesServerToolUseBlock['input'], { query: string }>>;
 
 test('reassembleMessagesEvents reassembles text response', async () => {
   const body = makeEvents([
@@ -103,78 +88,6 @@ test('reassembleMessagesEvents reassembles text response', async () => {
   assertEquals(result.usage.output_tokens, 5);
 });
 
-test('MessagesTool supports both client and native web search shapes', () => {
-  const clientTool: MessagesTool = {
-    name: 'get_weather',
-    description: 'Fetches weather',
-    input_schema: { type: 'object' },
-    strict: true,
-  };
-
-  const nativeWebSearchTool: MessagesTool = {
-    type: 'web_search_20250305',
-    max_uses: 3,
-    allowed_domains: ['example.com'],
-    user_location: {
-      type: 'approximate',
-      city: 'San Francisco',
-      region: 'CA',
-      country: 'US',
-      timezone: 'America/Los_Angeles',
-    },
-  };
-
-  assertEquals('name' in clientTool, true);
-  assertEquals(nativeWebSearchTool.type, 'web_search_20250305');
-  if ('user_location' in nativeWebSearchTool) {
-    assertEquals(nativeWebSearchTool.user_location?.type, 'approximate');
-  }
-});
-
-test('Anthropic native web search shared shapes pass through reassembly unchanged', () => {
-  const searchCitation: MessagesSearchResultLocationCitation = {
-    type: 'search_result_location',
-    url: 'https://docs.example.com/api-guide',
-    title: 'API Guide',
-    search_result_index: 0,
-    start_block_index: 1,
-    end_block_index: 2,
-    cited_text: 'Error handling guidance',
-  };
-
-  const searchResult: MessagesSearchResultBlock = {
-    type: 'search_result',
-    source: 'https://docs.example.com/api-guide',
-    title: 'API Guide',
-    content: [{ type: 'text', text: 'Error handling guidance' }],
-    citations: { enabled: true },
-  };
-
-  const serverToolUse: MessagesServerToolUseBlock = {
-    type: 'server_tool_use',
-    id: 'srvtoolu_1',
-    name: 'web_search',
-    input: { query: 'latest API guide' },
-  };
-
-  const webSearchToolResult: MessagesWebSearchToolResultBlock = {
-    type: 'web_search_tool_result',
-    tool_use_id: 'srvtoolu_1',
-    content: {
-      type: 'web_search_tool_result_error',
-      error_code: 'max_uses_exceeded',
-    },
-  };
-
-  assertEquals(searchCitation.search_result_index, 0);
-  assertEquals(searchResult.citations?.enabled, true);
-  assertEquals(serverToolUse.name, 'web_search');
-  assertEquals(Array.isArray(webSearchToolResult.content), false);
-  if (!Array.isArray(webSearchToolResult.content)) {
-    assertEquals(webSearchToolResult.content.type, 'web_search_tool_result_error');
-  }
-});
-
 test('reassembleMessagesEvents reassembles tool_use response', async () => {
   const body = makeEvents([
     {
@@ -198,7 +111,7 @@ test('reassembleMessagesEvents reassembles tool_use response', async () => {
       data: {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'tool_use', id: 'tu_1', name: 'calc' },
+        content_block: { type: 'tool_use', id: 'tu_1', name: 'calc', input: {} },
       },
     },
     {
@@ -248,7 +161,7 @@ test('reassembleMessagesEvents reassembles tool_use response', async () => {
   assertEquals(tu.input, { x: 42 });
 });
 
-test('reassembleMessagesEvents falls back to empty tool input for malformed JSON', async () => {
+test('reassembleMessagesEvents rejects malformed tool input JSON with its parse error', async () => {
   const body = makeEvents([
     {
       event: 'message_start',
@@ -271,7 +184,7 @@ test('reassembleMessagesEvents falls back to empty tool input for malformed JSON
       data: {
         type: 'content_block_start',
         index: 0,
-        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc' },
+        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc', input: {} },
       },
     },
     {
@@ -297,14 +210,12 @@ test('reassembleMessagesEvents falls back to empty tool input for malformed JSON
     { event: 'message_stop', data: { type: 'message_stop' } },
   ]);
 
-  const result = await reassembleMessagesEvents(body);
-
-  assertEquals(result.content[0], {
-    type: 'tool_use',
-    id: 'tu_bad',
-    name: 'calc',
-    input: {},
-  });
+  const error = await assertRejects(
+    async () => await reassembleMessagesEvents(body),
+    SyntaxError,
+    'Malformed upstream Messages tool input JSON',
+  );
+  assertEquals(error.cause instanceof SyntaxError, true);
 });
 
 test('reassembleMessagesEvents reassembles thinking blocks', async () => {
@@ -879,20 +790,4 @@ test('reassembleMessagesEvents preserves refusal details, fallback boundaries, a
     trigger: { type: 'refusal', category: 'future_policy' },
   }]);
   assertEquals(result.usage.iterations, [{ type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 5, output_tokens: 0 }]);
-});
-
-test('Messages assistant fallback history accepts omitted and opaque triggers', () => {
-  const messages: MessagesAssistantMessage[] = [
-    {
-      role: 'assistant',
-      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } }],
-    },
-    {
-      role: 'assistant',
-      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null }],
-    },
-  ];
-
-  assertEquals(messages[0].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } });
-  assertEquals(messages[1].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null });
 });

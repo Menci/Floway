@@ -16,22 +16,27 @@
 // usage" + "no choice element has any actual content", which matches the
 // LiteLLM / One-API / New-API consensus.
 
+const OPENAI_USAGE_PLACEHOLDER_CHOICE_KEYS = new Set(['index', 'text', 'delta', 'finish_reason', 'logprobs']);
+
 export const isOpenAIUsageOnlyEventShape = (event: unknown): boolean => {
   if (typeof event !== 'object' || event === null) return false;
   const { choices, usage } = event as { choices?: unknown; usage?: unknown };
-  if (usage === undefined || usage === null) return false;
+  if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) return false;
   if (!Array.isArray(choices)) return false;
   // `every` over an empty array is true (the OpenAI / vanilla-vLLM shape).
   // A non-empty array passes only when every element is a structural
   // placeholder (no text, no delta keys, no finish_reason) — the
   // Zhipu/GLM vendor-fork shape.
   return choices.every(choice => {
-    if (typeof choice !== 'object' || choice === null) return false;
-    const { text, delta, finish_reason: finishReason } = choice as { text?: unknown; delta?: unknown; finish_reason?: unknown };
+    if (typeof choice !== 'object' || choice === null || Array.isArray(choice)) return false;
+    if (Object.keys(choice).some(key => !OPENAI_USAGE_PLACEHOLDER_CHOICE_KEYS.has(key))) return false;
+    const { text, delta, finish_reason: finishReason, logprobs } = choice as { text?: unknown; delta?: unknown; finish_reason?: unknown; logprobs?: unknown };
     if (typeof text === 'string' && text.length > 0) return false;
+    if (text !== undefined && text !== null && typeof text !== 'string') return false;
     if (finishReason !== undefined && finishReason !== null) return false;
+    if (logprobs !== undefined && logprobs !== null) return false;
     if (delta !== undefined && delta !== null) {
-      if (typeof delta !== 'object') return false;
+      if (typeof delta !== 'object' || Array.isArray(delta)) return false;
       if (Object.keys(delta as object).length > 0) return false;
     }
     return true;

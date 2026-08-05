@@ -1,4 +1,5 @@
 import type { ResponsesOutputImageGenerationCall, ResponsesStreamEvent } from './index.ts';
+import { requireResponsesItemId } from './item-id.ts';
 
 export const imageGenerationCallLifecycleEvents = (
   item: ResponsesOutputImageGenerationCall,
@@ -7,7 +8,7 @@ export const imageGenerationCallLifecycleEvents = (
   startFrames: ResponsesStreamEvent[];
   endFrames: ResponsesStreamEvent[];
 } => {
-  const itemId = item.id;
+  const itemId = requireResponsesItemId(item);
   const inProgressItem: ResponsesOutputImageGenerationCall = {
     type: 'image_generation_call',
     id: itemId,

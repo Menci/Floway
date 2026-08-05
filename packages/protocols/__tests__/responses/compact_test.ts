@@ -29,3 +29,20 @@ test('toCompactPayloadShape forwards future cache control values verbatim', () =
     prompt_cache_retention: 'future_retention',
   });
 });
+
+test('toCompactPayloadShape strips every generate-only and unknown field', () => {
+  assertEquals(toCompactPayloadShape({
+    input: [],
+    instructions: null,
+    service_tier: 'future-tier',
+    temperature: 1,
+    stream: true,
+    tools: [{ type: 'function', name: 'tool' }],
+    reasoning: { effort: 'high' },
+    vendor_extension: 'must not leak',
+  } as never), {
+    input: [],
+    instructions: null,
+    service_tier: 'future-tier',
+  });
+});
