@@ -63,19 +63,20 @@ export const readableTone = (hex: string, surface: string): string => {
     // extreme, so this finds the same first rung as a linear walk of all 100.
     let first = 1;
     let last = STEPS;
-    let readable: ReturnType<typeof convertHsvToRgb> | undefined;
+    let readable: string | undefined;
     while (first <= last) {
       const step = Math.floor((first + last) / 2);
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
       const candidate = convertHsvToRgb({ h, s: saturation, v: value });
-      if (wcagContrast(linearRgb(candidate), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
-        readable = candidate;
+      const candidateHex = colorHex(candidate);
+      if (wcagContrast(linearRgb(parseRgb(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
+        readable = candidateHex;
         last = step - 1;
       } else {
         first = step + 1;
       }
     }
-    if (readable) return colorHex(readable);
+    if (readable) return readable;
   }
   // Reachable: the saturation ladder stops short of zero unless the saturation is
   // a multiple of a tenth. The extreme always clears -- a surface's ratios against

@@ -64,6 +64,7 @@ describe('readableTone', () => {
   it('holds the hue while it moves value', () => {
     const { h: sourceHue } = convertRgbToHsv(parseHex('#00E5FF')!);
     const { h: tonedHue } = convertRgbToHsv(parseHex(toned('#00E5FF', CARD_LIGHT))!);
+    if (sourceHue === undefined || tonedHue === undefined) throw new TypeError('Expected chromatic colors');
     expect(Math.abs(tonedHue - sourceHue)).toBeLessThan(1);
   });
 
