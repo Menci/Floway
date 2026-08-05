@@ -637,3 +637,130 @@ test('reassembleChatCompletionsEvents preserves an observed empty refusal', asyn
 
   assertEquals(result.choices[0].message, { role: 'assistant', content: null, refusal: '' });
 });
+
+test('reassembleChatCompletionsEvents preserves empty content and future finish reasons', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([{
+    data: {
+      id: 'cmpl_empty',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'gpt-test',
+      choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: 'future_reason' }],
+    },
+  }]));
+
+  assertEquals(result.choices[0].message.content, '');
+  assertEquals(result.choices[0].finish_reason, 'future_reason');
+});
+
+test('reassembleChatCompletionsEvents rejects incomplete choices and tool calls', async () => {
+  const base = {
+    id: 'cmpl_invalid',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+  };
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([{
+      data: { ...base, choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] },
+    }])),
+    Error,
+    'ended without finish_reason',
+  );
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([{
+      data: {
+        ...base,
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'lookup', arguments: '{}' } }] }, finish_reason: 'tool_calls' }],
+      },
+    }])),
+    Error,
+    'ended without id',
+  );
+});
+
+test('reassembleChatCompletionsEvents rejects data after a choice finishes', async () => {
+  const chunk = (content: string, finish_reason: string | null) => ({
+    id: 'cmpl_finished',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+    choices: [{ index: 0, delta: { content }, finish_reason }],
+  });
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: chunk('done', 'stop') },
+      { data: chunk('too late', null) },
+    ])),
+    Error,
+    'emitted data after finish_reason',
+  );
+});
+
+test('reassembleChatCompletionsEvents preserves explicit null response metadata', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([{
+    data: {
+      id: 'cmpl_null_metadata',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'gpt-test',
+      system_fingerprint: null,
+      service_tier: null,
+      choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
+    },
+  }]));
+  assertEquals(result.system_fingerprint, null);
+  assertEquals(result.service_tier, null);
+});
+
+test('reassembleChatCompletionsEvents rejects malformed known delta and tool-call fields', async () => {
+  const base = {
+    id: 'cmpl_malformed',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+  };
+  const rejectDelta = async (delta: Record<string, unknown>, message: string) => {
+    await assertRejects(
+      async () => await reassembleChatCompletionsEvents(makeEvents([{
+        data: { ...base, choices: [{ index: 0, delta, finish_reason: 'stop' }] },
+      }])),
+      TypeError,
+      message,
+    );
+  };
+
+  await rejectDelta({ content: 1 }, 'content must be a string or null');
+  await rejectDelta({ tool_calls: [{ index: 0, id: '', function: { name: 'run', arguments: '{}' } }] }, 'id must be a non-empty string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', function: { name: '', arguments: '{}' } }] }, 'function.name must be a non-empty string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', function: { name: 'run', arguments: {} } }] }, 'function.arguments must be a string');
+  await rejectDelta({ tool_calls: [{ index: 0, id: 'call', type: 'future', function: { name: 'run', arguments: '{}' } }] }, 'type must be "function"');
+});
+
+test('reassembleChatCompletionsEvents validates every repeated metadata value', async () => {
+  const valid = {
+    id: 'cmpl_metadata',
+    object: 'chat.completion.chunk',
+    created: 1000,
+    model: 'gpt-test',
+    system_fingerprint: 'fp_valid',
+    service_tier: 'priority',
+    choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+  };
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: valid },
+      { data: { ...valid, system_fingerprint: 1, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } },
+    ])),
+    TypeError,
+    'system_fingerprint must be a string or null',
+  );
+  await assertRejects(
+    async () => await reassembleChatCompletionsEvents(makeEvents([
+      { data: valid },
+      { data: { ...valid, service_tier: {}, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } },
+    ])),
+    TypeError,
+    'service_tier must be a string or null',
+  );
+});

@@ -215,6 +215,54 @@ test('responsesResultToEvents expands refusal content with the native refusal li
   ]);
 });
 
+test('responsesResultToEvents emits annotations in output-text order', () => {
+  const annotation = {
+    type: 'url_citation' as const,
+    url: 'https://example.com/source',
+    title: 'Source',
+    start_index: 0,
+    end_index: 5,
+  };
+  const events = responsesResultToEvents({
+    ...completedResponse,
+    output: [{
+      type: 'message',
+      id: 'msg_annotations',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'Hello', annotations: [annotation] }],
+    }],
+  }).map(frame => frame.event);
+  const annotationEvent = events.find(event => event.type === 'response.output_text.annotation.added');
+
+  assertEquals(annotationEvent, {
+    type: 'response.output_text.annotation.added',
+    item_id: 'msg_annotations',
+    output_index: 0,
+    content_index: 0,
+    annotation_index: 0,
+    annotation,
+    sequence_number: 5,
+  });
+});
+
+test('responsesResultToEvents completes empty and non-empty reasoning summary text', () => {
+  const events = responsesResultToEvents({
+    ...completedResponse,
+    output: [{
+      type: 'reasoning',
+      id: 'rs_1',
+      summary: [
+        { type: 'summary_text', text: '' },
+        { type: 'summary_text', text: 'summary' },
+      ],
+    }],
+  }).map(frame => frame.event);
+
+  assertEquals(events.filter(event => event.type === 'response.reasoning_summary_text.delta').map(event => event.delta), ['summary']);
+  assertEquals(events.filter(event => event.type === 'response.reasoning_summary_text.done').map(event => event.text), ['', 'summary']);
+});
+
 test('responsesResultToEvents propagates the real function_call item id to the added item and child frames', () => {
   const frames = Array.from(
     responsesResultToEvents({
@@ -370,28 +418,29 @@ test('responsesResultToEvents preserves advanced tool item wire fields', () => {
   assertEquals(done, output);
 });
 
-test('responsesResultToEvents surfaces a missing function_call item id instead of inventing one', () => {
-  let threw = false;
-  try {
-    Array.from(
-      responsesResultToEvents({
+const childEventItems = [
+  { type: 'message', status: 'completed', role: 'assistant', content: [] },
+  { type: 'reasoning', summary: [] },
+  { type: 'function_call', call_id: 'call_1', name: 'run', arguments: '{}', status: 'completed' },
+  { type: 'custom_tool_call', call_id: 'call_2', name: 'run', input: '{}' },
+  { type: 'web_search_call', status: 'completed' },
+  { type: 'image_generation_call', status: 'completed' },
+] as const;
+
+test.each(childEventItems.flatMap(item => [undefined, '', 1].map(id => ({ id, item }))))(
+  'responsesResultToEvents rejects invalid id $id on child-event item $item.type',
+  ({ id, item }) => {
+    const invalidItem = id === undefined ? item : { ...item, id };
+    assertThrows(
+      () => responsesResultToEvents({
         ...completedResponse,
-        output: [
-          {
-            type: 'function_call',
-            call_id: 'call_1',
-            name: 'do_thing',
-            arguments: '{}',
-            status: 'completed',
-          },
-        ],
+        output: [invalidItem as unknown as ResponsesOutputItem],
       }),
+      Error,
+      `Responses ${item.type} output item is missing its id`,
     );
-  } catch {
-    threw = true;
-  }
-  assertEquals(threw, true);
-});
+  },
+);
 
 test('responsesResultToEvents expands a web_search_call with the full 5-event lifecycle', () => {
   const frames = Array.from(
@@ -429,6 +478,18 @@ test('responsesResultToEvents expands a web_search_call with the full 5-event li
       'response.completed',
     ],
   );
+});
+
+test('responsesResultToEvents does not claim a failed web search completed', () => {
+  const eventTypes = responsesResultToEvents({
+    ...completedResponse,
+    status: 'failed',
+    error: { code: 'search_failed', message: 'search failed' },
+    output: [{ type: 'web_search_call', id: 'ws_failed', status: 'failed' }],
+  }).map(frame => frame.event.type);
+
+  assertFalse(eventTypes.includes('response.web_search_call.completed'));
+  assertEquals(eventTypes.at(-1), 'response.failed');
 });
 
 test('responsesResultToEvents expands a completed image_generation_call lifecycle', () => {

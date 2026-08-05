@@ -1,8 +1,6 @@
-import { expect, test } from 'vitest';
-
 import type { ResponsesTool, ResponsesToolChoice } from '../../src/responses/index.ts';
 
-const builtInPairs = [
+export const builtInPairs = [
   {
     tool: { type: 'file_search', vector_store_ids: ['vs_1'] },
     choice: { type: 'file_search' },
@@ -24,7 +22,3 @@ const builtInPairs = [
     choice: { type: 'mcp', server_label: 'docs' },
   },
 ] as const satisfies ReadonlyArray<{ tool: ResponsesTool; choice: ResponsesToolChoice }>;
-
-test('built-in tool declarations admit their forced tool choices', () => {
-  expect(builtInPairs).toHaveLength(5);
-});

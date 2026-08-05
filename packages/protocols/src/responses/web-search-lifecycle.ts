@@ -1,12 +1,15 @@
 import type { ResponsesOutputWebSearchCall, ResponsesStreamEvent } from './index.ts';
+import { requireResponsesItemId } from './item-id.ts';
 
-// Hosted `web_search` lifecycle on Responses: 5 events at one output_index.
+// Hosted `web_search` lifecycle on Responses: a completed call emits 5 events
+// at one output_index; a failed/noncompleted item omits the false `.completed`
+// claim and ends with its `output_item.done` state.
 //
 //   1. response.output_item.added            { item: web_search_call, status: 'in_progress', action }
 //   2. response.web_search_call.in_progress  { item_id }
 //   3. response.web_search_call.searching    { item_id }
-//   4. response.web_search_call.completed    { item_id }
-//   5. response.output_item.done             { item: completed item with action + results }
+//   4. response.web_search_call.completed    { item_id } (completed items only)
+//   5. response.output_item.done             { item: terminal item with action + results }
 //
 // Returned as `startFrames` / `endFrames` so callers awaiting a backend
 // between `searching` and `completed` can emit each half independently.
@@ -29,7 +32,7 @@ export const webSearchCallLifecycleEvents = (
   startFrames: ResponsesStreamEvent[];
   endFrames: ResponsesStreamEvent[];
 } => {
-  const itemId = item.id;
+  const itemId = requireResponsesItemId(item);
   const inProgressItem: ResponsesOutputWebSearchCall = {
     type: 'web_search_call',
     id: itemId,
@@ -47,7 +50,9 @@ export const webSearchCallLifecycleEvents = (
       { type: 'response.web_search_call.searching', output_index: outputIndex, item_id: itemId },
     ],
     endFrames: [
-      { type: 'response.web_search_call.completed', output_index: outputIndex, item_id: itemId },
+      ...(item.status === 'completed'
+        ? [{ type: 'response.web_search_call.completed' as const, output_index: outputIndex, item_id: itemId }]
+        : []),
       { type: 'response.output_item.done', output_index: outputIndex, item },
     ],
   };

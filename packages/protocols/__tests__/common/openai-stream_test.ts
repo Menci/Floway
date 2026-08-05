@@ -64,3 +64,12 @@ test('isOpenAIUsageOnlyEventShape rejects bare-usage rows without choices and an
   assertEquals(isOpenAIUsageOnlyEventShape('not an event'), false);
   assertEquals(isOpenAIUsageOnlyEventShape(42), false);
 });
+
+test('isOpenAIUsageOnlyEventShape never hides malformed or future choice content', () => {
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: 0 }), false);
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: [] }), false);
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [{ index: 0, text: 1 }], usage: {} }), false);
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [{ index: 0, delta: [] }], usage: {} }), false);
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [{ index: 0, vendor_delta: 'future content' }], usage: {} }), false);
+  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [{ index: 0, logprobs: { tokens: [] } }], usage: {} }), false);
+});

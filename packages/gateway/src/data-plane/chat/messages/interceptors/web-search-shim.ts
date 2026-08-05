@@ -388,7 +388,10 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
     }
 
     const rewrittenContent = message.content.flatMap((block): MessagesAssistantInputContentBlock[] => {
-      if (block.type === 'server_tool_use' && ownedReplayResultsByServerToolUseId.has(block.id)) {
+      if (block.type === 'server_tool_use'
+        && block.name === WEB_SEARCH_TOOL_NAME
+        && ownedReplayResultsByServerToolUseId.has(block.id)
+        && isJsonObject(block.input)) {
         return [
           {
             type: 'tool_use',

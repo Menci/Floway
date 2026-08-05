@@ -9,9 +9,11 @@ interface ParseSSEStreamOptions {
 export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const { signal } = options;
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
   let pendingFrames: SseFrame[] = [];
   let cancelPromise: Promise<void> | undefined;
+  let streamFailure: unknown;
+  let streamFailed = false;
 
   const parser = createParser({
     onEvent: event => {
@@ -58,8 +60,23 @@ export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>,
     // when its peer closes without writing the terminating blank line.
     parser.feed('\n\n');
     yield* takePendingFrames();
+  } catch (error) {
+    streamFailed = true;
+    streamFailure = error;
+    throw error;
   } finally {
     signal?.removeEventListener('abort', cancelReaderOnAbort);
-    await (cancelPromise ?? reader.cancel());
+    try {
+      await (cancelPromise ?? reader.cancel());
+    } catch (cancelError) {
+      if (!streamFailed) throw cancelError;
+      if (streamFailure instanceof Error && streamFailure.cause === undefined) {
+        try {
+          Object.defineProperty(streamFailure, 'cause', { configurable: true, value: cancelError });
+        } catch {
+          // The primary stream failure remains authoritative when it is frozen.
+        }
+      }
+    }
   }
 };

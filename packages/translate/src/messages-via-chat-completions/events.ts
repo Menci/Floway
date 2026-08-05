@@ -4,7 +4,7 @@ import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, Me
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
 
-const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null): MessagesResult['stop_reason'] => {
+const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason']): MessagesResult['stop_reason'] => {
   if (finishReason === null) return null;
 
   switch (finishReason) {
@@ -16,6 +16,8 @@ const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: 'stop'
     return 'tool_use';
   case 'content_filter':
     return 'refusal';
+  default:
+    return finishReason;
   }
 };
 
@@ -352,7 +354,7 @@ const handleFinishReason = (
 };
 
 const emitFinalMessageIfReady = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
-  if (!state.pendingFinishReason || state.finalMessageSent) return;
+  if (state.pendingFinishReason === undefined || state.finalMessageSent) return;
 
   const usage = mapChatCompletionsUsageToMessagesUsage(state.pendingUsage);
 
@@ -462,7 +464,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
     }
   }
 
-  if (choice.finish_reason) {
+  if (choice.finish_reason !== null && choice.finish_reason !== undefined) {
     handleFinishReason(choice.finish_reason, chunk, state, events);
   }
 

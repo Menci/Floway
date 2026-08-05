@@ -21,7 +21,7 @@ test('chatCompletionsProtocolFrameToSSEFrame passes through non-chunk JSON paylo
   });
 });
 
-test('chatCompletionsProtocolFrameToSSEFrame serializes DONE without owning termination', () => {
+test('chatCompletionsProtocolFrameToSSEFrame serializes DONE and filters only exact usage placeholders', () => {
   const chunk = {
     id: 'chatcmpl_done',
     object: 'chat.completion.chunk',
@@ -36,38 +36,11 @@ test('chatCompletionsProtocolFrameToSSEFrame serializes DONE without owning term
     ],
   } satisfies ChatCompletionsStreamEvent;
 
-  const frames = [
-    eventFrame(chunk),
-    doneFrame(),
-    eventFrame({
-      ...chunk,
-      id: 'chatcmpl_after_done',
-      choices: [
-        {
-          index: 0,
-          delta: { content: 'ignored' },
-          finish_reason: null,
-        },
-      ],
-    }),
-  ].map(frame => chatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk));
+  assertEquals(chatCompletionsProtocolFrameToSSEFrame(eventFrame(chunk), includeUsageChunk)?.data, JSON.stringify(chunk));
+  assertEquals(chatCompletionsProtocolFrameToSSEFrame(doneFrame(), includeUsageChunk)?.data, '[DONE]');
 
-  assertEquals(
-    frames.map(frame => frame?.data),
-    [
-      JSON.stringify(chunk),
-      '[DONE]',
-      JSON.stringify({
-        ...chunk,
-        id: 'chatcmpl_after_done',
-        choices: [
-          {
-            index: 0,
-            delta: { content: 'ignored' },
-            finish_reason: null,
-          },
-        ],
-      }),
-    ],
-  );
+  const usage = { ...chunk, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+  assertEquals(chatCompletionsProtocolFrameToSSEFrame(eventFrame(usage), { includeUsageChunk: false }), null);
+  const futureContent = { ...usage, choices: [{ index: 0, vendor_delta: 'keep me' }] } as unknown as ChatCompletionsStreamEvent;
+  assertEquals(chatCompletionsProtocolFrameToSSEFrame(eventFrame(futureContent), { includeUsageChunk: false })?.data, JSON.stringify(futureContent));
 });
