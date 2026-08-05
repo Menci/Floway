@@ -27,10 +27,10 @@ import { buildSearchChart, buildTokenChart, dashboardBuckets, summarizeUsage } f
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from '../components/usage/types';
 import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
+import { fluentComponents } from '../fluent';
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { fluentComponents } from '../fluent';
 
 const { Button, Tooltip } = fluentComponents;
 
@@ -190,6 +190,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
       {availableDimensions && <TelemetryDimensionControls
+        disabled={refreshing}
         dimensions={availableDimensions}
         filters={loadedQuery.filters}
         groupBy={loadedQuery.groupBy}
@@ -209,6 +210,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       <div className="flex justify-end min-w-0">
         <ChoiceGroup
           ariaLabel={t('dashboard.usage.range.label')}
+          disabled={refreshing}
           items={[
             { value: 'today', label: t('dashboard.usage.range.today'), to: addressOf({ range: 'today' }) },
             { value: '7d', label: t('dashboard.usage.range.sevenDays'), to: addressOf({ range: '7d' }) },

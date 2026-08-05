@@ -187,15 +187,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
   const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
-  const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
-    { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview?.dimensionValues.models.map(value => ({ value, label: value })) ?? [] },
-    { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview?.dimensionValues.upstreams.map(value => ({ value, label: labels?.upstreams.get(value) ?? value })) ?? [] },
-    { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview?.dimensionValues.operations.map(value => ({ value, label: value })) ?? [] },
-    { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview?.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) ?? [] },
-    { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview?.dimensionValues.userIds.map(value => ({ value: String(value), label: labels?.users.get(String(value)) ?? `user ${value}` })) ?? [] },
-    { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview?.dimensionValues.keyIds.map(value => ({ value, label: labels?.keys.get(value) ?? value })) ?? [] },
+  const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> | null = overview === null || labels === null ? null : [
+    { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
+    { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
+    { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
+    { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
+    { key: 'userId', groupLabel: t('dashboard.performance.groupBy.userId'), filterLabel: t('dashboard.performance.filters.userId'), allLabel: t('dashboard.performance.filters.all.userId'), options: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: labels.users.get(String(value)) ?? `user ${value}` })) },
+    { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
   ];
-  const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
+  const availableDimensions = dimensions?.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user') ?? null;
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -204,9 +204,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
-    {overview === null || chart === null || labels === null || activeBreakdown === undefined ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+    {overview === null || chart === null || labels === null || activeBreakdown === undefined || availableDimensions === null ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
       <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
         <TelemetryDimensionControls
+          disabled={refreshing}
           dimensions={availableDimensions}
           filters={loadedQuery.filters}
           groupBy={loadedQuery.groupBy}
@@ -235,7 +236,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
             { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
           ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
           <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} disabled={refreshing} items={[
             { value: 'today', label: t('dashboard.performance.range.today'), to: addressOf({ range: 'today' }) }, { value: '7d', label: t('dashboard.performance.range.sevenDays'), to: addressOf({ range: '7d' }) }, { value: '30d', label: t('dashboard.performance.range.thirtyDays'), to: addressOf({ range: '30d' }) },
           ]} onChange={value => changeRange(value as PerformanceRange)} value={loadedQuery.range} />
         </div>

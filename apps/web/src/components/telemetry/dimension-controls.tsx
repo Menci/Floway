@@ -15,6 +15,7 @@ export interface TelemetryDimension<Key extends string> {
 }
 
 export function TelemetryDimensionControls<Key extends string>({
+  disabled = false,
   dimensions,
   filters,
   groupBy,
@@ -24,6 +25,7 @@ export function TelemetryDimensionControls<Key extends string>({
   onGroupByChange,
   selectedLabel,
 }: {
+  disabled?: boolean;
   dimensions: readonly TelemetryDimension<Key>[];
   filters: Record<Key, readonly string[]>;
   groupBy: Key;
@@ -43,6 +45,7 @@ export function TelemetryDimensionControls<Key extends string>({
         <Dropdown
           aria-label={groupByLabel}
           className="flex-1"
+          disabled={disabled}
           selectedOptions={[groupBy]}
           value={selectedGroup.groupLabel}
           onOptionSelect={(_, data) => data.optionValue !== undefined && onGroupByChange(data.optionValue as Key)}
@@ -61,6 +64,7 @@ export function TelemetryDimensionControls<Key extends string>({
         <MultiselectCombobox
           className="w-full"
           clearLabel={dimension.allLabel}
+          disabled={disabled}
           onChange={values => onFilterChange(dimension.key, values)}
           options={dimension.options}
           placeholder={filters[dimension.key].length === 0

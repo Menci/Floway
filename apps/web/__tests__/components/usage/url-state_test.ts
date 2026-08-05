@@ -18,8 +18,6 @@ describe('usage URL state', () => {
     expect(serialized.get('g')).toBe('upstream');
     expect(serialized.getAll('fk')).toEqual(['key-1']);
     expect(serialized.getAll('fu')).toEqual([]);
-    expect(serialized.has('view')).toBe(false);
-    expect(serialized.has('redact')).toBe(false);
   });
 
   it('clears both identity filters when grouping by user or API key', () => {

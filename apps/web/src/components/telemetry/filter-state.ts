@@ -1,9 +1,11 @@
 export const clearGroupedTelemetryFilters = <Filters extends object>(
   filters: Filters,
   groupBy: keyof Filters & string,
-): Filters => ({ ...filters, ...(groupBy === 'userId' || groupBy === 'keyId'
+): Filters => ({
+  ...filters, ...(groupBy === 'userId' || groupBy === 'keyId'
     ? { userId: [], keyId: [] }
-    : { [groupBy]: [] }) }) as Filters;
+    : { [groupBy]: [] }),
+}) as Filters;
 
 export const scopeTelemetryIdentity = <Filters extends { userId: string[] }, Group extends keyof Filters & string>(
   groupBy: Group,

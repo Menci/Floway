@@ -2,7 +2,6 @@ import type { ChartProps } from '@fluentui/react-charts';
 
 import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange } from './types';
-import type { MultiselectOption } from '../ui/multiselect-combobox';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
@@ -12,6 +11,7 @@ import {
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
+import type { MultiselectOption } from '../ui/multiselect-combobox';
 import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
 const shortMonthDay = (date: Date, locale: string): string =>

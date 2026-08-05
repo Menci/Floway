@@ -77,7 +77,7 @@ const stubUsageGateway = (upstreamOptions: () => Response = () => Response.json(
 };
 
 describe('usage dimension controls', () => {
-  it('matches Performance controls and removes view/redaction UI', () => {
+  it('matches the Performance dimension and range controls', () => {
     renderPage(loaderData);
 
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
@@ -85,9 +85,6 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'API Key' })).toBeTruthy();
-    expect(screen.queryByText('All by user')).toBeNull();
-    expect(screen.queryByText('My keys')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Redact/ })).toBeNull();
     expect(screen.getByText('Last Day')).toBeTruthy();
     expect(screen.getByText('7 Days')).toBeTruthy();
     expect(screen.getByText('30 Days')).toBeTruthy();

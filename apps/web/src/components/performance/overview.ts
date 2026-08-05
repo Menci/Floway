@@ -1,6 +1,6 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
-import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type PerformanceRange = DashboardRange;

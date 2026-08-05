@@ -170,12 +170,14 @@ export interface ChoiceGroupItem {
 
 export function ChoiceGroup({
   ariaLabel,
+  disabled = false,
   items,
   onChange,
   readOnly,
   value,
 }: {
   ariaLabel: string;
+  disabled?: boolean;
   items: ChoiceGroupItem[];
   onChange: (value: string) => void;
   /**
@@ -206,17 +208,19 @@ export function ChoiceGroup({
   };
 
   return <div aria-label={ariaLabel} aria-readonly={readOnly === true ? true : undefined} className={styles.root} onKeyDown={handleKeyDown} role="radiogroup">
-    {items.map((item, index) => item.to === undefined
+    {items.map((item, index) => {
+      const itemDisabled = disabled || item.disabled === true;
+      return item.to === undefined
       ? <label
           className={styles.item}
           data-checked={value === item.value ? '' : undefined}
-          data-disabled={item.disabled === true ? '' : undefined}
+          data-disabled={itemDisabled ? '' : undefined}
           key={item.value}
         >
           <input
             checked={value === item.value}
             className={styles.input}
-            disabled={item.disabled}
+            disabled={itemDisabled}
             name={name}
             onChange={readOnly === true ? undefined : () => onChange(item.value)}
             onClick={readOnly === true ? refuseToggle : undefined}
@@ -228,12 +232,13 @@ export function ChoiceGroup({
       : <AddressedChoice
           checked={value === item.value}
           className={styles.item}
-          item={item}
+          item={{ ...item, disabled: itemDisabled }}
           key={item.value}
           onChange={onChange}
           to={item.to}
           tabIndex={(selectedIndex === -1 ? index === 0 : value === item.value) ? 0 : -1}
-        />)}
+        />;
+    })}
   </div>;
 }
 
@@ -248,8 +253,10 @@ function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
   // The page owns the transition, holding the view in state and writing the URL
   // after it, so the address only has to say where the view lives.
   const address = useRouteAddress(to, () => onChange(item.value));
+  const disabled = item.disabled === true;
   return <a
-    {...address}
+    href={disabled ? undefined : address.href}
+    onClick={disabled ? event => event.preventDefault() : address.onClick}
     aria-checked={checked}
     aria-disabled={item.disabled === true ? true : undefined}
     className={className}
@@ -258,12 +265,13 @@ function AddressedChoice({ checked, className, item, onChange, tabIndex, to }: {
     // An anchor answers Enter on its own; Space is the radio's key and has to
     // be given back, and its default is the page scroll.
     onKeyDown={event => {
+      if (disabled) return;
       if (event.key !== ' ') return;
       event.preventDefault();
       event.currentTarget.click();
     }}
     role="radio"
-    tabIndex={tabIndex}
+    tabIndex={disabled ? -1 : tabIndex}
   >
     <span>{item.label}</span>
   </a>;

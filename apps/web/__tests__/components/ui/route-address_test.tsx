@@ -65,4 +65,21 @@ describe('addressed controls', () => {
     expect(onChange).toHaveBeenCalledWith('7d');
     expect(router.state.location.search).toBe('');
   });
+
+  it('removes the address and activation from a disabled choice group', async () => {
+    const onChange = vi.fn();
+    const { router, getByRole } = renderRouter(<ChoiceGroup
+      ariaLabel="Range"
+      disabled
+      items={[{ value: '7d', label: '7 days', to: '?range=7d' }]}
+      onChange={onChange}
+      value="today"
+    />);
+
+    const sevenDays = getByRole('radio', { name: '7 days' });
+    expect(sevenDays.getAttribute('href')).toBeNull();
+    await act(async () => { fireEvent.click(sevenDays, { button: 0 }); });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(router.state.location.search).toBe('');
+  });
 });
