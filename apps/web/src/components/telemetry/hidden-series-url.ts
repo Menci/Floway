@@ -9,10 +9,12 @@ const decodeLegacyId = (value: string) => {
   }
 };
 
-export const parseHiddenSeries = (search: URLSearchParams, key: string): string[] =>
-  search.get(`${key}v`) === hiddenSeriesFormatVersion
-    ? search.getAll(key)
-    : (search.get(key) ?? '').split(',').map(decodeLegacyId).filter(Boolean);
+export const parseHiddenSeries = (search: URLSearchParams, key: string): string[] => {
+  const version = search.get(`${key}v`);
+  if (version === hiddenSeriesFormatVersion) return search.getAll(key);
+  if (version === null) return (search.get(key) ?? '').split(',').map(decodeLegacyId).filter(Boolean);
+  throw new RangeError(`Unsupported hidden-series URL format version: ${version}`);
+};
 
 export const serializeHiddenSeries = (
   search: URLSearchParams,
