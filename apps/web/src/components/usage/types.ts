@@ -4,29 +4,33 @@ import type { ChartBucket, DashboardRange } from '../charts/dashboard-time';
 import type { ChartSeries } from '../charts/series-legends';
 import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
-export type UsageView = 'all-by-user' | 'self-by-key';
+export type SearchUsageView = 'all-by-user' | 'self-by-key';
 export type UsageRange = DashboardRange;
-export type UsageGroupBy = 'identity' | 'model' | 'upstream';
+export type UsageGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
 export type UsageFilters = Record<UsageGroupBy, string[]>;
 export type UsageMetric =
   | 'requests' | 'cost' | 'total' | 'input' | 'output' | 'prefill'
   | 'cached' | 'cachedRate' | 'cacheCreation' | 'cacheHitRate';
 
 export interface DisplayUsageRecord {
-  keyId: string;
-  keyName?: string;
-  keyCreatedAt?: string;
-  model: string;
-  upstream: string | null;
-  hour: string;
+  bucket: string;
+  group: string;
   requests: number;
   metrics: Partial<Record<BillingMetric, DecimalString>>;
   cost: DecimalString | null;
 }
 
-export interface UsageResponse {
-  records: DisplayUsageRecord[];
-  keys: Array<{ id: string; name: string; createdAt?: string }>;
+export interface UsageOverviewResponse {
+  series: DisplayUsageRecord[];
+  axes: Record<UsageGroupBy | 'none', DisplayUsageRecord[]>;
+  dimensionValues: {
+    keyIds: string[];
+    userIds: number[];
+    models: string[];
+    upstreams: string[];
+  };
+  users: Array<{ id: number; username: string }>;
+  keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 
 export interface UsageUpstream {

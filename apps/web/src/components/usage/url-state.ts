@@ -1,53 +1,56 @@
-import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange, UsageView } from './types';
+import type { UsageFilters, UsageGroupBy, UsageMetric, UsageRange } from './types';
 import { oneOf, repeatedValues } from '../../lib/search-params';
 
 export interface UsageUrlState {
-  view: UsageView;
   range: UsageRange;
   groupBy: UsageGroupBy;
   filters: UsageFilters;
   metric: UsageMetric;
-  redactKeys: boolean;
-  hiddenKeys: string[];
-  hiddenModels: string[];
-  hiddenUpstreams: string[];
+  hidden: string[];
+  hiddenSearch: string[];
 }
 
-const usageViewValues: UsageView[] = ['all-by-user', 'self-by-key'];
 const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
-const usageGroupByValues: UsageGroupBy[] = ['identity', 'model', 'upstream'];
+const usageGroupByValues: UsageGroupBy[] = ['model', 'upstream', 'keyId', 'userId'];
 
 export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
-  const groupBy = oneOf(search.get('group'), usageGroupByValues, 'identity');
+  const groupBy = oneOf(search.get('g'), usageGroupByValues, 'model');
   const filters: UsageFilters = {
-    identity: repeatedValues(search, 'filterKey'),
-    model: repeatedValues(search, 'filterModel'),
-    upstream: repeatedValues(search, 'filterUpstream'),
+    model: repeatedValues(search, 'fm'),
+    upstream: repeatedValues(search, 'fu'),
+    userId: repeatedValues(search, 'fusr'),
+    keyId: repeatedValues(search, 'fk'),
   };
-  filters[groupBy] = [];
+  if (groupBy === 'userId' || groupBy === 'keyId') {
+    filters.userId = [];
+    filters.keyId = [];
+  } else {
+    filters[groupBy] = [];
+  }
   return {
-    view: oneOf(search.get('view'), usageViewValues, 'all-by-user'),
-    range: oneOf(search.get('range'), usageRangeValues, 'today'),
+    range: oneOf(search.get('r'), usageRangeValues, 'today'),
     groupBy,
     filters,
-    metric: oneOf(search.get('metric'), usageMetricValues, 'total'),
-    redactKeys: search.get('redact') === '1',
-    hiddenKeys: search.getAll('hideKey'),
-    hiddenModels: search.getAll('hideModel'),
-    hiddenUpstreams: search.getAll('hideUpstream'),
+    metric: oneOf(search.get('m'), usageMetricValues, 'total'),
+    hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
+    hiddenSearch: (search.get('hideSearch') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
   };
 };
 
 export const serializeUsageUrlState = (state: UsageUrlState): URLSearchParams => {
-  const search = new URLSearchParams({ view: state.view, range: state.range, metric: state.metric });
-  if (state.groupBy !== 'identity') search.set('group', state.groupBy);
-  if (state.redactKeys) search.set('redact', '1');
-  for (const id of [...state.hiddenKeys].sort()) search.append('hideKey', id);
-  for (const id of [...state.hiddenModels].sort()) search.append('hideModel', id);
-  for (const id of [...state.hiddenUpstreams].sort()) search.append('hideUpstream', id);
-  for (const id of [...state.filters.identity].sort()) search.append('filterKey', id);
-  for (const id of [...state.filters.model].sort()) search.append('filterModel', id);
-  for (const id of [...state.filters.upstream].sort()) search.append('filterUpstream', id);
+  const search = new URLSearchParams();
+  if (state.range !== 'today') search.set('r', state.range);
+  if (state.groupBy !== 'model') search.set('g', state.groupBy);
+  if (state.metric !== 'total') search.set('m', state.metric);
+  const filters: Array<[string, readonly string[]]> = [
+    ['fm', state.filters.model],
+    ['fu', state.filters.upstream],
+    ['fusr', state.filters.userId],
+    ['fk', state.filters.keyId],
+  ];
+  for (const [key, values] of filters) for (const value of values) search.append(key, value);
+  if (state.hidden.length > 0) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
+  if (state.hiddenSearch.length > 0) search.set('hideSearch', state.hiddenSearch.map(encodeURIComponent).join(','));
   return search;
 };

@@ -1,4 +1,4 @@
-import type { DisplayUsageRecord, UsageFilters, UsageGroupBy } from './types';
+import type { UsageFilters, UsageGroupBy } from './types';
 
 const upstreamPrefix = 'upstream:';
 const noUpstream = 'none';
@@ -12,28 +12,9 @@ export const upstreamFromUsageValue = (value: string): string | null => {
   return value.slice(upstreamPrefix.length);
 };
 
-export const usageDimensionValue = (record: DisplayUsageRecord, dimension: UsageGroupBy): string => {
-  if (dimension === 'identity') return record.keyId;
-  if (dimension === 'model') return record.model;
-  return usageUpstreamValue(record.upstream);
-};
-
-export const filterUsageRecords = (
-  records: readonly DisplayUsageRecord[],
-  filters: UsageFilters,
-): DisplayUsageRecord[] => records.filter(record => (
-  (filters.identity.length === 0 || filters.identity.includes(record.keyId))
-  && (filters.model.length === 0 || filters.model.includes(record.model))
-  && (filters.upstream.length === 0 || filters.upstream.includes(usageUpstreamValue(record.upstream)))
-));
-
-export const visibleUsageRecords = (
-  records: readonly DisplayUsageRecord[],
-  groupBy: UsageGroupBy,
-  hidden: ReadonlySet<string>,
-): DisplayUsageRecord[] => records.filter(record => !hidden.has(usageDimensionValue(record, groupBy)));
-
 export const clearGroupedUsageFilter = (filters: UsageFilters, groupBy: UsageGroupBy): UsageFilters => ({
   ...filters,
-  [groupBy]: [],
+  ...(groupBy === 'userId' || groupBy === 'keyId'
+    ? { userId: [], keyId: [] }
+    : { [groupBy]: [] }),
 });
