@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
@@ -64,6 +64,48 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
       assertEquals(fetches, 0);
     },
   );
+});
+
+test('a scheduled cold refresh survives disconnect before its claim dispatches', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord());
+  const originalClaim = repo.upstreams.claimModelsRefresh.bind(repo.upstreams);
+  let releaseClaim: (() => void) | null = null;
+  vi.spyOn(repo.upstreams, 'claimModelsRefresh').mockImplementation(async input => {
+    await new Promise<void>(resolve => { releaseClaim = resolve; });
+    return await originalClaim(input);
+  });
+  const controller = new AbortController();
+  const background: Promise<unknown>[] = [];
+  let fetches = 0;
+
+  await withMockedFetchRaw(
+    () => {
+      fetches++;
+      return jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] });
+    },
+    async () => {
+      await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'eventual-model',
+        kind: 'chat',
+        scheduler: promise => { background.push(promise); },
+        runtimeLocation: 'TEST',
+        clientDisconnectSignal: controller.signal,
+      });
+      await vi.waitFor(() => expect(releaseClaim).not.toBeNull());
+      controller.abort(new Error('client disconnected'));
+      releaseClaim!();
+      await Promise.all(background);
+    },
+  );
+
+  expect(fetches).toBe(1);
+  expect((await repo.upstreams.getById('up_custom'))?.modelsCache).toMatchObject({
+    lastError: null,
+    models: [{ id: 'eventual-model' }],
+  });
 });
 
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {

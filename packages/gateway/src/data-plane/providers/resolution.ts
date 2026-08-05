@@ -29,7 +29,8 @@ const enumerateOneUpstreamCandidates = async (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
-  fetcher: Fetcher,
+  catalogFetcher: Fetcher,
+  candidateFetcher: Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
   const cfg = provider.modelPrefix;
@@ -44,7 +45,7 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
+  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: catalogFetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
@@ -53,7 +54,7 @@ const enumerateOneUpstreamCandidates = async (
     if (!match) continue;
     sawAnyId = true;
     if (match.kind === kind) {
-      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher: candidateFetcher });
     }
   }
   return { candidates, sawAnyId, modelsError: provider.modelsCache?.lastError != null };
@@ -61,8 +62,9 @@ const enumerateOneUpstreamCandidates = async (
 
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
-// Client disconnect prevents snapshot work that has not dispatched, while a
-// retained operation already in flight runs to completion.
+// Client disconnect prevents snapshot work that has not dispatched. Once a
+// refresh is scheduled, its raw fetcher belongs to the background lifecycle;
+// only inference candidates receive the retained client-aware wrapper.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
@@ -76,6 +78,7 @@ export const enumerateRealModelCandidates = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
   clientDisconnectSignal?: AbortSignal,
+  candidateFetcherForUpstream: (upstreamId: string) => Fetcher = fetcherForUpstream,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
@@ -83,7 +86,14 @@ export const enumerateRealModelCandidates = async (
 }> => {
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
-    return enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler);
+    return enumerateOneUpstreamCandidates(
+      provider,
+      modelId,
+      kind,
+      fetcherForUpstream(provider.upstreamId),
+      candidateFetcherForUpstream(provider.upstreamId),
+      scheduler,
+    );
   }));
 
   const failedUpstreams: string[] = [];
@@ -123,17 +133,18 @@ const resolveRealCandidates = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
   clientDisconnectSignal?: AbortSignal,
+  candidateFetcherForUpstream: (upstreamId: string) => Fetcher = fetcherForUpstream,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -211,7 +222,7 @@ export const enumerateModelCandidates = async ({
   readonly failedUpstreams: readonly string[];
 }> => {
   const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const fetcherForUpstream = (upstreamId: string): Fetcher => {
+  const candidateFetcherForUpstream = (upstreamId: string): Fetcher => {
     const fetcher = createFetcherForUpstream(upstreamId);
     return clientDisconnectSignal === undefined
       ? fetcher
@@ -221,7 +232,7 @@ export const enumerateModelCandidates = async ({
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+    return await resolveRealCandidates(model, kind, providers, createFetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -233,7 +244,7 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, createFetcherForUpstream, scheduler, clientDisconnectSignal, candidateFetcherForUpstream);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
