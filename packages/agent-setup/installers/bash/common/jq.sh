@@ -32,9 +32,16 @@ _bootstrap_jq() {
   esac
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
   _bj_dest="$SETUP_TMPDIR/$_bj_asset"
+  _bj_max_bytes=${AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES:-8388608}
   out_warn 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
-  if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_bj_dest" "$_bj_url"; then
-    out_error "failed to download jq from $_bj_url"
+  curl -fsSL --connect-timeout 10 --max-time 120 --max-filesize "$_bj_max_bytes" -o "$_bj_dest" "$_bj_url"
+  _bj_curl_rc=$?
+  if [ "$_bj_curl_rc" -ne 0 ]; then
+    if [ "$_bj_curl_rc" -eq 63 ]; then
+      out_error 'the jq download exceeded the 8 MiB size limit.'
+    else
+      out_error "failed to download jq from $_bj_url"
+    fi
     rm -f "$_bj_dest"
     return 1
   fi
