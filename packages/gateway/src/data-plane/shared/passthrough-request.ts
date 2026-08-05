@@ -15,7 +15,7 @@ type PreparedJsonRequest =
 export const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string): PreparedJsonRequest => {
   let request: JsonModelRequestBody;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { type: 'invalid', message: `${requestName} request body must be an object.` };
     }
