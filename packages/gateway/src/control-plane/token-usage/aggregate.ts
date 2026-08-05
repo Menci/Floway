@@ -1,6 +1,5 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '../shared/telemetry-bucket.ts';
-import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
+import { addDecimalStrings, multiplyDecimalStrings, tokenUsageUnattributedUserId, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageMetric {
   metric: BillingMetric;
@@ -23,23 +22,6 @@ export interface DisplayUsageByUserRecord {
   requests: number;
   metrics: DisplayUsageMetric[];
   cost: DecimalString | null;
-}
-
-export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
-
-export interface UsageOverviewRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  metrics: DisplayUsageMetric[];
-  cost: DecimalString | null;
-}
-
-export interface UsageOverviewAggregateOptions {
-  bucket: TelemetryBucketGranularity;
-  groupBy: UsageOverviewGroupBy | 'none';
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
 }
 
 const recordCostUsd = (record: UsageRecord): DecimalString | null => {
@@ -108,9 +90,9 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
   );
 }
 
-// Token Usage assigns an unrecoverable key owner to the synthetic user bucket
-// so its record and overview responses both preserve unattributed rows.
-export const usageUserIdForKey = (
+// The all-by-user record response keeps hard-deleted-key usage in a synthetic
+// user bucket because no owner metadata remains to attribute it further.
+const usageUserIdForKey = (
   keyId: string,
   keyToUser: ReadonlyMap<string, number>,
 ): number => keyToUser.get(keyId) ?? tokenUsageUnattributedUserId;
@@ -128,50 +110,3 @@ export function aggregateUsageByUserForDisplay(
     (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
   );
 }
-
-const overviewGroup = (
-  record: UsageRecord,
-  groupBy: UsageOverviewAggregateOptions['groupBy'],
-  keyToUser: ReadonlyMap<string, number>,
-): string | null => {
-  if (groupBy === 'none') return 'all';
-  if (groupBy === 'userId') {
-    return String(usageUserIdForKey(record.keyId, keyToUser));
-  }
-  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
-  return record[groupBy];
-};
-
-export const aggregateUsageForOverview = <K extends string>(
-  records: readonly UsageRecord[],
-  axes: Record<K, UsageOverviewAggregateOptions>,
-  keyToUser: ReadonlyMap<string, number>,
-  visibleKeyIds: ReadonlySet<string>,
-): Record<K, UsageOverviewRecord[]> => {
-  const entries = Object.entries(axes) as [K, UsageOverviewAggregateOptions][];
-  const maps = entries.map(() => new Map<string, UsageOverviewRecord>());
-  const bucketResolvers = entries.map(([, options]) => createTelemetryBucket(options));
-  for (const record of records) {
-    for (let index = 0; index < entries.length; index++) {
-      const options = entries[index][1];
-      if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
-      const group = overviewGroup(record, options.groupBy, keyToUser);
-      if (group === null) continue;
-      const bucket = bucketResolvers[index](record.hour);
-      const key = `${bucket}\0${group}`;
-      let aggregate = maps[index].get(key);
-      if (!aggregate) {
-        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
-        maps[index].set(key, aggregate);
-      }
-      accumulate(aggregate, record);
-    }
-  }
-
-  const result = {} as Record<K, UsageOverviewRecord[]>;
-  for (let index = 0; index < entries.length; index++) {
-    result[entries[index][0]] = [...maps[index].values()]
-      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group));
-  }
-  return result;
-};

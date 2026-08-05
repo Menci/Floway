@@ -1,5 +1,6 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
-import type { DisplayUsageByUserRecord, DisplayUsageRecord, UsageOverviewGroupBy, UsageOverviewRecord } from './token-usage/aggregate.ts';
+import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
+import type { UsageOverviewGroupBy, UsageOverviewRecord } from '../repo/types.ts';
 
 export interface UsageKeyMetadata {
   id: string;
