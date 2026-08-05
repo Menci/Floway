@@ -125,16 +125,16 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     [hiddenSeries, usage],
   );
   const summary = useMemo(() => visibleSeries && summarizeUsage(visibleSeries), [visibleSeries]);
-  const tokenChart = useMemo(
-    () => usage && selectedDimension && buildTokenChart({
+  const tokenChart = useMemo(() => {
+    if (!usage || !selectedDimension) return null;
+    return buildTokenChart({
       records: usage.series,
       dimensionOptions: selectedDimension.options,
       metric,
       range: loadedRange,
       buckets,
-    }),
-    [buckets, loadedRange, metric, selectedDimension, usage],
-  );
+    });
+  }, [buckets, loadedRange, metric, selectedDimension, usage]);
   const searchChart = useMemo(
     () => search && buildSearchChart({ search, range: loadedRange, buckets }),
     [buckets, loadedRange, search],
