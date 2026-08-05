@@ -83,12 +83,16 @@ const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
   currentState().accounts[0]!.quotaSnapshot;
 
-// Yield to the queue so the .catch chain from fireAndForgetPersist completes
-// before assertions inspect the persisted state.
-const flushAsyncQueue = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+const captureBackgroundWrites = () => {
+  const writes: Promise<unknown>[] = [];
+  const call: MessagesUpstreamCallOptions = {
+    ...noopUpstreamCallOptions(),
+    waitUntil: write => { writes.push(write); },
+  };
+  return { call, settle: async () => { await Promise.all(writes); } };
+};
 
 beforeEach(() => {
-  vi.useRealTimers();
   seedAccount();
   initProviderRepo(() => ({
     upstreams: {
@@ -286,6 +290,31 @@ describe('callClaudeCodeMessages — wire body', () => {
     expect(body.model).toBe('claude-sonnet-4-5-20250929');
   });
 
+  test('forwards opaque request controls and the caller abort signal to Anthropic', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const abort = new AbortController();
+    await callClaudeCodeMessages({
+      upstreamId,
+      model: sonnetModel,
+      body: {
+        ...minimalBody,
+        output_config: { effort: 'future-effort' },
+        service_tier: 'future-tier',
+        speed: 'future-speed',
+      },
+      shaped: false,
+      signal: abort.signal,
+      call: noopUpstreamCallOptions(),
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.output_config.effort).toBe('future-effort');
+    expect(body.service_tier).toBe('future-tier');
+    expect(body.speed).toBe('future-speed');
+    expect(init.signal).toBe(abort.signal);
+  });
+
   test('targets /v1/messages?beta=true', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -345,11 +374,12 @@ describe('callClaudeCodeMessages — quota persistence', () => {
       'anthropic-ratelimit-unified-7d-reset': '1782039600',
       'anthropic-ratelimit-unified-7d-utilization': '0.5',
     }));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(true);
-    await flushAsyncQueue();
+    await background.settle();
     const stored = readQuotaEntry();
     expect(stored).not.toBeNull();
     const data = stored!.data as { status?: string; sevenDay?: { utilization?: number } };
@@ -364,12 +394,13 @@ describe('callClaudeCodeMessages — quota persistence', () => {
       'anthropic-ratelimit-unified-reset': '1781805000',
       'retry-after': '60',
     }));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
-    await flushAsyncQueue();
+    await background.settle();
     const stored = readQuotaEntry();
     const data = stored!.data as { status?: string };
     expect(data.status).toBe('rejected');
@@ -409,8 +440,9 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const upstreamBody = { error: { type: 'invalid_request_error', message: 'organization has been disabled' } };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -419,7 +451,7 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
       // readable after the provider call returned (we cloned for detection).
       expect(await result.response.json()).toEqual(upstreamBody);
     }
-    await flushAsyncQueue();
+    await background.settle();
     const account = currentState().accounts[0]!;
     expect(account.state).toBe('refresh_failed');
     expect(account.stateMessage).toMatch(/Organization disabled by Anthropic/);
@@ -436,15 +468,16 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
       },
     };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(403);
       expect(await result.response.json()).toEqual(upstreamBody);
     }
-    await flushAsyncQueue();
+    await background.settle();
     const account = currentState().accounts[0]!;
     expect(account.state).toBe('refresh_failed');
     expect(account.stateMessage).toMatch(/Organization banned from OAuth by Anthropic/);
@@ -455,15 +488,16 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const upstreamBody = { error: { type: 'invalid_request_error', message: 'max_tokens: must be at most 8192' } };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(400);
       expect(await result.response.json()).toEqual(upstreamBody);
     }
-    await flushAsyncQueue();
+    await background.settle();
     expect(currentState().accounts[0]!.state).toBe('active');
   });
 
@@ -471,15 +505,16 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const upstreamBody = { error: { type: 'permission_error', message: 'unrelated' } };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(403);
       expect(await result.response.json()).toEqual(upstreamBody);
     }
-    await flushAsyncQueue();
+    await background.settle();
     expect(currentState().accounts[0]!.state).toBe('active');
   });
 
@@ -488,15 +523,16 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('not json at all', { status: 400, headers: { 'content-type': 'text/plain' } }),
     );
+    const background = captureBackgroundWrites();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(400);
       expect(await result.response.text()).toBe('not json at all');
     }
-    await flushAsyncQueue();
+    await background.settle();
     expect(currentState().accounts[0]!.state).toBe('active');
   });
 });

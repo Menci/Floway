@@ -121,6 +121,17 @@ describe('assertCodexUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { constructor: { fetchedAt: 1, data: {} } } }],
     })).toThrow(/invalid active limit key/);
   });
+  test.each([
+    { observed_at: 123 },
+    { observed_at: 'not-a-date' },
+    { observed_at: '2026-06-05T00:00:00Z', primary_used_percent: 'full' },
+    { observed_at: '2026-06-05T00:00:00Z', primary_reset_after_at: {} },
+    { observed_at: '2026-06-05T00:00:00Z', extra: true },
+  ])('rejects malformed persisted quota data: %j', data => {
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { premium: { fetchedAt: 1, data } } }],
+    })).toThrow();
+  });
 
   test('rejects missing / empty openaiDeviceId', () => {
     const { openaiDeviceId: _drop, ...withoutDeviceId } = goodAccount;

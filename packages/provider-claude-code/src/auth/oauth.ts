@@ -126,8 +126,16 @@ const claudeCodeTokenRequest = async (
   if (typeof root.access_token !== 'string' || root.access_token === '') {
     throw new Error('Claude Code OAuth /token response missing access_token');
   }
-  if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('Claude Code OAuth /token response missing expires_in');
+  const expiresIn = root.expires_in;
+  const expiresAt = typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : Number.NaN;
+  if (
+    typeof expiresIn !== 'number'
+    || !Number.isSafeInteger(expiresIn)
+    || expiresIn <= 0
+    || !Number.isSafeInteger(expiresAt)
+    || Number.isNaN(new Date(expiresAt).getTime())
+  ) {
+    throw new Error('Claude Code OAuth /token response carries invalid expires_in');
   }
   if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
     throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
@@ -137,7 +145,7 @@ const claudeCodeTokenRequest = async (
   }
   return {
     access_token: root.access_token,
-    expires_in: root.expires_in,
+    expires_in: expiresIn,
     refresh_token: typeof root.refresh_token === 'string' ? root.refresh_token : undefined,
     scope: root.scope,
   };
