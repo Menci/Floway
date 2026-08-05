@@ -327,7 +327,7 @@ Request mapping:
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
   tool result as an error. Structured `encrypted_content` is Responses-native
   upstream state and is rejected at this translation boundary; affinity routes
-  an owned value only to its producing Responses upstream.
+  an owned value only to a native Responses model on its producing upstream.
 - readable `agent_message` content uses the Messages user wire role, while
   an explicit non-user-source notice and XML-escaped `<agent-message>` wrapper
   keep it from acquiring user authority. The wrapper preserves `author` and
@@ -572,7 +572,7 @@ Request mapping:
   though its image originated in tool output; no out-of-band provenance
   contradicts the wire role. Structured `encrypted_content` is rejected rather
   than flattened or dropped; owned encrypted output is upstream-required and
-  therefore remains on its producing Responses target.
+  therefore remains on a native Responses model on its producing upstream.
 - readable `agent_message` content uses one Chat user wire message with the
   same non-user-source notice and selective typed XML boundaries as the
   Messages target.

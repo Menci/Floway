@@ -270,7 +270,7 @@ Before affinity, candidates are ordered:
 Chat-shaped ingress analyzes client-carried affinity, then
 `selectAffinityCandidates` evaluates every viable candidate. One evaluation
 decides whether the candidate satisfies exact upstream/model requirements and
-upstream-only requirements, whether it can restore each required opaque value,
+native-Responses requirements on one upstream, whether it can restore each required opaque value,
 and whether projecting optional state would discard a natural blob. Rejected
 candidates leave the list. Accepted candidates that retain every natural blob
 come first in their existing order, followed by degrading fallbacks in their
