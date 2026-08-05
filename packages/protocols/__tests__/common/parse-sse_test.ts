@@ -1,5 +1,6 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { byteStream, collectAsync } from './test-utils.ts';
 import { parseSSEStream } from '../../src/common/parse-sse.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -36,11 +37,7 @@ const cancelStateWithin = async (promise: Promise<void>, timeoutMs: number): Pro
 };
 
 const collect = async (text: string) => {
-  const frames = [];
-  for await (const frame of parseSSEStream(new Response(text).body!)) {
-    frames.push(frame);
-  }
-  return frames;
+  return await collectAsync(parseSSEStream(byteStream(text)));
 };
 
 test('parseSSEStream flushes a final data line without a trailing newline', async () => {
@@ -99,6 +96,62 @@ test('parseSSEStream joins data fields and resets event state at blank-line boun
       data: 'tail',
     },
   ]);
+});
+
+test('parseSSEStream preserves Unicode split at every byte boundary', async () => {
+  const bytes = new TextEncoder().encode('event: update\r\ndata: A😀中\r\n\r\n');
+  const chunks = Array.from(bytes, byte => new Uint8Array([byte]));
+
+  assertEquals(await collectAsync(parseSSEStream(byteStream(...chunks))), [
+    { type: 'sse', event: 'update', data: 'A😀中' },
+  ]);
+});
+
+test('parseSSEStream rejects invalid UTF-8 rather than replacing upstream bytes', async () => {
+  const prefix = new TextEncoder().encode('data: {"text":"');
+  const suffix = new TextEncoder().encode('"}\n\n');
+  const invalid = new Uint8Array(prefix.length + 1 + suffix.length);
+  invalid.set(prefix);
+  invalid[prefix.length] = 0xff;
+  invalid.set(suffix, prefix.length + 1);
+
+  await expect(collectAsync(parseSSEStream(byteStream(invalid)))).rejects.toThrow(TypeError);
+});
+
+test('parseSSEStream preserves a decode failure when reader cancellation also fails', async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([0xff]));
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+
+  const error = await collectAsync(parseSSEStream(body)).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(TypeError);
+  expect((error as Error).cause).toEqual(new Error('cancel failed'));
+});
+
+test('parseSSEStream preserves a frozen stream failure when cancellation also fails', async () => {
+  const primary = Object.freeze(new Error('read failed'));
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      throw primary;
+    },
+    cancel() {
+      throw new Error('cancel failed');
+    },
+  });
+
+  const error = await collectAsync(parseSSEStream(body)).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBe(primary);
 });
 
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {

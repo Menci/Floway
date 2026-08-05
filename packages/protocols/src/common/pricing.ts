@@ -82,6 +82,7 @@ export interface PricedRequest {
 export type ModelPricingIssue =
   | { code: 'empty-catalog'; error: Error }
   | { code: 'empty-rates'; entryIndex: number; error: Error }
+  | { code: 'unknown-rate-metric'; entryIndex: number; metric: string; error: Error }
   | { code: 'invalid-rate'; entryIndex: number; metric: BillingMetric; error: Error }
   | { code: 'invalid-selector'; entryIndex: number; error: Error }
   | { code: 'base-count'; entryIndexes: readonly number[]; error: Error }
@@ -103,7 +104,9 @@ export type ModelPricingIssue =
   };
 
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
-  const metrics = BILLING_METRICS.filter(metric => pricing[metric] !== undefined);
+  const unknownMetrics = Object.keys(pricing).filter(metric => !(BILLING_METRICS as readonly string[]).includes(metric));
+  if (unknownMetrics.length > 0) throw new RangeError(`${path} has unknown billing metrics: ${unknownMetrics.join(', ')}`);
+  const metrics = BILLING_METRICS.filter(metric => Object.hasOwn(pricing, metric) && pricing[metric] !== undefined);
   if (metrics.length === 0) throw new Error(`${path} must contain at least one rate`);
   for (const metric of metrics) {
     const rate = pricing[metric]!;
@@ -158,7 +161,7 @@ const equalityScopeKey = (selector: PricingSelector): string =>
   JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
 
 const pricingMetrics = (rates: PriceVector): readonly BillingMetric[] =>
-  BILLING_METRICS.filter(metric => rates[metric] !== undefined);
+  BILLING_METRICS.filter(metric => Object.hasOwn(rates, metric) && rates[metric] !== undefined);
 
 export const collectModelPricingIssues = (pricing: ModelPricing): readonly ModelPricingIssue[] => {
   const issues: ModelPricingIssue[] = [];
@@ -170,6 +173,14 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
   const selectors: (PricingSelector | undefined)[] = [];
   for (let entryIndex = 0; entryIndex < pricing.entries.length; entryIndex++) {
     const entry = pricing.entries[entryIndex]!;
+    for (const metric of Object.keys(entry.rates).filter(candidate => !(BILLING_METRICS as readonly string[]).includes(candidate))) {
+      issues.push({
+        code: 'unknown-rate-metric',
+        entryIndex,
+        metric,
+        error: new RangeError(`model pricing entry ${entryIndex}.rates has unknown billing metric: ${metric}`),
+      });
+    }
     const metrics = pricingMetrics(entry.rates);
     if (metrics.length === 0) {
       issues.push({
@@ -311,17 +322,37 @@ interface CompiledModelPricing {
 
 const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
 
-// Pricing objects are immutable after provider/config construction. Compilation
-// validates and canonicalizes once per stable object identity.
+const freezeModelPricing = (pricing: ModelPricing): void => {
+  for (const entry of pricing.entries) {
+    Object.freeze(entry.rates);
+    if (entry.selector !== undefined) {
+      for (const coordinate of Object.values(entry.selector)) {
+        if (typeof coordinate === 'object') Object.freeze(coordinate);
+      }
+      Object.freeze(entry.selector);
+    }
+    Object.freeze(entry);
+  }
+  Object.freeze(pricing.entries);
+  Object.freeze(pricing);
+};
+
+// Compilation validates and freezes the whole pricing graph. The runtime
+// immutability guarantee makes the identity cache constant-time and prevents a
+// caller from invalidating compiled selectors behind the cache.
 const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
   const existing = compiledPricing.get(pricing);
-  if (existing) return existing;
+  if (existing !== undefined) return existing;
   validateModelPricing(pricing);
+  freezeModelPricing(pricing);
   const ratesBySelectorKey = new Map<string, PriceVector>();
   const bandsByAxisAndEqualityScope = new Map<string, Map<string, Map<number, PricingThresholdCoordinate>>>();
   for (const entry of pricing.entries) {
     const selector = canonicalizePricingSelector(entry.selector);
-    ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
+    const ownRates = Object.freeze(Object.fromEntries(
+      pricingMetrics(entry.rates).map(metric => [metric, entry.rates[metric]]),
+    ) as PriceVector);
+    ratesBySelectorKey.set(JSON.stringify(selector), ownRates);
     for (const axis of PRICING_AXES) {
       if (axis.kind !== 'threshold') continue;
       const coordinate = selector[axis.id];
@@ -371,6 +402,14 @@ const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number):
   coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;
 
 export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
+  const runtimeServiceTier: unknown = facts.serviceTier;
+  const runtimeInputTokens: unknown = facts.inputTokens;
+  if (runtimeServiceTier !== undefined && runtimeServiceTier !== null && (typeof runtimeServiceTier !== 'string' || runtimeServiceTier.length === 0)) {
+    throw new RangeError('pricing runtime serviceTier must be a non-empty string, null, or undefined');
+  }
+  if (runtimeInputTokens !== undefined && (typeof runtimeInputTokens !== 'number' || !Number.isSafeInteger(runtimeInputTokens) || runtimeInputTokens < 0)) {
+    throw new RangeError(`pricing runtime inputTokens must be a non-negative safe integer: ${String(runtimeInputTokens)}`);
+  }
   const compiled = pricing ? compileModelPricing(pricing) : undefined;
   const selector: Record<string, PricingCoordinateValue> = {};
   for (const axis of PRICING_AXES) {

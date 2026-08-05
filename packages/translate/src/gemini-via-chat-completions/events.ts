@@ -16,7 +16,7 @@ const mapFinishReason = (finishReason: ChatCompletionsStreamChoice['finish_reaso
   case 'content_filter':
     return 'SAFETY';
   default:
-    return undefined;
+    return finishReason === null || finishReason === undefined ? undefined : 'OTHER';
   }
 };
 

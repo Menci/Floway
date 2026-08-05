@@ -30,8 +30,12 @@ export const concatBytes = (...parts: readonly Uint8Array[]): Uint8Array => {
   return result;
 };
 
-export const uint16be = (length: number): Uint8Array =>
-  new Uint8Array([length >>> 8, length & 0xff]);
+export const uint16be = (length: number): Uint8Array => {
+  if (!Number.isSafeInteger(length) || length < 0 || length > MAX_OPAQUE_TRAILER_BYTES) {
+    throw new RangeError(`Unsigned 16-bit value must be an integer between 0 and ${MAX_OPAQUE_TRAILER_BYTES}: ${length}`);
+  }
+  return new Uint8Array([length >>> 8, length & 0xff]);
+};
 
 export const decodeOpaqueValue = (value: string): DecodedOpaqueValue => {
   if (value.length > 0) {
@@ -63,6 +67,9 @@ export const appendOpaqueTrailer = (
 };
 
 export const splitOpaqueTrailer = (value: string, minimumTrailerBytes = 1): SplitOpaqueTrailer | null => {
+  if (!Number.isSafeInteger(minimumTrailerBytes) || minimumTrailerBytes < 0 || minimumTrailerBytes > MAX_OPAQUE_TRAILER_BYTES) {
+    throw new RangeError(`Minimum opaque trailer length must be an integer between 0 and ${MAX_OPAQUE_TRAILER_BYTES}: ${minimumTrailerBytes}`);
+  }
   const framed = decodeCanonicalBase64(value) ?? decodeCanonicalBase64url(value);
   if (framed === null || framed.length < LENGTH_MARKER_BYTES + minimumTrailerBytes) return null;
   const trailerLength = (framed[framed.length - 2] << 8) | framed[framed.length - 1];

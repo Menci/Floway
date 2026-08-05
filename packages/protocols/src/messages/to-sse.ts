@@ -1,4 +1,4 @@
-import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEvent, MessagesTextCitation, MessagesWebSearchResultLocation } from './index.ts';
+import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEvent, MessagesTextCitation } from './index.ts';
 import { type ProtocolFrame, type SseFrame, sseFrame } from '../common/index.ts';
 
 // Anthropic's Messages SSE wire format renames `search_result_location` fields
@@ -9,14 +9,14 @@ import { type ProtocolFrame, type SseFrame, sseFrame } from '../common/index.ts'
 interface MessagesSearchResultLocationSsePayload {
   type: 'search_result_location';
   source: string;
-  title: string;
+  title: string | null;
   search_result_index: number;
   start_block_index: number;
   end_block_index: number;
   cited_text?: string;
 }
 
-type MessagesSseCitation = MessagesSearchResultLocationSsePayload | MessagesWebSearchResultLocation;
+type MessagesSseCitation = MessagesSearchResultLocationSsePayload | Exclude<MessagesTextCitation, { type: 'search_result_location' }>;
 
 type MessagesSseTextContentBlock = Extract<MessagesContentBlockStartEvent['content_block'], { type: 'text' }>;
 type MessagesSseNonTextContentBlock = Exclude<MessagesContentBlockStartEvent['content_block'], { type: 'text' }>;
@@ -27,13 +27,13 @@ type MessagesSseOtherDelta = Exclude<MessagesContentBlockDeltaEvent['delta'], { 
 interface MessagesSseContentBlockStartEvent {
   type: 'content_block_start';
   index: number;
-  content_block: MessagesSseNonTextContentBlock | (Omit<MessagesSseTextContentBlock, 'citations'> & { citations?: MessagesSseCitation[] });
+  content_block: MessagesSseNonTextContentBlock | (Omit<MessagesSseTextContentBlock, 'citations'> & { citations?: MessagesSseCitation[] | null });
 }
 
 interface MessagesSseContentBlockDeltaEvent {
   type: 'content_block_delta';
   index: number;
-  delta: MessagesSseOtherDelta | (Omit<MessagesSseTextDelta, 'citations'> & { citations?: MessagesSseCitation[] }) | (Omit<MessagesSseCitationsDelta, 'citation'> & { citation: MessagesSseCitation });
+  delta: MessagesSseOtherDelta | (Omit<MessagesSseTextDelta, 'citations'> & { citations?: MessagesSseCitation[] | null }) | (Omit<MessagesSseCitationsDelta, 'citation'> & { citation: MessagesSseCitation });
 }
 
 type MessagesSseEventPayload = Exclude<MessagesStreamEvent, { type: 'content_block_start' } | { type: 'content_block_delta' }> | MessagesSseContentBlockStartEvent | MessagesSseContentBlockDeltaEvent;
@@ -47,7 +47,7 @@ const citationToSsePayload = (citation: MessagesTextCitation): MessagesSseCitati
         search_result_index: citation.search_result_index,
         start_block_index: citation.start_block_index,
         end_block_index: citation.end_block_index,
-        ...(citation.cited_text ? { cited_text: citation.cited_text } : {}),
+        ...(citation.cited_text !== undefined ? { cited_text: citation.cited_text } : {}),
       }
     : citation;
 

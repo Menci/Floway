@@ -69,3 +69,19 @@ test('billable usage adds across the turns one response spans', () => {
   expect(sumBillableUsage(a, undefined)).toEqual(a);
   expect(sumBillableUsage(undefined, undefined)).toBeUndefined();
 });
+
+test('billable usage uses the latest turn tier including a return to base', () => {
+  const base = { input: 1, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 1 };
+  const priority = { ...base, tier: 'priority' };
+
+  expect(sumBillableUsage(priority, base)).toEqual({ input: 2, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 });
+  expect(sumBillableUsage(base, priority)?.tier).toBe('priority');
+});
+
+test('billable usage rejects invalid and overflowing counters', () => {
+  const valid = { input: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 0 };
+  for (const input of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() => sumBillableUsage({ ...valid, input }, valid)).toThrow('non-negative safe integer');
+  }
+  expect(() => sumBillableUsage({ ...valid, input: Number.MAX_SAFE_INTEGER }, { ...valid, input: 1 })).toThrow('safe integer range');
+});

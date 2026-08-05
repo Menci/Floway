@@ -193,6 +193,22 @@ test('non-empty content block starts preserve initial text, thinking, and tool i
   });
 });
 
+test.each([
+  { type: 'web_fetch_tool_result', tool_use_id: 'tool_1', content: { type: 'error' } },
+  { type: 'code_execution_tool_result', tool_use_id: 'tool_2', content: { type: 'error' } },
+  { type: 'bash_code_execution_tool_result', tool_use_id: 'tool_3', content: { type: 'error' } },
+  { type: 'text_editor_code_execution_tool_result', tool_use_id: 'tool_4', content: { type: 'error' } },
+  { type: 'tool_search_tool_result', tool_use_id: 'tool_5', content: { type: 'error' } },
+  { type: 'container_upload', file_id: 'file_1' },
+] as const)('opaque Messages $type blocks have no Chat Completions equivalent', contentBlock => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+  const result = translateMessagesEventToChatCompletionsChunks({
+    type: 'content_block_start', index: 0, content_block: contentBlock,
+  }, state);
+  assertEquals(result, []);
+});
+
 test('multiple tool_use blocks increment index', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
@@ -432,6 +448,17 @@ test('message_delta with pause_turn → finish_reason stop', () => {
     state,
   );
   assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
+});
+
+test.each(['future-stop-reason', ''])('message_delta preserves open stop reason %j', stopReason => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+  const result = translateMessagesEventToChatCompletionsChunks({
+    type: 'message_delta',
+    delta: { stop_reason: stopReason },
+  }, state);
+
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, stopReason);
 });
 
 test('message_delta with refusal → refusal delta and finish_reason stop', () => {

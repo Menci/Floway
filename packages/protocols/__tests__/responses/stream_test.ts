@@ -275,6 +275,47 @@ test('parseResponsesStream advances its counter past upstream-provided sequence 
   assertEquals(sequenceNumbers, [5, 6]);
 });
 
+test('parseResponsesStream rejects invalid or non-monotonic sequence numbers', async () => {
+  for (const sequence_number of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    await assertRejects(
+      async () => await collect(parse(sseFrame(JSON.stringify({
+        type: 'response.output_text.delta', item_id: 'msg', output_index: 0, content_index: 0, delta: 'x', sequence_number,
+      })))),
+      RangeError,
+      'non-negative safe integer',
+    );
+  }
+  await assertRejects(
+    async () => await collect(parse(
+      sseFrame(JSON.stringify({ type: 'response.output_text.delta', delta: 'a', sequence_number: 5 })),
+      sseFrame(JSON.stringify({ type: 'response.output_text.delta', delta: 'b', sequence_number: 5 })),
+    )),
+    RangeError,
+    'increase monotonically',
+  );
+  await assertRejects(
+    async () => await collect(parse(
+      sseFrame(JSON.stringify({ type: 'response.output_text.delta', delta: 'a', sequence_number: Number.MAX_SAFE_INTEGER })),
+      sseFrame(JSON.stringify({ type: 'response.output_text.delta', delta: 'b' })),
+    )),
+    RangeError,
+    'exhausted the safe integer range',
+  );
+});
+
+test('parseResponsesStream rejects malformed event and terminal shapes', async () => {
+  await assertRejects(async () => await collect(parse(sseFrame('null'))), TypeError, 'must be a JSON object');
+  await assertRejects(async () => await collect(parse(sseFrame('{}'))), TypeError, 'must state a non-empty string type');
+  await assertRejects(
+    async () => await collect(parse(sseFrame(JSON.stringify({
+      type: 'response.completed',
+      response: { ...makeResponse('failed') },
+    })))),
+    TypeError,
+    'response.completed cannot carry Responses status "failed"',
+  );
+});
+
 test('parseResponsesStream fast-paths response.failed terminal with error preserved on terminal only', async () => {
   const failed = makeResponse('failed', {
     output: [],

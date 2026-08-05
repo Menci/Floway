@@ -254,13 +254,15 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
 // blanket-drops every `citations_delta` because Chat Completions has no
 // url_citation equivalent.
 const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, citation: MessagesTextCitation, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
-  // Future citation variants (`char_location`, `page_location`,
-  // `content_block_location` from Anthropic native long-document
-  // citations) are not in the current `MessagesTextCitation` union; if
-  // they're added, this branch needs to either skip or map them.
+  // Character, page, and content-block coordinates have no URL annotation
+  // equivalent on Responses and therefore remain only on the Messages side.
   if (citation.type !== 'search_result_location' && citation.type !== 'web_search_result_location') {
     return [];
   }
+
+  // Responses requires a string title and has no spelling for Anthropic's
+  // explicit null, so that annotation cannot be represented on this surface.
+  if (citation.title === null) return [];
 
   if (!citation.cited_text) {
     // A present cited_text on an empty blockText (citation arriving

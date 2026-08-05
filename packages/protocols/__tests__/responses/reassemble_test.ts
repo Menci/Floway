@@ -113,3 +113,44 @@ test('reassembleResponsesEvents throws when stream ends without terminal event',
 
   await assertRejects(() => reassembleResponsesEvents(body), Error, 'terminal');
 });
+
+test('reassembleResponsesEvents rejects malformed and contradictory terminal events', async () => {
+  await assertRejects(
+    () => reassembleResponsesEvents(makeEvents([{ data: { type: 'response.completed' } }])),
+    TypeError,
+    'must carry a response object',
+  );
+  await assertRejects(
+    () => reassembleResponsesEvents(makeEvents([{
+      data: {
+        type: 'response.completed',
+        response: {
+          id: 'resp_bad', object: 'response', model: 'gpt-test', status: 'failed', output: [], error: null, incomplete_details: null,
+        },
+      },
+    }])),
+    TypeError,
+    'cannot carry Responses status "failed"',
+  );
+});
+
+test('reassembleResponsesEvents accepts a completed compaction resource with no status field', async () => {
+  const compaction = {
+    id: 'cmp_1',
+    object: 'response.compaction',
+    output: [],
+    created_at: 1,
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      total_tokens: 2,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens_details: { reasoning_tokens: 0 },
+    },
+  };
+  const result = await reassembleResponsesEvents(makeEvents([{
+    data: { type: 'response.completed', response: compaction },
+  }]));
+
+  assertEquals(result, compaction);
+});
