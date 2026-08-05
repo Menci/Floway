@@ -272,12 +272,9 @@ Dependency direction is strict. `protocols` and `interceptor` have no runtime
 workspace dependencies. `http` is also independent of other workspace
 packages; it owns HTTP/1.1 framing, userspace TLS, and WebSocket upgrade and
 frame handling. `translate` depends on `protocols`. `agent-setup` depends only
-on Hono, Zod, and `@scure/base` at runtime; it knows nothing of gateway
-databases, auth/CORS/logging, mount paths, or deployment runtimes. Production
-packages that encode or decode RFC 4648 base encodings depend directly on
-`@scure/base` and keep their wire- or persistence-specific acceptance rules
-locally. `platform` owns runtime-neutral contracts and helpers. `proxy` depends
-on `http`; its dialers
+on Hono and Zod at runtime; it knows nothing of gateway databases,
+auth/CORS/logging, mount paths, or deployment runtimes. `platform` owns
+runtime-neutral contracts and helpers. `proxy` depends on `http`; its dialers
 receive the byte-stream dial primitive through `DialOptions` — a `connect`
 that opens a duplex and can also wrap it in the runtime's native TLS —
 declared structurally in `proxy` itself, so the package never imports
