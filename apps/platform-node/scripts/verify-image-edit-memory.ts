@@ -406,6 +406,7 @@ const runChild = async (): Promise<void> => {
   };
 
   let server: ServerType | undefined;
+  let outcome: { readonly type: 'ok' } | { readonly type: 'failed'; readonly error: unknown } = { type: 'ok' };
   try {
     const started = await startServer();
     server = started.server;
@@ -443,15 +444,37 @@ const runChild = async (): Promise<void> => {
         })().catch(reject);
       });
     });
-  } finally {
-    releaseLarge();
-    globalThis.fetch = nativeFetch;
-    fileObserver.restore();
-    if (server !== undefined) await closeServer(server);
+  } catch (error) {
+    outcome = { type: 'failed', error };
+  }
+
+  const cleanupFailures: unknown[] = [];
+  const cleanup = async (operation: () => void | Promise<void>): Promise<void> => {
+    try { await operation(); } catch (error) { cleanupFailures.push(error); }
+  };
+  await cleanup(() => { releaseLarge(); });
+  await cleanup(() => { globalThis.fetch = nativeFetch; });
+  await cleanup(() => { fileObserver.restore(); });
+  await cleanup(async () => { await background.flush(); });
+  if (server !== undefined) await cleanup(async () => { await closeServer(server); });
+  await cleanup(async () => {
     await new Promise<void>((resolve, reject) => {
       upstreamServer.close(error => { if (error) reject(error); else resolve(); });
     });
-    await rm(tempRoot, { recursive: true, force: true });
+  });
+  await cleanup(async () => { await rm(tempRoot, { recursive: true, force: true }); });
+
+  if (outcome.type === 'failed') {
+    if (cleanupFailures.length === 0) throw outcome.error;
+    throw new AggregateError(
+      [outcome.error, ...cleanupFailures],
+      'image memory verification and cleanup both failed',
+      { cause: outcome.error },
+    );
+  }
+  if (cleanupFailures.length === 1) throw cleanupFailures[0];
+  if (cleanupFailures.length > 1) {
+    throw new AggregateError(cleanupFailures, 'image memory verification cleanup failed', { cause: cleanupFailures[0] });
   }
 };
 
