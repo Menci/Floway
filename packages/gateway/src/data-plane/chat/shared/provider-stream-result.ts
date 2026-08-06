@@ -177,6 +177,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     let lifecycleSettled = false;
     const reportError: CleanupErrorSink = error => {
       if (lifecycleSettled) {
+        if (errors.some(existing => Object.is(existing, error))) return;
         console.error('[provider-stream] cleanup failed after lifecycle settlement', error);
         return;
       }
