@@ -98,13 +98,9 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
   const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
   if (storedUpstream === null) throw new Error('expected stored upstream fixture');
   const cacheGeneration = modelsCacheGeneration(storedUpstream);
-  const cacheToken = 'node-cache-fixture';
-  const cacheClaim = await repo.upstreams.claimModelsRefresh({ id: 'up_node', generation: cacheGeneration, token: cacheToken, now: Date.now(), staleClaimedBefore: Number.MIN_SAFE_INTEGER, bypassBackoff: true, observedActiveToken: null });
-  if (cacheClaim.kind !== 'claimed') throw new Error('expected model-cache fixture claim');
-  await repo.upstreams.finalizeModelsRefreshSuccess({
+  await repo.upstreams.publishModelsRefresh({
     id: 'up_node',
     generation: cacheGeneration,
-    token: cacheToken,
     cache: {
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1_786_000_000_000,

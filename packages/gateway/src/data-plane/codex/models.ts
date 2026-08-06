@@ -64,10 +64,11 @@ export const loadCodexCatalog = async (
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
 ): Promise<CodexCatalog> => {
   const [resolution, addressable] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler, runtimeLocation),
   ]);
   return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };

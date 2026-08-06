@@ -1,4 +1,4 @@
-import { executeModelsRefresh, type ModelsRefreshExecutionInput } from './models-refresh.ts';
+import { executeModelsRefresh, modelsRefreshExecutionError, type ModelsRefreshExecutionInput } from './models-refresh.ts';
 
 export const handleExecutionRequest = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
@@ -6,8 +6,11 @@ export const handleExecutionRequest = async (request: Request): Promise<Response
     return new Response('Execution operation not found', { status: 404 });
   }
   const input = parseModelsRefreshInput(await request.json());
-  await executeModelsRefresh(input);
-  return new Response(null, { status: 204 });
+  try {
+    return Response.json(await executeModelsRefresh(input));
+  } catch (error) {
+    return Response.json(modelsRefreshExecutionError(error), { status: 502 });
+  }
 };
 
 const parseModelsRefreshInput = (value: unknown): ModelsRefreshExecutionInput => {
@@ -17,10 +20,14 @@ const parseModelsRefreshInput = (value: unknown): ModelsRefreshExecutionInput =>
   if (!Number.isSafeInteger(input.configVersion) || (input.configVersion as number) < 1) throw new TypeError('Models refresh configVersion must be a positive integer');
   if (input.cacheEpoch !== null && (!Number.isSafeInteger(input.cacheEpoch) || (input.cacheEpoch as number) < 0)) throw new TypeError('Models refresh cacheEpoch must be a non-negative integer or null');
   if (input.runtimeLocation !== null && typeof input.runtimeLocation !== 'string') throw new TypeError('Models refresh runtimeLocation must be a string or null');
+  if (typeof input.bypassBackoff !== 'boolean') throw new TypeError('Models refresh bypassBackoff must be a boolean');
+  if (typeof input.includeDiscovered !== 'boolean') throw new TypeError('Models refresh includeDiscovered must be a boolean');
   return {
     upstreamId: input.upstreamId,
     configVersion: input.configVersion as number,
     cacheEpoch: input.cacheEpoch as number | null,
     runtimeLocation: input.runtimeLocation as string | null,
+    bypassBackoff: input.bypassBackoff,
+    includeDiscovered: input.includeDiscovered,
   };
 };

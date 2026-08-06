@@ -4,7 +4,7 @@ import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
+import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
   assertSameStoredResponsesItem,
@@ -29,10 +29,9 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsRefreshClaimInput,
-  ModelsRefreshClaimResult,
+  ModelsRefreshBeginInput,
+  ModelsRefreshBeginResult,
   ModelsRefreshFailureInput,
-  ModelsRefreshOwnerInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -738,7 +737,7 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
-  private modelsRefreshes = new Map<string, { failCount: number; retryAt: number; claimToken: string | null; claimedAt: number | null }>();
+  private modelsRefreshes = new Map<string, { failureCount: number; retryAt: number }>();
 
   list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
@@ -833,9 +832,8 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, generation, token, cache } = input;
-    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
+    const { id, generation, cache } = input;
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
@@ -843,48 +841,27 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(true);
   }
 
-  finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, generation, token, error, previousFailureCount, failedAt } = input;
+  recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
+    const { id, generation, error, previousFailureCount, failedAt } = input;
     const failureCount = previousFailureCount + 1;
     const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
     const refresh = this.modelsRefreshes.get(id);
-    if (refresh?.claimToken !== token || refresh.failCount !== previousFailureCount) return Promise.resolve(false);
+    if ((refresh?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
-    this.modelsRefreshes.set(id, { failCount: failureCount, retryAt, claimToken: null, claimedAt: null });
+    this.modelsRefreshes.set(id, { failureCount, retryAt });
     return Promise.resolve(true);
   }
 
-  abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean> {
-    const { id, generation, token } = input;
-    const existing = this.store.get(id);
-    const refresh = this.modelsRefreshes.get(id);
-    if (!existing
-      || existing.configVersion !== generation.configVersion
-      || refresh?.claimToken !== token) return Promise.resolve(false);
-    this.modelsRefreshes.set(id, { ...refresh, claimToken: null, claimedAt: null });
-    return Promise.resolve(true);
-  }
-
-  claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
-    const { id, generation, token, now, staleClaimedBefore, bypassBackoff, observedActiveToken } = input;
+  beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
+    const { id, generation, now, bypassBackoff } = input;
     const stored = this.store.get(id);
     if (!stored || stored.configVersion !== generation.configVersion) return Promise.resolve({ kind: 'generation-mismatch' });
     const existing = this.modelsRefreshes.get(id);
-    if (observedActiveToken !== null && existing === undefined) return Promise.resolve({ kind: 'completed' });
-    if (existing !== undefined) {
-      if (existing.claimToken !== null && existing.claimedAt! > staleClaimedBefore) return Promise.resolve({ kind: 'active', token: existing.claimToken });
-      if (!bypassBackoff && existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
-    }
-    this.modelsRefreshes.set(id, {
-      failCount: existing?.failCount ?? 0,
-      retryAt: existing?.retryAt ?? 0,
-      claimToken: token,
-      claimedAt: now,
-    });
-    return Promise.resolve({ kind: 'claimed', failureCount: existing?.failCount ?? 0 });
+    if (!bypassBackoff && existing !== undefined && existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
+    return Promise.resolve({ kind: 'ready', failureCount: existing?.failureCount ?? 0 });
   }
 
 }

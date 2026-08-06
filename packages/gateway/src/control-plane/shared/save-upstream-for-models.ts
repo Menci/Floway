@@ -1,8 +1,6 @@
 import type { Context } from 'hono';
 
-import { warmUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
-import { createProvider } from '../../data-plane/providers/registry.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { modelsRefreshTarget, refreshModels } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -46,10 +44,10 @@ export const saveUpstreamsAndWarmChangedModels = async (
   const recordsToWarm = saved.filter(result => result.modelsChanged).map(result => result.record);
   if (recordsToWarm.length === 0) return new Map(saved.map(result => [result.record.id, result.record]));
 
-  const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), recordsToWarm);
+  const runtimeLocation = getRuntimeLocation(c.req.raw);
   const warmedEntries = await Promise.all(recordsToWarm.map(async record => {
     try {
-      await warmUpstreamModels(createProvider(record), fetcherForUpstream(record.id));
+      await refreshModels(modelsRefreshTarget(record), runtimeLocation, { bypassBackoff: false, includeDiscovered: false });
     } catch (error) {
       logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(error) });
     }

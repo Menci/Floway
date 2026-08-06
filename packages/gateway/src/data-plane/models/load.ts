@@ -44,6 +44,7 @@ export const loadModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
   aliasRepo: ModelAliasesRepo,
 ): Promise<PublicModelsResponse> => {
   // Data-plane responses always narrow `aliasedFrom.targets` to the
@@ -51,10 +52,10 @@ export const loadModels = async (
   // ids), but the alias's metadata is still computed gateway-wide so
   // every caller sees the same numbers.
   const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler, runtimeLocation),
     upstreamFilter === null
       ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
+      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler, runtimeLocation),
     aliasRepo.list(),
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;

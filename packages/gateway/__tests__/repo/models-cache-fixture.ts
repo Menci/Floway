@@ -17,10 +17,7 @@ export const seedModelsCache = async (
   generation: ModelsCacheGeneration,
   cache: Omit<UpstreamModelsCache, 'lastError'>,
 ): Promise<boolean> => {
-  const token = crypto.randomUUID();
-  const claim = await repo.claimModelsRefresh({ id, generation, token, now: Date.now(), staleClaimedBefore: Number.MIN_SAFE_INTEGER, bypassBackoff: true, observedActiveToken: null });
-  if (claim.kind !== 'claimed') return false;
-  return await repo.finalizeModelsRefreshSuccess({ id, generation, token, cache });
+  return await repo.publishModelsRefresh({ id, generation, cache });
 };
 
 export const seedModelsCacheError = async (
@@ -29,8 +26,5 @@ export const seedModelsCacheError = async (
   generation: ModelsCacheGeneration,
   error: NonNullable<UpstreamModelsCache['lastError']>,
 ): Promise<boolean> => {
-  const token = crypto.randomUUID();
-  const claim = await repo.claimModelsRefresh({ id, generation, token, now: Date.now(), staleClaimedBefore: Number.MIN_SAFE_INTEGER, bypassBackoff: true, observedActiveToken: null });
-  if (claim.kind !== 'claimed') return false;
-  return await repo.finalizeModelsRefreshFailure({ id, generation, token, error, previousFailureCount: 0, failedAt: -60_000 });
+  return await repo.recordModelsRefreshFailure({ id, generation, error, previousFailureCount: 0, failedAt: -60_000 });
 };

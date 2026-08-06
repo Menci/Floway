@@ -66,13 +66,14 @@ const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
   aliasRepo: ModelAliasesRepo,
 ): Promise<GeminiModel[]> => {
   const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler, runtimeLocation),
     upstreamFilter === null
       ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
+      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler, runtimeLocation),
     aliasRepo.list(),
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
@@ -93,7 +94,7 @@ const loadGeminiModels = async (
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases) });
+    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRuntimeLocation(c.req.raw), getRepo().modelAliases) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -106,7 +107,7 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
   const modelId = rawModelId.replace(/^models\//, '');
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRuntimeLocation(c.req.raw), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {

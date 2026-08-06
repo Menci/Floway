@@ -31,9 +31,10 @@ const enumerateOneUpstreamCandidates = async (
   context: {
     fetcher: Fetcher;
     scheduler: BackgroundScheduler;
+    runtimeLocation: string;
   },
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
-  const { fetcher, scheduler } = context;
+  const { fetcher, scheduler, runtimeLocation } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -46,7 +47,7 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, fetcher });
+  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, runtimeLocation });
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
@@ -79,6 +80,7 @@ export const enumerateRealModelCandidates = async (
   context: {
     fetcherForUpstream: (upstreamId: string) => Fetcher;
     scheduler: BackgroundScheduler;
+    runtimeLocation: string;
     clientDisconnectSignal?: AbortSignal;
   },
 ): Promise<{
@@ -86,7 +88,7 @@ export const enumerateRealModelCandidates = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const { fetcherForUpstream, scheduler, clientDisconnectSignal } = context;
+  const { fetcherForUpstream, scheduler, runtimeLocation, clientDisconnectSignal } = context;
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(
@@ -96,6 +98,7 @@ export const enumerateRealModelCandidates = async (
       {
         fetcher: fetcherForUpstream(provider.upstreamId),
         scheduler,
+        runtimeLocation,
       },
     );
   }));
@@ -225,6 +228,7 @@ export const enumerateModelCandidates = async ({
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
     scheduler,
+    runtimeLocation,
     clientDisconnectSignal,
   };
 

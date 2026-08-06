@@ -7,8 +7,9 @@ import { expect, test, vi } from 'vitest';
 // until the vitest timeout. Stub the cache layer to a no-op so the import
 // path's own behavior (upserts, identity validation, etc.) is what the tests
 // exercise — the warm itself has dedicated coverage in models-cache_test.ts.
-vi.mock('../../../src/data-plane/providers/models-refresh.ts', () => ({
-  warmUpstreamModels: () => Promise.resolve([]),
+vi.mock('../../../src/execution/models-refresh.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/execution/models-refresh.ts')>(),
+  refreshModels: () => Promise.resolve({ kind: 'refreshed' }),
 }));
 
 import { exportData, importData } from '../../../src/control-plane/data-transfer/routes.ts';

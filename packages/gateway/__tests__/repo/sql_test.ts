@@ -230,7 +230,7 @@ test('SQL rejects malformed persisted model refresh state', async () => {
 
   await assertRejects(
     () => db.prepare('UPDATE upstreams SET models_refresh_json = ? WHERE id = ?')
-      .bind(JSON.stringify({ failCount: 0, retryAt: 0, claimToken: 'owner', claimedAt: null }), 'up_test')
+      .bind(JSON.stringify({ failureCount: -1, retryAt: 0 }), 'up_test')
       .run(),
   );
 });

@@ -73,15 +73,16 @@ const isClaudeCodeUserAgent = (userAgent: string | undefined): boolean =>
 export const serveModels = async (c: Context): Promise<Response> => {
   try {
     const userAgent = c.req.header('user-agent');
-    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
+    const runtimeLocation = getRuntimeLocation(c.req.raw);
+    const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
     const upstreamIds = effectiveUpstreamIdsFromContext(c);
     const scheduler = backgroundSchedulerFromContext(c);
 
     if (isCodexUserAgent(userAgent)) {
-      return Response.json(await loadCodexCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler));
+      return Response.json(await loadCodexCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler, runtimeLocation));
     }
 
-    const publicCatalog = await loadModels(upstreamIds, fetcherForUpstream, scheduler, getRepo().modelAliases);
+    const publicCatalog = await loadModels(upstreamIds, fetcherForUpstream, scheduler, runtimeLocation, getRepo().modelAliases);
     // The Claude Code CLI's model discovery request identifies itself with
     // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
     // helper — verified in the v2.1.206 binary). The CLI's other request

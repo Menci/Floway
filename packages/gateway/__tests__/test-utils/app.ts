@@ -1,10 +1,8 @@
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
-import { clearModelsRefreshesForTesting, warmUpstreamModels } from '../../src/data-plane/providers/models-refresh.ts';
-import { listModelProviders } from '../../src/data-plane/providers/registry.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
-import { createPerRequestFetcher } from '../../src/dial/per-request.ts';
-import { initRepo } from '../../src/repo/index.ts';
+import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
+import { getRepo, initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
@@ -140,7 +138,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   });
 
   clearInProcessCopilotTokenCache();
-  clearModelsRefreshesForTesting();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
@@ -315,10 +312,9 @@ export const requestAppWithWarmModels = async (path: string, init: RequestInit):
 // before a model-consuming request while leaving repository/cache unit tests
 // free to exercise genuinely cold reads.
 export const warmModelsForTest = async (): Promise<void> => {
-  const providers = await listModelProviders(null);
-  const fetcherForUpstream = await createPerRequestFetcher('TEST');
-  await Promise.allSettled(providers.map(async provider =>
-    await warmUpstreamModels(provider, fetcherForUpstream(provider.upstreamId))));
+  const upstreams = await getRepo().upstreams.list();
+  await Promise.allSettled(upstreams.map(async upstream =>
+    await refreshModels(modelsRefreshTarget(upstream), 'TEST', { bypassBackoff: false, includeDiscovered: false })));
 };
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {

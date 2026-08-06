@@ -55,6 +55,7 @@ export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
   preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
@@ -65,7 +66,7 @@ export const enumerateAddressableModelIds = async (
   // hint behavior on a brand-new gateway. `preFetchedUpstreams` avoids
   // an additional round-trip when the caller has the list already.
   const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
-  const { models: realModels, upstreamsByPublicId } = await getModelsFromProviders(providers, fetcherForUpstream, scheduler);
+  const { models: realModels, upstreamsByPublicId } = await getModelsFromProviders(providers, fetcherForUpstream, scheduler, runtimeLocation);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
@@ -88,7 +89,7 @@ export const enumerateAddressableModelIds = async (
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
 
-    const upstreamModels = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstreamId) }).models;
+    const upstreamModels = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, runtimeLocation }).models;
     const disabled = new Set(provider.disabledPublicModelIds);
     const out: AddressableIdEntry[] = [];
 

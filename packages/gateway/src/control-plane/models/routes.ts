@@ -87,17 +87,18 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     // `enumerateAddressableModelIds`, the hue-join map) so this request
     // pays a single `upstreams.list()` round-trip.
     const upstreamRows = await getRepo().upstreams.list();
-    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), upstreamRows);
+    const runtimeLocation = getRuntimeLocation(c.req.raw);
+    const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + pricing — every caller
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
     const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
+      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c), runtimeLocation, upstreamRows),
       isAdmin
         ? Promise.resolve(null)
-        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
+        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c), runtimeLocation, upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
     const hueByUpstream = new Map<string, number>(upstreamRows.map(row => [row.id, row.hue]));

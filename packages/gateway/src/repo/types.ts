@@ -362,56 +362,39 @@ export interface UpstreamRepo {
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
-  // Catalog-cache writes are conditional on the row generation that started
-  // the fetch. A superseded provider can finish serving its own request, but
-  // cannot publish models or errors under newer credentials/configuration.
-  finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean>;
-  finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
-  abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean>;
-  claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult>;
+  beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult>;
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
+  recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
 
-export interface ModelsRefreshClaimInput {
+export interface ModelsRefreshBeginInput {
   id: string;
   generation: ModelsCacheGeneration;
-  token: string;
   now: number;
-  staleClaimedBefore: number;
   bypassBackoff: boolean;
-  observedActiveToken: string | null;
 }
 
 export interface ModelsRefreshSuccessInput {
   id: string;
   generation: ModelsCacheGeneration;
-  token: string;
   cache: Omit<UpstreamModelsCache, 'lastError'>;
-}
-
-export interface ModelsRefreshOwnerInput {
-  id: string;
-  generation: ModelsCacheGeneration;
-  token: string;
 }
 
 export interface ModelsRefreshFailureInput {
   id: string;
   generation: ModelsCacheGeneration;
-  token: string;
   error: NonNullable<UpstreamModelsCache['lastError']>;
   previousFailureCount: number;
   failedAt: number;
 }
 
-export interface ModelsRefreshClaim {
-  kind: 'claimed';
+export interface ModelsRefreshReady {
+  kind: 'ready';
   failureCount: number;
 }
 
-export type ModelsRefreshClaimResult = ModelsRefreshClaim
-  | { kind: 'active'; token: string }
+export type ModelsRefreshBeginResult = ModelsRefreshReady
   | { kind: 'backoff' }
-  | { kind: 'completed' }
   | { kind: 'generation-mismatch' };
 
 export interface ModelsCacheGeneration {

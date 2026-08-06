@@ -5,8 +5,8 @@ import type { ModelsCacheGeneration, StoredUpstreamRecord } from './types.ts';
 // its serialization changes so older rows become cold across deployments.
 export const MODEL_CATALOG_REVISION = 5;
 
-// Fetch ownership survives provider-managed state writes such as token
-// rotation, but changes whenever static request inputs or egress policy do.
+// Refresh publication survives provider-managed state writes such as token
+// rotation, but is fenced whenever static request inputs or egress policy change.
 export const modelsCacheGeneration = (
   record: Pick<StoredUpstreamRecord, 'configVersion'>,
 ): ModelsCacheGeneration => ({

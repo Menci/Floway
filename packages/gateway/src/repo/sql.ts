@@ -3,7 +3,7 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
-import { modelsRefreshRetryAt } from './models-refresh-contract.ts';
+import { modelsRefreshRetryAt } from './models-refresh-backoff.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
@@ -20,10 +20,9 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsRefreshClaimInput,
-  ModelsRefreshClaimResult,
+  ModelsRefreshBeginInput,
+  ModelsRefreshBeginResult,
   ModelsRefreshFailureInput,
-  ModelsRefreshOwnerInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -1058,17 +1057,17 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  async finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, generation, token, cache } = input;
+  async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
+    const { id, generation, cache } = input;
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.configVersion, token)
+      .prepare('UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ?')
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.configVersion)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, generation, token, error, previousFailureCount, failedAt } = input;
+  async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
+    const { id, generation, error, previousFailureCount, failedAt } = input;
     const failureCount = previousFailureCount + 1;
     const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
     // A cold failure remains immediately stale while preserving the error for
@@ -1078,81 +1077,26 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .prepare(
         `UPDATE upstreams SET
            models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
-           models_refresh_json = json_object('failCount', ?, 'retryAt', ?, 'claimToken', NULL, 'claimedAt', NULL)
+           models_refresh_json = json_object('failureCount', CAST(? AS INTEGER), 'retryAt', CAST(? AS INTEGER))
          WHERE id = ? AND config_version = ?
-           AND json_extract(models_refresh_json, '$.claimToken') = ?
-           AND coalesce(json_extract(models_refresh_json, '$.failCount'), 0) = ?`,
+           AND coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) = ?`,
       )
-      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.configVersion, token, previousFailureCount)
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.configVersion, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean> {
-    const { id, generation, token } = input;
-    const result = await this.db
-      .prepare("UPDATE upstreams SET models_refresh_json = json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) WHERE id = ? AND config_version = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
-      .bind(id, generation.configVersion, token)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
-  async claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
-    const { id, generation, token, now, staleClaimedBefore, bypassBackoff } = input;
-    let observedActiveToken = input.observedActiveToken;
-    while (true) {
-      const row = await this.db
-        .prepare(
-          `UPDATE upstreams
-           SET models_refresh_json = json_object(
-             'failCount', coalesce(json_extract(models_refresh_json, '$.failCount'), 0),
-             'retryAt', coalesce(json_extract(models_refresh_json, '$.retryAt'), 0),
-             'claimToken', ?,
-             'claimedAt', ?
-           )
-           WHERE id = ? AND config_version = ? AND (
-             ? IS NULL AND (
-               models_refresh_json IS NULL
-               OR (
-                 json_extract(models_refresh_json, '$.claimToken') IS NULL
-                 AND (? = 1 OR coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?)
-               )
-               OR json_extract(models_refresh_json, '$.claimedAt') <= ?
-             )
-             OR (
-               ? IS NOT NULL
-               AND json_extract(models_refresh_json, '$.claimToken') IS NOT NULL
-               AND json_extract(models_refresh_json, '$.claimedAt') <= ?
-             )
-           )
-           RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
-        )
-        .bind(token, now, id, generation.configVersion, observedActiveToken, sqliteBoolean(bypassBackoff), now, staleClaimedBefore, observedActiveToken, staleClaimedBefore)
-        .first<{ fail_count: number }>();
-      if (row !== null) return { kind: 'claimed', failureCount: row.fail_count };
-
-      const state = await this.db
-        .prepare(
-          `SELECT models_refresh_json,
-             json_extract(models_refresh_json, '$.retryAt') AS retry_at,
-             json_extract(models_refresh_json, '$.claimToken') AS claim_token,
-             json_extract(models_refresh_json, '$.claimedAt') AS claimed_at
-           FROM upstreams WHERE id = ? AND config_version = ?`,
-        )
-        .bind(id, generation.configVersion)
-        .first<{ models_refresh_json: string | null; retry_at: number | null; claim_token: string | null; claimed_at: number | null }>();
-      if (state === null) return { kind: 'generation-mismatch' };
-      if (state.models_refresh_json === null) {
-        if (observedActiveToken !== null) return { kind: 'completed' };
-        continue;
-      }
-      if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active', token: state.claim_token };
-      if (observedActiveToken !== null && state.claim_token === null) {
-        observedActiveToken = null;
-        continue;
-      }
-      if (!bypassBackoff && state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
-    }
+  async beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
+    const { id, generation, now, bypassBackoff } = input;
+    const row = await this.db.prepare(
+      `SELECT
+         coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) AS failure_count,
+         coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) AS retry_at
+       FROM upstreams WHERE id = ? AND config_version = ?`,
+    ).bind(id, generation.configVersion).first<{ failure_count: number; retry_at: number }>();
+    if (row === null) return { kind: 'generation-mismatch' };
+    if (!bypassBackoff && row.retry_at > now) return { kind: 'backoff' };
+    return { kind: 'ready', failureCount: row.failure_count };
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner

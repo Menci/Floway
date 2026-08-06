@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { clearModelsRefreshesForTesting, fetchUpstreamModels } from '../../../src/data-plane/providers/models-refresh.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { modelsRefreshTarget, refreshModels } from '../../../src/execution/models-refresh.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -66,15 +66,15 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
   );
 });
 
-test('a scheduled cold refresh survives disconnect before its claim dispatches', async () => {
+test('a scheduled cold refresh survives disconnect after execution starts', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord());
-  const originalClaim = repo.upstreams.claimModelsRefresh.bind(repo.upstreams);
-  let releaseClaim: (() => void) | null = null;
-  vi.spyOn(repo.upstreams, 'claimModelsRefresh').mockImplementation(async input => {
-    await new Promise<void>(resolve => { releaseClaim = resolve; });
-    return await originalClaim(input);
+  const originalBegin = repo.upstreams.beginModelsRefresh.bind(repo.upstreams);
+  let releaseBegin: (() => void) | null = null;
+  vi.spyOn(repo.upstreams, 'beginModelsRefresh').mockImplementation(async input => {
+    await new Promise<void>(resolve => { releaseBegin = resolve; });
+    return await originalBegin(input);
   });
   const controller = new AbortController();
   const background: Promise<unknown>[] = [];
@@ -94,9 +94,9 @@ test('a scheduled cold refresh survives disconnect before its claim dispatches',
         runtimeLocation: 'TEST',
         clientDisconnectSignal: controller.signal,
       });
-      await vi.waitFor(() => expect(releaseClaim).not.toBeNull());
+      await vi.waitFor(() => expect(releaseBegin).not.toBeNull());
       controller.abort(new Error('client disconnected'));
-      releaseClaim!();
+      releaseBegin!();
       await Promise.all(background);
     },
   );
@@ -267,10 +267,12 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      await fetchUpstreamModels(providers[0], directFetcher);
+      const first = await repo.upstreams.getById(providers[0].upstreamId);
+      if (first === null) throw new Error('first upstream missing');
+      await refreshModels(modelsRefreshTarget(first), 'TEST', { bypassBackoff: true, includeDiscovered: false });
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -314,8 +316,8 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
+  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
 });
@@ -352,7 +354,6 @@ test('a recorded refresh failure is irrelevant when the prefix policy cannot add
 // upstream's display name flows back via `failedUpstreams` while its empty
 // or last-known-good snapshot stays independent of the current request.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
-  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -404,7 +405,6 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // attempt, so the resolver returns immediately rather than walking the
 // stripped form.
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
-  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -445,7 +445,6 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 // failedUpstreams across the two retry attempts must dedupe: a single broken
 // upstream that rejects both walks reports its name once, not twice.
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -481,7 +480,6 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 });
 
 test('an AbortError from background catalog refresh does not abort model resolution', async () => {
-  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -519,7 +517,6 @@ test('an AbortError from background catalog refresh does not abort model resolut
 // upstream fetch. The failure renderer surfaces this as a model-missing 404
 // without re-deriving the empty-cap branch.
 test('enumerateModelCandidates returns the empty triple when the visible upstream list is empty', async () => {
-  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // A populated catalog is the case under test: the empty cap, not an empty
@@ -577,7 +574,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   };
 
   test('flattens across targets in declaration order for first-available', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -605,7 +601,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -638,7 +633,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -665,7 +659,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -697,7 +690,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -723,7 +715,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
-    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({

@@ -2,15 +2,15 @@ import { modelsCacheStatus } from './models-cache-status.ts';
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { fetchUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
-import { createPreviewProvider, createProvider } from '../../data-plane/providers/registry.ts';
+import { createPreviewProvider } from '../../data-plane/providers/registry.ts';
+import { modelsRefreshTarget, refreshModels } from '../../execution/models-refresh.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels, projectCustomDiscoveredModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels } from '@floway-dev/provider-custom';
 
 // `upstreamModelId` is the wire-side identifier the provider will send when
 // a caller invokes the public `model.id` — Claude Code exposes
@@ -106,29 +106,16 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
   const record = await getRepo().upstreams.getById(id);
   if (record === null) return c.json({ error: 'Upstream not found' }, 404);
 
-  let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({
-      override: record.proxyFallbackList,
-      upstreamId: id,
-      runtimeLocation: getRuntimeLocation(c.req.raw),
+    const result = await refreshModels(modelsRefreshTarget(record), getRuntimeLocation(c.req.raw), {
+      bypassBackoff: true,
+      includeDiscovered: record.kind === 'custom',
     });
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 400);
-  }
-
-  try {
-    let data: UpstreamModelConfig[];
-    if (record.kind === 'custom') {
-      const config = assertCustomUpstreamRecord(record).config;
-      const result = await fetchCustomModels(config, fetcher);
-      await fetchUpstreamModels(createProvider(record), fetcher, async () => projectCustomModels(record, result));
-      data = projectCustomDiscoveredModels(record, result);
-    } else {
-      data = (await fetchUpstreamModels(createProvider(record), fetcher)).map(reshapeModelForDashboard);
-    }
+    if (result.kind !== 'refreshed') throw new Error(`Upstream ${id} changed during models refresh`);
     const refreshed = await getRepo().upstreams.getById(id);
     if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
+    const data = result.discovered ?? refreshed.modelsCache?.models.map(reshapeModelForDashboard);
+    if (data === undefined) throw new Error(`Upstream ${id} models refresh did not publish a catalog`);
     return c.json({ data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {

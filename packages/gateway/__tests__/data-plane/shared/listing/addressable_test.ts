@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { clearModelsRefreshesForTesting } from '../../../../src/data-plane/providers/models-refresh.ts';
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
 import { directFetcher } from '@floway-dev/provider';
@@ -15,7 +14,6 @@ describe('enumerateAddressableModelIds', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord());
-    clearModelsRefreshesForTesting();
 
     await withMockedFetch(
       request => {
@@ -27,7 +25,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         await warmModelsForTest();
-        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
+        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST');
         expect(surface.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
           { id: 'shared-model', unlisted: undefined },
         ]);
@@ -45,7 +43,6 @@ describe('enumerateAddressableModelIds', () => {
       // public id.
       modelPrefix: { prefix: 'cust/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     }));
-    clearModelsRefreshesForTesting();
 
     await withMockedFetch(
       request => {
@@ -57,7 +54,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         await warmModelsForTest();
-        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
+        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST');
         const byId = new Map(surface.map(e => [e.id, e]));
         expect(byId.get('cust/gpt-5.4')?.unlisted).toBeUndefined();
         expect(byId.get('gpt-5.4')?.unlisted).toBe(true);
@@ -71,9 +68,8 @@ describe('enumerateAddressableModelIds', () => {
   test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    clearModelsRefreshesForTesting();
 
-    await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground))
+    await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST'))
       .rejects.toThrow('No upstream provider configured');
   });
 });

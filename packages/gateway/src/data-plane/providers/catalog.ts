@@ -85,6 +85,7 @@ const collectProviderModels = async (
   providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, InternalModel>();
   const upstreamsByPublicId = new Map<string, Provider[]>();
@@ -98,7 +99,7 @@ const collectProviderModels = async (
   const fetchOne = (instance: GatewayProvider) => {
     const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, {
       scheduler,
-      fetcher: fetcherForUpstream(instance.upstreamId),
+      runtimeLocation,
     });
     return { instance, models: snapshot.models, lastError: snapshot.lastError };
   };
@@ -222,12 +223,13 @@ export const getModelsFromProviders = async (
   providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  runtimeLocation: string,
 ): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
   if (providers.length === 0) {
     throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
-  const { models, upstreamsByPublicId, sawSuccess, lastError, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
+  const { models, upstreamsByPublicId, sawSuccess, lastError, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler, runtimeLocation);
 
   // TODO: surface `failedUpstreams` on each listing endpoint's wire response
   // so partial-listing failures reach clients.
