@@ -333,7 +333,6 @@ const runChild = async (): Promise<void> => {
       baseUrl: `http://127.0.0.1:${upstreamPort}`,
       authStyle: 'none',
       ingressHeadersRules: [],
-      apiKey: '',
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{ upstreamModelId: MODEL, endpoints: { imagesEdits: {} } }],
