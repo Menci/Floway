@@ -1,4 +1,10 @@
-import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token.ts';
+import {
+  ensureClaudeCodeAccessToken,
+  invalidateClaudeCodeAccessToken,
+  isClaudeCodeCredentialGeneration,
+  type ClaudeCodeCredentialGeneration,
+  type EnsuredAccessToken,
+} from './access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
 import { logWarn, logInfo } from './log.ts';
@@ -89,7 +95,11 @@ const isRateLimitedNow = (
   return new Date(snapshot.reset).getTime() > now.getTime();
 };
 
-const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
+const persistQuotaSnapshot = async (
+  upstreamId: string,
+  snapshot: ClaudeCodeQuotaSnapshot,
+  generation: ClaudeCodeCredentialGeneration,
+): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time, and this records when the snapshot was
   // observed rather than which attempt landed it.
@@ -97,15 +107,22 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   // The prior status comes from the state the mutator was handed: the write is
   // retried against whoever won the row, so only that view describes the
   // snapshot this write actually replaced.
-  let previousAccount!: ClaudeCodeAccountCredential;
+  let previousAccount: ClaudeCodeAccountCredential | null = null;
+  let applied = false;
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    applied = false;
     const state = readClaudeCodeUpstreamState(current);
-    previousAccount = state.accounts[0];
+    const account = state.accounts[0];
+    if (!isClaudeCodeCredentialGeneration(account, generation)) return state;
+    if (account.quotaSnapshot !== null && account.quotaSnapshot.fetchedAt >= fetchedAt) return state;
+    previousAccount = account;
+    applied = true;
     return replaceSoleAccount(state, account => ({
       ...account,
       quotaSnapshot: { fetchedAt, data: snapshot },
     }));
   }, { kind: 'claude-code' });
+  if (!applied || previousAccount === null) return;
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
   // with one event per request; the dashboard already reads the snapshot
@@ -138,11 +155,12 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
 const persistQuotaFromHeadersFireAndForget = (
   upstreamId: string,
   headers: Headers,
+  generation: ClaudeCodeCredentialGeneration,
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,
 ): void => {
   const snapshot = parseClaudeCodeQuotaHeaders(headers);
   if (Object.keys(snapshot.raw).length === 0) return;
-  const persist = persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
+  const persist = persistQuotaSnapshot(upstreamId, snapshot, generation).catch(error => {
     logWarn('claude_code_quota_persist_failed', {
       upstream_id: upstreamId,
       error: String(error),
@@ -214,15 +232,20 @@ const persistTerminalAccountState = async (
   terminalMessage: string,
   reason: string,
   upstreamStatus: number,
+  generation: ClaudeCodeCredentialGeneration,
 ): Promise<void> => {
   // Stamped before the write for the same reason as the quota snapshot: a
   // replay must produce the same document.
   const flippedAt = new Date().toISOString();
-  let previousAccount!: ClaudeCodeAccountCredential;
+  let previousAccount: ClaudeCodeAccountCredential | null = null;
+  let applied = false;
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    applied = false;
     const state = readClaudeCodeUpstreamState(current);
-    previousAccount = state.accounts[0];
-    if (previousAccount.state !== 'active') return state;
+    const account = state.accounts[0];
+    if (!isClaudeCodeCredentialGeneration(account, generation)) return state;
+    previousAccount = account;
+    applied = true;
     return replaceSoleAccount(state, account => ({
       ...account,
       state: 'refresh_failed',
@@ -231,7 +254,7 @@ const persistTerminalAccountState = async (
       accessToken: null,
     }));
   }, { kind: 'claude-code' });
-  if (previousAccount.state !== 'active') return;
+  if (!applied || previousAccount === null) return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
@@ -254,6 +277,7 @@ const persistTerminalAccountState = async (
 const maybePersistTerminalFromBodyFireAndForget = (
   upstreamId: string,
   response: Response,
+  generation: ClaudeCodeCredentialGeneration,
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,
 ): void => {
   if (response.status !== 400 && response.status !== 403) return;
@@ -278,7 +302,7 @@ const maybePersistTerminalFromBodyFireAndForget = (
       upstream_status: response.status,
       reason,
     });
-    await persistTerminalAccountState(upstreamId, terminalMessage, reason, response.status);
+    await persistTerminalAccountState(upstreamId, terminalMessage, reason, response.status, generation);
   })().catch(error => {
     logWarn('claude_code_terminal_sentinel_persist_failed', {
       upstream_id: upstreamId,
@@ -402,12 +426,12 @@ const performUpstreamCall = async (
     // limited gate above stays accurate as the window evolves. Other
     // statuses (4xx/5xx outside 429) carry no quota signal so we skip them.
     if (response.ok || response.status === 429) {
-      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, waitUntil);
+      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, accessToken.generation, waitUntil);
     }
     // 400 / 403 may carry the credential-class terminal sentinels — the
     // detector is body-shape-defensive and only flips on a real match, so
     // unrelated 400s (`max_tokens` validation, etc.) pass straight through.
-    maybePersistTerminalFromBodyFireAndForget(opts.upstreamId, response, waitUntil);
+    maybePersistTerminalFromBodyFireAndForget(opts.upstreamId, response, accessToken.generation, waitUntil);
     return response;
   });
 

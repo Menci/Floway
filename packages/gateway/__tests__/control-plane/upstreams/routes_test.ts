@@ -2183,13 +2183,13 @@ test('POST /api/upstreams/claude-code/probe returns the concurrent credential st
   assertEquals(typeof storedState.accounts[0].usageProbeSnapshot?.fetchedAt, 'number');
 });
 
-test('POST /api/upstreams/claude-code/probe does not attach account A usage after account B is imported', async () => {
+test('POST /api/upstreams/claude-code/probe does not attach usage after the same account is re-imported', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const created = await saveClaudeCodeUpstreamFixture(repo);
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
   const accountB = {
-    accountUuid: 'account-b',
+    accountUuid: 'acc-uuid-1',
     tokenKind: 'oauth' as const,
     state: 'active' as const,
     stateUpdatedAt: '2026-06-01T00:10:00.000Z',
@@ -2202,7 +2202,7 @@ test('POST /api/upstreams/claude-code/probe does not attach account A usage afte
   await withMockedFetch(
     async () => {
       await repo.upstreams.updateFields(created.id, 'claude-code', {
-        config: { accounts: [{ email: 'b@example.com', accountUuid: 'account-b', organizationUuid: null, subscriptionType: 'pro', rateLimitTier: 'default_claude_pro' }] },
+        config: { accounts: [{ email: 'alice@example.com', accountUuid: 'acc-uuid-1', organizationUuid: 'org-uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
         state: { accounts: [accountB] },
         updatedAt: new Date().toISOString(),
       }, { clearModelsCache: true });
@@ -2212,7 +2212,7 @@ test('POST /api/upstreams/claude-code/probe does not attach account A usage afte
       const response = await requestApp('/api/upstreams/claude-code/probe', authed(adminSession, { record: envelope }));
       assertEquals(response.status, 200);
       const body = await response.json() as { patch: { state: { accounts: Array<typeof accountB> } } };
-      assertEquals(body.patch.state.accounts[0].accountUuid, 'account-b');
+      assertEquals(body.patch.state.accounts[0].accountUuid, 'acc-uuid-1');
       assertEquals(body.patch.state.accounts[0].usageProbeSnapshot, null);
     },
   );

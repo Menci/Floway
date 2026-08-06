@@ -13,6 +13,35 @@ import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
 
+export interface ClaudeCodeCredentialGeneration {
+  readonly accountUuid: string;
+  readonly tokenKind: ClaudeCodeAccountCredential['tokenKind'];
+  readonly refreshToken: string | null;
+  readonly stateUpdatedAt: string;
+  readonly accessToken: string;
+}
+
+export const claudeCodeCredentialGeneration = (
+  account: ClaudeCodeAccountCredential,
+  accessToken: ClaudeCodeAccessTokenEntry,
+): ClaudeCodeCredentialGeneration => ({
+  accountUuid: account.accountUuid,
+  tokenKind: account.tokenKind,
+  refreshToken: account.refreshToken,
+  stateUpdatedAt: account.stateUpdatedAt,
+  accessToken: accessToken.token,
+});
+
+export const isClaudeCodeCredentialGeneration = (
+  account: ClaudeCodeAccountCredential,
+  generation: ClaudeCodeCredentialGeneration,
+): boolean => account.state === 'active'
+  && account.accountUuid === generation.accountUuid
+  && account.tokenKind === generation.tokenKind
+  && account.refreshToken === generation.refreshToken
+  && account.stateUpdatedAt === generation.stateUpdatedAt
+  && account.accessToken?.token === generation.accessToken;
+
 // Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when
 // this call shared in a real /v1/oauth/token round-trip (either drove the
 // mint itself, or coalesced onto an in-flight mint kicked off by a
@@ -28,6 +57,7 @@ export type { ClaudeCodeAccessTokenEntry };
 export interface EnsuredAccessToken {
   entry: ClaudeCodeAccessTokenEntry;
   freshlyMinted: boolean;
+  generation: ClaudeCodeCredentialGeneration;
 }
 
 // Refresh window: a cached token within this much of expiry counts as
@@ -54,9 +84,8 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
   // data plane leaves it false so a live request served from cache stays
-  // cheap. Lazy and forced calls share one flight per upstream so they can
-  // never rotate the same credential concurrently. A forced caller that
-  // joins a lazy cache hit starts one forced refresh after the hit settles.
+  // cheap. Forced actions serialize behind earlier work and then run through
+  // their own fetcher; lazy callers can share a successful mint.
   force?: boolean;
 }
 
@@ -89,8 +118,18 @@ export const ensureClaudeCodeAccessToken = async (
   const key = args.upstreamId;
   const existing = inFlightEnsures.get(key);
   if (existing) {
-    const ensured = await existing.promise;
-    if (!args.force || existing.force || ensured.freshlyMinted) return ensured;
+    if (!args.force && existing.force) {
+      const cached = await freshClaudeCodeAccessToken(args);
+      if (cached !== null) return cached;
+    }
+    try {
+      const ensured = await existing.promise;
+      if (!args.force) return ensured;
+    } catch (error) {
+      if (error instanceof ClaudeCodeOAuthSessionTerminatedError) throw error;
+      // The failed flight used another caller's fetcher. Retry this caller once
+      // the shared rotation slot is free.
+    }
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureClaudeCodeAccessToken(args);
   }
@@ -146,7 +185,11 @@ const ensureClaudeCodeAccessTokenInner = async (
   // 1-year validity makes the expiry path rare in practice.
   if (account.tokenKind === 'setup-token') {
     if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
-      return { entry: account.accessToken, freshlyMinted: false };
+      return {
+        entry: account.accessToken,
+        freshlyMinted: false,
+        generation: claudeCodeCredentialGeneration(account, account.accessToken),
+      };
     }
     const message = 'Setup token expired or absent; re-import to recover';
     await persistTerminalState(args.repo, args.upstreamId, account, {
@@ -158,7 +201,11 @@ const ensureClaudeCodeAccessTokenInner = async (
   }
 
   if (account.accessToken && isAccessTokenFresh(account.accessToken) && !args.force) {
-    return { entry: account.accessToken, freshlyMinted: false };
+    return {
+      entry: account.accessToken,
+      freshlyMinted: false,
+      generation: claudeCodeCredentialGeneration(account, account.accessToken),
+    };
   }
 
   let refreshed;
@@ -222,7 +269,29 @@ const ensureClaudeCodeAccessTokenInner = async (
     expires_in_seconds: refreshed.expires_in,
     refreshed_at: now,
   });
-  return { entry: newAccessTokenEntry, freshlyMinted: true };
+  return {
+    entry: newAccessTokenEntry,
+    freshlyMinted: true,
+    generation: claudeCodeCredentialGeneration({
+      ...account,
+      refreshToken: rotatedRefreshToken,
+      accessToken: newAccessTokenEntry,
+    }, newAccessTokenEntry),
+  };
+};
+
+const freshClaudeCodeAccessToken = async (
+  args: EnsureClaudeCodeAccessTokenArgs,
+): Promise<EnsuredAccessToken | null> => {
+  const record = await args.repo.getById(args.upstreamId);
+  if (record === null) return null;
+  const account = readClaudeCodeUpstreamState(record.state).accounts[0];
+  if (account.state !== 'active' || account.accessToken === null || !isAccessTokenFresh(account.accessToken)) return null;
+  return {
+    entry: account.accessToken,
+    freshlyMinted: false,
+    generation: claudeCodeCredentialGeneration(account, account.accessToken),
+  };
 };
 
 // Terminal flip from the oauth-error path. Distinct from fetch.ts's
@@ -312,7 +381,11 @@ const recoverFromRefreshRace = async (
     rotated_refresh_token_prefix: rereadAccount.refreshToken.slice(0, 6),
   });
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
-    return { entry: rereadAccount.accessToken, freshlyMinted: false };
+    return {
+      entry: rereadAccount.accessToken,
+      freshlyMinted: false,
+      generation: claudeCodeCredentialGeneration(rereadAccount, rereadAccount.accessToken),
+    };
   }
   // Sibling rotated the refresh token but no usable access token sits in
   // state — most likely an `invalidateClaudeCodeAccessToken` ran between
