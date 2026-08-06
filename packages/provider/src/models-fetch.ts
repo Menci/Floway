@@ -172,8 +172,6 @@ export const runProviderModelsTask = async <T>(
 
 const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
-// Cleanup errors are useful only when they settle promptly; a hostile cancel hook cannot hold the request open.
-const CLEANUP_SETTLEMENT_MICROTASKS = 16;
 const READS_PER_EVENT_LOOP_YIELD = 64;
 const TRUNCATED_BODY_MARKER = '...[truncated]';
 const REWRITTEN_BODY_HEADERS = [
@@ -247,17 +245,33 @@ const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string 
 
 type CleanupResult = { status: 'fulfilled' | 'pending' } | { error: unknown; status: 'rejected' };
 
+// Web Streams can relay an underlying cancellation rejection through several
+// internal promise turns. One task boundary observes that prompt failure while
+// keeping a source whose cancel hook never settles from holding the request.
 const boundedCleanup = async (cleanup: () => Promise<unknown>): Promise<CleanupResult> => {
   let result: CleanupResult = { status: 'pending' };
+  let settle!: () => void;
+  const settled = new Promise<void>(resolve => { settle = resolve; });
   try {
     void cleanup().then(
-      () => { result = { status: 'fulfilled' }; },
-      error => { result = { error, status: 'rejected' }; },
+      () => {
+        result = { status: 'fulfilled' };
+        settle();
+      },
+      error => {
+        result = { error, status: 'rejected' };
+        settle();
+      },
     );
   } catch (error) {
     return { error, status: 'rejected' };
   }
-  for (let turn = 0; turn < CLEANUP_SETTLEMENT_MICROTASKS && result.status === 'pending'; turn++) await Promise.resolve();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    settled,
+    new Promise<void>(resolve => { timeout = setTimeout(resolve, 0); }),
+  ]);
+  if (timeout !== undefined) clearTimeout(timeout);
   return result;
 };
 
