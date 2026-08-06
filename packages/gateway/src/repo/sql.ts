@@ -627,6 +627,13 @@ const storedUsageIdentity = (record: UsageRecord): StoredUsageIdentity => [
   canonicalPricingSelectorKey(record.pricingSelector),
 ];
 
+// SQLite only uses an expression-index column when the query repeats the
+// indexed expression. Keep these predicates aligned with migration 0078 so an
+// identity lookup does not stop at the key/model prefix and scan prior hours.
+// https://www.sqlite.org/expridx.html
+const USAGE_BUCKET_IDENTITY_PREDICATE = 'key_id = ? AND model_json = ? AND json_quote(upstream) = json_quote(?) AND model_key_json = ? AND hour = ? AND pricing_selector = ?';
+const USAGE_METRIC_IDENTITY_PREDICATE = `${USAGE_BUCKET_IDENTITY_PREDICATE} AND metric = ?`;
+
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -637,7 +644,7 @@ class SqlUsageRepo implements UsageRepo {
     const identity = [...storedIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
-        'SELECT quantity FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ?',
+        `SELECT quantity FROM usage WHERE ${USAGE_METRIC_IDENTITY_PREDICATE}`,
       ).bind(...identity).first<{ quantity: string }>();
       if (!current) {
         const inserted = await this.db.prepare(
@@ -650,7 +657,7 @@ class SqlUsageRepo implements UsageRepo {
 
       const quantity = addDecimalStrings(current.quantity, row.quantity);
       const updated = await this.db.prepare(
-        'UPDATE usage SET quantity = ? WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?',
+        `UPDATE usage SET quantity = ? WHERE ${USAGE_METRIC_IDENTITY_PREDICATE} AND quantity = ?`,
       ).bind(quantity, ...identity, current.quantity).run();
       if (updated.meta.changes === undefined) throw new Error('SQL runtime did not report updated usage row count');
       if (updated.meta.changes > 0) return;
@@ -697,7 +704,7 @@ class SqlUsageRepo implements UsageRepo {
   async set(record: UsageRecord): Promise<void> {
     const identity = storedUsageIdentity(record);
     const statements: SqlPreparedStatement[] = [
-      this.db.prepare('DELETE FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ?')
+      this.db.prepare(`DELETE FROM usage WHERE ${USAGE_BUCKET_IDENTITY_PREDICATE}`)
         .bind(...identity),
       ...usageMetricRows(record).map(row => this.db.prepare(
         'INSERT INTO usage (key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
