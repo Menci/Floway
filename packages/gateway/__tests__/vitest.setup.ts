@@ -1,6 +1,4 @@
-import { afterEach } from 'vitest';
-
-import { flushBackground, trackBackground } from './test-utils/background-tracker.ts';
+import { trackBackground } from './test-utils/background-tracker.ts';
 import type { DumpBroker } from '../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
 import type { DumpStore } from '../src/dump/store-contract.ts';
@@ -18,7 +16,6 @@ initRuntimeKind('node');
 initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
 
 initBackgroundSchedulerResolver(_c => trackBackground);
-afterEach(flushBackground);
 
 // Default no-op dump bindings keep tests that do not exercise dump persistence
 // independent of that subsystem. Dump-specific tests install real or recording
