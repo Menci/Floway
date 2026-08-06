@@ -1,6 +1,5 @@
 import { flushBackground, trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
-import { clearInFlightForTesting } from '../../src/data-plane/providers/models-cache.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
@@ -136,7 +135,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   });
 
   clearInProcessCopilotTokenCache();
-  clearInFlightForTesting();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
