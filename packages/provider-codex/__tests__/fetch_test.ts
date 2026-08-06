@@ -9,7 +9,17 @@ import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeEffects = (): CodexCallEffects => ({
-  persistRefreshTokenRotation: vi.fn(async () => {}),
+  persistRefreshTokenRotation: vi.fn(async (usedRefreshToken, newRefreshToken) => {
+    const state = currentRecord.state as CodexUpstreamState;
+    currentRecord = {
+      ...currentRecord,
+      state: {
+        accounts: state.accounts.map(account => account.refresh_token === usedRefreshToken
+          ? { ...account, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() }
+          : account),
+      },
+    };
+  }),
   persistTerminalState: vi.fn(async () => {}),
 });
 
