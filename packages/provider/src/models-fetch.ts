@@ -187,17 +187,16 @@ const cancelBody = (body: ReadableStream<Uint8Array> | null, reason: unknown): v
 const yieldToEventLoop = (signal: AbortSignal | undefined): Promise<void> => {
   if (signal?.aborted) return Promise.reject(signal.reason);
   return new Promise<void>((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
-      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       callback();
     };
     const onAbort = () => finish(() => reject(signal?.reason));
-    timer = setTimeout(() => finish(resolve), 0);
+    const timer = setTimeout(() => finish(resolve), 0);
     signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();
   });
