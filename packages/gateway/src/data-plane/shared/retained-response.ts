@@ -16,6 +16,7 @@ export interface RetainedResponseOptions {
   readonly backgroundScheduler: BackgroundScheduler;
   readonly clientDisconnectSignal?: AbortSignal;
   readonly onCancel?: (reason: unknown) => void;
+  readonly onSourceCancelError?: (error: unknown) => void;
   readonly limits?: RetainedResponseLimits;
   readonly onSettled?: () => void;
 }
@@ -33,7 +34,7 @@ export const RETAINED_RESPONSE_LIMITS: RetainedResponseLimits = {
   postDisconnectDrainTimeoutMs: 20 * 1000,
 };
 
-export class RetainedResponseTimeoutError extends Error {
+class RetainedResponseTimeoutError extends Error {
   constructor(readonly kind: RetainedResponseTimeoutKind) {
     super(`Retained upstream response exceeded its ${kind} timeout`);
     this.name = 'RetainedResponseTimeoutError';
@@ -66,12 +67,20 @@ const disconnectClockFor = (signal: AbortSignal): DisconnectClock => {
   return clock;
 };
 
-const validateLimits = (limits: RetainedResponseLimits): void => {
-  for (const [name, value] of Object.entries(limits)) {
-    if (!Number.isSafeInteger(value) || value <= 0 || value > 0x7FFF_FFFF) {
-      throw new RangeError(`Retained response ${name} must be a positive 32-bit timer value`);
-    }
+const validateTimerValue = (name: keyof RetainedResponseLimits, value: number): void => {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 0x7FFF_FFFF) {
+    throw new RangeError(`Retained response ${name} must be a positive 32-bit timer value`);
   }
+};
+
+const validateLimits = (limits: RetainedResponseLimits): void => {
+  validateTimerValue('idleTimeoutMs', limits.idleTimeoutMs);
+  validateTimerValue('totalTimeoutMs', limits.totalTimeoutMs);
+  validateTimerValue('postDisconnectDrainTimeoutMs', limits.postDisconnectDrainTimeoutMs);
+};
+
+const reportSourceCancelError = (error: unknown): void => {
+  console.error('[retained-response] source cancellation failed', error);
 };
 
 const unrefTimer = (timer: unknown): void => {
@@ -157,7 +166,9 @@ export const retainResponse = (
     outputState = 'errored';
     outputController.error(error);
   };
-  const settleLifetime = (error?: unknown): void => {
+  const settleLifetime = (
+    outcome: { readonly status: 'fulfilled' } | { readonly status: 'rejected'; readonly reason: unknown },
+  ): void => {
     if (settled) return;
     settled = true;
     clearTimers();
@@ -170,16 +181,19 @@ export const retainResponse = (
       rejectLifetime(settlementError);
       return;
     }
-    if (error === undefined) resolveLifetime();
-    else rejectLifetime(error);
+    if (outcome.status === 'fulfilled') resolveLifetime();
+    else rejectLifetime(outcome.reason);
   };
   const cancelSource = (error: unknown): void => {
     if (sourceCancelStarted) return;
     sourceCancelStarted = true;
     try {
-      void reader.cancel(error).catch(() => {});
-    } catch {
-      // Timeout settlement must not depend on a broken source's cleanup.
+      void reader.cancel(error).catch(options.onSourceCancelError ?? reportSourceCancelError);
+    } catch (cancelError) {
+      // Cancellation already has a terminal deadline outcome. Reporting its
+      // cleanup failure synchronously keeps it visible without letting an
+      // uncooperative source extend that deadline.
+      (options.onSourceCancelError ?? reportSourceCancelError)(cancelError);
     }
   };
   const tightenPostDisconnectDeadline = (
@@ -198,7 +212,7 @@ export const retainResponse = (
     tightenPostDisconnectDeadline(Date.now(), error);
     cancelSource(error);
     errorOutput(error);
-    settleLifetime(error);
+    settleLifetime({ status: 'rejected', reason: error });
   };
   const armIdleTimer = (): void => {
     if (settled) return;
@@ -236,7 +250,7 @@ export const retainResponse = (
       if (settled) return;
       if (next.done) {
         if (!consumerCanceled) closeOutput();
-        settleLifetime();
+        settleLifetime({ status: 'fulfilled' });
         return;
       }
       armIdleTimer();
@@ -244,7 +258,7 @@ export const retainResponse = (
     } catch (error) {
       if (settled) return;
       errorOutput(error);
-      settleLifetime(error);
+      settleLifetime({ status: 'rejected', reason: error });
     }
   };
   const readSource = (): Promise<void> => {

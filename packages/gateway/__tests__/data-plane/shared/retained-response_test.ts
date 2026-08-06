@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest';
 
 import {
   retainResponse,
-  RetainedResponseTimeoutError,
   type RetainedResponseLimits,
 } from '../../../src/data-plane/shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -39,6 +38,14 @@ const outcomeOf = async <T>(promise: Promise<T>): Promise<
   value => ({ status: 'fulfilled', value } as const),
   reason => ({ status: 'rejected', reason } as const),
 );
+
+const expectTimeout = (reason: unknown, kind: 'idle' | 'total' | 'post-disconnect'): void => {
+  expect(reason).toMatchObject({
+    name: 'RetainedResponseTimeoutError',
+    kind,
+    message: `Retained upstream response exceeded its ${kind} timeout`,
+  });
+};
 
 test('retainResponse drains the source without canceling it when its consumer disconnects', async () => {
   let sourceController!: ReadableStreamDefaultController<Uint8Array>;
@@ -113,8 +120,7 @@ test('a connected response stalled behind one queued chunk hits the exact idle d
     const readOutcome = await read;
     const lifetimeOutcome = await lifetime;
 
-    expect(sourceCancelReason).toBeInstanceOf(RetainedResponseTimeoutError);
-    expect((sourceCancelReason as RetainedResponseTimeoutError).kind).toBe('idle');
+    expectTimeout(sourceCancelReason, 'idle');
     expect(readOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
     expect(lifetimeOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
     expect(sourceCancelCount).toBe(1);
@@ -173,8 +179,7 @@ test('source chunks reset idle time while the absolute total deadline remains fi
 
     const terminalOutcome = await terminal;
     const lifetimeOutcome = await outcomeOf(background.tasks[0]!);
-    expect(sourceCancelReason).toBeInstanceOf(RetainedResponseTimeoutError);
-    expect((sourceCancelReason as RetainedResponseTimeoutError).kind).toBe('total');
+    expectTimeout(sourceCancelReason, 'total');
     expect(terminalOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
     expect(lifetimeOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
     expect(sourceCancelCount).toBe(1);
@@ -217,8 +222,7 @@ test('retainResponse cancels a stalled source at the post-disconnect deadline', 
     await pending.catch(() => {});
 
     const lifetimeOutcome = await outcomeOf(background.tasks[0]!);
-    expect(sourceCancelReason).toBeInstanceOf(RetainedResponseTimeoutError);
-    expect((sourceCancelReason as RetainedResponseTimeoutError).kind).toBe('post-disconnect');
+    expectTimeout(sourceCancelReason, 'post-disconnect');
     expect(lifetimeOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
     expect(sourceCancelCount).toBe(1);
     expect(onSettled).toHaveBeenCalledTimes(1);
@@ -267,8 +271,7 @@ test('nested retained bodies share one absolute post-disconnect deadline', async
     await pending.catch(() => {});
     const outcomes = await Promise.all(background.tasks.map(outcomeOf));
 
-    expect(sourceCancelReason).toBeInstanceOf(RetainedResponseTimeoutError);
-    expect((sourceCancelReason as RetainedResponseTimeoutError).kind).toBe('post-disconnect');
+    expectTimeout(sourceCancelReason, 'post-disconnect');
     expect(sourceCancelCount).toBe(1);
     expect(outcomes).toEqual([
       { status: 'rejected', reason: sourceCancelReason },
@@ -295,6 +298,13 @@ test('retained response limits reject every invalid timer field and accept timer
         limits: { ...valid, [field]: value },
       })).toThrowError(new RangeError(`Retained response ${field} must be a positive 32-bit timer value`));
     }
+
+    const missing = { ...valid } as Partial<RetainedResponseLimits>;
+    delete missing[field];
+    expect(() => retainResponse(new Response(null), {
+      backgroundScheduler,
+      limits: missing as RetainedResponseLimits,
+    })).toThrowError(new RangeError(`Retained response ${field} must be a positive 32-bit timer value`));
   }
 
   expect(() => retainResponse(new Response(null), {
@@ -305,4 +315,62 @@ test('retained response limits reject every invalid timer field and accept timer
     backgroundScheduler,
     limits: limits(0x7FFF_FFFF, 0x7FFF_FFFF, 0x7FFF_FFFF),
   })).not.toThrow();
+});
+
+test('an undefined source rejection remains a rejected lifetime', async () => {
+  const onSettled = vi.fn();
+  const background = captureBackgroundTasks();
+  const retained = retainResponse(
+    new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(undefined);
+      },
+    })),
+    {
+      backgroundScheduler: background.scheduler,
+      onSettled,
+    },
+  );
+
+  expect(await outcomeOf(retained.body!.getReader().read())).toEqual({
+    status: 'rejected',
+    reason: undefined,
+  });
+  expect(await outcomeOf(background.tasks[0]!)).toEqual({
+    status: 'rejected',
+    reason: undefined,
+  });
+  expect(onSettled).toHaveBeenCalledTimes(1);
+});
+
+test('source cancellation rejection reaches its explicit error sink without extending the deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    const cancelError = new Error('cancel cleanup failed');
+    const onSourceCancelError = vi.fn();
+    const background = captureBackgroundTasks();
+    const retained = retainResponse(
+      new Response(new ReadableStream<Uint8Array>({
+        pull: () => new Promise<void>(() => {}),
+        cancel: () => Promise.reject(cancelError),
+      }, { highWaterMark: 0 })),
+      {
+        backgroundScheduler: background.scheduler,
+        limits: limits(10, 100, 100),
+        onSourceCancelError,
+      },
+    );
+    const read = outcomeOf(retained.body!.getReader().read());
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    const readOutcome = await read;
+    const lifetimeOutcome = await outcomeOf(background.tasks[0]!);
+    expectTimeout(readOutcome.status === 'rejected' ? readOutcome.reason : undefined, 'idle');
+    expect(lifetimeOutcome).toEqual(readOutcome);
+    expect(onSourceCancelError).toHaveBeenCalledTimes(1);
+    expect(onSourceCancelError).toHaveBeenCalledWith(cancelError);
+  } finally {
+    vi.useRealTimers();
+  }
 });
