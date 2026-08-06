@@ -16,6 +16,7 @@
     "lint:fix": "cross-env NODE_OPTIONS=\"--max-old-space-size=12288\" eslint --cache . --fix",
     "test": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" vitest run",
     "test:agent-setup-installers": "pnpm --filter @floway-dev/agent-setup run test:installers",
+    "test:image-edit-memory": "pnpm --filter @floway-dev/platform-node run test:image-edit-memory",
     "typecheck": "pnpm -r run typecheck && tsc --noEmit -p tsconfig.scripts.json",
     "prepare": "husky"
   },
