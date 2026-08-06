@@ -29,6 +29,7 @@ interface NormalizedProviderModelsReadOptions {
 }
 
 interface ProviderModelsDeadline {
+  abortProjectors: Map<AbortSignal, (reason: unknown) => unknown>;
   error: DOMException;
   expiresAt: number;
   expire: () => void;
@@ -37,8 +38,6 @@ interface ProviderModelsDeadline {
 const deadlines = new WeakMap<AbortSignal, ProviderModelsDeadline>();
 const deadlineErrors = new WeakSet<DOMException>();
 const monotonicNow = (): number => performance.now();
-// Nested tasks may need a few promise turns to attach their own HTTP frame to a shared timeout.
-const DEADLINE_SETTLEMENT_MICROTASKS = 64;
 
 const timeoutError = (scope: 'idle' | 'total', timeoutMs: number): DOMException =>
   new DOMException(`Provider model listing ${scope} timeout after ${timeoutMs}ms`, 'TimeoutError');
@@ -67,18 +66,6 @@ const isDeadlineAbort = (signal: AbortSignal): boolean => {
   return signal.aborted && signal.reason instanceof DOMException && deadlineErrors.has(signal.reason);
 };
 
-const errorTreeIncludes = (error: unknown, expected: unknown, seen = new Set<object>()): boolean => {
-  if (error === expected) return true;
-  if (typeof error !== 'object' || error === null || seen.has(error)) return false;
-  seen.add(error);
-  if (error instanceof AggregateError) {
-    for (const nested of error.errors) {
-      if (errorTreeIncludes(nested, expected, seen)) return true;
-    }
-  }
-  return error instanceof Error && errorTreeIncludes(error.cause, expected, seen);
-};
-
 const errorTreeIncludesDeadline = (error: unknown, seen = new Set<object>()): boolean => {
   if (error instanceof DOMException && deadlineErrors.has(error)) return true;
   if (typeof error !== 'object' || error === null || seen.has(error)) return false;
@@ -92,29 +79,44 @@ const expireDeadlineIfElapsed = (signal: AbortSignal): void => {
   if (deadline && monotonicNow() >= deadline.expiresAt) deadline.expire();
 };
 
+const registerDeadlineAbortProjector = (
+  signal: AbortSignal,
+  projector: (reason: unknown) => unknown,
+): (() => void) => {
+  const deadline = deadlines.get(signal);
+  if (!deadline) return () => {};
+  deadline.abortProjectors.set(signal, projector);
+  return () => {
+    if (deadline.abortProjectors.get(signal) === projector) deadline.abortProjectors.delete(signal);
+  };
+};
+
+const projectDeadlineAbort = (signal: AbortSignal): unknown => {
+  const deadline = deadlines.get(signal);
+  if (!deadline) return signal.reason;
+  const localProjector = deadline.abortProjectors.get(signal);
+  const projector = localProjector ?? (deadline.abortProjectors.size === 1
+    ? deadline.abortProjectors.values().next().value
+    : undefined);
+  if (!projector) return signal.reason;
+  try {
+    return projector(signal.reason);
+  } catch (error) {
+    return new AggregateError([signal.reason, error], 'Provider model deadline projection failed', { cause: signal.reason });
+  }
+};
+
 const settleTaskWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
-    let graceStarted = false;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', onAbort);
       callback();
     };
-    const rejectDeadlineAfterGrace = async () => {
-      for (let turn = 0; turn < DEADLINE_SETTLEMENT_MICROTASKS && !settled; turn++) await Promise.resolve();
-      finish(() => reject(signal.reason));
-    };
     const onAbort = () => {
-      if (isDeadlineAbort(signal)) {
-        if (!graceStarted) {
-          graceStarted = true;
-          void rejectDeadlineAfterGrace();
-        }
-      } else {
-        finish(() => reject(signal.reason));
-      }
+      finish(() => reject(isDeadlineAbort(signal) ? projectDeadlineAbort(signal) : signal.reason));
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(
@@ -125,13 +127,8 @@ const settleTaskWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Pr
       },
       error => {
         expireDeadlineIfElapsed(signal);
-        if (isDeadlineAbort(signal)) {
-          finish(() => reject(errorTreeIncludes(error, signal.reason) ? error : signal.reason));
-        } else if (signal.aborted) {
-          finish(() => reject(signal.reason));
-        } else {
-          finish(() => reject(error));
-        }
+        if (signal.aborted) onAbort();
+        else finish(() => reject(error));
       },
     );
     if (signal.aborted) onAbort();
@@ -153,6 +150,7 @@ export const runProviderModelsTask = async <T>(
   const error = timeoutError('total', totalTimeoutMs);
   deadlineErrors.add(error);
   const ownDeadline: ProviderModelsDeadline = {
+    abortProjectors: new Map(),
     error,
     expiresAt: monotonicNow() + totalTimeoutMs,
     expire: () => controller.abort(error),
@@ -542,6 +540,11 @@ export const fetchUpstreamModels = <T>(
       headers: new Headers(response.headers),
       body: '',
     };
+    const projectDeadline = (cause: unknown): ProviderModelsUnavailableError => {
+      rewriteCapturedBodyHeaders(httpResponse.headers, true);
+      return new ProviderModelsUnavailableError(httpResponse, cause);
+    };
+    const unregisterDeadlineProjector = registerDeadlineAbortProjector(signal, projectDeadline);
     try {
       const captured = await readErrorBody(response, maxErrorResponseBytes, { idleTimeoutMs: options.idleTimeoutMs, signal });
       httpResponse.body = captured.body;
@@ -549,6 +552,8 @@ export const fetchUpstreamModels = <T>(
     } catch (cause) {
       rewriteCapturedBodyHeaders(httpResponse.headers, true);
       throw new ProviderModelsUnavailableError(httpResponse, cause);
+    } finally {
+      unregisterDeadlineProjector();
     }
     throw new ProviderModelsUnavailableError(httpResponse);
   }

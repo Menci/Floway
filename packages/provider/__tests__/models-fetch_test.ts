@@ -424,7 +424,10 @@ test('parallel inherited deadlines preserve each child frame without cross-conta
     expect(errorA.cause).toBe(errorB.cause);
     expect(cancellations.get('A')).toBe(errorA.cause);
     expect(cancellations.get('B')).toBe(errorB.cause);
-    expect([errorA, errorB]).toContain(outerError);
+    expect(outerError).toBe(errorA.cause);
+    expect(outerError).toMatchObject({ name: 'TimeoutError' });
+    expect(outerError).not.toBe(errorA);
+    expect(outerError).not.toBe(errorB);
   } finally {
     vi.useRealTimers();
   }
