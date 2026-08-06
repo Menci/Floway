@@ -241,7 +241,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   if (signal?.aborted) throw signal.reason;
   const key = tokenCacheKey(upstreamId, githubHost, githubToken);
   const fresh = await getRepo().upstreams.getById(upstreamId);
-  if (!fresh || fresh.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
+  if (fresh?.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
   const freshConfig = fresh.config as CopilotUpstreamConfig;
   if (freshConfig.githubHost !== githubHost || freshConfig.githubToken !== githubToken) {
     throw new UpstreamGenerationMismatchError(upstreamId);

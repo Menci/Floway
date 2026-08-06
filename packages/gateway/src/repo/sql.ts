@@ -1215,7 +1215,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
         .bind(id)
         .first<UpstreamRow>();
-      if (row === null || row.provider !== expectedKind) return null;
+      if (row?.provider !== expectedKind) return null;
 
       const current = toUpstreamRecord(row);
       if (
