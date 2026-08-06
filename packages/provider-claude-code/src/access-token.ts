@@ -79,7 +79,6 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // the rare case.
 interface ClaudeCodeAccessTokenFlight {
   force: boolean;
-  lifetime: Promise<EnsuredAccessToken> | null;
   promise: Promise<EnsuredAccessToken>;
 }
 
@@ -117,13 +116,12 @@ export const ensureClaudeCodeAccessToken = async (
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureClaudeCodeAccessToken(args);
   }
-  let flight!: ClaudeCodeAccessTokenFlight;
+  let clearFlight = (): void => {};
   let publishedFailure: { error: unknown } | undefined;
   const promise = runProviderModelsTask(signal => {
     const lifetime = ensureClaudeCodeAccessTokenInner({ ...args, signal }, true);
-    flight.lifetime = lifetime;
     void lifetime.finally(() => {
-      if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+      clearFlight();
     }).catch(error => {
       if (publishedFailure !== undefined && error !== publishedFailure.error) {
         console.error(
@@ -134,7 +132,10 @@ export const ensureClaudeCodeAccessToken = async (
     });
     return lifetime;
   });
-  flight = { force: args.force === true, lifetime: null, promise };
+  const flight: ClaudeCodeAccessTokenFlight = { force: args.force === true, promise };
+  clearFlight = () => {
+    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+  };
   inFlightEnsures.set(key, flight);
   void promise.catch(error => { publishedFailure = { error }; });
   return await waitForSignal(promise, args.signal);

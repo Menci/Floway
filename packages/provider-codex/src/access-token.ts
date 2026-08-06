@@ -137,7 +137,6 @@ type CodexAccessTokenMintResult = CodexAccessTokenEntry | MintedCodexAccessToken
 
 interface CodexAccessTokenFlight {
   force: boolean;
-  lifetime: Promise<EnsuredCodexAccessToken> | null;
   promise: Promise<EnsuredCodexAccessToken>;
 }
 
@@ -187,7 +186,7 @@ export const ensureCodexAccessToken = async (
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureCodexAccessToken(upstreamId, accountId, mint, true, signal);
   }
-  let flight!: CodexAccessTokenFlight;
+  let clearFlight = (): void => {};
   let publishedFailure: { error: unknown } | undefined;
   const promise = runProviderModelsTask(sharedSignal => {
     const lifetime = ensureCodexAccessTokenInner(
@@ -197,9 +196,8 @@ export const ensureCodexAccessToken = async (
       true,
       force,
     );
-    flight.lifetime = lifetime;
     void lifetime.finally(() => {
-      if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+      clearFlight();
     }).catch(error => {
       if (publishedFailure !== undefined && error !== publishedFailure.error) {
         console.error(
@@ -210,7 +208,10 @@ export const ensureCodexAccessToken = async (
     });
     return lifetime;
   });
-  flight = { force, lifetime: null, promise };
+  const flight: CodexAccessTokenFlight = { force, promise };
+  clearFlight = () => {
+    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+  };
   inFlightEnsures.set(key, flight);
   void promise.catch(error => { publishedFailure = { error }; });
   return (await waitForSignal(promise, signal)).entry;
