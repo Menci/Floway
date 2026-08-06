@@ -1144,7 +1144,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     id: string,
     expectedKind: UpstreamRecord['kind'],
     patch: UpstreamFieldsPatch,
-    options: { clearModelsCache?: boolean } = {},
+    options: { clearModelsCache?: boolean; expectedUpdatedAt?: string } = {},
   ): Promise<UpstreamRecord | null> {
     const assignments: string[] = [];
     const values: SqlBindValue[] = [];
@@ -1170,9 +1170,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (options.clearModelsCache) assignments.push('models_cache_json = NULL');
     if (assignments.length === 0) return null;
 
+    const generationPredicate = options.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?';
     const row = await this.db
-      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ? RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
-      .bind(...values, id, expectedKind)
+      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate} RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
+      .bind(...values, id, expectedKind, ...(options.expectedUpdatedAt === undefined ? [] : [options.expectedUpdatedAt]))
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
   }

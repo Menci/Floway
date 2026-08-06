@@ -382,7 +382,7 @@ export interface UpstreamRepo {
     id: string,
     expectedKind: UpstreamProviderKind,
     patch: UpstreamFieldsPatch,
-    options?: { clearModelsCache?: boolean },
+    options?: { clearModelsCache?: boolean; expectedUpdatedAt?: string },
   ): Promise<UpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;

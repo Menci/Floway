@@ -377,6 +377,48 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   assertEquals(cached!.fetchedAt > 1, true);
 });
 
+test('concurrent partial config PATCHes reject a stale writer without losing the winner', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const created = await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string };
+  const originalUpdate = repo.upstreams.updateFields.bind(repo.upstreams);
+  let entered = 0;
+  let bothEnteredResolve!: () => void;
+  const bothEntered = new Promise<void>(resolve => { bothEnteredResolve = resolve; });
+  let releaseResolve!: () => void;
+  const release = new Promise<void>(resolve => { releaseResolve = resolve; });
+  repo.upstreams.updateFields = async (...args) => {
+    entered += 1;
+    if (entered === 2) bothEnteredResolve();
+    await release;
+    return await originalUpdate(...args);
+  };
+  const patches = [
+    { config: { baseUrl: 'https://winner-a.example.com' } },
+    { config: { apiKey: 'sk-winner-b' } },
+  ];
+  const pending = patches.map(body => requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify(body),
+  }));
+  await bothEntered;
+  releaseResolve();
+  const responses = await Promise.all(pending);
+
+  assertEquals(responses.map(response => response.status).sort(), [200, 409]);
+  await Promise.all(responses.map(async response => await response.json()));
+  const winner = responses.findIndex(response => response.status === 200);
+  const config = (await repo.upstreams.getById(created.id))!.config as typeof customConfig;
+  if (winner === 0) {
+    assertEquals(config.baseUrl, 'https://winner-a.example.com');
+    assertEquals(config.apiKey, customConfig.apiKey);
+  } else {
+    assertEquals(config.baseUrl, customConfig.baseUrl);
+    assertEquals(config.apiKey, 'sk-winner-b');
+  }
+});
+
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();

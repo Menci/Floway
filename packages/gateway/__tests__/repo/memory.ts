@@ -930,11 +930,12 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     id: string,
     expectedKind: UpstreamRecord['kind'],
     patch: UpstreamFieldsPatch,
-    options: { clearModelsCache?: boolean } = {},
+    options: { clearModelsCache?: boolean; expectedUpdatedAt?: string } = {},
   ): Promise<UpstreamRecord | null> {
     if (Object.keys(patch).length === 0 && !options.clearModelsCache) return Promise.resolve(null);
     const existing = this.store.get(id);
     if (existing?.kind !== expectedKind) return Promise.resolve(null);
+    if (options.expectedUpdatedAt !== undefined && existing.updatedAt !== options.expectedUpdatedAt) return Promise.resolve(null);
     const next = {
       ...existing,
       ...patch,
