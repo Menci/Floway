@@ -32,7 +32,7 @@ _bootstrap_jq() {
   esac
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
   _bj_dest="$SETUP_TMPDIR/$_bj_asset"
-  _bj_max_bytes=${AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES:-8388608}
+  _bj_max_bytes=8388608
   out_warn 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
   curl -fsSL --connect-timeout 10 --max-time 120 --max-filesize "$_bj_max_bytes" -o "$_bj_dest" "$_bj_url"
   _bj_curl_rc=$?
@@ -81,16 +81,11 @@ _bootstrap_jq() {
   JQ="$_bj_dest"
 }
 
-# Resolve a usable jq: prefer PATH, else provision the pinned build. The
-# AGENT_SETUP_TEST_NO_JQ_DOWNLOAD hook lets the test harness assert the
-# fail-before-mutation path without reaching the network.
+# Resolve a usable jq: prefer PATH, else provision the pinned build.
 ensure_jq() {
   if command -v jq >/dev/null 2>&1; then
     JQ=jq
     return 0
-  fi
-  if [ -n "${AGENT_SETUP_TEST_NO_JQ_DOWNLOAD:-}" ]; then
-    return 1
   fi
   _bootstrap_jq
 }

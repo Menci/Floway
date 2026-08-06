@@ -13,11 +13,6 @@ function Enter-SetupLock {
     New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
   }
   $lockPath = Join-Path $TargetRoot '.floway-agent-setup.lock'
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS) {
-    [int]$env:AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS
-  } else {
-    600
-  }
   $wait = [System.Diagnostics.Stopwatch]::StartNew()
 
   while ($true) {
@@ -26,10 +21,7 @@ function Enter-SetupLock {
       break
     } catch {
       if (-not (Test-Path -LiteralPath $lockPath)) { throw }
-      if ($env:AGENT_SETUP_TEST_LOCK_WAIT_MARKER) {
-        [System.IO.File]::WriteAllText($env:AGENT_SETUP_TEST_LOCK_WAIT_MARKER, '')
-      }
-      if ($wait.Elapsed.TotalSeconds -ge $timeoutSeconds) {
+      if ($wait.Elapsed.TotalSeconds -ge 600) {
         Stop-Setup "another Agent Setup invocation is using $TargetRoot; if no setup process is running, remove the stale lock at $lockPath and re-run."
       }
       Start-Sleep -Milliseconds 100
