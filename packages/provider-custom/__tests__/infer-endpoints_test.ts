@@ -128,7 +128,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await createCustomProvider(record).instance.getProvidedModels(directFetcher);
+      const models = await createCustomProvider(record).instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
       assertEquals(models[0].kind, 'image');

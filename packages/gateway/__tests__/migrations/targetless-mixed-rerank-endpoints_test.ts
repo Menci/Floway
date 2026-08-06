@@ -163,11 +163,11 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
     // provider parser; reaching it proves the migrated row is current-schema data.
     upstreamRecordToJson(record);
     if (id === 'custom_embedding') {
-      const models = await customProviderModule.create(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
+      const models = await customProviderModule.create(record).instance.getProvidedModels({ fetcher: () => Promise.reject(new Error('catalog fetch must stay disabled')) });
       assertEquals(models.map(model => model.endpoints), [{ embeddings: {} }]);
     }
     if (id === 'custom_cache_only') {
-      const models = await customProviderModule.create(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
+      const models = await customProviderModule.create(record).instance.getProvidedModels({ fetcher: () => Promise.reject(new Error('catalog fetch must stay disabled')) });
       assertEquals(models, []);
     }
     if (id === 'ollama_images') {

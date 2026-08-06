@@ -73,7 +73,10 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const sseResponse = (): Response => new Response(
   new ReadableStream({
@@ -130,7 +133,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: noopUpstreamCallOptions().fetcher });
     expect(models.map(m => m.id)).toEqual([
       'claude-fable-5',
       'claude-opus-4-7',
@@ -141,6 +144,31 @@ describe('createClaudeCodeProvider — factory surface', () => {
     ]);
   });
 
+  test('getProvidedModels applies its deadline to an OAuth refresh before catalog dispatch', async () => {
+    vi.useFakeTimers();
+    currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: null }] });
+    let oauthSignal: AbortSignal | null = null;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      oauthSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        oauthSignal!.addEventListener('abort', () => reject(oauthSignal!.reason), { once: true });
+      });
+    });
+    const instance = createClaudeCodeProvider(currentRecord);
+    const result = instance.instance.getProvidedModels({
+      fetcher: noopUpstreamCallOptions().fetcher,
+      totalTimeoutMs: 25,
+    });
+    const rejection = result.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect(oauthSignal?.reason).toBe(error);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('getProvidedModels stamps the effective flag set onto every model', async () => {
     // claude-code's provider defaults leave `strip-billing-attribution` off
     // (Anthropic reads the block to bill against the user's plan) and turn
@@ -148,7 +176,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     // Both should be reflected on every emitted model's enabledFlags.
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: noopUpstreamCallOptions().fetcher });
     for (const m of models) {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
       expect(m.enabledFlags.has('responses-compact-shim')).toBe(true);
@@ -158,7 +186,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('getProvidedModels carries pricing resolved from each dated upstream id', async () => {
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: noopUpstreamCallOptions().fetcher });
     expect(models.find(model => model.id === 'claude-sonnet-4-5')?.pricing)
       .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
   });

@@ -44,7 +44,10 @@ beforeEach(() => {
   initProviderRepo(() => ({ upstreams: repo }));
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const sseResponse = (): Response => new Response(
   new ReadableStream({
@@ -95,7 +98,7 @@ describe('createCodexProvider', () => {
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const instance = createCodexProvider(baseRecord);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
@@ -113,7 +116,7 @@ describe('createCodexProvider', () => {
       .mockResolvedValueOnce(oauthTokenResponse({ access_token: 'at_retried', refresh_token: 'rt_v2' }))
       .mockResolvedValueOnce(modelsResponse());
     const instance = createCodexProvider(baseRecord);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     const firstModelHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -125,6 +128,53 @@ describe('createCodexProvider', () => {
     expect(account.accessToken?.token).toBe('at_retried');
   });
 
+  test('getProvidedModels does not refresh credentials when a 401 body reaches the catalog deadline', async () => {
+    vi.useFakeTimers();
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    }, { highWaterMark: 0 });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 401 }));
+    const instance = createCodexProvider(baseRecord);
+    const result = instance.instance.getProvidedModels({ fetcher: directFetcher, totalTimeoutMs: 25 });
+    const rejection = result.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect(cancellationReason).toBe(error);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((current!.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at');
+  });
+
+  test('getProvidedModels applies its deadline to an OAuth mint before catalog dispatch', async () => {
+    vi.useFakeTimers();
+    current = baseRecord;
+    let oauthSignal: AbortSignal | null = null;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      oauthSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        oauthSignal!.addEventListener('abort', () => reject(oauthSignal!.reason), { once: true });
+      });
+    });
+    const instance = createCodexProvider(baseRecord);
+    const result = instance.instance.getProvidedModels({ fetcher: directFetcher, totalTimeoutMs: 25 });
+    const rejection = result.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect(oauthSignal?.reason).toBe(error);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
     current = baseRecord;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
@@ -134,7 +184,7 @@ describe('createCodexProvider', () => {
       throw new Error(`unexpected fetch ${url}`);
     });
     const instance = createCodexProvider(baseRecord);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
@@ -152,7 +202,7 @@ describe('createCodexProvider', () => {
   test('getProvidedModels propagates catalog fetch failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
     const instance = createCodexProvider(baseRecord);
-    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
+    await expect(instance.instance.getProvidedModels({ fetcher: directFetcher })).rejects.toThrow(/Codex \/models fetch failed/);
   });
 
   test('getProvidedModels propagates OAuth refresh failures', async () => {
@@ -163,7 +213,7 @@ describe('createCodexProvider', () => {
       throw new Error(`unexpected fetch ${url}`);
     });
     const instance = createCodexProvider(baseRecord);
-    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex OAuth session terminated/);
+    await expect(instance.instance.getProvidedModels({ fetcher: directFetcher })).rejects.toThrow(/Codex OAuth session terminated/);
   });
 
   test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
@@ -177,7 +227,7 @@ describe('createCodexProvider', () => {
       flagOverrides: { 'responses-web-search-shim': true },
     };
     const instance = createCodexProvider(recordWithOverride);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     for (const m of models) {
       expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
       expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);

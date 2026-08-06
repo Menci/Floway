@@ -3,7 +3,7 @@ import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, ProviderModel, UpstreamModelsCache } from '@floway-dev/provider';
+import { runProviderModelsTask, type Fetcher, type ProviderModel, type UpstreamModelsCache } from '@floway-dev/provider';
 
 // Soft TTL: a fetched row is served verbatim within this window with no
 // upstream call. Past SOFT but within HARD, the stored row is still served
@@ -28,7 +28,7 @@ export interface ModelsCacheFetchOptions {
   // Their loader projects that already-fetched response into the exact
   // ProviderModel catalog the provider would otherwise return, avoiding a
   // second upstream request while keeping cache writes in this module.
-  loadProvidedModels?: () => Promise<ProviderModel[]>;
+  loadProvidedModels?: (signal: AbortSignal) => Promise<ProviderModel[]>;
 }
 
 interface ModelsFetchResult {
@@ -95,11 +95,14 @@ const runFetch = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
   key: string,
-  loadProvidedModels?: () => Promise<ProviderModel[]>,
+  loadProvidedModels?: (signal: AbortSignal) => Promise<ProviderModel[]>,
 ): Promise<ModelsFetchResult> => {
   const generation = instance.modelsCacheGeneration;
   try {
-    const models = assertUniqueModelIds(instance, [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))]);
+    const loaded = runProviderModelsTask(signal => loadProvidedModels === undefined
+      ? instance.instance.getProvidedModels({ fetcher, signal })
+      : loadProvidedModels(signal));
+    const models = assertUniqueModelIds(instance, [...await loaded]);
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
     const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
     return { models, persistedCache: persisted ? entry : null };

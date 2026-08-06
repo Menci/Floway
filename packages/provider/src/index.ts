@@ -48,6 +48,7 @@ export type {
   Provider,
   InboundHeaderMatcher,
   ProviderInstance,
+  ProviderModelsOptions,
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
@@ -57,6 +58,7 @@ export type {
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
+export { providerModelsTask } from './provider.ts';
 export { headersForMessagesCall } from './messages.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';

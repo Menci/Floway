@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
@@ -78,6 +78,10 @@ const storedCache = async (repo: InMemoryRepo): Promise<UpstreamModelsCache | nu
 
 beforeEach(() => {
   clearInFlightForTesting();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('fetchUpstreamModelsCached', () => {
@@ -205,6 +209,29 @@ describe('fetchUpstreamModelsCached', () => {
     expect(r1.map(m => m.id)).toEqual(['m1']);
     expect(r2.map(m => m.id)).toEqual(['m1']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a timed-out cold flight leaves the in-flight slot reusable', async () => {
+    vi.useFakeTimers();
+    await setupRepo();
+    const stalledFetch = vi.fn(() => new Promise<ProviderModel[]>(() => {}));
+    const stalled = fetchUpstreamModelsCached(
+      stubInstance(stalledFetch),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    const rejection = stalled.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    const succeedingFetch = vi.fn(async () => [aModel('recovered')]);
+    const recovered = await fetchUpstreamModelsCached(
+      stubInstance(succeedingFetch),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    expect(recovered.map(model => model.id)).toEqual(['recovered']);
+    expect(stalledFetch).toHaveBeenCalledTimes(1);
+    expect(succeedingFetch).toHaveBeenCalledTimes(1);
   });
 
   test('concurrent stale callers schedule one revalidation and refresh every joining provider instance', async () => {

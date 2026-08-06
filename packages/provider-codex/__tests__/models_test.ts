@@ -2,11 +2,14 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
 import { CodexModelsFetchError, codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
-import { directFetcher, type FlagId } from '@floway-dev/provider';
+import { directFetcher, type FlagId, ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('fetchCodexCatalog', () => {
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
@@ -34,10 +37,97 @@ describe('fetchCodexCatalog', () => {
   });
 
   test('surfaces a typed status when upstream returns non-2xx', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
-    const request = fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
-    await expect(request).rejects.toBeInstanceOf(CodexModelsFetchError);
-    await expect(request).rejects.toMatchObject({ status: 401 });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('unauthorized-body', { status: 401 }));
+    const error = await fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: directFetcher,
+      maxErrorResponseBytes: 4,
+    }).catch(cause => cause as unknown);
+    expect(error).toBeInstanceOf(CodexModelsFetchError);
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect(error).toMatchObject({
+      httpResponse: { body: 'unau...[truncated]', status: 401 },
+      status: 401,
+    });
+    expect((error as Error).cause).toBeInstanceOf(ProviderModelsUnavailableError);
+  });
+
+  test('bounds success bodies and cancels an oversized catalog', async () => {
+    const bytes = new TextEncoder().encode('{"models":[]}');
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    });
+
+    const error = await fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: () => Promise.resolve(new Response(body)),
+      maxResponseBytes: bytes.byteLength - 1,
+    }).catch(cause => cause as unknown);
+
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect((error as Error).cause).toMatchObject({
+      message: `Provider model listing exceeded ${bytes.byteLength - 1} response bytes`,
+    });
+    expect(cancellationReason).toBe((error as Error).cause);
+  });
+
+  test('cancels a stalled body at the idle deadline', async () => {
+    vi.useFakeTimers();
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    }, { highWaterMark: 0 });
+    const result = fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: () => Promise.resolve(new Response(body)),
+      idleTimeoutMs: 25,
+      totalTimeoutMs: 1_000,
+    });
+    const rejection = result.catch(cause => cause as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect((error as Error).cause).toMatchObject({ name: 'TimeoutError' });
+    expect(cancellationReason).toBe((error as Error).cause);
+  });
+
+  test('propagates caller abort to the catalog fetch', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('stopped', 'AbortError');
+    let upstreamSignal: AbortSignal | null = null;
+    const result = fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: (_input, init) => {
+        upstreamSignal = init.signal as AbortSignal;
+        return new Promise<Response>((_resolve, reject) => {
+          upstreamSignal!.addEventListener('abort', () => reject(upstreamSignal!.reason), { once: true });
+        });
+      },
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(upstreamSignal?.reason).toBe(reason);
   });
 
   test('throws on missing models key (forward-compatible shape guard)', async () => {

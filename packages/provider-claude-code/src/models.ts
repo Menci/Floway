@@ -15,7 +15,7 @@
 
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
-import type { Fetcher, FlagId, ProviderModel, UpstreamChatModelConfig } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, type FlagId, type ProviderModel, ProviderModelsUnavailableError, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface ClaudeCodeProviderData {
   readonly upstreamModelId: string;
@@ -57,20 +57,15 @@ export interface ClaudeCodeApiModel {
   };
 }
 
-export const fetchClaudeCodeModelsList = async (
-  accessToken: string,
-  fetcher: Fetcher,
-): Promise<ClaudeCodeApiModel[]> => {
-  const headers: Record<string, string> = {
-    ...CLAUDE_CODE_HEADERS_SONNET_OPUS,
-    authorization: `Bearer ${accessToken}`,
-  };
-  const response = await fetcher(ANTHROPIC_MODELS_ENDPOINT, { method: 'GET', headers });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Claude Code /v1/models fetch failed: ${response.status} ${body.slice(0, 200)}`);
-  }
-  const parsed = await response.json() as unknown;
+export interface ClaudeCodeModelsFetchOptions {
+  idleTimeoutMs?: number;
+  maxErrorResponseBytes?: number;
+  maxResponseBytes?: number;
+  signal?: AbortSignal;
+  totalTimeoutMs?: number;
+}
+
+const parseClaudeCodeModels = (parsed: unknown): ClaudeCodeApiModel[] => {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error('Claude Code /v1/models response is not an object');
   }
@@ -78,6 +73,30 @@ export const fetchClaudeCodeModelsList = async (
   if (!Array.isArray(data)) throw new Error('Claude Code /v1/models response missing data array');
   return data.map(assertApiModel);
 };
+
+export const fetchClaudeCodeModelsList = (
+  accessToken: string,
+  fetcher: Fetcher,
+  options: ClaudeCodeModelsFetchOptions = {},
+): Promise<ClaudeCodeApiModel[]> => fetchUpstreamModels(
+  signal => {
+    const headers: Record<string, string> = {
+      ...CLAUDE_CODE_HEADERS_SONNET_OPUS,
+      authorization: `Bearer ${accessToken}`,
+    };
+    return fetcher(ANTHROPIC_MODELS_ENDPOINT, { method: 'GET', headers, signal });
+  },
+  parseClaudeCodeModels,
+  options,
+).catch((cause: unknown) => {
+  if (cause instanceof ProviderModelsUnavailableError && cause.httpResponse !== null) {
+    throw new Error(
+      `Claude Code /v1/models fetch failed: ${cause.httpResponse.status} ${cause.httpResponse.body.slice(0, 200)}`,
+      { cause },
+    );
+  }
+  throw cause;
+});
 
 const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('Claude Code /v1/models entry is not an object');

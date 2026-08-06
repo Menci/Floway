@@ -301,7 +301,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
     },
     async () => {
       const provider = createCustomProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callImagesEdits(model, {
         parameters: { prompt: 'add a kite' },
         images: [{
@@ -341,7 +341,7 @@ test('Custom provider callAudioTranscriptions preserves multipart entries and ho
     },
     async () => {
       const provider = createCustomProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callAudioTranscriptions(model, {
         entries: [
           { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },

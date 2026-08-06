@@ -6,7 +6,7 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
-import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, type FlagId, type ProviderModel, ProviderModelsUnavailableError, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
   id: string;
@@ -21,20 +21,40 @@ export interface CodexRawModel {
   default_reasoning_effort?: string;
 }
 
-export class CodexModelsFetchError extends Error {
+export class CodexModelsFetchError extends ProviderModelsUnavailableError {
   readonly status: number;
 
-  constructor(status: number, bodySnippet: string) {
-    super(`Codex /models fetch failed: ${status} ${bodySnippet}`);
+  constructor(failure: ProviderModelsUnavailableError) {
+    if (failure.httpResponse === null) throw new TypeError('Codex HTTP failure requires a response frame');
+    super(failure.httpResponse, failure);
     this.name = 'CodexModelsFetchError';
-    this.status = status;
+    this.message = `Codex /models fetch failed: ${failure.httpResponse.status} ${failure.httpResponse.body.slice(0, 200)}`;
+    this.status = failure.httpResponse.status;
   }
 }
 
+export interface CodexCatalogFetchOptions {
+  accessToken: string;
+  accountId: string;
+  fetcher: Fetcher;
+  idleTimeoutMs?: number;
+  maxErrorResponseBytes?: number;
+  maxResponseBytes?: number;
+  signal?: AbortSignal;
+  totalTimeoutMs?: number;
+}
+
+const parseCodexCatalog = (parsed: unknown): CodexRawModel[] => {
+  if (!isPlainRecord(parsed) || !Array.isArray(parsed.models)) {
+    throw new Error('Codex /models response missing models array');
+  }
+  return parsed.models.map(assertRawModel);
+};
+
 // `fetcher` is required so the catalog refresh traverses the same proxy/
 // dial chain configured for request-time traffic.
-export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
-  const response = await opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
+export const fetchCodexCatalog = (opts: CodexCatalogFetchOptions): Promise<CodexRawModel[]> => fetchUpstreamModels(
+  signal => opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
     method: 'GET',
     headers: {
       authorization: `Bearer ${opts.accessToken}`,
@@ -43,16 +63,22 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
       'user-agent': CODEX_USER_AGENT,
       accept: 'application/json',
     },
+    signal,
+  }),
+  parseCodexCatalog,
+  {
+    idleTimeoutMs: opts.idleTimeoutMs,
+    maxErrorResponseBytes: opts.maxErrorResponseBytes,
+    maxResponseBytes: opts.maxResponseBytes,
     signal: opts.signal,
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new CodexModelsFetchError(response.status, body.slice(0, 200));
+    totalTimeoutMs: opts.totalTimeoutMs,
+  },
+).catch((cause: unknown) => {
+  if (cause instanceof ProviderModelsUnavailableError && cause.httpResponse !== null) {
+    throw new CodexModelsFetchError(cause);
   }
-  const parsed = await response.json() as { models?: unknown };
-  if (!Array.isArray(parsed.models)) throw new Error('Codex /models response missing models array');
-  return parsed.models.map(assertRawModel);
-};
+  throw cause;
+});
 
 const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 

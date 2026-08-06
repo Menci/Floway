@@ -22,7 +22,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { eventResult, getProviderRepo, headersForMessagesCall, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForMessagesCall, providerModelsTask, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -302,11 +302,11 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
-    getProvidedModels: async fetcher => {
+    getProvidedModels: providerModelsTask(async (fetcher, signal) => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
       if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
       const known = readCopilotUpstreamState(fresh.state).knownModels ?? emptyKnownModels();
-      const response = await fetchCopilotModels(upstreamConfig, fetcher);
+      const response = await fetchCopilotModels(upstreamConfig, fetcher, { signal });
       const now = Date.now();
       const merged = mergeKnownModels(known, response, now);
       // The accumulator merges into whatever is stored at write time, not into
@@ -327,7 +327,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
-    },
+    }),
     // Copilot's catalog never declares endpoints.completions, so this
     // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),

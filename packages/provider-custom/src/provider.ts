@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, providerModelsTask, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -162,11 +162,11 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
-    getProvidedModels: async fetcher => {
+    getProvidedModels: providerModelsTask(async (fetcher, signal) => {
       if (!config.modelsFetch.enabled) return projectCustomModels(record);
-      const response = await fetchCustomModels(config, fetcher);
+      const response = await fetchCustomModels(config, fetcher, { signal });
       return projectCustomModels(record, response);
-    },
+    }),
     callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, headersForCall(opts.headers), opts),
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, headersForCall(opts.headers), opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headersForCall(opts.headers), parseChatCompletionsStream, opts),

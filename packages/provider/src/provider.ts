@@ -3,6 +3,7 @@ import type { FlagDefaults } from './flags.ts';
 import type { ImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
+import { runProviderModelsTask, type ProviderModelsTaskOptions } from './models-fetch.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
@@ -131,11 +132,22 @@ export interface MessagesUpstreamCallOptions extends UpstreamCallOptions {
   readonly anthropicBeta: readonly string[];
 }
 
+export interface ProviderModelsOptions extends ProviderModelsTaskOptions {
+  fetcher: Fetcher;
+}
+
+export const providerModelsTask = <T extends readonly ProviderModel[]>(
+  load: (fetcher: Fetcher, signal: AbortSignal) => Promise<T>,
+): ((options: ProviderModelsOptions) => Promise<T>) => options => runProviderModelsTask(
+  signal => load(options.fetcher, signal),
+  options,
+);
+
 export interface ProviderInstance {
-  // Catalog refresh fetches a single resource and never enters the per-request
-  // latency budget, so it takes the per-upstream fetcher directly instead of
-  // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
-  getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
+  // Catalog work owns one deadline spanning authentication, every upstream
+  // page/detail request, projection, and persistence. The options bag keeps
+  // this control-plane lifecycle separate from data-plane call options.
+  getProvidedModels(options: ProviderModelsOptions): Promise<readonly ProviderModel[]>;
   callAlphaSearch(model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.completions`

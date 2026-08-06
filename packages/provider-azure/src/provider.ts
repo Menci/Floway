@@ -5,7 +5,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, providerModelsTask, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -44,8 +44,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
-    getProvidedModels() {
-      return Promise.resolve(azure.config.models.map(model => {
+    getProvidedModels: providerModelsTask(async () => {
+      return azure.config.models.map(model => {
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
         const endpoints = model.endpoints;
         return {
@@ -59,8 +59,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
         };
-      }));
-    },
+      });
+    }),
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {

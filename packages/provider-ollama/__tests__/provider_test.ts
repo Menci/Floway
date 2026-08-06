@@ -58,7 +58,7 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
 test('getProvidedModels projects catalog capabilities, metadata, and pricing', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
@@ -93,7 +93,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     // Manual entry appears first; the auto duplicate is filtered out so the
     // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
@@ -118,7 +118,7 @@ test('manual known models inherit built-in pricing when no override is configure
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
     assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
@@ -143,7 +143,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       throw new Error(`unexpected request ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.map(model => model.kind), ['transcription']);
       await instance.instance.callAudioTranscriptions(models[0], {
         entries: [
@@ -187,7 +187,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       return new Response('unexpected', { status: 500 });
     },
     async () => {
-      const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+      const [providerModel] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await instance.instance.callChatCompletions(
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
@@ -228,7 +228,7 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const [model] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       const opts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);

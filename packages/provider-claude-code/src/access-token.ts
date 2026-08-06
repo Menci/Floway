@@ -50,6 +50,7 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
   fetcher: Fetcher;
+  signal?: AbortSignal;
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
@@ -163,7 +164,7 @@ const ensureClaudeCodeAccessTokenInner = async (
 
   let refreshed;
   try {
-    refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);
+    refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher, args.signal);
   } catch (error) {
     if (error instanceof ClaudeCodeOAuthSessionTerminatedError) {
       if (error.code === 'invalid_grant' && recoveryAllowed) {

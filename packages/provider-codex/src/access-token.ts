@@ -294,8 +294,9 @@ export const mintCodexAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<MintedCodexAccessToken> => {
-  const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
+  const tokens = await refreshCodexAccessToken(refreshToken, fetcher, signal);
   await persistRefreshTokenRotation(tokens.refresh_token);
   return {
     refreshToken: tokens.refresh_token,

@@ -59,7 +59,7 @@ test('Custom applies empty and override rules after admitted headers reach the p
       return sseResponse();
     },
     async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const opts = noopUpstreamCallOptions({
         headers: new Headers({
           'x-admitted-by-gateway': 'gateway-value',
@@ -104,7 +104,7 @@ test('getProvidedModels returns only manual models and never fetches when models
       return jsonResponse({ object: 'list', data: [{ id: 'should-not-appear' }] });
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'pinned');
       assertEquals(models[0].kind, 'chat');
@@ -133,7 +133,7 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'auto-1' }, { id: 'auto-2' }] }),
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.map(m => m.id), ['manual-extra', 'auto-1', 'auto-2']);
     },
   );
@@ -148,7 +148,7 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
   await withMockedFetch(
     () => new Response('rate limited', { status: 429 }),
     async () => {
-      await assertRejects(() => instance.instance.getProvidedModels(directFetcher));
+      await assertRejects(() => instance.instance.getProvidedModels({ fetcher: directFetcher }));
     },
   );
 });
@@ -178,7 +178,7 @@ test('a manual model whose effective public id matches an auto-fetched id overri
       ],
     }),
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.map(m => m.id), ['shared-id', 'auto-only']);
       assertEquals(models[0].display_name, 'Manual Override');
       assertEquals(models[0].pricing, manualPricing);
@@ -199,7 +199,7 @@ test('a manual model without explicit pricing inherits pricing from its shadowed
       data: [{ id: 'shared-id', pricing: inheritedPricing }],
     }),
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models.length, 1);
       assertEquals(models[0]?.id, 'shared-id');
       assertEquals(models[0]?.pricing, inheritedPricing);
@@ -211,7 +211,7 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
   const instance = createCustomProvider(buildCustomUpstream());
   const models = await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'auto-reranker', kind: 'rerank' }, { id: 'chat-model', kind: 'chat' }] }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    async () => await instance.instance.getProvidedModels({ fetcher: directFetcher }),
   );
   assertEquals(models.map(model => model.id), ['chat-model']);
 });
@@ -222,7 +222,7 @@ test('auto-fetched models cannot inherit a rerank endpoint without an operator t
   }));
   const models = await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'chat-model', kind: 'chat' }, { id: 'unknown-model' }] }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    async () => await instance.instance.getProvidedModels({ fetcher: directFetcher }),
   );
 
   assertEquals(models.map(model => model.endpoints), [
@@ -237,7 +237,7 @@ test('auto-fetched non-chat models omit contradictory chat metadata', async () =
   const instance = createCustomProvider(buildCustomUpstream());
   const models = await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'embedding', kind: 'embedding', chat }] }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    async () => await instance.instance.getProvidedModels({ fetcher: directFetcher }),
   );
   assertEquals(models[0].kind, 'embedding');
   assertEquals(models[0].chat, undefined);
@@ -250,7 +250,7 @@ test('auto-fetched mixed models retain chat metadata when a chat endpoint is pre
   }));
   const models = await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'mixed', kind: 'chat', chat }] }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    async () => await instance.instance.getProvidedModels({ fetcher: directFetcher }),
   );
   assertEquals(models[0].kind, 'embedding');
   assertEquals(models[0].chat, chat);
@@ -263,7 +263,7 @@ test('auto-fetched models without a resolved endpoint stay out of the routable c
       object: 'list',
       data: [{ id: 'unknown' }, { id: 'embedding', kind: 'embedding' }],
     }),
-    async () => await instance.instance.getProvidedModels(directFetcher),
+    async () => await instance.instance.getProvidedModels({ fetcher: directFetcher }),
   );
   assertEquals(models.map(model => model.id), ['embedding']);
   assertEquals(models[0].endpoints, { embeddings: {} });
@@ -279,7 +279,7 @@ test('manual runtime kind follows rerank endpoints when stored kind is stale', a
       rerankTarget: { protocol: 'cohere-v2' },
     }],
   }));
-  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  const [model] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   assertEquals(model?.kind, 'rerank');
   assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
 });
@@ -293,7 +293,7 @@ test('manual runtime kind follows transcription endpoints when stored kind is st
       endpoints: { audioTranscriptions: {} },
     }],
   }));
-  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  const [model] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   assertEquals(model?.kind, 'transcription');
 });
 
@@ -308,7 +308,7 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
       rerankTarget: { protocol: 'cohere-v2' },
     }],
   }));
-  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  const [model] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   assertExists(model);
   let requestUrl: string | undefined;
   let requestBody: unknown;
@@ -343,7 +343,7 @@ test('callRerank honors the per-model path without adding an upstream path overr
       rerankTarget: { protocol: 'dashscope-native', path: '/workspace/rerank' },
     }],
   }));
-  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  const [model] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   assertExists(model);
   let requestUrl: string | undefined;
   await withMockedFetch(
@@ -385,7 +385,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
       assertExists(model);
       const opts = noopUpstreamCallOptions();
       const messagesOpts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
@@ -414,7 +414,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', supported_endpoints: ['/some/random/path'] }] }),
     async () => {
       const provider = createCustomProvider(buildCustomUpstream()).instance;
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
       assertEquals(model.endpoints, { chatCompletions: {} });
       assertEquals(model.kind, 'chat');
     },
@@ -440,7 +440,7 @@ test('Custom provider projects display_name / created / limits / pricing / chat 
       }],
     }),
     async () => {
-      const [model] = await createCustomProvider(buildCustomUpstream()).instance.getProvidedModels(directFetcher);
+      const [model] = await createCustomProvider(buildCustomUpstream()).instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(model.display_name, 'Rich Model');
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
@@ -457,7 +457,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-named', name: 'Named Model' }] }),
     async () => {
-      const [model] = await createCustomProvider(buildCustomUpstream()).instance.getProvidedModels(directFetcher);
+      const [model] = await createCustomProvider(buildCustomUpstream()).instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(model.display_name, 'Named Model');
     },
   );
@@ -477,7 +477,7 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
     },
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
@@ -502,7 +502,7 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
     },
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callAlphaSearch(
         model,
         { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },

@@ -1,6 +1,6 @@
 import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, type ProviderModelsTaskOptions } from '@floway-dev/provider';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -68,8 +68,13 @@ const MODELS_HEADER_OVERRIDES = new Headers({
   'content-type': '',
 });
 
-export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
+export const fetchCopilotModels = (
+  config: CopilotFetchConfig,
+  fetcher: Fetcher,
+  options: ProviderModelsTaskOptions = {},
+): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
     signal => copilotFetchModels(config, { method: 'GET', signal }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     v => (isCopilotModelsResponse(v) ? v : null),
+    options,
   );

@@ -9,7 +9,7 @@ import { CodexModelsFetchError, codexRawToProviderModel, fetchCodexCatalog } fro
 import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, providerModelsTask, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
@@ -94,7 +94,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const instance: ProviderInstance = {
-    getProvidedModels: async fetcher => {
+    getProvidedModels: providerModelsTask(async (fetcher, signal) => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an
       // access token. If the refresh_token has been revoked upstream, the
@@ -109,6 +109,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
               refreshToken,
               fetcher,
               newRefreshToken => persistRefreshTokenRotation(refreshToken, newRefreshToken),
+              signal,
             );
           }, force);
         } catch (err) {
@@ -122,15 +123,19 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
         accessToken,
         accountId: accountIdentity.chatgptAccountId,
         fetcher,
+        signal,
       });
       let access = await ensureCatalogAccess();
       let raw: Awaited<ReturnType<typeof fetchCodexCatalog>>;
       try {
         raw = await fetchCatalog(access.token);
       } catch (error) {
+        signal.throwIfAborted();
         if (!(error instanceof CodexModelsFetchError) || error.status !== 401) throw error;
         await invalidateCodexAccessToken(record.id, accountIdentity.chatgptAccountId, access.token);
+        signal.throwIfAborted();
         access = await ensureCatalogAccess(true);
+        signal.throwIfAborted();
         raw = await fetchCatalog(access.token);
       }
       // Surface every model the upstream returns, including ones whose
@@ -139,7 +144,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
       return raw.map(r => codexRawToProviderModel(r, enabledFlags));
-    },
+    }),
 
     callAlphaSearch: async (model, body, signal, opts) => {
       const { account } = await readActiveAccount();

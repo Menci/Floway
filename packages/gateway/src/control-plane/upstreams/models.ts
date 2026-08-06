@@ -107,8 +107,8 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
           scheduler,
           fetcher,
           force: true,
-          loadProvidedModels: async () => {
-            result = await fetchCustomModels(assertedConfig, fetcher);
+          loadProvidedModels: async signal => {
+            result = await fetchCustomModels(assertedConfig, fetcher, { signal });
             return projectCustomModels(synthRecord, result);
           },
         });
@@ -127,7 +127,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     const provider = createProvider(synthRecord, cacheGeneration);
     const models = record.id !== ''
       ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
-      : await provider.instance.getProvidedModels(fetcher);
+      : await provider.instance.getProvidedModels({ fetcher });
     return c.json({ kind, data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {

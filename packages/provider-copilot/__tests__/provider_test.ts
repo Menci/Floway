@@ -167,7 +167,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await provider.getProvidedModels(directFetcher);
+      const models = await provider.getProvidedModels({ fetcher: directFetcher });
 
       assertEquals(
         models.map(model => model.id),
@@ -218,7 +218,7 @@ test('Copilot provider exposes only Responses for Claude when available', async 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
 
       assertEquals(model.id, 'claude-opus-4-7');
       assertEquals(model.display_name, 'Claude Opus 4.7');
@@ -266,7 +266,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
 
       assertEquals(providerModel.id, 'claude-haiku-chat-listed');
       assertEquals(providerModel.endpoints, { messages: {} });
@@ -326,7 +326,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       await provider.callResponses(providerModel, {
         input: [],
         reasoning: { effort: 'xhigh' },
@@ -381,7 +381,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       // service_tier is set so withServiceTierStripped has something to strip;
       // an input_image is included so withVisionHeaderSet fires; the last
       // input item is a user message so withInitiatorHeaderSet picks 'user'.
@@ -445,7 +445,7 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       const model = models[0];
       if (!model) throw new Error('expected at least one Copilot model in test fixture');
       assertEquals(model.enabledFlags.has('strip-billing-attribution'), true);
@@ -490,7 +490,7 @@ test('per-model provider default beats operator upstream override — Claude < 4
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       const claude46 = models.find(m => m.id === 'claude-opus-4-6');
       const claude48 = models.find(m => m.id === 'claude-opus-4-8');
       const gpt = models.find(m => m.id === 'gpt-test');
@@ -556,7 +556,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await provider.getProvidedModels(directFetcher);
+      const models = await provider.getProvidedModels({ fetcher: directFetcher });
       const byId = new Map(models.map(model => [model.id, model]));
       const opts = noopUpstreamCallOptions();
       const messagesOpts = noopMessagesUpstreamCallOptions();
@@ -615,7 +615,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
 
       await driveMessages(model, {
         max_tokens: 10,
@@ -689,7 +689,7 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       // Even with a Claude-Code-shaped metadata blob, the chat-completions
       // boundary chain has no Messages-source interceptor, so the
       // messages-proxy intent must not appear on the wire.
@@ -739,7 +739,7 @@ test('Copilot provider rejects a merged public model without a raw variant group
       },
       async () => {
         await assertRejects(
-          () => instance.instance.getProvidedModels(directFetcher),
+          () => instance.instance.getProvidedModels({ fetcher: directFetcher }),
           Error,
           "Copilot model projection invariant violated: merged model 'orphan-public-model' has no raw variant group (raw model ids: gpt-raw-model)",
         );
@@ -766,7 +766,7 @@ test('Copilot provider persists the minted token and the merged known-models vie
     },
     async () => {
       const instance = createCopilotProvider(copilotUpstream);
-      const result = await instance.instance.getProvidedModels(directFetcher);
+      const result = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(result.map(m => m.id), ['m1']);
     },
   );
@@ -806,7 +806,7 @@ test('Copilot provider merges known-models into the row as it stands after the f
     },
     async () => {
       const instance = createCopilotProvider(copilotUpstream);
-      await instance.instance.getProvidedModels(directFetcher);
+      await instance.instance.getProvidedModels({ fetcher: directFetcher });
     },
   );
 
@@ -838,9 +838,9 @@ test('Copilot provider accumulates known-models across calls so a model dropped 
     },
     async () => {
       const instance = createCopilotProvider(copilotUpstream);
-      const first = await instance.instance.getProvidedModels(directFetcher);
+      const first = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(first.map(m => m.id), ['m1']);
-      const second = await instance.instance.getProvidedModels(directFetcher);
+      const second = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(second.map(m => m.id).sort(), ['m1', 'm2']);
     },
   );
@@ -868,7 +868,7 @@ test('Copilot provider throws when the upstream fetch fails — no in-provider f
     },
     async () => {
       const instance = createCopilotProvider(harness.copilotUpstream);
-      await assertRejects(() => instance.instance.getProvidedModels(directFetcher));
+      await assertRejects(() => instance.instance.getProvidedModels({ fetcher: directFetcher }));
     },
   );
 });
@@ -879,7 +879,7 @@ test('Copilot provider throws "disappeared mid-request" when the upstream row va
   harness.overrideGetById(async () => null);
 
   await assertRejects(
-    () => instance.instance.getProvidedModels(directFetcher),
+    () => instance.instance.getProvidedModels({ fetcher: directFetcher }),
     Error,
     'Copilot upstream up_copilot disappeared mid-request',
   );
@@ -904,7 +904,7 @@ test('Copilot provider swallows a saveState throw so a transient persistence hic
     },
     async () => {
       const instance = createCopilotProvider(harness.copilotUpstream);
-      const result = await instance.instance.getProvidedModels(directFetcher);
+      const result = await instance.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(result.map(m => m.id), ['m1']);
     },
   );
@@ -989,7 +989,7 @@ test('Copilot consumes Messages beta intent before serializing its supported wir
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.callMessages(
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
@@ -1026,7 +1026,7 @@ test('Copilot count_tokens consumes and serializes the same Messages beta intent
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.callMessagesCountTokens(
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
@@ -1062,7 +1062,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       assertEquals(providerModel.id, 'claude-opus-4-6');
 
       const result = await provider.callMessages(
@@ -1121,7 +1121,7 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
 
       const result = await provider.callMessages(
         providerModel,
@@ -1167,7 +1167,7 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels({ fetcher: directFetcher });
       // `priority` is not a documented Messages `speed` value; the gateway
       // does not own rejecting it and must not strip it either — let
       // Copilot surface whatever error its strict validator returns.
@@ -1230,7 +1230,7 @@ const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture
       if (url.pathname === '/models') return jsonResponse(copilotModelsWithCapabilities(fixtures));
       throw new Error(`Unhandled fetch ${request.url}`);
     },
-    async () => { models = await instance.instance.getProvidedModels(directFetcher); },
+    async () => { models = await instance.instance.getProvidedModels({ fetcher: directFetcher }); },
   );
 
   return models;
@@ -1291,7 +1291,7 @@ test('Copilot provider persists the quota snapshot a data-plane response carries
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       // The persist is fire-and-forget: on workerd `waitUntil` keeps it alive
       // past the response, and here it settles on the host event loop.
@@ -1334,7 +1334,7 @@ test('Copilot provider leaves the persisted snapshot alone when a response carri
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.getProvidedModels({ fetcher: directFetcher });
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
     },
   );

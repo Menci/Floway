@@ -10,6 +10,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
   headersForMessagesCall,
+  providerModelsTask,
   resolveEffectiveFlags,
   type ProviderInstance,
   type Provider,
@@ -45,15 +46,16 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`
     // when the refresh_token has died; the throw propagates so the catalog
     // cache records the failure and surfaces it on the dashboard.
-    getProvidedModels: async fetcher => {
+    getProvidedModels: providerModelsTask(async (fetcher, signal) => {
       const access = await ensureClaudeCodeAccessToken({
         upstreamId: record.id,
         repo: getProviderRepo().upstreams,
         fetcher,
+        signal,
       });
-      const apiModels = await fetchClaudeCodeModelsList(access.entry.token, fetcher);
+      const apiModels = await fetchClaudeCodeModelsList(access.entry.token, fetcher, { signal });
       return buildClaudeCodeCatalog(apiModels, enabledFlags);
-    },
+    }),
 
     callMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
       const ctx: MessagesBoundaryCtx = {

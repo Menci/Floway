@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
   aliasFromApiId,
@@ -9,7 +9,12 @@ import {
   type ClaudeCodeProviderData,
 } from '../src/models.ts';
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
-import type { FlagId } from '@floway-dev/provider';
+import { type FlagId, ProviderModelsUnavailableError } from '@floway-dev/provider';
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const fetchModels = (body: unknown) => fetchClaudeCodeModelsList(
   'at',
@@ -45,6 +50,91 @@ describe('fetchClaudeCodeModelsList', () => {
 
   test('rejects a non-object catalog envelope explicitly', async () => {
     await expect(fetchModels(null)).rejects.toThrow(/not an object/);
+  });
+
+  test('bounds success bodies and cancels an oversized catalog', async () => {
+    const bytes = new TextEncoder().encode('{"data":[]}');
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    });
+
+    const error = await fetchClaudeCodeModelsList(
+      'at',
+      () => Promise.resolve(new Response(body)),
+      { maxResponseBytes: bytes.byteLength - 1 },
+    ).catch(cause => cause as unknown);
+
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect((error as Error).cause).toMatchObject({
+      message: `Provider model listing exceeded ${bytes.byteLength - 1} response bytes`,
+    });
+    expect(cancellationReason).toBe((error as Error).cause);
+  });
+
+  test('cancels a stalled body at the idle deadline', async () => {
+    vi.useFakeTimers();
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    }, { highWaterMark: 0 });
+    const result = fetchClaudeCodeModelsList(
+      'at',
+      () => Promise.resolve(new Response(body)),
+      { idleTimeoutMs: 25, totalTimeoutMs: 1_000 },
+    );
+    const rejection = result.catch(cause => cause as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect((error as Error).cause).toMatchObject({ name: 'TimeoutError' });
+    expect(cancellationReason).toBe((error as Error).cause);
+  });
+
+  test('bounds error bodies while preserving the provider diagnostic', async () => {
+    const error = await fetchClaudeCodeModelsList(
+      'at',
+      () => Promise.resolve(new Response('unavailable-body', { status: 503 })),
+      { maxErrorResponseBytes: 4 },
+    ).catch(cause => cause as unknown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Claude Code /v1/models fetch failed: 503 unav...[truncated]');
+    expect((error as Error).cause).toBeInstanceOf(ProviderModelsUnavailableError);
+  });
+
+  test('propagates caller abort to the catalog fetch', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('stopped', 'AbortError');
+    let upstreamSignal: AbortSignal | null = null;
+    const result = fetchClaudeCodeModelsList(
+      'at',
+      (_input, init) => {
+        upstreamSignal = init.signal as AbortSignal;
+        return new Promise<Response>((_resolve, reject) => {
+          upstreamSignal!.addEventListener('abort', () => reject(upstreamSignal!.reason), { once: true });
+        });
+      },
+      { signal: controller.signal },
+    );
+    await Promise.resolve();
+
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(upstreamSignal?.reason).toBe(reason);
   });
 });
 

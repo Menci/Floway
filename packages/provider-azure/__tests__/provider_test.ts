@@ -49,7 +49,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
 
 test('createAzureProvider projects configured models into upstream models', async () => {
   const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));
-  const models = await instance.instance.getProvidedModels(directFetcher);
+  const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
 
   assertEquals(instance.upstreamId, 'up_azure');
   assertEquals(instance.name, 'Azure Resource');
@@ -78,7 +78,7 @@ test('createAzureProvider projects configured models into upstream models', asyn
 
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
   const instance = createAzureProvider(azureRecord());
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [providerModel] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
 
   await withMockedFetch(
@@ -134,7 +134,7 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
       },
     }),
   );
-  const [chatProviderModel, responsesProviderModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [chatProviderModel, responsesProviderModel] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   const chatOpts = noopUpstreamCallOptions();
   const responsesOpts = noopUpstreamCallOptions();
   const seen: Array<{ url: string; apiKey: string | null; body: Record<string, unknown> }> = [];
@@ -199,7 +199,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
       },
     }),
   );
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [providerModel] = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   const seen: Array<{ url: string; xApiKey: string | null; body: Record<string, unknown>; beta: string | null }> = [];
 
   assertEquals(providerModel.id, 'claude-public');
@@ -259,7 +259,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
       },
     }),
   );
-  const models = await instance.instance.getProvidedModels(directFetcher);
+  const models = await instance.instance.getProvidedModels({ fetcher: directFetcher });
   const d1 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd1');
   const d2 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd2');
   const d3 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd3');
@@ -309,7 +309,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
     },
     async () => {
       const provider = createAzureProvider(record);
-      const models = await provider.instance.getProvidedModels(directFetcher);
+      const models = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       assertEquals(models[0].kind, 'image');
       assertEquals(models[0].endpoints, { imagesGenerations: {}, imagesEdits: {} });
       const result = await provider.instance.callImagesGenerations(models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
@@ -358,7 +358,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     },
     async () => {
       const provider = createAzureProvider(record);
-      const models = await provider.instance.getProvidedModels(directFetcher);
+      const models = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callImagesEdits(models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{
@@ -393,7 +393,7 @@ test('createAzureProvider callAudioTranscriptions selects the deployment in the 
     },
     async () => {
       const provider = createAzureProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels({ fetcher: directFetcher });
       const result = await provider.instance.callAudioTranscriptions(model, {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' }) },
