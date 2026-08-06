@@ -52,6 +52,31 @@ test('opaque model storage migration converts existing rows and enables embedded
       db.run('UPDATE search_config SET alpha_search_model = ?', ['legacy-search-model']);
 
       db.run(sql);
+      const indexes = db.exec(`SELECT name FROM sqlite_master
+        WHERE type = 'index' AND name IN (
+          'idx_usage_metric_identity',
+          'idx_usage_metric_hour',
+          'idx_usage_metric_key_hour',
+          'idx_usage_requests_identity',
+          'idx_usage_requests_hour',
+          'idx_usage_requests_key_hour',
+          'idx_performance_summary_hour',
+          'idx_performance_summary_key_hour',
+          'idx_performance_buckets_hour',
+          'idx_performance_buckets_key_hour'
+        ) ORDER BY name`)[0];
+      assertEquals(indexes?.values.map(([name]) => name), [
+        'idx_performance_buckets_hour',
+        'idx_performance_buckets_key_hour',
+        'idx_performance_summary_hour',
+        'idx_performance_summary_key_hour',
+        'idx_usage_metric_hour',
+        'idx_usage_metric_identity',
+        'idx_usage_metric_key_hour',
+        'idx_usage_requests_hour',
+        'idx_usage_requests_identity',
+        'idx_usage_requests_key_hour',
+      ]);
       const repo = new SqlRepo(wrapSqlJsDatabase(db));
       assertEquals((await repo.usage.listAll())[0], {
         keyId: 'key-legacy',

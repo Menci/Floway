@@ -18,7 +18,7 @@ export const usageBucketIdentityKey = (
   modelKey: string,
   hour: string,
   pricingSelectorKey: string,
-): string => JSON.stringify([keyId, model, upstream ?? '', modelKey, hour, pricingSelectorKey]);
+): string => JSON.stringify([keyId, model, upstream, modelKey, hour, pricingSelectorKey]);
 
 export const usageMetricRows = (record: UsageRecord): UsageMetricRecord[] => {
   const seen = new Set<BillingMetric>();

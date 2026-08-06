@@ -185,6 +185,25 @@ for (const backend of backends) {
     });
   });
 
+  test(`${backend.name} usage repo distinguishes null and empty upstream identities`, async () => {
+    const repo = await backend.make();
+    await repo.usage.set(record({
+      upstream: null,
+      requests: 1,
+      metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+    }));
+    await repo.usage.set(record({
+      upstream: '',
+      requests: 2,
+      metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+    }));
+
+    const rows = await query(repo);
+    assertEquals(rows.length, 2);
+    assertEquals(rows.find(row => row.upstream === null)?.requests, 1);
+    assertEquals(rows.find(row => row.upstream === '')?.requests, 2);
+  });
+
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
@@ -397,6 +416,29 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
     cost: '900719925.4940992',
   });
+
+  const opaqueModel = 'model\0opaque';
+  for (const repo of repos) {
+    await repo.usage.set(record({
+      keyId: 'key-1',
+      model: opaqueModel,
+      modelKey: 'storage\0opaque',
+      upstream: 'up-opaque',
+      hour: '2026-11-01T06',
+      requests: 16,
+      metrics: [{ metric: 'output_tokens', quantity: '7', unitPrice: null }],
+    }));
+  }
+  const opaqueOptions = {
+    ...options,
+    filters: { keyIds: [], userIds: [], models: [opaqueModel], upstreams: [] },
+  };
+  const opaqueExpected = await memory.usage.queryOverview(opaqueOptions);
+  const opaqueActual = await sql.usage.queryOverview(opaqueOptions);
+  assertEquals(opaqueActual, opaqueExpected);
+  assertEquals(opaqueActual.series.map(row => row.group), [opaqueModel]);
+  assertEquals(opaqueActual.axes.model.some(row => row.group === opaqueModel), true);
+  assertEquals(opaqueActual.dimensionValues.models.includes(opaqueModel), true);
 });
 
 test('SQL usage overview preserves request-only and metric-only storage identities', async () => {

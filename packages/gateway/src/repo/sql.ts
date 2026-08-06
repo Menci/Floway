@@ -607,7 +607,7 @@ class SqlUsageRepo implements UsageRepo {
     const identity = [...storedIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
-        "SELECT quantity FROM usage WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
+        'SELECT quantity FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ?',
       ).bind(...identity).first<{ quantity: string }>();
       if (!current) {
         const inserted = await this.db.prepare(
@@ -620,7 +620,7 @@ class SqlUsageRepo implements UsageRepo {
 
       const quantity = addDecimalStrings(current.quantity, row.quantity);
       const updated = await this.db.prepare(
-        "UPDATE usage SET quantity = ? WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?",
+        'UPDATE usage SET quantity = ? WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?',
       ).bind(quantity, ...identity, current.quantity).run();
       if (updated.meta.changes === undefined) throw new Error('SQL runtime did not report updated usage row count');
       if (updated.meta.changes > 0) return;
@@ -667,7 +667,7 @@ class SqlUsageRepo implements UsageRepo {
   async set(record: UsageRecord): Promise<void> {
     const identity = storedUsageIdentity(record);
     const statements: SqlPreparedStatement[] = [
-      this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model_json = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key_json = ? AND hour = ? AND pricing_selector = ?")
+      this.db.prepare('DELETE FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ?')
         .bind(...identity),
       ...usageMetricRows(record).map(row => this.db.prepare(
         'INSERT INTO usage (key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',

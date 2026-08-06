@@ -377,6 +377,27 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
   }
   expect(await sql.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }))
     .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
+
+  const opaqueModel = 'model\0opaque';
+  for (const repo of repos) {
+    await repo.performance.set({
+      hour: '2026-11-01T06', keyId: 'key-1', model: opaqueModel, upstream: 'up-opaque',
+      operation: 'chat', runtimeLocation: 'SIN', requests: 1,
+      ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+      tpotSamples: 0, ttftMsSum: 25, tpotUsSum: 0,
+      buckets: [{ metric: 'ttft_ms', lower: 0, upper: 100, count: 1 }],
+    });
+  }
+  const opaqueOptions = {
+    ...options,
+    filters: { ...options.filters, models: [opaqueModel] },
+  };
+  const opaqueExpected = await memory.performance.queryOverview(opaqueOptions);
+  const opaqueActual = await sql.performance.queryOverview(opaqueOptions);
+  expect(opaqueActual).toEqual(opaqueExpected);
+  expect(opaqueActual.series.map(row => row.group)).toEqual([opaqueModel]);
+  expect(opaqueActual.axes.model.some(row => row.group === opaqueModel)).toBe(true);
+  expect(opaqueActual.dimensionValues.models).toContain(opaqueModel);
 });
 
 it('SQL Performance overview rejects a histogram row without its summary identity', async () => {

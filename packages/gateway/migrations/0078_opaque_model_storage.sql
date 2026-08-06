@@ -33,7 +33,7 @@ FROM usage;
 DROP TABLE usage;
 ALTER TABLE usage_with_model_json RENAME TO usage;
 CREATE UNIQUE INDEX idx_usage_metric_identity
-  ON usage (key_id, model_json, COALESCE(upstream, ''), model_key_json, hour, pricing_selector, metric);
+  ON usage (key_id, model_json, json_quote(upstream), model_key_json, hour, pricing_selector, metric);
 CREATE INDEX idx_usage_metric_hour ON usage (hour);
 CREATE INDEX idx_usage_metric_key_hour ON usage (key_id, hour);
 
@@ -57,7 +57,7 @@ FROM usage_requests;
 DROP TABLE usage_requests;
 ALTER TABLE usage_requests_with_model_json RENAME TO usage_requests;
 CREATE UNIQUE INDEX idx_usage_requests_identity
-  ON usage_requests (key_id, model_json, COALESCE(upstream, ''), model_key_json, hour, pricing_selector);
+  ON usage_requests (key_id, model_json, json_quote(upstream), model_key_json, hour, pricing_selector);
 CREATE INDEX idx_usage_requests_hour ON usage_requests (hour);
 CREATE INDEX idx_usage_requests_key_hour ON usage_requests (key_id, hour);
 
