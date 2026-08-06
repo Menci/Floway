@@ -624,14 +624,17 @@ const runParent = async (): Promise<void> => {
 };
 
 if (process.argv.includes(CHILD_FLAG)) {
-  runChild().catch(error => {
+  try {
+    await runChild();
+    process.disconnect?.();
+  } catch (error) {
     sendIpc({
       type: 'failure',
       message: errorMessage(error),
       ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
     });
     process.exit(1);
-  });
+  }
 } else {
   await runParent();
 }
