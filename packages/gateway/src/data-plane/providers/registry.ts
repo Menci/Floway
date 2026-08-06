@@ -26,10 +26,10 @@ export type GatewayProvider = Provider & {
 export const modelsCatalogIdentity = (record: UpstreamRecord): string =>
   serializeStoredConfig({ kind: record.kind, identity: providersByKind[record.kind].modelCatalogIdentity(record) });
 
-export const modelsOperatorRefreshIdentity = (record: UpstreamRecord): string =>
+export const modelsRequestIdentity = (record: UpstreamRecord): string =>
   serializeStoredConfig({
     kind: record.kind,
-    identity: providersByKind[record.kind].modelRefreshIdentity(record),
+    identity: providersByKind[record.kind].modelRequestIdentity(record),
     proxyFallbackList: record.proxyFallbackList,
   });
 

@@ -47,7 +47,10 @@ const memoInFlight = (
 
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
 
-const finalizeRefresh = async (finalize: () => Promise<boolean>): Promise<boolean> => {
+const finalizeRefresh = async (
+  finalize: () => Promise<boolean>,
+  abandon: () => Promise<boolean>,
+): Promise<boolean> => {
   const errors: unknown[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -55,6 +58,11 @@ const finalizeRefresh = async (finalize: () => Promise<boolean>): Promise<boolea
     } catch (error) {
       errors.push(error);
     }
+  }
+  try {
+    if (!await abandon()) return false;
+  } catch (error) {
+    errors.push(error);
   }
   throw new AggregateError(errors, 'Failed to finalize models refresh');
 };
@@ -117,14 +125,17 @@ const runClaimedRefresh = async (
       const lastError = { message: errorMessage(error), at: failedAt };
       let finalized: boolean;
       try {
-        finalized = await finalizeRefresh(async () => await repo.upstreams.finalizeModelsRefreshFailure({
-          id: instance.upstreamId,
-          generation: instance.modelsCacheGeneration,
-          token,
-          error: lastError,
-          previousFailureCount: outcome.failureCount,
-          failedAt,
-        }));
+        finalized = await finalizeRefresh(
+          async () => await repo.upstreams.finalizeModelsRefreshFailure({
+            id: instance.upstreamId,
+            generation: instance.modelsCacheGeneration,
+            token,
+            error: lastError,
+            previousFailureCount: outcome.failureCount,
+            failedAt,
+          }),
+          async () => await repo.upstreams.abandonModelsRefresh({ id: instance.upstreamId, generation: instance.modelsCacheGeneration, token }),
+        );
       } catch (backoffError) {
         throw new AggregateError([error, backoffError], errorMessage(error));
       }
@@ -138,12 +149,15 @@ const runClaimedRefresh = async (
       continue;
     }
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    const finalized = await finalizeRefresh(async () => await repo.upstreams.finalizeModelsRefreshSuccess({
-      id: instance.upstreamId,
-      generation: instance.modelsCacheGeneration,
-      token,
-      cache: entry,
-    }));
+    const finalized = await finalizeRefresh(
+      async () => await repo.upstreams.finalizeModelsRefreshSuccess({
+        id: instance.upstreamId,
+        generation: instance.modelsCacheGeneration,
+        token,
+        cache: entry,
+      }),
+      async () => await repo.upstreams.abandonModelsRefresh({ id: instance.upstreamId, generation: instance.modelsCacheGeneration, token }),
+    );
     if (finalized) {
       // The instance is reused across alias targets in one request, so publish
       // the finalized snapshot locally as well as durably.
@@ -182,6 +196,7 @@ export const fetchUpstreamModels = async (
         // failure, and bypasses the cooldown that failure just established.
       }
       if (inFlight.get(key) === existing) inFlight.delete(key);
+      continue;
     }
     const models = await startInFlight(key, 'explicit-refresh', () => runClaimedRefresh(instance, fetcher, 'explicit', loadProvidedModels));
     if (models === null) throw new Error(`Failed to acquire models refresh for ${instance.upstreamId}`);

@@ -338,6 +338,23 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     expect((await storedCache(repo))?.models).toEqual([aModel('published-model')]);
   });
 
+  test('persistent finalize errors release the claim for a later refresh', async () => {
+    const repo = await setupRepo();
+    vi.spyOn(repo.upstreams, 'finalizeModelsRefreshSuccess').mockRejectedValue(new Error('storage unavailable'));
+
+    await expect(fetchUpstreamModels(stubInstance(async () => [aModel('unpublished')]), directFetcher))
+      .rejects.toThrow('Failed to finalize models refresh');
+    await expect(repo.upstreams.claimModelsRefresh({
+      id: UPSTREAM_ID,
+      generation: CACHE_GENERATION,
+      token: 'next-owner',
+      now: Date.now(),
+      staleClaimedBefore: Number.MIN_SAFE_INTEGER,
+      bypassBackoff: false,
+      observedActiveToken: null,
+    })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+  });
+
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
     const repo = await setupRepo();
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
@@ -397,10 +414,13 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
     const explicitFetch = vi.fn(async () => [aModel('explicit-recovery-model')]);
-    const explicit = fetchUpstreamModels(stubInstance(explicitFetch), directFetcher);
+    const explicitInstance = stubInstance(explicitFetch);
+    const firstExplicit = fetchUpstreamModels(explicitInstance, directFetcher);
+    const secondExplicit = fetchUpstreamModels(explicitInstance, directFetcher);
     rejectOld!(new Error('late old failure'));
     await expect(oldScheduled.promises[0]).rejects.toThrow('late old failure');
-    await expect(explicit).resolves.toEqual([aModel('explicit-recovery-model')]);
+    await expect(firstExplicit).resolves.toEqual([aModel('explicit-recovery-model')]);
+    await expect(secondExplicit).resolves.toEqual([aModel('explicit-recovery-model')]);
     expect(explicitFetch).toHaveBeenCalledOnce();
     expect(await storedCache(repo)).toMatchObject({ models: [{ id: 'explicit-recovery-model' }], lastError: null });
   });

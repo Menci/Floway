@@ -24,6 +24,7 @@ import type {
   ModelsRefreshClaimInput,
   ModelsRefreshClaimResult,
   ModelsRefreshFailureInput,
+  ModelsRefreshOwnerInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -1074,6 +1075,17 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND coalesce(json_extract(models_refresh_json, '$.failCount'), 0) = ?`,
       )
       .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token, previousFailureCount)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean> {
+    const { id, generation, token } = input;
+    const fence = await this.modelsRefreshWriteFence(id, generation);
+    if (fence === null) return false;
+    const result = await this.db
+      .prepare("UPDATE upstreams SET models_refresh_json = json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
+      .bind(id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }

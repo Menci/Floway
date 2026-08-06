@@ -487,6 +487,14 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (usage.type === 'invalid') return usage;
   const upstreams = parseCollection('upstreams', upstreamWireSchema, value.upstreams, { arrayError: 'upstreams must be an array' });
   if (upstreams.type === 'invalid') return upstreams;
+  const upstreamIds = new Map<string, number>();
+  for (let index = 0; index < upstreams.records.length; index++) {
+    const prior = upstreamIds.get(upstreams.records[index].id);
+    if (prior !== undefined) {
+      return { type: 'invalid', error: `invalid upstreams: duplicate upstream id ${upstreams.records[index].id} at indexes ${prior} and ${index}` };
+    }
+    upstreamIds.set(upstreams.records[index].id, index);
+  }
   const proxies = parseCollection('proxies', proxySchema, value.proxies, { arrayError: 'proxies must be an array', optional: true });
   if (proxies.type === 'invalid') return proxies;
   const proxyIds = new Map<string, number>();

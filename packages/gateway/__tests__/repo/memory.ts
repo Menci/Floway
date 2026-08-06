@@ -29,10 +29,10 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsCacheGeneration,
   ModelsRefreshClaimInput,
   ModelsRefreshClaimResult,
   ModelsRefreshFailureInput,
+  ModelsRefreshOwnerInput,
   ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
@@ -74,7 +74,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-h
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { UpstreamGoneError, type UpstreamModelsCache, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -841,6 +841,18 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
     this.modelsRefreshes.set(id, { failCount: failureCount, retryAt, claimToken: null, claimedAt: null });
+    return Promise.resolve(true);
+  }
+
+  abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean> {
+    const { id, generation, token } = input;
+    const existing = this.store.get(id);
+    const refresh = this.modelsRefreshes.get(id);
+    if (!existing
+      || existing.updatedAt !== generation.updatedAt
+      || modelsFetchIdentity(existing) !== generation.fetchIdentity
+      || refresh?.claimToken !== token) return Promise.resolve(false);
+    this.modelsRefreshes.set(id, { ...refresh, claimToken: null, claimedAt: null });
     return Promise.resolve(true);
   }
 

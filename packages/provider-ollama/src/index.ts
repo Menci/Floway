@@ -6,7 +6,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const ollamaProviderModule: ProviderModule = {
   create: createOllamaProvider,
   modelCatalogIdentity: record => assertOllamaUpstreamRecord(record).config,
-  modelRefreshIdentity: record => assertOllamaUpstreamRecord(record).config,
+  modelRequestIdentity: record => assertOllamaUpstreamRecord(record).config,
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
 };
 

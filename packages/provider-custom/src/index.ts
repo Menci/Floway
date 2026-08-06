@@ -6,7 +6,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const customProviderModule: ProviderModule = {
   create: createCustomProvider,
   modelCatalogIdentity: record => assertCustomUpstreamRecord(record).config,
-  modelRefreshIdentity: record => assertCustomUpstreamRecord(record).config,
+  modelRequestIdentity: record => assertCustomUpstreamRecord(record).config,
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 

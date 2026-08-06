@@ -1,9 +1,10 @@
 import type { Context } from 'hono';
 
 import { warmUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
-import { modelsCatalogIdentity, modelsOperatorRefreshIdentity, createProvider } from '../../data-plane/providers/registry.ts';
+import { modelsCatalogIdentity, createProvider } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
+import { modelsOperatorRefreshIdentity } from '../../repo/models-cache-contract.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { logInfo } from '@floway-dev/provider-claude-code';
@@ -34,10 +35,17 @@ export const saveAndWarmUpstreamsForModels = async (
   changes: readonly UpstreamModelsChange[],
   c: Context,
 ): Promise<ReadonlyMap<string, UpstreamModelsCache | null>> => {
+  if (new Set(changes.map(change => change.next.id)).size !== changes.length) {
+    throw new Error('Duplicate upstream ids in models save batch');
+  }
   for (const change of changes) await saveUpstreamForModels(change);
   if (changes.length === 0) return new Map();
 
-  const records = changes.map(change => change.next);
+  const records = await Promise.all(changes.map(async change => {
+    const record = await getRepo().upstreams.getById(change.next.id);
+    if (record === null) throw new Error(`Upstream ${change.next.id} disappeared after save`);
+    return record;
+  }));
   const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), records);
   const entries = await Promise.all(records.map(async record => {
     try {

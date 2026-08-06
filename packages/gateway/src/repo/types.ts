@@ -364,6 +364,7 @@ export interface UpstreamRepo {
   // cannot publish models or errors under newer credentials/configuration.
   finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean>;
   finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
+  abandonModelsRefresh(input: ModelsRefreshOwnerInput): Promise<boolean>;
   claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult>;
 }
 
@@ -382,6 +383,12 @@ export interface ModelsRefreshSuccessInput {
   generation: ModelsCacheGeneration;
   token: string;
   cache: Omit<UpstreamModelsCache, 'lastError'>;
+}
+
+export interface ModelsRefreshOwnerInput {
+  id: string;
+  generation: ModelsCacheGeneration;
+  token: string;
 }
 
 export interface ModelsRefreshFailureInput {

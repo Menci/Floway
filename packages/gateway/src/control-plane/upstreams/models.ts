@@ -3,7 +3,7 @@ import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './sha
 import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
-import { createProvider, modelsOperatorRefreshIdentity } from '../../data-plane/providers/registry.ts';
+import { createProvider, modelsRequestIdentity } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
@@ -48,6 +48,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const kind = record.kind;
   const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
   if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
+  const effectiveProxyFallbackList = (record.proxy_fallback_list ?? persisted?.proxyFallbackList ?? []) as ProxyFallbackEntry[];
 
   const now = new Date().toISOString();
   const synthRecord: UpstreamRecord = {
@@ -60,7 +61,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     updatedAt: persisted?.updatedAt ?? now,
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
+    proxyFallbackList: effectiveProxyFallbackList,
     modelPrefix: null,
     // A draft only lists models; nothing renders its badge.
     hue: 0,
@@ -71,12 +72,12 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     modelsCache: null,
   };
   const canRefreshPersistedCache = persisted !== null
-    && modelsOperatorRefreshIdentity(persisted) === modelsOperatorRefreshIdentity(synthRecord);
+    && modelsRequestIdentity(persisted) === modelsRequestIdentity(synthRecord);
 
   let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({
-      override: record.proxy_fallback_list,
+      override: effectiveProxyFallbackList,
       upstreamId: record.id || undefined,
       runtimeLocation: getRuntimeLocation(c.req.raw),
     });

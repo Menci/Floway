@@ -7,7 +7,7 @@ import { expect, test, vi } from 'vitest';
 // until the vitest timeout. Stub the cache layer to a no-op so the import
 // path's own behavior (upserts, identity validation, etc.) is what the tests
 // exercise — the warm itself has dedicated coverage in models-cache_test.ts.
-vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
+vi.mock('../../../src/data-plane/providers/models-refresh.ts', () => ({
   warmUpstreamModels: () => Promise.resolve([]),
 }));
 
@@ -1033,6 +1033,17 @@ test('import reports the earliest duplicate before later malformed records', asy
   assertEquals(duplicateUser.body.error, 'invalid users at index 1: duplicate user id 1');
   assertEquals(duplicateMetric.body.error, 'invalid usage at index 0: duplicate usage metric: input_tokens');
   assertEquals(duplicateBucket.body.error, 'invalid performance record at index 0: duplicate bucket entry for {metric: ttft_ms, lower: 0}');
+});
+
+test('import rejects duplicate upstream ids before applying any records', async () => {
+  const { app, repo } = setup();
+  const upstream = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const result = await doImport(app, 'replace', latestImportData({
+    upstreams: [upstream, { ...upstream, name: 'Duplicate' }],
+  }));
+
+  assertEquals(result.body.error, `invalid upstreams: duplicate upstream id ${upstream.id} at indexes 0 and 1`);
+  assertEquals(await repo.upstreams.list(), []);
 });
 
 test('import preserves staged intra-record error precedence', async () => {

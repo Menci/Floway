@@ -9,9 +9,9 @@ export const claudeCodeProviderModule: ProviderModule = {
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
   },
-  modelRefreshIdentity: record => {
+  modelRequestIdentity: record => {
     assertClaudeCodeUpstreamRecord(record);
-    return { config: record.config, state: record.state };
+    return record.config;
   },
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
 };

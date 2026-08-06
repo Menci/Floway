@@ -15,8 +15,8 @@ vi.mock('../../../src/data-plane/providers/models-refresh.ts', () => ({
   clearModelsRefreshesForTesting: () => {},
 }));
 
-import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 

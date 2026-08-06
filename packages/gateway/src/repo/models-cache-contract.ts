@@ -17,6 +17,17 @@ export const modelsFetchIdentity = (
   proxyFallbackList: record.proxyFallbackList,
 });
 
+// Control-plane credential and transport changes reset refresh cooldown even
+// when the provider says the previous catalog remains valid.
+export const modelsOperatorRefreshIdentity = (
+  record: Pick<UpstreamRecord, 'kind' | 'config' | 'state' | 'proxyFallbackList'>,
+): string => serializeStoredConfig({
+  kind: record.kind,
+  config: record.config,
+  state: record.state ?? null,
+  proxyFallbackList: record.proxyFallbackList,
+});
+
 export const modelsCacheGeneration = (
   record: Pick<UpstreamRecord, 'updatedAt' | 'kind' | 'config' | 'proxyFallbackList'>,
 ): ModelsCacheGeneration => ({
