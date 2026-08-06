@@ -5,6 +5,7 @@
 | Scope | Requirement | Enforcement |
 |---|---|---|
 | Protocol shape | Keep this file as the two tables named `Requirements` and `Index`. | `pnpm run check:agent-protocol` |
+| Index inventory | Keep `Index` as the complete sorted inventory of CI workflows, skills, and workspace package directories with a short responsibility overview. | `pnpm run check:agent-protocol` |
 | Task scope | Derive every action from the user's request and preserve unrelated working-tree state. | Final diff review |
 | Questions | Answer requested questions from read-only evidence. | Final diff review |
 | Findings | Reproduce the reported scenario and validate third-party findings against primary sources before acting. | Investigation evidence |
@@ -43,29 +44,31 @@
 
 ## Index
 
-| Scope | Canonical source |
-|---|---|
-| Project use and operator setup | `README.md` |
-| Workspace commands | `package.json` |
-| Continuous verification | `.github/workflows/verify.yaml` |
-| TypeScript projects | `tsconfig.base.json`, `tsconfig.scripts.json`, and package `tsconfig.json` files |
-| Lint boundaries | `eslint.config.ts` |
-| Test discovery | `vitest.config.ts` and package `vitest.config.ts` files |
-| Workspace dependency graph | `pnpm-workspace.yaml` and package manifests |
-| Protocol contracts | `packages/protocols` |
-| Protocol translation | `packages/translate` |
-| Provider contracts | `packages/provider` |
-| Provider implementations | `packages/provider-*` |
-| Gateway composition | `packages/gateway` |
-| Model catalog resolution and refresh coordination | `packages/gateway/src/data-plane/providers` and `packages/gateway/src/repo/models-refresh-contract.ts` |
-| Portable runtime contracts | `packages/platform` |
-| Deployment runtimes | `apps/platform-*` |
-| Dashboard | `apps/web` |
-| Agent Setup generation | `packages/agent-setup/scripts/generate-assets.ts` |
-| Database migrations | `packages/gateway/migrations` |
-| Wrangler configuration shape | `wrangler.example.jsonc` and `scripts/check-wrangler.ts` |
-| Cloudflare deployment | `$deploy-to-cloudflare` |
-| Copilot upstream probing | `$probing-copilot` |
-| Copilot workaround audit | `$audit-copilot-workarounds` |
-| Model pricing research | `$fetching-models-pricing` |
-| Recorded usage repricing | `$backfill-model-pricing` |
+| Category | Entry | Overview |
+|---|---|---|
+| CI | `.github/workflows/build.yaml` | Builds and publishes deployment images. |
+| CI | `.github/workflows/verify.yaml` | Validates every repository change. |
+| Skill | `$audit-copilot-workarounds` | Audits Copilot compatibility workarounds. |
+| Skill | `$backfill-model-pricing` | Reprices recorded model usage. |
+| Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
+| Skill | `$fetching-models-pricing` | Researches provider model pricing. |
+| Skill | `$probing-copilot` | Probes Copilot upstream behavior. |
+| Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
+| Package | `apps/platform-node` | Hosts Floway on Node. |
+| Package | `apps/web` | Provides the operator dashboard. |
+| Package | `packages/agent-setup` | Configures supported coding agents. |
+| Package | `packages/gateway` | Composes gateway services. |
+| Package | `packages/http` | Provides HTTP transport primitives. |
+| Package | `packages/interceptor` | Intercepts gateway traffic. |
+| Package | `packages/platform` | Defines portable runtime contracts. |
+| Package | `packages/protocols` | Defines protocol contracts. |
+| Package | `packages/provider` | Defines provider contracts. |
+| Package | `packages/provider-azure` | Integrates Azure OpenAI. |
+| Package | `packages/provider-claude-code` | Integrates Claude Code subscriptions. |
+| Package | `packages/provider-codex` | Integrates OpenAI Codex subscriptions. |
+| Package | `packages/provider-copilot` | Integrates GitHub Copilot subscriptions. |
+| Package | `packages/provider-custom` | Integrates OpenAI-compatible providers. |
+| Package | `packages/provider-ollama` | Integrates Ollama. |
+| Package | `packages/proxy` | Routes traffic through configured proxies. |
+| Package | `packages/test-utils` | Provides shared test infrastructure. |
+| Package | `packages/translate` | Translates between protocol contracts. |
