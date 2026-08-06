@@ -219,9 +219,11 @@ const startServer = async (): Promise<{ readonly server: ServerType; readonly po
   return { server, port: info.port };
 };
 
-const sendIpc = (message: ChildMessage): void => {
+const sendIpc = async (message: ChildMessage): Promise<void> => {
   invariant(typeof process.send === 'function', 'memory verifier child requires an IPC channel');
-  process.send(message);
+  await new Promise<void>((resolve, reject) => {
+    process.send!(message, error => { if (error === null) resolve(); else reject(error); });
+  });
 };
 
 const responseForImageEdit = (): Response => new Response(JSON.stringify({
@@ -271,7 +273,11 @@ const runChild = async (): Promise<void> => {
   let releaseLarge!: () => void;
   const largeReleased = new Promise<void>(resolve => { releaseLarge = resolve; });
   let resolveLargeUpstreamDrain!: () => void;
-  const largeUpstreamDrained = new Promise<void>(resolve => { resolveLargeUpstreamDrain = resolve; });
+  let rejectLargeUpstreamDrain!: (error: unknown) => void;
+  const largeUpstreamDrained = new Promise<void>((resolve, reject) => {
+    resolveLargeUpstreamDrain = resolve;
+    rejectLargeUpstreamDrain = reject;
+  });
   let largeUpstreamBytes = 0;
   let largeUpstreamContentLength: string | undefined;
   const upstreamServer = createServer((request, response) => {
@@ -288,7 +294,10 @@ const runChild = async (): Promise<void> => {
       const body = await responseForImageEdit().text();
       response.writeHead(200, { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) });
       response.end(body);
-    })().catch(error => response.destroy(error as Error));
+    })().catch(error => {
+      if (phase === 'large') rejectLargeUpstreamDrain(error);
+      response.destroy(error as Error);
+    });
   });
   const upstreamPort = await new Promise<number>(resolve => {
     upstreamServer.listen(0, '127.0.0.1', () => {
@@ -416,7 +425,7 @@ const runChild = async (): Promise<void> => {
     invariant(arrayBuffersDelta >= IMAGE_BYTES, `memory sample saw only ${arrayBuffersDelta} live ArrayBuffer bytes; the 49 MiB body was not resident`);
     invariant(liveBodyBytes < LIVE_MEMORY_LIMIT_BYTES, `live image-edit memory ${liveBodyBytes} reached the ${LIVE_MEMORY_LIMIT_BYTES}-byte Worker limit`);
     invariant(peakBodyBytes < LIVE_MEMORY_LIMIT_BYTES, `transient image-edit memory ${peakBodyBytes} reached the ${LIVE_MEMORY_LIMIT_BYTES}-byte Worker limit`);
-    sendIpc({ type: 'hold', observation });
+    await sendIpc({ type: 'hold', observation });
 
     return await response;
   };
@@ -435,7 +444,7 @@ const runChild = async (): Promise<void> => {
     const largeShape = multipartShape(IMAGE_BYTES);
     dumpStore.beginLarge(largeShape.contentLength);
     phase = 'large';
-    sendIpc({ type: 'ready', port: started.port });
+    await sendIpc({ type: 'ready', port: started.port });
 
     await new Promise<void>((resolve, reject) => {
       process.on('message', message => {
@@ -456,7 +465,7 @@ const runChild = async (): Promise<void> => {
           invariant(record !== null, 'large request dump record was not persisted');
           invariant(record.request.body.byteLength === DUMP_CAPTURE_BYTES, `stored dump request body is ${record.request.body.byteLength} bytes`);
           invariant(observation !== undefined, 'large request memory observation is missing');
-          sendIpc({ type: 'complete', observation });
+          await sendIpc({ type: 'complete', observation });
           resolve();
         })().catch(reject);
       });
@@ -672,11 +681,15 @@ if (process.argv.includes(CHILD_FLAG)) {
     await runChild();
     process.disconnect?.();
   } catch (error) {
-    sendIpc({
-      type: 'failure',
-      message: errorMessage(error),
-      ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
-    });
+    try {
+      await sendIpc({
+        type: 'failure',
+        message: errorMessage(error),
+        ...(error instanceof Error && error.stack !== undefined ? { stack: error.stack } : {}),
+      });
+    } catch (ipcError) {
+      console.error('Image memory verifier failed and could not report over IPC:', error, ipcError);
+    }
     process.exit(1);
   }
 } else {
