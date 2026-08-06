@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -45,6 +45,29 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
   if (model.kind === 'transcription') return { audioTranscriptions: {} };
   if (model.kind === 'chat') return configured;
   return inferEndpointsFromModelId(model.id) ?? configured;
+};
+
+export const projectCustomDiscoveredModels = (
+  record: UpstreamRecord,
+  response: CustomModelsResponse,
+): UpstreamModelConfig[] => {
+  const { config } = assertCustomUpstreamRecord(record);
+  return response.data.map(model => {
+    const endpoints = model.kind === 'rerank' ? { rerank: {} } : autoModelEndpoints(model, config.endpoints);
+    const kind = model.kind === 'rerank' ? 'rerank' : kindForEndpoints(endpoints);
+    const projected: UpstreamModelConfig = {
+      upstreamModelId: model.id,
+      publicModelId: model.id,
+      kind,
+      endpoints,
+    };
+    const displayName = model.display_name ?? model.name;
+    if (displayName !== undefined) projected.display_name = displayName;
+    if (model.limits !== undefined) projected.limits = { ...model.limits };
+    if (model.pricing !== undefined) projected.pricing = model.pricing;
+    if (model.chat !== undefined) projected.chat = model.chat;
+    return projected;
+  });
 };
 
 const finalizeCustomModels = (

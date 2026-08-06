@@ -87,7 +87,6 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     updatedAt: '2026-08-05T00:00:00.000Z',
     config: { opaque: { value: true } },
     state: { cursor: ['a', 1] },
-    configVersion: 1,
     modelsCache: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -96,7 +95,9 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     hue: 210,
   };
   await repo.upstreams.save(upstreamRecord);
-  const cacheGeneration = modelsCacheGeneration(upstreamRecord);
+  const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
+  if (storedUpstream === null) throw new Error('expected stored upstream fixture');
+  const cacheGeneration = modelsCacheGeneration(storedUpstream);
   const cacheToken = 'node-cache-fixture';
   const cacheClaim = await repo.upstreams.claimModelsRefresh({ id: 'up_node', generation: cacheGeneration, token: cacheToken, now: Date.now(), staleClaimedBefore: Number.MIN_SAFE_INTEGER, bypassBackoff: true, observedActiveToken: null });
   if (cacheClaim.kind !== 'claimed') throw new Error('expected model-cache fixture claim');

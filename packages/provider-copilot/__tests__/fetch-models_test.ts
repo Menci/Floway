@@ -21,7 +21,6 @@ const installRepoAndConfig = async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: { githubHost: 'github.com', githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },

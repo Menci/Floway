@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
-import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
-import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache, storedModelsCacheGeneration } from '../../repo/models-cache-fixture.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -33,7 +32,6 @@ test('listModelProviders creates enabled provider instances with upstream row id
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     state: null,
@@ -98,7 +96,7 @@ test('listModelProviders carries each row cached catalog onto its instance', asy
   const cachedRecord = buildCustomUpstreamRecord({ id: 'up_cached', name: 'Cached', sortOrder: 10 });
   await repo.upstreams.save(cachedRecord);
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_cold', name: 'Cold', sortOrder: 20 }));
-  await seedModelsCache(repo.upstreams, 'up_cached', modelsCacheGeneration(cachedRecord), {
+  await seedModelsCache(repo.upstreams, 'up_cached', await storedModelsCacheGeneration(repo.upstreams, 'up_cached'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],

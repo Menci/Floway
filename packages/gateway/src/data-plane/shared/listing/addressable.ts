@@ -11,11 +11,12 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
+import type { StoredUpstreamRecord } from '../../../repo/types.ts';
 import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type Provider } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -54,7 +55,7 @@ export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-  preFetchedUpstreams?: readonly UpstreamRecord[],
+  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
   // the upstreams.list() round-trip and provider-instantiation cost is

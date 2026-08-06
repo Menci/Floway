@@ -1,16 +1,16 @@
+import { modelsCacheStatus } from './models-cache-status.ts';
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
-import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
-import { createProvider } from '../../data-plane/providers/registry.ts';
+import { createPreviewProvider, createProvider } from '../../data-plane/providers/registry.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { previewModelsBody } from '../schemas.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
+import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels, projectCustomDiscoveredModels } from '@floway-dev/provider-custom';
 
 // `upstreamModelId` is the wire-side identifier the provider will send when
 // a caller invokes the public `model.id` — Claude Code exposes
@@ -19,7 +19,7 @@ import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } fr
 // not a universal upstream-id field: only the providers that shape it as
 // `{ upstreamModelId }` surface a distinct wire id here, and the rest
 // (Copilot carries its raw variant list there) report the public id.
-const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
+const reshapeModelForDashboard = (model: ProviderModel): UpstreamModelConfig => {
   const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
   const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
   return {
@@ -58,7 +58,6 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
-    configVersion: 1,
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList,
@@ -85,10 +84,10 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
       const result = await fetchCustomModels(assertedConfig, fetcher);
-      return c.json({ kind, data: result.data });
+      return c.json({ data: projectCustomDiscoveredModels(synthRecord, result) });
     }
-    const models = await createProvider(synthRecord).instance.getProvidedModels(fetcher);
-    return c.json({ kind, data: models.map(reshapeModelForDashboard) });
+    const models = await createPreviewProvider(synthRecord).instance.getProvidedModels(fetcher);
+    return c.json({ data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
@@ -119,20 +118,18 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
   }
 
   try {
+    let data: UpstreamModelConfig[];
     if (record.kind === 'custom') {
       const config = assertCustomUpstreamRecord(record).config;
-      let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
-      await fetchUpstreamModels(createProvider(record), fetcher, async () => {
-        result = await fetchCustomModels(config, fetcher);
-        return projectCustomModels(record, result);
-      });
-      // Joining another runtime's refresh does not expose its raw custom wire
-      // response, which the editor needs for endpoint inference.
-      result ??= await fetchCustomModels(config, fetcher);
-      return c.json({ kind: record.kind, data: result.data });
+      const result = await fetchCustomModels(config, fetcher);
+      await fetchUpstreamModels(createProvider(record), fetcher, async () => projectCustomModels(record, result));
+      data = projectCustomDiscoveredModels(record, result);
+    } else {
+      data = (await fetchUpstreamModels(createProvider(record), fetcher)).map(reshapeModelForDashboard);
     }
-    const models = await fetchUpstreamModels(createProvider(record), fetcher);
-    return c.json({ kind: record.kind, data: models.map(reshapeModelForDashboard) });
+    const refreshed = await getRepo().upstreams.getById(id);
+    if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
+    return c.json({ data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);

@@ -11,9 +11,9 @@
 //
 // Deep upstream-config validation (e.g. Azure URL hostname rules, custom
 // pathOverrides and modelsFetch.endpoint URL parsing, per-model endpoint path
-// checks) intentionally stays in the handler functions — they own the
-// canonical error messages and downstream cache invalidation. The schemas
-// here describe the shape the dashboard sends.
+// checks) stays with provider validators and handlers, which own the canonical
+// error messages. Repository model-aware writes own catalog generations and
+// invalidation. The schemas here describe the shape the dashboard sends.
 
 import { z } from 'zod';
 

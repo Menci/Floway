@@ -4,7 +4,8 @@ import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
-import { seedModelsCache, seedModelsCacheError } from '../../repo/models-cache-fixture.ts';
+import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
+import { seedModelsCache, seedModelsCacheError, storedModelsCacheGeneration } from '../../repo/models-cache-fixture.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -343,7 +344,6 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {
@@ -391,7 +391,6 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {
@@ -437,7 +436,6 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
@@ -450,17 +448,18 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save(warmRecord);
   await repo.upstreams.save(failedRecord);
 
-  await seedModelsCache(repo.upstreams, 'up_warm', modelsCacheGeneration(warmRecord), {
+  await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsCacheGeneration(repo.upstreams, 'up_warm'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await seedModelsCache(repo.upstreams, 'up_failed', modelsCacheGeneration(failedRecord), {
+  const failedGeneration = await storedModelsCacheGeneration(repo.upstreams, 'up_failed');
+  await seedModelsCache(repo.upstreams, 'up_failed', failedGeneration, {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await seedModelsCacheError(repo.upstreams, 'up_failed', modelsCacheGeneration(failedRecord), { message: 'boom', at: 1_700_000_500_000 });
+  await seedModelsCacheError(repo.upstreams, 'up_failed', failedGeneration, { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -490,7 +489,6 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
@@ -544,7 +542,7 @@ test('POST /api/upstreams/preview-models fetches a draft custom upstream model l
       }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
-      assertEquals(body.data.map(m => m.id), ['gpt-a', 'gpt-b']);
+      assertEquals(body.data.map(m => m.upstreamModelId), ['gpt-a', 'gpt-b']);
       assertEquals(body.data[1].display_name, 'GPT B');
     },
   );
@@ -674,7 +672,6 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: { ...customConfig, apiKey: 'sk-refresh' },
@@ -698,11 +695,10 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
         headers: { 'x-floway-session': adminSession },
       });
       assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { data: Array<{ id?: string }> };
-      // Custom returns the raw upstream row shape (id-keyed), not the
-      // dashboard-projected UpstreamModelConfig — the SPA translates
-      // through the draft's endpoints.
-      assertEquals(body.data.map(m => m.id), ['fresh-model']);
+      const body = (await resp.json()) as { data: Array<{ upstreamModelId?: string }>; modelsCache: { fetchedAt: number | null; modelCount: number | null } };
+      assertEquals(body.data.map(m => m.upstreamModelId), ['fresh-model']);
+      assertEquals(body.modelsCache.modelCount, 1);
+      assertEquals(typeof body.modelsCache.fetchedAt, 'number');
       assertEquals(upstreamCalls, 1);
       const cached = (await repo.upstreams.getById(savedRecord.id))?.modelsCache;
       assertEquals(cached?.models.map((model: { id: string }) => model.id), ['fresh-model']);
@@ -757,62 +753,14 @@ test('POST /api/upstreams warms the models cache before responding', async () =>
   assertEquals(created.modelsCache.lastError, null);
 });
 
-test('PATCH /api/upstreams warms the models cache before responding', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
-  const created = (await create.json()) as { id: string };
-  // Overwrite whatever the create-time warm landed on the row with a marker
-  // catalog, so the assertion below can only pass if the PATCH-time warm wrote
-  // over it.
-  await seedModelsCache(repo.upstreams, created.id, await getCacheGeneration(repo, created.id), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1,
-    models: [{ id: 'warmed-on-create', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
-  });
-  // …and annotate it with an error the successful PATCH-time warm must clear,
-  // so the response body cannot pass by echoing the pre-warm row.
-  await seedModelsCacheError(repo.upstreams, created.id, await getCacheGeneration(repo, created.id), { message: 'stale failure', at: 1 });
-
-  const patched = await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-update' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const patch = await requestApp(`/api/upstreams/${created.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-        body: JSON.stringify({ name: 'Renamed' }),
-      });
-      assertEquals(patch.status, 200);
-      return (await patch.json()) as { modelsCache: { fetchedAt: number | null; lastError: unknown } };
-    },
-  );
-
-  const cached = (await repo.upstreams.getById(created.id))?.modelsCache;
-  assertEquals(cached?.models.map(model => model.id), ['warmed-on-update']);
-  assertEquals(patched.modelsCache.fetchedAt, cached?.fetchedAt ?? null);
-  assertEquals(patched.modelsCache.lastError, null);
-});
-
-test('PATCH /api/upstreams metadata warm preserves refresh backoff', async () => {
+test('PATCH /api/upstreams metadata edit preserves the catalog without model I/O', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const created = await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'cached-model' }] }),
     async () => await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json() as { id: string },
   );
-  const generation = await getCacheGeneration(repo, created.id);
   const configVersion = (await repo.upstreams.getById(created.id))?.configVersion;
-  const now = Date.now();
-  const claim = await repo.upstreams.claimModelsRefresh({ id: created.id, generation, token: 'failed-refresh', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
-  if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
-  await repo.upstreams.finalizeModelsRefreshFailure({ id: created.id, generation, token: 'failed-refresh', error: { message: 'failed refresh', at: now }, previousFailureCount: 0, failedAt: now });
   let modelRequests = 0;
 
   await withMockedFetch(
@@ -852,7 +800,7 @@ test('POST /api/upstreams/preview-models without an id still serves draft previe
       }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
-      assertEquals(body.data.map(m => m.id), ['draft-only']);
+      assertEquals(body.data.map(m => m.upstreamModelId), ['draft-only']);
     },
   );
 });
@@ -915,13 +863,13 @@ const createCodexUpstreamViaExchange = async (adminSession: string, overrides: R
   return (await create.json()) as { id: string };
 };
 
-const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string): Promise<UpstreamRecord> => {
+const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string): Promise<StoredUpstreamRecord> => {
   const record = await repo.upstreams.getById(id);
   if (!record) throw new Error(`Expected upstream ${id} to exist`);
   return record;
 };
 
-const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string) => {
+const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string) => {
   const record = await getRecord(repo, id);
   return modelsCacheGeneration(record);
 };
@@ -2212,7 +2160,6 @@ test('POST /api/upstreams/preview-models never writes the matching saved row', a
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {

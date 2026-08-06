@@ -50,7 +50,6 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     updatedAt: '2026-08-01T00:00:00.000Z',
     config: CACHE_CONFIG,
     state: null,
-    configVersion: 1,
     modelsCache: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -231,7 +230,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     const fetchFn = vi.fn(async () => [aModel('recovered')]);
     const cache = await storedCache(repo);
     const warming = stubInstance(fetchFn, cache);
-    await expect(warmUpstreamModels(warming, directFetcher)).resolves.toEqual([]);
+    await expect(warmUpstreamModels(warming, directFetcher)).resolves.toBeUndefined();
     expect(fetchFn).not.toHaveBeenCalled();
 
     await expect(fetchUpstreamModels(warming, directFetcher))
@@ -259,7 +258,8 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
       cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: now + 1, models: [aModel('remote-model')] },
     });
 
-    expect((await warming).map(model => model.id)).toEqual(['remote-model']);
+    await warming;
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['remote-model']);
     expect(localFetch).not.toHaveBeenCalled();
   });
 
@@ -282,7 +282,8 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
       cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: now + 1, models: [aModel('remote-model')] },
     });
     expect((await explicit).map(model => model.id)).toEqual(['remote-model']);
-    expect((await warming).map(model => model.id)).toEqual(['remote-model']);
+    await warming;
+    expect(instance.modelsCache?.models.map(model => model.id)).toEqual(['remote-model']);
   });
 
   test('explicit fetch retries after a remote owner records failure', async () => {
@@ -316,7 +317,8 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     const explicit = fetchUpstreamModels(instance, directFetcher);
     resolveWarm!([aModel('warm-owner-model')]);
     expect((await explicit).map(model => model.id)).toEqual(['warm-owner-model']);
-    expect((await warming).map(model => model.id)).toEqual(['warm-owner-model']);
+    await warming;
+    expect(instance.modelsCache?.models.map(model => model.id)).toEqual(['warm-owner-model']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -453,7 +455,6 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
       updatedAt: '2026-08-01T00:00:00.000Z',
       config: {},
       state: null,
-      configVersion: 1,
       modelsCache: null,
       flagOverrides: {},
       disabledPublicModelIds: [],

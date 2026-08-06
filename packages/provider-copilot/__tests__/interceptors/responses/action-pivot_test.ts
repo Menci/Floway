@@ -50,7 +50,6 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {

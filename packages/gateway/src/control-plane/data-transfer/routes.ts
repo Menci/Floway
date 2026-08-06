@@ -17,7 +17,7 @@ import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
-import { saveAndWarmUpstreamsForModels } from '../shared/save-upstream-for-models.ts';
+import { saveUpstreamsAndWarmChangedModels } from '../shared/save-upstream-for-models.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
@@ -189,7 +189,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
-  await saveAndWarmUpstreamsForModels(await Promise.all(upstreams.map(async next => ({
+  await saveUpstreamsAndWarmChangedModels(await Promise.all(upstreams.map(async next => ({
     previous: await repo.upstreams.getById(next.id),
     next,
   }))), c);

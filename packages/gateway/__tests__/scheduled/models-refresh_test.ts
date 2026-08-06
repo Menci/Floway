@@ -23,7 +23,6 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
     ingressHeadersRules: [],
   },
   state: null,
-  configVersion: 1,
   modelsCache: null,
   flagOverrides: {},
   disabledPublicModelIds: [],

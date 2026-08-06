@@ -58,6 +58,7 @@ import type {
   SessionsRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
+  StoredUpstreamRecord,
   UpstreamRepo,
   UsageRecord,
   UsageOverviewAxis,
@@ -736,14 +737,14 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 }
 
 class MemoryUpstreamRepo implements UpstreamRepo {
-  private store = new Map<string, UpstreamRecord>();
+  private store = new Map<string, StoredUpstreamRecord>();
   private modelsRefreshes = new Map<string, { failCount: number; retryAt: number; claimToken: string | null; claimedAt: number | null }>();
 
-  list(): Promise<UpstreamRecord[]> {
+  list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
   }
 
-  getById(id: string): Promise<UpstreamRecord | null> {
+  getById(id: string): Promise<StoredUpstreamRecord | null> {
     const found = this.store.get(id);
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
@@ -752,64 +753,60 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // the snapshot; other writes preserve it. New rows always start uncached.
   save(upstream: UpstreamRecord): Promise<void> {
     const existing = this.store.get(upstream.id);
-    if (existing === undefined && upstream.configVersion !== 1) {
-      throw new Error(`New upstream ${upstream.id} must start at config version 1`);
-    }
-    const configChanged = existing !== undefined
+    const modelConfigChanged = existing !== undefined
       && (existing.kind !== upstream.kind
-        || serializeStoredConfig(existing.config) !== serializeStoredConfig(upstream.config));
+        || serializeStoredConfig(existing.config) !== serializeStoredConfig(upstream.config)
+        || serializeStoredConfig(existing.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides));
+    const transportChanged = existing !== undefined
+      && serializeStoredConfig(existing.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
+    const refreshInputsChanged = modelConfigChanged || transportChanged;
     const preserved = existing
       ? {
           ...upstream,
           createdAt: existing.createdAt,
-          configVersion: existing.configVersion + (configChanged ? 1 : 0),
-          modelsCache: configChanged ? null : existing.modelsCache,
+          configVersion: existing.configVersion + (refreshInputsChanged ? 1 : 0),
+          modelsCache: modelConfigChanged ? null : existing.modelsCache,
         }
-      : { ...upstream, modelsCache: null };
+      : { ...upstream, configVersion: 1, modelsCache: null };
     this.store.set(preserved.id, cloneUpstreamRecord(preserved));
-    const refresh = this.modelsRefreshes.get(preserved.id);
-    if (configChanged) this.modelsRefreshes.delete(preserved.id);
-    else if (refresh) this.modelsRefreshes.set(preserved.id, { ...refresh, claimToken: null, claimedAt: null });
+    if (refreshInputsChanged) this.modelsRefreshes.delete(preserved.id);
     return Promise.resolve();
   }
 
-  insertForModels(upstream: UpstreamRecord): Promise<boolean> {
-    if (upstream.configVersion !== 1) throw new Error(`New upstream ${upstream.id} must start at config version 1`);
-    if (this.store.has(upstream.id)) return Promise.resolve(false);
-    this.store.set(upstream.id, cloneUpstreamRecord({ ...upstream, modelsCache: null }));
-    return Promise.resolve(true);
+  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    if (this.store.has(upstream.id)) return Promise.resolve(null);
+    const stored = cloneUpstreamRecord({ ...upstream, configVersion: 1, modelsCache: null });
+    this.store.set(upstream.id, stored);
+    return Promise.resolve(cloneUpstreamRecord(stored));
   }
 
   replaceForModels(input: {
-    previous: UpstreamRecord;
-    upstream: Omit<UpstreamRecord, 'configVersion'>;
-  }): Promise<boolean> {
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null> {
     const { previous, upstream } = input;
-    const configChanged = previous.kind !== upstream.kind
-      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config);
-    const configVersion = previous.configVersion + (configChanged ? 1 : 0);
+    const modelConfigChanged = previous.kind !== upstream.kind
+      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
     const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
+    const refreshInputsChanged = modelConfigChanged || transportChanged;
+    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
     const existing = this.store.get(upstream.id);
-    if (existing === undefined) return Promise.resolve(false);
+    if (existing === undefined) return Promise.resolve(null);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
     const comparableExisting = { ...existing, modelsCache: null, state: replaceState ? existing.state : null };
     const comparablePrevious = { ...previous, modelsCache: null, state: replaceState ? previous.state : null };
-    if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(false);
+    if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(null);
     const next = cloneUpstreamRecord({
       ...upstream,
       createdAt: existing.createdAt,
       configVersion,
       state: replaceState ? upstream.state : existing.state,
-      modelsCache: configChanged ? null : existing.modelsCache,
+      modelsCache: modelConfigChanged ? null : existing.modelsCache,
     });
     this.store.set(upstream.id, next);
-    if (!configChanged && !transportChanged) {
-      const refresh = this.modelsRefreshes.get(upstream.id);
-      if (refresh !== undefined) this.modelsRefreshes.set(upstream.id, { ...refresh, claimToken: null, claimedAt: null });
-    } else {
-      this.modelsRefreshes.delete(upstream.id);
-    }
-    return Promise.resolve(true);
+    if (refreshInputsChanged) this.modelsRefreshes.delete(upstream.id);
+    return Promise.resolve(cloneUpstreamRecord(next));
   }
 
   delete(id: string): Promise<boolean> {
@@ -879,7 +876,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     if (observedActiveToken !== null && existing === undefined) return Promise.resolve({ kind: 'completed' });
     if (existing !== undefined) {
       if (existing.claimToken !== null && existing.claimedAt! > staleClaimedBefore) return Promise.resolve({ kind: 'active', token: existing.claimToken });
-      if (observedActiveToken !== null && existing.claimToken === null) return Promise.resolve({ kind: 'completed' });
       if (!bypassBackoff && existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
     }
     this.modelsRefreshes.set(id, {
@@ -893,7 +889,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
 
 }
 
-const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
+const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamRecord => ({
   ...upstream,
   config: structuredClone(upstream.config),
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),

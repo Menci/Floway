@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import { modelsCacheStatus } from './models-cache-status.ts';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
@@ -8,10 +9,11 @@ import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
-import { saveAndWarmUpstreamForModels } from '../shared/save-upstream-for-models.ts';
+import { saveUpstreamAndWarmChangedModels } from '../shared/save-upstream-for-models.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
 import {
   normalizeModelPrefix,
@@ -65,7 +67,7 @@ const pruneDeletedProxyEntries = (
 // optional baseSerialize override lets callers swap in upstreamRecordToFullJson
 // to round-trip unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
-  record: UpstreamRecord,
+  record: StoredUpstreamRecord,
   knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
 ): Promise<UpstreamWithCacheResponse> => {
@@ -74,11 +76,7 @@ const serializeForResponse = async (
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
-    modelsCache: {
-      fetchedAt: record.modelsCache?.fetchedAt ?? null,
-      lastError: record.modelsCache?.lastError ?? null,
-      modelCount: storedCatalogSize(record),
-    },
+    modelsCache: modelsCacheStatus(record),
     ...codexQuota,
   };
 };
@@ -246,7 +244,6 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,
     updatedAt: now,
-    configVersion: 1,
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
@@ -281,7 +278,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const record = { ...upstream, config: config.value };
   // Answer with the catalog status this warm produced, not the one the record
   // was built with — the dashboard re-seeds its draft from this body.
-  const saved = await saveAndWarmUpstreamForModels({ previous: null, next: record }, c);
+  const saved = await saveUpstreamAndWarmChangedModels({ previous: null, next: record }, c);
   return c.json(await serializeForResponse(saved, knownProxyIds), 201);
 };
 
@@ -335,7 +332,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
 
-  const saved = await saveAndWarmUpstreamForModels({ previous: existing, next }, c);
+  const saved = await saveUpstreamAndWarmChangedModels({ previous: existing, next }, c);
   return c.json(await serializeForResponse(saved, knownProxyIds));
 };
 

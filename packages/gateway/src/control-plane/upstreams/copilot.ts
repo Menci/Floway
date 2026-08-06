@@ -5,7 +5,7 @@ import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
-import { saveAndWarmUpstreamForModels } from '../shared/save-upstream-for-models.ts';
+import { saveUpstreamAndWarmChangedModels } from '../shared/save-upstream-for-models.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
   assertCopilotUpstreamRecord,
@@ -127,7 +127,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
     clearInProcessCopilotTokenCache();
-    await saveAndWarmUpstreamForModels({ previous: dbRecord, next }, c);
+    await saveUpstreamAndWarmChangedModels({ previous: dbRecord, next }, c);
   } else {
     nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry };
   }

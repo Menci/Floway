@@ -5,10 +5,9 @@ import { createSqliteTestDb } from './test-sqlite.ts';
 import { MODEL_CATALOG_REVISION, modelsCacheGeneration } from '../../src/repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import type { ModelsCacheGeneration, Repo } from '../../src/repo/types.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { ModelsCacheGeneration, Repo, StoredUpstreamRecord } from '../../src/repo/types.ts';
 
-const record: UpstreamRecord = {
+const record: StoredUpstreamRecord = {
   id: 'up_refresh',
   kind: 'custom',
   name: 'Refresh',
@@ -35,7 +34,7 @@ const factories: [string, () => Promise<Repo>][] = [
 ];
 
 describe.each(factories)('%s models refresh coordination', (_name, createRepo) => {
-  test('config writes advance the generation while state writes do not', async () => {
+  test('catalog refresh inputs advance the generation while state writes do not', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
     await repo.upstreams.saveState(record.id, () => ({ accessToken: 'rotated' }));
@@ -47,6 +46,13 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     const changed = await repo.upstreams.getById(record.id);
     expect(changed?.configVersion).toBe(2);
     expect(changed?.state).toEqual({ accessToken: 'rotated' });
+    if (changed === null) throw new Error('upstream row missing after config update');
+    await repo.upstreams.save({ ...changed, flagOverrides: { 'vendor-deepseek': true } });
+    const flagged = await repo.upstreams.getById(record.id);
+    expect(flagged?.configVersion).toBe(3);
+    if (flagged === null) throw new Error('upstream row missing after flag update');
+    await repo.upstreams.save({ ...flagged, proxyFallbackList: [{ id: 'direct_fetch' }] });
+    expect((await repo.upstreams.getById(record.id))?.configVersion).toBe(4);
   });
 
   test('claims atomically, applies one backoff schedule, and lets force bypass cooldown', async () => {
@@ -79,6 +85,15 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'after-success', now: now + 2, staleClaimedBefore: now - 899_998, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
   });
 
+  test('a waiter acquires an abandoned claim rather than treating it as completed', async () => {
+    const repo = await createRepo();
+    await repo.upstreams.save(record);
+    const now = 1_800_000_000_000;
+    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'owner', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    await expect(repo.upstreams.abandonModelsRefresh({ id: record.id, generation, token: 'owner' })).resolves.toBe(true);
+    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'waiter', now: now + 1, staleClaimedBefore: now - 899_999, bypassBackoff: true, observedActiveToken: 'owner' })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+  });
+
   test('recovers abandoned claims and fences tokens and config versions', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
@@ -98,28 +113,33 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
 
     const renamed = { ...storedNext, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
     await repo.upstreams.replaceForModels({ previous: storedNext, upstream: renamed });
-    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(storedNext), token: 'after-rename', now: now + 900_004, staleClaimedBefore: now + 4, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(storedNext), token: 'after-rename', now: now + 900_004, staleClaimedBefore: now + 4, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'active', token: 'current' });
   });
 
-  test('metadata saves preserve backoff while invalidating an active owner', async () => {
+  test('metadata saves preserve an active refresh owner', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
     const now = 1_800_000_000_000;
-    const claim = await repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'failed', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
+    const claim = await repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'active', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
     if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
-    await repo.upstreams.finalizeModelsRefreshFailure({ id: record.id, generation, token: 'failed', error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
 
     const next = { ...record, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.toBe(true);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.not.toBeNull();
     await expect(repo.upstreams.claimModelsRefresh({
       id: record.id,
       generation: modelsCacheGeneration(next),
-      token: 'next-generation',
+      token: 'racer',
       now: now + 1,
       staleClaimedBefore: now - 899_999,
       bypassBackoff: false,
       observedActiveToken: null,
-    })).resolves.toEqual({ kind: 'backoff' });
+    })).resolves.toEqual({ kind: 'active', token: 'active' });
+    await expect(repo.upstreams.finalizeModelsRefreshSuccess({
+      id: record.id,
+      generation,
+      token: 'active',
+      cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: now + 1, models: [] },
+    })).resolves.toBe(true);
   });
 
   test('state changes preserve the snapshot generation and refresh cooldown', async () => {
@@ -131,7 +151,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.finalizeModelsRefreshFailure({ id: record.id, generation, token: 'failed', error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
 
     const next = { ...record, state: { credential: 'rotated' }, updatedAt: '2026-08-01T00:01:00.000Z' };
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.toBe(true);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.not.toBeNull();
     expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message).toBe('failure');
     await expect(repo.upstreams.claimModelsRefresh({
       id: record.id,
@@ -183,16 +203,16 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     const winner = { ...record, name: 'Winner', updatedAt: '2026-08-01T00:01:00.000Z' };
     const stale = { ...record, name: 'Stale', updatedAt: '2026-08-01T00:02:00.000Z' };
 
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: winner })).resolves.toBe(true);
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: stale })).resolves.toBe(false);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: winner })).resolves.not.toBeNull();
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: stale })).resolves.toBeNull();
     expect((await repo.upstreams.getById(record.id))?.name).toBe('Winner');
     expect((await repo.upstreams.getById(record.id))?.state).toEqual({ providerManaged: 'newer' });
   });
 
   test('catalog-aware insertion never overwrites a concurrent winner', async () => {
     const repo = await createRepo();
-    await expect(repo.upstreams.insertForModels(record)).resolves.toBe(true);
-    await expect(repo.upstreams.insertForModels({ ...record, name: 'Loser' })).resolves.toBe(false);
+    await expect(repo.upstreams.insertForModels(record)).resolves.not.toBeNull();
+    await expect(repo.upstreams.insertForModels({ ...record, name: 'Loser' })).resolves.toBeNull();
     expect((await repo.upstreams.getById(record.id))?.name).toBe(record.name);
   });
 

@@ -19,7 +19,6 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
   modelsCache: null,
   hue: 210,
   ...overrides,
@@ -62,7 +61,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     ['up_azure_a', 'up_copilot_a', 'up_custom_a'],
   );
 
-  assertEquals(await repo.getById('up_custom_a'), custom);
+  assertEquals(await repo.getById('up_custom_a'), { ...custom, configVersion: 1 });
   assertEquals(await repo.getById('missing'), null);
 
   const updatedCustom = upstream({
@@ -407,7 +406,6 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
-    configVersion: 1,
     modelsCache: null,
     hue: 210,
   };
@@ -1041,7 +1039,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configVersion, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, hue] = binds as [string, string, string, number, number, string, string, number, string, string | null, string, string, string, string | null, number];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, hue] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null, number];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const existing = existingIndex >= 0 ? this.rows[existingIndex] : undefined;
     const preservedCreatedAt = existing ? existing.created_at : createdAt;
@@ -1053,10 +1051,14 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       sort_order: sortOrder,
       created_at: preservedCreatedAt,
       updated_at: updatedAt,
-      config_version: configVersion,
+      config_version: existing === undefined || (existing.provider === provider && existing.config_json === configJson && existing.flag_overrides === flagOverrides && existing.proxy_fallback_list_json === proxyFallbackListJson)
+        ? existing?.config_version ?? 1
+        : existing.config_version + 1,
       config_json: configJson,
       state_json: stateJson,
-      models_cache_json: existing?.config_version === configVersion ? existing.models_cache_json : null,
+      models_cache_json: existing === undefined || (existing.provider === provider && existing.config_json === configJson && existing.flag_overrides === flagOverrides)
+        ? existing?.models_cache_json ?? null
+        : null,
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,

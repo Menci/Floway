@@ -42,6 +42,7 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   SpilledFilesRepo,
+  StoredUpstreamRecord,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
   WebSearchUsageRepo,
@@ -879,14 +880,14 @@ export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
-  async list(): Promise<UpstreamRecord[]> {
+  async list(): Promise<StoredUpstreamRecord[]> {
     const { results } = await this.db
       .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
-  async getById(id: string): Promise<UpstreamRecord | null> {
+  async getById(id: string): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
       .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
       .bind(id)
@@ -898,10 +899,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return this.saveRecord(upstream);
   }
 
-  async insertForModels(upstream: UpstreamRecord): Promise<boolean> {
-    if (upstream.configVersion !== 1) throw new Error(`New upstream ${upstream.id} must start at config version 1`);
-    const result = await this.db
-      .prepare('INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING')
+  async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const row = await this.db
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+        RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
       .bind(
         upstream.id,
         upstream.kind,
@@ -910,7 +911,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.sortOrder,
         upstream.createdAt,
         upstream.updatedAt,
-        upstream.configVersion,
         serializeStoredConfig(upstream.config),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
@@ -919,25 +919,25 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
         upstream.hue,
       )
-      .run();
-    return (result.meta.changes ?? 0) > 0;
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
   }
 
   async replaceForModels(input: {
-    previous: UpstreamRecord;
-    upstream: Omit<UpstreamRecord, 'configVersion'>;
-  }): Promise<boolean> {
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null> {
     const { previous, upstream } = input;
-    const configChanged = previous.kind !== upstream.kind
-      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config);
-    const configVersion = previous.configVersion + (configChanged ? 1 : 0);
+    const modelConfigChanged = previous.kind !== upstream.kind
+      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
     const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
+    const refreshInputsChanged = modelConfigChanged || transportChanged;
+    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
-    const modelsRefreshUpdate = configChanged || transportChanged
-      ? 'NULL'
-      : "CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END";
-    const modelsCacheUpdate = configChanged ? ', models_cache_json = NULL' : '';
-    const result = await this.db
+    const modelsRefreshUpdate = refreshInputsChanged ? ', models_refresh_json = NULL' : '';
+    const modelsCacheUpdate = modelConfigChanged ? ', models_cache_json = NULL' : '';
+    const row = await this.db
       .prepare(
         `UPDATE upstreams SET
            provider = ?,
@@ -952,8 +952,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = ?,
            proxy_fallback_list_json = ?,
            model_prefix_json = ?,
-           hue = ?,
-           models_refresh_json = ${modelsRefreshUpdate}${modelsCacheUpdate}
+           hue = ?${modelsRefreshUpdate}${modelsCacheUpdate}
          WHERE id = ?
            AND provider = ?
            AND name = ?
@@ -967,7 +966,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND disabled_public_model_ids = ?
            AND proxy_fallback_list_json = ?
            AND model_prefix_json IS ?
-           AND hue = ?`,
+           AND hue = ?
+         RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`,
       )
       .bind(
         upstream.kind,
@@ -1000,26 +1000,23 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.modelPrefix === null ? null : JSON.stringify(previous.modelPrefix),
         previous.hue,
       )
-      .run();
-    return (result.meta.changes ?? 0) > 0;
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
   }
 
   private async saveRecord(upstream: UpstreamRecord): Promise<void> {
-    if (upstream.configVersion !== 1 && await this.getById(upstream.id) === null) {
-      throw new Error(`New upstream ${upstream.id} must start at config version 1`);
-    }
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
            enabled = excluded.enabled,
            sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
-           config_version = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json THEN config_version ELSE config_version + 1 END,
+           config_version = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides AND proxy_fallback_list_json = excluded.proxy_fallback_list_json THEN config_version ELSE config_version + 1 END,
            config_json = excluded.config_json,
            state_json = excluded.state_json,
            flag_overrides = excluded.flag_overrides,
@@ -1027,11 +1024,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
            hue = excluded.hue,
-           models_cache_json = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json THEN models_cache_json ELSE NULL END,
+           models_cache_json = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides THEN models_cache_json ELSE NULL END,
            models_refresh_json = CASE
-             WHEN provider != excluded.provider OR config_json != excluded.config_json THEN NULL
-             WHEN models_refresh_json IS NULL THEN NULL
-             ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL)
+             WHEN provider != excluded.provider OR config_json != excluded.config_json OR flag_overrides != excluded.flag_overrides OR proxy_fallback_list_json != excluded.proxy_fallback_list_json THEN NULL
+             ELSE models_refresh_json
            END`,
       )
       .bind(
@@ -1042,7 +1038,6 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.sortOrder,
         upstream.createdAt,
         upstream.updatedAt,
-        upstream.configVersion,
         serializeStoredConfig(upstream.config),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
@@ -1103,7 +1098,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   async claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
-    const { id, generation, token, now, staleClaimedBefore, bypassBackoff, observedActiveToken } = input;
+    const { id, generation, token, now, staleClaimedBefore, bypassBackoff } = input;
+    let observedActiveToken = input.observedActiveToken;
     while (true) {
       const row = await this.db
         .prepare(
@@ -1151,7 +1147,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
         continue;
       }
       if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active', token: state.claim_token };
-      if (observedActiveToken !== null && state.claim_token === null) return { kind: 'completed' };
+      if (observedActiveToken !== null && state.claim_token === null) {
+        observedActiveToken = null;
+        continue;
+      }
       if (!bypassBackoff && state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
     }
   }
@@ -1210,7 +1209,7 @@ interface UpstreamRow {
   hue: number;
 }
 
-const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
+const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
   const config = decodeUpstreamConfig(row.config_json, row.id);
   const state = row.state_json === null ? null : decodeUpstreamState(row.state_json, row.id);
   if (!Number.isSafeInteger(row.config_version) || row.config_version < 1) {

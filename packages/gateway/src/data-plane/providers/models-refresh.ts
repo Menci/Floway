@@ -9,15 +9,14 @@ const ACTIVE_REFRESH_POLL_MS = 100;
 const ACTIVE_REFRESH_POLL_CAP_MS = 1_000;
 const ACTIVE_REFRESH_WAIT_MS = 60_000;
 
-// L1: per-isolate in-flight memoization. Callers join only when both their
-// actual fetch inputs and persisted-cache ownership match; different drafts
-// and superseded rows remain isolated. Not a TTL cache — the entry is removed
-// when the promise settles. The conditional delete defends against a stale
-// removal racing a later replacement.
-type RefreshIntent = 'explicit' | 'warm' | 'background';
+// L1: per-isolate in-flight memoization. Saved upstreams join only within one
+// persisted config generation; draft previews bypass this coordinator. Not a
+// TTL cache — the entry is removed when the promise settles. The conditional
+// delete defends against a stale removal racing a later replacement.
+type RefreshMode = 'explicit' | 'warm' | 'background';
 
 interface InFlightRefresh {
-  kind: 'background-refresh' | 'explicit-refresh' | 'owner-wait';
+  mode: RefreshMode;
   promise: Promise<ProviderModel[] | null>;
 }
 
@@ -25,10 +24,10 @@ const inFlight = new Map<string, InFlightRefresh>();
 
 const startInFlight = (
   key: string,
-  kind: InFlightRefresh['kind'],
+  mode: RefreshMode,
   fn: () => Promise<ProviderModel[] | null>,
 ): Promise<ProviderModel[] | null> => {
-  const entry: InFlightRefresh = { kind, promise: fn() };
+  const entry: InFlightRefresh = { mode, promise: fn() };
   inFlight.set(key, entry);
   entry.promise.finally(() => {
     if (inFlight.get(key) === entry) inFlight.delete(key);
@@ -38,11 +37,11 @@ const startInFlight = (
 
 const memoInFlight = (
   key: string,
-  kind: InFlightRefresh['kind'],
+  mode: RefreshMode,
   fn: () => Promise<ProviderModel[] | null>,
 ): Promise<ProviderModel[] | null> => {
   const existing = inFlight.get(key);
-  return existing?.promise ?? startInFlight(key, kind, fn);
+  return existing?.promise ?? startInFlight(key, mode, fn);
 };
 
 const errorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err);
@@ -67,16 +66,10 @@ const finalizeRefresh = async (
   throw new AggregateError(errors, 'Failed to finalize models refresh');
 };
 
-const runFetch = async (
-  instance: GatewayProvider,
-  fetcher: Fetcher,
-  loadProvidedModels?: () => Promise<ProviderModel[]>,
-): Promise<ProviderModel[]> => [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
-
 const runClaimedRefresh = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-  intent: RefreshIntent,
+  mode: RefreshMode,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[] | null> => {
   const repo = getRepo();
@@ -92,7 +85,7 @@ const runClaimedRefresh = async (
       token,
       now,
       staleClaimedBefore: now - MODELS_REFRESH_CLAIM_LEASE_MS,
-      bypassBackoff: intent === 'explicit',
+      bypassBackoff: mode === 'explicit',
       observedActiveToken,
     });
     if (outcome.kind === 'backoff' || outcome.kind === 'generation-mismatch') return null;
@@ -100,15 +93,12 @@ const runClaimedRefresh = async (
       const current = await repo.upstreams.getById(instance.upstreamId);
       if (current === null
         || current.configVersion !== instance.modelsCacheGeneration.configVersion) return null;
+      if (current.modelsCache === null) throw new Error(`Completed models refresh for ${instance.upstreamId} has no cache`);
       instance.modelsCache = current.modelsCache;
-      if (intent === 'explicit' && current.modelsCache?.lastError !== null && current.modelsCache?.lastError !== undefined) {
-        observedActiveToken = null;
-        continue;
-      }
-      return current.modelsCache?.models ?? [];
+      return current.modelsCache.models;
     }
     if (outcome.kind === 'active') {
-      if (intent === 'background') return null;
+      if (mode === 'background') return null;
       if (now >= waitDeadline) throw new Error(`Timed out waiting for models refresh owner for ${instance.upstreamId}`);
       observedActiveToken = outcome.token;
       await new Promise(resolve => setTimeout(resolve, pollMs));
@@ -118,7 +108,7 @@ const runClaimedRefresh = async (
 
     let models: ProviderModel[];
     try {
-      models = await runFetch(instance, fetcher, loadProvidedModels);
+      models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     } catch (error) {
       const failedAt = Date.now();
       const lastError = { message: errorMessage(error), at: failedAt };
@@ -143,7 +133,7 @@ const runClaimedRefresh = async (
         else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
         throw error;
       }
-      if (intent === 'background') throw error;
+      if (mode === 'background') throw error;
       observedActiveToken = token;
       continue;
     }
@@ -163,7 +153,7 @@ const runClaimedRefresh = async (
       instance.modelsCache = entry;
       return models;
     }
-    if (intent === 'background') return models;
+    if (mode === 'background') return models;
     observedActiveToken = token;
   }
 };
@@ -181,12 +171,12 @@ export const fetchUpstreamModels = async (
   const key = inFlightKey(instance);
   while (true) {
     const existing = inFlight.get(key);
-    if (existing?.kind === 'explicit-refresh') {
+    if (existing?.mode === 'explicit') {
       const joined = await existing.promise;
       if (joined === null) throw new Error(`Models refresh generation changed for ${instance.upstreamId}`);
       return joined;
     }
-    if (existing?.kind === 'background-refresh') {
+    if (existing?.mode === 'background') {
       try {
         const joined = await existing.promise;
         if (joined !== null) return joined;
@@ -197,7 +187,7 @@ export const fetchUpstreamModels = async (
       if (inFlight.get(key) === existing) inFlight.delete(key);
       continue;
     }
-    const models = await startInFlight(key, 'explicit-refresh', () => runClaimedRefresh(instance, fetcher, 'explicit', loadProvidedModels));
+    const models = await startInFlight(key, 'explicit', () => runClaimedRefresh(instance, fetcher, 'explicit', loadProvidedModels));
     if (models === null) throw new Error(`Failed to acquire models refresh for ${instance.upstreamId}`);
     return models;
   }
@@ -206,18 +196,16 @@ export const fetchUpstreamModels = async (
 export const warmUpstreamModels = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-): Promise<ProviderModel[]> => {
+): Promise<void> => {
   const key = inFlightKey(instance);
   const existing = inFlight.get(key);
   if (existing) {
     const joined = await existing.promise;
-    if (joined !== null) return joined;
-    if (existing.kind === 'owner-wait') return instance.modelsCache?.models ?? [];
+    if (joined !== null || existing.mode === 'warm') return;
     if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, 'owner-wait', () => runClaimedRefresh(instance, fetcher, 'warm'));
-  return models ?? instance.modelsCache?.models ?? [];
+  await memoInFlight(key, 'warm', () => runClaimedRefresh(instance, fetcher, 'warm'));
 };
 
 export const scheduleUpstreamModelsRefresh = (
@@ -226,7 +214,7 @@ export const scheduleUpstreamModelsRefresh = (
   fetcher: Fetcher,
 ): void => {
   const key = inFlightKey(instance);
-  scheduler(memoInFlight(key, 'background-refresh', () => runClaimedRefresh(instance, fetcher, 'background')).then(() => {}));
+  scheduler(memoInFlight(key, 'background', () => runClaimedRefresh(instance, fetcher, 'background')).then(() => {}));
 };
 
 // Test-only: drop the L1 map so a test's setup is independent of any

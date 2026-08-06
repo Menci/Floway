@@ -5,13 +5,13 @@ import { createSqliteTestDb } from './test-sqlite.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
 import { modelsCacheGeneration } from '../../src/repo/models-cache-contract.ts';
 import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
+import type { StoredUpstreamRecord } from '../../src/repo/types.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertRejects, stubProviderModel } from '@floway-dev/test-utils';
 
 const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
 const GENERATION = '2026-06-05T00:00:00.000Z';
-const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
+const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstreamRecord => ({
   id: 'up_test',
   kind: 'codex',
   name: 'Codex Test',

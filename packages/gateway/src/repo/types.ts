@@ -3,6 +3,10 @@ import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
+// Persistence-owned catalog generation. Provider config, flag overrides, and
+// catalog transport advance it; runtime state and non-model metadata do not.
+export type StoredUpstreamRecord = UpstreamRecord & { configVersion: number };
+
 export interface ApiKey {
   id: string;
   userId: number;
@@ -341,14 +345,14 @@ export interface WebSearchConfigRepo {
 }
 
 export interface UpstreamRepo {
-  list(): Promise<UpstreamRecord[]>;
-  getById(id: string): Promise<UpstreamRecord | null>;
+  list(): Promise<StoredUpstreamRecord[]>;
+  getById(id: string): Promise<StoredUpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
-  insertForModels(upstream: UpstreamRecord): Promise<boolean>;
+  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
   replaceForModels(input: {
-    previous: UpstreamRecord;
-    upstream: Omit<UpstreamRecord, 'configVersion'>;
-  }): Promise<boolean>;
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the

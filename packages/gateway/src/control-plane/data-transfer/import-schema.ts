@@ -159,9 +159,6 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     sortOrder,
     createdAt: parseValue(nonEmptyStringSchema('created_at'), wire.created_at),
     updatedAt: parseValue(nonEmptyStringSchema('updated_at'), wire.updated_at),
-    // Import establishes a local generation; merge mode will advance it when
-    // the imported provider config differs from the row already stored.
-    configVersion: 1,
     flagOverrides: parseValue(parsedBy(parseFlagOverridesWire), wire.flag_overrides),
     disabledPublicModelIds: parseValue(parsedBy(parseDisabledPublicModelIdsWire).optional().default([]), wire.disabled_public_model_ids),
     proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
