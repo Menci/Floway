@@ -57,6 +57,46 @@ test('aggregateUsageForDisplay groups variants that share public model id', () =
   assertEquals('modelKey' in out[0], false);
 });
 
+test('aggregateUsageForDisplay keeps colliding NUL-bearing key and model tuples separate', () => {
+  const records: UsageRecord[] = [
+    baseRecord({
+      keyId: 'key\0shared',
+      model: 'model',
+      modelKey: 'storage-a',
+      requests: 2,
+      rates: null,
+      tokens: { input: 10 },
+    }),
+    baseRecord({
+      keyId: 'key',
+      model: 'shared\0model',
+      modelKey: 'storage-b',
+      requests: 3,
+      rates: null,
+      tokens: { input: 20 },
+    }),
+  ];
+
+  const out = aggregateUsageForDisplay(records);
+  assertEquals(out.length, 2);
+  assertEquals(out.find(row => row.keyId === 'key\0shared'), {
+    keyId: 'key\0shared',
+    model: 'model',
+    hour: '2026-05-01T00',
+    requests: 2,
+    metrics: [{ metric: 'input_tokens', quantity: '10' }],
+    cost: null,
+  });
+  assertEquals(out.find(row => row.keyId === 'key'), {
+    keyId: 'key',
+    model: 'shared\0model',
+    hour: '2026-05-01T00',
+    requests: 3,
+    metrics: [{ metric: 'input_tokens', quantity: '20' }],
+    cost: null,
+  });
+});
+
 test('aggregateUsageForDisplay applies cost from each record rate snapshot', () => {
   const records: UsageRecord[] = [baseRecord({ modelKey: 'claude-opus-4-7-xhigh', tokens: { input: 1_000_000, output: 50 } })];
   const out = aggregateUsageForDisplay(records);
