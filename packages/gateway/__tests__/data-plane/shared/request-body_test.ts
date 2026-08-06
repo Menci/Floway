@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 
 import { readRequestBody, takeRequestBody } from '../../../src/data-plane/shared/request-body.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
+import { MAX_BUFFERED_REQUEST_BODY_BYTES } from '../../../src/middleware/request-body-limit.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('takeRequestBody transfers bytes and clears the source owner', () => {
@@ -90,6 +91,20 @@ test('readRequestBody rejects an oversized declared length without awaiting canc
   assertEquals(response.status, 413);
   assertEquals(canceled, true);
   assertEquals((await response.json()).error.max_bytes, 4);
+});
+
+test('readRequestBody applies the production body ceiling without allocating it', async () => {
+  const app = new Hono().onError(internalErrorResponse);
+  app.post('/body', async c => Response.json(await readRequestBody(c)));
+  const response = await app.request('/body', {
+    method: 'POST',
+    headers: { 'content-length': String(MAX_BUFFERED_REQUEST_BODY_BYTES + 1) },
+    body: new ReadableStream<Uint8Array>(),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+
+  assertEquals(response.status, 413);
+  assertEquals((await response.json()).error.max_bytes, MAX_BUFFERED_REQUEST_BODY_BYTES);
 });
 
 test('readRequestBody retains bytes received before a stream failure', async () => {

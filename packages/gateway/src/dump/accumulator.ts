@@ -20,7 +20,6 @@ import type { OwnedRequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { utf8ByteLength } from '../shared/utf8.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -181,6 +180,106 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
   return { id: upstream.id, name: upstream.name, kind: upstream.kind, hue: upstream.hue };
 };
 
+const jsonStringByteLength = (value: string): number => {
+  let bytes = 2;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5C) bytes += 2;
+    else if (code <= 0x1F) bytes += code === 0x08 || code === 0x09 || code === 0x0A || code === 0x0C || code === 0x0D ? 2 : 6;
+    else if (code <= 0x7F) bytes += 1;
+    else if (code <= 0x7FF) bytes += 2;
+    else if (code >= 0xD800 && code <= 0xDBFF && index + 1 < value.length) {
+      const low = value.charCodeAt(index + 1);
+      if (low >= 0xDC00 && low <= 0xDFFF) {
+        bytes += 4;
+        index += 1;
+      } else bytes += 6;
+    } else if (code >= 0xD800 && code <= 0xDFFF) bytes += 6;
+    else bytes += 3;
+  }
+  return bytes;
+};
+
+const boundedJsonByteLength = (root: unknown, limit: number): number | null => {
+  const visiting = new WeakSet<object>();
+  const measure = (value: unknown, arrayValue = false): number => {
+    if (value === null) return 4;
+    switch (typeof value) {
+    case 'string': return jsonStringByteLength(value);
+    case 'boolean': return value ? 4 : 5;
+    case 'number': return Number.isFinite(value) ? String(value).length : 4;
+    case 'undefined':
+    case 'function':
+    case 'symbol': return arrayValue ? 4 : 0;
+    case 'bigint': throw new TypeError('BigInt is not JSON-serializable');
+    case 'object': break;
+    }
+
+    const object = value as object;
+    if (visiting.has(object)) throw new TypeError('cyclic value is not JSON-serializable');
+    visiting.add(object);
+    try {
+      if (Array.isArray(object)) {
+        let bytes = 2;
+        for (let index = 0; index < object.length; index++) {
+          if (index > 0) bytes += 1;
+          bytes += measure(object[index], true);
+          if (bytes > limit) return bytes;
+        }
+        return bytes;
+      }
+      let bytes = 2;
+      let fields = 0;
+      for (const key in object) {
+        if (!Object.hasOwn(object, key)) continue;
+        const field = (object as Record<string, unknown>)[key];
+        const fieldBytes = measure(field);
+        if (fieldBytes === 0) continue;
+        bytes += (fields === 0 ? 0 : 1) + jsonStringByteLength(key) + 1 + fieldBytes;
+        fields += 1;
+        if (bytes > limit) return bytes;
+      }
+      return bytes;
+    } finally {
+      visiting.delete(object);
+    }
+  };
+  const bytes = measure(root);
+  return bytes > limit ? null : bytes;
+};
+
+const cloneMeasuredJson = <T>(root: T): T => {
+  const clones = new WeakMap<object, unknown>();
+  const visiting = new WeakSet<object>();
+  const clone = (value: unknown, arrayValue = false): unknown => {
+    if (value === null || typeof value !== 'object') {
+      if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') return arrayValue ? null : undefined;
+      return value;
+    }
+    const existing = clones.get(value);
+    if (visiting.has(value)) throw new TypeError('cyclic value is not JSON-serializable');
+    if (existing !== undefined) return existing;
+    visiting.add(value);
+    if (Array.isArray(value)) {
+      const result: unknown[] = [];
+      clones.set(value, result);
+      for (const item of value) result.push(clone(item, true));
+      visiting.delete(value);
+      return result;
+    }
+    const result: Record<string, unknown> = {};
+    clones.set(value, result);
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue;
+      const field = clone((value as Record<string, unknown>)[key]);
+      if (field !== undefined) result[key] = field;
+    }
+    visiting.delete(value);
+    return result;
+  };
+  return clone(root) as T;
+};
+
 export class DumpAccumulator {
   private events: DumpStreamEvent[] = [];
   private capturedEventBytes = 2; // JSON array brackets written by the store.
@@ -230,10 +329,9 @@ export class DumpAccumulator {
     this.errorMeta = { kind: 'failed', reason: oneLineError(reason) };
   }
 
-  // Records one protocol frame. Stored as the canonical ProtocolFrame so
-  // neither serialization nor parsing happens on this path; the dashboard
-  // derives the SSE wire view on demand via the per-protocol
-  // frame-to-SSE encoder + reducer.
+  // Records one protocol frame. The bounded walker measures the JSON form
+  // without materializing it, so an oversized image payload is rejected before
+  // JSON.stringify can allocate another full copy.
   frame(frame: ProtocolFrame<unknown>): void {
     if (this.captureClosed) return;
     this.sawProtocolFrame = true;
@@ -242,13 +340,12 @@ export class DumpAccumulator {
 
     const event = { frame, ts: Date.now() - this.startedAt };
     try {
-      const serialized = JSON.stringify(event);
-      if (serialized === undefined) throw new TypeError('event is not JSON-serializable');
       const delimiterBytes = this.events.length === 0 ? 0 : 1;
-      const eventBytes = utf8ByteLength(serialized);
+      const remainingBytes = this.captureLimits.streamEventBytes - this.capturedEventBytes - delimiterBytes;
+      const eventBytes = boundedJsonByteLength(event, remainingBytes);
       if (
         this.events.length >= this.captureLimits.streamEvents
-        || this.capturedEventBytes + delimiterBytes + eventBytes > this.captureLimits.streamEventBytes
+        || eventBytes === null
       ) {
         this.eventCaptureStopped = true;
         this.recordCaptureFailure(
@@ -257,7 +354,7 @@ export class DumpAccumulator {
         );
         return;
       }
-      this.events.push(JSON.parse(serialized) as DumpStreamEvent);
+      this.events.push(cloneMeasuredJson(event) as DumpStreamEvent);
       this.capturedEventBytes += delimiterBytes + eventBytes;
     } catch (err) {
       this.eventCaptureStopped = true;
