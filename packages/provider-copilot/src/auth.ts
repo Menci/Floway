@@ -45,7 +45,8 @@ const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID())
 // (caozhiyuan/copilot-api retries every refresh failure).
 const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
 
-// Two-level Copilot token cache: in-process (60s) memo keyed by upstream id,
+// Two-level Copilot token cache: in-process (60s) memo keyed by upstream and
+// credential generation,
 // backed by per-upstream `state_json.copilotToken` for cross-isolate / cold-
 // start sharing. The persisted entry survives a worker eviction; the in-
 // process memo avoids a DB read on every request inside one isolate.
@@ -89,11 +90,8 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-// Tests use this to drop process-local authentication state between cases —
-// they run against a fresh DB per test so the persisted state needs no separate
-// reset, and some tests deliberately want the next call to hydrate from
-// state_json instead of minting a fresh token. Cancelling an unfinished shared
-// refresh prevents it from writing into the next test's repository instance.
+// A persisted reauthentication clears only its upstream. Tests omit the id to
+// drop all process-local authentication state between independent repositories.
 export function clearInProcessCopilotTokenCache(upstreamId?: string): void {
   for (const [key, cached] of inProcessTokenCache) {
     if (upstreamId === undefined || cached.upstreamId === upstreamId) inProcessTokenCache.delete(key);
@@ -123,7 +121,11 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
       try {
         return await fn();
       } catch (error) {
-        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
+        if (
+          error instanceof UpstreamGenerationMismatchError
+          || isAbortError(error)
+          || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))
+        ) {
           throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
         }
 

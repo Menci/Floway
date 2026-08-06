@@ -49,6 +49,8 @@ import type {
   Session,
   SessionsRepo,
   UpstreamRepo,
+  UpstreamCredentialGeneration,
+  UpstreamCredentialsPatch,
   UpstreamFieldsPatch,
   UsageRecord,
   UsageOverviewQueryOptions,
@@ -1116,21 +1118,23 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 // much the same contention rather than independent draws. The bound is a
 // judgement call about how much immediate re-reading is worth doing before
 // declaring the row unwritable, not a derived figure.
-export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
+export const UPSTREAM_CAS_WRITE_ATTEMPTS = 4;
+
+const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at`)
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
+      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -1188,7 +1192,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
             )
         )`;
     const row = await this.db
-      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate}${proxyPredicate} RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
+      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate}${proxyPredicate} RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
         ...values,
         id,
@@ -1198,6 +1202,50 @@ class SqlUpstreamRepo implements UpstreamRepo {
       )
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
+  }
+
+  async replaceCredentials(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    expected: UpstreamCredentialGeneration,
+    mutate: (current: UpstreamRecord) => UpstreamCredentialsPatch,
+  ): Promise<UpstreamRecord | null> {
+    for (let attempt = 0; attempt < UPSTREAM_CAS_WRITE_ATTEMPTS; attempt++) {
+      const row = await this.db
+        .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
+        .bind(id)
+        .first<UpstreamRow>();
+      if (row === null || row.provider !== expectedKind) return null;
+
+      const current = toUpstreamRecord(row);
+      if (
+        current.createdAt !== expected.createdAt
+        || serializeStoredConfig(current.config) !== serializeStoredConfig(expected.config)
+      ) {
+        throw new UpstreamGenerationMismatchError(id);
+      }
+      const patch = mutate(current);
+      const updated = await this.db
+        .prepare(
+          `UPDATE upstreams
+           SET config_json = ?, state_json = ?, updated_at = MAX(updated_at, ?), models_cache_json = NULL
+           WHERE id = ? AND provider = ? AND created_at = ? AND config_json = ? AND state_json IS ?
+           RETURNING ${UPSTREAM_COLUMNS}`,
+        )
+        .bind(
+          serializeStoredConfig(patch.config),
+          serializeStoredState(patch.state),
+          patch.updatedAt,
+          id,
+          expectedKind,
+          row.created_at,
+          row.config_json,
+          row.state_json,
+        )
+        .first<UpstreamRow>();
+      if (updated !== null) return toUpstreamRecord(updated);
+    }
+    throw new Error(`Upstream ${id} credential replacement lost ${UPSTREAM_CAS_WRITE_ATTEMPTS} consecutive races`);
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
@@ -1301,7 +1349,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // vendor has already invalidated — cannot be reconstructed later, so it
   // throws rather than returning a flag a caller can drop.
   async saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void> {
-    for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
+    for (let attempt = 0; attempt < UPSTREAM_CAS_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
         .prepare('SELECT provider, config_json, state_json FROM upstreams WHERE id = ?')
         .bind(id)
@@ -1325,7 +1373,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }
-    throw new Error(`Upstream ${id} state write lost ${UPSTREAM_STATE_WRITE_ATTEMPTS} consecutive races`);
+    throw new Error(`Upstream ${id} state write lost ${UPSTREAM_CAS_WRITE_ATTEMPTS} consecutive races`);
   }
 }
 

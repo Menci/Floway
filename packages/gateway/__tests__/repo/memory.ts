@@ -58,6 +58,8 @@ import type {
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
+  UpstreamCredentialGeneration,
+  UpstreamCredentialsPatch,
   UpstreamFieldsPatch,
   UsageRecord,
   UsageOverviewAxis,
@@ -957,6 +959,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
           ? existing.updatedAt
           : patch.updatedAt,
         modelsCache: options.clearModelsCache ? null : existing.modelsCache,
+      };
+      this.store.set(id, cloneUpstreamRecord(next));
+      return cloneUpstreamRecord(next);
+    });
+  }
+
+  replaceCredentials(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    expected: UpstreamCredentialGeneration,
+    mutate: (current: UpstreamRecord) => UpstreamCredentialsPatch,
+  ): Promise<UpstreamRecord | null> {
+    return this.mutations.run(() => {
+      const existing = this.store.get(id);
+      if (existing?.kind !== expectedKind) return null;
+      if (
+        existing.createdAt !== expected.createdAt
+        || serializeStoredConfig(existing.config) !== serializeStoredConfig(expected.config)
+      ) {
+        throw new UpstreamGenerationMismatchError(id);
+      }
+      const patch = mutate(cloneUpstreamRecord(existing));
+      const next = {
+        ...existing,
+        ...patch,
+        updatedAt: patch.updatedAt < existing.updatedAt ? existing.updatedAt : patch.updatedAt,
+        modelsCache: null,
       };
       this.store.set(id, cloneUpstreamRecord(next));
       return cloneUpstreamRecord(next);

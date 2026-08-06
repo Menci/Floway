@@ -385,6 +385,16 @@ export interface UpstreamRepo {
     patch: UpstreamFieldsPatch,
     options?: { clearModelsCache?: boolean; expectedUpdatedAt?: string },
   ): Promise<UpstreamRecord | null>;
+  // Credential exchanges span remote network work. Apply their config/state
+  // replacement as a mutation over the row that exists at commit time so a
+  // sibling state write is merged and two exchanges cannot replay the same
+  // preflight snapshot over one another.
+  replaceCredentials(
+    id: string,
+    expectedKind: UpstreamProviderKind,
+    expected: UpstreamCredentialGeneration,
+    mutate: (current: UpstreamRecord) => UpstreamCredentialsPatch,
+  ): Promise<UpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -401,6 +411,9 @@ export interface UpstreamRepo {
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }
+
+export type UpstreamCredentialsPatch = Pick<UpstreamRecord, 'config' | 'state' | 'updatedAt'>;
+export type UpstreamCredentialGeneration = Pick<UpstreamRecord, 'createdAt' | 'config'>;
 
 export type UpstreamFieldsPatch = Partial<Pick<UpstreamRecord,
   | 'name'

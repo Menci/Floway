@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { copilotAuthedFetch, exchangeCopilotToken } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
-import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall, UpstreamGenerationMismatchError } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
@@ -302,6 +302,164 @@ test('concurrent cache misses share one Copilot token exchange', async () => {
   await expect(Promise.all([first, second])).resolves.toHaveLength(2);
   expect(tokenAttempts).toBe(1);
   expect(dataPlaneAttempts).toBe(2);
+});
+
+test('a token exchange cannot publish after its credential generation is replaced', async () => {
+  const oldConfig = {
+    githubHost: 'github.com',
+    githubToken: 'ghu_old',
+    user: { id: 1, login: 'old', name: null, avatar_url: '' },
+  };
+  const newConfig = {
+    githubHost: 'github.com',
+    githubToken: 'ghu_new',
+    user: { id: 2, login: 'new', name: null, avatar_url: '' },
+  };
+  let record: UpstreamRecord = {
+    id: UPSTREAM_ID,
+    kind: 'copilot',
+    name: 'auth-test',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    updatedAt: '2026-03-15T00:00:00.000Z',
+    config: oldConfig,
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+  };
+  initProviderRepo(() => ({
+    upstreams: {
+      getById: async () => structuredClone(record),
+      saveState: async (_id, mutate) => { record = { ...record, state: mutate(record.state) }; },
+    },
+  }));
+  clearInProcessCopilotTokenCache();
+  const exchangeStarted = Promise.withResolvers<void>();
+  const releaseExchange = Promise.withResolvers<void>();
+  const dataAuthorizations: string[] = [];
+  let tokenAttempts = 0;
+  const oldFetcher: Fetcher = async (request, init) => {
+    if (new URL(request).pathname === '/copilot_internal/v2/token') {
+      tokenAttempts += 1;
+      exchangeStarted.resolve();
+      await releaseExchange.promise;
+      return jsonResponse({
+        token: 'copilot-old',
+        expires_at: 4_102_444_800,
+        endpoints: { api: TOKEN_BASE_URL },
+      });
+    }
+    dataAuthorizations.push(new Headers(init.headers).get('authorization') ?? '');
+    return jsonResponse({});
+  };
+
+  const stale = copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}' },
+    { id: UPSTREAM_ID, githubHost: oldConfig.githubHost, githubToken: oldConfig.githubToken, config: oldConfig },
+    { fetcher: oldFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+  await exchangeStarted.promise;
+  record = { ...record, config: newConfig, state: null };
+  releaseExchange.resolve();
+  await expect(stale).rejects.toBeInstanceOf(UpstreamGenerationMismatchError);
+  expect(tokenAttempts).toBe(1);
+  expect(dataAuthorizations).toEqual([]);
+
+  const newFetcher: Fetcher = async (request, init) => {
+    if (new URL(request).pathname === '/copilot_internal/v2/token') {
+      return jsonResponse({
+        token: 'copilot-new',
+        expires_at: 4_102_444_800,
+        endpoints: { api: TOKEN_BASE_URL },
+      });
+    }
+    dataAuthorizations.push(new Headers(init.headers).get('authorization') ?? '');
+    return jsonResponse({});
+  };
+  await copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}' },
+    { id: UPSTREAM_ID, githubHost: newConfig.githubHost, githubToken: newConfig.githubToken, config: newConfig },
+    { fetcher: newFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+  expect(dataAuthorizations).toEqual(['Bearer copilot-new']);
+});
+
+test('clearing one upstream leaves another upstream token refresh running', async () => {
+  const configFor = (id: string) => ({
+    githubHost: 'github.com',
+    githubToken: `ghu_${id}`,
+    user: { id: id === 'up_a' ? 1 : 2, login: id, name: null, avatar_url: '' },
+  });
+  const recordFor = (id: string): UpstreamRecord => ({
+    id,
+    kind: 'copilot',
+    name: id,
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    updatedAt: '2026-03-15T00:00:00.000Z',
+    config: configFor(id),
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+  });
+  const records = new Map(['up_a', 'up_b'].map(id => [id, recordFor(id)]));
+  initProviderRepo(() => ({
+    upstreams: {
+      getById: async id => structuredClone(records.get(id) ?? null),
+      saveState: async (id, mutate) => {
+        const current = records.get(id);
+        if (current) records.set(id, { ...current, state: mutate(current.state) });
+      },
+    },
+  }));
+  clearInProcessCopilotTokenCache();
+  const startedA = Promise.withResolvers<void>();
+  const startedB = Promise.withResolvers<void>();
+  const releaseB = Promise.withResolvers<void>();
+  const fetcherFor = (id: 'up_a' | 'up_b'): Fetcher => async (request, init) => {
+    if (new URL(request).pathname !== '/copilot_internal/v2/token') return jsonResponse({});
+    (id === 'up_a' ? startedA : startedB).resolve();
+    if (id === 'up_b') await releaseB.promise;
+    else {
+      const signal = init.signal;
+      if (!signal) throw new Error('token refresh omitted its abort signal');
+      await new Promise<never>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    }
+    return jsonResponse({
+      token: `copilot-${id}`,
+      expires_at: 4_102_444_800,
+      endpoints: { api: TOKEN_BASE_URL },
+    });
+  };
+  const call = (id: 'up_a' | 'up_b') => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}' },
+    { id, ...configFor(id), config: configFor(id) },
+    { fetcher: fetcherFor(id), wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  const a = call('up_a');
+  const b = call('up_b');
+  await Promise.all([startedA.promise, startedB.promise]);
+  clearInProcessCopilotTokenCache('up_a');
+  await expect(a).rejects.toMatchObject({ name: 'AbortError' });
+  releaseB.resolve();
+  await expect(b).resolves.toMatchObject({ status: 200 });
 });
 
 test('one cancelled waiter does not abort a token refresh another request still needs', async () => {

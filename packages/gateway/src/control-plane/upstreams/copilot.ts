@@ -6,7 +6,7 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { type Fetcher, UpstreamGenerationMismatchError } from '@floway-dev/provider';
 import {
   assertCopilotUpstreamRecord,
   clearInProcessCopilotTokenCache,
@@ -134,16 +134,35 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // regardless of caller path.
   let nextState: CopilotUpstreamState;
   if (record.id !== '') {
-    const previous = assertCopilotUpstreamRecord(dbRecord!);
-    const sameIdentity = previous.config.githubHost === githubHost && previous.config.user.id === cred.user.id;
-    const prevState = sameIdentity ? readCopilotUpstreamState(dbRecord!.state) : emptyCopilotUpstreamState();
-    nextState = { ...prevState, copilotToken: cred.tokenEntry };
-    const next = await repo.updateFields(record.id, 'copilot', {
-      config: configPatch,
-      state: nextState,
-      updatedAt: nextUpstreamUpdatedAt(dbRecord!),
-    }, { clearModelsCache: true });
-    if (!next) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+    let next;
+    try {
+      next = await repo.replaceCredentials(record.id, 'copilot', {
+        createdAt: dbRecord!.createdAt,
+        config: dbRecord!.config,
+      }, currentRecord => {
+        const current = assertCopilotUpstreamRecord(currentRecord);
+        const sameIdentity = current.config.githubHost === githubHost && current.config.user.id === cred.user.id;
+        const state = sameIdentity ? readCopilotUpstreamState(current.state) : emptyCopilotUpstreamState();
+        return {
+          config: configPatch,
+          state: { ...state, copilotToken: cred.tokenEntry },
+          updatedAt: nextUpstreamUpdatedAt(currentRecord),
+        };
+      });
+    } catch (error) {
+      if (error instanceof UpstreamGenerationMismatchError) {
+        return c.json({ status: 'error' as const, error: 'Upstream credentials changed while device login was completing. Retry the login.' }, 409);
+      }
+      throw error;
+    }
+    if (!next) {
+      const replacement = await repo.getById(record.id);
+      if (replacement !== null && replacement.kind !== 'copilot') {
+        return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
+      }
+      return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+    }
+    nextState = readCopilotUpstreamState(next.state);
     clearInProcessCopilotTokenCache(record.id);
     await warmModelsCache(next, c, { readBack: false });
   } else {
