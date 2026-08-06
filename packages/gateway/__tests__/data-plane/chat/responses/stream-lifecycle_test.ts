@@ -8,7 +8,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 const visibleFrameTypes = (frames: readonly ProtocolFrame<ResponsesStreamEvent>[]): string[] =>
   frames.map(frame => frame.type === 'event' ? frame.event.type : frame.type);
 
-test('an upstream error without response.failed is closed with a failed response before the sentinel', async () => {
+test('an upstream error without response.failed is closed without exposing the transport sentinel', async () => {
   const created: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -29,7 +29,7 @@ test('an upstream error without response.failed is closed with a failed response
     frames.push(frame);
   }
 
-  assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed', 'done']);
+  assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed']);
   const failedFrame = frames[2];
   const failed = failedFrame?.type === 'event' ? failedFrame.event : undefined;
   if (failed?.type !== 'response.failed') throw new Error('expected a synthesized response.failed');
@@ -64,7 +64,7 @@ test('a response terminal remains the last visible frame', async () => {
     frames.push(frame);
   }
 
-  assertEquals(visibleFrameTypes(frames), ['response.created', 'response.completed', 'done']);
+  assertEquals(visibleFrameTypes(frames), ['response.created', 'response.completed']);
 });
 
 for (const terminalType of ['response.completed', 'response.incomplete'] as const) {
@@ -90,7 +90,7 @@ for (const terminalType of ['response.completed', 'response.incomplete'] as cons
       frames.push(frame);
     }
 
-    assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed', 'done']);
+    assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed']);
     const failedFrame = frames[2];
     const failed = failedFrame?.type === 'event' ? failedFrame.event : undefined;
     if (failed?.type !== 'response.failed') throw new Error('expected response.failed');
