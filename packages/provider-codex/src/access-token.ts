@@ -6,6 +6,12 @@ export type { CodexAccessTokenEntry };
 
 export type CodexCredentialGeneration = Pick<CodexAccountCredential, 'chatgptAccountId' | 'refresh_token' | 'state_updated_at'>;
 
+interface AccessTokenPersistenceGeneration {
+  readonly accountId: string;
+  readonly refreshToken: string;
+  readonly stateUpdatedAt?: string;
+}
+
 export class CodexCredentialRefreshTerminatedError extends CodexOAuthSessionTerminatedError {
   readonly generation!: CodexCredentialGeneration;
 
@@ -35,7 +41,7 @@ const persistAccessToken = async (
   entry: CodexAccessTokenEntry | null,
   where: string,
   expectedToken?: string,
-  expectedGeneration?: CodexCredentialGeneration,
+  expectedGeneration?: AccessTokenPersistenceGeneration,
 ): Promise<'persisted' | 'gone' | 'account-missing' | 'generation-mismatch'> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
@@ -52,9 +58,9 @@ const persistAccessToken = async (
       accountMissing = false;
       const account = state.accounts[idx];
       if (expectedGeneration !== undefined && (
-        account.chatgptAccountId !== expectedGeneration.chatgptAccountId
-        || account.refresh_token !== expectedGeneration.refresh_token
-        || account.state_updated_at !== expectedGeneration.state_updated_at
+        account.chatgptAccountId !== expectedGeneration.accountId
+        || account.refresh_token !== expectedGeneration.refreshToken
+        || (expectedGeneration.stateUpdatedAt !== undefined && account.state_updated_at !== expectedGeneration.stateUpdatedAt)
       )) {
         generationMismatch = true;
         return current;
@@ -122,6 +128,13 @@ interface EnsuredCodexAccessToken {
   freshlyMinted: boolean;
 }
 
+export interface MintedCodexAccessToken {
+  entry: CodexAccessTokenEntry;
+  refreshToken: string;
+}
+
+type CodexAccessTokenMintResult = CodexAccessTokenEntry | MintedCodexAccessToken;
+
 interface CodexAccessTokenFlight {
   force: boolean;
   promise: Promise<EnsuredCodexAccessToken>;
@@ -132,7 +145,7 @@ const inFlightEnsures = new Map<string, CodexAccessTokenFlight>();
 export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
-  mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
+  mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always mint a fresh one. Dashboard's Refresh button sets this so the
   // operator sees the row's tokens actually rotate; the data plane leaves
@@ -164,7 +177,7 @@ export const ensureCodexAccessToken = async (
 const ensureCodexAccessTokenInner = async (
   upstreamId: string,
   accountId: string,
-  mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
+  mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
   recoveryAllowed: boolean,
   force: boolean,
   generationRetryAllowed = true,
@@ -184,9 +197,9 @@ const ensureCodexAccessTokenInner = async (
     return { entry: account.accessToken, freshlyMinted: false };
   }
 
-  let minted;
+  let mintResult: CodexAccessTokenMintResult;
   try {
-    minted = await mint(account.refresh_token);
+    mintResult = await mint(account.refresh_token);
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
       const recovered = await recoverFromRefreshRace(upstreamId, accountId, account.refresh_token, mint);
@@ -201,10 +214,11 @@ const ensureCodexAccessTokenInner = async (
     }
     throw err;
   }
-  const generation: CodexCredentialGeneration = {
-    chatgptAccountId: account.chatgptAccountId,
-    refresh_token: account.refresh_token,
-    state_updated_at: account.state_updated_at,
+  const minted = 'entry' in mintResult ? mintResult.entry : mintResult;
+  const generation: AccessTokenPersistenceGeneration = {
+    accountId: account.chatgptAccountId,
+    refreshToken: 'entry' in mintResult ? mintResult.refreshToken : account.refresh_token,
+    ...('entry' in mintResult ? {} : { stateUpdatedAt: account.state_updated_at }),
   };
   const persisted = await persistAccessToken(
     upstreamId,
@@ -245,7 +259,7 @@ const recoverFromRefreshRace = async (
   upstreamId: string,
   accountId: string,
   usedRefreshToken: string,
-  mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
+  mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
 ): Promise<EnsuredCodexAccessToken | null> => {
   const reread = await getProviderRepo().upstreams.getById(upstreamId);
   if (!reread) return null;
@@ -280,12 +294,15 @@ export const mintCodexAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
-): Promise<CodexAccessTokenEntry> => {
+): Promise<MintedCodexAccessToken> => {
   const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
   await persistRefreshTokenRotation(tokens.refresh_token);
   return {
-    token: tokens.access_token,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
-    refreshedAt: new Date().toISOString(),
+    refreshToken: tokens.refresh_token,
+    entry: {
+      token: tokens.access_token,
+      expiresAt: Date.now() + tokens.expires_in * 1000,
+      refreshedAt: new Date().toISOString(),
+    },
   };
 };
