@@ -30,6 +30,7 @@ const limits = (overrides: Partial<MultipartParseLimits> = {}): MultipartParseLi
   files: 8,
   headerBytes: 1024,
   fieldBytes: 1024,
+  fieldTotalBytes: 4096,
   ...overrides,
 });
 
@@ -62,6 +63,13 @@ test('bounded multipart parser rejects oversized headers and text fields with ti
     .toEqual({ type: 'limit', kind: 'header-bytes', max: 8 });
   expect(await parseMultipartFormData(input.bytes, input.contentType, limits({ fieldBytes: 2 })))
     .toEqual({ type: 'limit', kind: 'field-bytes', max: 2 });
+});
+
+test('bounded multipart parser rejects aggregate text bytes before decoding fields', async () => {
+  const input = await encodeForm([['a', 'ab'], ['b', 'cd']]);
+
+  expect(await parseMultipartFormData(input.bytes, input.contentType, limits({ fieldTotalBytes: 3 })))
+    .toEqual({ type: 'limit', kind: 'field-total-bytes', max: 3 });
 });
 
 test('bounded multipart parser ignores bytes that resemble a different boundary', async () => {

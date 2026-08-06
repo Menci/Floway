@@ -4,13 +4,15 @@ export interface MultipartParseLimits {
   readonly files: number;
   readonly headerBytes: number;
   readonly fieldBytes: number;
+  readonly fieldTotalBytes: number;
 }
 
 // Image edits are the widest multipart schema: 16 images plus one mask. A
 // 64-part structural ceiling leaves 47 text fields, comfortably beyond the
 // endpoint's declared scalar surface, while preventing tiny-part amplification.
 // The 256 KiB field budget also covers the documented 32,000-character prompt
-// at four UTF-8 bytes per code point.
+// at four UTF-8 bytes per code point; the 1 MiB aggregate prevents many valid
+// fields from becoming a second large decoded representation together.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L44745-L44820
 export const DEFAULT_MULTIPART_PARSE_LIMITS: MultipartParseLimits = {
   parts: 64,
@@ -18,9 +20,16 @@ export const DEFAULT_MULTIPART_PARSE_LIMITS: MultipartParseLimits = {
   files: 17,
   headerBytes: 16 * 1024,
   fieldBytes: 256 * 1024,
+  fieldTotalBytes: 1024 * 1024,
 };
 
-export type MultipartLimitKind = 'parts' | 'fields' | 'files' | 'header-bytes' | 'field-bytes';
+export type MultipartLimitKind =
+  | 'parts'
+  | 'fields'
+  | 'files'
+  | 'header-bytes'
+  | 'field-bytes'
+  | 'field-total-bytes';
 
 export type MultipartFormDataResult =
   | { readonly type: 'ok'; readonly form: FormData }
@@ -241,6 +250,7 @@ const preflightMultipart = (
   let parts = 0;
   let fields = 0;
   let files = 0;
+  let fieldBytes = 0;
   const parsedParts: MultipartPart[] = [];
 
   for (;;) {
@@ -287,6 +297,12 @@ const preflightMultipart = (
     if (!file && bodyEnd - bodyStart > limits.fieldBytes) {
       return { type: 'limit', kind: 'field-bytes', max: limits.fieldBytes };
     }
+    if (!file) {
+      fieldBytes += bodyEnd - bodyStart;
+      if (fieldBytes > limits.fieldTotalBytes) {
+        return { type: 'limit', kind: 'field-total-bytes', max: limits.fieldTotalBytes };
+      }
+    }
     parsedParts.push({ headers, bodyStart, bodyEnd });
     cursor = suffix;
   }
@@ -330,6 +346,7 @@ export const multipartLimitMessage = (result: Extract<MultipartFormDataResult, {
   case 'files': return `Multipart request body supports at most ${result.max} file fields.`;
   case 'header-bytes': return `Each multipart part header must not exceed ${result.max} bytes.`;
   case 'field-bytes': return `Each multipart text field must not exceed ${result.max} bytes.`;
+  case 'field-total-bytes': return `Multipart text fields must not exceed ${result.max} bytes in total.`;
   }
 };
 
