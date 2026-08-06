@@ -139,6 +139,7 @@ test.each([
   Reflect.set(globalThis, 'FixedLengthStream', FailingFixedLengthStream);
   vi.stubGlobal('fetch', vi.fn(async () => {
     await writeStarted;
+    await Promise.resolve();
     throw fetchError;
   }));
   try {
@@ -182,17 +183,18 @@ test('direct fetch bounds late FixedLengthStream cleanup rejection and observes 
   Reflect.set(globalThis, 'FixedLengthStream', LateFailingFixedLengthStream);
   vi.stubGlobal('fetch', vi.fn(async () => {
     await writeStarted;
+    await Promise.resolve();
     throw fetchError;
   }));
   try {
-    const pending = directFetcher('https://example.test', {
+    const rejectionPending = directFetcher('https://example.test', {
       method: 'POST',
       body: createReplayableBody([Uint8Array.of(1, 2, 3)]),
-    });
+    }).catch((error: unknown) => error) as Promise<AggregateError>;
     await writeStarted;
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(5_000);
-    const rejection = await pending.catch((error: unknown) => error) as AggregateError;
+    const rejection = await rejectionPending;
 
     expect(rejection).toBeInstanceOf(AggregateError);
     expect(rejection.errors[0]).toBe(fetchError);
