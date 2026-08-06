@@ -227,6 +227,7 @@ export const userspaceTls = async (
         readonly message: string;
       };
   let terminal: Promise<TerminalOutcome> | null = null;
+  const currentTerminal = (): Promise<TerminalOutcome> | null => terminal;
   let terminate!: (intent: TerminalIntent) => Promise<TerminalOutcome>;
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
@@ -548,8 +549,9 @@ export const userspaceTls = async (
     throw outcome.type === 'error' ? outcome.error : err;
   }
 
-  if (terminal !== null) {
-    const outcome = await terminal;
+  const pendingTerminal = currentTerminal();
+  if (pendingTerminal !== null) {
+    const outcome = await pendingTerminal;
     if (outcome.type === 'error') throw outcome.error;
   }
 
