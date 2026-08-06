@@ -42,7 +42,12 @@ test('the API-key OWS migration canonicalizes every transport credential into th
         authStyle: 'bearer',
         apiKey: '\t custom key \t',
         endpoints: { chatCompletions: {} },
-        ingressHeadersRules: [],
+        ingressHeadersRules: [
+          { key: 'x-route', value: ' \t configured \t' },
+          { key: 'x-empty', value: ' \t ' },
+          { key: 'x-internal', value: 'a \t b' },
+          { key: 'x-delete', value: null },
+        ],
         modelsFetch: { enabled: false },
         models: [],
       }));
@@ -77,6 +82,12 @@ test('the API-key OWS migration canonicalizes every transport credential into th
   const configs = new Map(rows.map(row => [row.id, JSON.parse(row.config_json) as Record<string, unknown>]));
 
   assertEquals(configs.get('custom')?.apiKey, 'custom key');
+  assertEquals(configs.get('custom')?.ingressHeadersRules, [
+    { key: 'x-route', value: 'configured' },
+    { key: 'x-empty', value: '' },
+    { key: 'x-internal', value: 'a \t b' },
+    { key: 'x-delete', value: null },
+  ]);
   assertEquals(configs.get('azure')?.apiKey, 'azure\tkey');
   assertEquals(configs.get('ollama')?.apiKey, 'ollama key');
   assertEquals('apiKey' in configs.get('ollama_blank')!, false);
