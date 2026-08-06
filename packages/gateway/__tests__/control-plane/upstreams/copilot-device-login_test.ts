@@ -7,7 +7,6 @@ const modelsCacheMock = vi.hoisted<{ error: Error | null }>(() => ({ error: null
 
 vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
   fetchUpstreamModelsCached: () => modelsCacheMock.error ? Promise.reject(modelsCacheMock.error) : Promise.resolve([]),
-  clearInFlightForTesting: () => {},
 }));
 
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
@@ -306,15 +305,23 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
     },
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_existing_copilot', name: 'Pinned Copilot', sortOrder: 9 });
+  const concurrentQuota = {
+    fetchedAt: 1_700_000_000_000,
+    data: { observed_at: '2026-08-06T00:00:00.000Z', reset_at: null, quotas: {} },
+  };
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(existing);
 
   await withMockedFetch(
-    request => {
+    async request => {
       const url = new URL(request.url);
       if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_refreshed'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        await repo.upstreams.saveState(existing.id, current => ({
+          ...(current as Record<string, unknown>),
+          quotaSnapshot: concurrentQuota,
+        }), { kind: 'copilot', config: existing.config });
         return jsonResponse({
           token: 'ct_refreshed',
           expires_at: Math.floor(Date.now() / 1000) + 1500,
@@ -337,9 +344,13 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
         body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: 'up_existing_copilot' }, deviceCode: 'device' }),
       });
       assertEquals(response.status, 200);
-      const body = (await response.json()) as { status: string; patch: { config: { githubToken: string } } };
+      const body = (await response.json()) as {
+        status: string;
+        patch: { config: { githubToken: string }; state: { quotaSnapshot: unknown } };
+      };
       assertEquals(body.status, 'complete');
       assertEquals(body.patch.config.githubToken, 'ghu_refreshed');
+      assertEquals(body.patch.state.quotaSnapshot, concurrentQuota);
     },
   );
 
@@ -351,8 +362,58 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   assertEquals(rows[0].name, 'Pinned Copilot');
   assertEquals(rows[0].sortOrder, 9);
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_refreshed');
-  const persistedState = rows[0].state as { copilotToken: { baseUrl: string } | null } | null;
+  const persistedState = rows[0].state as { copilotToken: { baseUrl: string } | null; quotaSnapshot: unknown } | null;
   assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
+  assertEquals(persistedState?.quotaSnapshot, concurrentQuota);
+});
+
+test('/api/upstreams/copilot/oauth/device-login/poll cannot overwrite a newer credential generation', async () => {
+  const { repo, adminSession, githubAccount } = await setupAppTest({
+    githubAccount: { token: 'ghu_old', user: githubUser },
+  });
+  const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_reauthenticated_copilot' });
+  const replacementConfig = {
+    githubHost: 'github.com',
+    githubToken: 'ghu_newer',
+    user: { ...githubUser, id: 999, login: 'newer-login' },
+  };
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(existing);
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_stale_completion'));
+      if (url.pathname === '/user') return jsonResponse(githubUser);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        await repo.upstreams.updateFields(existing.id, 'copilot', {
+          config: replacementConfig,
+          state: null,
+          updatedAt: new Date().toISOString(),
+        }, { clearModelsCache: true });
+        return jsonResponse({
+          token: 'ct_stale_completion',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ record: { ...copilotBlueprintEnvelope, id: existing.id }, deviceCode: 'device' }),
+      });
+      assertEquals(response.status, 409);
+      assertEquals((await response.json() as { status: string }).status, 'error');
+    },
+  );
+
+  const stored = await repo.upstreams.getById(existing.id);
+  assertEquals(stored?.config, replacementConfig);
+  assertEquals(stored?.state, null);
 });
 
 test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache before warming', async () => {

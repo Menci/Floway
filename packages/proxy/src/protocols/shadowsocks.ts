@@ -26,6 +26,7 @@ import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { type Aead, leNonce, makeAead } from './shadowsocks-aead.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '@floway-dev/http/cleanup';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -88,16 +89,32 @@ const dialShadowsocksInner = async (
   }
 
   const reader = socket.readable.getReader();
-  const readExactly = makeExactReader(reader, 'SS');
-  let readerSettlement: Promise<void> | null = null;
-  const settleReader = (reason?: unknown): Promise<void> => {
-    readerSettlement ??= (async () => {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally {
-        try { reader.releaseLock(); } catch { /* lock already released */ }
-        await socket.close().catch(() => {});
+  let readerFailed = false;
+  const trackedReader = {
+    read: async () => {
+      try {
+        return await reader.read();
+      } catch (error) {
+        readerFailed = true;
+        throw error;
       }
-    })();
+    },
+  } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+  const readExactly = makeExactReader(trackedReader, 'SS');
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> => {
+    readerSettlement ??= Promise.all([
+      collectCleanupFailures([
+        ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+        () => reader.releaseLock(),
+      ]),
+      collectCleanupFailures([async () => await socket.close()]),
+    ]).then(([readerFailures, socketFailures]) => [...readerFailures, ...socketFailures]);
     return readerSettlement;
+  };
+  const settleReaderOrThrow = async (reason?: unknown): Promise<void> => {
+    const failures = await settleReader(reason, true);
+    if (failures.length > 0) throw cleanupFailure(failures, 'Shadowsocks reader cleanup failed');
   };
 
   // AEAD auth failure on the very first frame is overwhelmingly a wrong-
@@ -128,18 +145,19 @@ const dialShadowsocksInner = async (
         const error = !recvBootstrapped && !(e instanceof ProxyDialError)
           ? new ProxyDialError(`SS handshake decrypt failed: ${e instanceof Error ? e.message : String(e)}`, 'proxy-handshake', { cause: e })
           : e;
-        await settleReader(error);
-        controller.error(error);
+        const cleanupFailures = await settleReader(error, !readerFailed);
+        controller.error(failureWithCleanup(error, cleanupFailures, 'Shadowsocks read and cleanup both failed'));
       }
     },
     async cancel(reason) {
-      await settleReader(reason);
+      await settleReaderOrThrow(reason);
     },
   });
 
   const ssWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
       const w = socket.writable.getWriter();
+      let primary: { error: unknown } | null = null;
       try {
         let off = 0;
         while (off < chunk.byteLength) {
@@ -149,15 +167,29 @@ const dialShadowsocksInner = async (
           await w.write(frame);
           off += piece.byteLength;
         }
-      } finally {
-        w.releaseLock();
+      } catch (error) {
+        primary = { error };
+      }
+      const writerCleanup = await collectCleanupFailures([() => w.releaseLock()]);
+      if (primary !== null) {
+        const readerCleanup = await settleReader(primary.error, true);
+        throw failureWithCleanup(
+          primary.error,
+          [...writerCleanup, ...readerCleanup],
+          'Shadowsocks write and cleanup both failed',
+        );
+      }
+      if (writerCleanup.length > 0) {
+        const releaseFailure = cleanupFailure(writerCleanup, 'Shadowsocks writer release failed');
+        const readerCleanup = await settleReader(releaseFailure, true);
+        throw failureWithCleanup(releaseFailure, readerCleanup, 'Shadowsocks writer and reader cleanup both failed');
       }
     },
     async close() {
-      await settleReader();
+      await settleReaderOrThrow();
     },
     async abort(reason) {
-      await settleReader(reason);
+      await settleReaderOrThrow(reason);
     },
   });
 

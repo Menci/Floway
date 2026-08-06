@@ -4,8 +4,7 @@ function Install-SetupHomebrewCask {
   param([string]$Cask)
   $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $brew) { Stop-Setup 'Homebrew is required to install agent CLIs on macOS.' }
-  $timeoutSeconds = Get-SetupTimeoutSeconds 600
-  Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds $timeoutSeconds
+  Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds 600
 }
 
 # npm on Windows is commonly a .cmd launcher, which ProcessStartInfo cannot
@@ -21,8 +20,7 @@ function Install-SetupNpmPackage {
   $npmLiteral = "'" + $npm.Source.Replace("'", "''") + "'"
   $packageLiteral = "'" + $Package.Replace("'", "''") + "'"
   $command = "& $npmLiteral install --global $packageLiteral; exit `$LASTEXITCODE"
-  $timeoutSeconds = Get-SetupTimeoutSeconds 600
-  Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds $timeoutSeconds
+  Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds 600
 }
 
 # Execute a downloaded installer in a fresh interpreter. The script travels
@@ -69,10 +67,8 @@ function Invoke-SetupInterpreterBody {
 
 function Invoke-SetupPowerShellBody {
   param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
-  $pwsh = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $null }
-    else { Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }
-  $exe = if ($env:AGENT_SETUP_TEST_POWERSHELL_EXE) { $env:AGENT_SETUP_TEST_POWERSHELL_EXE }
-    elseif ($pwsh) { $pwsh.Source }
+  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $exe = if ($pwsh) { $pwsh.Source }
     else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
   $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
   Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $exe -Arguments "-NoProfile -NonInteractive ${executionPolicy}-Command -"
@@ -87,7 +83,7 @@ function Invoke-SetupShellBody {
 
 function Get-SetupRemoteInstaller {
   param([string]$Uri)
-  $maxBytes = if ($env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES) { [int]$env:AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES } else { 8388608 }
+  $maxBytes = 8388608
   $handler = New-Object System.Net.Http.HttpClientHandler
   $client = New-Object System.Net.Http.HttpClient($handler)
   $cancellation = New-Object System.Threading.CancellationTokenSource
@@ -122,7 +118,16 @@ function Get-SetupRemoteInstaller {
     $encoding = New-Object System.Text.UTF8Encoding($false, $true)
     $charset = $response.Content.Headers.ContentType.CharSet
     if ($charset) {
-      try { $encoding = [System.Text.Encoding]::GetEncoding($charset.Trim('"')) } catch { }
+      try {
+        $declaredEncoding = [System.Text.Encoding]::GetEncoding($charset.Trim('"'))
+        $encoding = [System.Text.Encoding]::GetEncoding(
+          $declaredEncoding.CodePage,
+          [System.Text.EncoderFallback]::ExceptionFallback,
+          [System.Text.DecoderFallback]::ExceptionFallback
+        )
+      } catch {
+        Stop-Setup "the installer response declared an invalid or unsupported charset ($charset)." $_.Exception
+      }
     }
     $body = $encoding.GetString($content.ToArray())
     if (($body.Length -gt 0) -and ([int]$body[0] -eq 0xfeff)) { $body = $body.Substring(1) }
@@ -155,9 +160,8 @@ function Invoke-SetupRemoteInstaller {
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
-  $timeoutSeconds = Get-SetupTimeoutSeconds 120
-  if ($Shell) { Invoke-SetupShellBody -Body $body -TimeoutSeconds $timeoutSeconds }
-  else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
+  if ($Shell) { Invoke-SetupShellBody -Body $body -TimeoutSeconds 120 }
+  else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds 120 -BypassExecutionPolicy:$BypassExecutionPolicy }
 }
 
 function Test-SetupApplicationFile {

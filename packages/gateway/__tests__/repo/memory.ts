@@ -58,6 +58,8 @@ import type {
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
+  UpstreamCredentialGeneration,
+  UpstreamCredentialsPatch,
   UpstreamFieldsPatch,
   UsageRecord,
   UsageOverviewAxis,
@@ -74,6 +76,7 @@ import type {
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
 import { usageBucketIdentityKey, usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
+import { assertStorageId } from '../../src/shared/storage-id.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
@@ -921,21 +924,39 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // an existing row keeps whatever the refresh path last wrote there, and a new
   // row starts uncached whatever the caller's record carried.
   save(upstream: UpstreamRecord): Promise<void> {
-    const existing = this.store.get(upstream.id);
-    const preserved = existing
-      ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
-      : { ...upstream, modelsCache: null };
-    this.store.set(preserved.id, cloneUpstreamRecord(preserved));
-    return Promise.resolve();
+    assertStorageId(upstream.id, 'upstream id');
+    return this.mutations.run(() => {
+      const normalized = this.normalizeProxyFallbackList(upstream);
+      this.assertProxyReferencesExist(normalized);
+      const existing = this.store.get(normalized.id);
+      const preserved = existing
+        ? { ...normalized, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
+        : { ...normalized, modelsCache: null };
+      this.store.set(preserved.id, cloneUpstreamRecord(preserved));
+    });
   }
 
   saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
-    const existing = this.store.get(upstream.id);
-    const next = existing
-      ? { ...upstream, createdAt: existing.createdAt, modelsCache: null }
-      : { ...upstream, modelsCache: null };
-    this.store.set(next.id, cloneUpstreamRecord(next));
-    return Promise.resolve();
+    assertStorageId(upstream.id, 'upstream id');
+    return this.mutations.run(() => {
+      const normalized = this.normalizeProxyFallbackList(upstream);
+      this.assertProxyReferencesExist(normalized);
+      const existing = this.store.get(normalized.id);
+      const next = existing
+        ? { ...normalized, createdAt: existing.createdAt, modelsCache: null }
+        : { ...normalized, modelsCache: null };
+      this.store.set(next.id, cloneUpstreamRecord(next));
+    });
+  }
+
+  private normalizeProxyFallbackList(upstream: UpstreamRecord): UpstreamRecord {
+    return { ...upstream, proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList) };
+  }
+
+  private assertProxyReferencesExist(upstream: UpstreamRecord): void {
+    if (upstream.proxyFallbackList.some(entry => !isDirectFallbackId(entry.id) && !this.proxyExists(entry.id))) {
+      throw new Error(`Upstream ${upstream.id} references a proxy that does not exist`);
+    }
   }
 
   updateFields(
@@ -957,6 +978,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
           ? existing.updatedAt
           : patch.updatedAt,
         modelsCache: options.clearModelsCache ? null : existing.modelsCache,
+      };
+      this.store.set(id, cloneUpstreamRecord(next));
+      return cloneUpstreamRecord(next);
+    });
+  }
+
+  replaceCredentials(
+    id: string,
+    expectedKind: UpstreamRecord['kind'],
+    expected: UpstreamCredentialGeneration,
+    mutate: (current: UpstreamRecord) => UpstreamCredentialsPatch,
+  ): Promise<UpstreamRecord | null> {
+    return this.mutations.run(() => {
+      const existing = this.store.get(id);
+      if (existing?.kind !== expectedKind) return null;
+      if (
+        existing.createdAt !== expected.createdAt
+        || serializeStoredConfig(existing.config) !== serializeStoredConfig(expected.config)
+      ) {
+        throw new UpstreamGenerationMismatchError(id);
+      }
+      const patch = mutate(cloneUpstreamRecord(existing));
+      const next = {
+        ...existing,
+        ...patch,
+        updatedAt: patch.updatedAt < existing.updatedAt ? existing.updatedAt : patch.updatedAt,
+        modelsCache: null,
       };
       this.store.set(id, cloneUpstreamRecord(next));
       return cloneUpstreamRecord(next);
@@ -1323,6 +1371,7 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
 
 class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
+  private latestRevision = 0;
 
   constructor(
     private readonly upstreams: MemoryUpstreamRepo,
@@ -1332,6 +1381,18 @@ class MemoryProxyRepo implements ProxyRepo {
 
   hasNow(id: string): boolean {
     return this.store.has(id);
+  }
+
+  getNow(id: string): ProxyRecord | null {
+    return this.store.get(id) ?? null;
+  }
+
+  private takeRevision(): number {
+    if (this.latestRevision === Number.MAX_SAFE_INTEGER) {
+      throw new RangeError('Proxy revision space exhausted');
+    }
+    this.latestRevision += 1;
+    return this.latestRevision;
   }
 
   list(): Promise<ProxyRecord[]> {
@@ -1348,11 +1409,14 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+    assertStorageId(input.id, 'proxy id');
+    if (this.store.has(input.id)) throw new Error(`Proxy ${input.id} already exists`);
     const now = new Date().toISOString();
     const record: ProxyRecord = {
       id: input.id,
       name: input.name,
       url: input.url,
+      revision: this.takeRevision(),
       createdAt: now,
       updatedAt: now,
       dialTimeoutSeconds: input.dialTimeoutSeconds,
@@ -1368,10 +1432,13 @@ class MemoryProxyRepo implements ProxyRepo {
     // Distinguish "absent" from "explicit null" — `??` would collapse a
     // deliberate clear back to the existing value.
     const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
+    const configChanged = (patch.url !== undefined && patch.url !== existing.url)
+      || (Object.hasOwn(patch, 'dialTimeoutSeconds') && nextDialTimeout !== existing.dialTimeoutSeconds);
     const updated: ProxyRecord = {
       ...existing,
       name: patch.name ?? existing.name,
       url: patch.url ?? existing.url,
+      revision: configChanged ? this.takeRevision() : existing.revision,
       dialTimeoutSeconds: nextDialTimeout,
       updatedAt: new Date().toISOString(),
     };
@@ -1399,15 +1466,22 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
+    assertStorageId(record.id, 'proxy id');
     // Upsert that mirrors the SQL ON CONFLICT path: preserve the existing
     // row's createdAt on collision so the import never overwrites the
     // local deployment's first-seen timestamp.
     const existing = this.store.get(record.id);
+    const revision = existing === undefined
+      || existing.url !== record.url
+      || existing.dialTimeoutSeconds !== record.dialTimeoutSeconds
+      ? this.takeRevision()
+      : existing.revision;
     const now = new Date().toISOString();
     const next: ProxyRecord = {
       id: record.id,
       name: record.name,
       url: record.url,
+      revision,
       dialTimeoutSeconds: record.dialTimeoutSeconds,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now,
@@ -1425,34 +1499,34 @@ class MemoryProxyRepo implements ProxyRepo {
 const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
 
 interface MemoryBackoffRow extends BackoffRow {
-  proxyUrl: string;
+  proxyRevision: number;
 }
 
 class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   private rows = new Map<string, MemoryBackoffRow>();
 
-  constructor(private getProxy: (proxyId: string) => Promise<ProxyRecord | null>) {}
+  constructor(private getProxy: (proxyId: string) => ProxyRecord | null) {}
 
   private key(proxyId: string, upstreamId: string): string {
     return JSON.stringify([proxyId, upstreamId]);
   }
 
-  async recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean> {
-    if ((await this.getProxy(proxyId))?.url !== proxyUrl) return false;
+  recordDialFailure(proxyId: string, upstreamId: string, proxyRevision: number, errorMessage: string): Promise<boolean> {
+    if (this.getProxy(proxyId)?.revision !== proxyRevision) return Promise.resolve(false);
     const k = this.key(proxyId, upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const existing = this.rows.get(k);
-    if (existing?.proxyUrl !== proxyUrl) {
+    if (existing?.proxyRevision !== proxyRevision) {
       this.rows.set(k, {
         proxyId,
         upstreamId,
-        proxyUrl,
+        proxyRevision,
         failCount: 1,
         expiresAt: now + 60,
         lastError: errorMessage,
         lastErrorAt: now,
       });
-      return true;
+      return Promise.resolve(true);
     }
     // Mirror the SQL UPSERT schedule (see SqlProxyBackoffRepo.recordDialFailure).
     // The exponent is clamped at 6 to stay within JS's 32-bit signed shift
@@ -1462,38 +1536,34 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
     this.rows.set(k, {
       proxyId,
       upstreamId,
-      proxyUrl,
+      proxyRevision,
       failCount: previousFailCount + 1,
       expiresAt: now + Math.min(60 * (1 << Math.min(previousFailCount, 6)), 3600),
       lastError: errorMessage,
       lastErrorAt: now,
     });
-    return true;
+    return Promise.resolve(true);
   }
 
-  async recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean> {
-    if ((await this.getProxy(proxyId))?.url !== proxyUrl) return false;
-    const key = this.key(proxyId, upstreamId);
-    if (this.rows.get(key)?.proxyUrl !== proxyUrl) return false;
-    return this.rows.delete(key);
+  recordDialSuccess(proxyId: string, upstreamId: string, proxyRevision: number): Promise<boolean> {
+    if (this.getProxy(proxyId)?.revision !== proxyRevision) return Promise.resolve(false);
+    return Promise.resolve(this.rows.delete(this.key(proxyId, upstreamId)));
   }
 
-  private async currentRows(): Promise<MemoryBackoffRow[]> {
-    const rows = [...this.rows.values()];
-    const current = await Promise.all(rows.map(async row => (await this.getProxy(row.proxyId))?.url === row.proxyUrl));
-    return rows.filter((_, index) => current[index]);
+  private currentRows(): MemoryBackoffRow[] {
+    return [...this.rows.values()].filter(row => this.getProxy(row.proxyId)?.revision === row.proxyRevision);
   }
 
-  async listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
-    return (await this.currentRows()).filter(r => r.upstreamId === upstreamId).map(cloneBackoffRow);
+  listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
+    return Promise.resolve(this.currentRows().filter(r => r.upstreamId === upstreamId).map(cloneBackoffRow));
   }
 
-  async listForProxy(proxyId: string): Promise<BackoffRow[]> {
-    return (await this.currentRows()).filter(r => r.proxyId === proxyId).map(cloneBackoffRow);
+  listForProxy(proxyId: string): Promise<BackoffRow[]> {
+    return Promise.resolve(this.currentRows().filter(r => r.proxyId === proxyId).map(cloneBackoffRow));
   }
 
-  async listAll(): Promise<BackoffRow[]> {
-    return (await this.currentRows()).map(cloneBackoffRow);
+  listAll(): Promise<BackoffRow[]> {
+    return Promise.resolve(this.currentRows().map(cloneBackoffRow));
   }
 
   resetForProxy(proxyId: string): Promise<void> {
@@ -1714,7 +1784,7 @@ export class InMemoryRepo implements Repo {
     const proxyHolder: { current?: MemoryProxyRepo } = {};
     const upstreams = new MemoryUpstreamRepo(mutations, id => proxyHolder.current?.hasNow(id) ?? false);
     this.upstreams = upstreams;
-    const proxyBackoffs = new MemoryProxyBackoffRepo(async id => await this.proxies.getById(id));
+    const proxyBackoffs = new MemoryProxyBackoffRepo(id => proxyHolder.current?.getNow(id) ?? null);
     const proxies = new MemoryProxyRepo(upstreams, async id => await proxyBackoffs.resetForProxy(id), mutations);
     proxyHolder.current = proxies;
     this.proxies = proxies;

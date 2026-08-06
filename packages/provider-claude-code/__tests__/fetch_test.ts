@@ -104,7 +104,10 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 const sseResponse = (status = 200, extraHeaders: Record<string, string> = {}): Response => new Response(
   new ReadableStream({
@@ -427,6 +430,92 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     const stored = readQuotaEntry();
     expect(stored).not.toBeNull();
   });
+
+  test('a delayed account A quota response cannot attach to re-imported account B', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const saveEntered = Promise.withResolvers<void>();
+    const releaseSave = Promise.withResolvers<void>();
+    initProviderRepo(() => ({
+      upstreams: {
+        getById: async () => currentRecord,
+        saveState: async (_id, mutate) => {
+          saveEntered.resolve();
+          await releaseSave.promise;
+          currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
+        },
+      },
+    }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: 'limited' }, {
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-reset': '1781805000',
+    }));
+    const background = captureBackgroundWrites();
+
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
+    });
+    await saveEntered.promise;
+    const accountBToken = { token: 'at_b', expiresAt: freshAccessTokenEntry.expiresAt, refreshedAt: 'b' };
+    seedAccount({
+      accountUuid: 'acc-b',
+      refreshToken: 'rt_b',
+      stateUpdatedAt: '2026-01-02T00:00:00Z',
+      accessToken: accountBToken,
+    });
+    releaseSave.resolve();
+    await background.settle();
+
+    expect(currentState().accounts[0]).toMatchObject({
+      accountUuid: 'acc-b',
+      refreshToken: 'rt_b',
+      accessToken: accountBToken,
+      quotaSnapshot: null,
+    });
+  });
+
+  test('an older rejected quota write cannot replace a newer allowed observation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const firstSaveEntered = Promise.withResolvers<void>();
+    const releaseFirstSave = Promise.withResolvers<void>();
+    let saves = 0;
+    initProviderRepo(() => ({
+      upstreams: {
+        getById: async () => currentRecord,
+        saveState: async (_id, mutate) => {
+          saves += 1;
+          if (saves === 1) {
+            firstSaveEntered.resolve();
+            await releaseFirstSave.promise;
+          }
+          currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
+        },
+      },
+    }));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(429, { error: 'limited' }, {
+        'anthropic-ratelimit-unified-status': 'rejected',
+        'anthropic-ratelimit-unified-reset': '1781805000',
+      }))
+      .mockResolvedValueOnce(sseResponse());
+    const older = captureBackgroundWrites();
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: older.call,
+    });
+    await firstSaveEntered.promise;
+
+    vi.setSystemTime(200_000);
+    const newer = captureBackgroundWrites();
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: newer.call,
+    });
+    await newer.settle();
+    releaseFirstSave.resolve();
+    await older.settle();
+
+    expect(readQuotaEntry()).toMatchObject({ fetchedAt: 200_000, data: { status: 'allowed' } });
+  });
 });
 
 // Body-sentinel terminal flips mirror sub2api / CRS detection of a
@@ -482,6 +571,47 @@ describe('callClaudeCodeMessages — terminal sentinel detection', () => {
     expect(account.state).toBe('refresh_failed');
     expect(account.stateMessage).toMatch(/Organization banned from OAuth by Anthropic/);
     expect(account.accessToken).toBeNull();
+  });
+
+  test('a delayed account A terminal response cannot invalidate re-imported account B', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const saveEntered = Promise.withResolvers<void>();
+    const releaseSave = Promise.withResolvers<void>();
+    initProviderRepo(() => ({
+      upstreams: {
+        getById: async () => currentRecord,
+        saveState: async (_id, mutate) => {
+          saveEntered.resolve();
+          await releaseSave.promise;
+          currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
+        },
+      },
+    }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, {
+      error: { type: 'invalid_request_error', message: 'organization has been disabled' },
+    }));
+    const background = captureBackgroundWrites();
+
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: background.call,
+    });
+    await saveEntered.promise;
+    const accountBToken = { token: 'at_b', expiresAt: freshAccessTokenEntry.expiresAt, refreshedAt: 'b' };
+    seedAccount({
+      accountUuid: 'acc-b',
+      refreshToken: 'rt_b',
+      stateUpdatedAt: '2026-01-02T00:00:00Z',
+      accessToken: accountBToken,
+    });
+    releaseSave.resolve();
+    await background.settle();
+
+    expect(currentState().accounts[0]).toMatchObject({
+      accountUuid: 'acc-b',
+      state: 'active',
+      refreshToken: 'rt_b',
+      accessToken: accountBToken,
+    });
   });
 
   test('400 invalid_request_error with unrelated message → surface verbatim, NO terminal flip', async () => {

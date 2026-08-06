@@ -22,6 +22,8 @@ export interface FakeServer {
   respond(bytes: Uint8Array | string): void;
   /** Close the dialer's readable (server EOF). */
   endResponse(): void;
+  /** Error the dialer's readable with the exact supplied reason. */
+  failResponse(reason: unknown): void;
   closed(): boolean;
 }
 
@@ -34,7 +36,13 @@ export interface FakeSocketDial {
   connectCount(): number;
 }
 
-export const makeFakeSocketDial = (): FakeSocketDial => {
+export interface FakeSocketFailures {
+  readonly readableCancel?: unknown;
+  readonly close?: unknown;
+  readonly writableWrite?: (index: number, chunk: Uint8Array) => void | Promise<void>;
+}
+
+export const makeFakeSocketDial = (failures: FakeSocketFailures = {}): FakeSocketDial => {
   let server: FakeServer | null = null;
   let resolveServer: ((s: FakeServer) => void) | null = null;
   const serverReady = new Promise<FakeServer>(resolve => { resolveServer = resolve; });
@@ -50,7 +58,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
         pendingConnectError = null;
         throw err;
       }
-      const { socket, srv } = makeFakeSocket();
+      const { socket, srv } = makeFakeSocket(failures);
       server = srv;
       resolveServer?.(srv);
       resolveServer = null;
@@ -66,7 +74,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
   };
 };
 
-const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
+const makeFakeSocket = (failures: FakeSocketFailures): { socket: DialedSocket; srv: FakeServer } => {
   let writeBuffer = new Uint8Array(0);
   const writeSizes: number[] = [];
   let writableClosed = false;
@@ -90,8 +98,9 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
   };
 
   const writable = new WritableStream<Uint8Array>({
-    write(chunk) {
+    async write(chunk) {
       writeSizes.push(chunk.byteLength);
+      await failures.writableWrite?.(writeSizes.length - 1, chunk);
       const next = new Uint8Array(writeBuffer.byteLength + chunk.byteLength);
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
@@ -111,6 +120,9 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
   let readableController!: ReadableStreamDefaultController<Uint8Array>;
   const readable = new ReadableStream<Uint8Array>({
     start(c) { readableController = c; },
+    cancel() {
+      if (failures.readableCancel !== undefined) throw failures.readableCancel;
+    },
   });
 
   const enc = new TextEncoder();
@@ -140,6 +152,7 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
       readableController.enqueue(new Uint8Array(u));
     },
     endResponse() { readableController.close(); },
+    failResponse(reason) { readableController.error(reason); },
     closed: () => closed,
   };
 
@@ -150,6 +163,7 @@ const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
       if (closed) return;
       closed = true;
       try { readableController.close(); } catch { /* already closed */ }
+      if (failures.close !== undefined) throw failures.close;
     },
   };
 

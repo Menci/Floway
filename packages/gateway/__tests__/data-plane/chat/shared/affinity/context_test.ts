@@ -8,7 +8,8 @@ const SECRET = '00'.repeat(32);
 
 describe('AffinityRequestContext', () => {
   test('rejects target access before candidate selection', () => {
-    expect(() => new AffinityRequestContext(SECRET).selectedTarget()).toThrow(Error);
+    const affinity = new AffinityRequestContext(SECRET);
+    expect(() => affinity.selectedTarget()).toThrow('Affinity target requested before a candidate was selected');
   });
 
   test('maps the selected candidate and its rule overlay into egress options', () => {
@@ -38,5 +39,6 @@ describe('AffinityRequestContext', () => {
 });
 
 test('affinity egress rejects a non-chat request context', () => {
-  expect(() => affinityEgressOptions(mockGatewayCtx())).toThrow(Error);
+  const ctx = mockGatewayCtx();
+  expect(() => affinityEgressOptions(ctx)).toThrow('Chat event result reached responder without affinity context');
 });

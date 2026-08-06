@@ -104,7 +104,7 @@ describe('createCodexProvider', () => {
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });
 
-  test('getProvidedModels invalidates a rejected cached token and retries with one forced refresh', async () => {
+  test('getProvidedModels invalidates a rejected cached token and refreshes once', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response('{"error":"expired"}', {
         status: 401,

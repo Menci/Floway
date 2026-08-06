@@ -91,6 +91,10 @@ describe('dial dispatch', () => {
 });
 
 describe('dial deadline', () => {
+  beforeEach(() => {
+    for (const mock of allDialerMocks) mock.mockClear();
+  });
+
   it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, 0x80000000])(
     'rejects an unrepresentable timer delay %s before dispatch',
     async dialTimeoutMs => {

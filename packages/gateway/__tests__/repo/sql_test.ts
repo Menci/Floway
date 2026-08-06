@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
-import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
+import { SqlRepo, UPSTREAM_CAS_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertRejects, stubProviderModel } from '@floway-dev/test-utils';
@@ -204,6 +204,42 @@ test('SQL upstream repo updateFields preserves unrelated concurrent fields and c
   assertEquals((await repo.getById(original.id))?.name, 'Concurrent rename');
 });
 
+test('SQL upstream repo replaceCredentials re-applies its mutation over a concurrent state write', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  const original = baseRecord();
+  await repo.save(original);
+  await repo.saveModelsCache(original.id, generationFor(original), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'old-credential-model' })],
+  });
+  const racing = new SqlRepo(withWriterRacingReads(db, () =>
+    db.prepare('UPDATE upstreams SET state_json = ? WHERE id = ?')
+      .bind(JSON.stringify({ accounts: [{ ...goodAccount, state_message: 'written by sibling' }] }), original.id)
+      .run(), 1)).upstreams;
+
+  const seen: string[] = [];
+  const updated = await racing.replaceCredentials(original.id, 'codex', {
+    createdAt: original.createdAt,
+    config: original.config,
+  }, current => {
+    const [account] = (current.state as { accounts: Array<typeof goodAccount & { state_message?: string }> }).accounts;
+    seen.push(account.state_message ?? '(none)');
+    return {
+      config: current.config,
+      state: { accounts: [{ ...account, refresh_token: 'rt_v2' }] },
+      updatedAt: '2026-06-05T00:00:01.000Z',
+    };
+  });
+
+  assertEquals(seen, ['(none)', 'written by sibling']);
+  assertEquals(updated?.state, {
+    accounts: [{ ...goodAccount, refresh_token: 'rt_v2', state_message: 'written by sibling' }],
+  });
+  assertEquals(updated?.modelsCache, null);
+});
+
 test('SQL model-cache generation accepts semantically equal noncanonical config JSON', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
@@ -280,7 +316,10 @@ const withWriterRacingReads = (db: SqlDatabase, race: () => Promise<unknown>, ti
     },
   });
   return {
-    prepare: query => wrapStatement(db.prepare(query), query.includes('state_json FROM upstreams WHERE id')),
+    prepare: query => wrapStatement(
+      db.prepare(query),
+      query.includes('FROM upstreams WHERE id') && query.includes('state_json'),
+    ),
     exec: sql => db.exec(sql),
   };
 };
@@ -364,7 +403,7 @@ test('SQL upstream repo saveState gives up after a bounded number of lost races'
     'consecutive races',
   );
   // Every attempt ran the mutator, and none of them landed.
-  assertEquals(attempts, UPSTREAM_STATE_WRITE_ATTEMPTS);
+  assertEquals(attempts, UPSTREAM_CAS_WRITE_ATTEMPTS);
   const stored = (await repo.getById('up_test'))?.state as { accounts: { refresh_token: string }[] };
   assertEquals(stored.accounts[0].refresh_token, goodAccount.refresh_token);
 });

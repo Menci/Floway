@@ -169,6 +169,55 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
     });
     expect(p.transport.readable.locked).toBe(false);
   });
+
+  it('keeps a transport read failure primary when reader release also fails', async () => {
+    const readError = new Error('transport read failed');
+    const releaseError = new Error('reader release failed');
+    const transport = {
+      readable: {
+        getReader: () => ({
+          read: async () => { throw readError; },
+          cancel: async () => {},
+          releaseLock: () => { throw releaseError; },
+        }),
+      } as unknown as ReadableStream<Uint8Array>,
+      writable: new WritableStream<Uint8Array>(),
+    };
+    const result = await vlessFrameOverStream(transport, UUID, target);
+
+    const rejection = await result.readable.getReader().read().catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([readError, releaseError]);
+    expect(rejection.cause).toBe(readError);
+  });
+
+  it('rejects consumer cancellation when owned-reader cancellation fails', async () => {
+    const cancelError = new Error('transport cancel failed');
+    const transport = {
+      readable: {
+        getReader: () => ({
+          read: async () => await new Promise<ReadableStreamReadResult<Uint8Array>>(() => {}),
+          cancel: async () => { throw cancelError; },
+          releaseLock: () => {},
+        }),
+      } as unknown as ReadableStream<Uint8Array>,
+      writable: new WritableStream<Uint8Array>(),
+    };
+    const result = await vlessFrameOverStream(transport, UUID, target);
+
+    await expect(result.readable.cancel('stop')).rejects.toBe(cancelError);
+  });
+
+  it('preserves a real transport read rejection without cancelling the errored reader again', async () => {
+    const readError = new Error('transport read failed');
+    const source = new ReadableStream<Uint8Array>({ pull: async () => { throw readError; } });
+    const result = await vlessFrameOverStream({
+      readable: source,
+      writable: new WritableStream<Uint8Array>(),
+    }, UUID, target);
+
+    await expect(result.readable.getReader().read()).rejects.toBe(readError);
+    expect(source.locked).toBe(false);
+  });
 });
 
 describe('vlessFrameOverStream — UUID parsing', () => {

@@ -10,7 +10,7 @@ import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { flushBackground, flushBackgroundExpectingFailures } from '../../test-utils/background-tracker.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assert, jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -74,8 +74,10 @@ const requestGenerationStream = (apiKey: string): Promise<Response> =>
 
 const assertFailedStreamSettlement = async (
   repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  expectedBackgroundFailures: readonly unknown[] = [],
 ): Promise<void> => {
-  await flushBackground();
+  if (expectedBackgroundFailures.length === 0) await flushBackground();
+  else await flushBackgroundExpectingFailures(...expectedBackgroundFailures);
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0]?.requests, 1);
@@ -728,21 +730,26 @@ test('/v1/images/edits streams multipart text true and preserves image and mask 
   assertEquals(tokenCountsFromUsage(usage[0]!), { input: 6, input_image: 4, output_image: 50 });
 });
 
+const upstreamImageStreamFailure = new Error('upstream image stream failed');
+
 test.each([
   {
     name: 'EOF without completed',
     body: () => imageSseResponse(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==', partial_image_index: 0 })),
     forwarded: 'image_generation.partial_image',
+    expectedBackgroundFailures: [] as unknown[],
   },
   {
     name: 'malformed event JSON',
     body: () => imageSseResponse('event: image_generation.partial_image\ndata: {not-json}\n\n'),
     forwarded: '{not-json}',
+    expectedBackgroundFailures: [] as unknown[],
   },
   {
     name: 'a foreign DONE sentinel',
     body: () => imageSseResponse('data: [DONE]\n\n'),
     forwarded: '[DONE]',
+    expectedBackgroundFailures: [] as unknown[],
   },
   {
     name: 'upstream body read error',
@@ -756,13 +763,14 @@ test.each([
             controller.enqueue(encoder.encode(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==' })));
             return;
           }
-          controller.error(new Error('upstream image stream failed'));
+          controller.error(upstreamImageStreamFailure);
         },
       }));
     },
     forwarded: 'image_generation.partial_image',
+    expectedBackgroundFailures: [upstreamImageStreamFailure, upstreamImageStreamFailure],
   },
-])('/v1/images/generations forwards and records $name as a failed request-only stream', async ({ body, forwarded }) => {
+])('/v1/images/generations forwards and records $name as a failed request-only stream', async ({ body, forwarded, expectedBackgroundFailures }) => {
   const { apiKey, repo } = await setupAppTest();
   await registerImagesUpstream(repo);
   await withMockedFetch(
@@ -773,7 +781,7 @@ test.each([
       assertEquals((await response.text()).includes(forwarded), true);
     },
   );
-  await assertFailedStreamSettlement(repo);
+  await assertFailedStreamSettlement(repo, expectedBackgroundFailures);
 });
 
 test('/v1/images/generations latches an error event after completed while retaining usage', async () => {

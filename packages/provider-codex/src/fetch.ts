@@ -1,4 +1,4 @@
-import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
+import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, mintCodexAccessToken, recoverCodexAccessTokenAfter401, type CodexCredentialGeneration } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -82,18 +82,15 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
-// Pre-fetch gates + initial access-token mint.
-const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  if (opts.account.state !== 'active') {
-    return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
-  }
-
+const ensureCodexAccessForCall = async (
+  opts: CodexBackendCallBase,
+  rejectedAccessToken?: string,
+): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   try {
-    const entry = await ensureCodexAccessToken(
-      opts.upstreamId,
-      opts.account.chatgptAccountId,
-      refresh => mintAccessToken(opts, refresh),
-    );
+    const mint = (refresh: string, signal: AbortSignal) => mintAccessToken(opts, refresh, signal);
+    const entry = rejectedAccessToken === undefined
+      ? await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, mint, false, opts.signal)
+      : await recoverCodexAccessTokenAfter401(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken, mint, opts.signal);
     return { ok: true, accessToken: entry.token };
   } catch (err) {
     if (err instanceof CodexCredentialRefreshTerminatedError) {
@@ -107,8 +104,21 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   }
 };
 
-const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string) =>
-  mintCodexAccessToken(refreshToken, opts.call.fetcher, newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken));
+// Pre-fetch gates + initial access-token mint.
+const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+  if (opts.account.state !== 'active') {
+    return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
+  }
+  return await ensureCodexAccessForCall(opts);
+};
+
+const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string, signal: AbortSignal) =>
+  mintCodexAccessToken(
+    refreshToken,
+    opts.call.fetcher,
+    newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken),
+    signal,
+  );
 
 interface CodexRequestIdentity {
   installationId: string;
@@ -380,27 +390,11 @@ const dispatchCodexHttpCall = async (
   return response;
 };
 
-// Force-mint a fresh access token after a 401. The forced ensure re-reads the
-// current refresh token, so a request whose initial mint rotated rt1 → rt2
-// cannot retry with its stale captured rt1. It also shares the credential's
-// single-flight entry, collapsing simultaneous 401 retries onto one rotation.
+// Replace a rejected access token after a 401. Conditional invalidation means a
+// late 401 reuses a sibling's newer token, while simultaneous rejections share
+// the one mint that follows the successful clear.
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase, rejectedAccessToken: string): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken);
-  try {
-    const minted = await ensureCodexAccessToken(
-      opts.upstreamId,
-      opts.account.chatgptAccountId,
-      refreshToken => mintAccessToken(opts, refreshToken),
-      true,
-    );
-    return { ok: true, accessToken: minted.token };
-  } catch (err) {
-    if (err instanceof CodexCredentialRefreshTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
-      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
-    }
-    throw err;
-  }
+  return await ensureCodexAccessForCall(opts, rejectedAccessToken);
 };
 
 const performStreamingResponsesCall = async (

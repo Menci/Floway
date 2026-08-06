@@ -7,6 +7,10 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
+    },
+    "./cleanup": {
+      "import": "./src/cleanup.ts",
+      "types": "./src/cleanup.ts"
     }
   },
   "scripts": {

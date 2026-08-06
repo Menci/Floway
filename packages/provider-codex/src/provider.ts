@@ -1,4 +1,4 @@
-import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
+import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, mintCodexAccessToken, recoverCodexAccessTokenAfter401 } from './access-token.ts';
 import { type CodexUpstreamConfig } from './config.ts';
 import { assertCodexUpstreamCredentials } from './credentials.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
@@ -102,15 +102,19 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // `refresh_failed` so the dashboard stops claiming the credential is
       // active, then rethrow so the caller's models-cache records the
       // failure and surfaces it to the operator.
-      const ensureCatalogAccess = async (force = false) => {
+      const ensureCatalogAccess = async (rejectedAccessToken?: string) => {
         try {
-          return await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken => {
+          const mint = (refreshToken: string, signal: AbortSignal) => {
             return mintCodexAccessToken(
               refreshToken,
               fetcher,
               newRefreshToken => persistRefreshTokenRotation(refreshToken, newRefreshToken),
+              signal,
             );
-          }, force);
+          };
+          return rejectedAccessToken === undefined
+            ? await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, mint)
+            : await recoverCodexAccessTokenAfter401(record.id, accountIdentity.chatgptAccountId, rejectedAccessToken, mint);
         } catch (err) {
           if (err instanceof CodexCredentialRefreshTerminatedError) {
             await persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
@@ -129,8 +133,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
         raw = await fetchCatalog(access.token);
       } catch (error) {
         if (!(error instanceof CodexModelsFetchError) || error.status !== 401) throw error;
-        await invalidateCodexAccessToken(record.id, accountIdentity.chatgptAccountId, access.token);
-        access = await ensureCatalogAccess(true);
+        access = await ensureCatalogAccess(access.token);
         raw = await fetchCatalog(access.token);
       }
       // Surface every model the upstream returns, including ones whose

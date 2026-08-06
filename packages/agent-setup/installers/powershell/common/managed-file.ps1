@@ -26,9 +26,7 @@ function Protect-SetupFile {
 
 # Rollback retains a backup when restoration fails so manual recovery remains
 # possible, warning with the preserved path and the action to take — matching
-# the Bash installer. The AGENT_SETUP_TEST_FAIL_RESTORE hook, read from the
-# ambient environment and never emitted by the gateway, forces the restore
-# rename to fail so the harness can assert that guidance.
+# the Bash installer.
 function Restore-SetupManagedFile {
   param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel)
   if ($Existed) {
@@ -37,7 +35,6 @@ function Restore-SetupManagedFile {
       return $false
     }
     try {
-      if ($env:AGENT_SETUP_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
       # Secret-bearing backups were already owner-only before any mutation.
       # Moving one back preserves that protection without a second operation
       # that could fail after the backup path has been consumed.

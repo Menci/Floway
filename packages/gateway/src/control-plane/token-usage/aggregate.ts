@@ -59,13 +59,14 @@ interface UsageDisplayFields {
 
 const aggregateUsage = <Coordinate extends object>(
   records: readonly UsageRecord[],
-  coordinateFor: (record: UsageRecord) => { key: string; fields: Coordinate },
+  coordinateFor: (record: UsageRecord) => { identity: readonly (number | string)[]; fields: Coordinate },
   compare: (left: UsageDisplayFields & Coordinate, right: UsageDisplayFields & Coordinate) => number,
 ): Array<UsageDisplayFields & Coordinate> => {
   const buckets = new Map<string, UsageDisplayFields & Coordinate>();
   for (const record of records) {
     const coordinate = coordinateFor(record);
-    let existing = buckets.get(coordinate.key);
+    const key = JSON.stringify(coordinate.identity);
+    let existing = buckets.get(key);
     if (!existing) {
       existing = {
         ...coordinate.fields,
@@ -75,7 +76,7 @@ const aggregateUsage = <Coordinate extends object>(
         metrics: [],
         cost: null,
       };
-      buckets.set(coordinate.key, existing);
+      buckets.set(key, existing);
     }
     accumulate(existing, record);
   }
@@ -85,7 +86,7 @@ const aggregateUsage = <Coordinate extends object>(
 export function aggregateUsageForDisplay(records: readonly UsageRecord[]): DisplayUsageRecord[] {
   return aggregateUsage(
     records,
-    record => ({ key: `${record.keyId}\0${record.model}\0${record.hour}`, fields: { keyId: record.keyId } }),
+    record => ({ identity: [record.keyId, record.model, record.hour], fields: { keyId: record.keyId } }),
     (left, right) => left.hour.localeCompare(right.hour) || left.keyId.localeCompare(right.keyId) || left.model.localeCompare(right.model),
   );
 }
@@ -105,7 +106,7 @@ export function aggregateUsageByUserForDisplay(
     records,
     record => {
       const userId = usageUserIdForKey(record.keyId, keyToUser);
-      return { key: `${userId}\0${record.model}\0${record.hour}`, fields: { userId } };
+      return { identity: [userId, record.model, record.hour], fields: { userId } };
     },
     (left, right) => left.hour.localeCompare(right.hour) || left.userId - right.userId || left.model.localeCompare(right.model),
   );

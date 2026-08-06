@@ -42,7 +42,7 @@ interface WorkerWebSocket extends WebSocket {
 
 interface ResponsesWebSocketSocket {
   readonly readyState: number;
-  readonly bufferedAmount?: number;
+  readonly bufferedAmount: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
 }
@@ -947,7 +947,7 @@ const sendJson = (
     byteLength = utf8ByteLength(text);
     if (
       byteLength > RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes
-      || (socket.bufferedAmount ?? 0) + byteLength > RESPONSES_WEBSOCKET_LIMITS.maxBufferedOutputBytes
+      || socket.bufferedAmount + byteLength > RESPONSES_WEBSOCKET_LIMITS.maxBufferedOutputBytes
     ) {
       return { ok: false, error: new Error('Responses WebSocket downstream buffer capacity exceeded') };
     }

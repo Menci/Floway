@@ -45,7 +45,8 @@ const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID())
 // (caozhiyuan/copilot-api retries every refresh failure).
 const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
 
-// Two-level Copilot token cache: in-process (60s) memo keyed by upstream id,
+// Two-level Copilot token cache: in-process (60s) memo keyed by upstream and
+// credential generation,
 // backed by per-upstream `state_json.copilotToken` for cross-isolate / cold-
 // start sharing. The persisted entry survives a worker eviction; the in-
 // process memo avoids a DB read on every request inside one isolate.
@@ -69,8 +70,24 @@ interface InFlightTokenRefresh {
 
 const inFlightTokenRefreshes = new Map<string, InFlightTokenRefresh>();
 
-const tokenCacheKey = (upstreamId: string, githubHost: string, githubToken: string): string =>
-  JSON.stringify([upstreamId, githubHost, githubToken]);
+const tokenCacheKey = (upstreamId: string, config: CopilotUpstreamConfig): string =>
+  JSON.stringify([
+    upstreamId,
+    config.githubHost,
+    config.githubToken,
+    config.user.id,
+    config.user.login,
+    config.user.name,
+    config.user.avatar_url,
+  ]);
+
+const sameCopilotConfig = (left: CopilotUpstreamConfig, right: CopilotUpstreamConfig): boolean =>
+  left.githubHost === right.githubHost
+  && left.githubToken === right.githubToken
+  && left.user.id === right.user.id
+  && left.user.login === right.user.login
+  && left.user.name === right.user.name
+  && left.user.avatar_url === right.user.avatar_url;
 
 const reusableTokenRefresh = (key: string): InFlightTokenRefresh | undefined => {
   const refresh = inFlightTokenRefreshes.get(key);
@@ -89,11 +106,8 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-// Tests use this to drop process-local authentication state between cases —
-// they run against a fresh DB per test so the persisted state needs no separate
-// reset, and some tests deliberately want the next call to hydrate from
-// state_json instead of minting a fresh token. Cancelling an unfinished shared
-// refresh prevents it from writing into the next test's repository instance.
+// A persisted reauthentication clears only its upstream. Tests omit the id to
+// drop all process-local authentication state between independent repositories.
 export function clearInProcessCopilotTokenCache(upstreamId?: string): void {
   for (const [key, cached] of inProcessTokenCache) {
     if (upstreamId === undefined || cached.upstreamId === upstreamId) inProcessTokenCache.delete(key);
@@ -123,7 +137,11 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
       try {
         return await fn();
       } catch (error) {
-        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
+        if (
+          error instanceof UpstreamGenerationMismatchError
+          || isAbortError(error)
+          || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))
+        ) {
           throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
         }
 
@@ -187,7 +205,7 @@ const refreshCopilotToken = (
   upstreamId: string,
   githubHost: string,
   githubToken: string,
-  expectedConfig: unknown,
+  expectedConfig: CopilotUpstreamConfig,
   fetcher: Fetcher,
 ): InFlightTokenRefresh => {
   const existing = reusableTokenRefresh(key);
@@ -200,7 +218,7 @@ const refreshCopilotToken = (
     const current = await getRepo().upstreams.getById(upstreamId);
     if (current?.kind !== 'copilot') throw new UpstreamGenerationMismatchError(upstreamId);
     const config = current.config as CopilotUpstreamConfig;
-    if (config.githubHost !== githubHost || config.githubToken !== githubToken) {
+    if (!sameCopilotConfig(config, expectedConfig)) {
       throw new UpstreamGenerationMismatchError(upstreamId);
     }
     inProcessTokenCache.set(key, { upstreamId, entry, cachedAt: Date.now() });
@@ -235,13 +253,19 @@ const refreshCopilotToken = (
   return refresh;
 };
 
-async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
+async function getCopilotToken(
+  upstreamId: string,
+  expectedConfig: CopilotUpstreamConfig,
+  fetcher: Fetcher,
+  signal: AbortSignal | undefined,
+): Promise<CopilotTokenEntry> {
   if (signal?.aborted) throw signal.reason;
-  const key = tokenCacheKey(upstreamId, githubHost, githubToken);
+  const { githubHost, githubToken } = expectedConfig;
+  const key = tokenCacheKey(upstreamId, expectedConfig);
   const fresh = await getRepo().upstreams.getById(upstreamId);
-  if (!fresh || fresh.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
+  if (fresh?.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
   const freshConfig = fresh.config as CopilotUpstreamConfig;
-  if (freshConfig.githubHost !== githubHost || freshConfig.githubToken !== githubToken) {
+  if (!sameCopilotConfig(freshConfig, expectedConfig)) {
     throw new UpstreamGenerationMismatchError(upstreamId);
   }
   const now = Date.now();
@@ -267,7 +291,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   // ~25 minutes per process. Concurrent misses share one exchange. Each caller
   // retains independent cancellation; the shared fetch is cancelled only after
   // its final waiter leaves.
-  return await awaitRefresh(refreshCopilotToken(key, upstreamId, githubHost, githubToken, fresh.config, fetcher), signal);
+  return await awaitRefresh(refreshCopilotToken(key, upstreamId, githubHost, githubToken, expectedConfig, fetcher), signal);
 }
 
 // Pure exchange against /copilot_internal/v2/token — no caching, no
@@ -334,9 +358,7 @@ export interface CopilotFetchOptions {
 
 export interface CopilotAuth {
   id: string;
-  githubHost: string;
-  githubToken: string;
-  config?: CopilotUpstreamConfig;
+  config: CopilotUpstreamConfig;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
@@ -346,7 +368,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   // the body in an explicit owner and replace the generator parameter so the
   // final network wait cannot retain both copies after ownership transfers.
   init = { signal };
-  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
+  const entry = await getCopilotToken(auth.id, auth.config, options.fetcher, signal);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.

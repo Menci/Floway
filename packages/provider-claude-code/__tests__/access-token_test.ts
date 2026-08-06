@@ -8,7 +8,7 @@ import {
 import { ClaudeCodeOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { ClaudeCodeUpstreamConfig } from '../src/config.ts';
 import type { ClaudeCodeQuotaSnapshotEntry, ClaudeCodeUpstreamState } from '../src/state.ts';
-import { directFetcher, UpstreamGoneError, type UpstreamRecord, type UpstreamsRepoSlim } from '@floway-dev/provider';
+import { directFetcher, UpstreamGoneError, type Fetcher, type UpstreamRecord, type UpstreamsRepoSlim } from '@floway-dev/provider';
 
 const accountUuid = 'acc-uuid-1';
 const upstreamId = 'up-claude-1';
@@ -93,7 +93,7 @@ describe('ensureClaudeCodeAccessToken', () => {
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out).toEqual({ entry, freshlyMinted: false });
+    expect(out).toMatchObject({ entry, freshlyMinted: false, generation: { accessToken: 'at_x', refreshToken: 'rt_v1' } });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
@@ -187,7 +187,11 @@ describe('ensureClaudeCodeAccessToken', () => {
       }), { status: 200 });
     });
     const result = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(result).toEqual({ entry: reimportedEntry, freshlyMinted: false });
+    expect(result).toMatchObject({
+      entry: reimportedEntry,
+      freshlyMinted: false,
+      generation: { accessToken: 'at_reimported', refreshToken: 'rt_reimported' },
+    });
     expect(writes).toHaveLength(0);
     const account = (current!.state as ClaudeCodeUpstreamState).accounts[0];
     expect(account.refreshToken).toBe('rt_reimported');
@@ -368,22 +372,84 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     expect(minted).toBe(2);
   });
 
-  test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
-    let releaseRefresh!: () => void;
-    const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      await refreshGate;
+  test('one cancelled waiter does not abort a refresh another caller still needs', async () => {
+    const refreshStarted = Promise.withResolvers<AbortSignal>();
+    const releaseRefresh = Promise.withResolvers<void>();
+    const fetcher = vi.fn<Fetcher>(async (_url, init) => {
+      if (!init.signal) throw new Error('refresh omitted its flight signal');
+      refreshStarted.resolve(init.signal);
+      await releaseRefresh.promise;
       return new Response(JSON.stringify({
         access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
       }), { status: 200 });
     });
-    const lazy = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher, force: true });
-    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    releaseRefresh();
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: firstController.signal });
+    const second = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: secondController.signal });
+    const flightSignal = await refreshStarted.promise;
+    const reason = new DOMException('first caller left', 'AbortError');
+    firstController.abort(reason);
+
+    await expect(first).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(false);
+    releaseRefresh.resolve();
+    await expect(second).resolves.toMatchObject({ entry: { token: 'at_new' } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('the last cancelled waiter aborts the shared refresh and releases the flight', async () => {
+    const refreshStarted = Promise.withResolvers<AbortSignal>();
+    const fetcher = vi.fn<Fetcher>(async (_url, init) => {
+      if (!init.signal) throw new Error('refresh omitted its flight signal');
+      const { signal } = init;
+      refreshStarted.resolve(signal);
+      return await new Promise<Response>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const call = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: controller.signal });
+    const flightSignal = await refreshStarted.promise;
+    const reason = new DOMException('last caller left', 'AbortError');
+    controller.abort(reason);
+
+    await expect(call).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(true);
+    const recoveryFetcher = vi.fn<Fetcher>(async () => new Response(JSON.stringify({
+      access_token: 'at_recovered', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: recoveryFetcher }))
+      .resolves.toMatchObject({ entry: { token: 'at_recovered' } });
+  });
+
+  test('a forced caller waits for a lazy mint and then uses its own fetcher', async () => {
+    const refreshStarted = Promise.withResolvers<void>();
+    const releaseRefresh = Promise.withResolvers<void>();
+    const lazyFetcher = vi.fn<Fetcher>(async (_url, init) => {
+      expect((JSON.parse(String(init.body)) as { refresh_token: string }).refresh_token).toBe('rt_v1');
+      refreshStarted.resolve();
+      await releaseRefresh.promise;
+      return new Response(JSON.stringify({
+        access_token: 'at_lazy', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+      }), { status: 200 });
+    });
+    const forcedFetcher = vi.fn<Fetcher>(async (_url, init) => {
+      expect((JSON.parse(String(init.body)) as { refresh_token: string }).refresh_token).toBe('rt_v2');
+      return new Response(JSON.stringify({
+        access_token: 'at_forced', expires_in: 3600, refresh_token: 'rt_v3', scope: 'user:inference',
+      }), { status: 200 });
+    });
+    const lazy = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: lazyFetcher });
+    const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: forcedFetcher, force: true });
+    await refreshStarted.promise;
+    expect(forcedFetcher).not.toHaveBeenCalled();
+    releaseRefresh.resolve();
     const results = await Promise.all([lazy, forced]);
-    expect(results.map(result => result.entry.token)).toEqual(['at_new', 'at_new']);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(results.map(result => result.entry.token)).toEqual(['at_lazy', 'at_forced']);
+    expect(lazyFetcher).toHaveBeenCalledTimes(1);
+    expect(forcedFetcher).toHaveBeenCalledTimes(1);
   });
 
   test('a force request following a coalesced cache hit performs one rotation', async () => {
@@ -399,6 +465,50 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     expect(lazyResult.entry).toEqual(cached);
     expect(forcedResult.entry.token).toBe('at_new');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('a lazy caller keeps a fresh cache entry while a forced refresh is failing', async () => {
+    const cached: ClaudeCodeAccessTokenEntry = { token: 'at_cached', expiresAt: farFutureMs, refreshedAt: 'cached' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: cached }] });
+    const forcedStarted = Promise.withResolvers<void>();
+    const releaseForced = Promise.withResolvers<void>();
+    const failure = new Error('forced proxy failed');
+    const forcedFetcher = vi.fn<Fetcher>(async () => {
+      forcedStarted.resolve();
+      await releaseForced.promise;
+      throw failure;
+    });
+    const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: forcedFetcher, force: true });
+    const forcedRejection = expect(forced).rejects.toBe(failure);
+    await forcedStarted.promise;
+
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .resolves.toMatchObject({ entry: cached, freshlyMinted: false });
+    releaseForced.resolve();
+    await forcedRejection;
+  });
+
+  test('an uncached lazy caller retries through its own fetcher after a forced refresh fails', async () => {
+    const forcedStarted = Promise.withResolvers<void>();
+    const releaseForced = Promise.withResolvers<void>();
+    const failure = new Error('forced proxy failed');
+    const forcedFetcher = vi.fn<Fetcher>(async () => {
+      forcedStarted.resolve();
+      await releaseForced.promise;
+      throw failure;
+    });
+    const lazyFetcher = vi.fn<Fetcher>(async () => new Response(JSON.stringify({
+      access_token: 'at_lazy', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: forcedFetcher, force: true });
+    const forcedRejection = expect(forced).rejects.toBe(failure);
+    await forcedStarted.promise;
+    const lazy = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: lazyFetcher });
+    releaseForced.resolve();
+
+    await forcedRejection;
+    await expect(lazy).resolves.toMatchObject({ entry: { token: 'at_lazy' } });
+    expect(lazyFetcher).toHaveBeenCalledTimes(1);
   });
 
   test('serial calls after the in-flight settles are not stuck on a stale entry', async () => {

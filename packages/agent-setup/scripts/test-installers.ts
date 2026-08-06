@@ -4,7 +4,7 @@
 // (rendered here through the real `render.ts`) plus a fixed checked-in body.
 // This harness executes that exact concatenation inside throwaway HOME,
 // CLAUDE_CONFIG_DIR, CODEX_HOME, and PATH roots against fake Claude Code and
-// Codex CLIs, fake installer hooks, and local HTTP fixtures, then inspects
+// Codex CLIs, fake package managers, and local HTTP fixtures, then inspects
 // files, protocol records, permissions, rollback, and output.
 // The full host run exercises more than 90 behavior cases across Bash and
 // PowerShell, including a real Codex 0.144.5 app-server smoke when that exact
@@ -326,18 +326,15 @@ const FIXTURES = join(HARNESS_ROOT, 'fixtures');
 mkdirSync(FIXTURES, { recursive: true });
 const FAKE_CLAUDE_SRC = join(FIXTURES, 'claude');
 writeFileSync(FAKE_CLAUDE_SRC, FAKE_CLAUDE, { mode: 0o755 });
-const FAKE_INSTALLER_SCRIPT = join(FIXTURES, 'install-claude.sh');
-writeFileSync(FAKE_INSTALLER_SCRIPT, FAKE_INSTALLER, { mode: 0o755 });
 const FAKE_CODEX_SRC = join(FIXTURES, 'codex');
 writeFileSync(FAKE_CODEX_SRC, FAKE_CODEX, { mode: 0o755 });
-const FAKE_CODEX_INSTALLER_SCRIPT = join(FIXTURES, 'install-codex.sh');
-writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 });
 
 // --- local HTTP fixtures ----------------------------------------------------
 
 type ModelServerMode =
   | 'ok'
-  | 'installer-sh' | 'installer-ps1' | 'installer-large-ps1' | 'installer-oversized-ps1' | 'installer-html' | 'installer-banner-html'
+  | 'installer-sh' | 'installer-ps1' | 'installer-oversized-ps1' | 'installer-html' | 'installer-banner-html'
+  | 'installer-unsupported-charset'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 interface ModelServer {
   url: string;
@@ -447,14 +444,14 @@ const startModelServer = async (): Promise<ModelServer> => {
         res.end(PS1_FAKE_INSTALLER_BODY('claude', 'FAKE_CLAUDE_SRC'));
         return;
       }
-      if (state.mode === 'installer-large-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(`Write-Output 'large installer'\n${'#'.repeat(256 * 1024)}`);
+      if (state.mode === 'installer-oversized-ps1') {
+        res.writeHead(200, { 'content-length': String(8 * 1024 * 1024 + 1), 'content-type': 'text/plain' });
+        res.end();
         return;
       }
-      if (state.mode === 'installer-oversized-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end('#'.repeat(1025));
+      if (state.mode === 'installer-unsupported-charset') {
+        res.writeHead(200, { 'content-type': 'text/plain; charset=floway-unsupported' });
+        res.end('Write-Output "must not execute"');
         return;
       }
       if (state.mode === 'installer-codex-ps1') {
@@ -508,6 +505,14 @@ if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
   exit 91
 fi
 printf '%s\\n' "$*" > "$FAKE_NPM_RECORD"
+if [ "\${FAKE_INSTALLER_SLEEP:-0}" -gt 0 ]; then
+  bash -c '
+    sleep "$FAKE_INSTALLER_SLEEP" &
+    child=$!
+    if [ -n "$FAKE_INSTALLER_CHILD_PID_FILE" ]; then printf "%s\\n" "$child" > "$FAKE_INSTALLER_CHILD_PID_FILE"; fi
+    wait "$child"
+  '
+fi
 case "$*" in
   *'@anthropic-ai/claude-code'*)
     mkdir -p "$HOME/.local/bin"
@@ -515,12 +520,117 @@ case "$*" in
     chmod 755 "$HOME/.local/bin/claude"
     ;;
   *'@openai/codex'*)
+    if [ "\${CODEX_NON_INTERACTIVE:-}" != true ]; then
+      printf 'fake npm did not receive CODEX_NON_INTERACTIVE=true for Codex\\n' >&2
+      exit 94
+    fi
+    if [ -n "\${FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE:-}" ]; then
+      printf '%s' "$CODEX_NON_INTERACTIVE" > "$FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE"
+    fi
     mkdir -p "$HOME/.local/bin"
     cp "$FAKE_CODEX_SRC" "$HOME/.local/bin/codex"
     chmod 755 "$HOME/.local/bin/codex"
     ;;
   *) exit 64 ;;
 esac
+: > "$FAKE_INSTALLER_MARKER"
+`, { mode: 0o755 });
+};
+
+const placeCurlRedirect = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'curl'), `#!/bin/bash
+output=
+max=8388608
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output=$2; shift 2 ;;
+    --max-filesize) max=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+exec "$FLOWAY_HARNESS_REAL_CURL" -fsSL --connect-timeout 2 --max-time 10 --max-filesize "$max" -o "$output" "$FLOWAY_HARNESS_CURL_URI"
+`, { mode: 0o755 });
+};
+
+const placeCurlFailure = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'curl'), '#!/bin/bash\nexit 22\n', { mode: 0o755 });
+};
+
+const jqDigestForHost = (): string => {
+  const key = `${process.platform}-${process.arch}`;
+  const digests: Record<string, string> = {
+    'darwin-x64': 'e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0',
+    'darwin-arm64': '2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e',
+    'linux-x64': 'b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f',
+    'linux-arm64': '8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309',
+  };
+  const digest = digests[key];
+  if (digest === undefined) throw new Error(`no jq fixture digest for ${key}`);
+  return digest;
+};
+
+const placeLocalJqDownload = (workspace: Workspace): void => {
+  if (!hostJqPath) throw new Error('a host jq is required for the local bootstrap fixture');
+  writeFileSync(join(workspace.binDir, 'curl'), `#!/bin/bash
+output=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -o ]; then output=$2; shift 2; else shift; fi
+done
+exec "$FLOWAY_HARNESS_REAL_CP" "$FLOWAY_HARNESS_JQ_SOURCE" "$output"
+`, { mode: 0o755 });
+  const checksum = '#!/bin/bash\nprintf \'%s\\n\' "$FLOWAY_HARNESS_JQ_DIGEST"\n';
+  writeFileSync(join(workspace.binDir, 'sha256sum'), checksum, { mode: 0o755 });
+  writeFileSync(join(workspace.binDir, 'shasum'), checksum, { mode: 0o755 });
+};
+
+const placeDeadlineShims = (workspace: Workspace, excludeTimeoutTools: boolean): void => {
+  if (!excludeTimeoutTools) {
+    const timeout = resolveTool('timeout') ?? resolveTool('gtimeout');
+    if (!timeout) throw new Error('a timeout executable is required for the bounded-process fixture');
+    writeFileSync(join(workspace.binDir, 'timeout'), `#!/bin/bash
+shift
+exec "$FLOWAY_HARNESS_REAL_TIMEOUT" "$FLOWAY_HARNESS_DEADLINE_SECONDS" "$@"
+`, { mode: 0o755 });
+  }
+  writeFileSync(join(workspace.binDir, 'sleep'), `#!/bin/bash
+duration=$1
+shift
+case "$duration" in
+  30|60|120|600) duration=$FLOWAY_HARNESS_DEADLINE_SECONDS ;;
+  1|0.5) if [ "$FLOWAY_HARNESS_SHORT_GRACE" = 1 ]; then duration=0.05; fi ;;
+esac
+if [ "$duration" = 0.1 ] && [ -n "\${FLOWAY_HARNESS_LOCK_WAIT_MARKER:-}" ]; then
+  : > "$FLOWAY_HARNESS_LOCK_WAIT_MARKER"
+fi
+exec "$FLOWAY_HARNESS_REAL_SLEEP" "$duration" "$@"
+`, { mode: 0o755 });
+};
+
+const placeLockWaitShim = (workspace: Workspace): void => {
+  if (existsSync(join(workspace.binDir, 'sleep'))) return;
+  writeFileSync(join(workspace.binDir, 'sleep'), `#!/bin/bash
+if [ "$1" = 0.1 ] && [ -n "\${FLOWAY_HARNESS_LOCK_WAIT_MARKER:-}" ]; then
+  : > "$FLOWAY_HARNESS_LOCK_WAIT_MARKER"
+fi
+exec "$FLOWAY_HARNESS_REAL_SLEEP" "$@"
+`, { mode: 0o755 });
+};
+
+const placeExpiredClock = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'date'), `#!/bin/bash
+if [ "$1" = +%s ]; then
+  if [ ! -e "$FLOWAY_HARNESS_CLOCK_STATE" ]; then
+    printf '1' > "$FLOWAY_HARNESS_CLOCK_STATE"
+    printf '0\n'
+  elif [ "$FLOWAY_HARNESS_CLOCK_MODE" = app-server ] && [ "$(cat "$FLOWAY_HARNESS_CLOCK_STATE")" = 1 ]; then
+    printf '2' > "$FLOWAY_HARNESS_CLOCK_STATE"
+    printf '0\n'
+  else
+    printf '600\n'
+  fi
+  exit 0
+fi
+exec "$FLOWAY_HARNESS_REAL_DATE" "$@"
 `, { mode: 0o755 });
 };
 
@@ -575,18 +685,18 @@ interface RunOptions {
   omitBaseUrl?: boolean;
   configDir?: string;
   includeJq?: boolean;
-  disableJqDownload?: boolean;
+  failJqDownload?: boolean;
+  bootstrapJqLocally?: boolean;
   fakeClaudeVersion?: string;
   fakeClaudeVersionSleep?: number;
   fakeCliGate?: string;
   fakeCliGateMarker?: string;
-  withInstallHook?: boolean;
+  autoInstallWithNpm?: boolean;
   installerSleep?: number;
-  installerUrl?: string;
+  bashInstallerUrl?: string;
   timeoutSeconds?: number;
-  downloadMaxBytes?: number;
-  powerShellInterpreter?: string;
-  lockTimeoutSeconds?: number;
+  expireLockDeadline?: boolean;
+  expireAppServerDeadline?: boolean;
   lockWaitMarker?: string;
   ambientApiKey?: boolean;
   excludeTimeoutTools?: boolean;
@@ -604,31 +714,27 @@ interface RunOptions {
   fakeCodexAppServerMode?: string;
   fakeCodexBatchDelay?: number;
   fakeCodexLargeStderr?: boolean;
-  withCodexInstallHook?: boolean;
-  codexInstallerUrl?: string;
+  autoInstallCodexWithNpm?: boolean;
+  bashCodexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
   powerShellTimeSeparator?: string;
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
   forcePowerShellWindowsReplacement?: boolean;
-  // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
-  // the palette is emitted even though the harness captures (never a TTY);
-  // `noColor` sets NO_COLOR; `failRestore` sets AGENT_SETUP_TEST_FAIL_RESTORE
-  // so the PowerShell rollback restore rename fails, exercising its recovery
-  // guidance the way the Bash `mv` shim does for Bash.
-  forceColor?: boolean;
+  // Output and filesystem-failure knobs are implemented entirely by harness
+  // state and command shims; the served installer has no test-only branches.
   noColor?: boolean;
-  failRestore?: boolean;
-  failClaudeAfterReplace?: boolean;
+  failPowerShellRestore?: boolean;
+  failBackupPrune?: boolean;
 }
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
   agent ?? configuration.testAgent;
 interface RunResult { code: number; stdout: string; stderr: string; combined: string }
 
-// Environment shared by the shell run helpers: Codex fake-binary knobs, the
-// install hook, and CODEX_HOME. Callers merge this over the Claude environment
-// before running the selected agent.
+// Environment shared by the shell run helpers: Codex fake-binary knobs and
+// CODEX_HOME. Callers merge this over the Claude environment before running
+// the selected agent.
 const codexEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
     FAKE_CODEX_SRC,
@@ -649,8 +755,6 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
   if (options.fakeCliGateMarker) env.FAKE_CLI_GATE_MARKER = options.fakeCliGateMarker;
   if (options.fakeCodexLargeStderr) env.FAKE_CODEX_LARGE_STDERR = '1';
   if (options.codexHome) env.CODEX_HOME = options.codexHome;
-  if (options.withCodexInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
-  if (options.codexInstallerUrl) env.AGENT_SETUP_TEST_CODEX_URL = options.codexInstallerUrl;
   return env;
 };
 
@@ -673,6 +777,25 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
+  const autoInstallWithNpm = agent === 'codex'
+    ? options.autoInstallCodexWithNpm !== false
+    : options.autoInstallWithNpm !== false;
+  if (autoInstallWithNpm) placeFakeNpm(workspace);
+  const redirectedInstallerUrl = options.bashInstallerUrl ?? options.bashCodexInstallerUrl;
+  if (redirectedInstallerUrl) placeCurlRedirect(workspace);
+  if (options.failJqDownload) placeCurlFailure(workspace);
+  if (options.bootstrapJqLocally) placeLocalJqDownload(workspace);
+  if (options.timeoutSeconds !== undefined) placeDeadlineShims(workspace, options.excludeTimeoutTools === true);
+  if (options.expireAppServerDeadline && options.timeoutSeconds === undefined) placeDeadlineShims(workspace, true);
+  if (options.lockWaitMarker) placeLockWaitShim(workspace);
+  if (options.expireLockDeadline || options.expireAppServerDeadline) placeExpiredClock(workspace);
+  if (options.failBackupPrune) {
+    writeFileSync(
+      join(workspace.binDir, 'rm'),
+      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 73 ;; esac; done\nexec "$FLOWAY_HARNESS_REAL_RM" "$@"\n',
+      { mode: 0o755 },
+    );
+  }
   const script = renderShellPrefix({ agent, apiKey: options.apiKey ?? SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
   const scriptPath = join(workspace.root, `setup${options.runId ? `-${options.runId}` : ''}.sh`);
   writeFileSync(scriptPath, script);
@@ -691,20 +814,24 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
+    FLOWAY_HARNESS_REAL_CP: join(SHIM_BIN, 'cp'),
+    FLOWAY_HARNESS_REAL_CURL: join(SHIM_BIN, 'curl'),
+    FLOWAY_HARNESS_REAL_DATE: join(SHIM_BIN, 'date'),
+    FLOWAY_HARNESS_REAL_RM: join(SHIM_BIN, 'rm'),
+    FLOWAY_HARNESS_REAL_SLEEP: join(SHIM_BIN, 'sleep'),
+    FLOWAY_HARNESS_REAL_TIMEOUT: resolveTool('timeout') ?? resolveTool('gtimeout') ?? '',
+    FLOWAY_HARNESS_CURL_URI: redirectedInstallerUrl ?? '',
+    FLOWAY_HARNESS_DEADLINE_SECONDS: String(options.timeoutSeconds ?? ''),
+    FLOWAY_HARNESS_SHORT_GRACE: options.expireAppServerDeadline ? '1' : '0',
+    FLOWAY_HARNESS_CLOCK_STATE: join(workspace.root, 'clock-state'),
+    FLOWAY_HARNESS_CLOCK_MODE: options.expireAppServerDeadline ? 'app-server' : 'lock',
+    FLOWAY_HARNESS_LOCK_WAIT_MARKER: options.lockWaitMarker ?? '',
+    FLOWAY_HARNESS_JQ_SOURCE: hostJqPath ?? '',
+    FLOWAY_HARNESS_JQ_DIGEST: options.bootstrapJqLocally ? jqDigestForHost() : '',
     ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
-  if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
-  if (options.downloadMaxBytes !== undefined) env.AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES = String(options.downloadMaxBytes);
-  if (options.lockTimeoutSeconds !== undefined) env.AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS = String(options.lockTimeoutSeconds);
-  if (options.lockWaitMarker) env.AGENT_SETUP_TEST_LOCK_WAIT_MARKER = options.lockWaitMarker;
-  if (options.failClaudeAfterReplace) env.AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE = '1';
-  if (options.excludeTimeoutTools) env.AGENT_SETUP_TEST_TRACE_TIMEOUT = '1';
-  if (options.disableJqDownload) env.AGENT_SETUP_TEST_NO_JQ_DOWNLOAD = '1';
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
 
   if (options.fakeRestoreFailure) {
@@ -713,10 +840,10 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     // and delegates every other rename (staging included) to the real mv.
     writeFileSync(
       join(workspace.binDir, 'mv'),
-      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 1 ;; esac; done\nexec "$SETUP_TEST_REAL_MV" "$@"\n',
+      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 1 ;; esac; done\nexec "$FLOWAY_HARNESS_REAL_MV" "$@"\n',
       { mode: 0o755 },
     );
-    env.SETUP_TEST_REAL_MV = join(SHIM_BIN, 'mv');
+    env.FLOWAY_HARNESS_REAL_MV = join(SHIM_BIN, 'mv');
   }
 
   const signal = options.signalDuringInstall;
@@ -747,6 +874,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
+  placeFakeNpm(workspace);
   const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
@@ -762,7 +890,6 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
-    AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
   };
   return new Promise<RunResult>(resolve => {
     const child = spawn('/bin/bash', ['-p', scriptPath], { env });
@@ -825,27 +952,63 @@ const readCodexToken = (workspace: Workspace, codexHome?: string): string =>
   readFileSync(codexTokenPath(workspace, codexHome), 'utf8');
 const readMaterializedCodexConfig = (workspace: Workspace, codexHome?: string): Record<string, unknown> =>
   JSON.parse(readFileSync(codexConfigPath(workspace, codexHome), 'utf8')) as Record<string, unknown>;
-const networkReachable = (): boolean => {
-  const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
-  return probe.status === 0;
-};
-
 // Runs the PowerShell body under a real interpreter, mirroring runShellInstaller
 // but rendering the PowerShell prefix. Model-directory traffic is in-process, so
 // this too must be async to keep the event loop free.
+const powerShellHarnessPrelude = (options: RunOptions): string => {
+  const parts: string[] = [];
+  if (options.lockWaitMarker) {
+    parts.push(`function Start-Sleep {
+  param([int]$Milliseconds, [int]$Seconds)
+  if ($Milliseconds -eq 100) { [System.IO.File]::WriteAllText($env:FLOWAY_HARNESS_LOCK_WAIT_MARKER, '') }
+  if ($PSBoundParameters.ContainsKey('Milliseconds')) { Microsoft.PowerShell.Utility\\Start-Sleep -Milliseconds $Milliseconds }
+  else { Microsoft.PowerShell.Utility\\Start-Sleep -Seconds $Seconds }
+}
+`);
+  }
+  if (options.failPowerShellRestore) {
+    parts.push(`function Move-Item {
+  param([string]$LiteralPath, [string]$Destination, [switch]$Force)
+  if ($LiteralPath -like '*.floway-backup.*') { throw 'harness-blocked backup restore' }
+  Microsoft.PowerShell.Management\\Move-Item @PSBoundParameters
+}
+`);
+  }
+  if (options.failBackupPrune) {
+    parts.push(`function Get-ChildItem {
+  param([string]$LiteralPath, [switch]$File, $ErrorAction)
+  if ($LiteralPath -ceq $env:FLOWAY_HARNESS_FAIL_PRUNE_DIR) { throw 'harness-blocked backup enumeration' }
+  Microsoft.PowerShell.Management\\Get-ChildItem @PSBoundParameters
+}
+`);
+  }
+  return parts.join('');
+};
+
 const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
+  const autoInstallWithNpm = agent === 'codex'
+    ? options.autoInstallCodexWithNpm !== false
+    : options.autoInstallWithNpm !== false;
+  if (autoInstallWithNpm) placeFakeNpm(workspace);
+  if (options.timeoutSeconds !== undefined) placeDeadlineShims(workspace, false);
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const canonicalBody = powerShellBody(agent);
+  let canonicalBody = powerShellBody(agent);
+  if (options.timeoutSeconds !== undefined) {
+    canonicalBody = canonicalBody.replace(/-TimeoutSeconds (?:30|60|120|600)\b/g, `-TimeoutSeconds ${options.timeoutSeconds}`);
+  }
+  if (options.expireLockDeadline) {
+    canonicalBody = canonicalBody.replace('$wait.Elapsed.TotalSeconds -ge 600', '$wait.Elapsed.TotalSeconds -ge 0');
+  }
   const body = options.forcePowerShellWindowsReplacement
     ? canonicalBody
         .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
         .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
     : canonicalBody;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: options.apiKey ?? SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + body;
+  const script = powerShellHarnessPrelude(options) + powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: options.apiKey ?? SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + body;
   const suffix = options.runId ? `-${options.runId}` : '';
   const scriptPath = join(workspace.root, `setup${suffix}.ps1`);
   writeFileSync(scriptPath, script);
@@ -857,29 +1020,24 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: [workspace.binDir, SHIM_BIN].join(':'),
-    TERM: process.env.TERM ?? 'dumb',
+    TERM: 'dumb',
     FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
+    FLOWAY_HARNESS_DEADLINE_SECONDS: String(options.timeoutSeconds ?? ''),
+    FLOWAY_HARNESS_FAIL_PRUNE_DIR: options.configDir ?? join(workspace.home, '.claude'),
+    FLOWAY_HARNESS_LOCK_WAIT_MARKER: options.lockWaitMarker ?? '',
+    FLOWAY_HARNESS_REAL_SLEEP: join(SHIM_BIN, 'sleep'),
+    FLOWAY_HARNESS_REAL_TIMEOUT: resolveTool('timeout') ?? resolveTool('gtimeout') ?? '',
     ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
-  if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
-  if (options.downloadMaxBytes !== undefined) env.AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES = String(options.downloadMaxBytes);
-  if (options.powerShellInterpreter) env.AGENT_SETUP_TEST_POWERSHELL_EXE = options.powerShellInterpreter;
-  if (options.lockTimeoutSeconds !== undefined) env.AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS = String(options.lockTimeoutSeconds);
-  if (options.lockWaitMarker) env.AGENT_SETUP_TEST_LOCK_WAIT_MARKER = options.lockWaitMarker;
-  if (options.failClaudeAfterReplace) env.AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE = '1';
   if (options.ambientApiKey) env.SETUP_API_KEY = SENTINEL_KEY;
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
-  if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-NonInteractive', '-Command', '-'], { env });
@@ -894,36 +1052,134 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   });
 };
 
+const runProbeProcess = (
+  exe: string,
+  args: string[],
+  env: Record<string, string>,
+  input?: string,
+): Promise<RunResult> => new Promise(resolve => {
+  const child = spawn(exe, args, { env });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
+  child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+  if (input === undefined) child.stdin.end(); else child.stdin.end(input);
+});
+
+const powerShellProbeEnv = (workspace: Workspace, extra: Record<string, string> = {}): Record<string, string> => ({
+  HOME: workspace.home,
+  PATH: [workspace.binDir, SHIM_BIN].join(':'),
+  TERM: 'dumb',
+  FAKE_CLAUDE_SRC,
+  FAKE_CODEX_SRC,
+  FAKE_INSTALLER_MARKER: installerMarker(workspace),
+  FAKE_INSTALLER_CHILD_PID_FILE: installerChildPid(workspace),
+  ...extra,
+});
+
+const runPowerShellProbe = (
+  workspace: Workspace,
+  source: string,
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> => {
+  const scriptPath = join(workspace.root, 'powershell-probe.ps1');
+  writeFileSync(scriptPath, source);
+  return runProbeProcess(hostPwsh!, ['-NoProfile', '-NonInteractive', '-File', scriptPath], powerShellProbeEnv(workspace, extraEnv));
+};
+
+const runPowerShellRemoteInstaller = (
+  workspace: Workspace,
+  uri: string,
+  switches = '',
+  catchBody = 'exit 1',
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> => runPowerShellProbe(workspace, `$ErrorActionPreference = 'Stop'
+${SETUP_POWERSHELL_COMMON}
+try {
+  Invoke-SetupRemoteInstaller -Uri ${powerShellLiteral(uri)} ${switches}
+  exit 0
+} catch {
+  ${catchBody}
+}
+`, extraEnv);
+
+const runBashRemoteInstaller = (
+  workspace: Workspace,
+  uri: string,
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> => {
+  const scriptPath = join(workspace.root, 'bash-remote-probe.sh');
+  writeFileSync(scriptPath, `${SETUP_BASH_COMMON}
+SETUP_TMPDIR=$1
+_init_output
+_download_and_run_installer "$2"
+`);
+  return runProbeProcess('/bin/bash', [scriptPath, workspace.root, uri], {
+    HOME: workspace.home,
+    PATH: [workspace.binDir, SHIM_BIN].join(':'),
+    FAKE_CLAUDE_SRC,
+    FAKE_CODEX_SRC,
+    FAKE_INSTALLER_MARKER: installerMarker(workspace),
+    FAKE_INSTALLER_CHILD_PID_FILE: installerChildPid(workspace),
+    ...extraEnv,
+  });
+};
+
+const runBashOutputProbe = (workspace: Workspace, noColor = false): Promise<RunResult> => {
+  const scriptPath = join(workspace.root, 'bash-output-probe.sh');
+  writeFileSync(scriptPath, `${SETUP_BASH_COMMON}
+_stream_color() {
+  [ -z "\${NO_COLOR:-}" ] || return 1
+  return 0
+}
+_init_output
+out_agent_notice 'Agent Setup' 'Claude Code'
+out_metadata 'Endpoint' 'https://gateway.example'
+out_metadata 'API Key' 'Primary key'
+out_agent_notice 'Installing' 'Claude Code'
+out_agent_notice 'Configuring' 'Claude Code'
+out_agent_notice 'Completed Agent Setup' 'Claude Code'
+out_warn 'warning detail'
+out_error 'error detail'
+`);
+  return runProbeProcess('/bin/bash', [scriptPath], {
+    PATH: SHIM_BIN,
+    NO_COLOR: noColor ? '1' : '',
+  });
+};
+
 // --- Claude cases -----------------------------------------------------------
 
 let modelServer: ModelServer;
 
-test('claude', 'existing CLI is used and the installer hook is not called', async t => {
+test('claude', 'existing CLI is used without invoking the package manager', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `installer should succeed:\n${run.combined}`);
-  t.ok(!existsSync(installerMarker(ws)), 'the installer hook must not run when claude is already present');
+  t.ok(!existsSync(installerMarker(ws)), 'the package manager must not run when claude is already present');
   const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL is written');
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'auth token is written');
 });
 
-test('claude', 'missing CLI triggers the configured installer hook', async t => {
+test('claude', 'missing CLI installs through npm', async t => {
   const ws = makeWorkspace();
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, forceColor: true });
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `installer should succeed after install:\n${run.combined}`);
-  t.ok(existsSync(installerMarker(ws)), 'the installer hook must run when claude is absent');
+  t.ok(existsSync(installerMarker(ws)), 'npm must run when claude is absent');
   t.ok(existsSync(join(ws.home, '.local/bin/claude')), 'the installer places claude in the user-local location');
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
-  const installLine = run.stdout.split(/\r?\n/).find(line => line.includes('Claude Code CLI not found; running the test installer'));
-  t.equal(installLine, 'Claude Code CLI not found; running the test installer', 'normal installation information carries no prefix or styling');
+  const installLine = run.stdout.split(/\r?\n/).find(line => line.includes('Claude Code CLI not found; installing with npm'));
+  t.equal(installLine, 'Claude Code CLI not found; installing with npm', 'normal installation information carries no prefix or styling');
 });
 
 test('claude', 'npm is preferred over the direct installer when npm is available', async t => {
   const ws = makeWorkspace();
   placeFakeNpm(ws);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, withInstallHook: false });
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, autoInstallWithNpm: false });
   t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
   t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @anthropic-ai/claude-code', 'npm receives the official global package');
   t.includes(run.stdout, 'Claude Code CLI not found; installing with npm', 'the selected installation source is reported plainly');
@@ -1079,7 +1335,7 @@ test('claude', 'Bash serializes one config root and a failing successor restores
     baseUrl: 'https://successor.example',
     configDir,
     lockWaitMarker: successorWaiting,
-    failClaudeAfterReplace: true,
+    failBackupPrune: true,
   });
   try {
     await waitForFile(successorWaiting, 'the successor to contend on the shared lock');
@@ -1217,7 +1473,7 @@ test('claude', 'missing jq without a download fails before mutating settings', a
   mkdirSync(configDir, { recursive: true });
   const original = JSON.stringify({ theme: 'light' });
   writeFileSync(settingsPathFor(ws), original);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, includeJq: false, disableJqDownload: true });
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, includeJq: false, failJqDownload: true });
   t.ok(run.code !== 0, 'a missing JSON parser must fail the run');
   t.includes(run.combined.toLowerCase(), 'jq', 'the failure names the jq requirement');
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched when jq is unavailable');
@@ -1225,10 +1481,16 @@ test('claude', 'missing jq without a download fails before mutating settings', a
 });
 
 test('claude', 'jq is bootstrapped from the pinned release when absent from PATH', async t => {
-  if (!networkReachable()) skip('GitHub jq release is unreachable; skipping the online bootstrap test');
+  if (!hostJqPath) skip('no jq executable is available for the local pinned-download fixture');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig({ modelDiscovery: true }), baseUrl: modelServer.url, includeJq: false });
+  const run = await runShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig({ modelDiscovery: true }),
+    baseUrl: modelServer.url,
+    includeJq: false,
+    bootstrapJqLocally: true,
+  });
   t.equal(run.code, 0, `bootstrapped jq should configure successfully:\n${run.combined}`);
   t.includes(run.stderr, 'Warning: jq not found on PATH; fetching the pinned jq-1.8.2 build', 'automatic jq recovery is presented as a non-blocking warning');
   const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
@@ -1436,7 +1698,7 @@ test('claude', 'Bash and PowerShell serialize one Claude config root and a faili
     baseUrl: 'https://successor.example',
     configDir,
     lockWaitMarker: successorWaiting,
-    failClaudeAfterReplace: true,
+    failBackupPrune: true,
   });
   try {
     await waitForFile(successorWaiting, 'the PowerShell successor to contend on the shared lock');
@@ -1470,18 +1732,16 @@ test('claude', 'Bash times out on an occupied lock before invoking the CLI or mu
   mkdirSync(bashLock, { recursive: true });
   writeFileSync(join(bashLock, 'owner'), 'stale-owner');
   const bashCliMarker = join(bashWs.root, 'cli-reached');
-  const bashWaitMarker = join(bashWs.root, 'lock-observed');
   const bash = await runShellInstaller({
     workspace: bashWs,
     configuration: claudeConfig(),
     baseUrl: modelServer.url,
     configDir: bashConfig,
-    lockTimeoutSeconds: 0,
-    lockWaitMarker: bashWaitMarker,
+    expireLockDeadline: true,
     fakeCliGateMarker: bashCliMarker,
   });
   t.ok(bash.code !== 0, 'Bash must fail when the lock timeout expires');
-  t.ok(existsSync(bashWaitMarker), 'Bash observed the occupied lock');
+  t.includes(bash.stderr, 'another Agent Setup invocation is using', 'Bash reaches the occupied-lock timeout path');
   t.ok(!existsSync(bashCliMarker), 'Bash fails before invoking Claude');
   t.ok(!existsSync(settingsPathFor(bashWs, bashConfig)), 'Bash leaves settings untouched');
   t.equal(readFileSync(join(bashLock, 'owner'), 'utf8'), 'stale-owner', 'Bash does not break an unowned lock');
@@ -1496,21 +1756,52 @@ test('claude', 'PowerShell times out on an occupied lock before invoking the CLI
   mkdirSync(psLock, { recursive: true });
   writeFileSync(join(psLock, 'owner'), 'stale-owner');
   const psCliMarker = join(psWs.root, 'cli-reached');
-  const psWaitMarker = join(psWs.root, 'lock-observed');
   const ps = await runPowerShellInstaller({
     workspace: psWs,
     configuration: claudeConfig(),
     baseUrl: modelServer.url,
     configDir: psConfig,
-    lockTimeoutSeconds: 0,
-    lockWaitMarker: psWaitMarker,
+    expireLockDeadline: true,
     fakeCliGateMarker: psCliMarker,
   });
   t.ok(ps.code !== 0, 'PowerShell must fail when the lock timeout expires');
-  t.ok(existsSync(psWaitMarker), 'PowerShell observed the occupied lock');
+  t.includes(ps.stderr, 'another Agent Setup invocation is using', 'PowerShell reaches the occupied-lock timeout path');
   t.ok(!existsSync(psCliMarker), 'PowerShell fails before invoking Claude');
   t.ok(!existsSync(settingsPathFor(psWs, psConfig)), 'PowerShell leaves settings untouched');
   t.equal(readFileSync(join(psLock, 'owner'), 'utf8'), 'stale-owner', 'PowerShell does not break an unowned lock');
+});
+
+test('claude', 'PowerShell retries when a lock owner releases after exclusive create reports contention', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const target = join(ws.root, 'release-race-config');
+  const run = await runPowerShellProbe(ws, `$ErrorActionPreference = 'Stop'
+${SETUP_POWERSHELL_COMMON}
+$script:ReleaseRaceInjected = $false
+function New-Item {
+  [CmdletBinding()]
+  param([string]$ItemType, [string]$Path, [switch]$Force)
+  if ((-not $script:ReleaseRaceInjected) -and $Path.EndsWith('.floway-agent-setup.lock', [System.StringComparison]::Ordinal)) {
+    $script:ReleaseRaceInjected = $true
+    Microsoft.PowerShell.Management\\New-Item @PSBoundParameters | Out-Null
+    Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $Path -Force
+    $record = [System.Management.Automation.ErrorRecord]::new(
+      [System.IO.IOException]::new('simulated directory-exists race'),
+      'DirectoryExist',
+      [System.Management.Automation.ErrorCategory]::ResourceExists,
+      $Path
+    )
+    $PSCmdlet.ThrowTerminatingError($record)
+  }
+  Microsoft.PowerShell.Management\\New-Item @PSBoundParameters
+}
+Enter-SetupLock ${powerShellLiteral(target)}
+if (-not $script:SetupLockAcquired) { throw 'lock was not acquired after the release race' }
+Exit-SetupLock
+if (Test-Path -LiteralPath ${powerShellLiteral(setupLockPath(target))}) { throw 'lock was not released' }
+exit 0
+`);
+  t.equal(run.code, 0, `the vanished contention must retry successfully:\n${run.combined}`);
 });
 
 test('claude', 'Bash cleanup preserves a lock whose owner changed while setup was running', async t => {
@@ -1664,7 +1955,7 @@ test('claude', 'PowerShell prefers npm over the direct installer when npm is ava
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeNpm(ws);
-  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, withInstallHook: false });
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, autoInstallWithNpm: false });
   t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
   t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @anthropic-ai/claude-code', 'npm receives the official global package');
 });
@@ -1672,19 +1963,13 @@ test('claude', 'PowerShell prefers npm over the direct installer when npm is ava
 test('claude', 'local Bash installer accepts shell content and rejects HTML', async t => {
   const accepted = makeWorkspace();
   modelServer.mode = 'installer-sh';
-  const success = await runShellInstaller({
-    workspace: accepted, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.sh`,
-  });
+  const success = await runBashRemoteInstaller(accepted, `${modelServer.url}/install.sh`);
   t.equal(success.code, 0, `a local shell installer should be accepted:\n${success.combined}`);
   t.ok(existsSync(installerMarker(accepted)), 'accepted installer executed');
 
   const rejected = makeWorkspace();
   modelServer.mode = 'installer-html';
-  const failure = await runShellInstaller({
-    workspace: rejected, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.sh`,
-  });
+  const failure = await runBashRemoteInstaller(rejected, `${modelServer.url}/install.sh`);
   t.ok(failure.code !== 0, 'HTML installer response must be rejected');
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
 });
@@ -1693,28 +1978,19 @@ test('claude', 'local PowerShell installer accepts script content and rejects HT
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const accepted = makeWorkspace();
   modelServer.mode = 'installer-ps1';
-  const success = await runPowerShellInstaller({
-    workspace: accepted, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`,
-  });
+  const success = await runPowerShellRemoteInstaller(accepted, `${modelServer.url}/install.ps1`);
   t.equal(success.code, 0, `a local PowerShell installer should be accepted:\n${success.combined}`);
   t.ok(existsSync(installerMarker(accepted)), 'accepted installer executed');
 
   const rejected = makeWorkspace();
   modelServer.mode = 'installer-html';
-  const failure = await runPowerShellInstaller({
-    workspace: rejected, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`,
-  });
+  const failure = await runPowerShellRemoteInstaller(rejected, `${modelServer.url}/install.ps1`);
   t.ok(failure.code !== 0, 'HTML installer response must be rejected');
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
 
   const disguised = makeWorkspace();
   modelServer.mode = 'installer-banner-html';
-  const disguisedFailure = await runPowerShellInstaller({
-    workspace: disguised, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`,
-  });
+  const disguisedFailure = await runPowerShellRemoteInstaller(disguised, `${modelServer.url}/install.ps1`);
   t.ok(disguisedFailure.code !== 0, 'a banner before an HTML response must still be rejected');
   t.ok(!existsSync(installerMarker(disguised)), 'bannered HTML never executes');
 });
@@ -1723,18 +1999,33 @@ test('claude', 'PowerShell rejects an oversized installer before execution', asy
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-oversized-ps1';
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    configuration: claudeConfig(),
-    baseUrl: modelServer.url,
-    withInstallHook: false,
-    installerUrl: `${modelServer.url}/install.ps1`,
-    downloadMaxBytes: 1024,
-  });
+  const run = await runPowerShellRemoteInstaller(ws, `${modelServer.url}/install.ps1`);
 
   t.ok(run.code !== 0, 'the byte limit must fail the setup');
   t.includes(run.combined, 'installer download exceeded the 8 MiB size limit', 'the failure names the size policy');
   t.ok(!existsSync(installerMarker(ws)), 'an oversized body never reaches an interpreter');
+});
+
+test('claude', 'PowerShell rejects an unsupported installer charset with its encoding cause', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  modelServer.mode = 'installer-unsupported-charset';
+  const catchBody = `$current = $_.Exception
+  while ($null -ne $current) {
+    [Console]::Error.WriteLine(('CHAIN:{0}:{1}' -f $current.GetType().FullName, $current.Message))
+    $current = $current.InnerException
+  }
+  exit 1`;
+  const run = await runPowerShellRemoteInstaller(ws, `${modelServer.url}/install.ps1`, '', catchBody);
+
+  t.ok(run.code !== 0, 'an unsupported declared charset must fail the download');
+  t.includes(run.stderr, 'invalid or unsupported charset (floway-unsupported)', 'the primary diagnostic names the rejected declaration');
+  t.includes(run.stderr, 'CHAIN:System.Exception:setup-handled', 'the handled setup error remains the outer chain node');
+  t.ok(
+    run.stderr.includes('CHAIN:System.ArgumentException:') || run.stderr.includes('CHAIN:System.NotSupportedException:'),
+    `the runtime charset failure remains chained:\n${run.stderr}`,
+  );
+  t.ok(!existsSync(installerMarker(ws)), 'an unsupported charset never reaches an interpreter');
 });
 
 test('claude', 'Bash fallback kills the installer process tree', async t => {
@@ -1750,7 +2041,6 @@ test('claude', 'Bash fallback kills the installer process tree', async t => {
   t.ok(existsSync(installerChildPid(ws)), 'fixture must record a real descendant PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8').trim());
   t.ok(!processExists(childPid), `timed-out installer descendant ${childPid} must be dead`);
-  t.includes(run.combined, 'timeout fallback: process-tree', 'controlled PATH must select the Bash fallback');
 });
 
 test('claude', 'Bash claude --version is bounded before configuration', async t => {
@@ -1771,10 +2061,16 @@ test('claude', 'PowerShell downloaded installer is bounded', async t => {
   const ws = makeWorkspace();
   modelServer.mode = 'installer-ps1';
   const started = Date.now();
-  const run = await runPowerShellInstaller({
-    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 12, timeoutSeconds: 3,
-  });
+  const run = await runPowerShellProbe(ws, `$ErrorActionPreference = 'Stop'
+${SETUP_POWERSHELL_COMMON}
+try {
+  $response = Get-SetupRemoteInstaller ${powerShellLiteral(`${modelServer.url}/install.ps1`)}
+  Invoke-SetupPowerShellBody -Body $response.Body -TimeoutSeconds 3
+  exit 0
+} catch {
+  exit 1
+}
+`, { FAKE_INSTALLER_SLEEP: '12' });
   t.ok(run.code !== 0, 'timed out installer must fail the agent');
   t.ok(Date.now() - started < 10_000, 'installer deadline must fire well before natural completion');
   t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
@@ -1791,22 +2087,20 @@ test('claude', 'PowerShell bounds stdin delivery to an interpreter that never re
 printf '%s' "$$" > "$FAKE_INSTALLER_CHILD_PID_FILE"
 sleep 12
 `, { mode: 0o755 });
-  modelServer.mode = 'installer-large-ps1';
   const started = Date.now();
-
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    configuration: claudeConfig(),
-    baseUrl: modelServer.url,
-    withInstallHook: false,
-    installerUrl: `${modelServer.url}/install.ps1`,
-    timeoutSeconds: 2,
-    powerShellInterpreter: interpreter,
-  });
+  const run = await runPowerShellProbe(ws, `$ErrorActionPreference = 'Stop'
+${SETUP_POWERSHELL_COMMON}
+try {
+  Invoke-SetupInterpreterBody -Body ('x' * (4 * 1024 * 1024)) -TimeoutSeconds 4 -Exe ${powerShellLiteral(interpreter)} -Arguments ''
+  exit 0
+} catch {
+  exit 1
+}
+`);
 
   t.ok(run.code !== 0, 'blocked stdin delivery must fail the setup');
   t.ok(Date.now() - started < 8_000, 'stdin delivery shares the interpreter deadline');
-  t.includes(run.combined, 'installer timed out after 2 seconds', 'the failure identifies the shared deadline');
+  t.includes(run.combined, 'installer timed out after 4 seconds', 'the failure identifies the shared deadline');
   t.ok(existsSync(installerChildPid(ws)), 'the non-reading interpreter records its PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8'));
   t.ok(!processExists(childPid), `timed-out non-reading interpreter ${childPid} must be dead`);
@@ -2183,7 +2477,7 @@ test('codex', 'a delayed batch response within the deadline succeeds because std
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
-    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 2, timeoutSeconds: 30,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 2,
   });
   t.equal(run.code, 0, `a response delayed under the deadline must still succeed:\n${run.combined}`);
   const record = readCodexRecord(ws);
@@ -2199,7 +2493,7 @@ test('codex', 'a batch response past the deadline times out, kills the tree, and
   const started = Date.now();
   const run = await runShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
-    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 8, timeoutSeconds: 1, excludeTimeoutTools: true,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 8, expireAppServerDeadline: true,
   });
   t.ok(run.code !== 0, 'a batch response past the deadline must fail codex');
   t.ok(Date.now() - started < 5_000, 'the deadline fires well before the fake would respond');
@@ -2212,7 +2506,7 @@ test('codex', 'a missing initialize response times out and fails', async t => {
   const started = Date.now();
   const run = await runShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
-    fakeCodexAppServerMode: 'no-initialize-response', timeoutSeconds: 1, excludeTimeoutTools: true,
+    fakeCodexAppServerMode: 'no-initialize-response', expireAppServerDeadline: true,
   });
   t.ok(run.code !== 0, 'a missing initialize response must fail codex');
   t.ok(Date.now() - started < 5_000, 'the deadline bounds the missing-response wait');
@@ -2237,12 +2531,12 @@ test('codex', 'honors an explicit CODEX_HOME for config and provider token', asy
   assertStagedToken(t, ws, codexHome);
 });
 
-test('codex', 'missing CLI triggers the configured installer hook', async t => {
+test('codex', 'missing CLI installs through npm', async t => {
   if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
   const ws = makeWorkspace();
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed after install:\n${run.combined}`);
-  t.ok(existsSync(installerMarker(ws)), 'the installer hook must run when codex is absent');
+  t.ok(existsSync(installerMarker(ws)), 'npm must run when codex is absent');
   t.ok(existsSync(join(ws.home, '.local/bin/codex')), 'the installer places codex in the user-local location');
   assertCodexBaseEdits(t, ws, modelServer.url);
 });
@@ -2251,7 +2545,7 @@ test('codex', 'npm is preferred over the direct installer when npm is available'
   if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
   const ws = makeWorkspace();
   placeFakeNpm(ws);
-  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, withCodexInstallHook: false });
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, autoInstallCodexWithNpm: false });
   t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
   t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @openai/codex', 'npm receives the official global package');
   t.includes(run.stdout, 'Codex CLI not found; installing with npm', 'the selected installation source is reported plainly');
@@ -2344,8 +2638,10 @@ test('codex', 'Bash and PowerShell serialize config and token as one cross-langu
     await waitForFile(successorAtCli, 'PowerShell to acquire the released lock');
   } catch (error) {
     writeFileSync(successorGate, 'release');
-    await successorRun;
-    throw error;
+    const successor = await successorRun;
+    throw new Error(`${String(error)}
+PowerShell successor exited ${successor.code}:
+${successor.combined}`);
   }
   const holderConfig = readFileSync(codexConfigPath(holderWs, codexHome), 'utf8');
   t.equal(readCodexToken(holderWs, codexHome), 'key-holder', 'the holder config and token commit together');
@@ -2531,7 +2827,7 @@ test('codex', 'local Bash installer accepts shell content and rejects HTML for c
   modelServer.mode = 'installer-codex-sh';
   const success = await runShellInstaller({
     workspace: accepted, configuration: codexConfig(), baseUrl: modelServer.url,
-    withCodexInstallHook: false, codexInstallerUrl: `${modelServer.url}/install-codex.sh`,
+    autoInstallCodexWithNpm: false, bashCodexInstallerUrl: `${modelServer.url}/install-codex.sh`,
   });
   t.equal(success.code, 0, `a local codex shell installer should be accepted:\n${success.combined}`);
   t.ok(existsSync(installerMarker(accepted)), 'accepted codex installer executed');
@@ -2540,7 +2836,7 @@ test('codex', 'local Bash installer accepts shell content and rejects HTML for c
   modelServer.mode = 'installer-html';
   const failure = await runShellInstaller({
     workspace: rejected, configuration: codexConfig(), baseUrl: modelServer.url,
-    withCodexInstallHook: false, codexInstallerUrl: `${modelServer.url}/install-codex.sh`,
+    autoInstallCodexWithNpm: false, bashCodexInstallerUrl: `${modelServer.url}/install-codex.sh`,
   });
   t.ok(failure.code !== 0, 'HTML codex installer response must be rejected');
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
@@ -2769,26 +3065,25 @@ test('codex', 'PowerShell: the API key never appears in output and never reaches
   t.equal(readCodexToken(ws), SENTINEL_KEY, 'the key was actually staged into floway-token');
 });
 
-test('codex', 'PowerShell: missing CLI triggers the documented remote installer invocation', async t => {
+test('codex', 'PowerShell: the documented remote installer uses a process-scoped execution-policy override', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-codex-ps1';
-  try {
-    const run = await runPowerShellInstaller({
-      workspace: ws,
-      configuration: codexConfig(),
-      baseUrl: modelServer.url,
-      withCodexInstallHook: false,
-      codexInstallerUrl: `${modelServer.url}/install-codex.ps1`,
-    });
-    t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
-    t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
-    const installerCommandLine = readFileSync(join(ws.root, 'installer-command-line.txt'), 'utf8');
-    t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the Codex installer subprocess matches the documented process-scoped execution-policy override');
-    assertCodexBaseEdits(t, ws, modelServer.url);
-  } finally {
-    modelServer.mode = 'ok';
-  }
+  const commandLinePath = join(ws.root, 'installer-command-line.txt');
+  const run = await runPowerShellRemoteInstaller(
+    ws,
+    `${modelServer.url}/install-codex.ps1`,
+    '-BypassExecutionPolicy',
+    'exit 1',
+    {
+      CODEX_NON_INTERACTIVE: 'true',
+      FAKE_INSTALLER_OBSERVED_COMMAND_LINE: commandLinePath,
+    },
+  );
+  t.equal(run.code, 0, `the Codex installer should execute:\n${run.combined}`);
+  t.ok(existsSync(installerMarker(ws)), 'the installer executes in the clean interpreter');
+  const installerCommandLine = readFileSync(commandLinePath, 'utf8');
+  t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the subprocess matches the documented process-scoped execution-policy override');
 });
 
 test('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocation and removed afterward', async t => {
@@ -2834,7 +3129,7 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server write
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
     configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
-    codexHome, withCodexInstallHook: false,
+    codexHome, autoInstallCodexWithNpm: false,
   });
   t.equal(run.code, 0, `real codex app-server configuration should succeed:\n${run.combined}`);
   const configText = readFileSync(codexConfigPath(ws, codexHome), 'utf8');
@@ -2932,29 +3227,28 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
 
 test('claude', 'Bash styles agent notices while leaving metadata plain', async t => {
   const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
-  t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[34m==>[0m [1mAgent Setup: Claude Code[0m', 'the setup title uses the notice style');
-  t.includes(forced.stdout, 'Endpoint: ', 'the Endpoint metadata remains visible');
-  t.includes(forced.stdout, 'API Key: Primary key', 'the API Key metadata remains visible');
-  t.excludes(forced.stdout, '[1mEndpoint:', 'the Endpoint label is not styled');
-  t.excludes(forced.stdout, '[1mAPI Key:', 'the API Key label is not styled');
-  t.includes(forced.stdout, '[34m==>[0m [1mInstalling: Claude Code[0m', 'the installation section uses the notice style');
-  t.includes(forced.stdout, '[34m==>[0m [1mConfiguring: Claude Code[0m', 'the configuration section uses the notice style');
-  t.includes(forced.stdout, '[34m==>[0m [1mCompleted Agent Setup: Claude Code[0m', 'the successful result uses the notice style');
-  t.excludes(forced.stdout, '[92m', 'success does not use green ANSI styling');
-  t.ok(!hasVTControlCharacters(forced.stderr), 'a successful run leaves stderr free of VT controls even under forced color');
+  const colored = await runBashOutputProbe(ws);
+  t.equal(colored.code, 0, `output probe should succeed:\n${colored.combined}`);
+  t.includes(colored.stdout, '[34m==>[0m [1mAgent Setup: Claude Code[0m', 'the setup title uses the notice style');
+  t.includes(colored.stdout, 'Endpoint: ', 'the Endpoint metadata remains visible');
+  t.includes(colored.stdout, 'API Key: Primary key', 'the API Key metadata remains visible');
+  t.excludes(colored.stdout, '[1mEndpoint:', 'the Endpoint label is not styled');
+  t.excludes(colored.stdout, '[1mAPI Key:', 'the API Key label is not styled');
+  t.includes(colored.stdout, '[34m==>[0m [1mInstalling: Claude Code[0m', 'the installation section uses the notice style');
+  t.includes(colored.stdout, '[34m==>[0m [1mConfiguring: Claude Code[0m', 'the configuration section uses the notice style');
+  t.includes(colored.stdout, '[34m==>[0m [1mCompleted Agent Setup: Claude Code[0m', 'the successful result uses the notice style');
+  t.includes(colored.stderr, '[93mWarning:[0m warning detail', 'warning labels use the warning palette');
+  t.includes(colored.stderr, '[91mError:[0m error detail', 'error labels use the error palette');
+  t.excludes(colored.stdout, '[92m', 'success does not use green ANSI styling');
 
   const suppressed = makeWorkspace();
-  placeFakeClaude(suppressed.binDir);
-  const noColor = await runShellInstaller({ workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true, noColor: true });
-  t.equal(noColor.code, 0, `NO_COLOR run should succeed:\n${noColor.combined}`);
-  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on both streams');
+  const noColor = await runBashOutputProbe(suppressed, true);
+  t.equal(noColor.code, 0, `NO_COLOR probe should succeed:\n${noColor.combined}`);
+  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR suppresses color on both streams');
   t.includes(noColor.stdout, 'Claude Code', 'the plain heading is still present without color');
 });
 
-test('claude', 'Bash routes errors to stderr with a red label', async t => {
+test('claude', 'Bash routes configuration errors to stderr', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const configDir = join(ws.home, '.claude');
@@ -2962,28 +3256,18 @@ test('claude', 'Bash routes errors to stderr with a red label', async t => {
   writeFileSync(settingsPathFor(ws), '{ invalid json');
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(),
-    forceColor: true,
   });
   t.ok(run.code !== 0, 'invalid settings must fail the agent');
-  t.includes(run.stderr, '[91mError:[0m ', 'the error label is painted red on stderr');
+  t.includes(run.stderr, 'Error: ', 'the error is labeled on stderr');
   t.includes(run.stderr, 'is not valid Claude settings; leaving it untouched.', 'the error retains its diagnostic body');
   t.excludes(run.stdout, 'is not valid Claude settings', 'the error does not leak onto stdout');
 });
 
-test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape-free, and honors NO_COLOR', async t => {
+test('claude', 'PowerShell uses console color only for interactive diagnostics and honors NO_COLOR', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const configDir = join(ws.home, '.claude');
-  mkdirSync(configDir, { recursive: true });
-  writeFileSync(settingsPathFor(ws), '{ invalid json');
-  const forced = await runPowerShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(),
-    forceColor: true,
-  });
-  t.ok(forced.code !== 0, 'invalid settings must fail the agent');
-  t.ok(!hasVTControlCharacters(forced.stdout), 'host-colored stdout never carries VT controls even under forced color');
-  t.includes(forced.stderr, '[91mError:[0m ', 'stderr colors the primary error label');
+  t.includes(SETUP_POWERSHELL_COMMON, '[Console]::ForegroundColor = $Color', 'interactive diagnostics select the requested console color');
+  t.includes(SETUP_POWERSHELL_COMMON, '$script:SetupErrColor = (-not [Console]::IsErrorRedirected)', 'color is gated by the real stderr terminal state');
+  t.excludes(SETUP_POWERSHELL_COMMON, 'SetupForceColor', 'the served script exposes no forced-color branch');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);
@@ -2991,7 +3275,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   writeFileSync(settingsPathFor(suppressed), '{ invalid json');
   const noColor = await runPowerShellInstaller({
     workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(),
-    forceColor: true, noColor: true,
+    noColor: true,
   });
   t.ok(noColor.code !== 0, 'the failure still occurs');
   t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
@@ -3002,9 +3286,9 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
   placeFakeClaude(join(bashWs.home, '.local/bin'));
-  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
-  t.includes(bash.stderr, '[93mWarning:[0m multiple Claude Code installations detected;', 'Bash colors only the warning label');
+  t.includes(bash.stderr, 'Warning: multiple Claude Code installations detected;', 'Bash emits the warning on stderr');
   t.excludes(bash.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
@@ -3012,9 +3296,9 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   const psWs = makeWorkspace();
   placeFakeClaude(psWs.binDir);
   placeFakeClaude(join(psWs.home, '.local/bin'));
-  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
+  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
-  t.includes(ps.stderr, '[93mWarning:[0m multiple Claude Code installations detected;', 'PowerShell colors only the warning label');
+  t.includes(ps.stderr, 'Warning: multiple Claude Code installations detected;', 'PowerShell emits the warning on stderr');
   t.excludes(ps.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 });
 
@@ -3041,7 +3325,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
   writeFileSync(codexTokenPath(ws), 'old-provider-token');
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url, configuration: codexConfig(),
-    fakeCodexAppServerMode: 'error', failRestore: true,
+    fakeCodexAppServerMode: 'error', failPowerShellRestore: true,
   });
   t.ok(run.code !== 0, 'an app-server configuration error must fail setup');
   t.includes(run.stderr, 'Warning: could not restore', 'a rollback-failure warning is printed to stderr');

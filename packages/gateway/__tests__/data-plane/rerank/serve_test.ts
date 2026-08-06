@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { readRerankTranslationResponse } from '../../../src/data-plane/rerank/serve.ts';
 import type { Repo } from '../../../src/repo/types.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackgroundExpectingFailures } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -575,7 +576,7 @@ test('same-protocol read failure discards already-observed rerank usage', async 
     },
   );
 
-  await flushAsyncWork();
+  await flushBackgroundExpectingFailures(failure, failure, failure);
   await assertFailedRequestOnlySettlement(repo);
 });
 
@@ -643,39 +644,58 @@ test('rerank failover drains the discarded response before settling the winner',
   });
   await repo.upstreams.save(upstream('up_first', 'https://first-rerank.example.com', 1));
   await repo.upstreams.save(upstream('up_second', 'https://second-rerank.example.com', 2));
-  let discardedController!: ReadableStreamDefaultController<Uint8Array>;
   let discardedSourceCanceled = false;
+  let markDiscardedPullStarted!: () => void;
+  const discardedPullStarted = new Promise<void>(resolve => { markDiscardedPullStarted = resolve; });
+  let releaseDiscardedPull!: () => void;
+  const discardedPullGate = new Promise<void>(resolve => { releaseDiscardedPull = resolve; });
+  let discardedPullOffered = false;
+  const encoder = new TextEncoder();
 
-  await withMockedFetch(
-    request => {
-      const host = new URL(request.url).hostname;
-      if (host === 'first-rerank.example.com') {
-        return new Response(new ReadableStream<Uint8Array>({
-          start(controller) {
-            discardedController = controller;
-            controller.enqueue(new TextEncoder().encode('{"error":"temporarily unavailable"}'));
-          },
-          cancel() {
-            discardedSourceCanceled = true;
-          },
-        }), { status: 503, headers: { 'content-type': 'application/json' } });
-      }
-      if (host === 'second-rerank.example.com') {
-        return jsonResponse({ model: 'raw-reranker', object: 'list', results: [], usage: { total_tokens: 9 } });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/jina/v1/rerank', {
-        method: 'POST',
-        headers: requestHeaders(apiKey.key),
-        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
-      });
-      assertEquals(response.status, 200);
-      await response.json();
-      discardedController.close();
-    },
-  );
+  try {
+    await withMockedFetch(
+      request => {
+        const host = new URL(request.url).hostname;
+        if (host === 'first-rerank.example.com') {
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode('{"error":"temporarily'));
+            },
+            async pull(controller) {
+              if (discardedPullOffered) return;
+              discardedPullOffered = true;
+              markDiscardedPullStarted();
+              await discardedPullGate;
+              controller.enqueue(encoder.encode(' unavailable"}'));
+              controller.close();
+            },
+            cancel() {
+              discardedSourceCanceled = true;
+            },
+          }, { highWaterMark: 0 }), { status: 503, headers: { 'content-type': 'application/json' } });
+        }
+        if (host === 'second-rerank.example.com') {
+          return jsonResponse({ model: 'raw-reranker', object: 'list', results: [], usage: { total_tokens: 9 } });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const request = requestApp('/jina/v1/rerank', {
+          method: 'POST',
+          headers: requestHeaders(apiKey.key),
+          body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+        });
+        await discardedPullStarted;
+        assertEquals(discardedSourceCanceled, false);
+        releaseDiscardedPull();
+        const response = await request;
+        assertEquals(response.status, 200);
+        await response.json();
+      },
+    );
+  } finally {
+    releaseDiscardedPull();
+  }
 
   await flushAsyncWork();
   assertEquals(discardedSourceCanceled, false);

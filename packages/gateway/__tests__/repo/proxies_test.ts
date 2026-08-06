@@ -95,6 +95,49 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     expect(await repo.proxies.getById('a')).not.toBeNull();
   });
 
+  test(`[${backend}] full upstream save cannot create an orphan when proxy deletion wins`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
+
+    // Start both operations without awaiting either. The delete call is issued
+    // first, so memory's shared mutation coordinator and SQLite's statement
+    // serialization both make deletion the winner deterministically.
+    const deletion = repo.proxies.delete('a');
+    const save = repo.upstreams.save(upstreamFixture('up_raced_insert', [{ id: 'a' }]));
+
+    await expect(deletion).resolves.toBe(true);
+    await expect(save).rejects.toThrow('references a proxy that does not exist');
+    expect(await repo.upstreams.getById('up_raced_insert')).toBeNull();
+  });
+
+  test(`[${backend}] full upstream replacement is all-or-nothing when proxy deletion wins`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
+    const original = upstreamFixture('up_raced_replace', []);
+    await repo.upstreams.save(original);
+
+    const deletion = repo.proxies.delete('a');
+    const replacement = repo.upstreams.saveClearingModelsCache({
+      ...original,
+      name: 'Must not land',
+      proxyFallbackList: [{ id: 'a' }],
+    });
+
+    await expect(deletion).resolves.toBe(true);
+    await expect(replacement).rejects.toThrow('references a proxy that does not exist');
+    expect(await repo.upstreams.getById(original.id)).toMatchObject({
+      name: original.name,
+      proxyFallbackList: [],
+    });
+  });
+
+  test(`[${backend}] full upstream save accepts both built-in transports without proxy rows`, async () => {
+    const repo = await makeRepo();
+    const upstream = upstreamFixture('up_direct', [{ id: 'direct_connect' }, { id: 'direct_fetch' }]);
+    await expect(repo.upstreams.save(upstream)).resolves.toBeUndefined();
+    expect((await repo.upstreams.getById(upstream.id))?.proxyFallbackList).toEqual(upstream.proxyFallbackList);
+  });
+
   test(`[${backend}] upstream writes cannot reference a proxy after its deletion wins`, async () => {
     const repo = await makeRepo();
     await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
@@ -157,6 +200,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(after?.createdAt, originalCreatedAt);
   });
 
+  test(`[${backend}] proxies repo rejects lossy UTF-16 ids and preserves a valid surrogate pair`, async () => {
+    const repo = await makeRepo();
+    for (const id of ['proxy\uD800', 'proxy\uDC00']) {
+      await expect(Promise.resolve().then(async () => await repo.proxies.save({
+        id,
+        name: 'Invalid',
+        url: 'socks5://invalid.example.test:1080',
+        dialTimeoutSeconds: null,
+      }))).rejects.toThrow('unpaired UTF-16 surrogates');
+    }
+
+    const id = 'proxy-\uD83D\uDE00';
+    await repo.proxies.save({ id, name: 'Valid', url: 'socks5://valid.example.test:1080', dialTimeoutSeconds: null });
+    expect(await repo.proxies.getById(id)).toMatchObject({ id, name: 'Valid' });
+  });
+
   test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
     const repo = await makeRepo();
     await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });
@@ -210,6 +269,10 @@ class VanishingProxyStatement implements SqlPreparedStatement {
 test('SQL proxy patch returns null when the row disappears at the write boundary', async () => {
   const db: SqlDatabase = {
     prepare: query => new VanishingProxyStatement(query),
+    batch: async () => [
+      { results: [], success: true, meta: { changes: 0 } },
+      { results: [], success: true, meta: { changes: 0 } },
+    ],
     exec: async () => undefined,
   };
   const repo = new SqlRepo(db);

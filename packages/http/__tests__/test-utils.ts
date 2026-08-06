@@ -18,7 +18,14 @@ export interface FakeDuplex {
   endResponse(): void;
 }
 
-export const makeFakeDuplex = (): FakeDuplex => {
+export interface FakeDuplexHooks {
+  readonly readableCancel?: (reason: unknown) => void | Promise<void>;
+  readonly writableWrite?: (index: number, chunk: Uint8Array) => void | Promise<void>;
+  readonly writableClose?: () => void | Promise<void>;
+  readonly writableAbort?: (reason: unknown) => void | Promise<void>;
+}
+
+export const makeFakeDuplex = (hooks: FakeDuplexHooks = {}): FakeDuplex => {
   let writeBuffer = new Uint8Array(0);
   const writeWaiters: Array<{
     minBytes: number;
@@ -35,21 +42,30 @@ export const makeFakeDuplex = (): FakeDuplex => {
   let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
 
+  let writeIndex = 0;
   const writable = new WritableStream<Uint8Array>({
-    write(chunk) {
+    async write(chunk) {
+      await hooks.writableWrite?.(writeIndex++, chunk);
       const next = new Uint8Array(writeBuffer.byteLength + chunk.byteLength);
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
       writeBuffer = next;
       dispatchWriteWaiters();
     },
-    close() { writableClosedResolve(); },
-    abort() { writableClosedResolve(); },
+    async close() {
+      writableClosedResolve();
+      await hooks.writableClose?.();
+    },
+    async abort(reason) {
+      writableClosedResolve();
+      await hooks.writableAbort?.(reason);
+    },
   });
 
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const readable = new ReadableStream<Uint8Array>({
     start(c) { controller = c; },
+    async cancel(reason) { await hooks.readableCancel?.(reason); },
   });
 
   const enc = new TextEncoder();

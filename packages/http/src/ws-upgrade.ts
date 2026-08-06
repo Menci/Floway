@@ -12,6 +12,7 @@ import { sha1 } from '@noble/hashes/legacy.js';
 
 import { signalAbortReason } from './abort.ts';
 import { base64EncodeBytes, concat, copy, utf8Bytes } from './bytes.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
 import { HttpProtocolError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { readHeadSection } from './read-head-section.ts';
@@ -120,21 +121,37 @@ export const wsUpgradeAndFrame = async (
   try {
     reader = transport.readable.getReader();
   } catch (error) {
-    writer.releaseLock();
-    throw error;
+    const cleanupFailures = await collectCleanupFailures([() => writer.releaseLock()]);
+    throw failureWithCleanup(error, cleanupFailures, 'WebSocket reader acquisition and writer cleanup both failed');
   }
 
   // The pre-handshake teardown path needs to release both locks so the
   // caller can destroy the underlying socket cleanly.
+  let handshakeReaderFailed = false;
+  const trackedHandshakeReader = {
+    read: async () => {
+      try {
+        return await reader.read();
+      } catch (error) {
+        handshakeReaderFailed = true;
+        throw error;
+      }
+    },
+  } as ReadableStreamDefaultReader<Uint8Array>;
   let handshakeReaderReleased = false;
   const releaseHandshakeReader = (): void => {
     if (handshakeReaderReleased) return;
+    reader.releaseLock();
     handshakeReaderReleased = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
   };
-  const releaseLocksAndCancel = async (cause?: unknown): Promise<void> => {
-    try { await reader.cancel(cause); } catch { /* reader already cancelled */ } finally { releaseHandshakeReader(); }
-    try { writer.releaseLock(); } catch { /* lock already released */ }
+  let handshakeCleanup: Promise<readonly unknown[]> | null = null;
+  const releaseLocksAndCancel = (cause?: unknown): Promise<readonly unknown[]> => {
+    handshakeCleanup ??= Promise.resolve().then(async () => await collectCleanupFailures([
+      ...(!handshakeReaderFailed ? [async () => await reader.cancel(cause)] : []),
+      releaseHandshakeReader,
+      () => writer.releaseLock(),
+    ]));
+    return handshakeCleanup;
   };
 
   let abortDetach: (() => void) | null = null;
@@ -147,7 +164,6 @@ export const wsUpgradeAndFrame = async (
     const onAbort = (): void => {
       const reason = signalAbortReason(signal);
       rejectAbort(reason);
-      void reader.cancel(reason).catch(() => {});
     };
     signal.addEventListener('abort', onAbort, { once: true });
     abortDetach = (): void => signal.removeEventListener('abort', onAbort);
@@ -160,7 +176,7 @@ export const wsUpgradeAndFrame = async (
   try {
     await raceAbort(sendUpgradeRequest(writer, opts, clientKey));
 
-    const { headers, remainder } = await raceAbort(readUpgradeResponse(reader));
+    const { headers, remainder } = await raceAbort(readUpgradeResponse(trackedHandshakeReader));
     validateUpgradeResponse(headers, expectedAccept, opts.subprotocols);
 
     abortDetach?.();
@@ -176,8 +192,8 @@ export const wsUpgradeAndFrame = async (
   } catch (err) {
     abortDetach?.();
     const failure = opts.signal?.aborted ? signalAbortReason(opts.signal) : err;
-    await releaseLocksAndCancel(failure);
-    throw failure;
+    const cleanupFailures = await releaseLocksAndCancel(failure);
+    throw failureWithCleanup(failure, cleanupFailures, 'WebSocket handshake and cleanup both failed');
   }
 };
 
@@ -414,48 +430,99 @@ const frameDuplexOnTransport = (
   // many dials — would otherwise accumulate one closure per ws upgrade
   // pinning the closed-over streams.
   let detachAbortListener: (() => void) | null = null;
-  let readerSettlement: Promise<void> | null = null;
-  const settleReader = (cause?: unknown): Promise<void> => {
-    readerSettlement ??= (async () => {
-      try { await reader.cancel(cause); } catch { /* reader already cancelled */ } finally {
-        try { reader.releaseLock(); } catch { /* lock already released */ }
-      }
-    })();
+  const defer = <T>(operation: () => Promise<T>): Promise<T> => Promise.resolve().then(operation);
+  let rawReaderFailed = false;
+  const readTransport = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    try {
+      return await reader.read();
+    } catch (error) {
+      rawReaderFailed = true;
+      throw error;
+    }
+  };
+  let readerReleased = false;
+  const releaseReader = (): void => {
+    if (readerReleased) return;
+    reader.releaseLock();
+    readerReleased = true;
+  };
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (cause?: unknown): Promise<readonly unknown[]> => {
+    readerSettlement ??= defer(async () => await collectCleanupFailures([
+      ...(rawReaderFailed ? [] : [async () => await reader.cancel(cause)]),
+      releaseReader,
+    ]));
     return readerSettlement;
   };
-  let writerSettlement: Promise<void> | null = null;
+  let frameWriterFailed = false;
+  let writerReleased = false;
+  const releaseFrameWriter = (): void => {
+    if (writerReleased) return;
+    frameWriter.releaseLock();
+    writerReleased = true;
+  };
+  type WriterSettlement = { readonly type: 'close' } | { readonly type: 'abort'; readonly reason: unknown };
+  let writerSettlement: Promise<readonly unknown[]> | null = null;
   let outboundClosing = false;
-  const settleFrameWriter = (cause?: unknown): Promise<void> => {
-    writerSettlement ??= (async () => {
-      try {
-        if (cause !== undefined) await frameWriter.abort(cause);
-        else await frameWriter.close();
-      } catch { /* peer already gone */ } finally {
-        try { frameWriter.releaseLock(); } catch { /* lock already released */ }
-      }
-    })();
+  const settleFrameWriter = (settlement: WriterSettlement): Promise<readonly unknown[]> => {
+    writerSettlement ??= defer(async () => await collectCleanupFailures([
+      ...(frameWriterFailed
+        ? []
+        : [async () => {
+            if (settlement.type === 'abort') await frameWriter.abort(settlement.reason);
+            else await frameWriter.close();
+          }]),
+      releaseFrameWriter,
+    ]));
     return writerSettlement;
   };
 
-  let plainSettlement: Promise<void> | null = null;
-  const closePlain = (cause?: unknown): Promise<void> => {
+  type PrimaryFailure = { readonly error: unknown } | null;
+  type PlainSettlement =
+    | { readonly type: 'ok'; readonly cleanupFailures: readonly unknown[] }
+    | { readonly type: 'error'; readonly error: unknown; readonly cleanupFailures: readonly unknown[] };
+  let plainSettlement: Promise<PlainSettlement> | null = null;
+  const closePlain = (
+    primary: PrimaryFailure,
+    priorCleanupFailures: readonly unknown[] = [],
+  ): Promise<PlainSettlement> => {
     if (plainSettlement) return plainSettlement;
     plainClosed = true;
     detachAbortListener?.();
     detachAbortListener = null;
     outboundClosing = true;
-    plainSettlement = (async () => {
+    plainSettlement = defer(async () => {
       // Settle both borrowed locks before resolving a pending consumer read.
       // This makes EOF/error a teardown certificate rather than a state that
       // can race the transport cleanup scheduled behind it.
-      await Promise.all([settleReader(cause), settleFrameWriter(cause)]);
-      if (cause !== undefined) {
-        try { plainController.error(cause); } catch { /* already closed */ }
-      } else {
-        try { plainController.close(); } catch { /* already closed */ }
+      const [readerFailures, writerFailures] = await Promise.all([
+        settleReader(primary?.error),
+        settleFrameWriter(primary === null ? { type: 'close' } : { type: 'abort', reason: primary.error }),
+      ]);
+      const cleanupFailures = [...priorCleanupFailures, ...readerFailures, ...writerFailures];
+      if (primary !== null) {
+        const error = failureWithCleanup(primary.error, cleanupFailures, 'WebSocket failure and cleanup both failed');
+        try { plainController.error(error); } catch { /* already closed */ }
+        return { type: 'error', error, cleanupFailures };
       }
-    })();
+      if (cleanupFailures.length > 0) {
+        const error = cleanupFailure(cleanupFailures, 'WebSocket cleanup failed');
+        try { plainController.error(error); } catch { /* already closed */ }
+        return { type: 'error', error, cleanupFailures };
+      }
+      try { plainController.close(); } catch { /* already closed */ }
+      return { type: 'ok', cleanupFailures };
+    });
     return plainSettlement;
+  };
+
+  const writeTransportFrame = async (opcode: number, payload: Uint8Array): Promise<void> => {
+    try {
+      await writeFrame(frameWriter, opcode, payload);
+    } catch (error) {
+      frameWriterFailed = true;
+      throw error;
+    }
   };
 
   const sendCloseFrame = async (code: number, reason: string): Promise<void> => {
@@ -480,11 +547,7 @@ const frameDuplexOnTransport = (
     payload[0] = (code >> 8) & 0xff;
     payload[1] = code & 0xff;
     payload.set(reasonBytes, 2);
-    try {
-      await writeFrame(frameWriter, 0x8, payload);
-    } catch {
-      /* peer already gone */
-    }
+    await writeTransportFrame(0x8, payload);
   };
 
   // Reassembly state for fragmented messages. RFC 6455 §5.4 allows a
@@ -510,12 +573,12 @@ const frameDuplexOnTransport = (
       validateClosePayload(payload);
       outboundClosing = true;
       await sendCloseFrame(WS_CLOSE_NORMAL, '');
-      await closePlain();
+      await closePlain(null);
       return false;
     }
     if (opcode === 0x9) {
       // Ping: per RFC 6455 §5.5.2 the pong payload echoes the ping payload.
-      await writeFrame(frameWriter, 0xa, payload);
+      await writeTransportFrame(0xa, payload);
       return false;
     }
     if (opcode === 0xa) {
@@ -589,7 +652,7 @@ const frameDuplexOnTransport = (
     try {
       plainController.enqueue(message);
     } catch (err) {
-      await closePlain(err);
+      await closePlain({ error: err });
     }
     return true;
   };
@@ -607,16 +670,21 @@ const frameDuplexOnTransport = (
       outboundClosing = true;
       detachAbortListener?.();
       detachAbortListener = null;
-      await settleReader(reason);
-      await sendCloseFrame(WS_CLOSE_NORMAL, '');
-      await settleFrameWriter(reason instanceof Error ? reason : undefined);
+      const readerSettlement = settleReader(reason);
+      const closeFrameFailures = await collectCleanupFailures([async () => await sendCloseFrame(WS_CLOSE_NORMAL, '')]);
+      const writerSettlement = settleFrameWriter(
+        reason instanceof Error ? { type: 'abort', reason } : { type: 'close' },
+      );
+      const [readerFailures, writerFailures] = await Promise.all([readerSettlement, writerSettlement]);
+      const cleanupFailures = [...readerFailures, ...closeFrameFailures, ...writerFailures];
+      if (cleanupFailures.length > 0) throw cleanupFailure(cleanupFailures, 'WebSocket readable cancellation cleanup failed');
     },
     async pull(_controller) {
       try {
         while (!plainClosed) {
           const header = tryParseFrameHeader(buffer);
           if (!header) {
-            const { value, done } = await reader.read();
+            const { value, done } = await readTransport();
             if (done) {
               if (plainClosed) return;
               throw new HttpProtocolError(
@@ -645,7 +713,7 @@ const frameDuplexOnTransport = (
           const parts = [buffer];
           let bufferedBytes = buffer.byteLength;
           while (bufferedBytes < total) {
-            const { value, done } = await reader.read();
+            const { value, done } = await readTransport();
             if (done) {
               if (plainClosed) return;
               throw new HttpProtocolError(
@@ -674,7 +742,7 @@ const frameDuplexOnTransport = (
           if (await handleFrame(header.fin, header.opcode, payload)) return;
         }
       } catch (err) {
-        await closePlain(err);
+        await closePlain({ error: err });
       }
     },
   });
@@ -690,27 +758,38 @@ const frameDuplexOnTransport = (
           { rfc: 'RFC 6455 §5.5.1' },
         );
       }
-      await writeFrame(frameWriter, 0x2, chunk);
+      try {
+        await writeTransportFrame(0x2, chunk);
+      } catch (error) {
+        const outcome = await closePlain({ error });
+        throw outcome.type === 'error' ? outcome.error : error;
+      }
     },
     async close() {
       if (outboundClosing) return;
       outboundClosing = true;
-      await sendCloseFrame(WS_CLOSE_NORMAL, '');
-      await settleFrameWriter();
+      const closeFrameFailures = await collectCleanupFailures([async () => await sendCloseFrame(WS_CLOSE_NORMAL, '')]);
+      const outcome = await closePlain(null, closeFrameFailures);
+      if (outcome.type === 'error') throw outcome.error;
     },
     async abort(reason) {
       if (outboundClosing) return;
       outboundClosing = true;
-      await sendCloseFrame(WS_CLOSE_INTERNAL_ERROR, String(reason ?? ''));
+      const closeFrameFailures = await collectCleanupFailures([
+        async () => await sendCloseFrame(WS_CLOSE_INTERNAL_ERROR, String(reason ?? '')),
+      ]);
       const cause = reason instanceof Error ? reason : new Error(String(reason ?? 'WebSocket writable aborted'));
-      await closePlain(cause);
+      const outcome = await closePlain({ error: cause }, closeFrameFailures);
+      if (outcome.cleanupFailures.length > 0) {
+        throw cleanupFailure(outcome.cleanupFailures, 'WebSocket writable abort cleanup failed');
+      }
     },
   });
 
   if (signal) {
     const captured = signal;
     const onAbort = (): void => {
-      void closePlain(signalAbortReason(captured));
+      void closePlain({ error: signalAbortReason(captured) });
     };
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);

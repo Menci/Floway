@@ -9,9 +9,49 @@ import {
   type ClaudeCodeAccessTokenEntry,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
-import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
+
+export interface ClaudeCodeCredentialGeneration {
+  readonly accountUuid: string;
+  readonly tokenKind: ClaudeCodeAccountCredential['tokenKind'];
+  readonly refreshToken: string | null;
+  readonly stateUpdatedAt: string;
+  readonly accessToken: string;
+}
+
+export const claudeCodeCredentialGeneration = (
+  account: ClaudeCodeAccountCredential,
+  accessToken: ClaudeCodeAccessTokenEntry,
+): ClaudeCodeCredentialGeneration => ({
+  accountUuid: account.accountUuid,
+  tokenKind: account.tokenKind,
+  refreshToken: account.refreshToken,
+  stateUpdatedAt: account.stateUpdatedAt,
+  accessToken: accessToken.token,
+});
+
+export const isClaudeCodeCredentialGeneration = (
+  account: ClaudeCodeAccountCredential,
+  generation: ClaudeCodeCredentialGeneration,
+): boolean => account.state === 'active'
+  && account.accountUuid === generation.accountUuid
+  && account.tokenKind === generation.tokenKind
+  && account.refreshToken === generation.refreshToken
+  && account.stateUpdatedAt === generation.stateUpdatedAt
+  && account.accessToken?.token === generation.accessToken;
+
+// Quota and terminal observations belong to the imported account generation,
+// not to one short-lived OAuth token. Successful refresh rotation deliberately
+// keeps stateUpdatedAt unchanged, while re-importing the account advances it.
+export const isClaudeCodeAccountGeneration = (
+  account: ClaudeCodeAccountCredential,
+  generation: ClaudeCodeCredentialGeneration,
+): boolean => account.state === 'active'
+  && account.accountUuid === generation.accountUuid
+  && account.tokenKind === generation.tokenKind
+  && account.stateUpdatedAt === generation.stateUpdatedAt;
 
 // Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when
 // this call shared in a real /v1/oauth/token round-trip (either drove the
@@ -28,6 +68,7 @@ export type { ClaudeCodeAccessTokenEntry };
 export interface EnsuredAccessToken {
   entry: ClaudeCodeAccessTokenEntry;
   freshlyMinted: boolean;
+  generation: ClaudeCodeCredentialGeneration;
 }
 
 // Refresh window: a cached token within this much of expiry counts as
@@ -50,13 +91,13 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
   fetcher: Fetcher;
+  signal?: AbortSignal;
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
   // data plane leaves it false so a live request served from cache stays
-  // cheap. Lazy and forced calls share one flight per upstream so they can
-  // never rotate the same credential concurrently. A forced caller that
-  // joins a lazy cache hit starts one forced refresh after the hit settles.
+  // cheap. Forced actions serialize behind earlier work and then run through
+  // their own fetcher; lazy callers can share a successful mint.
   force?: boolean;
 }
 
@@ -78,30 +119,80 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // the rare case.
 interface ClaudeCodeAccessTokenFlight {
   force: boolean;
+  controller: AbortController;
   promise: Promise<EnsuredAccessToken>;
+  waiters: number;
+  settled: boolean;
 }
 
 const inFlightEnsures = new Map<string, ClaudeCodeAccessTokenFlight>();
 
+const awaitClaudeCodeAccessTokenFlight = async (
+  flight: ClaudeCodeAccessTokenFlight,
+  signal: AbortSignal | undefined,
+): Promise<EnsuredAccessToken> => {
+  flight.waiters += 1;
+  try {
+    if (signal?.aborted) throw signal.reason;
+    if (signal === undefined) return await flight.promise;
+    return await new Promise<EnsuredAccessToken>((resolve, reject) => {
+      const onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      void flight.promise.then(resolve, reject).finally(() => {
+        signal.removeEventListener('abort', onAbort);
+      });
+    });
+  } finally {
+    flight.waiters -= 1;
+    if (!flight.settled && flight.waiters === 0) {
+      flight.controller.abort(signal?.reason ?? new DOMException('Claude Code token refresh has no waiters', 'AbortError'));
+    }
+  }
+};
+
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
 ): Promise<EnsuredAccessToken> => {
+  if (args.signal?.aborted) throw args.signal.reason;
   const key = args.upstreamId;
   const existing = inFlightEnsures.get(key);
-  if (existing) {
-    const ensured = await existing.promise;
-    if (!args.force || existing.force || ensured.freshlyMinted) return ensured;
+  if (existing?.settled || existing?.controller.signal.aborted) {
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureClaudeCodeAccessToken(args);
   }
-  const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  const flight: ClaudeCodeAccessTokenFlight = { force: args.force === true, promise };
-  inFlightEnsures.set(key, flight);
-  try {
-    return await promise;
-  } finally {
-    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+  if (existing) {
+    if (!args.force && existing.force) {
+      const cached = await freshClaudeCodeAccessToken(args);
+      if (args.signal?.aborted) throw args.signal.reason;
+      if (cached !== null) return cached;
+    }
+    try {
+      const ensured = await awaitClaudeCodeAccessTokenFlight(existing, args.signal);
+      if (!args.force) return ensured;
+    } catch (error) {
+      if (args.signal?.aborted) throw args.signal.reason;
+      if (error instanceof ClaudeCodeOAuthSessionTerminatedError || isAbortError(error)) throw error;
+      // The failed flight used another caller's fetcher. Retry this caller once
+      // the shared rotation slot is free.
+    }
+    if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
+    return await ensureClaudeCodeAccessToken(args);
   }
+  const controller = new AbortController();
+  const promise = ensureClaudeCodeAccessTokenInner(args, true, controller.signal);
+  const flight: ClaudeCodeAccessTokenFlight = {
+    force: args.force === true,
+    controller,
+    promise,
+    waiters: 0,
+    settled: false,
+  };
+  inFlightEnsures.set(key, flight);
+  void promise.finally(() => {
+    flight.settled = true;
+    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+  }).catch(() => {});
+  return await awaitClaudeCodeAccessTokenFlight(flight, args.signal);
 };
 
 // Reads, refreshes, and persists. The rotated refresh token and the new
@@ -125,8 +216,11 @@ export const ensureClaudeCodeAccessToken = async (
 const ensureClaudeCodeAccessTokenInner = async (
   args: EnsureClaudeCodeAccessTokenArgs,
   recoveryAllowed: boolean,
+  signal: AbortSignal,
 ): Promise<EnsuredAccessToken> => {
+  if (signal.aborted) throw signal.reason;
   const fresh = await args.repo.getById(args.upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
@@ -146,7 +240,11 @@ const ensureClaudeCodeAccessTokenInner = async (
   // 1-year validity makes the expiry path rare in practice.
   if (account.tokenKind === 'setup-token') {
     if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
-      return { entry: account.accessToken, freshlyMinted: false };
+      return {
+        entry: account.accessToken,
+        freshlyMinted: false,
+        generation: claudeCodeCredentialGeneration(account, account.accessToken),
+      };
     }
     const message = 'Setup token expired or absent; re-import to recover';
     await persistTerminalState(args.repo, args.upstreamId, account, {
@@ -158,16 +256,20 @@ const ensureClaudeCodeAccessTokenInner = async (
   }
 
   if (account.accessToken && isAccessTokenFresh(account.accessToken) && !args.force) {
-    return { entry: account.accessToken, freshlyMinted: false };
+    return {
+      entry: account.accessToken,
+      freshlyMinted: false,
+      generation: claudeCodeCredentialGeneration(account, account.accessToken),
+    };
   }
 
   let refreshed;
   try {
-    refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);
+    refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher, signal);
   } catch (error) {
     if (error instanceof ClaudeCodeOAuthSessionTerminatedError) {
       if (error.code === 'invalid_grant' && recoveryAllowed) {
-        const recovered = await recoverFromRefreshRace(args, account.refreshToken);
+        const recovered = await recoverFromRefreshRace(args, account.refreshToken, signal);
         if (recovered) return recovered;
       }
       await persistTerminalState(args.repo, args.upstreamId, account, {
@@ -215,14 +317,36 @@ const ensureClaudeCodeAccessTokenInner = async (
       accessToken: newAccessTokenEntry,
     }));
   }, { kind: 'claude-code' });
-  if (!rotationApplied) return await ensureClaudeCodeAccessTokenInner(args, false);
+  if (!rotationApplied) return await ensureClaudeCodeAccessTokenInner(args, false, signal);
   logInfo('claude_code_refresh_token_rotated', {
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
     expires_in_seconds: refreshed.expires_in,
     refreshed_at: now,
   });
-  return { entry: newAccessTokenEntry, freshlyMinted: true };
+  return {
+    entry: newAccessTokenEntry,
+    freshlyMinted: true,
+    generation: claudeCodeCredentialGeneration({
+      ...account,
+      refreshToken: rotatedRefreshToken,
+      accessToken: newAccessTokenEntry,
+    }, newAccessTokenEntry),
+  };
+};
+
+const freshClaudeCodeAccessToken = async (
+  args: EnsureClaudeCodeAccessTokenArgs,
+): Promise<EnsuredAccessToken | null> => {
+  const record = await args.repo.getById(args.upstreamId);
+  if (record === null) return null;
+  const account = readClaudeCodeUpstreamState(record.state).accounts[0];
+  if (account.state !== 'active' || account.accessToken === null || !isAccessTokenFresh(account.accessToken)) return null;
+  return {
+    entry: account.accessToken,
+    freshlyMinted: false,
+    generation: claudeCodeCredentialGeneration(account, account.accessToken),
+  };
 };
 
 // Terminal flip from the oauth-error path. Distinct from fetch.ts's
@@ -293,8 +417,10 @@ const persistTerminalState = async (
 const recoverFromRefreshRace = async (
   args: EnsureClaudeCodeAccessTokenArgs,
   usedRefreshToken: string,
+  signal: AbortSignal,
 ): Promise<EnsuredAccessToken | null> => {
   const reread = await args.repo.getById(args.upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!reread) return null;
   const rereadState = readClaudeCodeUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts[0];
@@ -312,7 +438,11 @@ const recoverFromRefreshRace = async (
     rotated_refresh_token_prefix: rereadAccount.refreshToken.slice(0, 6),
   });
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
-    return { entry: rereadAccount.accessToken, freshlyMinted: false };
+    return {
+      entry: rereadAccount.accessToken,
+      freshlyMinted: false,
+      generation: claudeCodeCredentialGeneration(rereadAccount, rereadAccount.accessToken),
+    };
   }
   // Sibling rotated the refresh token but no usable access token sits in
   // state — most likely an `invalidateClaudeCodeAccessToken` ran between
@@ -321,7 +451,7 @@ const recoverFromRefreshRace = async (
   // straight through the standard refresh path. The depth guard suppresses
   // a second recovery attempt — if `invalid_grant` strikes again the
   // refresh token really is dead and we want the terminal flip.
-  return await ensureClaudeCodeAccessTokenInner(args, false);
+  return await ensureClaudeCodeAccessTokenInner(args, false, signal);
 };
 
 // Used in 401-retry: clear the cached access token without touching the

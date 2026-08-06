@@ -1,5 +1,6 @@
 import { copy } from './bytes.ts';
 import type { DialedSocket } from './types.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '@floway-dev/http/cleanup';
 
 /**
  * Hand a protocol reader to its tunneled consumer after the handshake has
@@ -16,9 +17,20 @@ export const postHandshakeReadable = (
   let released = false;
   const release = (): void => {
     if (released) return;
+    reader.releaseLock();
     released = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
   };
+  let socketSettlement: Promise<void> | null = null;
+  const closeSocket = (): Promise<void> => (socketSettlement ??= socket.close());
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> =>
+    readerSettlement ??= Promise.all([
+      collectCleanupFailures([
+        ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+        release,
+      ]),
+      collectCleanupFailures([closeSocket]),
+    ]).then(([readerFailures, socketFailures]) => [...readerFailures, ...socketFailures]);
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -29,23 +41,23 @@ export const postHandshakeReadable = (
       try {
         const result = await reader.read();
         if (result.done) {
-          controller.close();
-          release();
-          void socket.close().catch(() => {});
+          const failures = await settleReader(undefined, false);
+          if (failures.length > 0) {
+            controller.error(cleanupFailure(failures, 'Tunnel EOF cleanup failed'));
+          } else {
+            controller.close();
+          }
         } else {
           controller.enqueue(copy(result.value));
         }
       } catch (error) {
-        release();
-        void socket.close().catch(() => {});
-        throw error;
+        const failures = await settleReader(error, false);
+        throw failureWithCleanup(error, failures, 'Tunnel read and cleanup both failed');
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally {
-        release();
-        await socket.close().catch(() => {});
-      }
+      const failures = await settleReader(reason, true);
+      if (failures.length > 0) throw cleanupFailure(failures, 'Tunnel cancellation cleanup failed');
     },
   });
 };

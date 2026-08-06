@@ -4,7 +4,7 @@
 _download_and_run_installer() {
   _dri_url=$1
   _dri_file=$(mktemp "$SETUP_TMPDIR/install.XXXXXX") || return 1
-  _dri_max_bytes=${AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES:-8388608}
+  _dri_max_bytes=8388608
   # curl 8.4+ enforces the ceiling during unknown-length transfers; the byte
   # count below covers older curl builds before anything executes.
   # Ref: https://curl.se/docs/manpage.html#--max-filesize
@@ -47,8 +47,7 @@ _download_and_run_installer() {
     rm -f "$_dri_file"
     return 1
   fi
-  _dri_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
-  _run_with_timeout "$_dri_timeout" env -u SETUP_API_KEY bash "$_dri_file" </dev/null
+  _run_with_timeout 120 env -u SETUP_API_KEY bash "$_dri_file" </dev/null
   _dri_rc=$?
   rm -f "$_dri_file"
   return $_dri_rc
@@ -82,12 +81,10 @@ _install_brew_cask() {
     out_error 'Homebrew is required to install agent CLIs on macOS.'
     return 1
   fi
-  _ibc_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-600}
-  _run_with_timeout "$_ibc_timeout" env -u SETUP_API_KEY brew install --cask "$_ibc_cask" </dev/null
+  _run_with_timeout 600 env -u SETUP_API_KEY brew install --cask "$_ibc_cask" </dev/null
 }
 
 _install_npm_package() {
   _inp_package=$1
-  _inp_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-600}
-  _run_with_timeout "$_inp_timeout" env -u SETUP_API_KEY npm install --global "$_inp_package" </dev/null
+  _run_with_timeout 600 env -u SETUP_API_KEY npm install --global "$_inp_package" </dev/null
 }

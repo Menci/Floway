@@ -299,41 +299,56 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
 test('/v1/completions preserves streaming status and drains upstream after the first DONE', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerCompletionsUpstream(repo);
-  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   let upstreamCanceled = false;
+  let markLatePullStarted!: () => void;
+  const latePullStarted = new Promise<void>(resolve => { markLatePullStarted = resolve; });
+  let releaseLatePull!: () => void;
+  const latePullGate = new Promise<void>(resolve => { releaseLatePull = resolve; });
+  let latePullOffered = false;
+  const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      upstreamController = controller;
-      controller.enqueue(new TextEncoder().encode([
+      controller.enqueue(encoder.encode([
         'data: {"id":"cmpl_X","choices":[{"index":0,"text":"before"}]}\n\n',
         'data: {"id":"cmpl_X","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\n',
         'data: [DONE]\n\n',
-        'data: {"id":"cmpl_X","choices":[{"index":0,"text":"late"}]}\n\n',
       ].join('')));
+    },
+    async pull(controller) {
+      if (latePullOffered) return;
+      latePullOffered = true;
+      markLatePullStarted();
+      await latePullGate;
+      controller.enqueue(encoder.encode('data: {"id":"cmpl_X","choices":[{"index":0,"text":"late"}]}\n\n'));
+      controller.close();
     },
     cancel() {
       upstreamCanceled = true;
     },
-  });
+  }, { highWaterMark: 0 });
 
-  await withMockedFetch(
-    () => new Response(body, { status: 201, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'completion-stream' } }),
-    async () => {
-      const response = await requestApp('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
-      });
-      assertEquals(response.status, 201);
-      assertEquals(response.headers.get('x-request-id'), 'completion-stream');
-      const text = await response.text();
-      assertEquals(text.includes('before'), true);
-      assertEquals(text.includes('late'), false);
-      assertEquals(text.match(/\[DONE\]/g)?.length, 1);
-      assertEquals(upstreamCanceled, false);
-      upstreamController.close();
-    },
-  );
+  try {
+    await withMockedFetch(
+      () => new Response(body, { status: 201, headers: { 'content-type': 'text/event-stream', 'x-request-id': 'completion-stream' } }),
+      async () => {
+        const response = await requestApp('/v1/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+        });
+        assertEquals(response.status, 201);
+        assertEquals(response.headers.get('x-request-id'), 'completion-stream');
+        const text = await response.text();
+        assertEquals(text.includes('before'), true);
+        assertEquals(text.includes('late'), false);
+        assertEquals(text.match(/\[DONE\]/g)?.length, 1);
+        await latePullStarted;
+        assertEquals(upstreamCanceled, false);
+      },
+    );
+  } finally {
+    releaseLatePull();
+  }
 
   await flushAsyncWork();
   assertEquals(upstreamCanceled, false);

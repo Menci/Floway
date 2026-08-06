@@ -6,26 +6,11 @@
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/README.md#L18-L37
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
-# The AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT hook —
-# read from the ambient environment, never emitted by the gateway — substitutes
-# a fake installer under test.
 function Install-SetupCodex {
   $hadNonInteractive = Test-Path Env:CODEX_NON_INTERACTIVE
   $previousNonInteractive = $env:CODEX_NON_INTERACTIVE
   try {
     $env:CODEX_NON_INTERACTIVE = 'true'
-    if ($env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT) {
-      Write-SetupInfo 'Codex CLI not found; running the test installer'
-      $timeoutSeconds = Get-SetupTimeoutSeconds 120
-      $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
-      if ($installer.ExitCode -ne 0) { Stop-Setup "the test codex installer hook failed." }
-      return
-    }
-    if ($env:AGENT_SETUP_TEST_CODEX_URL) {
-      Write-SetupInfo 'Codex CLI not found; running the test installer download'
-      Invoke-SetupRemoteInstaller -Uri $env:AGENT_SETUP_TEST_CODEX_URL -BypassExecutionPolicy
-      return
-    }
     $platform = Get-SetupPlatform
     $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     $brew = if ($platform -eq 'macos') { Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
@@ -192,8 +177,7 @@ function Write-SetupCodexConfig {
     @{ keyPath = 'model'; mergeStrategy = 'replace'; value = $SetupCodexModel },
     @{ keyPath = 'model_reasoning_effort'; mergeStrategy = 'replace'; value = $SetupCodexReasoningEffort }
   )
-  $timeoutSeconds = Get-SetupTimeoutSeconds 60
-  $result = Invoke-SetupCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds $timeoutSeconds
+  $result = Invoke-SetupCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds 60
   $status = [string]$result.status
   if ($status -eq 'okOverridden') {
     $message = if ($result.overriddenMetadata -and $result.overriddenMetadata.message) { [string]$result.overriddenMetadata.message } else { 'an override layer applies' }
@@ -243,8 +227,7 @@ function Write-SetupCodexToken {
 
 function Write-SetupCodexVersion {
   param([string]$Exe)
-  $timeoutSeconds = Get-SetupTimeoutSeconds 30
-  $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``codex --version`` timed out.'
+  $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds 30 -TimeoutMessage '``codex --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``codex --version`` failed." }
   Write-SetupInfo "Codex version: $($version.Output.Trim())"
 }

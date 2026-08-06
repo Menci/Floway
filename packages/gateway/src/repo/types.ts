@@ -385,6 +385,16 @@ export interface UpstreamRepo {
     patch: UpstreamFieldsPatch,
     options?: { clearModelsCache?: boolean; expectedUpdatedAt?: string },
   ): Promise<UpstreamRecord | null>;
+  // Credential exchanges span remote network work. Apply their config/state
+  // replacement as a mutation over the row that exists at commit time so a
+  // sibling state write is merged and two exchanges cannot replay the same
+  // preflight snapshot over one another.
+  replaceCredentials(
+    id: string,
+    expectedKind: UpstreamProviderKind,
+    expected: UpstreamCredentialGeneration,
+    mutate: (current: UpstreamRecord) => UpstreamCredentialsPatch,
+  ): Promise<UpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -401,6 +411,9 @@ export interface UpstreamRepo {
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }
+
+export type UpstreamCredentialsPatch = Pick<UpstreamRecord, 'config' | 'state' | 'updatedAt'>;
+export type UpstreamCredentialGeneration = Pick<UpstreamRecord, 'createdAt' | 'config'>;
 
 export type UpstreamFieldsPatch = Partial<Pick<UpstreamRecord,
   | 'name'
@@ -425,6 +438,9 @@ export interface ProxyRecord {
   id: string;
   name: string;
   url: string;
+  // Monotonic dial-config generation. It changes when the URL or dial timeout
+  // changes and stays within JavaScript's exact-integer range.
+  revision: number;
   createdAt: string;
   updatedAt: string;
   // Operator-set per-proxy override of the dial-stage deadline (seconds).
@@ -458,11 +474,11 @@ export interface BackoffRow {
 }
 
 export interface ProxyBackoffRepo {
-  // Apply an outcome only while the proxy still exists at the URL that was
-  // actually dialled. A request can outlive an operator URL edit or deletion;
-  // its stale outcome must not throttle or clear the replacement endpoint.
-  recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean>;
-  recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean>;
+  // Apply an outcome only while the proxy still exists at the revision that
+  // was actually dialled. A request can outlive multiple URL edits; its stale
+  // outcome must not throttle or clear a later endpoint, even after A -> B -> A.
+  recordDialFailure(proxyId: string, upstreamId: string, proxyRevision: number, errorMessage: string): Promise<boolean>;
+  recordDialSuccess(proxyId: string, upstreamId: string, proxyRevision: number): Promise<boolean>;
   listForUpstream(upstreamId: string): Promise<BackoffRow[]>;
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;

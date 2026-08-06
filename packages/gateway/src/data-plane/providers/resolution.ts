@@ -8,7 +8,7 @@ import type { ModelAliasRecord } from '../../repo/types.ts';
 import { serializeCanonicalJson } from '../../repo/upstream-json.ts';
 import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { endpointsSupportKind, type ModelKind } from '@floway-dev/protocols/common';
+import { type AliasRules, endpointsSupportKind, type ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provider';
 
 interface ProviderCatalogAccess {
@@ -199,15 +199,17 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
   return shuffled;
 };
 
+type AliasCandidate = ModelCandidate & { readonly rules: AliasRules };
+
 interface AliasCandidateCollector {
   readonly candidates: ModelCandidate[];
-  readonly add: (candidate: ModelCandidate) => void;
+  readonly add: (candidate: AliasCandidate) => void;
 }
 
 const createAliasCandidateCollector = (): AliasCandidateCollector => {
   const rulesByUpstreamByModel = new Map<string, Map<string, Set<string>>>();
   const candidates: ModelCandidate[] = [];
-  const add = (candidate: ModelCandidate): void => {
+  const add = (candidate: AliasCandidate): void => {
     let byUpstream = rulesByUpstreamByModel.get(candidate.model.id);
     if (byUpstream === undefined) {
       byUpstream = new Map();
@@ -218,7 +220,7 @@ const createAliasCandidateCollector = (): AliasCandidateCollector => {
       rules = new Set();
       byUpstream.set(candidate.provider.upstreamId, rules);
     }
-    const rulesKey = serializeCanonicalJson(candidate.rules ?? {});
+    const rulesKey = serializeCanonicalJson(candidate.rules);
     if (rules.has(rulesKey)) return;
     rules.add(rulesKey);
     candidates.push(candidate);
@@ -248,13 +250,8 @@ const createAliasCandidateCollector = (): AliasCandidateCollector => {
 // any upstream regardless of family, so the caller can distinguish "model
 // missing" (404) from "model does not serve this family" (400).
 //
-// Endpoint-level narrowing — picking the chat target protocol from
-// `model.endpoints`, or checking the specific `imagesEdits` /
-// `imagesGenerations` / `audioTranscriptions` / `completions` endpoint key —
-// is the caller's job.
-// This function stays endpoint-blind so the same path serves chat,
-// embeddings, image generation/edits, rerank, audio transcription, and
-// completions.
+// Resolution filters endpoint-family support here. Callers still select the
+// exact target protocol or endpoint key from `model.endpoints`.
 //
 // The alias walk is a natural top-of-chain check: by construction an
 // alias's target id is a real model id, so the shadow pattern (an alias
