@@ -9,6 +9,41 @@ export const signalAbortReason = (signal: AbortSignal): Error => {
   return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
 
+export const failureContains = (failure: unknown, target: unknown): boolean => {
+  const pending: unknown[] = [failure];
+  const seen = new Set<object>();
+  for (let visited = 0; pending.length > 0 && visited < 64; visited++) {
+    const current = pending.shift();
+    if (Object.is(current, target)) return true;
+    if ((typeof current !== 'object' && typeof current !== 'function') || current === null) continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    try {
+      const cause = Object.getOwnPropertyDescriptor(current, 'cause');
+      if (cause !== undefined && 'value' in cause) pending.push(cause.value);
+      const errors = Object.getOwnPropertyDescriptor(current, 'errors');
+      if (errors === undefined || !('value' in errors) || !Array.isArray(errors.value)) continue;
+      for (let index = 0; index < Math.min(errors.value.length, 64); index++) {
+        const item = Object.getOwnPropertyDescriptor(errors.value, String(index));
+        if (item !== undefined && 'value' in item) pending.push(item.value);
+      }
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+export const failureForSignalAbort = (
+  signal: AbortSignal,
+  caught: unknown,
+  message: string,
+): unknown => {
+  const reason = signalAbortReason(signal);
+  if (failureContains(caught, reason)) return caught;
+  return new AggregateError([reason, caught], message, { cause: reason });
+};
+
 type PromptCleanupOutcome =
   | { readonly type: 'settled' }
   | { readonly type: 'failed'; readonly error: unknown };

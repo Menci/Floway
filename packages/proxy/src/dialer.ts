@@ -11,7 +11,7 @@ import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { collectPromptCleanupFailures, fetchOnStream, signalAbortReason, startPromptCleanup, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { collectPromptCleanupFailures, failureForSignalAbort, fetchOnStream, signalAbortReason, startPromptCleanup, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '@floway-dev/http/cleanup';
 
 /**
@@ -77,7 +77,11 @@ const withDialDeadline = async <T>(
     return await run(innerOptions);
   } catch (err) {
     if (callerSignal?.aborted) {
-      throw signalAbortReason(callerSignal);
+      throw failureForSignalAbort(
+        callerSignal,
+        err,
+        'Caller cancellation raced with a dial failure',
+      );
     }
     if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
       throw internal.signal.reason;

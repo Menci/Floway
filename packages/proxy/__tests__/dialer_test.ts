@@ -172,7 +172,10 @@ describe('dial deadline', () => {
     await started;
     controller.abort(reason);
 
-    await expect(pending).rejects.toBe(reason);
+    await expect(pending).rejects.toMatchObject({
+      message: 'dial wrapper',
+      cause: reason,
+    });
   });
 
   it('refuses to dial when the caller signal is already aborted', async () => {

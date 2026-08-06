@@ -2,7 +2,7 @@ import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
-import { signalAbortReason, type HttpRequest } from '@floway-dev/http';
+import { failureForSignalAbort, type HttpRequest } from '@floway-dev/http';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError, replayableBodySource } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
@@ -41,44 +41,6 @@ interface CreateFetcherInput {
    */
   socketDial: () => SocketDial;
 }
-
-const containsFailure = (failure: unknown, target: unknown): boolean => {
-  const pending: unknown[] = [failure];
-  const seen = new Set<object>();
-  for (let visited = 0; pending.length > 0 && visited < 64; visited++) {
-    const current = pending.shift();
-    if (Object.is(current, target)) return true;
-    if ((typeof current !== 'object' && typeof current !== 'function') || current === null) continue;
-    if (seen.has(current)) continue;
-    seen.add(current);
-    try {
-      const cause = Object.getOwnPropertyDescriptor(current, 'cause');
-      if (cause !== undefined && 'value' in cause) pending.push(cause.value);
-      const errors = Object.getOwnPropertyDescriptor(current, 'errors');
-      if (errors === undefined || !('value' in errors) || !Array.isArray(errors.value)) continue;
-      for (let index = 0; index < Math.min(errors.value.length, 64); index++) {
-        const item = Object.getOwnPropertyDescriptor(errors.value, String(index));
-        if (item !== undefined && 'value' in item) pending.push(item.value);
-      }
-    } catch {
-      // A hostile accessor/proxy is not evidence that the caught transport
-      // failure already preserves the abort. The caller will aggregate the
-      // untouched value behind the original signal reason below.
-      return false;
-    }
-  }
-  return false;
-};
-
-const abortedRequestFailure = (signal: AbortSignal, caught: unknown): unknown => {
-  const reason = signalAbortReason(signal);
-  if (containsFailure(caught, reason)) return caught;
-  return new AggregateError(
-    [reason, caught],
-    'Request cancellation raced with a transport failure',
-    { cause: reason },
-  );
-};
 
 // Two-pass dial strategy. First pass walks the fallback list skipping any
 // entry whose (proxy, upstream) backoff row is still active, so a flaky
@@ -238,7 +200,11 @@ const tryOne = async (
     // Explicit request cancellation propagates immediately so the dial chain
     // does not continue against later fallback entries.
     if (request.signal?.aborted) {
-      throw abortedRequestFailure(request.signal, err);
+      throw failureForSignalAbort(
+        request.signal,
+        err,
+        'Request cancellation raced with a transport failure',
+      );
     }
     if (isAbortError(err)) {
       throw err;
