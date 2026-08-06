@@ -146,7 +146,7 @@ test('usage observation failure preserves its cause while the retained source dr
   const badUsage = new Error('invalid trailing usage');
   const terminalUsage = { input: 5, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
   let sourceFinished = false;
-  const events = (async function* () {
+  const events: AsyncIterable<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>> = (async function* () {
     try {
       yield { type: 'event', event: { type: 'response.created' } } as const;
       yield { type: 'event', event: { type: 'bad-usage' } } as const;
