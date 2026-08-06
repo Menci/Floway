@@ -25,6 +25,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   ...overrides,
@@ -167,7 +168,7 @@ test('SQL upstream repo catalog-aware replacement can clear the cached catalog a
     name: 'New identity',
     config: { accounts: [{ email: 'new@example.com', chatgptAccountId: 'new-account', chatgptUserId: 'new-user', planType: 'plus' }] },
   });
-  await repo.replaceForModels({ previous: baseRecord(), upstream: newIdentity, cachePolicy: 'clear' });
+  await repo.replaceForModels({ previous: baseRecord(), upstream: newIdentity });
 
   const stored = await repo.getById('up_test');
   assertEquals(stored?.name, 'New identity');

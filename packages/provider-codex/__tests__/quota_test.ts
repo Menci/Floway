@@ -30,6 +30,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
 });

@@ -18,6 +18,7 @@ const record: UpstreamRecord = {
   updatedAt: '2026-08-01T00:00:00.000Z',
   config: { tenant: 'current' },
   state: null,
+  configVersion: 1,
   modelsCache: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -34,6 +35,20 @@ const factories: [string, () => Promise<Repo>][] = [
 ];
 
 describe.each(factories)('%s models refresh coordination', (_name, createRepo) => {
+  test('config writes advance the generation while state writes do not', async () => {
+    const repo = await createRepo();
+    await repo.upstreams.save(record);
+    await repo.upstreams.saveState(record.id, () => ({ accessToken: 'rotated' }));
+    expect((await repo.upstreams.getById(record.id))?.configVersion).toBe(1);
+
+    const current = await repo.upstreams.getById(record.id);
+    if (current === null) throw new Error('upstream row missing');
+    await repo.upstreams.save({ ...current, config: { tenant: 'next' } });
+    const changed = await repo.upstreams.getById(record.id);
+    expect(changed?.configVersion).toBe(2);
+    expect(changed?.state).toEqual({ accessToken: 'rotated' });
+  });
+
   test('claims atomically, applies one backoff schedule, and lets force bypass cooldown', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
@@ -64,7 +79,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'after-success', now: now + 2, staleClaimedBefore: now - 899_998, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
   });
 
-  test('recovers abandoned claims and fences tokens, timestamps, and config', async () => {
+  test('recovers abandoned claims and fences tokens and config versions', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
     const now = 1_800_000_000_000;
@@ -75,13 +90,15 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'racer', now: now + 900_002, staleClaimedBefore: now + 2, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'active', token: 'replacement' });
 
     const next = { ...record, config: { tenant: 'next' } };
-    await repo.upstreams.replaceForModels({ previous: record, upstream: next, cachePolicy: 'clear' });
+    await repo.upstreams.replaceForModels({ previous: record, upstream: next });
     await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'old-config', now: now + 900_003, staleClaimedBefore: now + 3, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'generation-mismatch' });
-    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(next), token: 'current', now: now + 900_003, staleClaimedBefore: now + 3, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    const storedNext = await repo.upstreams.getById(record.id);
+    if (storedNext === null) throw new Error('upstream row missing');
+    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(storedNext), token: 'current', now: now + 900_003, staleClaimedBefore: now + 3, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
 
-    const newer = { ...next, updatedAt: '2026-08-01T00:01:00.000Z' };
-    await repo.upstreams.replaceForModels({ previous: next, upstream: newer, cachePolicy: 'clear' });
-    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(next), token: 'old-time', now: now + 900_004, staleClaimedBefore: now + 4, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'generation-mismatch' });
+    const renamed = { ...storedNext, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
+    await repo.upstreams.replaceForModels({ previous: storedNext, upstream: renamed });
+    await expect(repo.upstreams.claimModelsRefresh({ id: record.id, generation: modelsCacheGeneration(storedNext), token: 'after-rename', now: now + 900_004, staleClaimedBefore: now + 4, bypassBackoff: false, observedActiveToken: null })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
   });
 
   test('metadata saves preserve backoff while invalidating an active owner', async () => {
@@ -93,7 +110,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.finalizeModelsRefreshFailure({ id: record.id, generation, token: 'failed', error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
 
     const next = { ...record, name: 'Renamed', updatedAt: '2026-08-01T00:01:00.000Z' };
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next, cachePolicy: 'preserve' })).resolves.toBe(true);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.toBe(true);
     await expect(repo.upstreams.claimModelsRefresh({
       id: record.id,
       generation: modelsCacheGeneration(next),
@@ -105,7 +122,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     })).resolves.toEqual({ kind: 'backoff' });
   });
 
-  test('operator credential changes preserve the snapshot while resetting refresh cooldown', async () => {
+  test('state changes preserve the snapshot generation and refresh cooldown', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
     const now = 1_800_000_000_000;
@@ -114,7 +131,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     await repo.upstreams.finalizeModelsRefreshFailure({ id: record.id, generation, token: 'failed', error: { message: 'failure', at: now }, previousFailureCount: 0, failedAt: now });
 
     const next = { ...record, state: { credential: 'rotated' }, updatedAt: '2026-08-01T00:01:00.000Z' };
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next, cachePolicy: 'reset-refresh' })).resolves.toBe(true);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: next })).resolves.toBe(true);
     expect((await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message).toBe('failure');
     await expect(repo.upstreams.claimModelsRefresh({
       id: record.id,
@@ -124,7 +141,7 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
       staleClaimedBefore: now - 899_999,
       bypassBackoff: false,
       observedActiveToken: null,
-    })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+    })).resolves.toEqual({ kind: 'backoff' });
   });
 
   test('provider-managed credential state can rotate without invalidating its own owner', async () => {
@@ -166,8 +183,8 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
     const winner = { ...record, name: 'Winner', updatedAt: '2026-08-01T00:01:00.000Z' };
     const stale = { ...record, name: 'Stale', updatedAt: '2026-08-01T00:02:00.000Z' };
 
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: winner, cachePolicy: 'preserve' })).resolves.toBe(true);
-    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: stale, cachePolicy: 'clear' })).resolves.toBe(false);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: winner })).resolves.toBe(true);
+    await expect(repo.upstreams.replaceForModels({ previous: record, upstream: stale })).resolves.toBe(false);
     expect((await repo.upstreams.getById(record.id))?.name).toBe('Winner');
     expect((await repo.upstreams.getById(record.id))?.state).toEqual({ providerManaged: 'newer' });
   });

@@ -3,7 +3,7 @@ import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.t
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
-import { MODEL_CATALOG_REVISION, modelsFetchIdentity } from '../../src/repo/models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-contract.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
@@ -748,21 +748,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  // Mirrors the SQL INSERT/UPDATE column list, which omits the cache column:
-  // an existing row keeps whatever the refresh path last wrote there, and a new
-  // row starts uncached whatever the caller's record carried.
+  // Mirrors the SQL upsert: config changes advance the generation and clear
+  // the snapshot; other writes preserve it. New rows always start uncached.
   save(upstream: UpstreamRecord): Promise<void> {
     const existing = this.store.get(upstream.id);
+    if (existing === undefined && upstream.configVersion !== 1) {
+      throw new Error(`New upstream ${upstream.id} must start at config version 1`);
+    }
+    const configChanged = existing !== undefined
+      && (existing.kind !== upstream.kind
+        || serializeStoredConfig(existing.config) !== serializeStoredConfig(upstream.config));
     const preserved = existing
-      ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
+      ? {
+          ...upstream,
+          createdAt: existing.createdAt,
+          configVersion: existing.configVersion + (configChanged ? 1 : 0),
+          modelsCache: configChanged ? null : existing.modelsCache,
+        }
       : { ...upstream, modelsCache: null };
     this.store.set(preserved.id, cloneUpstreamRecord(preserved));
     const refresh = this.modelsRefreshes.get(preserved.id);
-    if (refresh) this.modelsRefreshes.set(preserved.id, { ...refresh, claimToken: null, claimedAt: null });
+    if (configChanged) this.modelsRefreshes.delete(preserved.id);
+    else if (refresh) this.modelsRefreshes.set(preserved.id, { ...refresh, claimToken: null, claimedAt: null });
     return Promise.resolve();
   }
 
   insertForModels(upstream: UpstreamRecord): Promise<boolean> {
+    if (upstream.configVersion !== 1) throw new Error(`New upstream ${upstream.id} must start at config version 1`);
     if (this.store.has(upstream.id)) return Promise.resolve(false);
     this.store.set(upstream.id, cloneUpstreamRecord({ ...upstream, modelsCache: null }));
     return Promise.resolve(true);
@@ -770,10 +782,13 @@ class MemoryUpstreamRepo implements UpstreamRepo {
 
   replaceForModels(input: {
     previous: UpstreamRecord;
-    upstream: UpstreamRecord;
-    cachePolicy: 'preserve' | 'reset-refresh' | 'clear';
+    upstream: Omit<UpstreamRecord, 'configVersion'>;
   }): Promise<boolean> {
-    const { previous, upstream, cachePolicy } = input;
+    const { previous, upstream } = input;
+    const configChanged = previous.kind !== upstream.kind
+      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config);
+    const configVersion = previous.configVersion + (configChanged ? 1 : 0);
+    const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
     const existing = this.store.get(upstream.id);
     if (existing === undefined) return Promise.resolve(false);
     const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
@@ -783,11 +798,12 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const next = cloneUpstreamRecord({
       ...upstream,
       createdAt: existing.createdAt,
+      configVersion,
       state: replaceState ? upstream.state : existing.state,
-      modelsCache: cachePolicy === 'clear' ? null : existing.modelsCache,
+      modelsCache: configChanged ? null : existing.modelsCache,
     });
     this.store.set(upstream.id, next);
-    if (cachePolicy === 'preserve') {
+    if (!configChanged && !transportChanged) {
       const refresh = this.modelsRefreshes.get(upstream.id);
       if (refresh !== undefined) this.modelsRefreshes.set(upstream.id, { ...refresh, claimToken: null, claimedAt: null });
     } else {
@@ -824,7 +840,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const { id, generation, token, cache } = input;
     if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
     const existing = this.store.get(id);
-    if (!existing || existing.updatedAt !== generation.updatedAt || modelsFetchIdentity(existing) !== generation.fetchIdentity) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     this.modelsRefreshes.delete(id);
     return Promise.resolve(true);
@@ -837,7 +853,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const refresh = this.modelsRefreshes.get(id);
     if (refresh?.claimToken !== token || refresh.failCount !== previousFailureCount) return Promise.resolve(false);
     const existing = this.store.get(id);
-    if (!existing || existing.updatedAt !== generation.updatedAt || modelsFetchIdentity(existing) !== generation.fetchIdentity) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
     this.modelsRefreshes.set(id, { failCount: failureCount, retryAt, claimToken: null, claimedAt: null });
@@ -849,8 +865,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const existing = this.store.get(id);
     const refresh = this.modelsRefreshes.get(id);
     if (!existing
-      || existing.updatedAt !== generation.updatedAt
-      || modelsFetchIdentity(existing) !== generation.fetchIdentity
+      || existing.configVersion !== generation.configVersion
       || refresh?.claimToken !== token) return Promise.resolve(false);
     this.modelsRefreshes.set(id, { ...refresh, claimToken: null, claimedAt: null });
     return Promise.resolve(true);
@@ -859,7 +874,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
     const { id, generation, token, now, staleClaimedBefore, bypassBackoff, observedActiveToken } = input;
     const stored = this.store.get(id);
-    if (!stored || stored.updatedAt !== generation.updatedAt || modelsFetchIdentity(stored) !== generation.fetchIdentity) return Promise.resolve({ kind: 'generation-mismatch' });
+    if (!stored || stored.configVersion !== generation.configVersion) return Promise.resolve({ kind: 'generation-mismatch' });
     const existing = this.modelsRefreshes.get(id);
     if (observedActiveToken !== null && existing === undefined) return Promise.resolve({ kind: 'completed' });
     if (existing !== undefined) {

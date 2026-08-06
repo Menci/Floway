@@ -1,6 +1,6 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
-import { MODEL_CATALOG_REVISION, modelsFetchIdentity } from '../../repo/models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import { MODELS_REFRESH_CLAIM_LEASE_MS } from '../../repo/models-refresh-contract.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel } from '@floway-dev/provider';
@@ -99,8 +99,7 @@ const runClaimedRefresh = async (
     if (outcome.kind === 'completed') {
       const current = await repo.upstreams.getById(instance.upstreamId);
       if (current === null
-        || current.updatedAt !== instance.modelsCacheGeneration.updatedAt
-        || modelsFetchIdentity(current) !== instance.modelsCacheGeneration.fetchIdentity) return null;
+        || current.configVersion !== instance.modelsCacheGeneration.configVersion) return null;
       instance.modelsCache = current.modelsCache;
       if (intent === 'explicit' && current.modelsCache?.lastError !== null && current.modelsCache?.lastError !== undefined) {
         observedActiveToken = null;
@@ -171,7 +170,7 @@ const runClaimedRefresh = async (
 
 const inFlightKey = (instance: GatewayProvider): string => {
   const generation = instance.modelsCacheGeneration;
-  return `${instance.upstreamId}\0${generation.updatedAt}\0${generation.fetchIdentity}`;
+  return `${instance.upstreamId}\0${generation.configVersion}`;
 };
 
 export const fetchUpstreamModels = async (

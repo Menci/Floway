@@ -1,20 +1,11 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { listModelProviders, modelsCatalogIdentity } from '../../../src/data-plane/providers/registry.ts';
+import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
-
-test('Copilot catalog identity follows the account rather than rotated credentials', () => {
-  const first = buildCopilotUpstreamRecord({ token: 'ghu_first', user: { id: 1, login: 'one', avatar_url: '', name: null } });
-  const rotated = buildCopilotUpstreamRecord({ token: 'ghu_rotated', user: { id: 1, login: 'one-renamed', avatar_url: '', name: null } });
-  const otherAccount = buildCopilotUpstreamRecord({ token: 'ghu_other', user: { id: 2, login: 'two', avatar_url: '', name: null } });
-
-  assertEquals(modelsCatalogIdentity(first), modelsCatalogIdentity(rotated));
-  expect(modelsCatalogIdentity(first)).not.toBe(modelsCatalogIdentity(otherAccount));
-});
 
 test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
@@ -42,6 +33,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    configVersion: 1,
     modelsCache: null,
     hue: 210,
     state: null,

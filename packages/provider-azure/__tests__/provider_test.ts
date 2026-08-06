@@ -39,6 +39,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    configVersion: 1,
     modelsCache: null,
     hue: 210,
     ...rest,
@@ -328,6 +329,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {
@@ -377,6 +379,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {

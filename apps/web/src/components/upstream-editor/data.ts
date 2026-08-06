@@ -48,6 +48,16 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
 // record.
 export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
 
+export const modelCatalogOperation = (
+  record: UpstreamRecord,
+  dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
+): 'saved' | 'preview' => isPersisted(record)
+  && !dirtyFields.config
+  && !dirtyFields.state
+  && !dirtyFields.proxyFallbackList
+  ? 'saved'
+  : 'preview';
+
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
 export interface ModelRow {
@@ -148,18 +158,23 @@ export interface ModelListingFailure {
   upstreamListingFailed: boolean;
 }
 
-// Listing re-reads the upstream afterwards: the server writes its models cache
-// as a side effect of the call, and the record the editor holds carries it.
+interface ModelCatalogFetchOptions extends RequestInit {
+  operation?: 'saved' | 'preview';
+}
+
 export const fetchModelCatalog = async (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
-  init?: RequestInit,
+  options: ModelCatalogFetchOptions = {},
 ): Promise<ModelCatalogFetch> => {
   if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, refreshed: null };
 
-  const result = await callApi(() => api.api.upstreams['list-models'].$post({
-    json: { record: previewRecord(record, values) },
-  }, { init }));
+  const { operation = modelCatalogOperation(record, {}), ...init } = options;
+  const result = operation === 'saved'
+    ? await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init }))
+    : await callApi(() => api.api.upstreams['preview-models'].$post({
+        json: { record: previewRecord(record, values) },
+      }, { init }));
   if (result.error) {
     return {
       discovered: null,
@@ -175,7 +190,7 @@ export const fetchModelCatalog = async (
     ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
     : {};
   const discovered = discoveredModelsFromResponse(result.data, endpoints);
-  if (!isPersisted(record)) return { discovered, modelsError: null, refreshed: null };
+  if (operation === 'preview') return { discovered, modelsError: null, refreshed: null };
 
   const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
   return refreshed.error

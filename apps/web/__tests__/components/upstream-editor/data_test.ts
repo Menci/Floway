@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { createBody, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
+import { createBody, modelCatalogOperation, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
@@ -43,4 +43,14 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((updateBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
+});
+
+test('model catalog operations write cache only for the unchanged saved config', () => {
+  expect(modelCatalogOperation(record, {})).toBe('saved');
+  expect(modelCatalogOperation(record, { config: true })).toBe('preview');
+  expect(modelCatalogOperation(record, { state: true })).toBe('preview');
+  expect(modelCatalogOperation(record, { proxyFallbackList: true })).toBe('preview');
+  expect(modelCatalogOperation({ ...record, id: '' }, {})).toBe('preview');
+  // Metadata does not alter the provider request inputs.
+  expect(modelCatalogOperation(record, { name: true })).toBe('saved');
 });

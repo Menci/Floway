@@ -393,7 +393,7 @@ export const updateUpstreamBody = z.object({
 });
 
 // Shared envelope for the record-body action contract used by every
-// action endpoint (OAuth exchange/refresh, quota, probe, list-models,
+// action endpoint (OAuth exchange/refresh, quota, probe, draft preview,
 // etc.). The client posts its full draft record; the server reads only
 // fields relevant to the specific action (credentials in config/state,
 // proxy_fallback_list for routing) and produces a targeted patch. Kind
@@ -408,7 +408,7 @@ export const upstreamRecordEnvelope = z.object({
 }).passthrough();
 
 // The bare envelope contract — every action endpoint that takes no extras
-// beyond `record` (refresh, probe, quota, list-models) shares this shape.
+// beyond `record` (refresh, probe, quota, draft preview) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
 export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
@@ -487,11 +487,9 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
-// Unified live-model listing for both create-time preview and edit-time
-// refresh. Custom returns the raw upstream row (dashboard translates
-// through the draft's endpoints); every other kind returns the fully
-// projected UpstreamModelConfig catalog.
-export const listModelsBody = recordOnlyBody;
+// A draft preview always remains detached from storage, even when the
+// envelope originated from an existing editor record.
+export const previewModelsBody = recordOnlyBody;
 
 // --- agent setup ---
 //

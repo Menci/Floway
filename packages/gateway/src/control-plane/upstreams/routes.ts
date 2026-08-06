@@ -246,6 +246,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,
     updatedAt: now,
+    configVersion: 1,
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
@@ -280,8 +281,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const record = { ...upstream, config: config.value };
   // Answer with the catalog status this warm produced, not the one the record
   // was built with — the dashboard re-seeds its draft from this body.
-  const modelsCache = await saveAndWarmUpstreamForModels({ previous: null, next: record }, c);
-  return c.json(await serializeForResponse({ ...record, modelsCache }, knownProxyIds), 201);
+  const saved = await saveAndWarmUpstreamForModels({ previous: null, next: record }, c);
+  return c.json(await serializeForResponse(saved, knownProxyIds), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -334,8 +335,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
 
-  const modelsCache = await saveAndWarmUpstreamForModels({ previous: existing, next }, c);
-  return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
+  const saved = await saveAndWarmUpstreamForModels({ previous: existing, next }, c);
+  return c.json(await serializeForResponse(saved, knownProxyIds));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

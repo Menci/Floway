@@ -347,8 +347,7 @@ export interface UpstreamRepo {
   insertForModels(upstream: UpstreamRecord): Promise<boolean>;
   replaceForModels(input: {
     previous: UpstreamRecord;
-    upstream: UpstreamRecord;
-    cachePolicy: 'preserve' | 'reset-refresh' | 'clear';
+    upstream: Omit<UpstreamRecord, 'configVersion'>;
   }): Promise<boolean>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
@@ -412,8 +411,7 @@ export type ModelsRefreshClaimResult = ModelsRefreshClaim
   | { kind: 'generation-mismatch' };
 
 export interface ModelsCacheGeneration {
-  updatedAt: string;
-  fetchIdentity: string;
+  configVersion: number;
 }
 
 export interface ProxyRecord {

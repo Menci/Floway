@@ -87,6 +87,7 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     updatedAt: '2026-08-05T00:00:00.000Z',
     config: { opaque: { value: true } },
     state: { cursor: ['a', 1] },
+    configVersion: 1,
     modelsCache: null,
     flagOverrides: {},
     disabledPublicModelIds: [],

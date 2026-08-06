@@ -1,7 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
 import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
 import type { ModelsCacheGeneration } from '../../repo/types.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
@@ -22,16 +21,6 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 export type GatewayProvider = Provider & {
   readonly modelsCacheGeneration: ModelsCacheGeneration;
 };
-
-export const modelsCatalogIdentity = (record: UpstreamRecord): string =>
-  serializeStoredConfig({ kind: record.kind, identity: providersByKind[record.kind].modelCatalogIdentity(record) });
-
-export const modelsRequestIdentity = (record: UpstreamRecord): string =>
-  serializeStoredConfig({
-    kind: record.kind,
-    identity: providersByKind[record.kind].modelRequestIdentity(record),
-    proxyFallbackList: record.proxyFallbackList,
-  });
 
 export const createProvider = (
   record: UpstreamRecord,

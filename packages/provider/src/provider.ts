@@ -166,12 +166,6 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
-  // Stable identity of the upstream account/catalog namespace. Each provider
-  // decides which of its configuration changes can preserve a snapshot.
-  modelCatalogIdentity: (record: UpstreamRecord) => unknown;
-  // Normalized request inputs captured by the provider instance. Provider-
-  // managed state is reread from storage when the catalog request runs.
-  modelRequestIdentity: (record: UpstreamRecord) => unknown;
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

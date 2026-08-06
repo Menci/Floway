@@ -1,18 +1,9 @@
-import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
 import { createCopilotProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const copilotProviderModule: ProviderModule = {
   create: createCopilotProvider,
-  modelCatalogIdentity: record => {
-    const upstream = assertCopilotUpstreamRecord(record);
-    return { githubHost: upstream.config.githubHost, userId: upstream.config.user.id };
-  },
-  modelRequestIdentity: record => {
-    const upstream = assertCopilotUpstreamRecord(record);
-    return upstream.config;
-  },
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 

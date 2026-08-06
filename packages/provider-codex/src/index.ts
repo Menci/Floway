@@ -1,18 +1,9 @@
-import { assertCodexUpstreamRecord } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { createCodexProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const codexProviderModule: ProviderModule = {
   create: createCodexProvider,
-  modelCatalogIdentity: record => {
-    assertCodexUpstreamRecord(record);
-    return record.config;
-  },
-  modelRequestIdentity: record => {
-    assertCodexUpstreamRecord(record);
-    return record.config;
-  },
   defaultFlags: CODEX_DEFAULT_FLAGS,
 };
 

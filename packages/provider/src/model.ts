@@ -68,6 +68,9 @@ export interface UpstreamRecord {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  // Monotonic generation of provider kind/configuration. Runtime state and
+  // operator metadata do not change it.
+  configVersion: number;
   config: unknown;
   // Gateway-written state that can change without an operator editing config;
   // null when a provider has no runtime state.

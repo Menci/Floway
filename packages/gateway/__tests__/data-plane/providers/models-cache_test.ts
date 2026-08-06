@@ -4,7 +4,7 @@ import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } 
 import { clearModelsRefreshesForTesting, fetchUpstreamModels, warmUpstreamModels } from '../../../src/data-plane/providers/models-refresh.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import { modelsFetchIdentity } from '../../../src/repo/models-cache-contract.ts';
+import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
 import { SqlRepo } from '../../../src/repo/sql.ts';
 import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
@@ -15,14 +15,8 @@ import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_a';
 const CACHE_CONFIG = { identity: 'old' };
-const fetchIdentityForConfig = (config: unknown): string => modelsFetchIdentity({
-  kind: 'custom',
-  config,
-  proxyFallbackList: [],
-});
 const CACHE_GENERATION: ModelsCacheGeneration = {
-  updatedAt: '2026-08-01T00:00:00.000Z',
-  fetchIdentity: fetchIdentityForConfig(CACHE_CONFIG),
+  configVersion: 1,
 };
 
 const aModel = (id: string): ProviderModel => stubProviderModel({ id });
@@ -31,7 +25,6 @@ const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
   generation: ModelsCacheGeneration = CACHE_GENERATION,
-  fetchIdentity = generation.fetchIdentity,
 ): GatewayProvider => ({
   upstreamId: UPSTREAM_ID,
   kind: 'custom',
@@ -41,7 +34,7 @@ const stubInstance = (
   modelPrefix: null,
   modelsCache,
   instance: stubProvider({ getProvidedModels: fetchFn }),
-  modelsCacheGeneration: { ...generation, fetchIdentity },
+  modelsCacheGeneration: generation,
 });
 
 const setupRepo = async (): Promise<InMemoryRepo> => {
@@ -54,9 +47,10 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: CACHE_GENERATION.updatedAt,
+    updatedAt: '2026-08-01T00:00:00.000Z',
     config: CACHE_CONFIG,
     state: null,
+    configVersion: 1,
     modelsCache: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -367,10 +361,10 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
     const nextConfig = { identity: 'new' };
-    const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, fetchIdentity: fetchIdentityForConfig(nextConfig) };
+    const nextGeneration = { configVersion: CACHE_GENERATION.configVersion + 1 };
     const current = await repo.upstreams.getById(UPSTREAM_ID);
     if (!current) throw new Error('upstream row missing');
-    await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, updatedAt: nextGeneration.updatedAt, config: nextConfig }, cachePolicy: 'clear' });
+    await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, config: nextConfig } });
     const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
     const newResult = await fetchUpstreamModels(stubInstance(newFetch, null, nextGeneration), directFetcher);
 
@@ -459,6 +453,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
       updatedAt: '2026-08-01T00:00:00.000Z',
       config: {},
       state: null,
+      configVersion: 1,
       modelsCache: null,
       flagOverrides: {},
       disabledPublicModelIds: [],
@@ -479,7 +474,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
     const scheduled = captureScheduled();
     const result = readUpstreamModelsSnapshotAndScheduleRefresh(
-      stubInstance(fetchFn, hydrated.modelsCache, { updatedAt: hydrated.updatedAt, fetchIdentity: modelsFetchIdentity(hydrated) }),
+      stubInstance(fetchFn, hydrated.modelsCache, modelsCacheGeneration(hydrated)),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 

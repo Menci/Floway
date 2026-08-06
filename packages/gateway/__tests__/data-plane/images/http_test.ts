@@ -198,6 +198,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
+    configVersion: 1,
     modelsCache: null,
     hue: 210,
     config: {

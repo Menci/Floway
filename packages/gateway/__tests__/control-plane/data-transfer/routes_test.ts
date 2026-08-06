@@ -86,6 +86,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -114,6 +115,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -141,6 +143,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -175,6 +178,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -203,6 +207,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {

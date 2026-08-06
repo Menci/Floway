@@ -10,6 +10,7 @@ import { refineCustomIngressHeaderRules } from './custom-ingress-header-rules-va
 import {
   createBody,
   fetchModelCatalog,
+  modelCatalogOperation,
   modelPrefixIsValid,
   updateBody,
   valuesFromRecord,
@@ -137,12 +138,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
   const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setModelsError(null);
-    const catalog = await fetchModelCatalog(record, getValues(), { signal });
+    const operation = modelCatalogOperation(record, formState.dirtyFields);
+    const catalog = await fetchModelCatalog(record, getValues(), { operation, signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered) setDiscovered(catalog.discovered);
     if (catalog.refreshed) updateRecord({ ...recordRef.current, modelsCache: catalog.refreshed.modelsCache } as UpstreamRecord);
-  }, [getValues, record, updateRecord]));
+  }, [formState.dirtyFields, getValues, record, updateRecord]));
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });

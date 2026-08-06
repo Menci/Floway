@@ -1,12 +1,9 @@
-import { assertCustomUpstreamRecord } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { createCustomProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const customProviderModule: ProviderModule = {
   create: createCustomProvider,
-  modelCatalogIdentity: record => assertCustomUpstreamRecord(record).config,
-  modelRequestIdentity: record => assertCustomUpstreamRecord(record).config,
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 
