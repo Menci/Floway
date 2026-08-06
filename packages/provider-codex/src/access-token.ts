@@ -42,11 +42,12 @@ const persistAccessToken = async (
   where: string,
   expectedToken?: string,
   expectedGeneration?: AccessTokenPersistenceGeneration,
-): Promise<'persisted' | 'gone' | 'account-missing' | 'generation-mismatch'> => {
+): Promise<'persisted' | 'gone' | 'account-missing' | 'generation-mismatch' | 'token-mismatch'> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
   let accountMissing = false;
   let generationMismatch = false;
+  let tokenMismatch = false;
   try {
     await getProviderRepo().upstreams.saveState(upstreamId, current => {
       const state = readCodexUpstreamState(current);
@@ -63,13 +64,18 @@ const persistAccessToken = async (
         || (expectedGeneration.stateUpdatedAt !== undefined && account.state_updated_at !== expectedGeneration.stateUpdatedAt)
       )) {
         generationMismatch = true;
+        tokenMismatch = false;
         return current;
       }
       generationMismatch = false;
       // Invalidation belongs to the request that observed `expectedToken`.
       // A sibling refresh or operator re-import may already have installed a
       // newer token; that generation must survive the late 401.
-      if (entry === null && state.accounts[idx].accessToken?.token !== expectedToken) return current;
+      if (entry === null && state.accounts[idx].accessToken?.token !== expectedToken) {
+        tokenMismatch = true;
+        return current;
+      }
+      tokenMismatch = false;
       return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
     }, { kind: 'codex' });
   } catch (err) {
@@ -84,14 +90,16 @@ const persistAccessToken = async (
     console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
     return 'account-missing';
   }
-  return generationMismatch ? 'generation-mismatch' : 'persisted';
+  if (generationMismatch) return 'generation-mismatch';
+  return tokenMismatch ? 'token-mismatch' : 'persisted';
 };
 
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
   expectedToken: string,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken', expectedToken); };
+): Promise<boolean> =>
+  await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken', expectedToken) === 'persisted';
 
 // Reads, mints, and persists. The mint callback is responsible for routing
 // the rotated refresh_token through the upstream's persistence hook;
@@ -115,29 +123,23 @@ export const invalidateCodexAccessToken = async (
 // each POST /oauth/token; the upstream rotates on every call so only one
 // survives and the rest fall into `recoverFromRefreshRace`, burning N
 // round-trips for one usable token. Coalescing here collapses the
-// within-isolate herd to a single mint. Lazy and forced callers share one
-// entry per credential so they can never rotate the same refresh token in
-// parallel. A forced caller that joined a lazy cache hit starts one forced
-// mint after that hit settles; if the lazy call minted, that rotation already
-// satisfies the force request.
+// within-isolate herd to a single mint. Forced actions serialize behind any
+// existing mint and then execute their own callback, preserving the proxy and
+// transport the operator selected. Lazy callers may consume a successful
+// shared mint, or a still-fresh persisted token while a forced refresh runs.
 //
 // Scope: per-isolate only. Cross-isolate siblings still race and are
 // caught by `recoverFromRefreshRace` — same trade-off as claude-code.
-interface EnsuredCodexAccessToken {
-  entry: CodexAccessTokenEntry;
-  freshlyMinted: boolean;
-}
-
 export interface MintedCodexAccessToken {
   entry: CodexAccessTokenEntry;
   refreshToken: string;
 }
 
-type CodexAccessTokenMintResult = CodexAccessTokenEntry | MintedCodexAccessToken;
+export type CodexAccessTokenMintResult = CodexAccessTokenEntry | MintedCodexAccessToken;
 
 interface CodexAccessTokenFlight {
   force: boolean;
-  promise: Promise<EnsuredCodexAccessToken>;
+  promise: Promise<CodexAccessTokenEntry>;
 }
 
 const inFlightEnsures = new Map<string, CodexAccessTokenFlight>();
@@ -159,19 +161,37 @@ export const ensureCodexAccessToken = async (
       const cached = await freshCodexAccessToken(upstreamId, accountId);
       if (cached !== null) return cached;
     }
-    const ensured = await existing.promise;
-    if (!force || existing.force || ensured.freshlyMinted) return ensured.entry;
+    try {
+      const entry = await existing.promise;
+      if (!force) return entry;
+    } catch (error) {
+      if (error instanceof CodexOAuthSessionTerminatedError) throw error;
+      // A proxy or storage failure belongs to the caller whose callback drove
+      // that flight. Once it settles, this caller retries through its own path.
+    }
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
-    return await ensureCodexAccessToken(upstreamId, accountId, mint, true);
+    return await ensureCodexAccessToken(upstreamId, accountId, mint, force);
   }
   const promise = ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
   const flight: CodexAccessTokenFlight = { force, promise };
   inFlightEnsures.set(key, flight);
   try {
-    return (await promise).entry;
+    return await promise;
   } finally {
     if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
   }
+};
+
+export const recoverCodexAccessTokenAfter401 = async (
+  upstreamId: string,
+  accountId: string,
+  rejectedAccessToken: string,
+  mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
+): Promise<CodexAccessTokenEntry> => {
+  await invalidateCodexAccessToken(upstreamId, accountId, rejectedAccessToken);
+  // Conditional invalidation either cleared the rejected token or discovered a
+  // newer sibling token. A normal ensure mints only in the former case.
+  return await ensureCodexAccessToken(upstreamId, accountId, mint);
 };
 
 const ensureCodexAccessTokenInner = async (
@@ -181,7 +201,7 @@ const ensureCodexAccessTokenInner = async (
   recoveryAllowed: boolean,
   force: boolean,
   generationRetryAllowed = true,
-): Promise<EnsuredCodexAccessToken> => {
+): Promise<CodexAccessTokenEntry> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
   const state = readCodexUpstreamState(fresh.state);
@@ -194,7 +214,7 @@ const ensureCodexAccessTokenInner = async (
     });
   }
   if (account.accessToken && isAccessTokenFresh(account.accessToken) && !force) {
-    return { entry: account.accessToken, freshlyMinted: false };
+    return account.accessToken;
   }
 
   let mintResult: CodexAccessTokenMintResult;
@@ -232,7 +252,7 @@ const ensureCodexAccessTokenInner = async (
     if (!generationRetryAllowed) throw new Error(`Codex credential generation changed repeatedly for ${accountId}`);
     return await ensureCodexAccessTokenInner(upstreamId, accountId, mint, recoveryAllowed, force, false);
   }
-  return { entry: minted, freshlyMinted: true };
+  return minted;
 };
 
 const freshCodexAccessToken = async (
@@ -260,7 +280,7 @@ const recoverFromRefreshRace = async (
   accountId: string,
   usedRefreshToken: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
-): Promise<EnsuredCodexAccessToken | null> => {
+): Promise<CodexAccessTokenEntry | null> => {
   const reread = await getProviderRepo().upstreams.getById(upstreamId);
   if (!reread) return null;
   const rereadState = readCodexUpstreamState(reread.state);
@@ -272,7 +292,7 @@ const recoverFromRefreshRace = async (
     `Codex refresh-race recovered for upstream ${upstreamId} account ${accountId}: sibling rotated, using their access token`,
   );
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
-    return { entry: rereadAccount.accessToken, freshlyMinted: false };
+    return rereadAccount.accessToken;
   }
   // Sibling rotated the refresh token but no usable access token sits in
   // state — most likely an `invalidateCodexAccessToken` ran between the

@@ -734,6 +734,31 @@ describe('callCodexResponses — upstream classification', () => {
     expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v1', 'rt_v2');
   });
 
+  test('401 retry returns synthetic 503 when the stored account became terminal', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => {
+      const state = currentRecord.state as CodexUpstreamState;
+      currentRecord = makeRecord({
+        accounts: [{
+          ...state.accounts[0],
+          state: 'session_terminated',
+          state_message: 'terminated concurrently',
+        }],
+      });
+      return errorJson(401, { error: { code: 'expired_token', message: 'expired' } });
+    });
+    const effects = makeEffects();
+
+    const result = await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(503);
+    expect(effects.persistTerminalState).not.toHaveBeenCalled();
+  });
+
   test('401 after an initial mint retries with the rotated refresh token', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at1', refresh_token: 'rt_v2', id_token: 'it1', expires_in: 600 }), { status: 200 }))

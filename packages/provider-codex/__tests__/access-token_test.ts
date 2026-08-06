@@ -5,6 +5,7 @@ import {
   CodexCredentialRefreshTerminatedError,
   ensureCodexAccessToken,
   invalidateCodexAccessToken,
+  recoverCodexAccessTokenAfter401,
   type CodexAccessTokenEntry,
 } from '../src/access-token.ts';
 import { CodexOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
@@ -64,19 +65,19 @@ describe('invalidateCodexAccessToken', () => {
   test('clears a populated access-token slot', async () => {
     const entry: CodexAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateCodexAccessToken(upstreamId, accountId, 'at_x');
+    await expect(invalidateCodexAccessToken(upstreamId, accountId, 'at_x')).resolves.toBe(true);
     expect(storedState().accounts[0].accessToken).toBeNull();
   });
 
   test('writes nothing when the slot is already null', async () => {
-    await invalidateCodexAccessToken(upstreamId, accountId, 'at_old');
+    await expect(invalidateCodexAccessToken(upstreamId, accountId, 'at_old')).resolves.toBe(false);
     expect(repo.writes).toEqual([]);
   });
 
   test('does not clear a newer token written after the rejected request started', async () => {
     const entry: CodexAccessTokenEntry = { token: 'at_newer', expiresAt: farFutureMs, refreshedAt: 'newer' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateCodexAccessToken(upstreamId, accountId, 'at_rejected');
+    await expect(invalidateCodexAccessToken(upstreamId, accountId, 'at_rejected')).resolves.toBe(false);
     expect(repo.writes).toEqual([]);
     expect(storedState().accounts[0].accessToken).toEqual(entry);
   });
@@ -236,20 +237,23 @@ describe('ensureCodexAccessToken', () => {
     expect(results).toEqual([minted, minted]);
   });
 
-  test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
+  test('a forced caller waits for a lazy mint and then uses its own callback', async () => {
     let releaseMint!: () => void;
     const mintGate = new Promise<void>(resolve => { releaseMint = resolve; });
-    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
-    const mint = vi.fn(async () => {
+    const lazyEntry: CodexAccessTokenEntry = { token: 'at_lazy', expiresAt: farFutureMs, refreshedAt: 'lazy' };
+    const forcedEntry: CodexAccessTokenEntry = { token: 'at_forced', expiresAt: farFutureMs, refreshedAt: 'forced' };
+    const lazyMint = vi.fn(async () => {
       await mintGate;
-      return minted;
+      return lazyEntry;
     });
-    const lazy = ensureCodexAccessToken(upstreamId, accountId, mint);
-    const forced = ensureCodexAccessToken(upstreamId, accountId, mint, true);
-    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    const forcedMint = vi.fn().mockResolvedValue(forcedEntry);
+    const lazy = ensureCodexAccessToken(upstreamId, accountId, lazyMint);
+    const forced = ensureCodexAccessToken(upstreamId, accountId, forcedMint, true);
+    await vi.waitFor(() => expect(lazyMint).toHaveBeenCalledTimes(1));
+    expect(forcedMint).not.toHaveBeenCalled();
     releaseMint();
-    expect(await Promise.all([lazy, forced])).toEqual([minted, minted]);
-    expect(mint).toHaveBeenCalledTimes(1);
+    expect(await Promise.all([lazy, forced])).toEqual([lazyEntry, forcedEntry]);
+    expect(forcedMint).toHaveBeenCalledTimes(1);
   });
 
   test('a force request following a coalesced cache hit performs one rotation', async () => {
@@ -278,6 +282,49 @@ describe('ensureCodexAccessToken', () => {
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).resolves.toEqual(cached);
     rejectMint(mintFailure);
     await expect(forced).rejects.toBe(mintFailure);
+  });
+
+  test('a lazy caller retries with its own callback after an uncached forced refresh fails', async () => {
+    const forcedStarted = Promise.withResolvers<void>();
+    const releaseForced = Promise.withResolvers<void>();
+    const failure = new Error('forced proxy failed');
+    const forcedMint = vi.fn(async () => {
+      forcedStarted.resolve();
+      await releaseForced.promise;
+      throw failure;
+    });
+    const lazyEntry: CodexAccessTokenEntry = { token: 'at_lazy', expiresAt: farFutureMs, refreshedAt: 'lazy' };
+    const lazyMint = vi.fn().mockResolvedValue(lazyEntry);
+    const forced = ensureCodexAccessToken(upstreamId, accountId, forcedMint, true);
+    const forcedRejection = expect(forced).rejects.toBe(failure);
+    await forcedStarted.promise;
+    const lazy = ensureCodexAccessToken(upstreamId, accountId, lazyMint);
+    releaseForced.resolve();
+
+    await forcedRejection;
+    await expect(lazy).resolves.toEqual(lazyEntry);
+    expect(lazyMint).toHaveBeenCalledTimes(1);
+  });
+
+  test('a late 401 reuses the token installed by the first recovery', async () => {
+    const oldEntry: CodexAccessTokenEntry = { token: 'at_old', expiresAt: farFutureMs, refreshedAt: 'old' };
+    const newEntry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: oldEntry }] });
+    const releaseMint = Promise.withResolvers<void>();
+    const mintStarted = Promise.withResolvers<void>();
+    const mint = vi.fn(async () => {
+      mintStarted.resolve();
+      await releaseMint.promise;
+      return newEntry;
+    });
+    const first = recoverCodexAccessTokenAfter401(upstreamId, accountId, oldEntry.token, mint);
+    await mintStarted.promise;
+    releaseMint.resolve();
+    await expect(first).resolves.toEqual(newEntry);
+
+    await expect(recoverCodexAccessTokenAfter401(upstreamId, accountId, oldEntry.token, mint))
+      .resolves.toEqual(newEntry);
+    expect(mint).toHaveBeenCalledTimes(1);
   });
 });
 
