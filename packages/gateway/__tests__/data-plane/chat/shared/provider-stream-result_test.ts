@@ -427,6 +427,7 @@ test('normal consumption yields to a pre-scheduled execution deadline across rea
     ctx,
     () => null,
   );
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
 
   setTimeout(() => executionController.abort(executionFailure), 0);
   await expect(drainEvents(result)).rejects.toBe(executionFailure);
