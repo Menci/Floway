@@ -961,8 +961,8 @@ const powerShellHarnessPrelude = (options: RunOptions): string => {
     parts.push(`function Start-Sleep {
   param([int]$Milliseconds, [int]$Seconds)
   if ($Milliseconds -eq 100) { [System.IO.File]::WriteAllText($env:FLOWAY_HARNESS_LOCK_WAIT_MARKER, '') }
-  if ($PSBoundParameters.ContainsKey('Milliseconds')) { Microsoft.PowerShell.Utility\Start-Sleep -Milliseconds $Milliseconds }
-  else { Microsoft.PowerShell.Utility\Start-Sleep -Seconds $Seconds }
+  if ($PSBoundParameters.ContainsKey('Milliseconds')) { Microsoft.PowerShell.Utility\\Start-Sleep -Milliseconds $Milliseconds }
+  else { Microsoft.PowerShell.Utility\\Start-Sleep -Seconds $Seconds }
 }
 `);
   }
@@ -970,7 +970,7 @@ const powerShellHarnessPrelude = (options: RunOptions): string => {
     parts.push(`function Move-Item {
   param([string]$LiteralPath, [string]$Destination, [switch]$Force)
   if ($LiteralPath -like '*.floway-backup.*') { throw 'harness-blocked backup restore' }
-  Microsoft.PowerShell.Management\Move-Item @PSBoundParameters
+  Microsoft.PowerShell.Management\\Move-Item @PSBoundParameters
 }
 `);
   }
@@ -978,7 +978,7 @@ const powerShellHarnessPrelude = (options: RunOptions): string => {
     parts.push(`function Get-ChildItem {
   param([string]$LiteralPath, [switch]$File, $ErrorAction)
   if ($LiteralPath -ceq $env:FLOWAY_HARNESS_FAIL_PRUNE_DIR) { throw 'harness-blocked backup enumeration' }
-  Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters
+  Microsoft.PowerShell.Management\\Get-ChildItem @PSBoundParameters
 }
 `);
   }
