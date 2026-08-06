@@ -77,7 +77,7 @@ export const fetchCodexCatalog = (opts: CodexCatalogFetchOptions): Promise<Codex
   if (
     cause instanceof ProviderModelsUnavailableError
     && cause.httpResponse !== null
-    && cause.cause === undefined
+    && !Object.hasOwn(cause, 'cause')
   ) {
     throw new CodexModelsFetchError(cause);
   }

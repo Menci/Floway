@@ -137,6 +137,25 @@ describe('fetchCodexCatalog', () => {
     expect(cancellationReason).toBe((error as Error).cause);
   });
 
+  test('preserves an undefined 401 body-read failure without credential classification', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(undefined);
+      },
+    });
+
+    const error = await fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: () => Promise.resolve(new Response(body, { status: 401 })),
+    }).catch(cause => cause as unknown);
+
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect(error).not.toBeInstanceOf(CodexModelsFetchError);
+    expect(Object.hasOwn(error as object, 'cause')).toBe(true);
+    expect((error as Error).cause).toBeUndefined();
+  });
+
   test('propagates caller abort to the catalog fetch', async () => {
     const controller = new AbortController();
     const reason = new DOMException('stopped', 'AbortError');

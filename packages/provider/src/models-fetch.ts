@@ -3,7 +3,7 @@ export class ProviderModelsUnavailableError extends Error {
     readonly httpResponse: { status: number; headers: Headers; body: string } | null,
     cause?: unknown,
   ) {
-    super('Provider model listing failed', cause !== undefined ? { cause } : undefined);
+    super('Provider model listing failed', arguments.length >= 2 ? { cause } : undefined);
     this.name = 'ProviderModelsUnavailableError';
   }
 }
