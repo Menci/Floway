@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
@@ -147,8 +147,10 @@ describe('createCodexProvider', () => {
     await vi.advanceTimersByTimeAsync(25);
 
     const error = await rejection;
-    expect(error).toMatchObject({ name: 'TimeoutError' });
-    expect(cancellationReason).toBe(error);
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect((error as ProviderModelsUnavailableError).httpResponse?.status).toBe(401);
+    expect((error as Error).cause).toMatchObject({ name: 'TimeoutError' });
+    expect(cancellationReason).toBe((error as Error).cause);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect((current!.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at');
   });
