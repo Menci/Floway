@@ -50,9 +50,9 @@ describe('createPerRequestFetcher', () => {
     // u_bad references the malformed row; u_ok shares the request but does
     // not. The whole-request build must still succeed; only u_bad's fetcher
     // surfaces the parse error, and only when actually called.
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
     await repo.upstreams.save(upstream('u_bad', [{ id: 'p_bad' }]));
     await repo.upstreams.save(upstream('u_ok', []));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
 
     const fetcherFor = await createPerRequestFetcher('TEST');
     const badFetcher = fetcherFor('u_bad');
