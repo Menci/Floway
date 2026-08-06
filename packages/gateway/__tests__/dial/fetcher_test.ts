@@ -739,14 +739,18 @@ describe('createFetcher', () => {
   it('uses the successful fallback even when an earlier entry rejects late', async () => {
     vi.useRealTimers();
     const repo = new InMemoryRepo();
+    const broken: ProxyEntry = { revision: 1, config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null };
+    const good: ProxyEntry = { revision: 1, config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null };
+    await insertProxy(repo, 'broken', 'socks5://broken:1', broken);
+    await insertProxy(repo, 'good', 'socks5://good:1', good);
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: [{ id: 'broken' }, { id: 'good' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([
-        ['broken', { url: 'socks5://broken:1', config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null }],
-        ['good', { url: 'socks5://good:1', config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null }],
+        ['broken', broken],
+        ['good', good],
       ]),
       runProxied: async (config: ProxyConfig) => {
         if (config.host === 'broken') {
