@@ -36,6 +36,52 @@ test('readRequestBody accepts exactly maxBytes', async () => {
   assertEquals(await response.json(), { bytes: [1, 2, 3, 4], streamError: null });
 });
 
+test('readRequestBody preallocates an exact declared Content-Length backing buffer', async () => {
+  const app = new Hono();
+  app.post('/body', async (c) => {
+    const body = await readRequestBody(c, { maxBytes: 64 * 1024 });
+    return c.json({
+      bytes: [...body.capturedBytes],
+      backingBytes: body.capturedBytes.buffer.byteLength,
+    });
+  });
+  const response = await app.request('/body', {
+    method: 'POST',
+    headers: { 'content-length': '4' },
+    body: Uint8Array.of(1, 2, 3, 4),
+  });
+
+  assertEquals(await response.json(), { bytes: [1, 2, 3, 4], backingBytes: 4 });
+});
+
+test('readRequestBody coalesces unknown-length chunks into one exact backing buffer', async () => {
+  let pull = 0;
+  const request = new Request('http://localhost/body', {
+    method: 'POST',
+    body: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pull += 1;
+        if (pull === 1) controller.enqueue(Uint8Array.of(1, 2));
+        else if (pull === 2) controller.enqueue(Uint8Array.of(3, 4, 5));
+        else controller.close();
+      },
+    }, { highWaterMark: 0 }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+  const app = new Hono();
+  app.post('/body', async (c) => {
+    const body = await readRequestBody(c, { maxBytes: 64 * 1024 });
+    return c.json({
+      bytes: [...body.capturedBytes],
+      backingBytes: body.capturedBytes.buffer.byteLength,
+    });
+  });
+
+  const response = await app.request(request);
+
+  assertEquals(await response.json(), { bytes: [1, 2, 3, 4, 5], backingBytes: 5 });
+});
+
 test('readRequestBody cancels a chunked upload at maxBytes + 1 and returns 413', async () => {
   let pulls = 0;
   let canceled = false;

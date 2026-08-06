@@ -72,6 +72,16 @@ const cancelOversizedBody = (body: ReadableStream<Uint8Array>, error: RequestBod
   throw error;
 };
 
+const coalesceChunks = (chunks: readonly Uint8Array[], byteLength: number): Uint8Array => {
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+};
+
 export const readRequestBody = async (c: Context, options: ReadRequestBodyOptions = {}): Promise<RequestBody> => {
   const maxBytes = options.maxBytes ?? MAX_BUFFERED_REQUEST_BODY_BYTES;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
@@ -85,8 +95,20 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
   }
 
   const reader = c.req.raw.body.getReader();
-  let bytes = new Uint8Array();
+  // A validated Content-Length lets the normal HTTP path allocate its final
+  // owner exactly once. Unknown-length uploads retain the runtime's bounded
+  // chunks and coalesce once at the end instead of geometrically reallocating
+  // and briefly retaining both an old and a new near-limit buffer.
+  let declaredBytes = declared === null ? null : new Uint8Array(declared);
+  let chunks: Uint8Array[] | null = declared === null ? [] : null;
   let length = 0;
+  const capturedBytes = (): Uint8Array => {
+    if (declaredBytes === null) return coalesceChunks(chunks!, length);
+    if (length === declaredBytes.byteLength) return declaredBytes;
+    // A short or failed body must not keep an over-declared near-limit backing
+    // allocation alive through parsing and dump finalization.
+    return declaredBytes.slice(0, length);
+  };
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -101,19 +123,24 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
         }
         throw error;
       }
-      if (required > bytes.byteLength) {
-        const doubled = bytes.byteLength === 0 ? 16 * 1024 : bytes.byteLength * 2;
-        const capacity = Math.min(maxBytes, Math.max(required, doubled));
-        const grown = new Uint8Array(capacity);
-        grown.set(bytes.subarray(0, length));
-        bytes = grown;
+      if (declaredBytes !== null && required <= declaredBytes.byteLength) {
+        declaredBytes.set(value, length);
+      } else {
+        // A body exceeding its declared length should normally be rejected by
+        // the HTTP runtime. Preserve the prior tolerant capture behavior for a
+        // synthetic or non-conforming Request by switching to the same
+        // coalesce-once path used for unknown lengths.
+        if (chunks === null) {
+          chunks = length === 0 ? [] : [declaredBytes!.subarray(0, length)];
+          declaredBytes = null;
+        }
+        chunks.push(value);
       }
-      bytes.set(value, length);
       length = required;
     }
-    return { capturedBytes: bytes.subarray(0, length), streamError: null };
+    return { capturedBytes: capturedBytes(), streamError: null };
   } catch (err) {
     if (err instanceof RequestBodyTooLargeError) throw err;
-    return { capturedBytes: bytes.subarray(0, length), streamError: normalizedStreamError(err) };
+    return { capturedBytes: capturedBytes(), streamError: normalizedStreamError(err) };
   }
 };
