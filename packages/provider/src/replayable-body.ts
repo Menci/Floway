@@ -173,6 +173,12 @@ export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
   // header on an ordinary ReadableStream is ignored by the runtime.
   // https://github.com/cloudflare/cloudflare-docs/blob/3f39c22a4b2e740e32f611bdd32fb801a2d3e3b8/src/content/docs/workers/runtime-apis/request.mdx#L495-L507
   const validated = validateReplayableBodySource(source);
+  // Finish every synchronous validation before allocating and pumping the
+  // fixed stream. A malformed header must fail without leaving a locked pump
+  // that no PreparedNativeFetch owner exists to cancel.
+  const headers = new Headers(init.headers);
+  headers.delete('transfer-encoding');
+  headers.set('content-length', String(validated.byteLength));
   const fixed = new FixedLengthStream(validated.byteLength);
   const pumpController = new AbortController();
   const pumpSignal = init.signal === null || init.signal === undefined
@@ -186,9 +192,6 @@ export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
     () => ({ type: 'settled' }),
     error => ({ type: 'failed', error }),
   );
-  const headers = new Headers(init.headers);
-  headers.delete('transfer-encoding');
-  headers.set('content-length', String(validated.byteLength));
   let cancellation: Promise<readonly unknown[]> | undefined;
   return {
     init: { ...init, body: fixed.readable, headers, duplex: 'half' } as DuplexRequestInit,

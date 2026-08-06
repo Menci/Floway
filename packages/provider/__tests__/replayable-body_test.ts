@@ -76,6 +76,27 @@ test('native fetch init uses FixedLengthStream when the runtime provides it', as
   }
 });
 
+test('prepare native fetch rejects malformed headers before constructing a FixedLengthStream pump', () => {
+  const original = Reflect.get(globalThis, 'FixedLengthStream');
+  let constructions = 0;
+  class UnreachableFixedLengthStream {
+    readonly readable = new ReadableStream<Uint8Array>();
+    readonly writable = new WritableStream<Uint8Array>();
+    constructor() { constructions += 1; }
+  }
+  Reflect.set(globalThis, 'FixedLengthStream', UnreachableFixedLengthStream);
+  try {
+    expect(() => prepareNativeFetch({
+      headers: { 'invalid header name': 'value' },
+      body: createReplayableBody([Uint8Array.of(1, 2, 3)]),
+    })).toThrow();
+    expect(constructions).toBe(0);
+  } finally {
+    if (original === undefined) Reflect.deleteProperty(globalThis, 'FixedLengthStream');
+    else Reflect.set(globalThis, 'FixedLengthStream', original);
+  }
+});
+
 test('replayable body rejects forged byte lengths before publishing framing', () => {
   expect(() => replayableBodyStream({ segments: [Uint8Array.of(1)], byteLength: 999 }))
     .toThrow(/does not match/u);
