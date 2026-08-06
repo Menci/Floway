@@ -58,7 +58,7 @@ export type {
   UpstreamCallOptions,
 } from './provider.ts';
 export { headersForMessagesCall } from './messages.ts';
-export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
+export type { ImagesEditsRequest, ImagesEditsSource, RawImagesEditsUpload, SerializedImagesEditsRequest } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
 export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
@@ -105,6 +105,8 @@ export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export type { Fetcher, UpstreamFetchOptions } from './options.ts';
 export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
+export type { ReplayableBodySource } from './replayable-body.ts';
+export { createReplayableBody, nativeFetchInit, replayableBodySource, replayableBodyStream } from './replayable-body.ts';
 
 export { isAbortError } from './abort.ts';
 export { isHttpFieldValue } from './http-field-value.ts';
