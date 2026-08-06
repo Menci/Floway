@@ -7,9 +7,13 @@ export type { CodexAccessTokenEntry };
 export type CodexCredentialGeneration = Pick<CodexAccountCredential, 'chatgptAccountId' | 'refresh_token' | 'state_updated_at'>;
 
 export class CodexCredentialRefreshTerminatedError extends CodexOAuthSessionTerminatedError {
-  constructor(error: CodexOAuthSessionTerminatedError, readonly generation: CodexCredentialGeneration) {
+  readonly generation!: CodexCredentialGeneration;
+
+  constructor(error: CodexOAuthSessionTerminatedError, generation: CodexCredentialGeneration) {
     super({ code: error.code, message: error.upstreamMessage });
     this.name = 'CodexCredentialRefreshTerminatedError';
+    Object.defineProperty(this, 'generation', { value: generation, enumerable: false });
+    Object.defineProperty(this, 'cause', { value: error, enumerable: false });
   }
 }
 
@@ -31,10 +35,12 @@ const persistAccessToken = async (
   entry: CodexAccessTokenEntry | null,
   where: string,
   expectedToken?: string,
-): Promise<void> => {
+  expectedGeneration?: CodexCredentialGeneration,
+): Promise<'persisted' | 'gone' | 'account-missing' | 'generation-mismatch'> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
   let accountMissing = false;
+  let generationMismatch = false;
   try {
     await getProviderRepo().upstreams.saveState(upstreamId, current => {
       const state = readCodexUpstreamState(current);
@@ -44,6 +50,16 @@ const persistAccessToken = async (
         return current;
       }
       accountMissing = false;
+      const account = state.accounts[idx];
+      if (expectedGeneration !== undefined && (
+        account.chatgptAccountId !== expectedGeneration.chatgptAccountId
+        || account.refresh_token !== expectedGeneration.refresh_token
+        || account.state_updated_at !== expectedGeneration.state_updated_at
+      )) {
+        generationMismatch = true;
+        return current;
+      }
+      generationMismatch = false;
       // Invalidation belongs to the request that observed `expectedToken`.
       // A sibling refresh or operator re-import may already have installed a
       // newer token; that generation must survive the late 401.
@@ -56,11 +72,13 @@ const persistAccessToken = async (
     // request over. Every other storage failure still propagates.
     if (!(err instanceof UpstreamGoneError)) throw err;
     console.warn(`${where}: Codex upstream ${upstreamId} disappeared mid-request`);
-    return;
+    return 'gone';
   }
   if (accountMissing) {
     console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
+    return 'account-missing';
   }
+  return generationMismatch ? 'generation-mismatch' : 'persisted';
 };
 
 export const invalidateCodexAccessToken = async (
@@ -124,6 +142,10 @@ export const ensureCodexAccessToken = async (
   const key = JSON.stringify([upstreamId, accountId]);
   const existing = inFlightEnsures.get(key);
   if (existing) {
+    if (!force && existing.force) {
+      const cached = await freshCodexAccessToken(upstreamId, accountId);
+      if (cached !== null) return cached;
+    }
     const ensured = await existing.promise;
     if (!force || existing.force || ensured.freshlyMinted) return ensured.entry;
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
@@ -145,6 +167,7 @@ const ensureCodexAccessTokenInner = async (
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
   recoveryAllowed: boolean,
   force: boolean,
+  generationRetryAllowed = true,
 ): Promise<EnsuredCodexAccessToken> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
@@ -178,8 +201,36 @@ const ensureCodexAccessTokenInner = async (
     }
     throw err;
   }
-  await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
+  const generation: CodexCredentialGeneration = {
+    chatgptAccountId: account.chatgptAccountId,
+    refresh_token: account.refresh_token,
+    state_updated_at: account.state_updated_at,
+  };
+  const persisted = await persistAccessToken(
+    upstreamId,
+    accountId,
+    minted,
+    'ensureCodexAccessToken',
+    undefined,
+    generation,
+  );
+  if (persisted === 'generation-mismatch' || persisted === 'account-missing') {
+    if (!generationRetryAllowed) throw new Error(`Codex credential generation changed repeatedly for ${accountId}`);
+    return await ensureCodexAccessTokenInner(upstreamId, accountId, mint, recoveryAllowed, force, false);
+  }
   return { entry: minted, freshlyMinted: true };
+};
+
+const freshCodexAccessToken = async (
+  upstreamId: string,
+  accountId: string,
+): Promise<CodexAccessTokenEntry | null> => {
+  const record = await getProviderRepo().upstreams.getById(upstreamId);
+  if (record === null) return null;
+  const account = readCodexUpstreamState(record.state).accounts.find(candidate => candidate.chatgptAccountId === accountId);
+  return account?.state === 'active' && account.accessToken !== null && isAccessTokenFresh(account.accessToken)
+    ? account.accessToken
+    : null;
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced

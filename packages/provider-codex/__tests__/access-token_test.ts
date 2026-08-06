@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
+  CodexCredentialRefreshTerminatedError,
   ensureCodexAccessToken,
   invalidateCodexAccessToken,
   type CodexAccessTokenEntry,
@@ -98,6 +99,29 @@ describe('ensureCodexAccessToken', () => {
     expect(out).toEqual(minted);
     expect(mint).toHaveBeenCalledWith('rt_v1');
     expect(storedState().accounts[0].accessToken).toEqual(minted);
+  });
+
+  test('discards a minted token when the credential generation is re-imported', async () => {
+    const staleMint: CodexAccessTokenEntry = { token: 'at_stale', expiresAt: farFutureMs, refreshedAt: 'stale' };
+    const reimported: CodexAccessTokenEntry = { token: 'at_reimported', expiresAt: farFutureMs, refreshedAt: 'reimported' };
+    const mint = vi.fn(async () => {
+      current = makeRecord({
+        accounts: [{
+          ...baseAccount,
+          refresh_token: 'rt_reimported',
+          state_updated_at: '2026-06-02T00:00:00.000Z',
+          accessToken: reimported,
+        }],
+      });
+      return staleMint;
+    });
+
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).resolves.toEqual(reimported);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(storedState().accounts[0]).toMatchObject({
+      refresh_token: 'rt_reimported',
+      accessToken: reimported,
+    });
   });
 
   test('propagates storage failures after a mint', async () => {
@@ -241,4 +265,31 @@ describe('ensureCodexAccessToken', () => {
     expect(forcedResult).toEqual(minted);
     expect(mint).toHaveBeenCalledTimes(1);
   });
+
+  test('a lazy caller keeps a fresh cache entry while a forced refresh is failing', async () => {
+    const cached: CodexAccessTokenEntry = { token: 'at_cached', expiresAt: farFutureMs, refreshedAt: 'cached' };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: cached }] });
+    let rejectMint!: (error: unknown) => void;
+    const mintFailure = new Error('forced proxy failed');
+    const mint = vi.fn(() => new Promise<CodexAccessTokenEntry>((_resolve, reject) => { rejectMint = reject; }));
+    const forced = ensureCodexAccessToken(upstreamId, accountId, mint, true);
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).resolves.toEqual(cached);
+    rejectMint(mintFailure);
+    await expect(forced).rejects.toBe(mintFailure);
+  });
+});
+
+test('Codex terminal refresh errors preserve their cause without serializing the refresh token', () => {
+  const cause = new CodexOAuthSessionTerminatedError({ code: 'invalid_grant', message: 'revoked' });
+  const error = new CodexCredentialRefreshTerminatedError(cause, {
+    chatgptAccountId: accountId,
+    refresh_token: 'rt_secret',
+    state_updated_at: '2026-06-01T00:00:00.000Z',
+  });
+
+  expect(error.cause).toBe(cause);
+  expect(JSON.stringify(error)).not.toContain('rt_secret');
+  expect(error.generation.refresh_token).toBe('rt_secret');
 });

@@ -1,4 +1,5 @@
 import { CodexCredentialRefreshTerminatedError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexCredentialGeneration } from './access-token.ts';
+import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
@@ -97,6 +98,9 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   } catch (err) {
     if (err instanceof CodexCredentialRefreshTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);
+      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
+    }
+    if (err instanceof CodexOAuthSessionTerminatedError) {
       return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
