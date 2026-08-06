@@ -1771,6 +1771,39 @@ test('claude', 'PowerShell times out on an occupied lock before invoking the CLI
   t.equal(readFileSync(join(psLock, 'owner'), 'utf8'), 'stale-owner', 'PowerShell does not break an unowned lock');
 });
 
+test('claude', 'PowerShell retries when a lock owner releases after exclusive create reports contention', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const target = join(ws.root, 'release-race-config');
+  const run = await runPowerShellProbe(ws, `$ErrorActionPreference = 'Stop'
+${SETUP_POWERSHELL_COMMON}
+$script:ReleaseRaceInjected = $false
+function New-Item {
+  [CmdletBinding()]
+  param([string]$ItemType, [string]$Path, [switch]$Force)
+  if ((-not $script:ReleaseRaceInjected) -and $Path.EndsWith('.floway-agent-setup.lock', [System.StringComparison]::Ordinal)) {
+    $script:ReleaseRaceInjected = $true
+    Microsoft.PowerShell.Management\\New-Item @PSBoundParameters | Out-Null
+    Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $Path -Force
+    $record = [System.Management.Automation.ErrorRecord]::new(
+      [System.IO.IOException]::new('simulated directory-exists race'),
+      'DirectoryExist',
+      [System.Management.Automation.ErrorCategory]::ResourceExists,
+      $Path
+    )
+    $PSCmdlet.ThrowTerminatingError($record)
+  }
+  Microsoft.PowerShell.Management\\New-Item @PSBoundParameters
+}
+Enter-SetupLock ${powerShellLiteral(target)}
+if (-not $script:SetupLockAcquired) { throw 'lock was not acquired after the release race' }
+Exit-SetupLock
+if (Test-Path -LiteralPath ${powerShellLiteral(setupLockPath(target))}) { throw 'lock was not released' }
+exit 0
+`);
+  t.equal(run.code, 0, `the vanished contention must retry successfully:\n${run.combined}`);
+});
+
 test('claude', 'Bash cleanup preserves a lock whose owner changed while setup was running', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);

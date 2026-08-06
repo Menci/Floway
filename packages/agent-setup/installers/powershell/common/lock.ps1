@@ -20,7 +20,11 @@ function Enter-SetupLock {
       New-Item -ItemType Directory -Path $lockPath -ErrorAction Stop | Out-Null
       break
     } catch {
-      if (-not (Test-Path -LiteralPath $lockPath)) { throw }
+      if ($_.CategoryInfo.Category -ne [System.Management.Automation.ErrorCategory]::ResourceExists) { throw }
+      # The owner can release the directory between our exclusive-create
+      # failure and this observation. That is a completed handoff, so retry the
+      # create; other New-Item failures retain their original error above.
+      if (-not (Test-Path -LiteralPath $lockPath)) { continue }
       if ($wait.Elapsed.TotalSeconds -ge 600) {
         Stop-Setup "another Agent Setup invocation is using $TargetRoot; if no setup process is running, remove the stale lock at $lockPath and re-run."
       }
