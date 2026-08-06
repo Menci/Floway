@@ -14,6 +14,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  ChangeOwnPasswordResult,
   CreateUserAccountResult,
   DeleteUserAccountResult,
   ExpirationSweepsRepo,
@@ -467,6 +468,31 @@ class SqlUsersRepo implements UsersRepo {
       if (isUsernameTakenError(error)) return { status: 'username-taken' };
       throw error;
     }
+  }
+
+  async changeOwnPassword(
+    id: number,
+    sessionId: string,
+    expectedPasswordHash: string,
+    passwordHash: string,
+  ): Promise<ChangeOwnPasswordResult> {
+    const update = this.db.prepare(
+      `UPDATE users SET password_hash = ?
+       WHERE id = ? AND deleted_at IS NULL AND password_hash = ?
+         AND EXISTS (SELECT 1 FROM sessions WHERE id = ? AND user_id = users.id)
+       RETURNING id`,
+    ).bind(passwordHash, id, expectedPasswordHash, sessionId);
+    const deleteSiblingSessions = this.db.prepare(
+      `DELETE FROM sessions WHERE user_id = ? AND id != ?
+       AND EXISTS (
+         SELECT 1 FROM users
+         WHERE id = ? AND deleted_at IS NULL AND password_hash = ?
+       )`,
+    ).bind(id, sessionId, id, passwordHash);
+    const results = await this.atomicBatch([update, deleteSiblingSessions]);
+    const rows = results[0].results as unknown as Array<{ id: number }>;
+    if (rows.length > 1) throw new Error(`changeOwnPassword: atomic update returned ${rows.length} rows`);
+    return rows.length === 1 ? { status: 'updated' } : { status: 'stale' };
   }
 
   async deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {

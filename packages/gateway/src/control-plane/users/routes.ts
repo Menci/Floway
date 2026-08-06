@@ -145,12 +145,12 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
     return c.json({ error: 'Current password is incorrect' }, 400);
   }
 
-  const result = await repo.users.updateActive(
+  const result = await repo.users.changeOwnPassword(
     user.id,
-    { passwordHash: await hashPassword(newPassword) },
-    { keepSessionId: sessionId },
+    sessionId,
+    user.passwordHash,
+    await hashPassword(newPassword),
   );
-  if (result.status === 'missing') return c.json({ error: 'Invalid session' }, 401);
-  if (result.status === 'username-taken') throw new Error('Password-only user update reported a username collision');
+  if (result.status === 'stale') return c.json({ error: 'Invalid session' }, 401);
   return c.json({ ok: true });
 };

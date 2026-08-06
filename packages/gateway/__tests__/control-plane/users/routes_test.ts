@@ -4,6 +4,7 @@ import { DUMP_DISABLED_REASON } from '../../../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
+import { hashPassword } from '../../../src/shared/passwords.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { flushBackground, trackBackground } from '../../test-utils/background-tracker.ts';
 import { requestControlPlane, setupControlPlaneTest, TEST_PASSWORD, TEST_PASSWORD_HASH } from '../../test-utils/control-plane.ts';
@@ -274,6 +275,28 @@ test('self-service password change validates the old password, revokes other ses
   expect(await repo.sessions.getByIdAndTouch(sessionB.id)).toBeNull();
   assertEquals((await login('alice', TEST_PASSWORD)).status, 401);
   assertEquals((await login('alice', 'new-pw')).status, 200);
+});
+
+test('self-service password change cannot overwrite a concurrent administrator reset', async () => {
+  const { repo } = await setupControlPlaneTest();
+  await repo.users.save(sampleUser({ passwordHash: TEST_PASSWORD_HASH }));
+  const session = await repo.sessions.create(3);
+  const originalChange = repo.users.changeOwnPassword.bind(repo.users);
+  repo.users.changeOwnPassword = async (...args) => {
+    await repo.users.updateActive(3, { passwordHash: await hashPassword('admin-reset') }, { keepSessionId: null });
+    return await originalChange(...args);
+  };
+
+  const response = await requestControlPlane('/api/users/me/password', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': session.id },
+    body: JSON.stringify({ currentPassword: TEST_PASSWORD, newPassword: 'attacker-write' }),
+  });
+
+  assertEquals(response.status, 401);
+  assertEquals(await response.json(), { error: 'Invalid session' });
+  assertEquals((await login('alice', 'attacker-write')).status, 401);
+  assertEquals((await login('alice', 'admin-reset')).status, 200);
 });
 
 test('self-service password change rejects API-key auth and an account without a password', async () => {

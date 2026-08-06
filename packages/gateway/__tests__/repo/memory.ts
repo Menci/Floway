@@ -18,6 +18,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  ChangeOwnPasswordResult,
   CreateUserAccountResult,
   DeleteUserAccountResult,
   ExpirationDomain,
@@ -170,6 +171,19 @@ class MemoryUsersRepo implements UsersRepo {
     });
   }
 
+  changeOwnPassword(id: number, sessionId: string, expectedPasswordHash: string, passwordHash: string): Promise<ChangeOwnPasswordResult> {
+    return this.mutate(() => {
+      const index = this.users.findIndex(user =>
+        user.id === id
+        && user.deletedAt === null
+        && user.passwordHash === expectedPasswordHash);
+      if (index < 0 || !this.sessions.hasNow(sessionId, id)) return { status: 'stale' };
+      this.users[index] = { ...this.users[index], passwordHash };
+      this.sessions.deleteByUserIdExceptNow(id, sessionId);
+      return { status: 'updated' };
+    });
+  }
+
   deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult> {
     return this.mutate(async () => {
       const index = this.users.findIndex(user => user.id === id && user.deletedAt === null);
@@ -226,6 +240,10 @@ class MemorySessionsRepo implements SessionsRepo {
 
   createForActiveUser(userId: number): Promise<Session | null> {
     return this.mutations.run(() => this.isUserActive(userId) ? this.create(userId) : null);
+  }
+
+  hasNow(id: string, userId: number): boolean {
+    return this.sessions.some(session => session.id === id && session.userId === userId);
   }
 
   deleteById(id: string): Promise<boolean> {

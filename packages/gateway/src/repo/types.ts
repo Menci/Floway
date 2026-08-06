@@ -289,6 +289,10 @@ export type DeleteUserAccountResult =
   | { status: 'deleted'; apiKeyIds: string[] }
   | { status: 'missing' };
 
+export type ChangeOwnPasswordResult =
+  | { status: 'updated' }
+  | { status: 'stale' };
+
 export interface UsersRepo {
   list(): Promise<User[]>;
   listIncludingDeleted(): Promise<User[]>;
@@ -296,6 +300,7 @@ export interface UsersRepo {
   findByUsername(username: string): Promise<User | null>;
   createAccount(user: NewUserAccount, defaultKey: NewUserDefaultKey): Promise<CreateUserAccountResult>;
   updateActive(id: number, patch: UserUpdate, options?: UserUpdateOptions): Promise<UpdateActiveUserResult>;
+  changeOwnPassword(id: number, sessionId: string, expectedPasswordHash: string, passwordHash: string): Promise<ChangeOwnPasswordResult>;
   deleteAccount(id: number, deletedAt: string): Promise<DeleteUserAccountResult>;
   // Full-row restore primitive for validated data transfer. Request paths use
   // the conditional aggregate mutations above.
