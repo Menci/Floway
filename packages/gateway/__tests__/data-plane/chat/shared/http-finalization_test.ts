@@ -125,7 +125,7 @@ test.each(catalogFailureCases)('$name finalizes a verbatim catalog failure exact
     assertEquals(responseBody, catalogBody);
     await flushBackground();
 
-    timers.assertLifecycleCount(1);
+    timers.assertLifecycleCount(2);
     assertEquals(dumps.stored.length, 1);
     const stored = dumps.stored[0];
     assertEquals(stored.keyId, API_KEY_ID);
@@ -155,7 +155,7 @@ test('a corrupt affinity secret leaves only the finalized fallback lifecycle', a
     assertEquals(responseBody.length > 0, true);
     await flushBackground();
 
-    timers.assertLifecycleCount(1);
+    timers.assertLifecycleCount(2);
     assertEquals(enumerateModelCandidates.mock.calls.length, 0);
     assertEquals(dumps.stored.length, 1);
     assertEquals(dumps.stored[0].record.meta.requestBytes, new TextEncoder().encode(requestBody).byteLength);
