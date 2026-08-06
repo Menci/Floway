@@ -11,9 +11,8 @@ import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
-import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
+import { saveAndWarmUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
-import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import {
   normalizeModelPrefix,
   ALL_PROVIDER_KINDS,
@@ -279,10 +278,9 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   }
 
   const record = { ...upstream, config: config.value };
-  await getRepo().upstreams.save(record);
   // Answer with the catalog status this warm produced, not the one the record
   // was built with — the dashboard re-seeds its draft from this body.
-  const modelsCache = await warmModelsCache(record, c);
+  const modelsCache = await saveAndWarmUpstreamForModels({ previous: null, next: record }, c);
   return c.json(await serializeForResponse({ ...record, modelsCache }, knownProxyIds), 201);
 };
 
@@ -336,8 +334,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
 
-  await saveUpstreamForModels(existing, next);
-  const modelsCache = await warmModelsCache(next, c);
+  const modelsCache = await saveAndWarmUpstreamForModels({ previous: existing, next }, c);
   return c.json(await serializeForResponse({ ...next, modelsCache }, knownProxyIds));
 };
 

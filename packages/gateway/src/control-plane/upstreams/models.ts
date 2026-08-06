@@ -2,11 +2,12 @@ import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
-import { createProvider } from '../../data-plane/providers/registry.ts';
+import { fetchUpstreamModels } from '../../data-plane/providers/models-cache.ts';
+import { createProvider, modelsCatalogIdentity } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
+import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { listModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
@@ -35,13 +36,11 @@ const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => 
   };
 };
 
-// Unified model catalog fetch for both draft preview and saved-record
-// refresh. Always live-fetches on the control plane; when
-// record.id !== '' the request also warms/refreshes the SWR cache via
-// `fetchUpstreamModelsCached` so a subsequent data-plane call picks up
-// the fresh catalog. Custom's response stays the raw upstream row shape
-// (dashboard translates through the draft's endpoints); every other
-// kind returns UpstreamModelConfig-shaped rows.
+// Unified model catalog fetch for draft previews and saved records. A request
+// matching the saved fetch inputs atomically publishes its result to the
+// persisted snapshot; an unsaved draft is fetched without touching that row.
+// Custom keeps the raw upstream response shape for the dashboard; every other
+// provider returns its ProviderModel projection.
 export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const { record } = c.req.valid('json');
   if (!isValidProviderKind(record.kind)) {
@@ -51,7 +50,6 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const persisted = record.id === '' ? null : await getRepo().upstreams.getById(record.id);
   if (record.id !== '' && persisted === null) return c.json({ error: 'Upstream not found' }, 404);
 
-  const scheduler = backgroundSchedulerFromContext(c);
   const now = new Date().toISOString();
   const synthRecord: UpstreamRecord = {
     id: record.id || 'draft',
@@ -73,9 +71,9 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // never carries a cached catalog.
     modelsCache: null,
   };
-  const cacheGeneration = persisted === null
-    ? { updatedAt: synthRecord.updatedAt, config: synthRecord.config }
-    : { updatedAt: persisted.updatedAt, config: persisted.config };
+  const canRefreshPersistedCache = persisted !== null
+    && modelsCatalogIdentity(persisted) === modelsCatalogIdentity(synthRecord)
+    && serializeStoredConfig(persisted.proxyFallbackList) === serializeStoredConfig(synthRecord.proxyFallbackList);
 
   let fetcher: Fetcher;
   try {
@@ -91,19 +89,14 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   try {
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const provider = createProvider(synthRecord, cacheGeneration);
+      const provider = createProvider(synthRecord, persisted === null ? undefined : modelsCacheGeneration(persisted));
       let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
-      if (record.id === '') {
+      if (!canRefreshPersistedCache) {
         result = await fetchCustomModels(assertedConfig, fetcher);
       } else {
-        await fetchUpstreamModelsCached(provider, {
-          scheduler,
-          fetcher,
-          force: true,
-          loadProvidedModels: async () => {
-            result = await fetchCustomModels(assertedConfig, fetcher);
-            return projectCustomModels(synthRecord, result);
-          },
+        await fetchUpstreamModels(provider, fetcher, async () => {
+          result = await fetchCustomModels(assertedConfig, fetcher);
+          return projectCustomModels(synthRecord, result);
         });
         // A concurrent refresh may already own the cache's in-flight slot, in
         // which case our raw-shape loader was not invoked. The dashboard still
@@ -113,13 +106,10 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
       }
       return c.json({ kind, data: result.data });
     }
-    // Copilot / codex / claude-code / azure / ollama — use the provider factory.
-    // Force through the SWR cache when the record is persisted so the
-    // side-effect refresh keeps the data-plane cache in step; otherwise
-    // live-fetch without any caching.
-    const provider = createProvider(synthRecord, cacheGeneration);
-    const models = record.id !== ''
-      ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
+    // Copilot / codex / claude-code / azure / ollama use the provider factory.
+    const provider = createProvider(synthRecord, persisted === null ? undefined : modelsCacheGeneration(persisted));
+    const models = canRefreshPersistedCache
+      ? await fetchUpstreamModels(provider, fetcher)
       : await provider.instance.getProvidedModels(fetcher);
     return c.json({ kind, data: models.map(reshapeModelForDashboard) });
   } catch (e) {

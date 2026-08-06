@@ -1,4 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
+import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
 import type { ModelsCacheGeneration } from '../../repo/types.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -20,21 +21,19 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 
 export type GatewayProvider = Provider & {
   readonly modelsCacheGeneration: ModelsCacheGeneration;
-  readonly modelsFetchIdentity: string;
 };
 
-export const modelsFetchIdentity = (record: Pick<UpstreamRecord, 'kind' | 'config' | 'state' | 'proxyFallbackList'>): string =>
-  serializeStoredConfig({ kind: record.kind, config: record.config, state: record.state, proxyFallbackList: record.proxyFallbackList });
+export const modelsCatalogIdentity = (record: UpstreamRecord): string =>
+  serializeStoredConfig({ kind: record.kind, identity: providersByKind[record.kind].modelCatalogIdentity(record) });
 
 export const createProvider = (
   record: UpstreamRecord,
-  cacheGeneration: ModelsCacheGeneration = { updatedAt: record.updatedAt, config: record.config },
+  cacheGeneration: ModelsCacheGeneration = modelsCacheGeneration(record),
 ): GatewayProvider => {
   const provider = providersByKind[record.kind].create(record);
   return {
     ...provider,
     modelsCacheGeneration: cacheGeneration,
-    modelsFetchIdentity: modelsFetchIdentity(record),
   };
 };
 

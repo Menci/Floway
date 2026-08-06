@@ -5,8 +5,7 @@ import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody } from '../schemas.ts';
-import { saveUpstreamForModels } from '../shared/save-upstream-for-models.ts';
-import { warmModelsCache } from '../shared/warm-models-cache.ts';
+import { saveAndWarmUpstreamForModels } from '../shared/save-upstream-for-models.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
   type ClaudeCodeAccountCredential,
@@ -79,8 +78,7 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await saveUpstreamForModels(dbRecord, next);
-    await warmModelsCache(next, c);
+    await saveAndWarmUpstreamForModels({ previous: dbRecord, next }, c);
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
@@ -123,8 +121,7 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await saveUpstreamForModels(dbRecord, next);
-    await warmModelsCache(next, c);
+    await saveAndWarmUpstreamForModels({ previous: dbRecord, next }, c);
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });

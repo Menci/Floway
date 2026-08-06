@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-// The import handler warms the SWR models cache for every saved upstream by
+// The import handler warms the persisted models snapshot for every saved upstream by
 // calling each provider's getProvidedModels, which for Copilot / Custom would
 // make real upstream HTTP requests the test sandbox cannot serve and hang
 // until the vitest timeout. Stub the cache layer to a no-op so the import

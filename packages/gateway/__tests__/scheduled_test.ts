@@ -18,7 +18,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
-    await runScheduledMaintenance();
+    await runScheduledMaintenance('TEST', () => {});
   } finally {
     error.mockRestore();
   }
@@ -38,7 +38,7 @@ test('scheduled maintenance collects exact spilled files after expiration work',
   vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
   vi.spyOn(repo.spilledFiles, 'acknowledge').mockResolvedValue(1);
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
 
   expect(await files.get(key)).toBeNull();
 });
@@ -55,7 +55,7 @@ test('scheduled maintenance does not collect spilled files before expiration wor
   });
   const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
 
-  const maintenance = runScheduledMaintenance();
+  const maintenance = runScheduledMaintenance('TEST', () => {});
   await vi.waitFor(() => expect(releaseExpiration).not.toBeNull());
   expect(collect).not.toHaveBeenCalled();
   releaseExpiration!();

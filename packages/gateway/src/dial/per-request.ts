@@ -15,7 +15,7 @@ import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 // `preFetchedUpstreams` lets a caller reuse a list it already loaded on
 // this request instead of paying a second `upstreams.list()` round-trip.
 export const createPerRequestFetcher = async (
-  runtimeLocation: string,
+  runtimeLocation: string | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();

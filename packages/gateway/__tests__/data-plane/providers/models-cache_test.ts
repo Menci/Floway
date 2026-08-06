@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION, warmUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModels, readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION, warmUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { modelsFetchIdentity } from '../../../src/repo/models-cache-contract.ts';
 import { SqlRepo } from '../../../src/repo/sql.ts';
 import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
-import { serializeStoredConfig } from '../../../src/repo/upstream-json.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
@@ -13,10 +13,16 @@ import { directFetcher, type ProviderModel, type UpstreamModelsCache } from '@fl
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_a';
-const CACHE_GENERATION = vi.hoisted<ModelsCacheGeneration>(() => ({
+const CACHE_CONFIG = { identity: 'old' };
+const fetchIdentityForConfig = (config: unknown): string => modelsFetchIdentity({
+  kind: 'custom',
+  config,
+  proxyFallbackList: [],
+});
+const CACHE_GENERATION: ModelsCacheGeneration = {
   updatedAt: '2026-08-01T00:00:00.000Z',
-  config: { identity: 'old' },
-}));
+  fetchIdentity: fetchIdentityForConfig(CACHE_CONFIG),
+};
 
 const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 
@@ -24,7 +30,7 @@ const stubInstance = (
   fetchFn: () => Promise<ProviderModel[]>,
   modelsCache: UpstreamModelsCache | null = null,
   generation: ModelsCacheGeneration = CACHE_GENERATION,
-  fetchIdentity = serializeStoredConfig(generation.config),
+  fetchIdentity = generation.fetchIdentity,
 ): GatewayProvider => ({
   upstreamId: UPSTREAM_ID,
   kind: 'custom',
@@ -34,8 +40,7 @@ const stubInstance = (
   modelPrefix: null,
   modelsCache,
   instance: stubProvider({ getProvidedModels: fetchFn }),
-  modelsCacheGeneration: generation,
-  modelsFetchIdentity: fetchIdentity,
+  modelsCacheGeneration: { ...generation, fetchIdentity },
 });
 
 const setupRepo = async (): Promise<InMemoryRepo> => {
@@ -49,7 +54,7 @@ const setupRepo = async (): Promise<InMemoryRepo> => {
     sortOrder: 0,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: CACHE_GENERATION.updatedAt,
-    config: CACHE_GENERATION.config,
+    config: CACHE_CONFIG,
     state: null,
     modelsCache: null,
     flagOverrides: {},
@@ -87,19 +92,19 @@ beforeEach(() => {
   clearInFlightForTesting();
 });
 
-describe('fetchUpstreamModelsCached', () => {
+describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
   test('cold cache returns immediately and refreshes in the background', async () => {
     const repo = await setupRepo();
     let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
     const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
     const scheduled = captureScheduled();
 
-    const result = await fetchUpstreamModelsCached(
+    const result = readUpstreamModelsSnapshotAndScheduleRefresh(
       stubInstance(fetchFn),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result).toEqual([]);
+    expect(result.models).toEqual([]);
     expect(scheduled.promises).toHaveLength(1);
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
     resolveFetch!([aModel('m1')]);
@@ -113,48 +118,42 @@ describe('fetchUpstreamModelsCached', () => {
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
     const scheduled = captureScheduled();
 
-    const result = await fetchUpstreamModelsCached(
+    const result = readUpstreamModelsSnapshotAndScheduleRefresh(
       stubInstance(fetchFn, cache),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(model => model.id)).toEqual(['cached']);
+    expect(result.models.map(model => model.id)).toEqual(['cached']);
     expect(scheduled.promises).toEqual([]);
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  test('every stale age remains SWR forever', async () => {
+  test('snapshots remain usable regardless of age while refresh runs separately', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 365 * 24 * 60 * 60_000, models: [aModel('stale')] });
     let resolveFetch: ((models: ProviderModel[]) => void) | null = null;
     const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFetch = resolve; }));
     const scheduled = captureScheduled();
 
-    const result = await fetchUpstreamModelsCached(
+    const result = readUpstreamModelsSnapshotAndScheduleRefresh(
       stubInstance(fetchFn, cache),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result.map(model => model.id)).toEqual(['stale']);
+    expect(result.models.map(model => model.id)).toEqual(['stale']);
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
     resolveFetch!([aModel('fresh')]);
     await scheduled.promises[0];
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['fresh']);
   });
 
-  test('force is the explicit fetch operation and blocks for a fresh result', async () => {
+  test('explicit fetch blocks for a fresh result', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
-    const scheduled = captureScheduled();
-
-    const result = await fetchUpstreamModelsCached(
-      stubInstance(fetchFn, cache),
-      { scheduler: scheduled.scheduler, fetcher: directFetcher, force: true },
-    );
+    const result = await fetchUpstreamModels(stubInstance(fetchFn, cache), directFetcher);
 
     expect(result.map(model => model.id)).toEqual(['fresh']);
-    expect(scheduled.promises).toEqual([]);
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['fresh']);
   });
 
@@ -165,13 +164,13 @@ describe('fetchUpstreamModelsCached', () => {
     const instance = stubInstance(fetchFn);
     const scheduled = captureScheduled();
 
-    const [first, second] = await Promise.all([
-      fetchUpstreamModelsCached(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
-      fetchUpstreamModelsCached(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
-    ]);
+    const [first, second] = [
+      readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
+      readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: scheduled.scheduler, fetcher: directFetcher }),
+    ];
 
-    expect(first).toEqual([]);
-    expect(second).toEqual([]);
+    expect(first.models).toEqual([]);
+    expect(second.models).toEqual([]);
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
     resolveFetch!([aModel('m1')]);
     await Promise.all(scheduled.promises);
@@ -186,12 +185,12 @@ describe('fetchUpstreamModelsCached', () => {
     const instance = stubInstance(fetchFn, cache);
     const firstScheduled = captureScheduled();
 
-    expect((await fetchUpstreamModelsCached(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher })).map(model => model.id)).toEqual(['stale']);
+    expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher }).models.map(model => model.id)).toEqual(['stale']);
     await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
 
     clearInFlightForTesting();
     const secondScheduled = captureScheduled();
-    expect((await fetchUpstreamModelsCached(instance, { scheduler: secondScheduled.scheduler, fetcher: directFetcher })).map(model => model.id)).toEqual(['stale']);
+    expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: secondScheduled.scheduler, fetcher: directFetcher }).models.map(model => model.id)).toEqual(['stale']);
     await expect(secondScheduled.promises[0]).resolves.toBeUndefined();
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect((await storedCache(repo))?.lastError?.message).toContain('boom');
@@ -205,42 +204,42 @@ describe('fetchUpstreamModelsCached', () => {
     const instance = stubInstance(fetchFn);
 
     const firstScheduled = captureScheduled();
-    await expect(fetchUpstreamModelsCached(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher }).models).toEqual([]);
     await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
     expect(await storedCache(repo)).toMatchObject({ fetchedAt: 0, models: [], lastError: { message: 'boom' } });
 
     clearInFlightForTesting();
     now += 59_999;
     const backedOff = captureScheduled();
-    await expect(fetchUpstreamModelsCached(instance, { scheduler: backedOff.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: backedOff.scheduler, fetcher: directFetcher }).models).toEqual([]);
     await expect(backedOff.promises[0]).resolves.toBeUndefined();
     expect(fetchFn).toHaveBeenCalledTimes(1);
 
     clearInFlightForTesting();
     now += 1;
     const retry = captureScheduled();
-    await expect(fetchUpstreamModelsCached(instance, { scheduler: retry.scheduler, fetcher: directFetcher })).resolves.toEqual([]);
+    expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: retry.scheduler, fetcher: directFetcher }).models).toEqual([]);
     await expect(retry.promises[0]).rejects.toThrow('boom');
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
-  test('synchronous warm respects backoff while explicit force bypasses it', async () => {
+  test('synchronous warm respects backoff while explicit fetch bypasses it', async () => {
     const repo = await setupRepo();
     const now = 1_800_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
-    const failing = stubInstance(async () => { throw new Error('boom'); }, null, CACHE_GENERATION, 'backoff-source');
+    const failing = stubInstance(async () => { throw new Error('boom'); });
     const scheduled = captureScheduled();
-    await fetchUpstreamModelsCached(failing, { scheduler: scheduled.scheduler, fetcher: directFetcher });
+    readUpstreamModelsSnapshotAndScheduleRefresh(failing, { scheduler: scheduled.scheduler, fetcher: directFetcher });
     await expect(scheduled.promises[0]).rejects.toThrow('boom');
     clearInFlightForTesting();
 
     const fetchFn = vi.fn(async () => [aModel('recovered')]);
     const cache = await storedCache(repo);
-    const warming = stubInstance(fetchFn, cache, CACHE_GENERATION, 'warm-during-backoff');
+    const warming = stubInstance(fetchFn, cache);
     await expect(warmUpstreamModels(warming, directFetcher)).resolves.toEqual([]);
     expect(fetchFn).not.toHaveBeenCalled();
 
-    await expect(fetchUpstreamModelsCached(warming, { scheduler: () => {}, fetcher: directFetcher, force: true }))
+    await expect(fetchUpstreamModels(warming, directFetcher))
       .resolves.toEqual([aModel('recovered')]);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
@@ -248,7 +247,7 @@ describe('fetchUpstreamModelsCached', () => {
   test('synchronous warm waits for a refresh owned by another runtime', async () => {
     const repo = await setupRepo();
     const now = Date.now();
-    await expect(repo.upstreams.claimModelsRefresh({ id: UPSTREAM_ID, generation: CACHE_GENERATION, token: 'remote-owner', now, staleClaimedBefore: now - 900_000, force: false, observedActiveToken: null }))
+    await expect(repo.upstreams.claimModelsRefresh({ id: UPSTREAM_ID, generation: CACHE_GENERATION, token: 'remote-owner', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null }))
       .resolves.toEqual({ kind: 'claimed', failureCount: 0 });
     const localFetch = vi.fn(async () => [aModel('duplicate-local-model')]);
     const warming = warmUpstreamModels(stubInstance(localFetch), directFetcher);
@@ -258,53 +257,51 @@ describe('fetchUpstreamModelsCached', () => {
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(settled).toBe(false);
 
-    await repo.upstreams.finalizeModelsRefreshSuccess(UPSTREAM_ID, CACHE_GENERATION, 'remote-owner', {
-      revision: MODEL_CATALOG_REVISION,
-      fetchedAt: now + 1,
-      models: [aModel('remote-model')],
+    await repo.upstreams.finalizeModelsRefreshSuccess({
+      id: UPSTREAM_ID,
+      generation: CACHE_GENERATION,
+      token: 'remote-owner',
+      cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: now + 1, models: [aModel('remote-model')] },
     });
 
     expect((await warming).map(model => model.id)).toEqual(['remote-model']);
     expect(localFetch).not.toHaveBeenCalled();
   });
 
-  test('explicit force bypasses a local warm waiting on another runtime', async () => {
+  test('explicit fetch follows the durable owner already awaited by a local warm', async () => {
     const repo = await setupRepo();
     const now = Date.now();
-    await repo.upstreams.claimModelsRefresh({ id: UPSTREAM_ID, generation: CACHE_GENERATION, token: 'remote-owner', now, staleClaimedBefore: now - 900_000, force: false, observedActiveToken: null });
-    const fetchFn = vi.fn(async () => [aModel('forced-model')]);
-    const instance = stubInstance(fetchFn, null, CACHE_GENERATION, 'shared-warm-force-key');
+    await repo.upstreams.claimModelsRefresh({ id: UPSTREAM_ID, generation: CACHE_GENERATION, token: 'remote-owner', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
+    const fetchFn = vi.fn(async () => [aModel('duplicate-local-model')]);
+    const instance = stubInstance(fetchFn);
     const warming = warmUpstreamModels(instance, directFetcher);
     await new Promise(resolve => setTimeout(resolve, 20));
 
-    const forced = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true });
-    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
-    expect((await forced).map(model => model.id)).toEqual(['forced-model']);
-    expect((await warming).map(model => model.id)).toEqual(['forced-model']);
+    const explicit = fetchUpstreamModels(instance, directFetcher);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(fetchFn).not.toHaveBeenCalled();
+    await repo.upstreams.finalizeModelsRefreshSuccess({
+      id: UPSTREAM_ID,
+      generation: CACHE_GENERATION,
+      token: 'remote-owner',
+      cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: now + 1, models: [aModel('remote-model')] },
+    });
+    expect((await explicit).map(model => model.id)).toEqual(['remote-model']);
+    expect((await warming).map(model => model.id)).toEqual(['remote-model']);
   });
 
-  test('a warm superseded during I/O waits for the forced owner to finalize', async () => {
+  test('explicit fetch joins a warm that already owns the durable refresh', async () => {
     await setupRepo();
     let resolveWarm: ((models: ProviderModel[]) => void) | null = null;
-    let resolveForce: ((models: ProviderModel[]) => void) | null = null;
-    const fetchFn = vi.fn()
-      .mockImplementationOnce(() => new Promise<ProviderModel[]>(resolve => { resolveWarm = resolve; }))
-      .mockImplementationOnce(() => new Promise<ProviderModel[]>(resolve => { resolveForce = resolve; }));
-    const instance = stubInstance(fetchFn, null, CACHE_GENERATION, 'warm-force-race');
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveWarm = resolve; }));
+    const instance = stubInstance(fetchFn);
     const warming = warmUpstreamModels(instance, directFetcher);
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
-    const forced = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true });
-    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
-
-    let warmSettled = false;
-    void warming.finally(() => { warmSettled = true; });
-    resolveWarm!([aModel('superseded-warm-model')]);
-    await new Promise(resolve => setTimeout(resolve, 20));
-    expect(warmSettled).toBe(false);
-
-    resolveForce!([aModel('forced-winner-model')]);
-    expect((await forced).map(model => model.id)).toEqual(['forced-winner-model']);
-    expect((await warming).map(model => model.id)).toEqual(['forced-winner-model']);
+    const explicit = fetchUpstreamModels(instance, directFetcher);
+    resolveWarm!([aModel('warm-owner-model')]);
+    expect((await explicit).map(model => model.id)).toEqual(['warm-owner-model']);
+    expect((await warming).map(model => model.id)).toEqual(['warm-owner-model']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   test('an atomic success-finalize failure does not install upstream failure backoff', async () => {
@@ -313,7 +310,7 @@ describe('fetchUpstreamModelsCached', () => {
     vi.spyOn(repo.upstreams, 'finalizeModelsRefreshSuccess').mockRejectedValueOnce(new Error('finalize failed'));
     const instance = stubInstance(async () => [aModel('published-model')]);
 
-    await expect(fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher, force: true }))
+    await expect(fetchUpstreamModels(instance, directFetcher))
       .rejects.toThrow('finalize failed');
     expect(finalizeFailure).not.toHaveBeenCalled();
     expect(await storedCache(repo)).toBeNull();
@@ -324,21 +321,19 @@ describe('fetchUpstreamModelsCached', () => {
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
     const oldScheduled = captureScheduled();
-    await fetchUpstreamModelsCached(
-      stubInstance(oldFetch, null, CACHE_GENERATION, 'same-fetch'),
+    readUpstreamModelsSnapshotAndScheduleRefresh(
+      stubInstance(oldFetch),
       { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
     );
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
-    const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, config: { identity: 'new' } };
+    const nextConfig = { identity: 'new' };
+    const nextGeneration = { updatedAt: CACHE_GENERATION.updatedAt, fetchIdentity: fetchIdentityForConfig(nextConfig) };
     const current = await repo.upstreams.getById(UPSTREAM_ID);
     if (!current) throw new Error('upstream row missing');
-    await repo.upstreams.saveClearingModelsCache({ ...current, updatedAt: nextGeneration.updatedAt, config: nextGeneration.config });
+    await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, updatedAt: nextGeneration.updatedAt, config: nextConfig }, cachePolicy: 'clear' });
     const newFetch = vi.fn(async () => [aModel('new-tenant-model')]);
-    const newResult = await fetchUpstreamModelsCached(
-      stubInstance(newFetch, null, nextGeneration, 'same-fetch'),
-      { scheduler: () => {}, fetcher: directFetcher, force: true },
-    );
+    const newResult = await fetchUpstreamModels(stubInstance(newFetch, null, nextGeneration), directFetcher);
 
     expect(newResult.map(model => model.id)).toEqual(['new-tenant-model']);
     resolveOld!([aModel('old-tenant-model')]);
@@ -348,55 +343,44 @@ describe('fetchUpstreamModelsCached', () => {
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['new-tenant-model']);
   });
 
-  test('a forced fetch prevents an older claim from publishing a late success', async () => {
+  test('explicit fetch joins an older background refresh instead of preempting it', async () => {
     const repo = await setupRepo();
     let resolveOld: ((models: ProviderModel[]) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveOld = resolve; }));
     const oldScheduled = captureScheduled();
-    await fetchUpstreamModelsCached(
-      stubInstance(oldFetch, null, CACHE_GENERATION, 'old-claim'),
+    readUpstreamModelsSnapshotAndScheduleRefresh(
+      stubInstance(oldFetch),
       { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
     );
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
-    const forced = await fetchUpstreamModelsCached(
-      stubInstance(async () => [aModel('forced-model')], null, CACHE_GENERATION, 'forced-claim'),
-      { scheduler: () => {}, fetcher: directFetcher, force: true },
-    );
-    expect(forced.map(model => model.id)).toEqual(['forced-model']);
-
+    const explicitFetch = vi.fn(async () => [aModel('duplicate-explicit-model')]);
+    const explicit = fetchUpstreamModels(stubInstance(explicitFetch), directFetcher);
     resolveOld!([aModel('late-old-model')]);
+    expect((await explicit).map(model => model.id)).toEqual(['late-old-model']);
     await oldScheduled.promises[0];
-    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['forced-model']);
+    expect(explicitFetch).not.toHaveBeenCalled();
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['late-old-model']);
   });
 
-  test('a forced fetch prevents an older claim from publishing a late error', async () => {
+  test('explicit fetch surfaces failure from an older background owner', async () => {
     const repo = await setupRepo();
     let rejectOld: ((error: Error) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>((_resolve, reject) => { rejectOld = reject; }));
     const oldScheduled = captureScheduled();
-    await fetchUpstreamModelsCached(
-      stubInstance(oldFetch, null, CACHE_GENERATION, 'old-error-claim'),
+    readUpstreamModelsSnapshotAndScheduleRefresh(
+      stubInstance(oldFetch),
       { scheduler: oldScheduled.scheduler, fetcher: directFetcher },
     );
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
-    await fetchUpstreamModelsCached(
-      stubInstance(async () => [aModel('forced-model')], null, CACHE_GENERATION, 'forced-error-claim'),
-      { scheduler: () => {}, fetcher: directFetcher, force: true },
-    );
+    const explicitFetch = vi.fn(async () => [aModel('duplicate-explicit-model')]);
+    const explicit = fetchUpstreamModels(stubInstance(explicitFetch), directFetcher);
     rejectOld!(new Error('late old failure'));
     await expect(oldScheduled.promises[0]).rejects.toThrow('late old failure');
-
-    expect(await storedCache(repo)).toMatchObject({
-      models: [{ id: 'forced-model' }],
-      lastError: null,
-    });
-
-    clearInFlightForTesting();
-    const recovery = vi.fn(async () => [aModel('post-race-model')]);
-    await warmUpstreamModels(stubInstance(recovery, await storedCache(repo), CACHE_GENERATION, 'post-race'), directFetcher);
-    expect(recovery).toHaveBeenCalledTimes(1);
+    await expect(explicit).rejects.toThrow('late old failure');
+    expect(explicitFetch).not.toHaveBeenCalled();
+    expect(await storedCache(repo)).toMatchObject({ models: [], lastError: { message: 'late old failure' } });
   });
 
   test('catalog revision mismatch is cold and refreshes without blocking', async () => {
@@ -409,12 +393,12 @@ describe('fetchUpstreamModelsCached', () => {
     const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
     const scheduled = captureScheduled();
 
-    const result = await fetchUpstreamModelsCached(
+    const result = readUpstreamModelsSnapshotAndScheduleRefresh(
       stubInstance(fetchFn, cache),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result).toEqual([]);
+    expect(result.models).toEqual([]);
     await scheduled.promises[0];
     expect((await storedCache(repo))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
@@ -452,12 +436,12 @@ describe('fetchUpstreamModelsCached', () => {
     expect(hydrated.modelsCache).toBeNull();
     const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
     const scheduled = captureScheduled();
-    const result = await fetchUpstreamModelsCached(
-      stubInstance(fetchFn, hydrated.modelsCache, { updatedAt: hydrated.updatedAt, config: hydrated.config }),
+    const result = readUpstreamModelsSnapshotAndScheduleRefresh(
+      stubInstance(fetchFn, hydrated.modelsCache, { updatedAt: hydrated.updatedAt, fetchIdentity: modelsFetchIdentity(hydrated) }),
       { scheduler: scheduled.scheduler, fetcher: directFetcher },
     );
 
-    expect(result).toEqual([]);
+    expect(result.models).toEqual([]);
     await scheduled.promises[0];
     expect((await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache?.revision).toBe(MODEL_CATALOG_REVISION);
   });

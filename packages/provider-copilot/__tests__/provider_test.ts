@@ -887,7 +887,7 @@ test('Copilot provider throws "disappeared mid-request" when the upstream row va
 test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
   // Persistence is best-effort: the fetched models are the user-facing
   // payload, and a storage-level error on the write must not propagate out of
-  // getProvidedModels. Mirrors the gateway SWR layer's persistence policy.
+  // getProvidedModels. Mirrors the gateway's persisted catalog policy.
   const harness = await setupCopilotTest();
   harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));
 

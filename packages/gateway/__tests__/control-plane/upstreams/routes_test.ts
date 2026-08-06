@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { modelsRefreshRetryAt } from '../../../src/repo/models-refresh-contract.ts';
+import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
 import { seedModelsCache, seedModelsCacheError } from '../../repo/models-cache-fixture.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -438,21 +438,24 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
-  await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });
-  await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
-  await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
+  const freshRecord = { ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 };
+  const warmRecord = { ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 };
+  const failedRecord = { ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 };
+  await repo.upstreams.save(freshRecord);
+  await repo.upstreams.save(warmRecord);
+  await repo.upstreams.save(failedRecord);
 
-  await seedModelsCache(repo.upstreams, 'up_warm', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
+  await seedModelsCache(repo.upstreams, 'up_warm', modelsCacheGeneration(warmRecord), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await seedModelsCache(repo.upstreams, 'up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, {
+  await seedModelsCache(repo.upstreams, 'up_failed', modelsCacheGeneration(failedRecord), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await seedModelsCacheError(repo.upstreams, 'up_failed', { updatedAt: baseRow.updatedAt, config: baseRow.config }, { message: 'boom', at: 1_700_000_500_000 });
+  await seedModelsCacheError(repo.upstreams, 'up_failed', modelsCacheGeneration(failedRecord), { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -650,7 +653,7 @@ test('POST /api/upstreams/list-models rejects a malformed draft config with 400'
   assertEquals(body.error.includes('apiKey'), true);
 });
 
-test('POST /api/upstreams/list-models with a persisted id forces a fresh upstream fetch and updates the SWR cache', async () => {
+test('POST /api/upstreams/list-models with matching saved inputs fetches and publishes a fresh snapshot', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const savedRecord: UpstreamRecord = {
@@ -789,9 +792,9 @@ test('PATCH /api/upstreams metadata warm preserves refresh backoff', async () =>
   );
   const generation = await getCacheGeneration(repo, created.id);
   const now = Date.now();
-  const claim = await repo.upstreams.claimModelsRefresh({ id: created.id, generation, token: 'failed-refresh', now, staleClaimedBefore: now - 900_000, force: false, observedActiveToken: null });
+  const claim = await repo.upstreams.claimModelsRefresh({ id: created.id, generation, token: 'failed-refresh', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
   if (claim.kind !== 'claimed') throw new Error('expected refresh claim');
-  await repo.upstreams.finalizeModelsRefreshFailure(created.id, generation, 'failed-refresh', { message: 'failed refresh', at: now }, 1, modelsRefreshRetryAt(now, 0));
+  await repo.upstreams.finalizeModelsRefreshFailure({ id: created.id, generation, token: 'failed-refresh', error: { message: 'failed refresh', at: now }, previousFailureCount: 0, failedAt: now });
   let modelRequests = 0;
 
   await withMockedFetch(
@@ -901,7 +904,7 @@ const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<U
 
 const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<UpstreamRecord | null> } }, id: string) => {
   const record = await getRecord(repo, id);
-  return { updatedAt: record.updatedAt, config: record.config };
+  return modelsCacheGeneration(record);
 };
 
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
@@ -2173,8 +2176,8 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
 test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mutation on a saved row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // Azure sits in the SWR-cached branch alongside copilot / codex /
-  // claude-code, so this exercises the `fetchUpstreamModelsCached` path a
+  // Azure publishes through the persisted-snapshot branch alongside Copilot / Codex /
+  // claude-code, so this exercises the `readUpstreamModelsSnapshotAndScheduleRefresh` path a
   // future "refresh row metadata" regression would land in. Azure's
   // getProvidedModels reads directly from config.models — no upstream mock
   // needed, no credential mint.

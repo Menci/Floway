@@ -1,10 +1,20 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
+import { listModelProviders, modelsCatalogIdentity } from '../../../src/data-plane/providers/registry.ts';
+import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+
+test('Copilot catalog identity follows the account rather than rotated credentials', () => {
+  const first = buildCopilotUpstreamRecord({ token: 'ghu_first', user: { id: 1, login: 'one', avatar_url: '', name: null } });
+  const rotated = buildCopilotUpstreamRecord({ token: 'ghu_rotated', user: { id: 1, login: 'one-renamed', avatar_url: '', name: null } });
+  const otherAccount = buildCopilotUpstreamRecord({ token: 'ghu_other', user: { id: 2, login: 'two', avatar_url: '', name: null } });
+
+  assertEquals(modelsCatalogIdentity(first), modelsCatalogIdentity(rotated));
+  expect(modelsCatalogIdentity(first)).not.toBe(modelsCatalogIdentity(otherAccount));
+});
 
 test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
@@ -89,14 +99,14 @@ test('listModelProviders silently drops deleted upstreams from a whitelist', asy
 });
 
 test('listModelProviders carries each row cached catalog onto its instance', async () => {
-  // The SWR layer reads the catalog off the instance instead of paying a
+  // Resolution reads the persisted snapshot off the instance instead of paying a
   // second round trip, so the row read has to bring it along.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   const cachedRecord = buildCustomUpstreamRecord({ id: 'up_cached', name: 'Cached', sortOrder: 10 });
   await repo.upstreams.save(cachedRecord);
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_cold', name: 'Cold', sortOrder: 20 }));
-  await seedModelsCache(repo.upstreams, 'up_cached', { updatedAt: cachedRecord.updatedAt, config: cachedRecord.config }, {
+  await seedModelsCache(repo.upstreams, 'up_cached', modelsCacheGeneration(cachedRecord), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'cached-model' })],

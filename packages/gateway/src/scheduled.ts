@@ -1,5 +1,5 @@
 import { sweepExpirations } from './scheduled/expiration-sweeps.ts';
-import { refreshModelsCaches } from './scheduled/models-refresh.ts';
+import { scheduleModelsCacheRefreshes } from './scheduled/models-refresh.ts';
 import { collectSpilledFiles } from './scheduled/spilled-files.ts';
 import { getImageCacheStore, type BackgroundScheduler } from '@floway-dev/platform';
 
@@ -13,13 +13,9 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
   }
 };
 
-const defaultBackgroundScheduler: BackgroundScheduler = promise => {
-  promise.catch(error => console.error('[scheduled] background task failed', error));
-};
-
 export const runScheduledMaintenance = async (
-  runtimeLocation = 'SCHEDULED',
-  backgroundScheduler: BackgroundScheduler = defaultBackgroundScheduler,
+  runtimeLocation: string | null,
+  backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
   const nowMs = Date.now();
   const storageMaintenance = async (): Promise<void> => {
@@ -27,7 +23,7 @@ export const runScheduledMaintenance = async (
     await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
   };
   await Promise.all([
-    runSweep('models.refresh', () => refreshModelsCaches(runtimeLocation, backgroundScheduler)),
+    runSweep('models.refresh', () => scheduleModelsCacheRefreshes(runtimeLocation, backgroundScheduler)),
     storageMaintenance(),
     runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs)),
   ]);

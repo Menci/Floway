@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { initRepo } from '../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import { refreshModelsCaches } from '../../src/scheduled/models-refresh.ts';
+import { scheduleModelsCacheRefreshes } from '../../src/scheduled/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { withMockedFetch } from '@floway-dev/test-utils';
@@ -46,7 +46,7 @@ test('scheduled maintenance submits enabled refreshes without waiting for model 
     },
     async () => {
       const background: Promise<unknown>[] = [];
-      await refreshModelsCaches('SCHEDULED', promise => { background.push(promise); });
+      await scheduleModelsCacheRefreshes('TEST', promise => { background.push(promise); });
 
       expect(background).toHaveLength(1);
       await vi.waitFor(() => expect(requested).toEqual(['enabled.example.com']));
@@ -61,4 +61,51 @@ test('scheduled maintenance submits enabled refreshes without waiting for model 
       expect((await repo.upstreams.getById('disabled'))?.modelsCache).toBeNull();
     },
   );
+});
+
+test('one malformed upstream does not prevent later refreshes from being scheduled', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  await repo.upstreams.save({ ...custom('malformed', true), config: null });
+  await repo.upstreams.save(custom('healthy', true));
+  const background: Promise<unknown>[] = [];
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  try {
+    await withMockedFetch(
+      () => Response.json({ data: [{ id: 'healthy-model' }] }),
+      async () => {
+        await scheduleModelsCacheRefreshes('TEST', promise => { background.push(promise); });
+        expect(background).toHaveLength(1);
+        await background[0];
+      },
+    );
+  } finally {
+    error.mockRestore();
+  }
+
+  expect((await repo.upstreams.getById('healthy'))?.modelsCache?.models).toMatchObject([{ id: 'healthy-model' }]);
+});
+
+test('locationless scheduled events skip colo-scoped-only egress policies', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  await repo.upstreams.save({ ...custom('scoped', true), proxyFallbackList: [{ id: 'direct_fetch', colos: ['HKG'] }] });
+  await repo.upstreams.save(custom('global', true));
+  const background: Promise<unknown>[] = [];
+  const requested: string[] = [];
+
+  await withMockedFetch(
+    request => {
+      requested.push(new URL(request.url).hostname);
+      return Response.json({ data: [{ id: 'global-model' }] });
+    },
+    async () => {
+      await scheduleModelsCacheRefreshes(null, promise => { background.push(promise); });
+      await Promise.all(background);
+    },
+  );
+
+  expect(requested).toEqual(['global.example.com']);
+  expect((await repo.upstreams.getById('scoped'))?.modelsCache).toBeNull();
 });

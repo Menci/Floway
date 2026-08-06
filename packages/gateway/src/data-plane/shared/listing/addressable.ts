@@ -12,7 +12,7 @@
 // a second registry round trip.
 
 import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
-import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
@@ -87,7 +87,7 @@ export const enumerateAddressableModelIds = async (
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
 
-    const upstreamModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstreamId) });
+    const upstreamModels = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstreamId) }).models;
     const disabled = new Set(provider.disabledPublicModelIds);
     const out: AddressableIdEntry[] = [];
 

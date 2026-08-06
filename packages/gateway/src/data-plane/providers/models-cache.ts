@@ -1,30 +1,28 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
-import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
-import { MODELS_REFRESH_CLAIM_LEASE_MS, modelsRefreshRetryAt } from '../../repo/models-refresh-contract.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
+import { MODEL_CATALOG_REVISION, modelsFetchIdentity } from '../../repo/models-cache-contract.ts';
+import { MODELS_REFRESH_CLAIM_LEASE_MS } from '../../repo/models-refresh-contract.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, ProviderModel } from '@floway-dev/provider';
+import type { Fetcher, ProviderModel, UpstreamModelsCache } from '@floway-dev/provider';
 
 // Soft-fresh rows need no refresh. Every older row remains usable forever;
 // access only triggers a background attempt guarded by the persisted refresh
 // claim/backoff state.
 const SOFT_MS = 10 * 60 * 1000;
 const ACTIVE_REFRESH_POLL_MS = 100;
+const ACTIVE_REFRESH_POLL_CAP_MS = 1_000;
+const ACTIVE_REFRESH_WAIT_MS = 60_000;
 
 export { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 
-export interface ModelsCacheFetchOptions {
+interface ModelsSnapshotReadOptions {
   scheduler: BackgroundScheduler;
   fetcher: Fetcher;
-  // The upstream editor's explicit Fetch Models action is the sole caller of
-  // this option. It waits for an actual fetch and bypasses refresh backoff.
-  force?: boolean;
-  // Some control-plane callers also need the upstream's raw catalog shape.
-  // Their loader projects that already-fetched response into the exact
-  // ProviderModel catalog the provider would otherwise return, avoiding a
-  // second upstream request while keeping cache writes in this module.
-  loadProvidedModels?: () => Promise<ProviderModel[]>;
+}
+
+interface ModelsSnapshot {
+  readonly models: readonly ProviderModel[];
+  readonly lastError: UpstreamModelsCache['lastError'];
 }
 
 // L1: per-isolate in-flight memoization. Callers join only when both their
@@ -32,10 +30,10 @@ export interface ModelsCacheFetchOptions {
 // and superseded rows remain isolated. Not a TTL cache — the entry is removed
 // when the promise settles. The conditional delete defends against a stale
 // removal racing a later replacement.
-type RefreshMode = 'fetch' | 'warm' | 'trigger';
+type RefreshIntent = 'explicit' | 'warm' | 'background';
 
 interface InFlightRefresh {
-  kind: 'fetch' | 'wait';
+  kind: 'refresh' | 'owner-wait';
   promise: Promise<ProviderModel[] | null>;
 }
 
@@ -71,17 +69,17 @@ const runFetch = async (
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
 
-const runClaimedFetch = async (
+const runClaimedRefresh = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-  mode: RefreshMode,
+  intent: RefreshIntent,
   loadProvidedModels?: () => Promise<ProviderModel[]>,
-  initialObservedActiveToken: string | null = null,
 ): Promise<ProviderModel[] | null> => {
   const repo = getRepo();
   const token = crypto.randomUUID();
-  let observedActiveToken = initialObservedActiveToken;
-  let claimed: Extract<Awaited<ReturnType<typeof repo.upstreams.claimModelsRefresh>>, { kind: 'claimed' }>;
+  let observedActiveToken: string | null = null;
+  let pollMs = ACTIVE_REFRESH_POLL_MS;
+  const waitDeadline = Date.now() + ACTIVE_REFRESH_WAIT_MS;
   while (true) {
     const now = Date.now();
     const outcome = await repo.upstreams.claimModelsRefresh({
@@ -90,74 +88,78 @@ const runClaimedFetch = async (
       token,
       now,
       staleClaimedBefore: now - MODELS_REFRESH_CLAIM_LEASE_MS,
-      force: mode === 'fetch',
+      bypassBackoff: intent === 'explicit',
       observedActiveToken,
     });
-    if (outcome.kind === 'claimed') {
-      claimed = outcome;
-      break;
-    }
-    if (mode !== 'warm' || outcome.kind === 'backoff' || outcome.kind === 'generation-mismatch') return null;
+    if (outcome.kind === 'backoff' || outcome.kind === 'generation-mismatch') return null;
     if (outcome.kind === 'completed') {
       const current = await repo.upstreams.getById(instance.upstreamId);
       if (current !== null
         && current.updatedAt === instance.modelsCacheGeneration.updatedAt
-        && serializeStoredConfig(current.config) === serializeStoredConfig(instance.modelsCacheGeneration.config)) instance.modelsCache = current.modelsCache;
-      return null;
+        && modelsFetchIdentity(current) === instance.modelsCacheGeneration.fetchIdentity) instance.modelsCache = current.modelsCache;
+      if (intent === 'explicit' && instance.modelsCache?.lastError !== null && instance.modelsCache?.lastError !== undefined) {
+        throw new Error(instance.modelsCache.lastError.message);
+      }
+      return instance.modelsCache?.models ?? [];
     }
-    observedActiveToken = outcome.token;
-    await new Promise(resolve => setTimeout(resolve, ACTIVE_REFRESH_POLL_MS));
-  }
+    if (outcome.kind === 'active') {
+      if (intent === 'background') return null;
+      if (now >= waitDeadline) throw new Error(`Timed out waiting for models refresh owner for ${instance.upstreamId}`);
+      observedActiveToken = outcome.token;
+      await new Promise(resolve => setTimeout(resolve, pollMs));
+      pollMs = Math.min(pollMs * 2, ACTIVE_REFRESH_POLL_CAP_MS);
+      continue;
+    }
 
-  let models: ProviderModel[];
-  try {
-    models = await runFetch(instance, fetcher, loadProvidedModels);
-  } catch (error) {
-    const failureCount = claimed.failureCount + 1;
-    const now = Date.now();
-    const lastError = { message: errorMessage(error), at: now };
+    let models: ProviderModel[];
     try {
-      const finalized = await repo.upstreams.finalizeModelsRefreshFailure(
-        instance.upstreamId,
-        instance.modelsCacheGeneration,
-        token,
-        lastError,
-        failureCount,
-        modelsRefreshRetryAt(now, claimed.failureCount),
-      );
+      models = await runFetch(instance, fetcher, loadProvidedModels);
+    } catch (error) {
+      const failedAt = Date.now();
+      const lastError = { message: errorMessage(error), at: failedAt };
+      let finalized: boolean;
+      try {
+        finalized = await repo.upstreams.finalizeModelsRefreshFailure({
+          id: instance.upstreamId,
+          generation: instance.modelsCacheGeneration,
+          token,
+          error: lastError,
+          previousFailureCount: outcome.failureCount,
+          failedAt,
+        });
+      } catch (backoffError) {
+        throw new AggregateError([error, backoffError], errorMessage(error));
+      }
       if (finalized) {
         if (instance.modelsCache) instance.modelsCache.lastError = lastError;
         else instance.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
+        throw error;
       }
-      if (!finalized && mode === 'warm') {
-        const winner = await runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels, token);
-        return winner ?? instance.modelsCache?.models ?? [];
-      }
-    } catch (backoffError) {
-      throw new AggregateError([error, backoffError], errorMessage(error));
+      if (intent === 'background') throw error;
+      observedActiveToken = token;
+      continue;
     }
-    throw error;
+    const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
+    const finalized = await repo.upstreams.finalizeModelsRefreshSuccess({
+      id: instance.upstreamId,
+      generation: instance.modelsCacheGeneration,
+      token,
+      cache: entry,
+    });
+    if (finalized) {
+      // The instance is reused across alias targets in one request, so publish
+      // the finalized snapshot locally as well as durably.
+      instance.modelsCache = entry;
+      return models;
+    }
+    if (intent === 'background') return models;
+    observedActiveToken = token;
   }
-  const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-  const finalized = await repo.upstreams.finalizeModelsRefreshSuccess(
-    instance.upstreamId,
-    instance.modelsCacheGeneration,
-    token,
-    entry,
-  );
-  // The instance is reused across alias targets in one request, so publish the
-  // finalized snapshot locally as well as durably.
-  if (finalized) instance.modelsCache = entry;
-  else if (mode === 'warm') {
-    const winner = await runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels, token);
-    return winner ?? instance.modelsCache?.models ?? [];
-  }
-  return models;
 };
 
 const inFlightKey = (instance: GatewayProvider): string => {
   const generation = instance.modelsCacheGeneration;
-  return `${instance.upstreamId}\0${instance.modelsFetchIdentity}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
+  return `${instance.upstreamId}\0${generation.updatedAt}\0${generation.fetchIdentity}`;
 };
 
 export const fetchUpstreamModels = async (
@@ -166,64 +168,60 @@ export const fetchUpstreamModels = async (
   loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
   const key = inFlightKey(instance);
-  const existing = inFlight.get(key);
-  if (existing?.kind === 'fetch') {
-    const joined = await existing.promise;
-    if (joined !== null) return joined;
-    if (inFlight.get(key) === existing) inFlight.delete(key);
+  while (true) {
+    const existing = inFlight.get(key);
+    if (existing?.kind === 'refresh') {
+      const joined = await existing.promise;
+      if (joined !== null) return joined;
+      if (inFlight.get(key) === existing) inFlight.delete(key);
+      continue;
+    }
+    const models = await startInFlight(key, 'refresh', () => runClaimedRefresh(instance, fetcher, 'explicit', loadProvidedModels));
+    if (models === null) throw new Error(`Failed to acquire models refresh for ${instance.upstreamId}`);
+    return models;
   }
-
-  const models = await startInFlight(key, 'fetch', () => runClaimedFetch(instance, fetcher, 'fetch', loadProvidedModels));
-  if (models === null) throw new Error(`Failed to force-claim models refresh for ${instance.upstreamId}`);
-  return models;
 };
 
 export const warmUpstreamModels = async (
   instance: GatewayProvider,
   fetcher: Fetcher,
-  loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
   const key = inFlightKey(instance);
   const existing = inFlight.get(key);
   if (existing) {
     const joined = await existing.promise;
     if (joined !== null) return joined;
+    if (existing.kind === 'owner-wait') return instance.modelsCache?.models ?? [];
     if (inFlight.get(key) === existing) inFlight.delete(key);
   }
 
-  const models = await memoInFlight(key, 'wait', () => runClaimedFetch(instance, fetcher, 'warm', loadProvidedModels));
+  const models = await memoInFlight(key, 'owner-wait', () => runClaimedRefresh(instance, fetcher, 'warm'));
   return models ?? instance.modelsCache?.models ?? [];
 };
 
-export const triggerUpstreamModelsFetch = (
+export const scheduleUpstreamModelsRefresh = (
   instance: GatewayProvider,
   scheduler: BackgroundScheduler,
   fetcher: Fetcher,
-  loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): void => {
   const key = inFlightKey(instance);
-  scheduler(memoInFlight(key, 'fetch', () => runClaimedFetch(instance, fetcher, 'trigger', loadProvidedModels)).then(() => {}));
+  scheduler(memoInFlight(key, 'refresh', () => runClaimedRefresh(instance, fetcher, 'background')).then(() => {}));
 };
 
-export const fetchUpstreamModelsCached = async (
+export const readUpstreamModelsSnapshotAndScheduleRefresh = (
   instance: GatewayProvider,
-  opts: ModelsCacheFetchOptions,
-): Promise<ProviderModel[]> => {
-  const { scheduler, fetcher, force, loadProvidedModels } = opts;
+  opts: ModelsSnapshotReadOptions,
+): ModelsSnapshot => {
+  const { scheduler, fetcher } = opts;
   const now = Date.now();
-
-  if (force) {
-    return await fetchUpstreamModels(instance, fetcher, loadProvidedModels);
-  }
-
-  // Read off the instance rather than queried: the row that produced this
-  // provider carried its catalog, so the SWR check costs nothing.
   const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
+  const snapshot = {
+    models: cached?.models ?? [],
+    lastError: cached?.lastError ?? null,
+  };
 
-  if (cached && now - cached.fetchedAt < SOFT_MS) return cached.models;
-
-  triggerUpstreamModelsFetch(instance, scheduler, fetcher, loadProvidedModels);
-  return cached?.models ?? [];
+  if (!cached || now - cached.fetchedAt >= SOFT_MS) scheduleUpstreamModelsRefresh(instance, scheduler, fetcher);
+  return snapshot;
 };
 
 // Test-only: drop the L1 map so a test's setup is independent of any

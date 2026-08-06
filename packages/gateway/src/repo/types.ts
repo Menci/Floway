@@ -344,7 +344,11 @@ export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
-  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
+  replaceForModels(input: {
+    previous: UpstreamRecord;
+    upstream: UpstreamRecord;
+    cachePolicy: 'preserve' | 'reset-refresh' | 'clear';
+  }): Promise<boolean>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -357,8 +361,8 @@ export interface UpstreamRepo {
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.
-  finalizeModelsRefreshSuccess(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
-  finalizeModelsRefreshFailure(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>, failureCount: number, retryAt: number): Promise<boolean>;
+  finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean>;
+  finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
   claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult>;
 }
 
@@ -368,8 +372,24 @@ export interface ModelsRefreshClaimInput {
   token: string;
   now: number;
   staleClaimedBefore: number;
-  force: boolean;
+  bypassBackoff: boolean;
   observedActiveToken: string | null;
+}
+
+export interface ModelsRefreshSuccessInput {
+  id: string;
+  generation: ModelsCacheGeneration;
+  token: string;
+  cache: Omit<UpstreamModelsCache, 'lastError'>;
+}
+
+export interface ModelsRefreshFailureInput {
+  id: string;
+  generation: ModelsCacheGeneration;
+  token: string;
+  error: NonNullable<UpstreamModelsCache['lastError']>;
+  previousFailureCount: number;
+  failedAt: number;
 }
 
 export interface ModelsRefreshClaim {
@@ -385,7 +405,7 @@ export type ModelsRefreshClaimResult = ModelsRefreshClaim
 
 export interface ModelsCacheGeneration {
   updatedAt: string;
-  config: unknown;
+  fetchIdentity: string;
 }
 
 export interface ProxyRecord {

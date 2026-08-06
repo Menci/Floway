@@ -348,7 +348,7 @@ test('catalog assembly: a rejected provider does not block other providers', asy
 
 // End-to-end listing checks for the prefix policy. The catalog walk goes
 // through getModelsFromProviders, which threads custom upstreams' /v1/models
-// responses through fetchUpstreamModelsCached just like production does.
+// responses through readUpstreamModelsSnapshotAndScheduleRefresh just like production does.
 describe('catalog listing under modelPrefix', () => {
   test('null prefix lists bare ids only (today\'s behavior)', async () => {
     const { repo } = await setupAppTest();

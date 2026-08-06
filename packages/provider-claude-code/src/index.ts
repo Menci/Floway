@@ -1,9 +1,14 @@
+import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const claudeCodeProviderModule: ProviderModule = {
   create: createClaudeCodeProvider,
+  modelCatalogIdentity: record => {
+    assertClaudeCodeUpstreamRecord(record);
+    return record.config;
+  },
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
 };
 

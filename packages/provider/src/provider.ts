@@ -38,9 +38,8 @@ export interface Provider {
   // record so registry helpers — routing and listing — read it from the
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
-  // The row's cached catalog, mirrored for the same reason: the SWR layer
-  // reads it from the instance instead of paying a second round trip that the
-  // row read already covered.
+  // The row's persisted catalog snapshot, mirrored so resolution does not pay
+  // a second round trip after the row has already been loaded.
   modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
@@ -167,6 +166,9 @@ export interface ProviderModule {
   // fetch) happens on demand inside the per-request methods on the
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
+  // Stable identity of the upstream account/catalog namespace. Each provider
+  // decides which of its configuration changes can preserve a snapshot.
+  modelCatalogIdentity: (record: UpstreamRecord) => unknown;
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;

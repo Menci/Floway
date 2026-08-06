@@ -2,7 +2,8 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
-import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION, modelsFetchIdentity } from './models-cache-contract.ts';
+import { modelsRefreshRetryAt } from './models-refresh-contract.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
@@ -22,6 +23,8 @@ import type {
   ModelsCacheGeneration,
   ModelsRefreshClaimInput,
   ModelsRefreshClaimResult,
+  ModelsRefreshFailureInput,
+  ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -892,17 +895,81 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   save(upstream: UpstreamRecord): Promise<void> {
-    return this.saveRecord(upstream, false);
+    return this.saveRecord(upstream);
   }
 
-  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
-    return this.saveRecord(upstream, true);
+  async replaceForModels(input: {
+    previous: UpstreamRecord;
+    upstream: UpstreamRecord;
+    cachePolicy: 'preserve' | 'reset-refresh' | 'clear';
+  }): Promise<boolean> {
+    const { previous, upstream, cachePolicy } = input;
+    const modelsRefreshUpdate = cachePolicy === 'preserve'
+      ? "CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END"
+      : 'NULL';
+    const modelsCacheUpdate = cachePolicy === 'clear' ? ', models_cache_json = NULL' : '';
+    const result = await this.db
+      .prepare(
+        `UPDATE upstreams SET
+           provider = ?,
+           name = ?,
+           enabled = ?,
+           sort_order = ?,
+           updated_at = ?,
+           config_json = ?,
+           state_json = ?,
+           flag_overrides = ?,
+           disabled_public_model_ids = ?,
+           proxy_fallback_list_json = ?,
+           model_prefix_json = ?,
+           hue = ?,
+           models_refresh_json = ${modelsRefreshUpdate}${modelsCacheUpdate}
+         WHERE id = ?
+           AND provider = ?
+           AND name = ?
+           AND enabled = ?
+           AND sort_order = ?
+           AND updated_at = ?
+           AND config_json = ?
+           AND state_json IS ?
+           AND flag_overrides = ?
+           AND disabled_public_model_ids = ?
+           AND proxy_fallback_list_json = ?
+           AND model_prefix_json IS ?
+           AND hue = ?`,
+      )
+      .bind(
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.sortOrder,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+        upstream.id,
+        previous.kind,
+        previous.name,
+        previous.enabled ? 1 : 0,
+        previous.sortOrder,
+        previous.updatedAt,
+        serializeStoredConfig(previous.config),
+        serializeStoredState(previous.state),
+        JSON.stringify(normalizeFlagOverrides(previous.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(previous.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(previous.proxyFallbackList)),
+        previous.modelPrefix === null ? null : JSON.stringify(previous.modelPrefix),
+        previous.hue,
+      )
+      .run();
+    return (result.meta.changes ?? 0) > 0;
   }
 
-  private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
-    const modelsRefreshUpdate = clearModelsCache
-      ? 'NULL'
-      : "CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END";
+  private async saveRecord(upstream: UpstreamRecord): Promise<void> {
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
@@ -921,7 +988,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
            hue = excluded.hue,
-           models_refresh_json = ${modelsRefreshUpdate}${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
+           models_refresh_json = CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END`,
       )
       .bind(
         upstream.id,
@@ -951,19 +1018,23 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  async finalizeModelsRefreshSuccess(id: string, generation: ModelsCacheGeneration, token: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
+  async finalizeModelsRefreshSuccess(input: ModelsRefreshSuccessInput): Promise<boolean> {
+    const { id, generation, token, cache } = input;
+    const fence = await this.modelsRefreshWriteFence(id, generation);
+    if (fence === null) return false;
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig, token)
+      .prepare("UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?")
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async finalizeModelsRefreshFailure(id: string, generation: ModelsCacheGeneration, token: string, error: NonNullable<UpstreamModelsCache['lastError']>, failureCount: number, retryAt: number): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
+  async finalizeModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
+    const { id, generation, token, error, previousFailureCount, failedAt } = input;
+    const failureCount = previousFailureCount + 1;
+    const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
+    const fence = await this.modelsRefreshWriteFence(id, generation);
+    if (fence === null) return false;
     // A cold failure remains immediately stale while preserving the error for
     // the next request and dashboard read.
     const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
@@ -972,17 +1043,17 @@ class SqlUpstreamRepo implements UpstreamRepo {
         `UPDATE upstreams SET
            models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
            models_refresh_json = json_object('failCount', ?, 'retryAt', ?, 'claimToken', NULL, 'claimedAt', NULL)
-         WHERE id = ? AND updated_at = ? AND config_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
+         WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
       )
-      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, rawConfig, token)
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async claimModelsRefresh(input: ModelsRefreshClaimInput): Promise<ModelsRefreshClaimResult> {
-    const { id, generation, token, now, staleClaimedBefore, force, observedActiveToken } = input;
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return { kind: 'generation-mismatch' };
+    const { id, generation, token, now, staleClaimedBefore, bypassBackoff, observedActiveToken } = input;
+    const fence = await this.modelsRefreshWriteFence(id, generation);
+    if (fence === null) return { kind: 'generation-mismatch' };
     while (true) {
       const row = await this.db
         .prepare(
@@ -993,19 +1064,16 @@ class SqlUpstreamRepo implements UpstreamRepo {
              'claimToken', ?,
              'claimedAt', ?
            )
-           WHERE id = ? AND updated_at = ? AND config_json = ? AND (
-             ? = 1 OR (
-               ? IS NULL AND (
-                 models_refresh_json IS NULL
-                 OR (
-                   coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?
-                   AND (
-                     json_extract(models_refresh_json, '$.claimToken') IS NULL
-                     OR json_extract(models_refresh_json, '$.claimedAt') <= ?
-                   )
-                 )
+           WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ? AND (
+             ? IS NULL AND (
+               models_refresh_json IS NULL
+               OR (
+                 json_extract(models_refresh_json, '$.claimToken') IS NULL
+                 AND (? = 1 OR coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) <= ?)
                )
-             ) OR (
+               OR json_extract(models_refresh_json, '$.claimedAt') <= ?
+             )
+             OR (
                ? IS NOT NULL
                AND json_extract(models_refresh_json, '$.claimToken') = ?
                AND json_extract(models_refresh_json, '$.claimedAt') <= ?
@@ -1013,7 +1081,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            )
            RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
         )
-        .bind(token, now, id, generation.updatedAt, rawConfig, sqliteBoolean(force), observedActiveToken, now, staleClaimedBefore, observedActiveToken, observedActiveToken, staleClaimedBefore)
+        .bind(token, now, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, observedActiveToken, sqliteBoolean(bypassBackoff), now, staleClaimedBefore, observedActiveToken, observedActiveToken, staleClaimedBefore)
         .first<{ fail_count: number }>();
       if (row !== null) return { kind: 'claimed', failureCount: row.fail_count };
 
@@ -1023,9 +1091,9 @@ class SqlUpstreamRepo implements UpstreamRepo {
              json_extract(models_refresh_json, '$.retryAt') AS retry_at,
              json_extract(models_refresh_json, '$.claimToken') AS claim_token,
              json_extract(models_refresh_json, '$.claimedAt') AS claimed_at
-           FROM upstreams WHERE id = ? AND updated_at = ? AND config_json = ?`,
+           FROM upstreams WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ?`,
         )
-        .bind(id, generation.updatedAt, rawConfig)
+        .bind(id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList)
         .first<{ models_refresh_json: string | null; retry_at: number | null; claim_token: string | null; claimed_at: number | null }>();
       if (state === null) return { kind: 'generation-mismatch' };
       if (state.models_refresh_json === null) {
@@ -1033,19 +1101,28 @@ class SqlUpstreamRepo implements UpstreamRepo {
         continue;
       }
       if (state.claim_token !== null && state.claimed_at !== null && state.claimed_at > staleClaimedBefore) return { kind: 'active', token: state.claim_token };
-      if (state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
-      if (observedActiveToken !== null) return { kind: 'completed' };
+      if (observedActiveToken !== null && state.claim_token === null) return { kind: 'completed' };
+      if (!bypassBackoff && state.retry_at !== null && state.retry_at > now) return { kind: 'backoff' };
     }
   }
 
-  private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {
+  private async modelsRefreshWriteFence(id: string, generation: ModelsCacheGeneration): Promise<{
+    provider: string;
+    config: string;
+    proxyFallbackList: string;
+  } | null> {
     const row = await this.db
-      .prepare('SELECT updated_at, config_json FROM upstreams WHERE id = ?')
+      .prepare('SELECT updated_at, provider, config_json, proxy_fallback_list_json FROM upstreams WHERE id = ?')
       .bind(id)
-      .first<{ updated_at: string; config_json: string }>();
+      .first<{ updated_at: string; provider: string; config_json: string; proxy_fallback_list_json: string }>();
     if (row === null || row.updated_at !== generation.updatedAt) return null;
-    return serializeStoredConfig(JSON.parse(row.config_json)) === serializeStoredConfig(generation.config)
-      ? row.config_json
+    const identity = modelsFetchIdentity({
+      kind: parseUpstreamKind(id, row.provider),
+      config: decodeUpstreamConfig(row.config_json, id),
+      proxyFallbackList: parseProxyFallbackList(id, row.proxy_fallback_list_json),
+    });
+    return identity === generation.fetchIdentity
+      ? { provider: row.provider, config: row.config_json, proxyFallbackList: row.proxy_fallback_list_json }
       : null;
   }
 

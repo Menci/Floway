@@ -1,7 +1,7 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
-import { fetchUpstreamModelsCached } from './models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -46,19 +46,19 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
+  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const lookupId of lookupIds) {
-    const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
+    const match = snapshot.models.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
     if (match.kind === kind) {
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
-  return { candidates, sawAnyId, modelsError: provider.modelsCache?.lastError != null };
+  return { candidates, sawAnyId, modelsError: snapshot.lastError !== null };
 };
 
 // Walk every visible upstream in configured order. Snapshot reads never wait
@@ -209,8 +209,6 @@ export const enumerateModelCandidates = async ({
   upstreamIds: readonly string[] | null;
   model: string;
   kind: ModelKind;
-  // Threaded into `enumerateRealModelCandidates` so stale snapshot access can
-  // submit or join a separate background refresh trigger.
   scheduler: BackgroundScheduler;
   // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
   // Threaded into the per-request fetcher so colo-scoped fallback entries

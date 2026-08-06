@@ -1,5 +1,5 @@
 import { unionEndpoints } from './endpoint-union.ts';
-import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
@@ -95,13 +95,15 @@ const collectProviderModels = async (
   // Catalog reads never await upstream I/O. Each result is the persisted
   // snapshot carried by the provider; a cold or stale snapshot separately
   // triggers background refresh through the supplied scheduler.
-  const fetchOne = (instance: GatewayProvider) =>
-    fetchUpstreamModelsCached(instance, {
+  const fetchOne = (instance: GatewayProvider) => {
+    const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstreamId),
-    }).then(models => ({ instance, models, lastError: instance.modelsCache?.lastError ?? null }));
+    });
+    return { instance, models: snapshot.models, lastError: snapshot.lastError };
+  };
 
-  const settled = await Promise.allSettled(providers.map(fetchOne));
+  const settled = await Promise.allSettled(providers.map(async provider => fetchOne(provider)));
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {

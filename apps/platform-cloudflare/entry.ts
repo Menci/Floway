@@ -25,6 +25,6 @@ export default {
   scheduled(_controller: unknown, env: CloudflareEnv, ctx: ExecutionContext) {
     const { db } = bootstrapCloudflarePlatform(env);
     initRepo(new SqlRepo(db));
-    ctx.waitUntil(runScheduledMaintenance('SCHEDULED', promise => ctx.waitUntil(promise)));
+    ctx.waitUntil(runScheduledMaintenance(null, promise => ctx.waitUntil(promise)));
   },
 };

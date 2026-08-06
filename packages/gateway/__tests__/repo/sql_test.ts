@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { seedModelsCache, seedModelsCacheError } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
+import { modelsCacheGeneration } from '../../src/repo/models-cache-contract.ts';
 import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -28,7 +29,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   hue: 210,
   ...overrides,
 });
-const generationFor = (record: UpstreamRecord) => ({ updatedAt: record.updatedAt, config: record.config });
+const generationFor = modelsCacheGeneration;
 
 const ownValue = (value: unknown, key: string): unknown => {
   if (value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) {
@@ -153,7 +154,7 @@ test('SQL upstream repo persists an immediately-stale empty catalog on first fai
   });
 });
 
-test('SQL upstream repo saveClearingModelsCache updates the row and removes the cached catalog atomically', async () => {
+test('SQL upstream repo catalog-aware replacement can clear the cached catalog atomically', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
   await seedModelsCache(repo, 'up_test', generationFor(baseRecord()), {
@@ -166,7 +167,7 @@ test('SQL upstream repo saveClearingModelsCache updates the row and removes the 
     name: 'New identity',
     config: { accounts: [{ email: 'new@example.com', chatgptAccountId: 'new-account', chatgptUserId: 'new-user', planType: 'plus' }] },
   });
-  await repo.saveClearingModelsCache(newIdentity);
+  await repo.replaceForModels({ previous: baseRecord(), upstream: newIdentity, cachePolicy: 'clear' });
 
   const stored = await repo.getById('up_test');
   assertEquals(stored?.name, 'New identity');
@@ -219,6 +220,18 @@ test('SQL upstream repo save leaves an existing cached catalog alone', async () 
   const record = await repo.getById('up_test');
   assertEquals(record?.name, 'Renamed');
   assertEquals(record?.modelsCache?.models.map(model => model.id), ['cached-model']);
+});
+
+test('SQL rejects malformed persisted model refresh state', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await repo.save(baseRecord());
+
+  await assertRejects(
+    () => db.prepare('UPDATE upstreams SET models_refresh_json = ? WHERE id = ?')
+      .bind(JSON.stringify({ failCount: 0, retryAt: 0, claimToken: 'owner', claimedAt: null }), 'up_test')
+      .run(),
+  );
 });
 
 test('SQL upstream repo round-trips state_json on save/list/getById', async () => {
