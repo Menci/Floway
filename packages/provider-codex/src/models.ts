@@ -74,7 +74,11 @@ export const fetchCodexCatalog = (opts: CodexCatalogFetchOptions): Promise<Codex
     totalTimeoutMs: opts.totalTimeoutMs,
   },
 ).catch((cause: unknown) => {
-  if (cause instanceof ProviderModelsUnavailableError && cause.httpResponse !== null) {
+  if (
+    cause instanceof ProviderModelsUnavailableError
+    && cause.httpResponse !== null
+    && cause.cause === undefined
+  ) {
     throw new CodexModelsFetchError(cause);
   }
   throw cause;

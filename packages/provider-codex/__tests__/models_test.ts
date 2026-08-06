@@ -107,6 +107,36 @@ describe('fetchCodexCatalog', () => {
     expect(cancellationReason).toBe((error as Error).cause);
   });
 
+  test('does not classify an incomplete 401 frame as a credential rejection', async () => {
+    vi.useFakeTimers();
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    }, { highWaterMark: 0 });
+    const result = fetchCodexCatalog({
+      accessToken: 'at',
+      accountId: 'acc',
+      fetcher: () => Promise.resolve(new Response(body, { status: 401 })),
+      idleTimeoutMs: 25,
+      totalTimeoutMs: 1_000,
+    });
+    const rejection = result.catch(cause => cause as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect(error).not.toBeInstanceOf(CodexModelsFetchError);
+    expect((error as ProviderModelsUnavailableError).httpResponse?.status).toBe(401);
+    expect((error as Error).cause).toMatchObject({ name: 'TimeoutError' });
+    expect(cancellationReason).toBe((error as Error).cause);
+  });
+
   test('propagates caller abort to the catalog fetch', async () => {
     const controller = new AbortController();
     const reason = new DOMException('stopped', 'AbortError');
