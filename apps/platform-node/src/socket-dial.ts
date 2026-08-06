@@ -1,8 +1,29 @@
 import net from 'node:net';
-import { Readable } from 'node:stream';
+import { PassThrough, pipeline, Readable } from 'node:stream';
 import tls from 'node:tls';
 
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
+
+// Readable.toWeb(socket) waits for `finished(socket)`, which treats the
+// net.Socket as both readable and writable. Projecting the read side through a
+// PassThrough keeps Node's own backpressure, Buffer copying, error propagation,
+// and cancellation teardown while letting peer FIN finish the read side
+// independently. pipeline() observes the socket only as its readable source,
+// so normal EOF does not close the socket's writable half. Node fixed the
+// direct adapter upstream after our supported Node 22 line; this projection can
+// disappear once our minimum runtime includes that fix.
+// https://github.com/nodejs/node/blob/aa4c77582be995286fc6e00aaf530dc7ade102a9/lib/internal/webstreams/adapters.js#L424-L502
+// https://github.com/nodejs/node/blob/783b3824831053fb020c17d456505ed76dfaef87/lib/internal/webstreams/adapters.js#L500-L527
+// https://github.com/nodejs/node/blob/aa4c77582be995286fc6e00aaf530dc7ade102a9/lib/internal/streams/pipeline.js#L213-L267
+const socketToReadable = (socket: net.Socket): ReadableStream<Uint8Array> => {
+  const readable = new PassThrough({ highWaterMark: socket.readableHighWaterMark });
+  pipeline(socket, readable, error => {
+    // pipeline has already propagated the error into readable; keep the
+    // callback as a final invariant guard for non-standard stream behavior.
+    if (error && !readable.errored) readable.destroy(error);
+  });
+  return Readable.toWeb(readable) as ReadableStream<Uint8Array>;
+};
 
 // Hand-rolled adapter from a node:net.Socket to a WritableStream<Uint8Array>.
 // Writable.toWeb only wires `close()` to socket.end(); writer.abort() is
@@ -81,17 +102,7 @@ export const nodeSocketDial: SocketDial = {
       socket.once('error', onError);
     });
 
-    // net.Socket recycles its emitted Buffers from a shared pool, so any
-    // chunk our handshake state machines retain across an await can read
-    // overwritten bytes. Copy on the way out.
-    const rawReadable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
-    const readable = rawReadable.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        const owned = new Uint8Array(chunk.byteLength);
-        owned.set(chunk);
-        controller.enqueue(owned);
-      },
-    }));
+    const readable = socketToReadable(socket);
     const writable = socketToWritable(socket);
 
     // Listen on 'close' rather than the toWeb readable's own close signal:

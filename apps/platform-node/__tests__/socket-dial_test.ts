@@ -25,6 +25,18 @@ const startEchoServer = async (): Promise<{ port: number; close: () => Promise<v
   };
 };
 
+const withDeadline = async <T>(promise: Promise<T>, label: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 1_000);
+  });
+  try {
+    return await Promise.race([promise, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
 describe('nodeSocketDial', () => {
   let server: Awaited<ReturnType<typeof startEchoServer>>;
   beforeEach(async () => { server = await startEchoServer(); });
@@ -40,6 +52,58 @@ describe('nodeSocketDial', () => {
     expect(new TextDecoder().decode(value)).toBe('hi');
     reader.releaseLock();
     await dialed.close();
+  });
+
+  it('ends the readable on peer FIN while leaving the writable half open', async () => {
+    let receivedAfterFinResolve!: () => void;
+    const receivedAfterFin = new Promise<void>(resolve => { receivedAfterFinResolve = resolve; });
+    const halfCloseServer = net.createServer({ allowHalfOpen: true }, socket => {
+      let received = '';
+      socket.on('data', chunk => {
+        received += chunk.toString();
+        if (received === 'still-open') receivedAfterFinResolve();
+      });
+      socket.end('bye');
+    });
+    await new Promise<void>(resolve => halfCloseServer.listen(0, '127.0.0.1', resolve));
+    const address = halfCloseServer.address();
+    if (!address || typeof address === 'string') throw new Error('half-close server has no address');
+
+    const dialed = await nodeSocketDial.connect('127.0.0.1', address.port);
+    try {
+      // Adapted from workerd's allowHalfOpen=true contract test: read through
+      // peer EOF, then prove the same connection's writable side remains open.
+      // https://github.com/cloudflare/workerd/blob/243fd41f8944c2446c46e415373b107ecb9bc789/src/workerd/api/tests/outbound-interceptor-socket-test.js#L169-L183
+      await expect(withDeadline(new Response(dialed.readable).text(), 'peer FIN')).resolves.toBe('bye');
+
+      const writer = dialed.writable.getWriter();
+      await writer.write(new TextEncoder().encode('still-open'));
+      writer.releaseLock();
+      await withDeadline(receivedAfterFin, 'data written after peer FIN');
+    } finally {
+      await dialed.close();
+      await new Promise<void>(resolve => halfCloseServer.close(() => resolve()));
+    }
+  });
+
+  it('destroys the socket when the readable is canceled', async () => {
+    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
+    try {
+      const writer = dialed.writable.getWriter();
+      await writer.write(new TextEncoder().encode('warmup'));
+      writer.releaseLock();
+      const reader = dialed.readable.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe('warmup');
+      reader.releaseLock();
+
+      const remote = server.lastSocket();
+      if (!remote) throw new Error('echo server did not accept the socket');
+      const remoteClosed = new Promise<void>(resolve => remote.once('close', () => resolve()));
+      await dialed.readable.cancel(new Error('consumer canceled'));
+      await withDeadline(remoteClosed, 'peer close after readable cancellation');
+    } finally {
+      await dialed.close();
+    }
   });
 
   it('rejects a connect against a closed port', async () => {
