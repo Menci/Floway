@@ -43,9 +43,9 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // Tries each narrowed candidate in order and returns the first success. A
 // per-candidate *failure result* falls through so a transient 5xx/429 on
 // one upstream rolls over to the next; a thrown error leaves the loop and
-// surfaces to the caller, so a dial failure does not advance. When the
-// A discarded intermediate failure releases any response resources before the
-// next attempt begins. The most recent failure remains owned by the caller so
+// surfaces to the caller, so a dial failure does not advance. A discarded
+// intermediate failure releases any response resources before the next
+// attempt begins. The most recent failure remains owned by the caller so
 // it can be forwarded verbatim when the list is exhausted. Callers are
 // contractually required to hand in a non-empty candidate list — the
 // empty-candidate branch renders

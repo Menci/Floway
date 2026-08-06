@@ -774,6 +774,7 @@ test('/v1/audio/transcriptions counts a bodyless SSE response as a failed reques
       });
       assertEquals(response.status, 502);
       assertEquals(response.headers.get('x-empty-trace'), 'empty-sse');
+      await response.json();
     },
   );
   await flushAsyncWork();

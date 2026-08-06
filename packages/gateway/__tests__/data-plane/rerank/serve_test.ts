@@ -611,6 +611,72 @@ test('same-protocol cancellation drains already-observed rerank usage', async ()
   assertEquals(performance.errorsNoOutput, 0);
 });
 
+test('rerank failover drains the discarded response before settling the winner', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  const upstream = (id: string, baseUrl: string, sortOrder: number) => buildCustomUpstreamRecord({
+    id,
+    name: id,
+    sortOrder,
+    config: {
+      baseUrl,
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: `sk-${id}`,
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'raw-reranker',
+        publicModelId: 'public-reranker',
+        kind: 'rerank',
+        endpoints: { rerank: {} },
+        rerankTarget: { protocol: 'jina-v1' },
+      }],
+    },
+  });
+  await repo.upstreams.save(upstream('up_first', 'https://first-rerank.example.com', 1));
+  await repo.upstreams.save(upstream('up_second', 'https://second-rerank.example.com', 2));
+  let discardedController!: ReadableStreamDefaultController<Uint8Array>;
+  let discardedSourceCanceled = false;
+
+  await withMockedFetch(
+    request => {
+      const host = new URL(request.url).hostname;
+      if (host === 'first-rerank.example.com') {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            discardedController = controller;
+            controller.enqueue(new TextEncoder().encode('{"error":"temporarily unavailable"}'));
+          },
+          cancel() {
+            discardedSourceCanceled = true;
+          },
+        }), { status: 503, headers: { 'content-type': 'application/json' } });
+      }
+      if (host === 'second-rerank.example.com') {
+        return jsonResponse({ model: 'raw-reranker', object: 'list', results: [], usage: { total_tokens: 9 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+      discardedController.close();
+    },
+  );
+
+  await flushAsyncWork();
+  assertEquals(discardedSourceCanceled, false);
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
+});
+
 test('cross-protocol success still validates result items before rendering', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });

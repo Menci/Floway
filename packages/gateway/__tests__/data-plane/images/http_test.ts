@@ -88,6 +88,7 @@ test('/v1/images/generations rejects malformed JSON body with 400', async () => 
     body: 'not json',
   });
   assertEquals(response.status, 400);
+  await response.json();
 });
 
 test('/v1/images/generations rejects body without model with 400', async () => {
@@ -98,6 +99,7 @@ test('/v1/images/generations rejects body without model with 400', async () => {
     body: JSON.stringify({ prompt: 'hi' }),
   });
   assertEquals(response.status, 400);
+  await response.json();
 });
 
 test('/v1/images/generations 404s when no upstream provides the model', async () => {
@@ -122,6 +124,7 @@ test('/v1/images/generations 404s when no upstream provides the model', async ()
         body: JSON.stringify({ model: 'no-such-model', prompt: 'hi' }),
       });
       assertEquals(response.status, 404);
+      await response.json();
     },
   );
 });
@@ -134,6 +137,7 @@ test('/v1/images/edits rejects malformed JSON with 400', async () => {
     body: 'not json',
   });
   assertEquals(response.status, 400);
+  await response.json();
 });
 
 test('/v1/images/edits rejects JSON without a model with 400', async () => {
@@ -144,6 +148,7 @@ test('/v1/images/edits rejects JSON without a model with 400', async () => {
     body: JSON.stringify({ prompt: 'hi', images: [{ file_id: 'file-image' }] }),
   });
   assertEquals(response.status, 400);
+  await response.json();
 });
 
 test('/v1/images/edits rejects multipart body without model field with 400', async () => {
@@ -156,6 +161,7 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
     body: form,
   });
   assertEquals(response.status, 400);
+  await response.json();
 });
 
 test.each([
@@ -672,6 +678,41 @@ test('/v1/images/generations latches an error event after completed while retain
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.errorsNoOutput, 1);
+});
+
+test('/v1/images/generations keeps first-terminal usage when a duplicate completed event fails the stream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerImagesUpstream(repo);
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const wire = [
+    imageSseFrame({ type: 'image_generation.completed', b64_json: 'Zmlyc3Q=', usage: IMAGE_USAGE }),
+    imageSseFrame({
+      type: 'image_generation.completed',
+      b64_json: 'ZHVwbGljYXRl',
+      usage: {
+        total_tokens: 4,
+        input_tokens: 2,
+        output_tokens: 2,
+        input_tokens_details: { text_tokens: 1, image_tokens: 1 },
+      },
+    }),
+  ].join('');
+
+  await withMockedFetch(
+    () => imageSseResponse(wire),
+    async () => {
+      const response = await requestGenerationStream(apiKey.key);
+      assertEquals(await response.text(), wire);
+    },
+  );
+  await flushBackground();
+
+  const [usage] = await repo.usage.listAll();
+  assertEquals(tokenCountsFromUsage(usage), { input: 6, input_image: 4, output_image: 50 });
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+  assertEquals(dumps.stored[0]?.record.meta.error?.kind, 'failed');
 });
 
 test('/v1/images response handling follows upstream media type and preserves streaming status', async () => {

@@ -132,6 +132,7 @@ test('passthrough-serve: Custom resolves configured ingress header rules before 
         body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
       });
       assertEquals(response.status, 200);
+      assertEquals(await response.json(), { object: 'list', data: [], model: 'custom-embed-model' });
     },
   );
 });
@@ -421,6 +422,7 @@ test('passthrough-serve: throw during rollover attributes the error perf row to 
         });
 
         assertEquals(response.status, 502);
+        await response.json();
         await flushAsyncWork();
       },
     );

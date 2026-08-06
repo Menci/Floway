@@ -16,6 +16,7 @@ export interface RerankAttemptResult {
   readonly target: RerankTarget;
   readonly performance: PerformanceTelemetryContext;
   readonly identity: TelemetryModelIdentity;
+  readonly discard: () => Promise<void>;
 }
 
 export const rerankAttempt = async (
@@ -38,5 +39,6 @@ export const rerankAttempt = async (
     target: result.target,
     performance: upstreamPerformanceContext(ctx, candidate, 'rerank'),
     identity: telemetryModelIdentity(candidate, result.modelKey),
+    discard: async () => { await result.response.body?.cancel(); },
   };
 };

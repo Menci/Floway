@@ -64,9 +64,12 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           if (type === 'error') {
             protocolError ??= new Error(`Upstream ${sourceApi} emitted an error event.`);
           } else if (type === expectedCompletedEvent) {
-            if (terminalEventSeen) protocolError ??= new Error(`Upstream ${sourceApi} emitted duplicate completed events.`);
-            terminalEventSeen = true;
-            usage = tokenUsageFromImagesBody(event);
+            if (terminalEventSeen) {
+              protocolError ??= new Error(`Upstream ${sourceApi} emitted duplicate completed events.`);
+            } else {
+              terminalEventSeen = true;
+              usage = tokenUsageFromImagesBody(event);
+            }
           }
           yield frame;
         }
