@@ -104,11 +104,12 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // failure and surfaces it to the operator.
       const ensureCatalogAccess = async (rejectedAccessToken?: string) => {
         try {
-          const mint = (refreshToken: string) => {
+          const mint = (refreshToken: string, signal: AbortSignal) => {
             return mintCodexAccessToken(
               refreshToken,
               fetcher,
               newRefreshToken => persistRefreshTokenRotation(refreshToken, newRefreshToken),
+              signal,
             );
           };
           return rejectedAccessToken === undefined

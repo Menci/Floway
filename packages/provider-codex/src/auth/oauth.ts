@@ -85,6 +85,7 @@ const codexTokenRequest = async (
   body: URLSearchParams,
   terminalCodes: ReadonlySet<string>,
   fetcher: Fetcher,
+  signal?: AbortSignal,
 ): Promise<CodexOAuthTokens> => {
   const response = await fetcher(CODEX_OAUTH_TOKEN_URL, {
     method: 'POST',
@@ -94,6 +95,7 @@ const codexTokenRequest = async (
       accept: 'application/json',
     },
     body: body.toString(),
+    signal,
   });
 
   const rawText = await response.text();
@@ -177,7 +179,11 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
 // `fetcher` is required because the refresh has an associated upstream
 // and must flow through that upstream's proxy-aware fallback chain rather
 // than direct egress.
-export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthTokens> => {
+export const refreshCodexAccessToken = async (
+  refreshToken: string,
+  fetcher: Fetcher,
+  signal?: AbortSignal,
+): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
@@ -189,5 +195,5 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
   // worker raced us, won the rotation, and our copy is now stale. The
   // access-token module's `recoverFromRefreshRace` distinguishes by re-reading
   // upstream state; the other codes here always mean credential death.
-  return await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  return await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher, signal);
 };

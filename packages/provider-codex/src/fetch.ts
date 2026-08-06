@@ -87,10 +87,10 @@ const ensureCodexAccessForCall = async (
   rejectedAccessToken?: string,
 ): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   try {
-    const mint = (refresh: string) => mintAccessToken(opts, refresh);
+    const mint = (refresh: string, signal: AbortSignal) => mintAccessToken(opts, refresh, signal);
     const entry = rejectedAccessToken === undefined
-      ? await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, mint)
-      : await recoverCodexAccessTokenAfter401(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken, mint);
+      ? await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, mint, false, opts.signal)
+      : await recoverCodexAccessTokenAfter401(opts.upstreamId, opts.account.chatgptAccountId, rejectedAccessToken, mint, opts.signal);
     return { ok: true, accessToken: entry.token };
   } catch (err) {
     if (err instanceof CodexCredentialRefreshTerminatedError) {
@@ -112,8 +112,13 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   return await ensureCodexAccessForCall(opts);
 };
 
-const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string) =>
-  mintCodexAccessToken(refreshToken, opts.call.fetcher, newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken));
+const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string, signal: AbortSignal) =>
+  mintCodexAccessToken(
+    refreshToken,
+    opts.call.fetcher,
+    newRefreshToken => opts.effects.persistRefreshTokenRotation(refreshToken, newRefreshToken),
+    signal,
+  );
 
 interface CodexRequestIdentity {
   installationId: string;

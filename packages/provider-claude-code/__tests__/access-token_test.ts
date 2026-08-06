@@ -372,6 +372,58 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     expect(minted).toBe(2);
   });
 
+  test('one cancelled waiter does not abort a refresh another caller still needs', async () => {
+    const refreshStarted = Promise.withResolvers<AbortSignal>();
+    const releaseRefresh = Promise.withResolvers<void>();
+    const fetcher = vi.fn<Fetcher>(async (_url, init) => {
+      if (!init.signal) throw new Error('refresh omitted its flight signal');
+      refreshStarted.resolve(init.signal);
+      await releaseRefresh.promise;
+      return new Response(JSON.stringify({
+        access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+      }), { status: 200 });
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: firstController.signal });
+    const second = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: secondController.signal });
+    const flightSignal = await refreshStarted.promise;
+    const reason = new DOMException('first caller left', 'AbortError');
+    firstController.abort(reason);
+
+    await expect(first).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(false);
+    releaseRefresh.resolve();
+    await expect(second).resolves.toMatchObject({ entry: { token: 'at_new' } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  test('the last cancelled waiter aborts the shared refresh and releases the flight', async () => {
+    const refreshStarted = Promise.withResolvers<AbortSignal>();
+    const fetcher = vi.fn<Fetcher>(async (_url, init) => {
+      if (!init.signal) throw new Error('refresh omitted its flight signal');
+      const { signal } = init;
+      refreshStarted.resolve(signal);
+      return await new Promise<Response>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const call = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher, signal: controller.signal });
+    const flightSignal = await refreshStarted.promise;
+    const reason = new DOMException('last caller left', 'AbortError');
+    controller.abort(reason);
+
+    await expect(call).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(true);
+    const recoveryFetcher = vi.fn<Fetcher>(async () => new Response(JSON.stringify({
+      access_token: 'at_recovered', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: recoveryFetcher }))
+      .resolves.toMatchObject({ entry: { token: 'at_recovered' } });
+  });
+
   test('a forced caller waits for a lazy mint and then uses its own fetcher', async () => {
     const refreshStarted = Promise.withResolvers<void>();
     const releaseRefresh = Promise.withResolvers<void>();

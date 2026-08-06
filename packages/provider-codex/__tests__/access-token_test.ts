@@ -237,6 +237,52 @@ describe('ensureCodexAccessToken', () => {
     expect(results).toEqual([minted, minted]);
   });
 
+  test('one cancelled waiter does not abort a mint another caller still needs', async () => {
+    const mintStarted = Promise.withResolvers<AbortSignal>();
+    const releaseMint = Promise.withResolvers<void>();
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const mint = vi.fn(async (_refreshToken: string, signal: AbortSignal) => {
+      mintStarted.resolve(signal);
+      await releaseMint.promise;
+      return minted;
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = ensureCodexAccessToken(upstreamId, accountId, mint, false, firstController.signal);
+    const second = ensureCodexAccessToken(upstreamId, accountId, mint, false, secondController.signal);
+    const flightSignal = await mintStarted.promise;
+    const reason = new DOMException('first caller left', 'AbortError');
+    firstController.abort(reason);
+
+    await expect(first).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(false);
+    releaseMint.resolve();
+    await expect(second).resolves.toEqual(minted);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  test('the last cancelled waiter aborts the shared mint and releases the flight', async () => {
+    const mintStarted = Promise.withResolvers<AbortSignal>();
+    const mint = vi.fn(async (_refreshToken: string, signal: AbortSignal) => {
+      mintStarted.resolve(signal);
+      return await new Promise<CodexAccessTokenEntry>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const call = ensureCodexAccessToken(upstreamId, accountId, mint, false, controller.signal);
+    const flightSignal = await mintStarted.promise;
+    const reason = new DOMException('last caller left', 'AbortError');
+    controller.abort(reason);
+
+    await expect(call).rejects.toBe(reason);
+    expect(flightSignal.aborted).toBe(true);
+    const recovered: CodexAccessTokenEntry = { token: 'at_recovered', expiresAt: farFutureMs, refreshedAt: 'recovered' };
+    await expect(ensureCodexAccessToken(upstreamId, accountId, vi.fn().mockResolvedValue(recovered)))
+      .resolves.toEqual(recovered);
+  });
+
   test('a forced caller waits for a lazy mint and then uses its own callback', async () => {
     let releaseMint!: () => void;
     const mintGate = new Promise<void>(resolve => { releaseMint = resolve; });
