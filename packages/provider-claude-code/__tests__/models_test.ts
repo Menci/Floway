@@ -134,7 +134,7 @@ describe('fetchClaudeCodeModelsList', () => {
     controller.abort(reason);
 
     await expect(result).rejects.toBe(reason);
-    expect(upstreamSignal?.reason).toBe(reason);
+    expect((upstreamSignal as unknown as AbortSignal).reason).toBe(reason);
   });
 });
 

@@ -171,7 +171,7 @@ describe('createCodexProvider', () => {
 
     const error = await rejection;
     expect(error).toMatchObject({ name: 'TimeoutError' });
-    expect(oauthSignal?.reason).toBe(error);
+    expect((oauthSignal as unknown as AbortSignal).reason).toBe(error);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
