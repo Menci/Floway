@@ -354,7 +354,7 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     `INSERT INTO dump_records
      (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
      VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-  ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
+  ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes', encoding: 'gzip' })).run();
   await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
   await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();

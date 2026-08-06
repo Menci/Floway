@@ -242,7 +242,7 @@ test('FileDumpStore rejects malformed stream events with record and file context
   const compressed = new Uint8Array(await new Response(
     new Blob([malformedEvents as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')),
   ).arrayBuffer());
-  await files.put(descriptor.key, compressed);
+  await files.put(descriptor.key, descriptor.encoding === 'gzip' ? compressed : malformedEvents);
 
   await expect(store.get('key_x', record.meta.id)).rejects.toThrow(
     new RegExp(`Invalid dump record ${record.meta.id} response events at key=${descriptor.key}.*ts`, 'su'),

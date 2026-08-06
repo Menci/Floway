@@ -264,11 +264,13 @@ test('image edit upload byte limits are exact without allocating production-size
 });
 
 test('/v1/images/edits applies its multipart wire budget before reading an oversized upload', async () => {
+  const { apiKey } = await setupAppTest();
   const response = await requestApp('/v1/images/edits', {
     method: 'POST',
     headers: {
       'content-type': 'multipart/form-data; boundary=unused',
       'content-length': String(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES + 1),
+      'x-api-key': apiKey.key,
     },
     body: new ReadableStream<Uint8Array>(),
     duplex: 'half',
@@ -297,7 +299,7 @@ test('/v1/images/edits rejects multipart part amplification before upstream disp
       });
       assertEquals(response.status, 400);
       assertEquals(await response.json(), {
-        error: { message: 'Multipart request body supports at most 64 parts.', type: 'api_error' },
+        error: { message: 'Multipart request body supports at most 47 text fields.', type: 'api_error' },
       });
     },
   );

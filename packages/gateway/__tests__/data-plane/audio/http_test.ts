@@ -184,7 +184,7 @@ test('/v1/audio/transcriptions rejects multipart part amplification before upstr
       });
       assertEquals(response.status, 400);
       assertEquals(await response.json(), {
-        error: { message: 'Multipart request body supports at most 64 parts.', type: 'api_error' },
+        error: { message: 'Multipart request body supports at most 47 text fields.', type: 'api_error' },
       });
     },
   );
