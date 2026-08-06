@@ -119,13 +119,15 @@ test('reassembleResponsesEvents returns a response.failed that follows an error 
 test('reassembleResponsesEvents rejects a success terminal after an error event', async () => {
   await assertRejects(() => reassembleResponsesEvents(makeEvents([
     { data: { type: 'error', message: 'try later' } },
-    { data: {
-      type: 'response.completed',
-      response: {
-        id: 'resp_bad', object: 'response', model: 'gpt-test', status: 'completed',
-        output: [], error: null, incomplete_details: null,
+    {
+      data: {
+        type: 'response.completed',
+        response: {
+          id: 'resp_bad', object: 'response', model: 'gpt-test', status: 'completed',
+          output: [], error: null, incomplete_details: null,
+        },
       },
-    } },
+    },
   ])), Error, 'try later');
 });
 

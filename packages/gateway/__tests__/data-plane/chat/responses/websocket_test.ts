@@ -3,7 +3,6 @@ import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
-import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
 import {
   RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
@@ -13,6 +12,7 @@ import {
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
