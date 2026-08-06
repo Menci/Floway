@@ -953,3 +953,104 @@ describe('parseHttpResponse — reader-lock release on error', () => {
     expect(readable.locked).toBe(false);
   });
 });
+
+describe('parseHttpResponse — body reader cleanup failures', () => {
+  it('keeps a Content-Length protocol error primary when transport cancellation also fails', async () => {
+    const cancelError = new Error('transport cancel failed');
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nAB'));
+      },
+      cancel: async () => { throw cancelError; },
+    });
+    const raw = await parseHttpResponse(source);
+
+    const rejection = await raw.body.getReader().read().catch((error: unknown) => error) as AggregateError;
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors[0]).toMatchObject({ code: 'TRAILING_BODY_BYTES' });
+    expect(rejection.errors[1]).toBe(cancelError);
+    expect(rejection.cause).toBe(rejection.errors[0]);
+  });
+
+  it('rejects a complete Content-Length body when terminal transport cancellation fails', async () => {
+    const cancelError = new Error('transport cancel failed');
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA'));
+      },
+      cancel: async () => { throw cancelError; },
+    });
+    const raw = await parseHttpResponse(source);
+    const reader = raw.body.getReader();
+
+    await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([0x41]) });
+    await expect(reader.read()).rejects.toBe(cancelError);
+  });
+
+  it('rejects EOF-framed body cancellation when transport cancellation fails', async () => {
+    const cancelError = new Error('transport cancel failed');
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('HTTP/1.1 200 OK\r\n\r\n'));
+      },
+      cancel: async () => { throw cancelError; },
+    });
+    const raw = await parseHttpResponse(source);
+
+    await expect(raw.body.cancel('stop')).rejects.toBe(cancelError);
+  });
+
+  it('keeps an EOF-framed read failure primary when releasing its reader also fails', async () => {
+    const readError = new Error('transport read failed');
+    const releaseError = new Error('reader release failed');
+    let reads = 0;
+    const reader = {
+      read: async () => {
+        reads++;
+        if (reads === 1) {
+          return {
+            done: false,
+            value: new TextEncoder().encode('HTTP/1.1 200 OK\r\n\r\n'),
+          };
+        }
+        throw readError;
+      },
+      releaseLock: () => { throw releaseError; },
+    } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+    const readable = { getReader: () => reader } as unknown as ReadableStream<Uint8Array>;
+    const raw = await parseHttpResponse(readable);
+
+    const rejection = await raw.body.getReader().read().catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([readError, releaseError]);
+    expect(rejection.cause).toBe(readError);
+  });
+
+  it('cancels the transport when Content-Length projection fails after a read', async () => {
+    const projectionError = new Error('byteLength failed');
+    const cancelError = new Error('transport cancel failed');
+    let reads = 0;
+    const value = Object.defineProperty({}, 'byteLength', {
+      get: () => { throw projectionError; },
+    }) as unknown as Uint8Array;
+    const reader = {
+      read: async () => {
+        reads++;
+        if (reads === 1) {
+          return {
+            done: false,
+            value: new TextEncoder().encode('HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n'),
+          };
+        }
+        return { done: false, value };
+      },
+      cancel: async () => { throw cancelError; },
+      releaseLock: () => {},
+    } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+    const readable = { getReader: () => reader } as unknown as ReadableStream<Uint8Array>;
+    const raw = await parseHttpResponse(readable);
+
+    const rejection = await raw.body.getReader().read().catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([projectionError, cancelError]);
+    expect(rejection.cause).toBe(projectionError);
+  });
+});

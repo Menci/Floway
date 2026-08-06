@@ -5,6 +5,7 @@
 import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { DialResult, DialTarget } from '../types.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '@floway-dev/http/cleanup';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
@@ -70,67 +71,76 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
   let stripped = false;
   let buf = new Uint8Array(0);
   let released = false;
+  let readerFailed = false;
+  const read = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    try {
+      return await reader.read();
+    } catch (error) {
+      readerFailed = true;
+      throw error;
+    }
+  };
   const release = (): void => {
     if (released) return;
+    reader.releaseLock();
     released = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
   };
-  const fail = async (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    error: ProxyDialError,
-  ): Promise<void> => {
-    try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
-    controller.error(error);
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> => {
+    readerSettlement ??= collectCleanupFailures([
+      ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+      release,
+    ]);
+    return readerSettlement;
   };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      if (!stripped) {
-        while (buf.byteLength < 2) {
-          const r = await reader.read();
-          if (r.done) {
-            await fail(controller, new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'));
-            return;
-          }
-          buf = concat(buf, r.value);
-        }
-        // Fail closed with a typed proxy-handshake error so non-VLESS
-        // bytes never reach the payload stream and surface as an opaque
-        // downstream failure.
-        if (buf[0] !== 0x00) {
-          await fail(controller, new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
-          return;
-        }
-        const addonsLen = buf[1]!;
-        while (buf.byteLength < 2 + addonsLen) {
-          const r = await reader.read();
-          if (r.done) {
-            await fail(controller, new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'));
-            return;
-          }
-          buf = concat(buf, r.value);
-        }
-        stripped = true;
-        const remainder = copy(buf.subarray(2 + addonsLen));
-        if (remainder.byteLength) {
-          controller.enqueue(remainder);
-          return;
-        }
-      }
       try {
-        const r = await reader.read();
+        if (!stripped) {
+          while (buf.byteLength < 2) {
+            const r = await read();
+            if (r.done) {
+              throw new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake');
+            }
+            buf = concat(buf, r.value);
+          }
+          // Fail closed with a typed proxy-handshake error so non-VLESS
+          // bytes never reach the payload stream and surface as an opaque
+          // downstream failure.
+          if (buf[0] !== 0x00) {
+            throw new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake');
+          }
+          const addonsLen = buf[1]!;
+          while (buf.byteLength < 2 + addonsLen) {
+            const r = await read();
+            if (r.done) {
+              throw new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake');
+            }
+            buf = concat(buf, r.value);
+          }
+          stripped = true;
+          const remainder = copy(buf.subarray(2 + addonsLen));
+          if (remainder.byteLength) {
+            controller.enqueue(remainder);
+            return;
+          }
+        }
+        const r = await read();
         if (r.done) {
-          controller.close();
-          release();
+          const failures = await settleReader(undefined, false);
+          if (failures.length > 0) controller.error(cleanupFailure(failures, 'VLESS reader cleanup failed'));
+          else controller.close();
         } else {
           controller.enqueue(copy(r.value));
         }
       } catch (error) {
-        release();
-        throw error;
+        const failures = await settleReader(error, !readerFailed);
+        controller.error(failureWithCleanup(error, failures, 'VLESS read and cleanup both failed'));
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
+      const failures = await settleReader(reason, true);
+      if (failures.length > 0) throw cleanupFailure(failures, 'VLESS cancellation cleanup failed');
     },
   });
 };
