@@ -77,28 +77,17 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_CONNECT_ID];
-  // If direct-fetch precedes any materialized transport, runtime fetch may take
-  // ownership of `init.body` and consume its underlying stream/Blob.
-  // Buffer the body up-front so a runtime that re-streams a Blob can't
-  // strand a later proxy attempt with empty bytes. The fast path
-  // (direct-fetch-only list) keeps the runtime's native body handling intact —
-  // FormData, Blob, etc. don't need to be buffered.
   const hasMaterializedTransport = list.some(id => id !== DIRECT_FETCH_ID);
-  const hasDirectFetch = list.includes(DIRECT_FETCH_ID);
-  const directFetchBeforeMaterialized = hasMaterializedTransport
-    && hasDirectFetch
-    && list.indexOf(DIRECT_FETCH_ID) < list.length - 1;
   return (url, init) => {
-    // Reject streaming bodies upfront whenever any materialized entry is in
-    // play. The two-pass dial can replay a request and a stream is
-    // single-shot; for a list like ['a','direct_fetch'] where 'a' is in active
-    // backoff, pass 1 would consume the stream via the runtime fetch and
-    // strand pass 2 with empty bytes.
+    // Reject ordinary streaming bodies whenever the policy contains a
+    // transport that requires materialized bytes. Which entry runs first can
+    // vary with proxy backoff, so accepting a single-shot stream only while a
+    // proxy happens to be skipped would make the request contract stateful.
     if (hasMaterializedTransport && init.body instanceof ReadableStream && replayableBodySource(init.body) === null) {
       return Promise.reject(new Error('streaming request bodies are not replayable through direct-connect or proxy transports'));
     }
 
-    return runFallbacks(input, list, url, createReplayableRequest(url, init), directFetchBeforeMaterialized);
+    return runFallbacks(input, list, url, createReplayableRequest(url, init));
   };
 };
 
@@ -107,12 +96,7 @@ const runFallbacks = async (
   list: readonly string[],
   url: string,
   request: ReplayableRequest,
-  directFetchBeforeMaterialized: boolean,
 ): Promise<Response> => {
-  // A direct-fetch attempt before a materialized transport can consume
-  // Blob/FormData bodies. Build the replayable byte form first so every later
-  // attempt observes one body.
-  if (directFetchBeforeMaterialized) await request.materialized();
   const errors: unknown[] = [];
 
   // Backoff rows only ever exist for operator-managed proxies, so a list made
@@ -219,13 +203,17 @@ const tryOne = async (
       throw err;
     }
     if (id === DIRECT_FETCH_ID) {
-      // Direct egress can fail for the same dial-shaped reasons a proxy can
-      // (TCP refused, GFW SNI reset, DNS, connect timeout). Runtime fetch
-      // surfaces those as plain Errors / TypeErrors, not ProxyDialError, but
-      // for fallback semantics they ARE dial failures — request bytes never
-      // reached an upstream. Advance to the next entry like we would for a
-      // proxy, just without touching the backoff table (no proxy entity to
-      // throttle here).
+      // Runtime fetch collapses failures from before connect through after a
+      // complete request write into plain Error/TypeError, so an ambiguous
+      // body-bearing failure cannot be replayed without at-least-once duplicate
+      // semantics. Continue only for the bodyless safe methods classified by
+      // ReplayableRequest. This matches Go's post-write replay gate and the
+      // active copilot2api gateway's single-dispatch behavior; LiteLLM instead
+      // explicitly accepts ambiguous POST replay, which Floway does not.
+      // https://github.com/golang/go/blob/d90b98e65320778f3b1f99a6951ab20f04d218b3/src/net/http/request.go#L1534-L1547
+      // https://github.com/whtsky/copilot2api/blob/c6db16158d5a5d01b2ac4964071b2c6c5c6b6a25/internal/upstream/client.go#L132-L213
+      // https://github.com/BerriAI/litellm/blob/ba917681461b1ad04d30f91da26e75b3521996f3/litellm/llms/custom_httpx/http_handler.py#L628-L678
+      if (!request.canRetryAfterDirectFetchFailure) throw err;
       errors.push(err);
       return null;
     }

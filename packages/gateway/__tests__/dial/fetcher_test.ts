@@ -536,10 +536,9 @@ describe('createFetcher', () => {
     expect(init.body).toBe('request body');
   });
 
-  it('materializes before a leading direct attempt without mutating the caller init', async () => {
+  it.each(['GET', 'HEAD', 'OPTIONS'])('falls through after an ambiguous bodyless %s direct-fetch failure', async (method) => {
     const repo = new InMemoryRepo();
-    let directBody: BodyInit | null | undefined;
-    let materializedBody: HttpRequest['body'];
+    const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -547,26 +546,42 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => {
-        materializedBody = request.body;
+        calls.push('proxy');
+        expect(request.body).toBeUndefined();
         return new Response('proxy');
       },
-      runDirectFetch: async (_url, init) => {
-        directBody = init.body;
+      runDirectFetch: async () => {
+        calls.push('direct');
         throw new TypeError('direct dial failed');
       },
       runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
-    const init: RequestInit = { method: 'POST', body: 'request body' };
 
-    const response = await fetcher('https://api.openai.com/v1/responses', init);
+    const response = await fetcher('https://api.openai.com/v1/models', { method });
 
     expect(await response.text()).toBe('proxy');
-    expect(directBody).toBeInstanceOf(Uint8Array);
-    expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
-    if (!(materializedBody instanceof Uint8Array)) throw new Error('expected materialized byte body');
-    expect(new TextDecoder().decode(materializedBody)).toBe('request body');
-    expect(init.body).toBe('request body');
+    expect(calls).toEqual(['direct', 'proxy']);
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('keeps an ambiguous bodyless %s direct-fetch failure terminal', async (method) => {
+    const repo = new InMemoryRepo();
+    const directFailure = new TypeError('direct fetch may have reached upstream');
+    let proxyCalls = 0;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { proxyCalls += 1; return new Response('proxy'); },
+      runDirectFetch: async () => { throw directFailure; },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    await expect(fetcher('https://api.openai.com/v1/mutation', { method })).rejects.toBe(directFailure);
+    expect(proxyCalls).toBe(0);
   });
 
   it('forwards init.signal to runProxied so the dialer can honour client cancellation', async () => {
@@ -692,20 +707,21 @@ describe('createFetcher', () => {
     expect(capturedBody[1]).toBe(second);
   });
 
-  it('replays fresh segmented streams across direct-fetch failure and proxy fallback', async () => {
+  it('does not replay a consumed POST after an ambiguous direct-fetch failure', async () => {
     const repo = new InMemoryRepo();
     await insertProxy(repo, 'a', proxyAUrl, proxyA);
     const payload = Uint8Array.of(1, 2, 3, 4);
+    const directFailure = new TypeError('socket closed after request write');
     let directBody: number[] | undefined;
-    let proxyBody!: HttpRequest['body'];
+    let proxyCalls = 0;
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
-      runProxied: async (_config, _target, request) => {
-        proxyBody = request.body;
+      runProxied: async () => {
+        proxyCalls += 1;
         return new Response('proxy');
       },
       runDirectFetch: async (_url, init) => {
@@ -713,21 +729,18 @@ describe('createFetcher', () => {
         expect(replayableBodySource(init.body)).not.toBeNull();
         if (!(init.body instanceof ReadableStream)) throw new Error('expected replayable stream');
         directBody = Array.from(new Uint8Array(await new Response(init.body).arrayBuffer()));
-        throw new TypeError('direct failed');
+        throw directFailure;
       },
       runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
 
-    const response = await fetcher('https://api.openai.com/v1/images/edits', {
-      method: 'POST',
-      body: createReplayableBody([payload]),
-    });
+    await expect(fetcher('https://api.openai.com/v1/images/edits', {
+      method: 'POST', body: createReplayableBody([payload]),
+    })).rejects.toBe(directFailure);
 
-    expect(await response.text()).toBe('proxy');
     expect(directBody).toEqual([1, 2, 3, 4]);
-    if (!Array.isArray(proxyBody)) throw new Error('expected segmented request body');
-    expect(proxyBody[0]).toBe(payload);
+    expect(proxyCalls).toBe(0);
   });
 
   it('replays segmented views from a failed proxy into a fresh direct-fetch stream', async () => {
