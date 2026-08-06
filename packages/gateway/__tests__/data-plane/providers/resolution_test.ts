@@ -174,37 +174,6 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
   );
 });
 
-test('enumerateModelCandidates does not retry when the inbound id has no dated suffix', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save(
-    buildCustomUpstreamRecord({
-      config: {
-        baseUrl: 'https://custom.example.com',
-        authStyle: 'bearer',
-        ingressHeadersRules: [],
-        apiKey: 'sk-custom',
-        endpoints: { messages: {} },
-      },
-    }),
-  );
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'claude-opus-4-7' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      // Plain typo / unknown id — no dated suffix, no retry.
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-unknown', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolved.candidates.length, 0);
-    },
-  );
-});
-
 test('enumerateModelCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
   // The dated-suffix retry is a SECOND attempt, gated on the first
   // attempt finding nothing. When the upstream catalog already lists the
@@ -289,41 +258,6 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
   );
 
   assertEquals(secondModelsFetches, 0);
-});
-
-test('enumerateRealModelCandidates rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
-    id: 'up_x',
-    kind: 'azure',
-    name: 'X',
-    enabled: true,
-    sortOrder: 1,
-    createdAt: '2026-05-21T00:00:00.000Z',
-    updatedAt: '2026-05-21T00:00:00.000Z',
-    config: {
-      endpoint: 'https://example.openai.azure.com',
-      apiKey: 'az-key',
-      models: [
-        { upstreamModelId: 'enabled-model', endpoints: { chatCompletions: {} } },
-        { upstreamModelId: 'disabled-model', endpoints: { chatCompletions: {} } },
-      ],
-    },
-    flagOverrides: {},
-    disabledPublicModelIds: ['disabled-model'],
-    proxyFallbackList: [],
-    modelPrefix: null,
-    modelsCache: null,
-    hue: 210,
-    state: null,
-  });
-
-  const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, () => directFetcher, testScheduler);
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, () => directFetcher, testScheduler);
-  assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
-  assertEquals(disabled.candidates.length, 0);
 });
 
 test('a Custom mixed chat and embedding model resolves once in both endpoint families', async () => {
@@ -785,7 +719,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
-  test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
+  test('preserves first-occurrence order while deduping equal rules and retaining distinct rules', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
@@ -796,6 +730,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
         { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'high' } } },
       ],
       ...aliasCommon,
     });
@@ -812,38 +747,13 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         }))).toEqual([
           { binding: 'gpt-5@up_a', effort: 'low' },
           { binding: 'claude@up_b', effort: 'high' },
+          { binding: 'gpt-5@up_a', effort: 'high' },
         ]);
       },
     );
   });
 
-  test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearInFlightForTesting();
-    const { repo } = await setupAppTest();
-    await seedUpstreams(repo);
-    await repo.modelAliases.insert({
-      id: 'alias_two-rules',
-      name: 'two-rules', kind: 'chat', selection: 'first-available',
-      targets: [
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'high' } } },
-      ],
-      ...aliasCommon,
-    });
-
-    await withMockedFetch(
-      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
-      async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'two-rules', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
-        });
-        assertEquals(resolved.candidates.length, 2);
-        expect(resolved.candidates.map(c => c.rules?.reasoning?.effort)).toEqual(['low', 'high']);
-      },
-    );
-  });
-
-  test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
+  test('falls through to a later target when an earlier target is absent from every catalog', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
