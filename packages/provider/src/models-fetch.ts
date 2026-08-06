@@ -64,6 +64,17 @@ const isDeadlineAbort = (signal: AbortSignal): boolean => {
   return signal.aborted && signal.reason instanceof DOMException && deadlineErrors.has(signal.reason);
 };
 
+const errorChainIncludes = (error: unknown, expected: unknown): boolean => {
+  const seen = new Set<Error>();
+  let current = error;
+  while (current instanceof Error && !seen.has(current)) {
+    if (current === expected) return true;
+    seen.add(current);
+    current = current.cause;
+  }
+  return current === expected;
+};
+
 const raceWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise<T>((resolve, reject) => {
@@ -91,7 +102,9 @@ const raceWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<
       value => {
         if (!deadlineAborted) finish(() => resolve(value));
       },
-      error => finish(() => reject(error)),
+      error => {
+        if (!deadlineAborted || errorChainIncludes(error, signal.reason)) finish(() => reject(error));
+      },
     );
   });
 };
