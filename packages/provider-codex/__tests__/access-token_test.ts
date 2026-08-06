@@ -98,7 +98,7 @@ describe('ensureCodexAccessToken', () => {
     const mint = vi.fn().mockResolvedValue(minted);
     const out = await ensureCodexAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
+    expect(mint).toHaveBeenCalledWith('rt_v1', expect.anything());
     expect(storedState().accounts[0].accessToken).toEqual(minted);
   });
 
@@ -149,7 +149,7 @@ describe('ensureCodexAccessToken', () => {
     const mint = vi.fn().mockResolvedValue(minted);
     const out = await ensureCodexAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
+    expect(mint).toHaveBeenCalledWith('rt_v1', expect.anything());
   });
 
   test('throws when the upstream row is missing', async () => {
