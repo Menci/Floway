@@ -195,7 +195,7 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
     const transport = {
       readable: {
         getReader: () => ({
-          read: async () => new Promise<ReadableStreamReadResult<Uint8Array>>(() => {}),
+          read: async () => await new Promise<ReadableStreamReadResult<Uint8Array>>(() => {}),
           cancel: async () => { throw cancelError; },
           releaseLock: () => {},
         }),

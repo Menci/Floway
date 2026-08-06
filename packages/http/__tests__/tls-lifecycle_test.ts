@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 import { makeFakeDuplex } from './test-utils.ts';
 
 interface MockTlsOptions {

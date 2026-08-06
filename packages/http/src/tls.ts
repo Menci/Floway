@@ -207,28 +207,27 @@ export const userspaceTls = async (
     | { readonly type: 'error'; readonly error: unknown; readonly cleanupFailures: readonly unknown[] };
   type TerminalIntent =
     | {
-        readonly type: 'failure';
-        readonly primary: unknown;
-        readonly endTls: boolean;
-        readonly writer: 'abort';
-        readonly message: string;
-      }
+      readonly type: 'failure';
+      readonly primary: unknown;
+      readonly endTls: boolean;
+      readonly writer: 'abort';
+      readonly message: string;
+    }
     | {
-        readonly type: 'clean';
-        readonly endTls: boolean;
-        readonly writer: 'close';
-        readonly message: string;
-      }
+      readonly type: 'clean';
+      readonly endTls: boolean;
+      readonly writer: 'close';
+      readonly message: string;
+    }
     | {
-        readonly type: 'cancel';
-        readonly reason: unknown;
-        readonly endTls: boolean;
-        readonly writer: 'close' | 'abort';
-        readonly message: string;
-      };
+      readonly type: 'cancel';
+      readonly reason: unknown;
+      readonly endTls: boolean;
+      readonly writer: 'close' | 'abort';
+      readonly message: string;
+    };
   let terminal: Promise<TerminalOutcome> | null = null;
   const currentTerminal = (): Promise<TerminalOutcome> | null => terminal;
-  let terminate!: (intent: TerminalIntent) => Promise<TerminalOutcome>;
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
   let handshakeResolve!: () => void;
@@ -284,7 +283,6 @@ export const userspaceTls = async (
     verifyHost?: string;
     onTlsEnd?: (error?: unknown) => void;
   };
-  let tlsClient!: ReturnType<typeof makeTLSClient>;
   const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
@@ -344,7 +342,7 @@ export const userspaceTls = async (
     },
   };
 
-  terminate = (intent: TerminalIntent): Promise<TerminalOutcome> => {
+  const terminate = (intent: TerminalIntent): Promise<TerminalOutcome> => {
     if (terminal !== null) return terminal;
     plainClosed = true;
     cleanupSignal();
@@ -389,7 +387,7 @@ export const userspaceTls = async (
     return terminal;
   };
 
-  tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
+  const tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
 
   // App-data downward stream (TLS plaintext → consumer). The cancel hook
   // fires only after the duplex pair has been returned to the consumer,
@@ -466,8 +464,9 @@ export const userspaceTls = async (
         const { value, done } = await readTransport();
         if (done) {
           readerDone = true;
-          if (terminal !== null) {
-            await terminal;
+          const pendingTerminal = currentTerminal();
+          if (pendingTerminal !== null) {
+            await pendingTerminal;
             return;
           }
           if (!handshakeOk) {
@@ -495,8 +494,9 @@ export const userspaceTls = async (
           return;
         }
         await tlsClient.handleReceivedBytes(value);
-        if (terminal !== null) {
-          await terminal;
+        const pendingTerminal = currentTerminal();
+        if (pendingTerminal !== null) {
+          await pendingTerminal;
           return;
         }
         await waitForPlainDemand();
