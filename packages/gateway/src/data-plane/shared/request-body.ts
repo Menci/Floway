@@ -16,6 +16,8 @@ export interface OwnedRequestBody {
   readonly streamError: string | null;
 }
 
+type RequestBodyOwner<T> = (body: OwnedRequestBody) => T;
+
 export const completeRequestBodyBytes = (source: RequestBody): Uint8Array =>
   source.streamError === null ? source.capturedBytes : new Uint8Array();
 
@@ -27,6 +29,15 @@ export const takeRequestBody = (source: RequestBody): OwnedRequestBody => {
   const owned = { bytes: source.capturedBytes, streamError: source.streamError };
   source.capturedBytes = new Uint8Array();
   return owned;
+};
+
+// Transfers the buffer only after its destination has been constructed. A
+// synchronous context-construction failure leaves the bytes on `source`, so
+// an error fallback can still open the request dump from the original body.
+export const transferRequestBody = <T>(source: RequestBody, owner: RequestBodyOwner<T>): T => {
+  const result = owner({ bytes: source.capturedBytes, streamError: source.streamError });
+  source.capturedBytes = new Uint8Array();
+  return result;
 };
 
 // Reads the inbound body in full into a Uint8Array; the handler parses its

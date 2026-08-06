@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { describe, test, vi } from 'vitest';
 
+import { getDumpStore, initDumpStore } from '../../../src/dump/registry.ts';
 import { createGatewayCtxFromHono, type AttemptState, stampUpstreamCallStart } from '../../../src/data-plane/shared/gateway-ctx.ts';
 import type { OwnedRequestBody } from '../../../src/data-plane/shared/request-body.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
+import { observeExecutionTimers } from './execution-timer-audit.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -175,6 +177,36 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.backgroundScheduler, scheduler);
+  });
+
+  test('does not arm lifecycle timers when dump construction rejects', async () => {
+    const originalStore = getDumpStore();
+    const failure = new Error('request body preparation failed');
+    initDumpStore({
+      ...originalStore,
+      prepareRequestBody() { throw failure; },
+    });
+    const timers = observeExecutionTimers();
+    try {
+      const app = makeApp();
+      let caught: unknown;
+      app.get('/test', c => {
+        c.set('apiKey', buildApiKey({ dumpRetentionSeconds: 60 }));
+        try {
+          createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+        } catch (error) {
+          caught = error;
+        }
+        return c.text('ok');
+      });
+      await app.request('/test');
+
+      assertEquals(caught, failure);
+      timers.assertNoLifecycleStarted();
+    } finally {
+      timers.cleanup();
+      initDumpStore(originalStore);
+    }
   });
 
   test('upstreamIds is the intersection of the per-user cap and the per-key whitelist', async () => {

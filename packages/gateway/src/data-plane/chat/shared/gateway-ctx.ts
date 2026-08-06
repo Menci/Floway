@@ -1,5 +1,5 @@
 import { AffinityRequestContext } from './affinity/index.ts';
-import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { createGatewayCtxFromHono, type CreateGatewayCtxOptions, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
@@ -26,10 +26,8 @@ export const createChatGatewayCtxFromHono = (
   opts: CreateGatewayCtxOptions,
   storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
-  const base = createGatewayCtxFromHono(c, opts);
-  return {
-    ...base,
-    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(apiKeyFromContext(c), base.requestStartedAt),
-  };
+  return createGatewayCtxFromHono(c, opts, ({ apiKey, requestStartedAt }) => ({
+    affinity: new AffinityRequestContext(apiKey.serverSecret),
+    store: storeFactory(apiKey, requestStartedAt),
+  }));
 };
