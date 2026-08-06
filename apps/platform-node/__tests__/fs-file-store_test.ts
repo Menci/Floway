@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -48,33 +48,42 @@ test('put creates intermediate directories', () => withTempRoot(async root => {
   assertEquals(read, new Uint8Array([42]));
 }));
 
-test('concurrent replacements expose only complete file versions', () => withTempRoot(async root => {
-  const store = new FsFileStore(root);
-  const size = 1024 * 1024;
-  const initial = new Uint8Array(size).fill(0x11);
-  const first = new Uint8Array(size).fill(0x55);
-  const second = new Uint8Array(size).fill(0xaa);
-  await store.put('atomic/value.bin', initial);
+test('a concurrent read sees complete versions on both sides of an atomic replacement', () => withTempRoot(async root => {
+  const key = 'atomic/value.bin';
+  const initial = new Uint8Array([0x11, 0x22, 0x33]);
+  const replacement = new Uint8Array([0xaa, 0xbb]);
+  await new FsFileStore(root).put(key, initial);
 
-  let completed = false;
-  const replacements = Promise.all([
-    store.put('atomic/value.bin', first),
-    store.put('atomic/value.bin', second),
-  ]).finally(() => { completed = true; });
-  const assertCompleteVersion = (value: Uint8Array): void => {
-    assertEquals(value.byteLength, size);
-    const byte = value[0]!;
-    assertEquals([0x11, 0x55, 0xaa].includes(byte), true);
-    assertEquals(value.every(current => current === byte), true);
-  };
-  let observations = 0;
-  while (!completed && observations < 2) {
-    assertCompleteVersion((await store.get('atomic/value.bin'))!);
-    observations += 1;
+  const temporaryWritten = Promise.withResolvers<void>();
+  const allowReplacement = Promise.withResolvers<void>();
+  const fileReplaced = Promise.withResolvers<void>();
+  const allowCompletion = Promise.withResolvers<void>();
+  const store = new FsFileStore(root, {
+    writeTemporaryFile: async (path, body) => {
+      await writeFile(path, body, { flag: 'wx' });
+      temporaryWritten.resolve();
+      await allowReplacement.promise;
+    },
+    replaceFile: async (temporaryPath, path) => {
+      await rename(temporaryPath, path);
+      fileReplaced.resolve();
+      await allowCompletion.promise;
+    },
+  });
+
+  const put = store.put(key, replacement);
+  try {
+    await temporaryWritten.promise;
+    assertEquals(await store.get(key), initial);
+
+    allowReplacement.resolve();
+    await fileReplaced.promise;
+    assertEquals(await store.get(key), replacement);
+  } finally {
+    allowReplacement.resolve();
+    allowCompletion.resolve();
+    await put;
   }
-  await replacements;
-  assertCompleteVersion((await store.get('atomic/value.bin'))!);
-  assertEquals(observations > 0, true);
 }));
 
 test('deleteKeys prunes empty key directories while retaining shared and root directories', () => withTempRoot(async root => {
