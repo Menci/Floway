@@ -420,6 +420,7 @@ const recoverFromRefreshRace = async (
   signal: AbortSignal,
 ): Promise<EnsuredAccessToken | null> => {
   const reread = await args.repo.getById(args.upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!reread) return null;
   const rereadState = readClaudeCodeUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts[0];

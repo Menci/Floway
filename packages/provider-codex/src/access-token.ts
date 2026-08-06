@@ -326,6 +326,7 @@ const recoverFromRefreshRace = async (
   signal: AbortSignal,
 ): Promise<CodexAccessTokenEntry | null> => {
   const reread = await getProviderRepo().upstreams.getById(upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!reread) return null;
   const rereadState = readCodexUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts.find(a => a.chatgptAccountId === accountId);

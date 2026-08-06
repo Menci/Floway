@@ -70,8 +70,16 @@ interface InFlightTokenRefresh {
 
 const inFlightTokenRefreshes = new Map<string, InFlightTokenRefresh>();
 
-const tokenCacheKey = (upstreamId: string, githubHost: string, githubToken: string): string =>
-  JSON.stringify([upstreamId, githubHost, githubToken]);
+const tokenCacheKey = (upstreamId: string, config: CopilotUpstreamConfig): string =>
+  JSON.stringify([
+    upstreamId,
+    config.githubHost,
+    config.githubToken,
+    config.user.id,
+    config.user.login,
+    config.user.name,
+    config.user.avatar_url,
+  ]);
 
 const sameCopilotConfig = (left: CopilotUpstreamConfig, right: CopilotUpstreamConfig): boolean =>
   left.githubHost === right.githubHost
@@ -253,7 +261,7 @@ async function getCopilotToken(
 ): Promise<CopilotTokenEntry> {
   if (signal?.aborted) throw signal.reason;
   const { githubHost, githubToken } = expectedConfig;
-  const key = tokenCacheKey(upstreamId, githubHost, githubToken);
+  const key = tokenCacheKey(upstreamId, expectedConfig);
   const fresh = await getRepo().upstreams.getById(upstreamId);
   if (fresh?.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
   const freshConfig = fresh.config as CopilotUpstreamConfig;
