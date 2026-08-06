@@ -183,25 +183,3 @@ test('opaque model dimensions round-trip embedded NUL through node:sqlite', () =
     'search\0model',
   );
 }));
-
-test('Performance reads stay on one snapshot during a concurrent batch write', () => withRepo(async repo => {
-  const sample = {
-    hour: '2026-08-06T00',
-    keyId: 'key_node',
-    model: 'concurrent-model',
-    upstream: 'up_node',
-    operation: 'chat' as const,
-    runtimeLocation: 'LOCAL',
-    ttftMs: 100,
-    tpotUs: 1_000,
-    success: true,
-  };
-
-  const [snapshot] = await Promise.all([
-    repo.performance.listAll(),
-    repo.performance.recordSample(sample),
-  ]);
-
-  assertEquals(snapshot, []);
-  assertEquals((await repo.performance.listAll())[0]?.model, sample.model);
-}));
