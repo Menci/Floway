@@ -116,3 +116,99 @@ test('direct fetch cancels a FixedLengthStream pump when fetch rejects before re
     else Reflect.set(globalThis, 'FixedLengthStream', original);
   }
 });
+
+test.each([
+  ['Error values', new Error('readable cancel failed'), new Error('pump failed')],
+  ['undefined values', undefined, undefined],
+])('direct fetch preserves immediate FixedLengthStream cleanup failures, including %s', async (_label, readableError, pumpError) => {
+  const original = Reflect.get(globalThis, 'FixedLengthStream');
+  const fetchError = new Error('fetch rejected');
+  let notifyWriteStarted!: () => void;
+  const writeStarted = new Promise<void>(resolve => { notifyWriteStarted = resolve; });
+  class FailingFixedLengthStream {
+    readonly readable = new ReadableStream<Uint8Array>({
+      cancel: () => { throw readableError; },
+    });
+    readonly writable = new WritableStream<Uint8Array>({
+      write() {
+        notifyWriteStarted();
+        throw pumpError;
+      },
+    });
+  }
+  Reflect.set(globalThis, 'FixedLengthStream', FailingFixedLengthStream);
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    await writeStarted;
+    throw fetchError;
+  }));
+  try {
+    const rejection = await directFetcher('https://example.test', {
+      method: 'POST',
+      body: createReplayableBody([Uint8Array.of(1, 2, 3)]),
+    }).catch((error: unknown) => error) as AggregateError;
+
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors).toEqual(readableError === pumpError
+      ? [fetchError, readableError]
+      : [fetchError, readableError, pumpError]);
+    expect(rejection.cause).toBe(fetchError);
+  } finally {
+    vi.unstubAllGlobals();
+    if (original === undefined) Reflect.deleteProperty(globalThis, 'FixedLengthStream');
+    else Reflect.set(globalThis, 'FixedLengthStream', original);
+  }
+});
+
+test('direct fetch bounds late FixedLengthStream cleanup rejection and observes its eventual failure', async () => {
+  vi.useFakeTimers();
+  const original = Reflect.get(globalThis, 'FixedLengthStream');
+  const fetchError = new Error('fetch rejected');
+  const pumpError = new Error('pump failed');
+  const lateCancelError = new Error('late readable cancel failure');
+  let notifyWriteStarted!: () => void;
+  const writeStarted = new Promise<void>(resolve => { notifyWriteStarted = resolve; });
+  let rejectReadableCancel!: (error: unknown) => void;
+  class LateFailingFixedLengthStream {
+    readonly readable = new ReadableStream<Uint8Array>({
+      cancel: () => new Promise<void>((_resolve, reject) => { rejectReadableCancel = reject; }),
+    });
+    readonly writable = new WritableStream<Uint8Array>({
+      write() {
+        notifyWriteStarted();
+        throw pumpError;
+      },
+    });
+  }
+  Reflect.set(globalThis, 'FixedLengthStream', LateFailingFixedLengthStream);
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    await writeStarted;
+    throw fetchError;
+  }));
+  try {
+    const pending = directFetcher('https://example.test', {
+      method: 'POST',
+      body: createReplayableBody([Uint8Array.of(1, 2, 3)]),
+    });
+    await writeStarted;
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    const rejection = await pending.catch((error: unknown) => error) as AggregateError;
+
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors[0]).toBe(fetchError);
+    expect(rejection.errors[1]).toMatchObject({
+      name: 'NativeFetchCleanupTimeoutError',
+      operationIndex: 0,
+      timeoutMs: 5_000,
+    });
+    expect(rejection.errors[2]).toBe(pumpError);
+    rejectReadableCancel(lateCancelError);
+    await Promise.resolve();
+    await Promise.resolve();
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    if (original === undefined) Reflect.deleteProperty(globalThis, 'FixedLengthStream');
+    else Reflect.set(globalThis, 'FixedLengthStream', original);
+  }
+});

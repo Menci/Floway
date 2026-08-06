@@ -12,7 +12,19 @@ export const directFetcher: Fetcher = async (url, init) => {
   try {
     return await fetch(url, prepared.init);
   } catch (error) {
-    await prepared.cancel(error);
+    let cleanupFailures: readonly unknown[];
+    try {
+      cleanupFailures = await prepared.cancel(error);
+    } catch (cleanupError) {
+      cleanupFailures = [cleanupError];
+    }
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupFailures],
+        'Native fetch and request-body cleanup both failed',
+        { cause: error },
+      );
+    }
     throw error;
   }
 };
