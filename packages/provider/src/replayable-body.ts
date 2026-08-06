@@ -1,8 +1,9 @@
 const STREAM_CHUNK_BYTES = 64 * 1024;
 
 export interface ReplayableBodySource {
-  // Segments are borrowed until the fetch settles. The array shape is frozen,
-  // but callers that own a Uint8Array must not mutate its bytes in flight.
+  // Segment views transfer into the request. The array shape is frozen, but
+  // callers must not mutate their bytes after transfer; a runtime fetch may
+  // resolve response headers before it finishes pumping the request body.
   readonly segments: readonly Uint8Array[];
   readonly byteLength: number;
 }
@@ -18,7 +19,17 @@ const assertSource = (segments: readonly Uint8Array[]): ReplayableBodySource => 
   return Object.freeze({ segments: Object.freeze([...segments]), byteLength });
 };
 
-export const replayableBodyStream = (source: ReplayableBodySource): ReadableStream<Uint8Array> => {
+export const validateReplayableBodySource = (source: ReplayableBodySource): ReplayableBodySource => {
+  let byteLength = 0;
+  for (const segment of source.segments) {
+    byteLength += segment.byteLength;
+    if (!Number.isSafeInteger(byteLength)) throw new RangeError('Replayable body byte length exceeds Number.MAX_SAFE_INTEGER');
+  }
+  if (byteLength !== source.byteLength) throw new RangeError('Replayable body byte length does not match its segments');
+  return source;
+};
+
+const streamFromSource = (source: ReplayableBodySource): ReadableStream<Uint8Array> => {
   let segmentIndex = 0;
   let segmentOffset = 0;
   const stream = new ReadableStream<Uint8Array>({
@@ -43,22 +54,77 @@ export const replayableBodyStream = (source: ReplayableBodySource): ReadableStre
 };
 
 export const createReplayableBody = (segments: readonly Uint8Array[]): ReadableStream<Uint8Array> =>
-  replayableBodyStream(assertSource(segments));
+  streamFromSource(assertSource(segments));
+
+export const replayableBodyStream = (source: ReplayableBodySource): ReadableStream<Uint8Array> => {
+  return streamFromSource(validateReplayableBodySource(source));
+};
 
 export const replayableBodySource = (body: BodyInit | null | undefined): ReplayableBodySource | null =>
   body instanceof ReadableStream ? sources.get(body) ?? null : null;
 
+// Undici rejects a ReadableStream request body without duplex='half'.
+// https://github.com/nodejs/undici/blob/aa33b19549ef5c37b73599a6deba768e85f46f92/lib/web/fetch/request.js#L535-L542
 type DuplexRequestInit = RequestInit & { duplex: 'half' };
+
+interface FixedLengthStreamLike {
+  readonly readable: ReadableStream<Uint8Array>;
+  readonly writable: WritableStream<Uint8Array>;
+}
+
+type FixedLengthStreamConstructor = new (expectedLength: number) => FixedLengthStreamLike;
+
+const fixedLengthStreamConstructor = (): FixedLengthStreamConstructor | null => {
+  const candidate = Reflect.get(globalThis, 'FixedLengthStream');
+  return typeof candidate === 'function' ? candidate as FixedLengthStreamConstructor : null;
+};
 
 export const nativeFetchInit = (init: RequestInit): RequestInit => {
   if (!(init.body instanceof ReadableStream)) return init;
   const source = replayableBodySource(init.body);
   const headers = new Headers(init.headers);
-  if (source !== null) headers.set('content-length', String(source.byteLength));
+  headers.delete('transfer-encoding');
+  const validated = source === null ? null : validateReplayableBodySource(source);
+  if (validated !== null) headers.set('content-length', String(validated.byteLength));
   return {
     ...init,
-    body: source === null ? init.body : replayableBodyStream(source),
+    body: validated === null ? init.body : streamFromSource(validated),
     headers,
     duplex: 'half',
   } as DuplexRequestInit;
+};
+
+export interface PreparedNativeFetch {
+  readonly init: RequestInit;
+  readonly cancel: (reason: unknown) => Promise<void>;
+}
+
+export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
+  const source = replayableBodySource(init.body);
+  const FixedLengthStream = source === null ? null : fixedLengthStreamConstructor();
+  if (source === null || FixedLengthStream === null) {
+    return { init: nativeFetchInit(init), cancel: () => Promise.resolve() };
+  }
+
+  // Workers only derives a Content-Length from FixedLengthStream; a manual
+  // header on an ordinary ReadableStream is ignored by the runtime.
+  // https://github.com/cloudflare/cloudflare-docs/blob/3f39c22a4b2e740e32f611bdd32fb801a2d3e3b8/src/content/docs/workers/runtime-apis/request.mdx#L495-L507
+  const validated = validateReplayableBodySource(source);
+  const fixed = new FixedLengthStream(validated.byteLength);
+  const pumpController = new AbortController();
+  const pumpSignal = init.signal === null || init.signal === undefined
+    ? pumpController.signal
+    : AbortSignal.any([init.signal, pumpController.signal]);
+  const pumping = streamFromSource(validated).pipeTo(fixed.writable, { signal: pumpSignal });
+  void pumping.catch(() => {});
+  const headers = new Headers(init.headers);
+  headers.delete('transfer-encoding');
+  headers.set('content-length', String(validated.byteLength));
+  return {
+    init: { ...init, body: fixed.readable, headers, duplex: 'half' } as DuplexRequestInit,
+    cancel: async reason => {
+      pumpController.abort(reason);
+      await pumping.catch(() => {});
+    },
+  };
 };

@@ -134,7 +134,11 @@ const multipartBody = async (request: ImagesEditsRequest, model: string): Promis
   const boundary = `floway-${crypto.randomUUID()}`;
   const segments: Uint8Array[] = [];
   const appendText = (name: string, value: string): void => {
-    segments.push(multipartHeader(boundary, name), encoder.encode(normalizeLinefeeds(value)), encoder.encode('\r\n'));
+    segments.push(
+      multipartHeader(boundary, normalizeLinefeeds(name)),
+      encoder.encode(normalizeLinefeeds(value)),
+      encoder.encode('\r\n'),
+    );
   };
   const appendUpload = (name: string, upload: UploadBytes): void => {
     segments.push(

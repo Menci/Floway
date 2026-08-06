@@ -384,13 +384,23 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 describe('fetchOnStream — request body serialization', () => {
   it('writes replayable segments in order with one computed Content-Length', async () => {
     const fake = makeFakeDuplex();
+    const writes: Uint8Array[] = [];
+    const writable = new WritableStream<Uint8Array>({
+      write(chunk) {
+        writes.push(chunk);
+        const writer = fake.writable.getWriter();
+        return writer.write(chunk).finally(() => writer.releaseLock());
+      },
+    });
+    const first = Uint8Array.of(1, 2);
+    const second = Uint8Array.of(3, 4, 5);
     const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
+      { readable: fake.readable, writable },
       {
         method: 'POST',
         path: '/',
         headers: { Host: 'h', 'Content-Length': '999' },
-        body: [Uint8Array.of(1, 2), new Uint8Array(), Uint8Array.of(3, 4, 5)],
+        body: [first, new Uint8Array(), second],
       },
     );
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
@@ -405,6 +415,8 @@ describe('fetchOnStream — request body serialization', () => {
     expect(headEnd).toBeGreaterThan(-1);
     expect(decodeAscii(written.subarray(0, headEnd + separator.byteLength))).toContain('Content-Length: 5\r\n');
     expect(Array.from(written.subarray(headEnd + separator.byteLength))).toEqual([1, 2, 3, 4, 5]);
+    expect(writes[1]?.buffer).toBe(first.buffer);
+    expect(writes[2]?.buffer).toBe(second.buffer);
   });
 
   it('splits a body that exceeds the chunk size across multiple writes', async () => {

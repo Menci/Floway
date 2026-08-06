@@ -1,6 +1,7 @@
-import type { HttpRequest } from '@floway-dev/http';
+import type { HttpRequest, HttpRequestBody } from '@floway-dev/http';
 import { normalizeDialHost } from '@floway-dev/platform';
 import type { ProxyRequestTarget } from '@floway-dev/proxy';
+import { createReplayableBody, nativeFetchInit, replayableBodySource, replayableBodyStream, validateReplayableBodySource, type ReplayableBodySource } from '@floway-dev/provider';
 
 interface MaterializedRequest {
   target: ProxyRequestTarget;
@@ -18,16 +19,21 @@ class ReplayableRequestOwner implements ReplayableRequest {
   private fetch: RequestInit;
   private materializedRequest: MaterializedRequest | undefined;
   private rebuildFetchBody = false;
+  private readonly replayableSource: ReplayableBodySource | null;
 
   constructor(
     private readonly url: string,
     init: RequestInit,
   ) {
     this.signal = init.signal ?? undefined;
-    this.fetch = init;
+    this.replayableSource = replayableBodySource(init.body);
+    this.fetch = this.replayableSource === null ? init : { ...init, body: null };
   }
 
   fetchInit(): RequestInit {
+    if (this.replayableSource !== null) {
+      return nativeFetchInit({ ...this.fetch, body: replayableBodyStream(this.replayableSource) });
+    }
     if (this.rebuildFetchBody) {
       this.fetch = rebuildInitFromMaterialized(this.fetch, this.materializedRequest!);
       this.rebuildFetchBody = false;
@@ -37,7 +43,7 @@ class ReplayableRequestOwner implements ReplayableRequest {
 
   async materialized(): Promise<MaterializedRequest> {
     if (this.materializedRequest !== undefined) return this.materializedRequest;
-    this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch);
+    this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch, this.replayableSource);
     // Once bytes exist, the original BodyInit must not remain captured for the
     // duration of the upstream request. A later direct-fetch fallback rebuilds its
     // owned byte body lazily, so a successful proxy does not retain a second
@@ -57,26 +63,33 @@ const rebuildInitFromMaterialized = (original: RequestInit, materialized: Materi
   if (targetCt !== undefined && !headers.has('content-type')) {
     headers.set('content-type', targetCt);
   }
-  // Copy into a freshly-allocated ArrayBuffer-backed Uint8Array so the
-  // BodyInit slot accepts it under TypeScript's stricter typing — and so
-  // the buffer we hand to runtime fetch never aliases a backing buffer
-  // that's also referenced elsewhere.
-  let body: Uint8Array<ArrayBuffer> | null = null;
-  if (materialized.request.body) {
+  // Copy ordinary bodies into a freshly-allocated ArrayBuffer-backed
+  // Uint8Array so the BodyInit slot never aliases materialized transport
+  // bytes. Segmented bodies remain borrowed views and get a fresh stream.
+  let body: BodyInit | null = null;
+  if (materialized.request.body instanceof Uint8Array) {
     const owned = new Uint8Array(materialized.request.body.byteLength);
     owned.set(materialized.request.body);
     body = owned;
+  } else if (materialized.request.body !== undefined) {
+    body = createReplayableBody(materialized.request.body);
   }
-  return {
+  return nativeFetchInit({
     ...original,
     headers,
     body,
-  };
+  });
 };
 
-const buildMaterializedRequest = async (url: string, init: RequestInit): Promise<MaterializedRequest> => {
+const buildMaterializedRequest = async (
+  url: string,
+  init: RequestInit,
+  replayableSource: ReplayableBodySource | null,
+): Promise<MaterializedRequest> => {
   const u = new URL(url);
-  const collected = await collectBody(init.body);
+  const collected = replayableSource === null
+    ? await collectBody(init.body)
+    : { body: validateReplayableBodySource(replayableSource).segments };
   const headers = extractHeaders(init.headers);
   // FormData/URLSearchParams synthesize a Content-Type with the multipart
   // boundary or the urlencoded marker. Adopt it only when the caller did not
@@ -123,7 +136,7 @@ const extractHeaders = (input: HeadersInit | undefined): Record<string, string> 
 };
 
 interface CollectedBody {
-  body: Uint8Array;
+  body: HttpRequestBody;
   /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
    *  multipart boundary or urlencoded marker). undefined for shapes that
    *  carry no implicit Content-Type. */

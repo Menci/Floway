@@ -14,13 +14,13 @@ import type { Context } from 'hono';
 import { respondImages } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { multipartLimitMessage, parseMultipartFormData, singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
+import { multipartLimitMessage, parseMultipartEntries, singleNonEmptyMultipartTextEntry } from '../shared/multipart.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
-import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource, type RawImagesEditsUpload } from '@floway-dev/provider';
 
 type PreparedImagesEdit =
   | { type: 'ok'; request: ImagesEditsRequest }
@@ -179,31 +179,31 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   if (!isMultipartFormDataMediaType(contentType)) {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
-  const parsed = await parseMultipartFormData(completeRequestBodyBytes(requestBody), contentType);
+  const parsed = parseMultipartEntries(completeRequestBodyBytes(requestBody), contentType);
   if (parsed.type === 'invalid') {
     return invalid('Image edits request body must be valid multipart/form-data.');
   }
   if (parsed.type === 'limit') return invalid(multipartLimitMessage(parsed));
-  const { form } = parsed;
-  const model = singleNonEmptyMultipartTextField(form, 'model');
+  const { entries } = parsed;
+  const model = singleNonEmptyMultipartTextEntry(entries, 'model');
   if (model === undefined) {
     return invalid('Image edits request body must include a model field.');
   }
-  const images: File[] = [];
-  let mask: File | undefined;
+  const images: RawImagesEditsUpload[] = [];
+  let mask: RawImagesEditsUpload | undefined;
   const parameters: Record<string, string | number | boolean> = {};
   const parameterNames = new Set<string>();
-  for (const [name, value] of form.entries()) {
+  for (const { name, value } of entries) {
     if (name === 'model') continue;
     if (name === 'image' || name === 'image[]') {
-      if (!(value instanceof File)) return invalid(`Image edits ${name} fields must be files.`);
-      const sizeError = imageEditUploadSizeError(value, 'image');
+      if (typeof value === 'string') return invalid(`Image edits ${name} fields must be files.`);
+      const sizeError = imageEditUploadSizeError({ size: value.bytes.byteLength }, 'image');
       if (sizeError !== null) return invalid(sizeError);
       images.push(value);
     } else if (name === 'mask') {
-      if (!(value instanceof File)) return invalid('Image edits mask field must be a file.');
+      if (typeof value === 'string') return invalid('Image edits mask field must be a file.');
       if (mask !== undefined) return invalid('Image edits request body supports at most one mask file.');
-      const sizeError = imageEditUploadSizeError(value, 'mask');
+      const sizeError = imageEditUploadSizeError({ size: value.bytes.byteLength }, 'mask');
       if (sizeError !== null) return invalid(sizeError);
       mask = value;
     } else {
@@ -220,8 +220,8 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     return invalid(`Image edits request body supports at most ${MAX_IMAGE_EDIT_INPUTS} images.`);
   }
   return await serveImagesEditRequest(c, requestBody, model, {
-    images: images.map(file => ({ type: 'upload', file })),
-    ...(mask === undefined ? {} : { mask: { type: 'upload' as const, file: mask } }),
+    images: images.map(upload => ({ type: 'raw-upload', upload })),
+    ...(mask === undefined ? {} : { mask: { type: 'raw-upload' as const, upload: mask } }),
     parameters,
   }, parameters.stream === 'true');
 };

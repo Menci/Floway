@@ -4,7 +4,7 @@ import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackI
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
-import { isAbortError } from '@floway-dev/provider';
+import { isAbortError, replayableBodySource } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
 interface CreateFetcherInput {
@@ -94,7 +94,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     // single-shot; for a list like ['a','direct_fetch'] where 'a' is in active
     // backoff, pass 1 would consume the stream via the runtime fetch and
     // strand pass 2 with empty bytes.
-    if (hasMaterializedTransport && init.body instanceof ReadableStream) {
+    if (hasMaterializedTransport && init.body instanceof ReadableStream && replayableBodySource(init.body) === null) {
       return Promise.reject(new Error('streaming request bodies are not replayable through direct-connect or proxy transports'));
     }
 

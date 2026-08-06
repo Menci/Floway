@@ -107,11 +107,11 @@ test('serializeOpenAIImagesEditsRequest matches FormData linefeed and media-type
       type: 'raw-upload',
       upload: { name: 'raw.png', type: 'IMAGE/PNG\r\nX-Evil: yes', bytes: Uint8Array.of(1) },
     }],
-    parameters: { prompt: 'a\nb\rc\r\nd' },
+    parameters: { 'line\nbreak': 'a\nb\rc\r\nd' },
   }, 'gpt-image');
 
   const form = await new Response(serialized.body, { headers: { 'content-type': serialized.contentType } }).formData();
-  assertEquals(form.get('prompt'), 'a\r\nb\r\nc\r\nd');
+  assertEquals(form.get('line\r\nbreak'), 'a\r\nb\r\nc\r\nd');
   const file = form.get('image');
   if (!(file instanceof File)) throw new Error('expected image file');
   assertEquals(file.type, 'application/octet-stream');

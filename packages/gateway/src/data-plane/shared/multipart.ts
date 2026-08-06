@@ -31,10 +31,28 @@ export type MultipartLimitKind =
   | 'field-bytes'
   | 'field-total-bytes';
 
-export type MultipartFormDataResult =
-  | { readonly type: 'ok'; readonly form: FormData }
+type MultipartFailure =
   | { readonly type: 'invalid' }
   | { readonly type: 'limit'; readonly kind: MultipartLimitKind; readonly max: number };
+
+export interface MultipartFileEntryValue {
+  readonly name: string;
+  readonly type: string;
+  readonly bytes: Uint8Array;
+}
+
+export interface MultipartEntry {
+  readonly name: string;
+  readonly value: string | MultipartFileEntryValue;
+}
+
+export type MultipartEntriesResult =
+  | { readonly type: 'ok'; readonly entries: readonly MultipartEntry[] }
+  | MultipartFailure;
+
+export type MultipartFormDataResult =
+  | { readonly type: 'ok'; readonly form: FormData }
+  | MultipartFailure;
 
 const LF = 0x0A;
 const CR = 0x0D;
@@ -227,7 +245,7 @@ interface MultipartPart {
 }
 
 type MultipartPreflightResult =
-  | Exclude<MultipartFormDataResult, { readonly type: 'ok' }>
+  | MultipartFailure
   | { readonly type: 'ok'; readonly parts: readonly MultipartPart[] };
 
 const preflightMultipart = (
@@ -316,30 +334,51 @@ const preflightMultipart = (
   }
 };
 
-// Validate framing and every structural budget before constructing a File or
-// decoding field text. Native Response.formData() builds all entries first, so
-// it cannot reject a tiny-part amplification attack before paying its memory
-// cost; the bounded descriptors above keep that decision ahead of allocation.
+// Validate framing and every structural budget before decoding field text.
+// File entries remain exact views over the immutable request buffer so callers
+// that can stream them do not need a second whole-file representation.
+export const parseMultipartEntries = (
+  bytes: Uint8Array,
+  contentType: string,
+  limits: MultipartParseLimits = DEFAULT_MULTIPART_PARSE_LIMITS,
+): MultipartEntriesResult => {
+  const preflight = preflightMultipart(bytes, contentType, limits);
+  if (preflight.type !== 'ok') return preflight;
+  try {
+    const entries = preflight.parts.map((part): MultipartEntry => {
+      const body = bytes.subarray(part.bodyStart, part.bodyEnd);
+      if (part.headers.filename === undefined) {
+        return { name: part.headers.name, value: new TextDecoder().decode(body) };
+      }
+      return {
+        name: part.headers.name,
+        value: { name: part.headers.filename, type: part.headers.contentType, bytes: body },
+      };
+    });
+    return { type: 'ok', entries };
+  } catch {
+    return { type: 'invalid' };
+  }
+};
+
+// Audio still exposes FormData to its provider contract. Materialize only after
+// the same bounded parse; image edits consume parseMultipartEntries directly.
 export const parseMultipartFormData = async (
   bytes: Uint8Array,
   contentType: string,
   limits: MultipartParseLimits = DEFAULT_MULTIPART_PARSE_LIMITS,
 ): Promise<MultipartFormDataResult> => {
-  const preflight = preflightMultipart(bytes, contentType, limits);
-  if (preflight.type !== 'ok') return preflight;
+  const parsed = parseMultipartEntries(bytes, contentType, limits);
+  if (parsed.type !== 'ok') return parsed;
   try {
     const form = new FormData();
-    for (const part of preflight.parts) {
-      const body = bytes.subarray(part.bodyStart, part.bodyEnd);
-      if (part.headers.filename === undefined) {
-        form.append(part.headers.name, new TextDecoder().decode(body));
-      } else {
-        form.append(part.headers.name, new File(
-          [body as BlobPart],
-          part.headers.filename,
-          { type: part.headers.contentType },
-        ));
-      }
+    for (const entry of parsed.entries) {
+      if (typeof entry.value === 'string') form.append(entry.name, entry.value);
+      else form.append(entry.name, new File(
+        [entry.value.bytes as BlobPart],
+        entry.value.name,
+        { type: entry.value.type },
+      ));
     }
     return { type: 'ok', form };
   } catch {
@@ -360,6 +399,13 @@ export const multipartLimitMessage = (result: Extract<MultipartFormDataResult, {
 
 export const singleNonEmptyMultipartTextField = (form: FormData, name: string): string | undefined => {
   const values = form.getAll(name);
+  if (values.length !== 1) return undefined;
+  const [value] = values;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+};
+
+export const singleNonEmptyMultipartTextEntry = (entries: readonly MultipartEntry[], name: string): string | undefined => {
+  const values = entries.filter(entry => entry.name === name).map(entry => entry.value);
   if (values.length !== 1) return undefined;
   const [value] = values;
   return typeof value === 'string' && value.length > 0 ? value : undefined;

@@ -1,4 +1,4 @@
-import { nativeFetchInit } from './replayable-body.ts';
+import { prepareNativeFetch } from './replayable-body.ts';
 
 // Indirection for outbound HTTP so per-upstream proxy chains can be
 // threaded by reference.
@@ -7,7 +7,15 @@ export type Fetcher = (
   init: RequestInit,
 ) => Promise<Response>;
 
-export const directFetcher: Fetcher = (url, init) => fetch(url, nativeFetchInit(init));
+export const directFetcher: Fetcher = async (url, init) => {
+  const prepared = prepareNativeFetch(init);
+  try {
+    return await fetch(url, prepared.init);
+  } catch (error) {
+    await prepared.cancel(error);
+    throw error;
+  }
+};
 
 // extraHeaders are merged on top of the helper's own default headers.
 export interface UpstreamFetchOptions {

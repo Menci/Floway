@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { parseMultipartFormData, type MultipartParseLimits } from '../../../src/data-plane/shared/multipart.ts';
+import { parseMultipartEntries, parseMultipartFormData, type MultipartParseLimits } from '../../../src/data-plane/shared/multipart.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const encodeForm = async (entries: ReadonlyArray<readonly [string, string | File]>) => {
@@ -79,6 +79,17 @@ test('bounded multipart parser ignores bytes that resemble a different boundary'
   if (parsed.type !== 'ok') throw new Error(`expected parsed form, got ${parsed.type}`);
   const file = parsed.form.get('file');
   expect(file).toBeInstanceOf(File);
+});
+
+test('bounded multipart entries retain file bytes as an exact request-buffer view', async () => {
+  const input = await encodeForm([['file', new File([Uint8Array.of(1, 2, 3)], 'x.bin')]]);
+  const parsed = parseMultipartEntries(input.bytes, input.contentType, limits());
+
+  if (parsed.type !== 'ok') throw new Error(`expected parsed entries, got ${parsed.type}`);
+  const value = parsed.entries[0]?.value;
+  if (value === undefined || typeof value === 'string') throw new Error('expected file entry');
+  expect(value.bytes.buffer).toBe(input.bytes.buffer);
+  expect(Array.from(value.bytes)).toEqual([1, 2, 3]);
 });
 
 test('bounded multipart parser rejects an exact boundary prefix with an invalid delimiter suffix', async () => {
