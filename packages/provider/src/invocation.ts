@@ -18,9 +18,8 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // `model.*`, and the per-upstream `ProviderModel` (providerData,
 // enabledFlags) off `providerModelOf(candidate)`.
 //
-// Resolution narrows by `model.kind` only — choosing the inbound target
-// protocol from `model.endpoints` is the attempt layer's job, not part of
-// the candidate.
+// Resolution narrows by endpoint-family support. The attempt layer then reads
+// the exact protocol configuration from `model.endpoints`.
 //
 // `rules` is set only for candidates minted by the alias walk — it carries
 // the picked target's rule overlay so the attempt's terminal wire call can

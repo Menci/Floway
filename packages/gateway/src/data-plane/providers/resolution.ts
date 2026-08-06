@@ -13,7 +13,8 @@ import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provide
 
 interface ProviderCatalogAccess {
   readonly fetcher: Fetcher;
-  readonly models: ProviderModel[];
+  readonly modelsById: ReadonlyMap<string, ProviderModel>;
+  readonly disabledModelIds: ReadonlySet<string>;
 }
 
 type ProviderCatalogLoader = (provider: GatewayProvider) => Promise<ProviderCatalogAccess>;
@@ -33,7 +34,11 @@ const createProviderCatalogLoader = (
     const loading = (async () => {
       const fetcher = fetcherForUpstream(provider.upstreamId);
       const models = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
-      return { fetcher, models };
+      const modelsById = new Map<string, ProviderModel>();
+      for (const model of models) {
+        if (!modelsById.has(model.id)) modelsById.set(model.id, model);
+      }
+      return { fetcher, modelsById, disabledModelIds: new Set(provider.disabledPublicModelIds) };
     })();
     byProvider.set(provider, loading);
     return loading;
@@ -71,12 +76,12 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false };
 
-  const { fetcher, models: providedModels } = await loadCatalog(provider);
-  const disabled = new Set(provider.disabledPublicModelIds);
+  const { fetcher, modelsById, disabledModelIds } = await loadCatalog(provider);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const lookupId of lookupIds) {
-    const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
+    const match = modelsById.get(lookupId);
+    if (match !== undefined && disabledModelIds.has(match.id)) continue;
     if (!match) continue;
     sawAnyId = true;
     if (endpointsSupportKind(match.endpoints, kind)) {
@@ -123,10 +128,12 @@ const enumerateRealModelCandidatesWithLoader = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
+  clientDisconnectSignal?.throwIfAborted();
   const settled = await settleUnlessAborted(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(provider, modelId, kind, loadCatalog);
   }));
+  clientDisconnectSignal?.throwIfAborted();
 
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
@@ -274,17 +281,20 @@ export const enumerateModelCandidates = async ({
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
+  clientDisconnectSignal?.throwIfAborted();
   if (upstreamIds !== null && upstreamIds.length === 0) {
     return { candidates: [], sawModel: false, failedUpstreams: [] };
   }
 
   const repo = getRepo();
   const upstreams = await repo.upstreams.list();
+  clientDisconnectSignal?.throwIfAborted();
   const providers = await listModelProviders(upstreamIds, upstreams);
   if (providers.length === 0) {
     return { candidates: [], sawModel: false, failedUpstreams: [] };
   }
   const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreams);
+  clientDisconnectSignal?.throwIfAborted();
   const fetcherForUpstream = (upstreamId: string): Fetcher => {
     const fetcher = createFetcherForUpstream(upstreamId);
     return clientDisconnectSignal === undefined
@@ -296,8 +306,12 @@ export const enumerateModelCandidates = async ({
     enumerateRealModelCandidatesWithLoader(modelId, modelKind, providers, loadCatalog, clientDisconnectSignal);
 
   const alias = await repo.modelAliases.getByName(model);
+  clientDisconnectSignal?.throwIfAborted();
   if (alias === null) {
     return await resolveRealCandidates(model, kind, enumerateReal);
+  }
+  if (alias.kind !== kind) {
+    return { candidates: [], sawModel: true, failedUpstreams: [] };
   }
 
   // Walk every target, tag each returned candidate with the target's rule

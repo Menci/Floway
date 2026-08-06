@@ -86,6 +86,39 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
   );
 });
 
+test('enumerateModelCandidates observes disconnect after a retained catalog settles', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-custom',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  const controller = new AbortController();
+  const reason = new Error('client disconnected after catalog dispatch');
+
+  await withMockedFetch(
+    () => {
+      controller.abort(reason);
+      return jsonResponse({ object: 'list', data: [{ id: 'gpt-test' }] });
+    },
+    async () => {
+      await expect(enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'gpt-test',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+        clientDisconnectSignal: controller.signal,
+      })).rejects.toBe(reason);
+    },
+  );
+});
+
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 
@@ -627,6 +660,38 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
       config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     }));
   };
+
+  test('an alias is known but unsupported outside its declared endpoint family', async () => {
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_embedding-only',
+      name: 'embedding-only',
+      kind: 'embedding',
+      selection: 'first-available',
+      targets: [{ target_model_id: 'gpt-5', rules: {} }],
+      ...aliasCommon,
+    });
+    let catalogCalls = 0;
+
+    await withMockedFetch(
+      () => {
+        catalogCalls += 1;
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5' }] });
+      },
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null,
+          model: 'embedding-only',
+          kind: 'chat',
+          scheduler: testScheduler,
+          runtimeLocation: 'TEST',
+        });
+        assertEquals(resolved, { candidates: [], sawModel: true, failedUpstreams: [] });
+      },
+    );
+    assertEquals(catalogCalls, 0);
+  });
 
   test('flattens across targets in declaration order for first-available', async () => {
     clearInFlightForTesting();
