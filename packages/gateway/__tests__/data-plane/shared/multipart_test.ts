@@ -97,10 +97,13 @@ test('bounded multipart parser rejects an exact boundary prefix with an invalid 
     .toEqual({ type: 'invalid' });
 });
 
-test('bounded multipart parser rejects filename-star parameters that the replaced parsers do not support', async () => {
+test.each([
+  'filename*=UTF-8\'\'caf%C3%A9.png',
+  'filename*="UTF-8\'\'caf%C3%A9.png"',
+])('bounded multipart parser rejects unsupported %s parameters', async filename => {
   const bytes = new TextEncoder().encode([
     '--b',
-    'Content-Disposition: form-data; name="file"; filename*=UTF-8\'\'caf%C3%A9.png',
+    `Content-Disposition: form-data; name="file"; ${filename}`,
     'Content-Type: image/png',
     '',
     'x',
