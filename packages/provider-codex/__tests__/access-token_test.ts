@@ -237,17 +237,19 @@ describe('ensureCodexAccessToken', () => {
   });
 
   test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
-    let releaseMint!: () => void;
-    const mintGate = new Promise<void>(resolve => { releaseMint = resolve; });
+    const mintEntered = Promise.withResolvers<void>();
+    const mintGate = Promise.withResolvers<void>();
     const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
     const mint = vi.fn(async () => {
-      await mintGate;
+      mintEntered.resolve();
+      await mintGate.promise;
       return minted;
     });
     const lazy = ensureCodexAccessToken(upstreamId, accountId, mint);
     const forced = ensureCodexAccessToken(upstreamId, accountId, mint, true);
-    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
-    releaseMint();
+    await mintEntered.promise;
+    expect(mint).toHaveBeenCalledTimes(1);
+    mintGate.resolve();
     expect(await Promise.all([lazy, forced])).toEqual([minted, minted]);
     expect(mint).toHaveBeenCalledTimes(1);
   });
@@ -269,14 +271,19 @@ describe('ensureCodexAccessToken', () => {
   test('a lazy caller keeps a fresh cache entry while a forced refresh is failing', async () => {
     const cached: CodexAccessTokenEntry = { token: 'at_cached', expiresAt: farFutureMs, refreshedAt: 'cached' };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: cached }] });
-    let rejectMint!: (error: unknown) => void;
+    const mintEntered = Promise.withResolvers<void>();
+    const mintResult = Promise.withResolvers<CodexAccessTokenEntry>();
     const mintFailure = new Error('forced proxy failed');
-    const mint = vi.fn(() => new Promise<CodexAccessTokenEntry>((_resolve, reject) => { rejectMint = reject; }));
+    const mint = vi.fn(() => {
+      mintEntered.resolve();
+      return mintResult.promise;
+    });
     const forced = ensureCodexAccessToken(upstreamId, accountId, mint, true);
-    await vi.waitFor(() => expect(mint).toHaveBeenCalledTimes(1));
+    await mintEntered.promise;
+    expect(mint).toHaveBeenCalledTimes(1);
 
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).resolves.toEqual(cached);
-    rejectMint(mintFailure);
+    mintResult.reject(mintFailure);
     await expect(forced).rejects.toBe(mintFailure);
   });
 });

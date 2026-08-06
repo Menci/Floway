@@ -370,18 +370,20 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
   });
 
   test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
-    let releaseRefresh!: () => void;
-    const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+    const refreshEntered = Promise.withResolvers<void>();
+    const refreshGate = Promise.withResolvers<void>();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      await refreshGate;
+      refreshEntered.resolve();
+      await refreshGate.promise;
       return new Response(JSON.stringify({
         access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
       }), { status: 200 });
     });
     const lazy = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
     const forced = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher, force: true });
-    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    releaseRefresh();
+    await refreshEntered.promise;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    refreshGate.resolve();
     const results = await Promise.all([lazy, forced]);
     expect(results.map(result => result.entry.token)).toEqual(['at_new', 'at_new']);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
