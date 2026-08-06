@@ -16,7 +16,11 @@ const tokenResponse = (): Response => jsonResponse({
   endpoints: { api: TOKEN_BASE_URL },
 });
 
-const installRepoAndClearCache = async () => {
+const installRepoAndClearCache = async (config: UpstreamRecord['config'] = {
+  githubHost: 'github.com',
+  githubToken: 'ghu_test',
+  user: { id: 1, login: 't', name: null, avatar_url: '' },
+}) => {
   let state: unknown = null;
   const stub: UpstreamRecord = {
     id: UPSTREAM_ID,
@@ -33,7 +37,7 @@ const installRepoAndClearCache = async () => {
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { githubHost: 'github.com', githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config,
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -474,7 +478,11 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
 });
 
 test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
-  await installRepoAndClearCache();
+  await installRepoAndClearCache({
+    githubHost: 'octocorp.ghe.com',
+    githubToken: 'ghu_ghe',
+    user: { id: 1, login: 't', name: null, avatar_url: '' },
+  });
   const observed: string[] = [];
   await withMockedFetch(
     async request => {

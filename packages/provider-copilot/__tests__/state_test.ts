@@ -73,7 +73,7 @@ test('assertCopilotUpstreamState rejects an unknown key inside copilotToken', ()
 
 test.each([
   ['empty token', { token: '', expiresAt: 1, baseUrl: 'https://api.individual.githubcopilot.com' }, 'token must be a non-empty string'],
-  ['non-finite expiry', { token: 'tok', expiresAt: Number.POSITIVE_INFINITY, baseUrl: 'https://api.individual.githubcopilot.com' }, 'expiresAt must be a finite number'],
+  ['non-finite expiry', { token: 'tok', expiresAt: Number.POSITIVE_INFINITY, baseUrl: 'https://api.individual.githubcopilot.com' }, 'expiresAt must be a positive safe integer'],
   ['empty base URL', { token: 'tok', expiresAt: 1, baseUrl: '' }, 'baseUrl must be a non-empty string'],
 ] as const)('assertCopilotUpstreamState rejects a token entry with %s', (_label, copilotToken, message) => {
   assertThrows(
