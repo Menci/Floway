@@ -3,6 +3,7 @@
 
 import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
 import { HttpProtocolError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 import { readHeadSection } from './read-head-section.ts';
@@ -454,20 +455,26 @@ const lengthBody = (
   let released = false;
   const release = (): void => {
     if (released) return;
+    reader.releaseLock();
     released = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
   };
-  const cancelAndRelease = async (reason?: unknown): Promise<void> => {
-    try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> => {
+    readerSettlement ??= collectCleanupFailures([
+      ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+      release,
+    ]);
+    return readerSettlement;
   };
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       if (head.byteLength > total) {
-        controller.error(new HttpProtocolError(
+        const error = new HttpProtocolError(
           `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
-        ));
-        await cancelAndRelease();
+        );
+        const cleanupFailures = await settleReader(error, true);
+        controller.error(failureWithCleanup(error, cleanupFailures, 'Content-Length protocol and cleanup both failed'));
         return;
       }
       if (head.byteLength) {
@@ -475,8 +482,12 @@ const lengthBody = (
         consumed += head.byteLength;
       }
       if (consumed >= total) {
-        controller.close();
-        await cancelAndRelease();
+        const cleanupFailures = await settleReader(undefined, true);
+        if (cleanupFailures.length > 0) {
+          controller.error(cleanupFailure(cleanupFailures, 'Content-Length completion cleanup failed'));
+        } else {
+          controller.close();
+        }
       }
     },
     async pull(controller) {
@@ -490,39 +501,54 @@ const lengthBody = (
       try {
         result = await reader.read();
       } catch (error) {
-        release();
-        throw error;
+        const cleanupFailures = await settleReader(error, false);
+        throw failureWithCleanup(error, cleanupFailures, 'Content-Length read and cleanup both failed');
       }
       const { value, done } = result;
       if (done) {
-        controller.error(new HttpProtocolError(
+        const error = new HttpProtocolError(
           `upstream EOF after ${consumed}/${total} body bytes`,
           'EOF',
-        ));
-        release();
+        );
+        const cleanupFailures = await settleReader(error, false);
+        controller.error(failureWithCleanup(error, cleanupFailures, 'Content-Length protocol and cleanup both failed'));
         return;
       }
       const remain = total - consumed;
-      if (value.byteLength <= remain) {
-        controller.enqueue(copy(value));
-        consumed += value.byteLength;
-      } else {
-        controller.enqueue(copy(value.subarray(0, remain)));
-        consumed += remain;
-        controller.error(new HttpProtocolError(
-          `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
-          'TRAILING_BODY_BYTES',
-        ));
-        await cancelAndRelease();
+      let overrunError: HttpProtocolError | undefined;
+      try {
+        if (value.byteLength <= remain) {
+          controller.enqueue(copy(value));
+          consumed += value.byteLength;
+        } else {
+          controller.enqueue(copy(value.subarray(0, remain)));
+          consumed += remain;
+          overrunError = new HttpProtocolError(
+            `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
+            'TRAILING_BODY_BYTES',
+          );
+        }
+      } catch (error) {
+        const cleanupFailures = await settleReader(error, true);
+        throw failureWithCleanup(error, cleanupFailures, 'Content-Length projection and cleanup both failed');
+      }
+      if (overrunError !== undefined) {
+        const cleanupFailures = await settleReader(overrunError, true);
+        controller.error(failureWithCleanup(overrunError, cleanupFailures, 'Content-Length protocol and cleanup both failed'));
         return;
       }
       if (consumed >= total) {
-        controller.close();
-        await cancelAndRelease();
+        const cleanupFailures = await settleReader(undefined, true);
+        if (cleanupFailures.length > 0) {
+          controller.error(cleanupFailure(cleanupFailures, 'Content-Length completion cleanup failed'));
+        } else {
+          controller.close();
+        }
       }
     },
     async cancel(reason) {
-      await cancelAndRelease(reason);
+      const cleanupFailures = await settleReader(reason, true);
+      if (cleanupFailures.length > 0) throw cleanupFailure(cleanupFailures, 'Content-Length cancellation cleanup failed');
     },
   });
 };
@@ -534,8 +560,16 @@ const untilEofBody = (
   let released = false;
   const release = (): void => {
     if (released) return;
+    reader.releaseLock();
     released = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> => {
+    readerSettlement ??= collectCleanupFailures([
+      ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+      release,
+    ]);
+    return readerSettlement;
   };
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -546,19 +580,26 @@ const untilEofBody = (
       try {
         result = await reader.read();
       } catch (error) {
-        release();
-        throw error;
+        const cleanupFailures = await settleReader(error, false);
+        throw failureWithCleanup(error, cleanupFailures, 'EOF-framed read and cleanup both failed');
       }
       const { value, done } = result;
       if (done) {
-        controller.close();
-        release();
+        const cleanupFailures = await settleReader(undefined, false);
+        if (cleanupFailures.length > 0) controller.error(cleanupFailure(cleanupFailures, 'EOF-framed completion cleanup failed'));
+        else controller.close();
       } else {
-        controller.enqueue(copy(value));
+        try {
+          controller.enqueue(copy(value));
+        } catch (error) {
+          const cleanupFailures = await settleReader(error, true);
+          throw failureWithCleanup(error, cleanupFailures, 'EOF-framed projection and cleanup both failed');
+        }
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
+      const cleanupFailures = await settleReader(reason, true);
+      if (cleanupFailures.length > 0) throw cleanupFailure(cleanupFailures, 'EOF-framed cancellation cleanup failed');
     },
   });
 };

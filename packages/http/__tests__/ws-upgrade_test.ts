@@ -6,7 +6,7 @@
 // the client surfaces the unmasked payload to its consumer.
 
 import { sha1 } from '@noble/hashes/legacy.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
 import { wsUpgradeAndFrame } from '../src/ws-upgrade.ts';
@@ -270,6 +270,27 @@ describe('wsUpgradeAndFrame — handshake', () => {
     await fake.waitForWritten(1);
     controller.abort(reason);
     await expect(upgrade).rejects.toBe(reason);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('keeps handshake abort primary when reader cancellation also fails', async () => {
+    const cancelError = new Error('reader cancel failed');
+    const cancel = vi.fn(async () => { throw cancelError; });
+    const fake = makeFakeDuplex({ readableCancel: cancel });
+    const controller = new AbortController();
+    const reason = new DOMException('stop handshake', 'AbortError');
+    const upgrade = wsUpgradeAndFrame(fake, {
+      host: 'h', path: '/', signal: controller.signal,
+    });
+    await fake.waitForWritten(1);
+
+    controller.abort(reason);
+    const rejection = await upgrade.catch((error: unknown) => error) as AggregateError;
+
+    expect(rejection.errors).toEqual([reason, cancelError]);
+    expect(rejection.cause).toBe(reason);
+    expect(cancel).toHaveBeenCalledOnce();
     expect(fake.readable.locked).toBe(false);
     expect(fake.writable.locked).toBe(false);
   });
@@ -600,6 +621,69 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const { frame, seen } = await readClientFrame(fake, handshakeBytes);
     expect(frame!.opcode).toBe(0x8);
     expect(fake.written().subarray(seen)).toHaveLength(0);
+  });
+
+  it('rejects readable cancellation with ordered reader and writer cleanup failures', async () => {
+    const cancelError = new Error('reader cancel failed');
+    const closeError = new Error('writer close failed');
+    const fake = makeFakeDuplex({
+      readableCancel: async () => { throw cancelError; },
+      writableClose: async () => { throw closeError; },
+    });
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+
+    const rejection = await stream.readable.cancel('stop').catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([cancelError, closeError]);
+    expect(rejection.cause).toBe(cancelError);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('keeps a malformed-frame error primary when reader cancel and writer abort fail', async () => {
+    const cancelError = new Error('reader cancel failed');
+    const abortError = new Error('writer abort failed');
+    const fake = makeFakeDuplex({
+      readableCancel: async () => { throw cancelError; },
+      writableAbort: async () => { throw abortError; },
+    });
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    fake.respond(new Uint8Array([0x82, 0x80, 0, 0, 0, 0]));
+
+    const rejection = await stream.readable.getReader().read().catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors[0]).toMatchObject({ code: 'BAD_HEADERS' });
+    expect(rejection.errors.slice(1)).toEqual([cancelError, abortError]);
+    expect(rejection.cause).toBe(rejection.errors[0]);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('reports one aggregate to both halves when a data write and reader cancellation fail', async () => {
+    const writeError = new Error('frame write failed');
+    const cancelError = new Error('reader cancel failed');
+    const fake = makeFakeDuplex({
+      readableCancel: async () => { throw cancelError; },
+      writableWrite: async index => { if (index === 1) throw writeError; },
+    });
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    const reader = stream.readable.getReader();
+    const pendingRead = reader.read().catch((error: unknown) => error);
+    const writer = stream.writable.getWriter();
+
+    const writeRejection = await writer.write(enc('payload')).catch((error: unknown) => error) as AggregateError;
+    const readRejection = await pendingRead as AggregateError;
+    expect(writeRejection.errors).toEqual([writeError, cancelError]);
+    expect(writeRejection.cause).toBe(writeError);
+    expect(readRejection).toBe(writeRejection);
+    reader.releaseLock();
+    writer.releaseLock();
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
   });
 
   it('writable abort errors the readable and settles both transport locks', async () => {

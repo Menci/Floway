@@ -17,6 +17,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
 import { signalAbortReason } from './abort.ts';
 import { copy } from './bytes.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
 import type { DuplexStream } from './types.ts';
 
 let cryptoInstalled = false;
@@ -106,9 +107,35 @@ export const userspaceTls = async (
   try {
     reader = transport.readable.getReader();
   } catch (error) {
-    writer.releaseLock();
-    throw error;
+    const cleanupFailures = await collectCleanupFailures([() => writer.releaseLock()]);
+    throw failureWithCleanup(error, cleanupFailures, 'TLS reader acquisition and writer cleanup both failed');
   }
+
+  const defer = <T>(operation: () => Promise<T>): Promise<T> => Promise.resolve().then(operation);
+  let readerReleased = false;
+  let readerFailed = false;
+  let readerDone = false;
+  const readTransport = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    try {
+      return await reader.read();
+    } catch (error) {
+      readerFailed = true;
+      throw error;
+    }
+  };
+  const releaseReader = (): void => {
+    if (readerReleased) return;
+    reader.releaseLock();
+    readerReleased = true;
+  };
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown): Promise<readonly unknown[]> => {
+    readerSettlement ??= defer(async () => await collectCleanupFailures([
+      ...(!readerFailed && !readerDone ? [async () => await reader.cancel(reason)] : []),
+      releaseReader,
+    ]));
+    return readerSettlement;
+  };
 
   // Detach the abort listener on every teardown path so a long-lived caller
   // signal (e.g. a request controller shared across many dials) doesn't
@@ -139,28 +166,68 @@ export const userspaceTls = async (
   let resumeDemand: (() => void) | null = null;
 
   let transportWrites = Promise.resolve();
+  let writerFailed = false;
   const queueTransportWrite = (bytes: Uint8Array): void => {
     transportWrites = transportWrites.then(async () => await writer.write(bytes));
     transportWrites.catch(error => {
+      writerFailed = true;
       if (!handshakeOk) handshakeReject(error);
-      else void closePlain(error);
+      void terminate({
+        type: 'failure',
+        primary: error,
+        endTls: false,
+        writer: 'abort',
+        message: 'TLS transport write and cleanup both failed',
+      });
     });
   };
 
-  let writerSettlement: Promise<void> | null = null;
-  const settleWriter = (error?: unknown): Promise<void> => {
-    writerSettlement ??= (async () => {
-      try {
-        if (error !== undefined) await writer.abort(error);
-        else await writer.close();
-      } catch (cause) {
-        logTlsTeardownError(cause);
-      } finally {
-        try { writer.releaseLock(); } catch { /* lock already released */ }
-      }
-    })();
+  let writerReleased = false;
+  const releaseWriter = (): void => {
+    if (writerReleased) return;
+    writer.releaseLock();
+    writerReleased = true;
+  };
+  let writerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleWriter = (mode: 'close' | 'abort', reason: unknown): Promise<readonly unknown[]> => {
+    writerSettlement ??= defer(async () => await collectCleanupFailures([
+      ...(writerFailed
+        ? []
+        : [async () => {
+            if (mode === 'abort') await writer.abort(reason);
+            else await writer.close();
+          }]),
+      releaseWriter,
+    ]));
     return writerSettlement;
   };
+
+  type TerminalOutcome =
+    | { readonly type: 'ok'; readonly cleanupFailures: readonly unknown[] }
+    | { readonly type: 'error'; readonly error: unknown; readonly cleanupFailures: readonly unknown[] };
+  type TerminalIntent =
+    | {
+        readonly type: 'failure';
+        readonly primary: unknown;
+        readonly endTls: boolean;
+        readonly writer: 'abort';
+        readonly message: string;
+      }
+    | {
+        readonly type: 'clean';
+        readonly endTls: boolean;
+        readonly writer: 'close';
+        readonly message: string;
+      }
+    | {
+        readonly type: 'cancel';
+        readonly reason: unknown;
+        readonly endTls: boolean;
+        readonly writer: 'close' | 'abort';
+        readonly message: string;
+      };
+  let terminal: Promise<TerminalOutcome> | null = null;
+  let terminate!: (intent: TerminalIntent) => Promise<TerminalOutcome>;
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
   let handshakeResolve!: () => void;
@@ -176,7 +243,6 @@ export const userspaceTls = async (
   // a passive observer.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
-  let plainSettlement: Promise<void> | null = null;
   const drainPlaintext = (): void => {
     try {
       while (pendingPlaintext.length > 0 && (plainController.desiredSize ?? 0) > 0) {
@@ -187,29 +253,14 @@ export const userspaceTls = async (
         plainController.close();
       }
     } catch (error) {
-      void closePlain(error);
+      void terminate({
+        type: 'failure',
+        primary: error,
+        endTls: true,
+        writer: 'abort',
+        message: 'TLS plaintext delivery and cleanup both failed',
+      });
     }
-  };
-
-  const closePlain = async (error?: unknown): Promise<void> => {
-    if (plainSettlement) return await plainSettlement;
-    plainClosed = true;
-    cleanupSignal();
-    resumeDemand?.();
-    resumeDemand = null;
-    plainSettlement = (async () => {
-      if (error !== undefined) {
-        pendingPlaintext.length = 0;
-        try { plainController.error(error); } catch { /* already closed/errored */ }
-      } else {
-        cleanClosePending = true;
-        drainPlaintext();
-      }
-      // On error, abort the underlying writer so the transport tears down
-      // hard; on a clean teardown, emit a polite FIN.
-      await settleWriter(error);
-    })();
-    await plainSettlement;
   };
 
   const waitForPlainDemand = async (): Promise<void> => {
@@ -232,6 +283,7 @@ export const userspaceTls = async (
     verifyHost?: string;
     onTlsEnd?: (error?: unknown) => void;
   };
+  let tlsClient!: ReturnType<typeof makeTLSClient>;
   const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
@@ -261,13 +313,82 @@ export const userspaceTls = async (
     },
     onTlsEnd(error) {
       if (!handshakeOk) {
-        handshakeReject(error ?? new Error('TLS ended before handshake'));
+        const primary = error ?? new Error('TLS ended before handshake');
+        handshakeReject(primary);
+        void terminate({
+          type: 'failure',
+          primary,
+          endTls: false,
+          writer: 'abort',
+          message: 'TLS handshake and cleanup both failed',
+        });
         return;
       }
-      void closePlain(error);
+      if (error === undefined) {
+        void terminate({
+          type: 'clean',
+          endTls: false,
+          writer: 'close',
+          message: 'TLS close cleanup failed',
+        });
+      } else {
+        void terminate({
+          type: 'failure',
+          primary: error,
+          endTls: false,
+          writer: 'abort',
+          message: 'TLS failure and cleanup both failed',
+        });
+      }
     },
   };
-  const tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
+
+  terminate = (intent: TerminalIntent): Promise<TerminalOutcome> => {
+    if (terminal !== null) return terminal;
+    plainClosed = true;
+    cleanupSignal();
+    resumeDemand?.();
+    resumeDemand = null;
+    terminal = defer(async () => {
+      const reason = intent.type === 'failure'
+        ? intent.primary
+        : intent.type === 'cancel'
+          ? intent.reason
+          : undefined;
+      const [tlsAndWriteFailures, readerFailures, writerFailures] = await Promise.all([
+        collectCleanupFailures([
+          ...(intent.endTls ? [async () => await tlsClient.end()] : []),
+          async () => await transportWrites,
+        ]),
+        settleReader(reason),
+        settleWriter(intent.writer, reason),
+      ]);
+      const cleanupFailures = [
+        ...tlsAndWriteFailures,
+        ...readerFailures,
+        ...writerFailures,
+      ].filter(error => intent.type !== 'failure' || !Object.is(error, intent.primary));
+      const failed = intent.type === 'failure' || cleanupFailures.length > 0;
+      if (failed) {
+        const error = intent.type === 'failure'
+          ? failureWithCleanup(intent.primary, cleanupFailures, intent.message)
+          : cleanupFailure(cleanupFailures, intent.message);
+        pendingPlaintext.length = 0;
+        if (intent.type !== 'cancel') {
+          try { plainController.error(error); } catch { /* consumer already cancelled */ }
+        }
+        return { type: 'error', error, cleanupFailures };
+      }
+      if (intent.type === 'clean') {
+        cleanClosePending = true;
+        drainPlaintext();
+      }
+      return { type: 'ok', cleanupFailures };
+    });
+    return terminal;
+  };
+
+  tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
 
   // App-data downward stream (TLS plaintext → consumer). The cancel hook
   // fires only after the duplex pair has been returned to the consumer,
@@ -280,21 +401,18 @@ export const userspaceTls = async (
       resumeDemand = null;
     },
     // Consumer-initiated cancel (response body fully read or aborted) tears
-    // down our side of the duplex — flag so subsequent TLS-end callbacks
-    // skip their controller calls, and signal end-of-stream upward. Mirror
-    // closePlain's split: an Error reason means the consumer hit a failure,
-    // so we abort the underlying writer rather than emit a polite FIN that
-    // would block on a peer already gone; a clean cancel still closes.
+    // down our side of the duplex. An Error reason hard-aborts the writer;
+    // a clean cancel emits a polite FIN. The cancellation reason is metadata,
+    // so only cleanup failures reject the cancel operation.
     async cancel(reason) {
-      plainClosed = true;
-      pendingPlaintext.length = 0;
-      cleanupSignal();
-      resumeDemand?.();
-      resumeDemand = null;
-      void tlsClient.end().catch(logTlsTeardownError);
-      await reader.cancel(reason).catch(() => {});
-      try { reader.releaseLock(); } catch { /* lock already released */ }
-      await settleWriter(reason instanceof Error ? reason : undefined);
+      const outcome = await terminate({
+        type: 'cancel',
+        reason,
+        endTls: true,
+        writer: reason instanceof Error ? 'abort' : 'close',
+        message: 'TLS readable cancellation cleanup failed',
+      });
+      if (outcome.type === 'error') throw outcome.error;
     },
   });
 
@@ -303,23 +421,38 @@ export const userspaceTls = async (
   // handshake await resolves and the duplex pair is handed back.
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      await tlsClient.write(chunk);
-      await transportWrites;
+      try {
+        await tlsClient.write(chunk);
+        await transportWrites;
+      } catch (error) {
+        const outcome = await terminate({
+          type: 'failure',
+          primary: error,
+          endTls: true,
+          writer: 'abort',
+          message: 'TLS application write and cleanup both failed',
+        });
+        throw outcome.type === 'error' ? outcome.error : error;
+      }
     },
     async close() {
-      // Both promises must be awaited — a bare `void promise` discards
-      // rejection and crashes Node with unhandled-rejection when the
-      // underlying stream is already closed. Surface teardown errors via
-      // a debug log so genuine bugs aren't silenced, but never let one
-      // mask the close itself (peer already gone is normal here).
-      try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
-      await transportWrites;
-      await settleWriter();
+      const outcome = await terminate({
+        type: 'clean',
+        endTls: true,
+        writer: 'close',
+        message: 'TLS writable close cleanup failed',
+      });
+      if (outcome.type === 'error') throw outcome.error;
     },
     async abort(reason) {
-      try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
-      await transportWrites.catch(() => {});
-      await settleWriter(reason);
+      const outcome = await terminate({
+        type: 'cancel',
+        reason,
+        endTls: true,
+        writer: 'abort',
+        message: 'TLS writable abort cleanup failed',
+      });
+      if (outcome.type === 'error') throw outcome.error;
     },
   });
 
@@ -329,24 +462,53 @@ export const userspaceTls = async (
   void (async () => {
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await readTransport();
         if (done) {
-          await tlsClient.end().catch(logTlsTeardownError);
+          readerDone = true;
+          if (terminal !== null) {
+            await terminal;
+            return;
+          }
+          if (!handshakeOk) {
+            const primary = new Error('TLS ended before handshake');
+            handshakeReject(primary);
+            await terminate({
+              type: 'failure',
+              primary,
+              endTls: true,
+              writer: 'abort',
+              message: 'TLS handshake and cleanup both failed',
+            });
+            return;
+          }
           // Reclaim's onTlsEnd usually fires for clean close-notify, but
           // a raw transport EOF without an alert wouldn't trigger it.
-          // Drive closePlain ourselves so the consumer's reader unsticks
-          // when the transport simply hangs up.
-          await closePlain();
+          // Drive the terminal coordinator ourselves so the consumer's reader
+          // unsticks when the transport simply hangs up.
+          await terminate({
+            type: 'clean',
+            endTls: true,
+            writer: 'close',
+            message: 'TLS EOF cleanup failed',
+          });
           return;
         }
         await tlsClient.handleReceivedBytes(value);
+        if (terminal !== null) {
+          await terminal;
+          return;
+        }
         await waitForPlainDemand();
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
-      else await closePlain(e);
-    } finally {
-      try { reader.releaseLock(); } catch { /* lock already released */ }
+      await terminate({
+        type: 'failure',
+        primary: e,
+        endTls: false,
+        writer: 'abort',
+        message: handshakeOk ? 'TLS read and cleanup both failed' : 'TLS handshake and cleanup both failed',
+      });
     }
   })();
 
@@ -355,8 +517,13 @@ export const userspaceTls = async (
     const onAbort = (): void => {
       const reason = signalAbortReason(captured);
       if (!handshakeOk) handshakeReject(reason);
-      else void closePlain(reason);
-      void reader.cancel(reason).catch(() => {});
+      void terminate({
+        type: 'failure',
+        primary: reason,
+        endTls: true,
+        writer: 'abort',
+        message: handshakeOk ? 'TLS abort and cleanup both failed' : 'TLS handshake abort and cleanup both failed',
+      });
     };
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => { captured.removeEventListener('abort', onAbort); };
@@ -368,31 +535,23 @@ export const userspaceTls = async (
   }
 
   try {
-    await tlsClient.startHandshake();
-    await transportWrites;
-    await handshakeDone;
+    const startAndWrites = tlsClient.startHandshake().then(async () => await transportWrites);
+    await Promise.all([startAndWrites, handshakeDone]);
   } catch (err) {
-    cleanupSignal();
-    // Handshake never completed: the reader still holds the transport.readable
-    // lock and the writer holds transport.writable. Cancel both so the caller
-    // can close the underlying socket cleanly without an orphaned stream lock.
-    await reader.cancel(err).catch(() => {});
-    try { reader.releaseLock(); } catch { /* lock already released */ }
-    await settleWriter(err);
-    throw err;
+    const outcome = await terminate({
+      type: 'failure',
+      primary: err,
+      endTls: true,
+      writer: 'abort',
+      message: 'TLS handshake and cleanup both failed',
+    });
+    throw outcome.type === 'error' ? outcome.error : err;
+  }
+
+  if (terminal !== null) {
+    const outcome = await terminal;
+    if (outcome.type === 'error') throw outcome.error;
   }
 
   return { readable: plainReadable, writable: plainWritable };
-};
-
-// Keep teardown errors visible at debug level — they're usually "peer
-// already closed" but a real bug would otherwise be silenced. Gate behind
-// an env flag so we don't log on hot paths where any console output is
-// undesirable (e.g. inside a Worker request).
-interface NodeProcessShape { env?: { DEBUG_USERSPACE_TLS?: string } }
-const logTlsTeardownError = (e: unknown): void => {
-  const proc = (globalThis as unknown as { process?: NodeProcessShape }).process;
-  if (proc?.env?.DEBUG_USERSPACE_TLS) {
-    console.debug('[userspace-tls] teardown:', e);
-  }
 };

@@ -120,6 +120,49 @@ describe('dialShadowsocks — AEAD frame round trip', () => {
     });
     expect(srv.closed()).toBe(true);
   });
+
+  it('rejects readable cancellation with ordered reader and socket cleanup failures', async () => {
+    const cancelError = new Error('reader cancel failed');
+    const closeError = new Error('socket close failed');
+    const fake = makeFakeSocketDial({ readableCancel: cancelError, close: closeError });
+    const result = await dialShadowsocks(config(), target, { socketDial: fake.socketDial });
+
+    const rejection = await result.readable.cancel('stop').catch((error: unknown) => error) as AggregateError;
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors).toEqual([cancelError, closeError]);
+    expect(rejection.cause).toBe(cancelError);
+  });
+
+  it('keeps an application write failure primary while tearing down the reader and socket', async () => {
+    const writeError = new Error('application write failed');
+    const cancelError = new Error('reader cancel failed');
+    const closeError = new Error('socket close failed');
+    const fake = makeFakeSocketDial({
+      readableCancel: cancelError,
+      close: closeError,
+      writableWrite: index => { if (index === 1) throw writeError; },
+    });
+    const result = await dialShadowsocks(config(), target, { socketDial: fake.socketDial });
+    const writer = result.writable.getWriter();
+
+    const rejection = await writer.write(new Uint8Array([1]))
+      .catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([writeError, cancelError, closeError]);
+    expect(rejection.cause).toBe(writeError);
+    writer.releaseLock();
+  });
+
+  it('wraps a real transport read failure once without reporting it again as cleanup', async () => {
+    const readError = new Error('transport read failed');
+    const fake = makeFakeSocketDial();
+    const result = await dialShadowsocks(config(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    srv.failResponse(readError);
+
+    const rejection = await result.readable.getReader().read().catch((error: unknown) => error) as Error;
+    expect(rejection).not.toBeInstanceOf(AggregateError);
+    expect(rejection).toMatchObject({ name: 'ProxyDialError', cause: readError });
+  });
 });
 
 describe('evpBytesToKey — extended password vectors', () => {

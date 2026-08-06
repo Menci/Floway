@@ -3,6 +3,7 @@
 // the underlying reader.
 
 import { concat, copy } from './bytes.ts';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
 import { HttpProtocolError } from './errors.ts';
 import { ASCII_DECODER, TCHAR, decodeHttp1Head, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 
@@ -43,17 +44,34 @@ export const decodeChunked = (
     buf = growingStorage!.subarray(0, required);
   };
   let released = false;
+  let readerFailed = false;
+  const read = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
+    try {
+      return await reader.read();
+    } catch (error) {
+      readerFailed = true;
+      throw error;
+    }
+  };
   const release = (): void => {
     if (released) return;
+    reader.releaseLock();
     released = true;
-    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  let readerSettlement: Promise<readonly unknown[]> | null = null;
+  const settleReader = (reason: unknown, cancelReader: boolean): Promise<readonly unknown[]> => {
+    readerSettlement ??= collectCleanupFailures([
+      ...(cancelReader ? [async () => await reader.cancel(reason)] : []),
+      release,
+    ]);
+    return readerSettlement;
   };
   const fail = async (
     controller: ReadableStreamDefaultController<Uint8Array>,
     error: HttpProtocolError,
   ): Promise<void> => {
-    controller.error(error);
-    try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
+    const cleanupFailures = await settleReader(error, true);
+    controller.error(failureWithCleanup(error, cleanupFailures, 'Chunked protocol and cleanup both failed'));
   };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -70,7 +88,7 @@ export const decodeChunked = (
                 return;
               }
               scanFrom = Math.max(0, buf.byteLength - 1);
-              const more = await reader.read();
+              const more = await read();
               if (more.done) {
                 await fail(controller, new HttpProtocolError('chunked: EOF in size', 'EOF'));
                 return;
@@ -124,7 +142,7 @@ export const decodeChunked = (
             state = need === 0 ? 'trailers' : 'data';
           } else if (state === 'data') {
             if (buf.byteLength === 0) {
-              const more = await reader.read();
+              const more = await read();
               if (more.done) {
                 await fail(controller, new HttpProtocolError('chunked: EOF mid-data', 'EOF'));
                 return;
@@ -140,7 +158,7 @@ export const decodeChunked = (
             return;
           } else if (state === 'after-data-crlf') {
             while (buf.byteLength < 2) {
-              const more = await reader.read();
+              const more = await read();
               if (more.done) {
                 await fail(controller, new HttpProtocolError(
                   'chunked: EOF before CRLF after data',
@@ -175,7 +193,7 @@ export const decodeChunked = (
                 return;
               }
               scanFrom = Math.max(0, buf.byteLength - 1);
-              const more = await reader.read();
+              const more = await read();
               if (more.done) {
                 await fail(controller, new HttpProtocolError('chunked: EOF in trailers', 'EOF'));
                 return;
@@ -191,8 +209,12 @@ export const decodeChunked = (
                 ));
                 return;
               }
-              controller.close();
-              try { await reader.cancel(); } catch { /* reader already cancelled */ } finally { release(); }
+              const cleanupFailures = await settleReader(undefined, true);
+              if (cleanupFailures.length > 0) {
+                controller.error(cleanupFailure(cleanupFailures, 'Chunked completion cleanup failed'));
+              } else {
+                controller.close();
+              }
               return;
             }
             validateTrailerLine(buf.subarray(0, idx));
@@ -209,12 +231,13 @@ export const decodeChunked = (
           }
         }
       } catch (error) {
-        try { await reader.cancel(error); } catch { /* reader already cancelled */ } finally { release(); }
-        throw error;
+        const cleanupFailures = await settleReader(error, !readerFailed);
+        throw failureWithCleanup(error, cleanupFailures, 'Chunked read and cleanup both failed');
       }
     },
     async cancel(reason) {
-      try { await reader.cancel(reason); } catch { /* reader already cancelled */ } finally { release(); }
+      const cleanupFailures = await settleReader(reason, true);
+      if (cleanupFailures.length > 0) throw cleanupFailure(cleanupFailures, 'Chunked cancellation cleanup failed');
     },
   });
 };

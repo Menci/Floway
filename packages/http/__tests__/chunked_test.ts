@@ -72,6 +72,41 @@ describe('decodeChunked — error vectors', () => {
     expect((err as Error).message).toMatch(/EOF in trailers/);
   });
 
+  it('keeps the protocol failure primary when cancel and release also fail', async () => {
+    const cancelError = new Error('cancel failed');
+    const releaseError = new Error('release failed');
+    const reader = {
+      read: async () => ({ done: true, value: undefined }),
+      cancel: async () => { throw cancelError; },
+      releaseLock: () => { throw releaseError; },
+    } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+    const rejection = await drain(decodeChunked(reader, enc('not-hex\r\n')))
+      .catch((error: unknown) => error) as AggregateError;
+
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors[0]).toMatchObject({ code: 'CHUNK_BAD_SIZE' });
+    expect(rejection.errors.slice(1)).toEqual([cancelError, releaseError]);
+    expect(rejection.cause).toBe(rejection.errors[0]);
+  });
+
+  it('rejects consumer cancellation when the owned reader cancel fails', async () => {
+    const cancelError = new Error('cancel failed');
+    const reader = {
+      cancel: async () => { throw cancelError; },
+      releaseLock: () => {},
+    } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+
+    await expect(decodeChunked(reader, new Uint8Array(0)).cancel('stop')).rejects.toBe(cancelError);
+  });
+
+  it('preserves a real transport read rejection without cancelling the errored reader again', async () => {
+    const readError = new Error('transport read failed');
+    const source = new ReadableStream<Uint8Array>({ pull: async () => { throw readError; } });
+
+    await expect(drain(decodeChunked(source.getReader(), new Uint8Array(0)))).rejects.toBe(readError);
+    expect(source.locked).toBe(false);
+  });
+
 });
 
 describe('decodeChunked — incremental reads', () => {
