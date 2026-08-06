@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { postHandshakeReadable } from '../src/post-handshake-readable.ts';
 import type { DialedSocket } from '../src/types.ts';
+import { CLEANUP_OPERATION_DEADLINE_MS, CleanupTimeoutError } from '@floway-dev/http/cleanup';
+
+afterEach(() => vi.useRealTimers());
 
 const fakeReader = (overrides: {
   read?: () => Promise<ReadableStreamReadResult<Uint8Array>>;
@@ -77,5 +80,42 @@ describe('postHandshakeReadable cleanup failures', () => {
     expect(close).toHaveBeenCalledOnce();
     resolveCancel();
     await cancellation;
+  });
+
+  it('bounds never-settling reader and socket cleanup operations', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn(async () => await new Promise<void>(() => {}));
+    const close = vi.fn(async () => await new Promise<void>(() => {}));
+    const stream = postHandshakeReadable(
+      fakeSocket(close),
+      fakeReader({ cancel }),
+      new Uint8Array(0),
+    );
+
+    const cancellation = stream.cancel('stop').catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(CLEANUP_OPERATION_DEADLINE_MS);
+    const rejection = await cancellation as AggregateError;
+    expect(rejection.errors).toHaveLength(2);
+    expect(rejection.errors.every(error => error instanceof CleanupTimeoutError)).toBe(true);
+    expect(rejection.cause).toBe(rejection.errors[0]);
+  });
+
+  it('propagates an actual undefined cancellation rejection', async () => {
+    const stream = postHandshakeReadable(
+      fakeSocket(async () => {}),
+      fakeReader({ cancel: vi.fn(async () => { throw undefined; }) }),
+      new Uint8Array(0),
+    );
+    let rejection: unknown = Symbol('not rejected');
+
+    try {
+      await stream.cancel('stop');
+    } catch (error) {
+      rejection = error;
+    }
+    expect(rejection).toBeUndefined();
   });
 });

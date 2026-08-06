@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
+import { CLEANUP_OPERATION_DEADLINE_MS, CleanupTimeoutError } from '../src/cleanup.ts';
 import { userspaceTls } from '../src/tls.ts';
 
 interface MockTlsOptions {
@@ -82,6 +83,8 @@ beforeEach(() => {
   tlsMock.handledChunks = 0;
   tlsMock.onHandled = null;
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe('userspaceTls lifecycle', () => {
   it('does not resolve the handshake before the ClientHello transport write settles', async () => {
@@ -259,6 +262,29 @@ describe('userspaceTls lifecycle', () => {
 
     await expect(tls.writable.abort('stop')).rejects.toBe(writeError);
     await new Promise<void>(resolve => setTimeout(resolve, 0));
+    expect(transport.readable.locked).toBe(false);
+    expect(transport.writable.locked).toBe(false);
+  });
+
+  it('bounds never-settling reader cancel and writer close while starting both immediately', async () => {
+    const cancel = vi.fn(async () => await new Promise<void>(() => {}));
+    const close = vi.fn(async () => await new Promise<void>(() => {}));
+    const transport = makeFakeDuplex({
+      readableCancel: cancel,
+      writableClose: close,
+    });
+    const tls = await userspaceTls(transport, { host: 'example.com' });
+    vi.useFakeTimers();
+
+    const cancellation = tls.readable.cancel('stop').catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(CLEANUP_OPERATION_DEADLINE_MS);
+    const rejection = await cancellation as AggregateError;
+    expect(rejection.errors).toHaveLength(2);
+    expect(rejection.errors.every(error => error instanceof CleanupTimeoutError)).toBe(true);
+    expect(rejection.cause).toBe(rejection.errors[0]);
     expect(transport.readable.locked).toBe(false);
     expect(transport.writable.locked).toBe(false);
   });

@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '../src/cleanup.ts';
+import { CleanupTimeoutError, cleanupFailure, collectCleanupFailures, failureWithCleanup } from '../src/cleanup.ts';
+
+afterEach(() => vi.useRealTimers());
 
 describe('cleanup failure composition', () => {
   it('runs every operation and keeps cleanup failures in operation order', async () => {
@@ -36,5 +38,25 @@ describe('cleanup failure composition', () => {
 
     expect(failures).toEqual([undefined]);
     expect(cleanupFailure(failures, 'cleanup failed')).toBeUndefined();
+  });
+
+  it('bounds a never-settling operation, continues cleanup, and observes late rejection', async () => {
+    vi.useFakeTimers();
+    let rejectLate!: (reason?: unknown) => void;
+    const never = new Promise<void>((_resolve, reject) => { rejectLate = reject; });
+    const afterTimeout = vi.fn();
+    const settlement = collectCleanupFailures([
+      async () => await never,
+      afterTimeout,
+    ], { timeoutMs: 20 });
+
+    await vi.advanceTimersByTimeAsync(20);
+    const failures = await settlement;
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeInstanceOf(CleanupTimeoutError);
+    expect(afterTimeout).toHaveBeenCalledOnce();
+
+    rejectLate(undefined);
+    await Promise.resolve();
   });
 });

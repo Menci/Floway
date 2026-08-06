@@ -6,10 +6,13 @@
 // the client surfaces the unmasked payload to its consumer.
 
 import { sha1 } from '@noble/hashes/legacy.js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
+import { CLEANUP_OPERATION_DEADLINE_MS, CleanupTimeoutError } from '../src/cleanup.ts';
 import { wsUpgradeAndFrame } from '../src/ws-upgrade.ts';
+
+afterEach(() => vi.useRealTimers());
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -637,6 +640,31 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const rejection = await stream.readable.cancel('stop').catch((error: unknown) => error) as AggregateError;
     expect(rejection.errors).toEqual([cancelError, closeError]);
     expect(rejection.cause).toBe(cancelError);
+    expect(fake.readable.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+  });
+
+  it('bounds never-settling reader cancel and writer close while starting both immediately', async () => {
+    const cancel = vi.fn(async () => await new Promise<void>(() => {}));
+    const close = vi.fn(async () => await new Promise<void>(() => {}));
+    const fake = makeFakeDuplex({
+      readableCancel: cancel,
+      writableClose: close,
+    });
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    vi.useFakeTimers();
+
+    const cancellation = stream.readable.cancel('stop').catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(CLEANUP_OPERATION_DEADLINE_MS);
+    const rejection = await cancellation as AggregateError;
+    expect(rejection.errors).toHaveLength(2);
+    expect(rejection.errors.every(error => error instanceof CleanupTimeoutError)).toBe(true);
+    expect(rejection.cause).toBe(rejection.errors[0]);
     expect(fake.readable.locked).toBe(false);
     expect(fake.writable.locked).toBe(false);
   });
