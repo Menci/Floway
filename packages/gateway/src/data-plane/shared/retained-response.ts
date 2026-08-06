@@ -55,8 +55,12 @@ export const retainResponse = (
   backgroundScheduler: BackgroundScheduler,
   onCancel?: (reason: unknown) => void,
   limits: RetainedResponseLimits = RETAINED_RESPONSE_LIMITS,
+  onSettled?: () => void,
 ): Response => {
-  if (response.body === null) return response;
+  if (response.body === null) {
+    onSettled?.();
+    return response;
+  }
   for (const [name, value] of Object.entries(limits)) {
     if (!Number.isSafeInteger(value) || value <= 0 || value > 0x7FFF_FFFF) {
       throw new RangeError(`Retained response ${name} must be a positive 32-bit timer value`);
@@ -89,6 +93,7 @@ export const retainResponse = (
     if (settled) return;
     settled = true;
     if (postDisconnectTimer !== undefined) clearTimeout(postDisconnectTimer);
+    onSettled?.();
     if (error === undefined) resolveLifetime();
     else rejectLifetime(error);
   };

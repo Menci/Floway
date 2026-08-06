@@ -9,12 +9,16 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 // `overrides` to nudge what each test cares about.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
   const clientDisconnectController = overrides.clientDisconnectController ?? new AbortController();
+  const executionController = overrides.executionController ?? new AbortController();
   return {
     apiKeyId: 'key_test',
     requestStartedAt: 0,
     upstreamIds: null,
     clientDisconnectSignal: overrides.clientDisconnectSignal ?? clientDisconnectController.signal,
     clientDisconnectController,
+    executionSignal: overrides.executionSignal ?? executionController.signal,
+    executionController,
+    finishExecution: () => {},
     wantsStream: false,
     runtimeLocation: 'TEST',
     dump: null,

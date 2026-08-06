@@ -11,6 +11,7 @@ export const RESPONSES_WEBSOCKET_LIMITS = {
   maxMessageBytes: 32 * 1024 * 1024,
   maxPendingTurns: 2,
   maxPendingBytes: 32 * 1024 * 1024,
+  maxBufferedOutputBytes: 32 * 1024 * 1024,
   maxConnectionDurationMs: 60 * 60 * 1000,
 } as const;
 

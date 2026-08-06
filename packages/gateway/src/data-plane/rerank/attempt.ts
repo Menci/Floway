@@ -29,7 +29,7 @@ export const rerankAttempt = async (
   const result: ProviderRerankCallResult = await candidate.provider.instance.callRerank(
     model,
     request,
-    undefined,
+    ctx.executionSignal,
     buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {

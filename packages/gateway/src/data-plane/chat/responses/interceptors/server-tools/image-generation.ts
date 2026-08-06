@@ -905,6 +905,7 @@ interface ShimState {
   backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
   clientDisconnectSignal: AbortSignal;
+  executionSignal: AbortSignal;
   imageDispatchCount: number;
 }
 
@@ -1098,8 +1099,8 @@ const issueImageCall = async (
       wrapUpstreamCall: stampUpstreamCallStart(attempt, state.clientDisconnectSignal),
     };
     const { response, modelKey } = await (editRequest === null
-      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), undefined, opts)
-      : provider.instance.callImagesEdits(model, editRequest, undefined, opts));
+      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.executionSignal, opts)
+      : provider.instance.callImagesEdits(model, editRequest, state.executionSignal, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -1437,6 +1438,7 @@ export const createImageGenerationServerTool = (
 
   const materializer = createRemoteImageMaterializer({
     clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
+    executionSignal: gatewayCtx.executionSignal,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
   }, maxRemoteImageTotalBytes);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
@@ -1490,6 +1492,7 @@ export const createImageGenerationServerTool = (
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
     clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
+    executionSignal: gatewayCtx.executionSignal,
     imageDispatchCount: 0,
   };
 

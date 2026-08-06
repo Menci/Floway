@@ -93,7 +93,7 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
     model: request.model,
     kind: 'transcription',
     modelServesEndpoint: model => model.endpoints.audioTranscriptions !== undefined,
-    call: (provider, model, opts) => provider.instance.callAudioTranscriptions(model, { entries: request.entries }, undefined, opts),
+    call: (provider, model, opts) => provider.instance.callAudioTranscriptions(model, { entries: request.entries }, ctx.executionSignal, opts),
     response: { format: 'strategy', respond: respondAudioTranscription },
   });
   return finalizeGatewayResponse(ctx, response);

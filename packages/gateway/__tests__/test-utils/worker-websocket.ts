@@ -7,6 +7,7 @@ type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
 export class TestWorkerWebSocket extends EventTarget {
   peer?: TestWorkerWebSocket;
   readyState: number = WebSocket.OPEN;
+  bufferedAmount = 0;
   binaryType: BinaryType = 'blob';
   closeCode?: number;
   closeReason?: string;

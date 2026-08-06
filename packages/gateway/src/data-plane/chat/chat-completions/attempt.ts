@@ -46,7 +46,7 @@ export const chatCompletionsAttempt = {
         const providerResult = await candidate.provider.instance.callChatCompletions(
           providerModelOf(candidate),
           body,
-          undefined,
+          ctx.executionSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx, billableUsageFromChatCompletionsEvent);

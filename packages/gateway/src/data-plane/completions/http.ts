@@ -89,7 +89,7 @@ export const completions = async (c: Context): Promise<Response> => {
     modelServesEndpoint: model => model.endpoints.completions !== undefined,
     call: (provider, model, opts) => {
       serving = { model, upstreamId: provider.upstreamId };
-      return provider.instance.callCompletions(model, upstreamBody, undefined, opts);
+      return provider.instance.callCompletions(model, upstreamBody, ctx.executionSignal, opts);
     },
     response: {
       format: 'media-type',

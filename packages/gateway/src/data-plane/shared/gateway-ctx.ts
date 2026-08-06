@@ -1,5 +1,5 @@
 import type { OwnedRequestBody } from './request-body.ts';
-import { retainResponse } from './retained-response.ts';
+import { retainResponse, RETAINED_RESPONSE_LIMITS } from './retained-response.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -32,6 +32,9 @@ export interface GatewayCtx {
   readonly clientDisconnectSignal: AbortSignal;
   readonly wantsStream: boolean;
   readonly clientDisconnectController: AbortController;
+  readonly executionSignal: AbortSignal;
+  readonly executionController: AbortController;
+  readonly finishExecution: () => void;
   readonly backgroundScheduler: BackgroundScheduler;
   readonly attempt: AttemptState;
   // The deployment colo / region, used both as the `runtimeLocation`
@@ -50,6 +53,9 @@ export interface CreateGatewayCtxOptions {
   // WebSocket call sites own the connection controller. HTTP call sites let
   // the factory create one and mirror the inbound Request signal into it.
   clientDisconnectController?: AbortController;
+  // WebSocket turns supply this so a server-owned connection policy can stop
+  // execution without changing ordinary client-disconnect semantics.
+  executionController?: AbortController;
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
   // snapshot reflects the exact bytes the handler parsed. WebSocket
@@ -95,6 +101,25 @@ const createRequestLinkedAbortController = (requestSignal: AbortSignal): AbortCo
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
   const controller = opts.clientDisconnectController ?? createRequestLinkedAbortController(c.req.raw.signal);
+  const executionController = opts.executionController ?? new AbortController();
+  let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  const executionTimer = setTimeout(() => {
+    executionController.abort(new Error('Gateway upstream execution exceeded one hour'));
+  }, RETAINED_RESPONSE_LIMITS.totalTimeoutMs);
+  unrefTimer(executionTimer);
+  const finishExecution = (): void => {
+    clearTimeout(executionTimer);
+    if (disconnectTimer !== undefined) clearTimeout(disconnectTimer);
+  };
+  const scheduleDisconnectDeadline = (): void => {
+    if (disconnectTimer !== undefined || executionController.signal.aborted) return;
+    disconnectTimer = setTimeout(() => {
+      executionController.abort(new Error('Gateway upstream drain exceeded the post-disconnect deadline'));
+    }, RETAINED_RESPONSE_LIMITS.postDisconnectDrainTimeoutMs);
+    unrefTimer(disconnectTimer);
+  };
+  if (controller.signal.aborted) scheduleDisconnectDeadline();
+  else controller.signal.addEventListener('abort', scheduleDisconnectDeadline, { once: true });
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
@@ -106,6 +131,9 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     clientDisconnectSignal: controller.signal,
     wantsStream: opts.wantsStream,
     clientDisconnectController: controller,
+    executionSignal: executionController.signal,
+    executionController,
+    finishExecution,
     backgroundScheduler: opts.backgroundScheduler,
     attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
     runtimeLocation: getRuntimeLocation(c.req.raw),
@@ -123,4 +151,12 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
     reason => {
       if (!ctx.clientDisconnectSignal.aborted) ctx.clientDisconnectController.abort(reason);
     },
+    RETAINED_RESPONSE_LIMITS,
+    ctx.finishExecution,
   );
+
+const unrefTimer = (timer: unknown): void => {
+  if (typeof timer !== 'object' || timer === null) return;
+  const unref = Reflect.get(timer, 'unref');
+  if (typeof unref === 'function') Reflect.apply(unref, timer, []);
+};

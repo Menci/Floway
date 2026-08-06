@@ -178,10 +178,12 @@ const mockControlledResponsesTurn = (
   finalMetadata: Promise<EventResultMetadata> = Promise.resolve({ modelIdentity: TEST_MODEL_IDENTITY }),
 ) => {
   const turnSignal = deferred<AbortSignal>();
+  const executionSignal = deferred<AbortSignal>();
   const controlledEvents = deferred<ControlledResponsesEvents>();
   const metadataRead = deferred<void>();
   const generate = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
     const signal = ctx.clientDisconnectSignal;
+    executionSignal.resolve(ctx.executionSignal);
     const events = createEvents(signal);
     ctx.affinity.select(stubModelCandidate({ model: { id: 'gpt-direct-responses' } }));
     turnSignal.resolve(signal);
@@ -193,6 +195,7 @@ const mockControlledResponsesTurn = (
   return {
     calls: () => generate.mock.calls.length,
     signal: turnSignal.promise,
+    executionSignal: executionSignal.promise,
     events: controlledEvents.promise,
     metadataRead: metadataRead.promise,
   };
@@ -1793,8 +1796,9 @@ test('Responses WebSocket close stops downstream keep-alives while draining an i
       assertEquals(recorded.messages.length, 1);
       client.close();
       assertEquals((await turn.signal).aborted, true);
-      await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS * 3);
+      await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
       assertEquals(recorded.messages.length, 1);
+      assertEquals((await turn.executionSignal).aborted, false);
       finishControlledResponsesEvents(events);
       await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the drained turn after the client closed');
       recorded.stop();
@@ -1837,6 +1841,7 @@ test('Responses WebSocket expires an active connection at exactly 60 minutes', a
       assertEquals(client.closeCode, 1000);
       assertEquals(client.closeReason, RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code);
       assertEquals((await turn.signal).aborted, true);
+      assertEquals((await turn.executionSignal).aborted, true);
 
       finishControlledResponsesEvents(events, true);
       await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the expired turn');
@@ -1955,6 +1960,31 @@ test('Responses WebSocket send failures close downstream delivery and drain the 
     assertEquals(client.closeCode, 1011);
     assertEquals(client.closeReason, 'downstream_send_failed');
     await flushAsyncWork();
+    assertEquals(turn.calls(), 1);
+  });
+});
+
+test('Responses WebSocket closes a session whose downstream buffer is full while draining its active turn', async () => {
+  const { apiKey } = await setupAppTest();
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
+
+  await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const pair = activeRuntime().pairs.at(-1);
+    assertExists(pair);
+    pair.server.bufferedAmount = RESPONSES_WEBSOCKET_LIMITS.maxBufferedOutputBytes;
+    client.send(JSON.stringify({
+      type: 'response.create',
+      response: { model: 'gpt-direct-responses', input: 'fill downstream' },
+    }));
+    const events = await promiseWithin(turn.events, 'Responses WebSocket did not create the buffered stream');
+    await promiseWithin(events.secondNextStarted, 'Responses WebSocket did not keep draining after buffer saturation');
+    finishControlledResponsesEvents(events);
+    await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the buffer-saturated turn');
+
+    assertEquals(client.readyState, WebSocket.CLOSED);
+    assertEquals(client.closeCode, 1011);
+    assertEquals(client.closeReason, 'downstream_send_failed');
     assertEquals(turn.calls(), 1);
   });
 });

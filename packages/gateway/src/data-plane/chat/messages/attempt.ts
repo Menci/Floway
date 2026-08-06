@@ -63,7 +63,7 @@ export const messagesAttempt = {
         const providerResult = await candidate.provider.instance.callMessages(
           providerModelOf(candidate),
           body,
-          undefined,
+          ctx.executionSignal,
           buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());

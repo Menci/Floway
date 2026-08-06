@@ -42,6 +42,7 @@ interface WorkerWebSocket extends WebSocket {
 
 interface ResponsesWebSocketSocket {
   readonly readyState: number;
+  readonly bufferedAmount?: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
 }
@@ -136,6 +137,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   const ingressBudget = new ResponsesWebSocketIngressBudget();
   let closed = false;
   let activeClientDisconnectController: AbortController | undefined;
+  let activeExecutionController: AbortController | undefined;
   let activeTurn: Promise<void> | undefined;
   let connectionLimitTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -200,12 +202,13 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     for (const turn of queuedTurns.splice(0)) turn.reservation.release();
   };
 
-  const closeActiveRequest = (reason?: unknown): void => {
+  const closeActiveRequest = (reason?: unknown, abortExecution = false): void => {
     if (closed) return;
     closed = true;
     clearConnectionLimitTimer();
     discardQueuedTurns();
     activeClientDisconnectController?.abort(reason);
+    if (abortExecution) activeExecutionController?.abort(reason);
     sessionClosedResolve?.();
   };
 
@@ -225,9 +228,10 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     error: Record<string, unknown>,
     closeCode: number,
     closeReason: string,
+    abortExecution = false,
   ): void => {
     sendError(socket, status, error);
-    closeActiveRequest(new WebSocketClientMessageError(String(error.message ?? closeReason)));
+    closeActiveRequest(new WebSocketClientMessageError(String(error.message ?? closeReason)), abortExecution);
     if (socket.readyState === WebSocket.OPEN) socket.close(closeCode, closeReason);
   };
 
@@ -245,7 +249,9 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
       }
 
       const clientDisconnectController = new AbortController();
+      const executionController = new AbortController();
       activeClientDisconnectController = clientDisconnectController;
+      activeExecutionController = executionController;
       try {
         await handleClientMessage(
           c,
@@ -254,12 +260,14 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           turn.prepared.bytes,
           authenticatedRawKey,
           clientDisconnectController,
+          executionController,
           () => closed,
           reason => closeAfterDownstreamLoss(turn.socket, reason),
           sessionScheduler,
         );
       } finally {
         if (activeClientDisconnectController === clientDisconnectController) activeClientDisconnectController = undefined;
+        if (activeExecutionController === executionController) activeExecutionController = undefined;
       }
     })()
       // WS-specific top-level: Hono's onError never runs for callbacks fired off
@@ -296,6 +304,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
           1000,
           RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR.code,
+          true,
         );
       }, RESPONSES_WEBSOCKET_LIMITS.maxConnectionDurationMs);
       unrefTimer(connectionLimitTimer);
@@ -326,7 +335,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           type: 'rate_limit_error',
           code: RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
           message: 'Responses WebSocket queue capacity exceeded; open a new connection and retry.',
-        }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
+        }, 1008, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE, true);
         return;
       }
 
@@ -355,6 +364,7 @@ const handleClientMessage = async (
   requestBytes: Uint8Array,
   authenticatedRawKey: string,
   clientDisconnectController: AbortController,
+  executionController: AbortController,
   isClosed: () => boolean,
   onDownstreamLoss: (reason?: unknown) => void,
   backgroundScheduler: BackgroundScheduler,
@@ -437,6 +447,7 @@ const handleClientMessage = async (
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       clientDisconnectController,
+      executionController,
       // The WS upgrade has no HTTP body; the dump's request body is the
       // per-turn JSON frame bytes so an operator reading the dashboard
       // sees the exact `response.create` payload the client sent.
@@ -499,6 +510,8 @@ const handleClientMessage = async (
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }
+  } finally {
+    ctx?.finishExecution();
   }
 };
 
@@ -928,12 +941,20 @@ const sendJson = (
     ? value
     : { ...value, event_id: eventId };
   let text: string;
+  let byteLength: number;
   try {
     text = JSON.stringify(payload);
+    byteLength = utf8ByteLength(text);
+    if (
+      byteLength > RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes
+      || (socket.bufferedAmount ?? 0) + byteLength > RESPONSES_WEBSOCKET_LIMITS.maxBufferedOutputBytes
+    ) {
+      return { ok: false, error: new Error('Responses WebSocket downstream buffer capacity exceeded') };
+    }
     socket.send(text);
   } catch (error) {
     return { ok: false, error };
   }
-  dump?.recordSentPayloadBytes(utf8ByteLength(text));
+  dump?.recordSentPayloadBytes(byteLength);
   return { ok: true };
 };
