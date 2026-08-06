@@ -232,7 +232,10 @@ export const streamingProviderCall = async <TEvent>(
   }
   const contentType = response.headers.get('content-type') ?? '';
   if (!response.body || !isEventStreamMediaType(contentType)) {
-    signal?.throwIfAborted();
+    if (!response.body) {
+      signal?.throwIfAborted();
+      throw streamRequiredError(response, contentType, '<empty>');
+    }
     let snippet: BodySnippet;
     try {
       snippet = await readBodySnippet(response, signal);

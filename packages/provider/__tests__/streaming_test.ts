@@ -223,9 +223,10 @@ test('streamingProviderCall gives stalled diagnostics an idle timeout', async ()
       'm-1',
       undefined,
     );
+    const rejection = assertRejects(() => call, Error);
 
     await vi.advanceTimersToNextTimerAsync();
-    const error = await assertRejects(() => call, Error);
+    const error = await rejection;
     assertEquals((error.cause as DOMException).name, 'TimeoutError');
     assertStringIncludes((error.cause as DOMException).message, 'idle timeout');
     assertEquals(cancellationReason, error.cause);
@@ -255,9 +256,10 @@ test('streamingProviderCall gives progressing diagnostics an independent total t
       'm-1',
       undefined,
     );
+    const rejection = assertRejects(() => call, Error);
 
     await vi.runAllTimersAsync();
-    const error = await assertRejects(() => call, Error);
+    const error = await rejection;
     assertEquals((error.cause as DOMException).name, 'TimeoutError');
     assertStringIncludes((error.cause as DOMException).message, 'total timeout');
     assertEquals(cancellationReason, error.cause);
