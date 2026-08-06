@@ -30,6 +30,61 @@ test('toInternalDebugError bounds adversarially deep Error cause chains', () => 
   expect(cause).toMatchObject({ type: 'depth_limit', limit: 32, name: 'Error' });
 });
 
+test('toInternalDebugError preserves every AggregateError branch and its cause chain', () => {
+  const parseError = new SyntaxError('invalid payload');
+  const primary = new TypeError('stream failed', { cause: parseError });
+  const cleanup = new Error('cleanup failed', { cause: { phase: 'return' } });
+  const aggregate = new AggregateError([primary, cleanup], 'stream and cleanup failed', { cause: primary });
+
+  const debug = toInternalDebugError(aggregate);
+  expect(debug.cause).toMatchObject({
+    name: 'TypeError',
+    message: 'stream failed',
+    stack: primary.stack,
+    cause: { name: 'SyntaxError', message: 'invalid payload', stack: parseError.stack },
+  });
+  expect(debug.errors).toMatchObject([
+    {
+      name: 'TypeError',
+      message: 'stream failed',
+      stack: primary.stack,
+      cause: { name: 'SyntaxError', message: 'invalid payload', stack: parseError.stack },
+    },
+    {
+      name: 'Error',
+      message: 'cleanup failed',
+      stack: cleanup.stack,
+      cause: { phase: 'return' },
+    },
+  ]);
+  expect(() => JSON.stringify(debug)).not.toThrow();
+});
+
+test('toInternalDebugError bounds cyclic and deeply nested AggregateError branches', () => {
+  const cyclic = new AggregateError([], 'cyclic');
+  cyclic.errors.push(cyclic);
+
+  let deeplyNested: Error = new Error('leaf');
+  for (let depth = 0; depth < 64; depth++) deeplyNested = new AggregateError([deeplyNested], `depth ${depth}`);
+  const debug = toInternalDebugError(new AggregateError([cyclic, deeplyNested], 'root'));
+
+  expect(debug.errors?.[0]).toMatchObject({
+    name: 'AggregateError',
+    message: 'cyclic',
+    errors: [{ type: 'circular_reference', name: 'AggregateError', message: 'cyclic' }],
+  });
+
+  let nested = debug.errors?.[1];
+  let serializedDepth = 0;
+  while (typeof nested === 'object' && nested !== null && !('type' in nested)) {
+    serializedDepth++;
+    nested = (nested as { errors?: unknown[] }).errors?.[0];
+  }
+  expect(serializedDepth).toBe(32);
+  expect(nested).toMatchObject({ type: 'depth_limit', limit: 32, name: 'AggregateError' });
+  expect(() => JSON.stringify(debug)).not.toThrow();
+});
+
 test('toInternalDebugError snapshots stateful non-Error causes exactly once', () => {
   let calls = 0;
   const cause = {

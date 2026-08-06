@@ -98,16 +98,7 @@ export const respondResponses = async (
 // --- error rendering ---
 
 const internalResponsesErrorResponse = (status: number, error: InternalDebugError): Response =>
-  Response.json({
-    error: {
-      type: error.type,
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      cause: error.cause,
-      target_api: error.target_api,
-    },
-  }, { status });
+  Response.json({ error }, { status });
 
 // The spec nests the `error` event's payload under `error`, and both official
 // SDKs key their mid-stream throw on exactly that key; the same fields at the
@@ -116,16 +107,12 @@ const internalResponsesErrorResponse = (status: number, error: InternalDebugErro
 // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
 // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98
 const internalResponsesStreamErrorEvent = (error: unknown): ClientResponsesStreamEvent => {
-  const debug = toInternalDebugError(error);
+  const { type, ...debug } = toInternalDebugError(error);
   return {
     type: 'error',
     error: {
-      message: debug.message,
-      code: debug.type,
-      name: debug.name,
-      stack: debug.stack,
-      cause: debug.cause,
-      target_api: debug.target_api,
+      ...debug,
+      code: type,
     },
   } as unknown as ClientResponsesStreamEvent;
 };

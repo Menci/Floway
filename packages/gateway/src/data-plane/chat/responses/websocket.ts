@@ -834,13 +834,8 @@ const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
 };
 
 const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
-  type: error.type,
+  ...error,
   code: error.type,
-  name: error.name,
-  message: error.message,
-  stack: error.stack,
-  cause: error.cause,
-  target_api: error.target_api,
 });
 
 const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({

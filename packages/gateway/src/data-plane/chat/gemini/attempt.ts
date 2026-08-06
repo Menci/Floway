@@ -189,12 +189,8 @@ const geminiInternalPlainResult = (status: number, error: unknown, headers: Head
     new TextEncoder().encode(JSON.stringify({
       error: {
         code: status,
-        message: debug.message,
         status: geminiStatusForHttpStatus(status),
-        type: debug.type,
-        name: debug.name,
-        stack: debug.stack,
-        cause: debug.cause,
+        ...debug,
       },
     })),
     upstream,

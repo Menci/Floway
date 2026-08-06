@@ -35,7 +35,7 @@ export const respondGemini = async (
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error));
+    return geminiErrorResponse(result.status, result.error.message, result.error);
   }
 
   if (result.type === 'plain') {
@@ -87,7 +87,7 @@ export const respondGemini = async (
 
 // --- error rendering: Google-RPC envelope ---
 
-type GeminiErrorDebugFields = Partial<Pick<InternalDebugError, 'type' | 'name' | 'stack' | 'cause'>> & { target_api?: string };
+type GeminiErrorDebugFields = Partial<InternalDebugError>;
 
 type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
@@ -102,17 +102,9 @@ const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErr
   };
 };
 
-const internalDebugFields = (error: InternalDebugError): GeminiErrorDebugFields => ({
-  type: error.type,
-  name: error.name,
-  stack: error.stack,
-  cause: error.cause,
-  ...(error.target_api ? { target_api: error.target_api } : {}),
-});
-
 const geminiInternalRpcErrorPayload = (status: number, error: unknown): GeminiErrorStatusPayload => {
   const debug = toInternalDebugError(error);
-  return geminiRpcErrorPayload(status, debug.message, internalDebugFields(debug));
+  return geminiRpcErrorPayload(status, debug.message, debug);
 };
 
 // Response builders. The count_tokens path under `http.ts` reuses them

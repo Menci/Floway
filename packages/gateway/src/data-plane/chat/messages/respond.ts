@@ -87,14 +87,7 @@ export const respondMessages = async (
 
 const internalMessagesErrorPayload = (error: InternalDebugError) => ({
   type: 'error',
-  error: {
-    type: error.type,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    target_api: error.target_api,
-  },
+  error,
 });
 
 const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });

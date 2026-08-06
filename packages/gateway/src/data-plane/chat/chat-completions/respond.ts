@@ -85,14 +85,7 @@ export const respondChatCompletions = async (
 // --- error rendering ---
 
 const internalChatCompletionsErrorPayload = (error: InternalDebugError) => ({
-  error: {
-    type: error.type,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    target_api: error.target_api,
-  },
+  error,
 });
 
 const internalChatCompletionsErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalChatCompletionsErrorPayload(error), { status });

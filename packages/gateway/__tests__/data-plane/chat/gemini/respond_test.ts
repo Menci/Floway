@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import { respondGemini } from '../../../../src/data-plane/chat/gemini/respond.ts';
+import { geminiInternalRpcErrorResponse, respondGemini } from '../../../../src/data-plane/chat/gemini/respond.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -118,6 +118,7 @@ test('respondGemini internal errors include debug fields in Google RPC Status', 
     message: 'boom',
     stack: 'TypeError: boom\n    at test',
     cause: { upstream: 'bad shape' },
+    errors: [{ name: 'Error', message: 'cleanup failed', stack: 'Error: cleanup failed\n    at test' }],
     target_api: 'responses',
   };
 
@@ -135,4 +136,27 @@ test('respondGemini internal errors include debug fields in Google RPC Status', 
   assertEquals(body.error.stack, error.stack);
   assertEquals(body.error.target_api, 'responses');
   assertExists(body.error.cause);
+  assertEquals(body.error.errors, error.errors);
+});
+
+test('Gemini structured internal errors preserve every AggregateError branch', async () => {
+  const primaryCause = new SyntaxError('malformed upstream event');
+  const primary = new TypeError('stream failed', { cause: primaryCause });
+  const cleanup = new Error('cleanup failed', { cause: { phase: 'return' } });
+  const response = geminiInternalRpcErrorResponse(
+    502,
+    new AggregateError([primary, cleanup], 'stream and cleanup failed', { cause: primary }),
+  );
+  const body = await response.json();
+
+  assertEquals(response.status, 502);
+  assertEquals(body.error.message, 'stream and cleanup failed');
+  assertEquals(body.error.cause.message, 'stream failed');
+  assertEquals(body.error.cause.cause.message, 'malformed upstream event');
+  assertEquals(body.error.errors.length, 2);
+  assertEquals(body.error.errors[0].stack, primary.stack);
+  assertEquals(body.error.errors[0].cause.stack, primaryCause.stack);
+  assertEquals(body.error.errors[1].message, 'cleanup failed');
+  assertEquals(body.error.errors[1].stack, cleanup.stack);
+  assertEquals(body.error.errors[1].cause, { phase: 'return' });
 });

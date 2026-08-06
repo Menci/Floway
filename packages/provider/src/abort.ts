@@ -8,17 +8,23 @@
 // notably Cloudflare Workers and undici — further wrap aborts as
 // `TypeError` with `{ cause: AbortError }`, so we walk the cause chain
 // before deciding it's not an abort.
-const MAX_CAUSE_DEPTH = 128;
+const readErrorProperty = (value: object, property: 'cause' | 'name'): unknown => {
+  try {
+    return Reflect.get(value, property);
+  } catch {
+    return undefined;
+  }
+};
 
 export const isAbortError = (err: unknown): boolean => {
   const seen = new Set<object>();
   let cur = err;
-  for (let depth = 0; cur !== null && cur !== undefined && depth < MAX_CAUSE_DEPTH; depth++) {
-    if ((typeof cur !== 'object' && typeof cur !== 'function') || seen.has(cur)) return false;
+  while (cur !== null && cur !== undefined) {
+    if (typeof cur !== 'object' && typeof cur !== 'function') return false;
+    if (seen.has(cur)) return false;
     seen.add(cur);
-    const candidate = cur as { cause?: unknown; name?: unknown };
-    if (candidate.name === 'AbortError') return true;
-    cur = candidate.cause;
+    if (readErrorProperty(cur, 'name') === 'AbortError') return true;
+    cur = readErrorProperty(cur, 'cause');
   }
   return false;
 };
