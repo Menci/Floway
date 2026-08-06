@@ -245,8 +245,14 @@ const warmupEndpoint = async (fetchImpl: typeof fetch, port: number): Promise<vo
       'content-length': String(body.byteLength),
       'x-api-key': API_KEY,
     },
-    body,
-  });
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(body);
+        controller.close();
+      },
+    }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
   const responseBytes = await response.arrayBuffer();
   invariant(response.status === 200, `warmup endpoint returned ${response.status}: ${new TextDecoder().decode(responseBytes)}`);
 };
