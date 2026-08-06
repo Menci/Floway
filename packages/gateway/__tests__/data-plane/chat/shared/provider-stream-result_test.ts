@@ -311,6 +311,34 @@ test('source cleanup failure remains attached to the primary read failure', asyn
   await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
 });
 
+test('an already-aborted execution never enters the provider iterator', async () => {
+  const executionController = new AbortController();
+  const executionFailure = new Error('execution already expired');
+  executionController.abort(executionFailure);
+  const next = vi.fn(async () => ({
+    done: false as const,
+    value: { type: 'event' as const, event: { type: 'response.in_progress' } },
+  }));
+  const events: AsyncIterable<ProtocolFrame<unknown>> = {
+    [Symbol.asyncIterator]() {
+      return { next };
+    },
+  };
+  const ctx = mockGatewayCtx({ executionController, executionSignal: executionController.signal });
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(events),
+    stubModelCandidate(),
+    'responses',
+    ctx,
+    () => null,
+  );
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+  await expect(result.events[Symbol.asyncIterator]().next()).rejects.toBe(executionFailure);
+  expect(next).not.toHaveBeenCalled();
+  await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+});
+
 test('return preempts a pending source read and bounds its uncooperative cleanup', async () => {
   vi.useFakeTimers();
   try {

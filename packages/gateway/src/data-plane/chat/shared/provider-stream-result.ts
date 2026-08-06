@@ -84,6 +84,10 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   };
   const readSource = async (): Promise<IteratorResult<ProtocolFrame<TEvent>>> => {
     if (sourceDone) return { done: true, value: undefined };
+    if (ctx.executionSignal.aborted) {
+      sourceReadInterrupted = true;
+      throw abortReason(ctx.executionSignal);
+    }
     const pendingRead = Promise.resolve().then(async () => await sourceIterator().next());
     const sourceOutcome = pendingRead.then(
       result => ({ kind: 'source' as const, result }),
