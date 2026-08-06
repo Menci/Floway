@@ -187,11 +187,12 @@ test('toInternalDebugError budgets JSON-escaped identity strings by their encode
 test('toInternalDebugError memoizes a shared Error first reached at the depth limit', () => {
   let messageReads = 0;
   const shared = new Error('initial');
+  shared.stack = 'shared stack';
   Object.defineProperty(shared, 'message', {
     get: () => `snapshot-${++messageReads}`,
   });
   let deep = shared;
-  for (let depth = 0; depth < 40; depth++) deep = new Error(`wrapper-${depth}`, { cause: deep });
+  for (let depth = 0; depth < 32; depth++) deep = new Error(`wrapper-${depth}`, { cause: deep });
 
   const debug = toInternalDebugError(new AggregateError([deep, shared], 'root'));
   expect(messageReads).toBe(1);
