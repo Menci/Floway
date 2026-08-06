@@ -60,3 +60,29 @@ jobs:
         run: pnpm --filter @floway-dev/web exec react-router typegen
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
+
+  image-edit-memory:
+    name: image-edit-memory (49 MiB upload / <128 MiB live)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Keep the verifier in a separate resource profile. Its subprocess gates
+      # live ArrayBuffer + positive heap delta at the Workerd 128 MiB limit and
+      # prints absolute/delta/max RSS only as allocator diagnostics.
+      NODE_OPTIONS: --max-old-space-size=256
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Verify 49 MiB image edit memory
+        run: pnpm run test:image-edit-memory
