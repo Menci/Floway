@@ -16,8 +16,8 @@ const DOWNLOAD_INSTALLER = SETUP_BASH_COMMON_CLI.slice(functionStart, functionEn
 test('Bash installer downloads stop at the byte limit before execution', async () => {
   const root = mkdtempSync(join(tmpdir(), 'floway-installer-size-limit.'));
   const server = createServer((_request, response) => {
-    response.writeHead(200, { 'content-length': '1025', 'content-type': 'text/x-shellscript' });
-    response.end(`printf 'executed' > "$1"\n${'x'.repeat(995)}`);
+    response.writeHead(200, { 'content-length': String(8 * 1024 * 1024 + 1), 'content-type': 'text/x-shellscript' });
+    response.end();
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -28,7 +28,6 @@ test('Bash installer downloads stop at the byte limit before execution', async (
       const child = spawn('/bin/bash', ['-c', `
 ${DOWNLOAD_INSTALLER}
 SETUP_TMPDIR=$1
-AGENT_SETUP_TEST_DOWNLOAD_MAX_BYTES=1024
 out_error() { printf '%s\\n' "$1" >&2; }
 _run_with_timeout() { "$@"; }
 _download_and_run_installer "$2"

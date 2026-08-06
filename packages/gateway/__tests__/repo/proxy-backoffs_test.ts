@@ -34,6 +34,12 @@ const insertProxy = async (repo: Repo, id: string): Promise<void> => {
   await repo.proxies.insert({ id, name: id, url: proxyUrl(id), dialTimeoutSeconds: null });
 };
 
+const proxyRevision = async (repo: Repo, id: string): Promise<number> => {
+  const proxy = await repo.proxies.getById(id);
+  if (proxy === null) throw new Error(`missing proxy ${id}`);
+  return proxy.revision;
+};
+
 for (const [backend, makeRepo] of REPO_BACKENDS) {
 
   describe(`[${backend}] proxy_upstream_backoffs repo`, () => {
@@ -48,7 +54,7 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     it('records first failure with 60s expiry', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), 'tcp refused');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u', await proxyRevision(repo, 'p'), 'tcp refused');
       const rows = await repo.proxyBackoffs.listForUpstream('u');
       expect(rows).toEqual([
         {
@@ -62,33 +68,65 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       ]);
     });
 
-    it('ignores outcomes from a stale proxy URL generation', async () => {
+    it('rejects stale outcomes after the URL returns to its original value', async () => {
       const repo = await makeRepo();
       const oldUrl = proxyUrl('p');
       const newUrl = 'socks5://replacement.example.test:1080';
       await insertProxy(repo, 'p');
-      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', oldUrl, 'old failure')).toBe(true);
+      const oldRevision = await proxyRevision(repo, 'p');
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', oldRevision, 'old failure')).toBe(true);
 
       await repo.proxies.patch('p', { url: newUrl });
       expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
-      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', oldUrl, 'late old failure')).toBe(false);
-      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', newUrl, 'new failure')).toBe(true);
+      await repo.proxies.patch('p', { url: oldUrl });
+      const currentRevision = await proxyRevision(repo, 'p');
+      expect(currentRevision).toBe(oldRevision + 2);
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', oldRevision, 'late old failure')).toBe(false);
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', currentRevision, 'new failure')).toBe(true);
       expect((await repo.proxyBackoffs.listForUpstream('u'))[0]?.failCount).toBe(1);
 
-      expect(await repo.proxyBackoffs.recordDialSuccess('p', 'u', oldUrl)).toBe(false);
+      expect(await repo.proxyBackoffs.recordDialSuccess('p', 'u', oldRevision)).toBe(false);
       expect(await repo.proxyBackoffs.listForUpstream('u')).toHaveLength(1);
-      expect(await repo.proxyBackoffs.recordDialSuccess('p', 'u', newUrl)).toBe(true);
+      expect(await repo.proxyBackoffs.recordDialSuccess('p', 'u', currentRevision)).toBe(true);
       expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
+    });
+
+    it('never reuses a revision after deleting and recreating the same proxy id', async () => {
+      const repo = await makeRepo();
+      await insertProxy(repo, 'p');
+      const oldRevision = await proxyRevision(repo, 'p');
+
+      expect(await repo.proxies.delete('p')).toBe(true);
+      await insertProxy(repo, 'p');
+      const recreatedRevision = await proxyRevision(repo, 'p');
+
+      expect(recreatedRevision).toBeGreaterThan(oldRevision);
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', oldRevision, 'late old failure')).toBe(false);
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', recreatedRevision, 'new failure')).toBe(true);
+      expect((await repo.proxyBackoffs.listForUpstream('u'))[0]?.lastError).toBe('new failure');
+    });
+
+    it('changes revision when dial timeout changes but not for metadata-only edits', async () => {
+      const repo = await makeRepo();
+      await insertProxy(repo, 'p');
+      const initial = await proxyRevision(repo, 'p');
+
+      await repo.proxies.patch('p', { name: 'renamed' });
+      expect(await proxyRevision(repo, 'p')).toBe(initial);
+
+      await repo.proxies.patch('p', { dialTimeoutSeconds: 30 });
+      expect(await proxyRevision(repo, 'p')).toBeGreaterThan(initial);
     });
 
     it('cascades proxy deletion and rejects a late orphan outcome', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), 'failure');
+      const revision = await proxyRevision(repo, 'p');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u', revision, 'failure');
 
       expect(await repo.proxies.delete('p')).toBe(true);
       expect(await repo.proxyBackoffs.listAll()).toEqual([]);
-      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), 'late failure')).toBe(false);
+      expect(await repo.proxyBackoffs.recordDialFailure('p', 'u', revision, 'late failure')).toBe(false);
       expect(await repo.proxyBackoffs.listAll()).toEqual([]);
     });
 
@@ -97,7 +135,7 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       await insertProxy(repo, 'p');
       const expected = [60, 120, 240, 480, 960, 1920, 3600, 3600];
       for (let n = 0; n < expected.length; n++) {
-        await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), `failure ${n + 1}`);
+        await repo.proxyBackoffs.recordDialFailure('p', 'u', await proxyRevision(repo, 'p'), `failure ${n + 1}`);
         const [row] = await repo.proxyBackoffs.listForUpstream('u');
         expect(row!.failCount).toBe(n + 1);
         expect(row!.expiresAt - baseUnix).toBe(expected[n]);
@@ -111,7 +149,7 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       // saturate the schedule at 3600s regardless of how high fail_count
       // climbs, with no JS 32-bit shift surprise creeping back in.
       for (let n = 0; n < 50; n++) {
-        await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), `failure ${n + 1}`);
+        await repo.proxyBackoffs.recordDialFailure('p', 'u', await proxyRevision(repo, 'p'), `failure ${n + 1}`);
       }
       const [row] = await repo.proxyBackoffs.listForUpstream('u');
       expect(row!.failCount).toBe(50);
@@ -121,40 +159,26 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     it('clears the row on dial success', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u', proxyUrl('p'), 'x');
-      await repo.proxyBackoffs.recordDialSuccess('p', 'u', proxyUrl('p'));
+      const revision = await proxyRevision(repo, 'p');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u', revision, 'x');
+      await repo.proxyBackoffs.recordDialSuccess('p', 'u', revision);
       expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
     });
 
     it('isolates state between upstreams', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'uA', proxyUrl('p'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('p', 'uA', await proxyRevision(repo, 'p'), 'x');
       expect(await repo.proxyBackoffs.listForUpstream('uB')).toEqual([]);
       expect(await repo.proxyBackoffs.listForUpstream('uA')).toHaveLength(1);
-    });
-
-    it('keeps NUL-bearing proxy and upstream tuple identities distinct', async () => {
-      const repo = await makeRepo();
-      const firstUrl = 'socks5://first.example.test:1080';
-      const secondUrl = 'socks5://second.example.test:1080';
-      await repo.proxies.insert({ id: 'a', name: 'first', url: firstUrl, dialTimeoutSeconds: null });
-      await repo.proxies.insert({ id: 'a\0b', name: 'second', url: secondUrl, dialTimeoutSeconds: null });
-
-      await repo.proxyBackoffs.recordDialFailure('a', 'b\0c', firstUrl, 'first');
-      await repo.proxyBackoffs.recordDialFailure('a\0b', 'c', secondUrl, 'second');
-
-      expect((await repo.proxyBackoffs.listAll()).map(row => [row.proxyId, row.upstreamId])).toEqual([
-        ['a', 'b\0c'],
-        ['a\0b', 'c'],
-      ]);
     });
 
     it('reset removes all rows for the proxy', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u1', proxyUrl('p'), 'x');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u2', proxyUrl('p'), 'x');
+      const revision = await proxyRevision(repo, 'p');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u1', revision, 'x');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u2', revision, 'x');
       await repo.proxyBackoffs.resetForProxy('p');
       expect(await repo.proxyBackoffs.listForProxy('p')).toEqual([]);
     });
@@ -162,8 +186,9 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     it('reset for a single (proxy, upstream)', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u1', proxyUrl('p'), 'x');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u2', proxyUrl('p'), 'x');
+      const revision = await proxyRevision(repo, 'p');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u1', revision, 'x');
+      await repo.proxyBackoffs.recordDialFailure('p', 'u2', revision, 'x');
       await repo.proxyBackoffs.reset('p', 'u1');
       const ids = (await repo.proxyBackoffs.listForProxy('p')).map(r => r.upstreamId);
       expect(ids).toEqual(['u2']);
@@ -173,9 +198,9 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       const repo = await makeRepo();
       await insertProxy(repo, 'pA');
       await insertProxy(repo, 'pB');
-      await repo.proxyBackoffs.recordDialFailure('pA', 'u1', proxyUrl('pA'), 'x');
-      await repo.proxyBackoffs.recordDialFailure('pB', 'u1', proxyUrl('pB'), 'x');
-      await repo.proxyBackoffs.recordDialFailure('pA', 'u2', proxyUrl('pA'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('pA', 'u1', await proxyRevision(repo, 'pA'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('pB', 'u1', await proxyRevision(repo, 'pB'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('pA', 'u2', await proxyRevision(repo, 'pA'), 'x');
       await repo.proxyBackoffs.resetForUpstream('u1');
       expect(await repo.proxyBackoffs.listForUpstream('u1')).toEqual([]);
       expect((await repo.proxyBackoffs.listForUpstream('u2')).length).toBe(1);
@@ -185,13 +210,54 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       const repo = await makeRepo();
       await insertProxy(repo, 'p1');
       await insertProxy(repo, 'p2');
-      await repo.proxyBackoffs.recordDialFailure('p1', 'u1', proxyUrl('p1'), 'x');
-      await repo.proxyBackoffs.recordDialFailure('p2', 'u2', proxyUrl('p2'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('p1', 'u1', await proxyRevision(repo, 'p1'), 'x');
+      await repo.proxyBackoffs.recordDialFailure('p2', 'u2', await proxyRevision(repo, 'p2'), 'x');
       expect(await repo.proxyBackoffs.listAll()).toHaveLength(2);
     });
   });
 
 }
+
+it('stores one bounded revision per backoff even when the proxy URL is very large', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.proxies.insert({
+    id: 'p_large',
+    name: 'Large',
+    url: `socks5://${'a'.repeat(1_000_000)}`,
+    dialTimeoutSeconds: null,
+  });
+  const revision = await proxyRevision(repo, 'p_large');
+  for (let index = 0; index < 100; index++) {
+    await repo.proxyBackoffs.recordDialFailure('p_large', `up_${index}`, revision, 'failure');
+  }
+
+  const storage = await db.prepare(
+    `SELECT COUNT(*) AS row_count,
+            SUM(LENGTH(CAST(proxy_revision AS TEXT))) AS revision_bytes
+     FROM proxy_upstream_backoffs`,
+  ).first<{ row_count: number; revision_bytes: number }>();
+  expect(storage).not.toBeNull();
+  expect(storage!.row_count).toBe(100);
+  expect(storage!.revision_bytes).toBeLessThanOrEqual(1_600);
+});
+
+it('rolls back a proxy config edit when the bounded SQL revision clock is exhausted', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  const original = await repo.proxies.insert({
+    id: 'p_exhausted',
+    name: 'Exhausted',
+    url: proxyUrl('old'),
+    dialTimeoutSeconds: null,
+  });
+  await db.prepare('UPDATE proxy_revision_counter SET revision = ? WHERE singleton = 1')
+    .bind(Number.MAX_SAFE_INTEGER)
+    .run();
+
+  await expect(repo.proxies.patch('p_exhausted', { url: proxyUrl('new') })).rejects.toThrow();
+  expect(await repo.proxies.getById('p_exhausted')).toEqual(original);
+});
 
 it('proxy backoff generation migration carries current rows and drops existing orphans', async () => {
   const db = await createSqlJsDatabase();
@@ -224,5 +290,10 @@ it('proxy backoff generation migration carries current rows and drops existing o
     lastError: 'current',
     lastErrorAt: 1200,
   }]);
-  expect(db.exec('SELECT proxy_url FROM proxy_upstream_backoffs')[0]?.values).toEqual([[proxyUrl('p')]]);
+  const columns = db.exec("SELECT name, type FROM pragma_table_info('proxy_upstream_backoffs')")[0];
+  expect(columns.values).toContainEqual(['proxy_revision', 'INTEGER']);
+  expect(columns.values.some(([name]) => name === 'proxy_url')).toBe(false);
+  expect(db.exec('SELECT proxy_revision FROM proxy_upstream_backoffs')[0]?.values).toEqual([[1]]);
+  expect(() => db.run('UPDATE proxies SET revision = 1.5 WHERE id = \'p\'')).toThrow();
+  expect(() => db.run('UPDATE proxy_upstream_backoffs SET proxy_revision = 1.5')).toThrow();
 });

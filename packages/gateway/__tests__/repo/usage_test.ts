@@ -146,7 +146,7 @@ for (const backend of backends) {
     assertEquals(tokenRatesFromUsage(rows[1]), longPricing);
   });
 
-  test(`${backend.name} usage repo keeps NUL-bearing opaque model dimensions in separate buckets`, async () => {
+  test(`${backend.name} usage repo keeps NUL-bearing opaque model dimensions separate across set and additive writes`, async () => {
     const repo = await backend.make();
     await repo.usage.set(record({
       model: 'a\0b',
@@ -162,6 +162,20 @@ for (const backend of backends) {
       requests: 2,
       metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
     }));
+    await repo.usage.record(record({
+      model: 'a\0b',
+      upstream: 'c',
+      modelKey: 'd',
+      requests: 10,
+      metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: null }],
+    }));
+    await repo.usage.record(record({
+      model: 'a',
+      upstream: 'b',
+      modelKey: 'c\0d',
+      requests: 20,
+      metrics: [{ metric: 'output_tokens', quantity: '20', unitPrice: null }],
+    }));
 
     const rows = await query(repo);
     assertEquals(rows.length, 2);
@@ -170,8 +184,8 @@ for (const backend of backends) {
         model: 'a',
         upstream: 'b',
         modelKey: 'c\0d',
-        requests: 2,
-        metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+        requests: 22,
+        metrics: [{ metric: 'output_tokens', quantity: '22', unitPrice: null }],
       }),
     });
     assertEquals(rows.find(row => row.model === 'a\0b'), {
@@ -179,29 +193,47 @@ for (const backend of backends) {
         model: 'a\0b',
         upstream: 'c',
         modelKey: 'd',
-        requests: 1,
-        metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+        requests: 11,
+        metrics: [{ metric: 'input_tokens', quantity: '11', unitPrice: null }],
       }),
     });
   });
 
-  test(`${backend.name} usage repo distinguishes null and empty upstream identities`, async () => {
+  test(`${backend.name} usage repo preserves null and empty upstream identities across replacement and additive writes`, async () => {
     const repo = await backend.make();
-    await repo.usage.set(record({
-      upstream: null,
-      requests: 1,
-      metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
-    }));
+    for (const [upstream, requests, quantity] of [
+      [null, 1, '1'],
+      ['', 2, '2'],
+    ] as const) {
+      await repo.usage.set(record({
+        upstream,
+        requests,
+        metrics: [{ metric: 'input_tokens', quantity, unitPrice: null }],
+      }));
+      await repo.usage.record(record({
+        upstream,
+        requests: 10,
+        metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: null }],
+      }));
+    }
     await repo.usage.set(record({
       upstream: '',
-      requests: 2,
-      metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+      requests: 20,
+      metrics: [{ metric: 'input_tokens', quantity: '20', unitPrice: null }],
     }));
 
     const rows = await query(repo);
     assertEquals(rows.length, 2);
-    assertEquals(rows.find(row => row.upstream === null)?.requests, 1);
-    assertEquals(rows.find(row => row.upstream === '')?.requests, 2);
+    assertEquals(rows.find(row => row.upstream === null), record({
+      upstream: null,
+      requests: 11,
+      metrics: [{ metric: 'input_tokens', quantity: '11', unitPrice: null }],
+    }));
+    assertEquals(rows.find(row => row.upstream === ''), record({
+      upstream: '',
+      requests: 20,
+      metrics: [{ metric: 'input_tokens', quantity: '20', unitPrice: null }],
+    }));
   });
 
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
@@ -305,6 +337,55 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
   assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
   assertEquals(stored.requests, 50);
   assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
+});
+
+test('SQL usage point mutations constrain the complete expression-index identity', async () => {
+  const db = await createSqliteTestDb();
+  const identity = record({
+    model: 'model\0opaque',
+    upstream: null,
+    modelKey: 'storage\0opaque',
+    metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+  });
+  await new SqlRepo(db).usage.set(identity);
+  const captured: CapturedStatement[] = [];
+  const repo = new SqlRepo(recordBoundStatements(db, captured));
+
+  await repo.usage.record(record({
+    model: identity.model,
+    upstream: identity.upstream,
+    modelKey: identity.modelKey,
+    metrics: [{ metric: 'input_tokens', quantity: '2', unitPrice: null }],
+  }));
+  await repo.usage.set(record({
+    model: identity.model,
+    upstream: identity.upstream,
+    modelKey: identity.modelKey,
+    metrics: [{ metric: 'output_tokens', quantity: '3', unitPrice: null }],
+  }));
+
+  const mutations = captured.filter(statement =>
+    statement.query.startsWith('SELECT quantity FROM usage WHERE')
+    || statement.query.startsWith('UPDATE usage SET quantity')
+    || statement.query.startsWith('DELETE FROM usage WHERE'));
+  assertEquals(mutations.length, 3);
+  for (const statement of mutations) {
+    const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
+      .bind(...statement.binds)
+      .all<{ detail: string }>();
+    const plan = results.map(row => row.detail).join('\n');
+    for (const required of [
+      'idx_usage_metric_identity',
+      'model_key_json=?',
+      'hour=?',
+      'pricing_selector=?',
+    ]) {
+      assertEquals(plan.includes(required), true, `${statement.query}\n${plan}`);
+    }
+    if (!statement.query.startsWith('DELETE')) {
+      assertEquals(plan.includes('metric=?'), true, `${statement.query}\n${plan}`);
+    }
+  }
 });
 
 test('SQL usage key scopes use key-hour range indexes in both storage tables', async () => {

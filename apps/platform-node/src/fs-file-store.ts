@@ -5,6 +5,16 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 import type { FileStore } from '@floway-dev/platform';
 
+export interface FsFileStoreWriteOperations {
+  writeTemporaryFile(path: string, body: Uint8Array): Promise<void>;
+  replaceFile(temporaryPath: string, path: string): Promise<void>;
+}
+
+const nodeWriteOperations: FsFileStoreWriteOperations = {
+  writeTemporaryFile: async (path, body) => await writeFile(path, body, { flag: 'wx' }),
+  replaceFile: rename,
+};
+
 // Filesystem-backed FileStore. Every key resolves to a path under `root`.
 // Keys use forward-slash POSIX separators (matching R2's surface) and are
 // translated to native path segments on the way in/out so the same key reads
@@ -23,7 +33,10 @@ export class FsFileStore implements FileStore {
   private readonly root: string;
   private readonly directoryMutations = new Map<string, Promise<void>>();
 
-  constructor(root: string) {
+  constructor(
+    root: string,
+    private readonly writeOperations: FsFileStoreWriteOperations = nodeWriteOperations,
+  ) {
     // Resolve once so `pathFor` can verify resolved paths still live under it.
     this.root = resolve(root);
     // Ensure the root exists so the first put() doesn't race against a missing
@@ -38,8 +51,8 @@ export class FsFileStore implements FileStore {
       await mkdir(directory, { recursive: true });
       const temporaryPath = join(directory, `.floway-write-${randomUUID()}`);
       try {
-        await writeFile(temporaryPath, body, { flag: 'wx' });
-        await rename(temporaryPath, path);
+        await this.writeOperations.writeTemporaryFile(temporaryPath, body);
+        await this.writeOperations.replaceFile(temporaryPath, path);
       } catch (error) {
         try {
           await rm(temporaryPath, { force: true });

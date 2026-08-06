@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
-import { describe, test, vi } from 'vitest';
+import { afterEach, describe, test, vi } from 'vitest';
 
+import { observeExecutionTimers } from './execution-timer-audit.ts';
 import { createGatewayCtxFromHono, type AttemptState, stampUpstreamCallStart } from '../../../src/data-plane/shared/gateway-ctx.ts';
 import type { OwnedRequestBody } from '../../../src/data-plane/shared/request-body.ts';
+import { RETAINED_RESPONSE_LIMITS } from '../../../src/data-plane/shared/retained-response.ts';
+import { getDumpStore, initDumpStore } from '../../../src/dump/registry.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -50,13 +53,24 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
   return app;
 };
 
+const createdContexts: ReturnType<typeof createGatewayCtxFromHono>[] = [];
+const createTestGatewayCtx = (...args: Parameters<typeof createGatewayCtxFromHono>): ReturnType<typeof createGatewayCtxFromHono> => {
+  const ctx = createGatewayCtxFromHono(...args);
+  createdContexts.push(ctx);
+  return ctx;
+};
+
+afterEach(() => {
+  for (const ctx of createdContexts.splice(0)) ctx.finishExecution();
+});
+
 describe('createGatewayCtxFromHono', () => {
   test('copies auth fields when both are set', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'] }));
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createTestGatewayCtx(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
     await app.request('/test');
@@ -69,7 +83,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
     await app.request('/test');
@@ -88,7 +102,7 @@ describe('createGatewayCtxFromHono', () => {
     const handlerReleased = new Promise<void>(resolve => { releaseHandler = resolve; });
     app.get('/test', async c => {
       signalSeenByHandler = c.req.raw.signal;
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createTestGatewayCtx(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       handlerReadyResolve?.();
       await handlerReleased;
       return c.text('ok');
@@ -121,7 +135,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
 
@@ -141,7 +155,7 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     const controller = new AbortController();
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, clientDisconnectController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createTestGatewayCtx(c, { wantsStream: true, clientDisconnectController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
 
@@ -169,12 +183,42 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     const scheduler: BackgroundScheduler = () => {};
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: scheduler });
+      ctx = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: scheduler });
       return c.text('ok');
     });
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.backgroundScheduler, scheduler);
+  });
+
+  test('does not arm lifecycle timers when dump construction rejects', async () => {
+    const originalStore = getDumpStore();
+    const failure = new Error('request body preparation failed');
+    initDumpStore({
+      ...originalStore,
+      prepareRequestBody() { throw failure; },
+    });
+    const timers = observeExecutionTimers();
+    try {
+      const app = makeApp();
+      let caught: unknown;
+      app.get('/test', c => {
+        c.set('apiKey', buildApiKey({ dumpRetentionSeconds: 60 }));
+        try {
+          createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+        } catch (error) {
+          caught = error;
+        }
+        return c.text('ok');
+      });
+      await app.request('/test');
+
+      assertEquals(caught, failure);
+      timers.assertNoLifecycleStarted();
+    } finally {
+      timers.cleanup();
+      initDumpStore(originalStore);
+    }
   });
 
   test('upstreamIds is the intersection of the per-user cap and the per-key whitelist', async () => {
@@ -185,21 +229,21 @@ describe('createGatewayCtxFromHono', () => {
     app.get('/cap-only', c => {
       // Unrestricted key (apiKey.upstreamIds null) under a capped user.
       c.set('user', buildUser({ upstreamIds: ['up-a'] }));
-      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.capOnly = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
       return c.text('ok');
     });
     app.get('/both', c => {
       // Per-key whitelist further narrows the user cap and preserves per-key order.
       c.set('user', buildUser({ upstreamIds: ['up-a', 'up-b'] }));
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
-      collected.both = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.both = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
       return c.text('ok');
     });
     app.get('/key-only', c => {
       // Uncapped user with a per-key whitelist falls through to the per-key
       // list verbatim.
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-x'] }));
-      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
+      collected.keyOnly = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
       return c.text('ok');
     });
     await app.request('/cap-only');
@@ -208,6 +252,92 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(collected.capOnly, ['up-a']);
     assertEquals(collected.both, ['up-b']);
     assertEquals(collected.keyOnly, ['up-x']);
+  });
+
+  test('execution aborts at the exact total deadline with its server-policy reason', async () => {
+    vi.useFakeTimers();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    try {
+      const app = makeApp();
+      app.get('/test', c => {
+        ctx = createTestGatewayCtx(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+        return c.text('ok');
+      });
+      await app.request('/test');
+      assertExists(ctx);
+
+      await vi.advanceTimersByTimeAsync(RETAINED_RESPONSE_LIMITS.totalTimeoutMs - 1);
+      assertEquals(ctx.executionSignal.aborted, false);
+      await vi.advanceTimersByTimeAsync(1);
+      assertEquals(ctx.executionSignal.aborted, true);
+      assertEquals((ctx.executionSignal.reason as Error).message, 'Gateway upstream execution exceeded one hour');
+    } finally {
+      ctx?.finishExecution();
+      vi.useRealTimers();
+    }
+  });
+
+  test('client disconnect starts the exact execution drain deadline', async () => {
+    vi.useFakeTimers();
+    const clientDisconnectController = new AbortController();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    try {
+      const app = makeApp();
+      app.get('/test', c => {
+        ctx = createTestGatewayCtx(c, {
+          wantsStream: true,
+          clientDisconnectController,
+          requestBody: EMPTY_REQUEST_BODY,
+          backgroundScheduler: NOOP_SCHEDULER,
+        });
+        return c.text('ok');
+      });
+      await app.request('/test');
+      assertExists(ctx);
+
+      clientDisconnectController.abort(new Error('client left'));
+      await vi.advanceTimersByTimeAsync(RETAINED_RESPONSE_LIMITS.postDisconnectDrainTimeoutMs - 1);
+      assertEquals(ctx.executionSignal.aborted, false);
+      await vi.advanceTimersByTimeAsync(1);
+      assertEquals(ctx.executionSignal.aborted, true);
+      assertEquals(
+        (ctx.executionSignal.reason as Error).message,
+        'Gateway upstream drain exceeded the post-disconnect deadline',
+      );
+    } finally {
+      ctx?.finishExecution();
+      vi.useRealTimers();
+    }
+  });
+
+  test('finishExecution clears deadlines and prevents a later disconnect from scheduling one', async () => {
+    vi.useFakeTimers();
+    const clientDisconnectController = new AbortController();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    try {
+      const app = makeApp();
+      app.get('/test', c => {
+        ctx = createTestGatewayCtx(c, {
+          wantsStream: true,
+          clientDisconnectController,
+          requestBody: EMPTY_REQUEST_BODY,
+          backgroundScheduler: NOOP_SCHEDULER,
+        });
+        return c.text('ok');
+      });
+      await app.request('/test');
+      assertExists(ctx);
+      assertEquals(vi.getTimerCount(), 1);
+
+      ctx.finishExecution();
+      clientDisconnectController.abort(new Error('late disconnect'));
+      assertEquals(vi.getTimerCount(), 0);
+      await vi.advanceTimersByTimeAsync(RETAINED_RESPONSE_LIMITS.totalTimeoutMs);
+      assertEquals(ctx.executionSignal.aborted, false);
+    } finally {
+      ctx?.finishExecution();
+      vi.useRealTimers();
+    }
   });
 });
 

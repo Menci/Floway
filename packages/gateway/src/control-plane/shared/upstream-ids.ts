@@ -1,5 +1,4 @@
 import { getRepo } from '../../repo/index.ts';
-export { parseUpstreamIdsValue } from '../../shared/upstream-ids.ts';
 
 export const loadKnownUpstreamIds = async (): Promise<ReadonlySet<string>> =>
   new Set((await getRepo().upstreams.list()).map(upstream => upstream.id));

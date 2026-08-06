@@ -10,7 +10,7 @@ SETUP_LOCK_ACQUIRED=0
 
 _acquire_setup_lock() {
   _asl_root=$1
-  _asl_timeout=${AGENT_SETUP_TEST_LOCK_TIMEOUT_SECONDS:-600}
+  _asl_timeout=600
   _asl_started=$(date +%s)
   if ! mkdir -p "$_asl_root"; then
     out_error "could not create $_asl_root"
@@ -19,12 +19,6 @@ _acquire_setup_lock() {
   _asl_path="$_asl_root/.floway-agent-setup.lock"
 
   while ! mkdir "$_asl_path" 2>/dev/null; do
-    if [ -n "${AGENT_SETUP_TEST_LOCK_WAIT_MARKER:-}" ]; then
-      if ! : > "$AGENT_SETUP_TEST_LOCK_WAIT_MARKER"; then
-        out_error 'could not record Agent Setup lock contention for the test harness.'
-        return 1
-      fi
-    fi
     _asl_now=$(date +%s)
     if [ $((_asl_now - _asl_started)) -ge "$_asl_timeout" ]; then
       out_error "another Agent Setup invocation is using $_asl_root; if no setup process is running, remove the stale lock at $_asl_path and re-run."

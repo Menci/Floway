@@ -17,7 +17,6 @@ function Main {
 
   try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
   $script:SetupNoColor = [bool]$env:NO_COLOR
-  $script:SetupForceColor = [bool]$env:AGENT_SETUP_TEST_FORCE_COLOR
   $script:SetupErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:SetupNoColor)
   $script:SetupEsc = [char]27
   $supportsVt = try { [bool]$Host.UI.SupportsVirtualTerminal } catch { $false }

@@ -1,22 +1,7 @@
 # Claude Code Agent Setup fragment.
 
-# Install the official Claude Code package. The
-# AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT hook — read from the ambient
-# environment, never emitted by the gateway — substitutes a fake installer
-# under test.
+# Install the official Claude Code package.
 function Install-SetupClaude {
-  if ($env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT) {
-    Write-SetupInfo 'Claude Code CLI not found; running the test installer'
-    $timeoutSeconds = Get-SetupTimeoutSeconds 120
-    $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
-    if ($installer.ExitCode -ne 0) { Stop-Setup "the test installer hook failed." }
-    return
-  }
-  if ($env:AGENT_SETUP_TEST_CLAUDE_URL) {
-    Write-SetupInfo 'Claude Code CLI not found; running the test installer download'
-    Invoke-SetupRemoteInstaller -Uri $env:AGENT_SETUP_TEST_CLAUDE_URL
-    return
-  }
   $platform = Get-SetupPlatform
   $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   switch ($platform) {
@@ -158,7 +143,6 @@ function Write-SetupClaudeSettings {
       # target on Windows. Windows replacing an existing target uses File.Replace.
       Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
     }
-    if ($env:AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE) { throw 'test-injected failure after replacing Claude settings' }
     Remove-SetupOlderBackups -Path $script:ClaudeSettingsPath -Keep $script:ClaudeSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
@@ -169,8 +153,7 @@ function Write-SetupClaudeSettings {
 
 function Write-SetupClaudeVersion {
   param([string]$Exe)
-  $timeoutSeconds = Get-SetupTimeoutSeconds 30
-  $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``claude --version`` timed out.'
+  $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds 30 -TimeoutMessage '``claude --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``claude --version`` failed." }
   Write-SetupInfo "Claude Code version: $($version.Output.Trim())"
 }

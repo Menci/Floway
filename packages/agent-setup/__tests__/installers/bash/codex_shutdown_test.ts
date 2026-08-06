@@ -87,8 +87,7 @@ while :; do /bin/sleep 10; done
   const result = runBash(`
 ${CODEX_KILL_GROUP}
 SETUP_TMPDIR=$1
-AGENT_SETUP_TEST_CODEX_TERM_GRACE_SECONDS=0.05
-AGENT_SETUP_TEST_CODEX_KILL_GRACE_SECONDS=0.05
+sleep() { /bin/sleep 0.05; }
 set -m
 ROOT_TERM_FILE=$4 CHILD_TERM_FILE=$5 CHILD_PID_FILE=$3 STUBBORN_CHILD=$6 /bin/bash "$7" &
 pid=$!

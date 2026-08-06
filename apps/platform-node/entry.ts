@@ -1,4 +1,5 @@
-import { serve, upgradeWebSocket } from '@hono/node-server';
+import { serve, upgradeWebSocket, type WebSocketLike } from '@hono/node-server';
+import type { WSContext } from 'hono/ws';
 import { setGlobalDispatcher } from 'undici';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
@@ -26,8 +27,29 @@ initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
 
-initResponsesWebSocketUpgradeResolver((c, events) =>
-  upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
+const nodeResponsesWebSocket = (socket: WSContext<WebSocketLike>) => {
+  const raw = socket.raw;
+  if (raw === undefined) throw new Error('Node WebSocket context is missing its raw socket');
+  const bufferedAmount = (): number => {
+    const value = Reflect.get(raw, 'bufferedAmount');
+    if (typeof value !== 'number') throw new Error('Node WebSocket does not expose bufferedAmount');
+    return value;
+  };
+  bufferedAmount();
+  return {
+    get readyState() { return socket.readyState; },
+    get bufferedAmount() { return bufferedAmount(); },
+    send: (data: string) => socket.send(data),
+    close: (code?: number, reason?: string) => socket.close(code, reason),
+  };
+};
+
+initResponsesWebSocketUpgradeResolver((c, events) => upgradeWebSocket(c, {
+  onOpen: (event, socket) => events.onOpen(event, nodeResponsesWebSocket(socket)),
+  onMessage: (event, socket) => events.onMessage(event, nodeResponsesWebSocket(socket)),
+  onClose: (event, socket) => events.onClose(event, nodeResponsesWebSocket(socket)),
+  onError: (event, socket) => events.onError(event, nodeResponsesWebSocket(socket)),
+}, { onError: err => console.error('[websocket]', err) }));
 
 const { db } = bootstrapNodePlatform();
 const port = parseNodeListenPort(getEnvOptional('PORT', '8788'));

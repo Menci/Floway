@@ -12,6 +12,17 @@ export interface RetainedResponseLimits {
   readonly postDisconnectDrainTimeoutMs: number;
 }
 
+export interface RetainedResponseOptions {
+  readonly backgroundScheduler: BackgroundScheduler;
+  readonly clientDisconnectSignal?: AbortSignal;
+  readonly onCancel?: (reason: unknown) => void;
+  readonly onSourceCancelError?: (error: unknown) => void;
+  readonly limits?: RetainedResponseLimits;
+  readonly onSettled?: () => void;
+}
+
+type RetainedResponseTimeoutKind = 'idle' | 'total' | 'post-disconnect';
+
 // Copilotd uses a 600-second SSE idle timeout; Vekil bounds upstream work to
 // one hour. Cloudflare grants waitUntil only 30 seconds after disconnect, so
 // the drain leaves ten seconds for final telemetry writes.
@@ -24,21 +35,70 @@ export const RETAINED_RESPONSE_LIMITS: RetainedResponseLimits = {
 };
 
 class RetainedResponseTimeoutError extends Error {
-  constructor(kind: 'idle' | 'total' | 'post-disconnect') {
+  constructor(readonly kind: RetainedResponseTimeoutKind) {
     super(`Retained upstream response exceeded its ${kind} timeout`);
     this.name = 'RetainedResponseTimeoutError';
   }
 }
+
+interface RetentionChainState {
+  postDisconnectDeadlineAt: number | undefined;
+  deadlineError: RetainedResponseTimeoutError | undefined;
+}
+
+interface DisconnectClock {
+  disconnectedAt: number | undefined;
+}
+
+const retentionChainByBody = new WeakMap<ReadableStream<Uint8Array>, RetentionChainState>();
+const disconnectClockBySignal = new WeakMap<AbortSignal, DisconnectClock>();
+
+const disconnectClockFor = (signal: AbortSignal): DisconnectClock => {
+  const existing = disconnectClockBySignal.get(signal);
+  if (existing !== undefined) return existing;
+
+  const clock: DisconnectClock = { disconnectedAt: undefined };
+  const markDisconnected = (): void => {
+    clock.disconnectedAt ??= Date.now();
+  };
+  disconnectClockBySignal.set(signal, clock);
+  if (signal.aborted) markDisconnected();
+  else signal.addEventListener('abort', markDisconnected, { once: true });
+  return clock;
+};
+
+const validateTimerValue = (name: keyof RetainedResponseLimits, value: number): void => {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 0x7FFF_FFFF) {
+    throw new RangeError(`Retained response ${name} must be a positive 32-bit timer value`);
+  }
+};
+
+const validateLimits = (limits: RetainedResponseLimits): void => {
+  validateTimerValue('idleTimeoutMs', limits.idleTimeoutMs);
+  validateTimerValue('totalTimeoutMs', limits.totalTimeoutMs);
+  validateTimerValue('postDisconnectDrainTimeoutMs', limits.postDisconnectDrainTimeoutMs);
+};
+
+const reportSourceCancelError = (error: unknown): void => {
+  console.error('[retained-response] source cancellation failed', error);
+};
+
+const unrefTimer = (timer: unknown): void => {
+  if (typeof timer !== 'object' || timer === null) return;
+  const unref = Reflect.get(timer, 'unref');
+  if (typeof unref === 'function') Reflect.apply(unref, timer, []);
+};
 
 export const dispatchRetainedResponse = async (
   dispatch: () => Promise<Response>,
   lifecycle?: RetainedDispatchLifecycle,
 ): Promise<Response> => {
   if (lifecycle === undefined) return await dispatch();
+  disconnectClockFor(lifecycle.clientDisconnectSignal);
   lifecycle.clientDisconnectSignal.throwIfAborted();
   const pendingResponse = dispatch();
   lifecycle.backgroundScheduler(pendingResponse.then(() => {}, () => {}));
-  return retainResponse(await pendingResponse, lifecycle.backgroundScheduler);
+  return retainResponse(await pendingResponse, lifecycle);
 };
 
 export const retainUpstreamFetcher = (
@@ -52,123 +112,245 @@ export const retainUpstreamFetcher = (
 
 export const retainResponse = (
   response: Response,
-  backgroundScheduler: BackgroundScheduler,
-  onCancel?: (reason: unknown) => void,
-  limits: RetainedResponseLimits = RETAINED_RESPONSE_LIMITS,
-  onSettled?: () => void,
+  options: RetainedResponseOptions,
 ): Response => {
+  const limits = options.limits ?? RETAINED_RESPONSE_LIMITS;
+  validateLimits(limits);
   if (response.body === null) {
-    onSettled?.();
+    options.onSettled?.();
     return response;
   }
-  for (const [name, value] of Object.entries(limits)) {
-    if (!Number.isSafeInteger(value) || value <= 0 || value > 0x7FFF_FFFF) {
-      throw new RangeError(`Retained response ${name} must be a positive 32-bit timer value`);
-    }
-  }
 
-  const reader = response.body.getReader();
-  const startedAt = Date.now();
+  const sourceBody = response.body;
+  const chain = retentionChainByBody.get(sourceBody) ?? {
+    postDisconnectDeadlineAt: undefined,
+    deadlineError: undefined,
+  };
+  const disconnectClock = options.clientDisconnectSignal === undefined
+    ? undefined
+    : disconnectClockFor(options.clientDisconnectSignal);
+  const reader = sourceBody.getReader();
+  const totalDeadlineAt = Date.now() + limits.totalTimeoutMs;
   let resolveLifetime!: () => void;
   let rejectLifetime!: (error: unknown) => void;
   const lifetime = new Promise<void>((resolve, reject) => {
     resolveLifetime = resolve;
     rejectLifetime = reject;
   });
+
   let settled = false;
+  let sourceCancelStarted = false;
   let consumerCanceled = false;
-  let currentPull: Promise<void> | undefined;
   let drainStarted = false;
+  let sourceRead: Promise<void> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let totalTimer: ReturnType<typeof setTimeout> | undefined;
   let postDisconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let outputState: 'open' | 'closed' | 'errored' | 'canceled' = 'open';
+  let outputController!: ReadableStreamDefaultController<Uint8Array>;
 
-  const cancelSource = (error: unknown): void => {
-    try {
-      void reader.cancel(error).catch(() => {});
-    } catch {
-      // The timeout owns settlement even when a broken source rejects cleanup.
-    }
+  const clearTimers = (): void => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    if (totalTimer !== undefined) clearTimeout(totalTimer);
+    if (postDisconnectTimer !== undefined) clearTimeout(postDisconnectTimer);
+    idleTimer = undefined;
+    totalTimer = undefined;
+    postDisconnectTimer = undefined;
   };
-
-  const settleLifetime = (error?: unknown): void => {
+  const closeOutput = (): void => {
+    if (outputState !== 'open') return;
+    outputState = 'closed';
+    outputController.close();
+  };
+  const errorOutput = (error: unknown): void => {
+    if (outputState !== 'open') return;
+    outputState = 'errored';
+    outputController.error(error);
+  };
+  const settleLifetime = (
+    outcome: { readonly status: 'fulfilled' } | { readonly status: 'rejected'; readonly reason: unknown },
+  ): void => {
     if (settled) return;
     settled = true;
+    clearTimers();
+    if (options.clientDisconnectSignal !== undefined && onClientDisconnect !== undefined) {
+      options.clientDisconnectSignal.removeEventListener('abort', onClientDisconnect);
+    }
+    try {
+      options.onSettled?.();
+    } catch (settlementError) {
+      rejectLifetime(settlementError);
+      return;
+    }
+    if (outcome.status === 'fulfilled') resolveLifetime();
+    else rejectLifetime(outcome.reason);
+  };
+  const cancelSource = (error: unknown): void => {
+    if (sourceCancelStarted) return;
+    sourceCancelStarted = true;
+    try {
+      void reader.cancel(error).catch(options.onSourceCancelError ?? reportSourceCancelError);
+    } catch (cancelError) {
+      // Cancellation already has a terminal deadline outcome. Reporting its
+      // cleanup failure synchronously keeps it visible without letting an
+      // uncooperative source extend that deadline.
+      (options.onSourceCancelError ?? reportSourceCancelError)(cancelError);
+    }
+  };
+  const tightenPostDisconnectDeadline = (
+    deadlineAt: number,
+    error?: RetainedResponseTimeoutError,
+  ): void => {
+    if (chain.postDisconnectDeadlineAt === undefined || deadlineAt < chain.postDisconnectDeadlineAt) {
+      chain.postDisconnectDeadlineAt = deadlineAt;
+      chain.deadlineError = error;
+    } else if (error !== undefined && chain.deadlineError === undefined) {
+      chain.deadlineError = error;
+    }
+  };
+  const stopWithTimeout = (error: RetainedResponseTimeoutError): void => {
+    if (settled) return;
+    tightenPostDisconnectDeadline(Date.now(), error);
+    cancelSource(error);
+    errorOutput(error);
+    settleLifetime({ status: 'rejected', reason: error });
+  };
+  const armIdleTimer = (): void => {
+    if (settled) return;
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      stopWithTimeout(new RetainedResponseTimeoutError('idle'));
+    }, limits.idleTimeoutMs);
+    unrefTimer(idleTimer);
+  };
+  const armPostDisconnectTimer = (): void => {
+    if (settled || chain.postDisconnectDeadlineAt === undefined) return;
     if (postDisconnectTimer !== undefined) clearTimeout(postDisconnectTimer);
-    onSettled?.();
-    if (error === undefined) resolveLifetime();
-    else rejectLifetime(error);
-  };
-  const readSource = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-    const totalRemaining = limits.totalTimeoutMs - (Date.now() - startedAt);
-    if (totalRemaining <= 0) throw new RetainedResponseTimeoutError('total');
-    const timeoutMs = Math.min(limits.idleTimeoutMs, totalRemaining);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        reader.read(),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => {
-            const kind = totalRemaining <= limits.idleTimeoutMs ? 'total' : 'idle';
-            const error = new RetainedResponseTimeoutError(kind);
-            cancelSource(error);
-            reject(error);
-          }, timeoutMs);
-        }),
-      ]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
+    const remaining = chain.postDisconnectDeadlineAt - Date.now();
+    if (remaining <= 0) {
+      const error = chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+      chain.deadlineError = error;
+      stopWithTimeout(error);
+      return;
     }
-  };
-  const drain = async (): Promise<void> => {
-    try {
-      await currentPull;
-      while (!(await readSource()).done) {}
-      settleLifetime();
-    } catch (error) {
-      settleLifetime(error);
-    }
-  };
-  const startDrain = (): void => {
-    if (drainStarted) return;
-    drainStarted = true;
     postDisconnectTimer = setTimeout(() => {
-      const error = new RetainedResponseTimeoutError('post-disconnect');
-      cancelSource(error);
-      settleLifetime();
-    }, limits.postDisconnectDrainTimeoutMs);
-    void drain();
+      const error = chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+      chain.deadlineError = error;
+      stopWithTimeout(error);
+    }, remaining);
+    unrefTimer(postDisconnectTimer);
+  };
+  const armPostDisconnectDeadline = (disconnectedAt: number): void => {
+    tightenPostDisconnectDeadline(disconnectedAt + limits.postDisconnectDrainTimeoutMs);
+    armPostDisconnectTimer();
+  };
+  const expiredAbsoluteTimeout = (): RetainedResponseTimeoutError | undefined => {
+    const now = Date.now();
+    const postDisconnectDeadlineAt = chain.postDisconnectDeadlineAt;
+    if (
+      postDisconnectDeadlineAt !== undefined
+      && postDisconnectDeadlineAt <= totalDeadlineAt
+      && now >= postDisconnectDeadlineAt
+    ) {
+      return chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+    }
+    if (now >= totalDeadlineAt) return new RetainedResponseTimeoutError('total');
+    if (postDisconnectDeadlineAt !== undefined && now >= postDisconnectDeadlineAt) {
+      return chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+    }
+    return undefined;
   };
 
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const pull = (async () => {
-        try {
-          const next = await readSource();
-          if (consumerCanceled) return;
-          if (next.done) {
-            controller.close();
-            settleLifetime();
-          } else {
-            controller.enqueue(next.value);
-          }
-        } catch (error) {
-          settleLifetime(error);
-          if (!consumerCanceled) controller.error(error);
+  const readOneFromSource = async (): Promise<void> => {
+    const expired = expiredAbsoluteTimeout();
+    if (expired !== undefined) {
+      stopWithTimeout(expired);
+      return;
+    }
+    try {
+      const next = await reader.read();
+      if (settled) return;
+      if (next.done) {
+        if (!consumerCanceled) closeOutput();
+        settleLifetime({ status: 'fulfilled' });
+        return;
+      }
+      armIdleTimer();
+      if (!drainStarted && outputState === 'open') outputController.enqueue(next.value);
+    } catch (error) {
+      if (settled) return;
+      errorOutput(error);
+      settleLifetime({ status: 'rejected', reason: error });
+    }
+  };
+  const readSource = (): Promise<void> => {
+    if (sourceRead !== undefined) return sourceRead;
+    const reading = readOneFromSource();
+    sourceRead = reading;
+    void reading.then(() => {
+      if (sourceRead === reading) sourceRead = undefined;
+    });
+    return reading;
+  };
+  const drain = async (): Promise<void> => {
+    while (!settled) await readSource();
+  };
+  const startDrain = (disconnectedAt: number): void => {
+    armPostDisconnectDeadline(disconnectedAt);
+    if (settled || drainStarted) return;
+    drainStarted = true;
+    void drain();
+  };
+  const disconnectTime = (): number => {
+    if (disconnectClock?.disconnectedAt !== undefined) return disconnectClock.disconnectedAt;
+    return Date.now();
+  };
+  const onClientDisconnect = options.clientDisconnectSignal === undefined
+    ? undefined
+    : (): void => {
+        if (disconnectClock !== undefined && disconnectClock.disconnectedAt === undefined) {
+          disconnectClock.disconnectedAt = Date.now();
         }
-      })();
-      currentPull = pull;
-      await pull;
-      if (currentPull === pull) currentPull = undefined;
+        armPostDisconnectDeadline(disconnectTime());
+      };
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      outputController = controller;
+    },
+    async pull() {
+      await readSource();
     },
     cancel(reason) {
       consumerCanceled = true;
-      onCancel?.(reason);
-      startDrain();
+      outputState = 'canceled';
+      try {
+        options.onCancel?.(reason);
+      } finally {
+        startDrain(disconnectTime());
+      }
     },
   });
-  backgroundScheduler(lifetime);
-  return new Response(body, {
+  const retained = new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
   });
+  retentionChainByBody.set(body, chain);
+  if (retained.body !== null) retentionChainByBody.set(retained.body, chain);
+
+  armIdleTimer();
+  totalTimer = setTimeout(() => {
+    stopWithTimeout(new RetainedResponseTimeoutError('total'));
+  }, Math.max(0, totalDeadlineAt - Date.now()));
+  unrefTimer(totalTimer);
+  options.backgroundScheduler(lifetime);
+
+  if (chain.postDisconnectDeadlineAt !== undefined) armPostDisconnectTimer();
+  if (options.clientDisconnectSignal?.aborted) onClientDisconnect?.();
+  else if (options.clientDisconnectSignal !== undefined && onClientDisconnect !== undefined) {
+    options.clientDisconnectSignal.addEventListener('abort', onClientDisconnect, { once: true });
+  }
+
+  return retained;
 };

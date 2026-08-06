@@ -4,7 +4,7 @@ import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { decodeOpaqueSqlText, encodeOpaqueSqlText } from './opaque-sql-text.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
-import { DIRECT_FETCH_ID, normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+import { DIRECT_FALLBACK_IDS, normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
@@ -78,6 +78,7 @@ import { usageBucketIdentityKey, usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
+import { assertStorageId } from '../shared/storage-id.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/agent-setup';
@@ -393,13 +394,12 @@ class SqlUsersRepo implements UsersRepo {
       );
     const insertDefaultKey = this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (
-           ?, (SELECT id FROM users WHERE username = ? AND deleted_at IS NULL), ?, ?, ?, ?, ?, ?, NULL, ?, ?
-         )`,
+        `INSERT INTO api_keys (${API_KEY_COLUMNS})
+         SELECT ?, id, ?, ?, ?, ?, ?, ?, NULL, ?, ? FROM users
+         WHERE id = last_insert_rowid() AND username = ? AND deleted_at IS NULL AND changes() = 1`,
       )
       .bind(
         defaultKey.id,
-        template.username,
         defaultKey.name,
         defaultKey.key,
         defaultKey.serverSecret,
@@ -408,12 +408,16 @@ class SqlUsersRepo implements UsersRepo {
         serializeUpstreamIds(defaultKey.upstreamIds),
         defaultKey.dumpRetentionSeconds,
         defaultKey.responsesRetentionSeconds,
+        template.username,
       );
 
     try {
       const results = await this.atomicBatch([insertUser, insertDefaultKey]);
       const [userRow] = results[0].results as unknown as UserRow[];
       if (!userRow || results[0].results.length !== 1) {
+        if (await this.findByUsername(template.username)) return { status: 'username-taken' };
+        const max = await this.db.prepare('SELECT MAX(id) AS id FROM users').first<{ id: number | null }>();
+        if (max?.id === Number.MAX_SAFE_INTEGER) return { status: 'id-exhausted' };
         throw new Error('createAccount: atomic user insert did not return exactly one row');
       }
       return { status: 'created', user: toUser(userRow) };
@@ -490,6 +494,7 @@ class SqlUsersRepo implements UsersRepo {
     ).bind(passwordHash, id, expectedPasswordHash, sessionId);
     const deleteSiblingSessions = this.db.prepare(
       `DELETE FROM sessions WHERE user_id = ? AND id != ?
+       AND changes() = 1
        AND EXISTS (
          SELECT 1 FROM users
          WHERE id = ? AND deleted_at IS NULL AND password_hash = ?
@@ -629,6 +634,13 @@ const storedUsageIdentity = (record: UsageRecord): StoredUsageIdentity => [
   canonicalPricingSelectorKey(record.pricingSelector),
 ];
 
+// SQLite only uses an expression-index column when the query repeats the
+// indexed expression. Keep these predicates aligned with migration 0078 so an
+// identity lookup does not stop at the key/model prefix and scan prior hours.
+// https://www.sqlite.org/expridx.html
+const USAGE_BUCKET_IDENTITY_PREDICATE = 'key_id = ? AND model_json = ? AND json_quote(upstream) = json_quote(?) AND model_key_json = ? AND hour = ? AND pricing_selector = ?';
+const USAGE_METRIC_IDENTITY_PREDICATE = `${USAGE_BUCKET_IDENTITY_PREDICATE} AND metric = ?`;
+
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -639,7 +651,7 @@ class SqlUsageRepo implements UsageRepo {
     const identity = [...storedIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
-        'SELECT quantity FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ?',
+        `SELECT quantity FROM usage WHERE ${USAGE_METRIC_IDENTITY_PREDICATE}`,
       ).bind(...identity).first<{ quantity: string }>();
       if (!current) {
         const inserted = await this.db.prepare(
@@ -652,7 +664,7 @@ class SqlUsageRepo implements UsageRepo {
 
       const quantity = addDecimalStrings(current.quantity, row.quantity);
       const updated = await this.db.prepare(
-        'UPDATE usage SET quantity = ? WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?',
+        `UPDATE usage SET quantity = ? WHERE ${USAGE_METRIC_IDENTITY_PREDICATE} AND quantity = ?`,
       ).bind(quantity, ...identity, current.quantity).run();
       if (updated.meta.changes === undefined) throw new Error('SQL runtime did not report updated usage row count');
       if (updated.meta.changes > 0) return;
@@ -699,7 +711,7 @@ class SqlUsageRepo implements UsageRepo {
   async set(record: UsageRecord): Promise<void> {
     const identity = storedUsageIdentity(record);
     const statements: SqlPreparedStatement[] = [
-      this.db.prepare('DELETE FROM usage WHERE key_id = ? AND model_json = ? AND upstream IS ? AND model_key_json = ? AND hour = ? AND pricing_selector = ?')
+      this.db.prepare(`DELETE FROM usage WHERE ${USAGE_BUCKET_IDENTITY_PREDICATE}`)
         .bind(...identity),
       ...usageMetricRows(record).map(row => this.db.prepare(
         'INSERT INTO usage (key_id, model_json, upstream, model_key_json, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1122,6 +1134,17 @@ export const UPSTREAM_CAS_WRITE_ATTEMPTS = 4;
 
 const UPSTREAM_COLUMNS = 'id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
 
+const proxyReferencesExistSql = (jsonExpression: string): string => `NOT EXISTS (
+  SELECT 1 FROM json_each(${jsonExpression}) entry
+  WHERE json_extract(entry.value, '$.id') NOT IN (${DIRECT_FALLBACK_IDS.map(() => '?').join(', ')})
+    AND NOT EXISTS (
+      SELECT 1 FROM proxies WHERE proxies.id = json_extract(entry.value, '$.id')
+    )
+)`;
+
+const proxyReferenceBinds = (proxyFallbackListJson: string): SqlBindValue[] =>
+  [proxyFallbackListJson, ...DIRECT_FALLBACK_IDS];
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -1184,13 +1207,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const generationPredicate = options.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?';
     const proxyPredicate = proxyFallbackListJson === undefined
       ? ''
-      : ` AND NOT EXISTS (
-          SELECT 1 FROM json_each(?) entry
-          WHERE json_extract(entry.value, '$.id') != ?
-            AND NOT EXISTS (
-              SELECT 1 FROM proxies WHERE proxies.id = json_extract(entry.value, '$.id')
-            )
-        )`;
+      : ` AND ${proxyReferencesExistSql('?')}`;
     const row = await this.db
       .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate}${proxyPredicate} RETURNING ${UPSTREAM_COLUMNS}`)
       .bind(
@@ -1198,7 +1215,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         id,
         expectedKind,
         ...(options.expectedUpdatedAt === undefined ? [] : [options.expectedUpdatedAt]),
-        ...(proxyFallbackListJson === undefined ? [] : [proxyFallbackListJson, DIRECT_FETCH_ID]),
+        ...(proxyFallbackListJson === undefined ? [] : proxyReferenceBinds(proxyFallbackListJson)),
       )
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -1249,11 +1266,15 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
+    assertStorageId(upstream.id, 'upstream id');
+    const proxyFallbackListJson = JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList));
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
-    await this.db
+    const result = await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE ${proxyReferencesExistSql('?')}
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -1266,7 +1287,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
+           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL' : ''}
+         RETURNING id`,
       )
       .bind(
         upstream.id,
@@ -1280,11 +1302,15 @@ class SqlUpstreamRepo implements UpstreamRepo {
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        proxyFallbackListJson,
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
         upstream.hue,
+        ...proxyReferenceBinds(proxyFallbackListJson),
       )
-      .run();
+      .first<{ id: string }>();
+    if (result === null) {
+      throw new Error(`Upstream ${upstream.id} references a proxy that does not exist`);
+    }
   }
 
   async delete(id: string): Promise<boolean> {
@@ -1450,63 +1476,94 @@ const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | 
 class SqlProxyRepo implements ProxyRepo {
   constructor(private db: SqlDatabase) {}
 
+  private async transactionalBatch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
+    if (this.db.batch === undefined) {
+      throw new Error('Proxy revision updates require transactional SQL batch support');
+    }
+    return await this.db.batch(statements);
+  }
+
   async list(): Promise<ProxyRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, name, url, created_at, updated_at, dial_timeout_seconds FROM proxies ORDER BY created_at')
+      .prepare('SELECT id, name, url, revision, created_at, updated_at, dial_timeout_seconds FROM proxies ORDER BY created_at')
       .all<ProxyRow>();
     return results.map(toProxyRecord);
   }
 
   async getById(id: string): Promise<ProxyRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, name, url, created_at, updated_at, dial_timeout_seconds FROM proxies WHERE id = ?')
+      .prepare('SELECT id, name, url, revision, created_at, updated_at, dial_timeout_seconds FROM proxies WHERE id = ?')
       .bind(id)
       .first<ProxyRow>();
     return row ? toProxyRecord(row) : null;
   }
 
   async insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+    assertStorageId(input.id, 'proxy id');
     const now = new Date().toISOString();
-    await this.db
-      .prepare('INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(input.id, input.name, input.url, now, now, input.dialTimeoutSeconds)
-      .run();
-    return {
-      id: input.id,
-      name: input.name,
-      url: input.url,
-      createdAt: now,
-      updatedAt: now,
-      dialTimeoutSeconds: input.dialTimeoutSeconds,
-    };
+    const [, inserted] = await this.transactionalBatch([
+      this.db.prepare('UPDATE proxy_revision_counter SET revision = revision + 1 WHERE singleton = 1'),
+      this.db
+        .prepare(
+          `INSERT INTO proxies (id, name, url, revision, created_at, updated_at, dial_timeout_seconds)
+           SELECT ?, ?, ?, revision, ?, ?, ? FROM proxy_revision_counter WHERE singleton = 1
+           RETURNING id, name, url, revision, created_at, updated_at, dial_timeout_seconds`,
+        )
+        .bind(input.id, input.name, input.url, now, now, input.dialTimeoutSeconds),
+    ]);
+    const row = inserted?.results[0] as unknown as ProxyRow | undefined;
+    if (row === undefined) throw new Error(`Proxy ${input.id} was not inserted`);
+    return toProxyRecord(row);
   }
 
   async patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
-    // One targeted UPDATE lets concurrent patches to different fields compose
-    // and makes row deletion observable through the missing RETURNING row.
+    // One transactional revision allocation + targeted UPDATE lets concurrent
+    // patches to different fields compose and makes deletion observable.
     const hasName = sqliteBoolean(patch.name !== undefined);
     const hasUrl = sqliteBoolean(patch.url !== undefined);
     const hasDialTimeout = sqliteBoolean(Object.hasOwn(patch, 'dialTimeoutSeconds'));
     const updatedAt = new Date().toISOString();
-    const row = await this.db
-      .prepare(
+    const configChangedValues: SqlBindValue[] = [
+      hasUrl,
+      patch.url ?? null,
+      hasDialTimeout,
+      hasDialTimeout ? patch.dialTimeoutSeconds! : null,
+    ];
+    const [, updated] = await this.transactionalBatch([
+      this.db.prepare(
+        `UPDATE proxy_revision_counter
+         SET revision = revision + CASE WHEN EXISTS (
+           SELECT 1 FROM proxies
+           WHERE id = ?
+             AND ((? AND url IS NOT ?) OR (? AND dial_timeout_seconds IS NOT ?))
+         ) THEN 1 ELSE 0 END
+         WHERE singleton = 1`,
+      ).bind(id, ...configChangedValues),
+      this.db.prepare(
         `UPDATE proxies
          SET name = CASE WHEN ? THEN ? ELSE name END,
+             revision = CASE
+               WHEN (? AND url IS NOT ?) OR (? AND dial_timeout_seconds IS NOT ?)
+                 THEN (SELECT revision FROM proxy_revision_counter WHERE singleton = 1)
+               ELSE revision
+             END,
              url = CASE WHEN ? THEN ? ELSE url END,
              dial_timeout_seconds = CASE WHEN ? THEN ? ELSE dial_timeout_seconds END,
              updated_at = ?
          WHERE id = ?
-         RETURNING id, name, url, created_at, updated_at, dial_timeout_seconds`,
+         RETURNING id, name, url, revision, created_at, updated_at, dial_timeout_seconds`,
       )
-      .bind(
-        hasName, patch.name ?? null,
-        hasUrl, patch.url ?? null,
-        hasDialTimeout, hasDialTimeout ? patch.dialTimeoutSeconds! : null,
-        updatedAt,
-        id,
-      )
-      .first<ProxyRow>();
-    return row === null ? null : toProxyRecord(row);
+        .bind(
+          hasName, patch.name ?? null,
+          ...configChangedValues,
+          hasUrl, patch.url ?? null,
+          hasDialTimeout, hasDialTimeout ? patch.dialTimeoutSeconds! : null,
+          updatedAt,
+          id,
+        ),
+    ]);
+    const row = updated?.results[0] as unknown as ProxyRow | undefined;
+    return row === undefined ? null : toProxyRecord(row);
   }
 
   async delete(id: string): Promise<boolean> {
@@ -1535,18 +1592,35 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
+    assertStorageId(record.id, 'proxy id');
     const now = new Date().toISOString();
-    await this.db
-      .prepare(
-        `INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?)
+    await this.transactionalBatch([
+      this.db.prepare(
+        `UPDATE proxy_revision_counter
+         SET revision = revision + CASE WHEN NOT EXISTS (SELECT 1 FROM proxies WHERE id = ?)
+           OR EXISTS (
+             SELECT 1 FROM proxies
+             WHERE id = ? AND (url IS NOT ? OR dial_timeout_seconds IS NOT ?)
+           )
+           THEN 1 ELSE 0 END
+         WHERE singleton = 1`,
+      ).bind(record.id, record.id, record.url, record.dialTimeoutSeconds),
+      this.db.prepare(
+        `INSERT INTO proxies (id, name, url, revision, created_at, updated_at, dial_timeout_seconds)
+         SELECT ?, ?, ?, revision, ?, ?, ? FROM proxy_revision_counter WHERE singleton = 1
          ON CONFLICT (id) DO UPDATE SET
            name = excluded.name,
+           revision = CASE
+             WHEN proxies.url IS NOT excluded.url OR proxies.dial_timeout_seconds IS NOT excluded.dial_timeout_seconds
+               THEN excluded.revision
+             ELSE proxies.revision
+           END,
            url = excluded.url,
            updated_at = excluded.updated_at,
            dial_timeout_seconds = excluded.dial_timeout_seconds`,
       )
-      .bind(record.id, record.name, record.url, now, now, record.dialTimeoutSeconds)
-      .run();
+        .bind(record.id, record.name, record.url, now, now, record.dialTimeoutSeconds),
+    ]);
   }
 
   async findUpstreamsReferencing(proxyId: string): Promise<string[]> {
@@ -1565,6 +1639,7 @@ interface ProxyRow {
   id: string;
   name: string;
   url: string;
+  revision: number;
   created_at: string;
   updated_at: string;
   dial_timeout_seconds: number | null;
@@ -1574,15 +1649,23 @@ const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
   id: row.id,
   name: row.name,
   url: row.url,
+  revision: assertProxyRevision(row.id, row.revision),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   dialTimeoutSeconds: row.dial_timeout_seconds,
 });
 
+const assertProxyRevision = (id: string, revision: number): number => {
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    throw new TypeError(`Invalid proxy revision for ${id}: ${revision}`);
+  }
+  return revision;
+};
+
 class SqlProxyBackoffRepo implements ProxyBackoffRepo {
   constructor(private db: SqlDatabase) {}
 
-  async recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean> {
+  async recordDialFailure(proxyId: string, upstreamId: string, proxyRevision: number, errorMessage: string): Promise<boolean> {
     const now = Math.floor(Date.now() / 1000);
     // SQLite reads RHS column references at the start of the UPDATE, before
     // the increment is applied. So `1 << fail_count` resolves against the
@@ -1596,33 +1679,33 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
     const result = await this.db
       .prepare(
         `INSERT INTO proxy_upstream_backoffs
-           (proxy_id, upstream_id, proxy_url, fail_count, expires_at, last_error, last_error_at)
-         SELECT id, ?, url, 1, ? + 60, ?, ?
+           (proxy_id, upstream_id, proxy_revision, fail_count, expires_at, last_error, last_error_at)
+         SELECT id, ?, revision, 1, ? + 60, ?, ?
          FROM proxies
-         WHERE id = ? AND url = ?
+         WHERE id = ? AND revision = ?
          ON CONFLICT (proxy_id, upstream_id) DO UPDATE SET
-           proxy_url = excluded.proxy_url,
-           fail_count = CASE WHEN proxy_url = excluded.proxy_url THEN fail_count + 1 ELSE 1 END,
+           proxy_revision = excluded.proxy_revision,
+           fail_count = CASE WHEN proxy_revision = excluded.proxy_revision THEN fail_count + 1 ELSE 1 END,
            expires_at = CASE
-             WHEN proxy_url = excluded.proxy_url THEN ? + min(60 * (1 << min(fail_count, 6)), 3600)
+             WHEN proxy_revision = excluded.proxy_revision THEN ? + min(60 * (1 << min(fail_count, 6)), 3600)
              ELSE excluded.expires_at
            END,
            last_error = excluded.last_error,
            last_error_at = excluded.last_error_at`,
       )
-      .bind(upstreamId, now, errorMessage, now, proxyId, proxyUrl, now)
+      .bind(upstreamId, now, errorMessage, now, proxyId, proxyRevision, now)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  async recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean> {
+  async recordDialSuccess(proxyId: string, upstreamId: string, proxyRevision: number): Promise<boolean> {
     const result = await this.db
       .prepare(
         `DELETE FROM proxy_upstream_backoffs
-         WHERE proxy_id = ? AND upstream_id = ? AND proxy_url = ?
-           AND EXISTS (SELECT 1 FROM proxies WHERE id = ? AND url = ?)`,
+         WHERE proxy_id = ? AND upstream_id = ?
+           AND EXISTS (SELECT 1 FROM proxies WHERE id = ? AND revision = ?)`,
       )
-      .bind(proxyId, upstreamId, proxyUrl, proxyId, proxyUrl)
+      .bind(proxyId, upstreamId, proxyId, proxyRevision)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -1632,7 +1715,7 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
       .prepare(
         `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
          FROM proxy_upstream_backoffs b
-         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url
+         JOIN proxies p ON p.id = b.proxy_id AND p.revision = b.proxy_revision
          WHERE b.upstream_id = ?`,
       )
       .bind(upstreamId)
@@ -1645,7 +1728,7 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
       .prepare(
         `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
          FROM proxy_upstream_backoffs b
-         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url
+         JOIN proxies p ON p.id = b.proxy_id AND p.revision = b.proxy_revision
          WHERE b.proxy_id = ?`,
       )
       .bind(proxyId)
@@ -1658,7 +1741,7 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
       .prepare(
         `SELECT b.proxy_id, b.upstream_id, b.fail_count, b.expires_at, b.last_error, b.last_error_at
          FROM proxy_upstream_backoffs b
-         JOIN proxies p ON p.id = b.proxy_id AND p.url = b.proxy_url`,
+         JOIN proxies p ON p.id = b.proxy_id AND p.revision = b.proxy_revision`,
       )
       .all<BackoffRowDb>();
     return results.map(toBackoffRow);

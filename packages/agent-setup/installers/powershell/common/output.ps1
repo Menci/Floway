@@ -37,7 +37,7 @@ function Write-SetupNotice {
 # Console.Error is used directly so diagnostics remain on stderr while only the
 # Homebrew-style label receives color.
 function Write-SetupDiagnostic {
-  param([string]$Label, [string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
+  param([string]$Label, [string]$Text, [System.ConsoleColor]$Color)
   if ($script:SetupErrColor) {
     $previous = [Console]::ForegroundColor
     try {
@@ -48,8 +48,6 @@ function Write-SetupDiagnostic {
     } finally {
       [Console]::ForegroundColor = $previous
     }
-  } elseif ($script:SetupForceColor -and (-not $script:SetupNoColor)) {
-    [Console]::Error.WriteLine("$($script:SetupEsc)[${TestAnsiCode}m${Label}:$($script:SetupEsc)[0m $Text")
   } else {
     [Console]::Error.WriteLine("${Label}: $Text")
   }
@@ -58,9 +56,14 @@ function Write-SetupDiagnostic {
 function Write-SetupAgentNotice { param([string]$Label, [string]$AgentName) Write-SetupNotice "${Label}: $AgentName" }
 function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
 function Write-SetupInfo { param([string]$Text) Write-SetupHostLine $Text -Plain }
-function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
-function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
+function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow }
+function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red }
 
 # Report a primary error to stderr and unwind. The agent boundary recognizes the
 # 'setup-handled' marker as already reported, so no line is ever duplicated.
-function Stop-Setup { param([string]$Message) Write-SetupError $Message; throw 'setup-handled' }
+function Stop-Setup {
+  param([string]$Message, [System.Exception]$Cause)
+  Write-SetupError $Message
+  if ($null -eq $Cause) { throw 'setup-handled' }
+  throw [System.Exception]::new('setup-handled', $Cause)
+}

@@ -7,7 +7,6 @@ const modelsCacheMock = vi.hoisted<{ error: Error | null }>(() => ({ error: null
 
 vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
   fetchUpstreamModelsCached: () => modelsCacheMock.error ? Promise.reject(modelsCacheMock.error) : Promise.resolve([]),
-  clearInFlightForTesting: () => {},
 }));
 
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';

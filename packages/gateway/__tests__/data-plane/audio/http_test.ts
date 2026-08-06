@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest';
 
 import { audioTranscriptionFileError } from '../../../src/data-plane/audio/http.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
+import { flushBackgroundExpectingFailures } from '../../test-utils/background-tracker.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -67,8 +68,12 @@ const transcriptionForm = (fields: readonly [string, string][] = []): FormData =
   return form;
 };
 
-const assertFailedRequestOnlySettlement = async (repo: InMemoryRepo): Promise<void> => {
-  await flushAsyncWork();
+const assertFailedRequestOnlySettlement = async (
+  repo: InMemoryRepo,
+  expectedBackgroundFailures: readonly unknown[] = [],
+): Promise<void> => {
+  if (expectedBackgroundFailures.length === 0) await flushAsyncWork();
+  else await flushBackgroundExpectingFailures(...expectedBackgroundFailures);
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0]?.requests, 1);
@@ -463,7 +468,7 @@ test('/v1/audio/transcriptions records a non-streaming JSON read failure as requ
       await expect(response.text()).rejects.toBe(failure);
     },
   );
-  await assertFailedRequestOnlySettlement(repo);
+  await assertFailedRequestOnlySettlement(repo, [failure, failure, failure]);
 });
 
 test('/v1/audio/transcriptions preserves unknown future usage metrics as request-only', async () => {
@@ -541,7 +546,7 @@ test('/v1/audio/transcriptions records a raw response body failure', async () =>
     },
   );
 
-  await flushAsyncWork();
+  await flushBackgroundExpectingFailures(failure, failure, failure);
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.metrics, []);
   const [performance] = await repo.performance.listAll();
@@ -737,6 +742,7 @@ test.each([
         '',
       ].join('\n'), { headers: { 'content-type': 'text/event-stream' } }),
       verify: () => undefined,
+      expectedBackgroundFailures: [] as unknown[],
     }),
     forwarded: ['transcript.text.delta', '{not-json}', 'transcript.text.done'],
   },
@@ -744,6 +750,7 @@ test.each([
     name: 'an upstream body read error',
     createFixture: () => {
       const encoder = new TextEncoder();
+      const failure = new Error('upstream audio stream failed');
       let pulled = false;
       let readErrorTriggered = false;
       return {
@@ -755,10 +762,11 @@ test.each([
               return;
             }
             readErrorTriggered = true;
-            controller.error(new Error('upstream audio stream failed'));
+            controller.error(failure);
           },
         }), { headers: { 'content-type': 'text/event-stream' } }),
         verify: () => assertEquals(readErrorTriggered, true),
+        expectedBackgroundFailures: [failure, failure],
       };
     },
     forwarded: ['transcript.text.delta', 'partial'],
@@ -779,7 +787,7 @@ test.each([
     },
   );
   fixture.verify();
-  await assertFailedRequestOnlySettlement(repo);
+  await assertFailedRequestOnlySettlement(repo, fixture.expectedBackgroundFailures);
 });
 
 test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {

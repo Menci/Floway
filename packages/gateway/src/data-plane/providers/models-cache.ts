@@ -1,6 +1,7 @@
 import type { GatewayProvider } from './registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
+import type { Repo } from '../../repo/types.ts';
 import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ProviderModel, UpstreamModelsCache } from '@floway-dev/provider';
@@ -42,20 +43,30 @@ interface InFlightModelsFetch {
   backgroundScheduled: boolean;
 }
 
-// L1: per-isolate in-flight memoization. Callers join only when both their
-// actual fetch inputs and persisted-cache ownership match; different drafts
-// and superseded rows remain isolated. Every joining provider instance receives
-// the cache snapshot committed by the shared fetch, keeping later reads in each
-// request coherent. Not a TTL cache — the entry is removed when the promise
-// settles. The conditional delete defends against a stale removal racing a
-// later replacement.
-const inFlight = new Map<string, InFlightModelsFetch>();
+// L1: per-repository in-flight memoization. Callers join only when both their
+// actual fetch inputs and persisted-cache ownership match; different drafts,
+// superseded rows, and application compositions remain isolated. Every joining
+// provider instance receives the cache snapshot committed by the shared fetch,
+// keeping later reads in each request coherent. Not a TTL cache — the entry is
+// removed when the promise settles. The conditional delete defends against a
+// stale removal racing a later replacement.
+const inFlightByRepo = new WeakMap<Repo, Map<string, InFlightModelsFetch>>();
+
+const inFlightForRepo = (repo: Repo): Map<string, InFlightModelsFetch> => {
+  const existing = inFlightByRepo.get(repo);
+  if (existing !== undefined) return existing;
+  const created = new Map<string, InFlightModelsFetch>();
+  inFlightByRepo.set(repo, created);
+  return created;
+};
 
 const memoInFlight = (
+  repo: Repo,
   key: string,
   instance: GatewayProvider,
   fn: () => Promise<ModelsFetchResult>,
 ): InFlightModelsFetch => {
+  const inFlight = inFlightForRepo(repo);
   const existing = inFlight.get(key);
   if (existing) {
     existing.instances.add(instance);
@@ -92,6 +103,7 @@ const assertUniqueModelIds = (instance: GatewayProvider, models: ProviderModel[]
 };
 
 const runFetch = async (
+  repo: Repo,
   instance: GatewayProvider,
   fetcher: Fetcher,
   key: string,
@@ -101,13 +113,13 @@ const runFetch = async (
   try {
     const models = assertUniqueModelIds(instance, [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))]);
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
-    const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
+    const persisted = await repo.upstreams.saveModelsCache(key, generation, entry);
     return { models, persistedCache: persisted ? entry : null };
   } catch (err) {
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
     // fails its first fetch surfaces the error to the caller with nothing
     // persisted.
-    await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() });
+    await repo.upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() });
     throw err;
   }
 };
@@ -117,13 +129,14 @@ export const fetchUpstreamModelsCached = async (
   opts: ModelsCacheFetchOptions,
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force, loadProvidedModels } = opts;
+  const repo = getRepo();
   const key = instance.upstreamId;
   const generation = instance.modelsCacheGeneration;
   const inFlightKey = `${key}\0${instance.modelsFetchIdentity}\0${generation.updatedAt}\0${serializeStoredConfig(generation.config)}`;
   const now = Date.now();
 
   if (force) {
-    return await memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key, loadProvidedModels)).promise;
+    return await memoInFlight(repo, inFlightKey, instance, () => runFetch(repo, instance, fetcher, key, loadProvidedModels)).promise;
   }
 
   // Read off the instance rather than queried: the row that produced this
@@ -135,7 +148,7 @@ export const fetchUpstreamModelsCached = async (
   }
 
   if (cached && now - cached.fetchedAt < HARD_MS) {
-    const inFlightFetch = memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key));
+    const inFlightFetch = memoInFlight(repo, inFlightKey, instance, () => runFetch(repo, instance, fetcher, key));
     if (!inFlightFetch.backgroundScheduled) {
       // The trailing `.catch` is the sink for the background branch only —
       // `runFetch` already persists the failure via `saveModelsCacheError`
@@ -147,11 +160,5 @@ export const fetchUpstreamModelsCached = async (
     return assertUniqueModelIds(instance, cached.models);
   }
 
-  return await memoInFlight(inFlightKey, instance, () => runFetch(instance, fetcher, key)).promise;
-};
-
-// Test-only: drop the L1 map so a test's setup is independent of any
-// promise the previous test left mid-settle.
-export const clearInFlightForTesting = (): void => {
-  inFlight.clear();
+  return await memoInFlight(repo, inFlightKey, instance, () => runFetch(repo, instance, fetcher, key)).promise;
 };

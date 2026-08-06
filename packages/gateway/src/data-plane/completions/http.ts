@@ -95,13 +95,13 @@ export const completions = async (c: Context): Promise<Response> => {
       format: 'media-type',
       sse: { format: 'sse', transformFrame, settleUsage },
       json: {
-          format: 'json',
-          extractBilling: (body: unknown) => {
-            if (!body || typeof body !== 'object') return null;
-            const { usage, service_tier: tier } = body as { usage?: unknown; service_tier?: string | null };
-            return tokenUsageFromCompletionsUsage(usage, tier, declaredExclusive(), servingIdentity());
-          },
+        format: 'json',
+        extractBilling: (body: unknown) => {
+          if (!body || typeof body !== 'object') return null;
+          const { usage, service_tier: tier } = body as { usage?: unknown; service_tier?: string | null };
+          return tokenUsageFromCompletionsUsage(usage, tier, declaredExclusive(), servingIdentity());
         },
+      },
     },
   });
   return finalizeGatewayResponse(ctx, response);

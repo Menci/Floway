@@ -1,3 +1,5 @@
+import { isStorageId } from './storage-id.ts';
+
 type UpstreamIdsValue = string[] | null;
 
 type ParseUpstreamIdsResult =
@@ -15,6 +17,7 @@ export const parseUpstreamIdsValue = (raw: unknown): ParseUpstreamIdsResult => {
   const seen = new Set<string>();
   for (const item of raw) {
     if (typeof item !== 'string' || item.length === 0) return { ok: false, error: 'upstream_ids must be non-empty strings' };
+    if (!isStorageId(item)) return { ok: false, error: 'upstream_ids must not contain NUL or unpaired UTF-16 surrogates' };
     if (seen.has(item)) return { ok: false, error: `upstream_ids contains duplicate id ${item}` };
     seen.add(item);
     ids.push(item);

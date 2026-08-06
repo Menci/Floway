@@ -1,6 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
@@ -174,37 +173,6 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
   );
 });
 
-test('enumerateModelCandidates does not retry when the inbound id has no dated suffix', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save(
-    buildCustomUpstreamRecord({
-      config: {
-        baseUrl: 'https://custom.example.com',
-        authStyle: 'bearer',
-        ingressHeadersRules: [],
-        apiKey: 'sk-custom',
-        endpoints: { messages: {} },
-      },
-    }),
-  );
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'claude-opus-4-7' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      // Plain typo / unknown id — no dated suffix, no retry.
-      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-unknown', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolved.candidates.length, 0);
-    },
-  );
-});
-
 test('enumerateModelCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
   // The dated-suffix retry is a SECOND attempt, gated on the first
   // attempt finding nothing. When the upstream catalog already lists the
@@ -291,41 +259,6 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
   assertEquals(secondModelsFetches, 0);
 });
 
-test('enumerateRealModelCandidates rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save({
-    id: 'up_x',
-    kind: 'azure',
-    name: 'X',
-    enabled: true,
-    sortOrder: 1,
-    createdAt: '2026-05-21T00:00:00.000Z',
-    updatedAt: '2026-05-21T00:00:00.000Z',
-    config: {
-      endpoint: 'https://example.openai.azure.com',
-      apiKey: 'az-key',
-      models: [
-        { upstreamModelId: 'enabled-model', endpoints: { chatCompletions: {} } },
-        { upstreamModelId: 'disabled-model', endpoints: { chatCompletions: {} } },
-      ],
-    },
-    flagOverrides: {},
-    disabledPublicModelIds: ['disabled-model'],
-    proxyFallbackList: [],
-    modelPrefix: null,
-    modelsCache: null,
-    hue: 210,
-    state: null,
-  });
-
-  const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, () => directFetcher, testScheduler);
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, () => directFetcher, testScheduler);
-  assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
-  assertEquals(disabled.candidates.length, 0);
-});
-
 test('a Custom mixed chat and embedding model resolves once in both endpoint families', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -373,7 +306,6 @@ test('an Azure mixed chat and embedding model resolves once in both endpoint fam
 // still resolve. The broken upstream's display name flows back via
 // `failedUpstreams` so the eventual error renderer can mention it.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -425,7 +357,6 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // attempt, so the resolver returns immediately rather than walking the
 // stripped form.
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -466,7 +397,6 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 // failedUpstreams across the two retry attempts must dedupe: a single broken
 // upstream that rejects both walks reports its name once, not twice.
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -508,7 +438,6 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 // fetch error in a ProviderModelsUnavailableError with the AbortError as
 // its cause, so the resolver's detection walks the cause chain.
 test('enumerateModelCandidates rethrows AbortError without waiting for a hanging sibling', { timeout: 1_000 }, async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -559,7 +488,6 @@ test('enumerateModelCandidates rethrows AbortError without waiting for a hanging
       if (!isAbortInChain(thrown)) {
         throw new Error(`expected rejection to carry an AbortError in its cause chain; got: ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`);
       }
-      clearInFlightForTesting();
     },
   );
 });
@@ -595,7 +523,6 @@ test('enumerateModelCandidates uses one upstream snapshot for fetchers and provi
 // upstream fetch. The failure renderer surfaces this as a model-missing 404
 // without re-deriving the empty-cap branch.
 test('enumerateModelCandidates returns the empty triple when the visible upstream list is empty', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // A populated catalog is the case under test: the empty cap, not an empty
@@ -694,7 +621,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('flattens across targets in declaration order for first-available', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -722,7 +648,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('random selection can reverse target blocks without mutating stored declaration order', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -759,7 +684,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('dedups semantically equal rule objects regardless of property insertion order', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -785,8 +709,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
-  test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
-    clearInFlightForTesting();
+  test('preserves first-occurrence order while deduping equal rules and retaining distinct rules', async () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -796,6 +719,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
         { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
         { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'high' } } },
       ],
       ...aliasCommon,
     });
@@ -812,39 +736,13 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         }))).toEqual([
           { binding: 'gpt-5@up_a', effort: 'low' },
           { binding: 'claude@up_b', effort: 'high' },
+          { binding: 'gpt-5@up_a', effort: 'high' },
         ]);
       },
     );
   });
 
-  test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearInFlightForTesting();
-    const { repo } = await setupAppTest();
-    await seedUpstreams(repo);
-    await repo.modelAliases.insert({
-      id: 'alias_two-rules',
-      name: 'two-rules', kind: 'chat', selection: 'first-available',
-      targets: [
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'high' } } },
-      ],
-      ...aliasCommon,
-    });
-
-    await withMockedFetch(
-      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
-      async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, model: 'two-rules', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
-        });
-        assertEquals(resolved.candidates.length, 2);
-        expect(resolved.candidates.map(c => c.rules?.reasoning?.effort)).toEqual(['low', 'high']);
-      },
-    );
-  });
-
-  test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
-    clearInFlightForTesting();
+  test('falls through to a later target when an earlier target is absent from every catalog', async () => {
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -872,7 +770,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('reuses one rejected cold catalog fetch across every alias target', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({

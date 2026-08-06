@@ -975,6 +975,10 @@ class FakeUpstreamsSqlPreparedStatement {
   }
 
   first<T>(): Promise<T | null> {
+    if (this.query.startsWith('INSERT INTO upstreams')) {
+      this.db.upsert(this.binds);
+      return Promise.resolve({ id: this.binds[0] } as T);
+    }
     if (this.query.includes('FROM upstreams WHERE id = ?')) {
       return Promise.resolve((this.db.selectById(this.binds[0] as string) as T | undefined) ?? null);
     }
@@ -995,10 +999,6 @@ class FakeUpstreamsSqlPreparedStatement {
   }
 
   run(): Promise<{ results: never[]; success: true; meta: Record<string, unknown> }> {
-    if (this.query.startsWith('INSERT INTO upstreams')) {
-      this.db.upsert(this.binds);
-      return Promise.resolve({ results: [], success: true, meta: { changes: 1 } });
-    }
     if (this.query === 'DELETE FROM upstreams') {
       this.db.rows = [];
       return Promise.resolve({ results: [], success: true, meta: { changes: 0 } });
