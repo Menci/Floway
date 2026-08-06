@@ -234,6 +234,55 @@ test('a rejecting source next cannot wait forever for source cleanup', async () 
   }
 });
 
+test('a cleanup rejection after the deadline is reported without becoming unhandled', async () => {
+  vi.useFakeTimers();
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const sourceFailure = new Error('provider next failed');
+    const lateCleanupFailure = new Error('provider return failed after timeout');
+    const returnStarted = deferred<void>();
+    const cleanup = deferred<IteratorResult<ProtocolFrame<unknown>>>();
+    const events: AsyncIterable<ProtocolFrame<unknown>> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => { throw sourceFailure; },
+          return: () => {
+            returnStarted.resolve();
+            return cleanup.promise;
+          },
+        };
+      },
+    };
+    const executionController = new AbortController();
+    const ctx = mockGatewayCtx({ executionController, executionSignal: executionController.signal });
+    const result = await providerStreamResultToExecuteResult(
+      okStreamResult(events),
+      stubModelCandidate(),
+      'responses',
+      ctx,
+      () => null,
+    );
+    if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+    const pending = result.events[Symbol.asyncIterator]().next();
+    await returnStarted.promise;
+    await vi.advanceTimersByTimeAsync(RETAINED_RESPONSE_LIMITS.postDisconnectDrainTimeoutMs);
+    const error = await pending.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AggregateError);
+
+    cleanup.reject(lateCleanupFailure);
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(consoleError).toHaveBeenCalledWith(
+      '[provider-stream] cleanup failed after lifecycle settlement',
+      lateCleanupFailure,
+    );
+    await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+  } finally {
+    consoleError.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 test('source cleanup failure remains attached to the primary read failure', async () => {
   const sourceFailure = new Error('provider next failed');
   const cleanupFailure = new Error('provider return failed');
