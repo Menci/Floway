@@ -251,7 +251,7 @@ describe('ensureCodexAccessToken', () => {
     const first = ensureCodexAccessToken(upstreamId, accountId, mint, false, firstController.signal);
     const second = ensureCodexAccessToken(upstreamId, accountId, mint, false, secondController.signal);
     const flightSignal = await mintStarted.promise;
-    const reason = new DOMException('first caller left', 'AbortError');
+    const reason = { kind: 'first caller left' };
     firstController.abort(reason);
 
     await expect(first).rejects.toBe(reason);

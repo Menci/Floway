@@ -195,12 +195,14 @@ export const ensureCodexAccessToken = async (
   if (existing) {
     if (!force && existing.force) {
       const cached = await freshCodexAccessToken(upstreamId, accountId);
+      if (signal?.aborted) throw signal.reason;
       if (cached !== null) return cached;
     }
     try {
       const entry = await awaitCodexAccessTokenFlight(existing, signal);
       if (!force) return entry;
     } catch (error) {
+      if (signal?.aborted) throw signal.reason;
       if (error instanceof CodexOAuthSessionTerminatedError || isAbortError(error)) throw error;
       // A proxy or storage failure belongs to the caller whose callback drove
       // that flight. Once it settles, this caller retries through its own path.
@@ -243,6 +245,7 @@ const ensureCodexAccessTokenInner = async (
 ): Promise<CodexAccessTokenEntry> => {
   if (signal.aborted) throw signal.reason;
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);

@@ -163,12 +163,14 @@ export const ensureClaudeCodeAccessToken = async (
   if (existing) {
     if (!args.force && existing.force) {
       const cached = await freshClaudeCodeAccessToken(args);
+      if (args.signal?.aborted) throw args.signal.reason;
       if (cached !== null) return cached;
     }
     try {
       const ensured = await awaitClaudeCodeAccessTokenFlight(existing, args.signal);
       if (!args.force) return ensured;
     } catch (error) {
+      if (args.signal?.aborted) throw args.signal.reason;
       if (error instanceof ClaudeCodeOAuthSessionTerminatedError || isAbortError(error)) throw error;
       // The failed flight used another caller's fetcher. Retry this caller once
       // the shared rotation slot is free.
@@ -218,6 +220,7 @@ const ensureClaudeCodeAccessTokenInner = async (
 ): Promise<EnsuredAccessToken> => {
   if (signal.aborted) throw signal.reason;
   const fresh = await args.repo.getById(args.upstreamId);
+  if (signal.aborted) throw signal.reason;
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
