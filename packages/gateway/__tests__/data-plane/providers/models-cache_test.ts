@@ -213,8 +213,9 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('a timed-out cold flight leaves the in-flight slot reusable', async () => {
     vi.useFakeTimers();
-    await setupRepo();
-    const stalledFetch = vi.fn(() => new Promise<ProviderModel[]>(() => {}));
+    const repo = await setupRepo();
+    const stalledResult = Promise.withResolvers<ProviderModel[]>();
+    const stalledFetch = vi.fn(() => stalledResult.promise);
     const stalled = fetchUpstreamModelsCached(
       stubInstance(stalledFetch),
       { scheduler: () => {}, fetcher: directFetcher },
@@ -232,6 +233,34 @@ describe('fetchUpstreamModelsCached', () => {
     expect(recovered.map(model => model.id)).toEqual(['recovered']);
     expect(stalledFetch).toHaveBeenCalledTimes(1);
     expect(succeedingFetch).toHaveBeenCalledTimes(1);
+    stalledResult.resolve([aModel('late-old-model')]);
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['recovered']);
+  });
+
+  test('a timed-out fetch cannot attach a later failure to its recovery flight', async () => {
+    vi.useFakeTimers();
+    const repo = await setupRepo();
+    const stalledResult = Promise.withResolvers<ProviderModel[]>();
+    const stalled = fetchUpstreamModelsCached(
+      stubInstance(vi.fn(() => stalledResult.promise)),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    const rejection = stalled.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    const recovered = await fetchUpstreamModelsCached(
+      stubInstance(vi.fn(async () => [aModel('recovered')])),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    expect(recovered.map(model => model.id)).toEqual(['recovered']);
+    stalledResult.reject(new Error('late old failure'));
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    const stored = await storedCache(repo);
+    expect(stored?.models.map(model => model.id)).toEqual(['recovered']);
+    expect(stored?.lastError).toBeNull();
   });
 
   test('a stalled successful persistence leaves the in-flight slot reusable', async () => {
