@@ -982,6 +982,27 @@ describe('parseHttpResponse — execution cancellation', () => {
     expect(readable.locked).toBe(false);
   });
 
+  it.each([
+    ['an Error', new Error('head cancel failed')],
+    ['undefined', undefined],
+  ])('keeps a head-read abort primary when reader cancel rejects with %s', async (_label, cleanupError) => {
+    const reason = new Error('request ended during response head');
+    const controller = new AbortController();
+    const readable = new ReadableStream<Uint8Array>({
+      pull: () => new Promise<void>(() => {}),
+      cancel: () => { throw cleanupError; },
+    });
+    const pending = parseHttpResponse(readable, controller.signal);
+
+    controller.abort(reason);
+
+    const rejection = await pending.catch((error: unknown) => error) as AggregateError;
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors).toEqual([reason, cleanupError]);
+    expect(rejection.cause).toBe(reason);
+    expect(readable.locked).toBe(false);
+  });
+
   it('cancels a blocked response-body read with the original abort reason', async () => {
     const reason = new Error('request ended during response body');
     const controller = new AbortController();
@@ -1002,6 +1023,32 @@ describe('parseHttpResponse — execution cancellation', () => {
 
     await expect(pending).rejects.toBe(reason);
     expect(cancelReason).toBe(reason);
+  });
+
+  it.each([
+    ['an Error', new Error('body cancel failed')],
+    ['undefined', undefined],
+  ])('keeps a body-read abort primary when reader cancel rejects with %s', async (_label, cleanupError) => {
+    const reason = new Error('request ended during response body');
+    const controller = new AbortController();
+    const readable = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode(
+          'HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n',
+        ));
+      },
+      pull: () => new Promise<void>(() => {}),
+      cancel: () => { throw cleanupError; },
+    });
+    const raw = await parseHttpResponse(readable, controller.signal);
+    const pending = raw.body.getReader().read();
+
+    controller.abort(reason);
+
+    const rejection = await pending.catch((error: unknown) => error) as AggregateError;
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors).toEqual([reason, cleanupError]);
+    expect(rejection.cause).toBe(reason);
   });
 });
 

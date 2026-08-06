@@ -393,7 +393,9 @@ describe('fetchOnStream — request body serialization', () => {
         writes += 1;
         if (writes === 1) return;
         bodyWriteStarted();
-        return new Promise<void>(() => {});
+        return new Promise<void>((_resolve, reject) => {
+          controller.signal.addEventListener('abort', () => reject(reason), { once: true });
+        });
       },
     });
     const response = new ReadableStream<Uint8Array>();
@@ -407,6 +409,41 @@ describe('fetchOnStream — request body serialization', () => {
     controller.abort(reason);
 
     await expect(pending).rejects.toBe(reason);
+  });
+
+  it.each([
+    ['an Error', new Error('writer abort failed')],
+    ['undefined', undefined],
+  ])('keeps cancellation primary when writer abort rejects with %s', async (_label, cleanupError) => {
+    const reason = new Error('stop upload');
+    const controller = new AbortController();
+    let writes = 0;
+    let bodyWriteStarted!: () => void;
+    const started = new Promise<void>(resolve => { bodyWriteStarted = resolve; });
+    const writable = new WritableStream<Uint8Array>({
+      write() {
+        writes += 1;
+        if (writes === 1) return;
+        bodyWriteStarted();
+        return new Promise<void>((_resolve, reject) => {
+          controller.signal.addEventListener('abort', () => reject(reason), { once: true });
+        });
+      },
+      abort() { throw cleanupError; },
+    });
+    const pending = fetchOnStream(
+      { readable: new ReadableStream<Uint8Array>(), writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body: Uint8Array.of(1, 2, 3) },
+      undefined,
+      { signal: controller.signal },
+    );
+    await started;
+    controller.abort(reason);
+
+    const rejection = await pending.catch((error: unknown) => error) as AggregateError;
+    expect(rejection).toBeInstanceOf(AggregateError);
+    expect(rejection.errors).toEqual([reason, cleanupError]);
+    expect(rejection.cause).toBe(reason);
   });
 
   it('writes replayable segments in order with one computed Content-Length', async () => {

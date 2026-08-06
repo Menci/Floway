@@ -62,7 +62,11 @@ export const parseHttpResponse = async (
 ): Promise<RawHttpResponse> => {
   if (signal?.aborted) throw signalAbortReason(signal);
   const reader = readable.getReader();
-  const onAbort = (): void => { void reader.cancel(signalAbortReason(signal!)).catch(() => {}); };
+  let abortCleanup: Promise<readonly unknown[]> | undefined;
+  const onAbort = (): void => {
+    const reason = signalAbortReason(signal!);
+    abortCleanup ??= collectCleanupFailures([async () => await reader.cancel(reason)]);
+  };
   signal?.addEventListener('abort', onAbort, { once: true });
   let buffer: Uint8Array = new Uint8Array(0);
   let informationalCount = 0;
@@ -99,7 +103,17 @@ export const parseHttpResponse = async (
   } catch (err) {
     signal?.removeEventListener('abort', onAbort);
     try { reader.releaseLock(); } catch { /* lock already released */ }
-    throw signal?.aborted ? signalAbortReason(signal) : err;
+    if (signal?.aborted) {
+      const reason = signalAbortReason(signal);
+      const cleanupFailures = await (abortCleanup
+        ?? collectCleanupFailures([async () => await reader.cancel(reason)]));
+      throw failureWithCleanup(
+        reason,
+        cleanupFailures,
+        'HTTP response-head abort and reader cleanup both failed',
+      );
+    }
+    throw err;
   }
 };
 
@@ -118,8 +132,13 @@ const responseWithAbortSignal = (response: RawHttpResponse, signal: AbortSignal 
       onAbort = () => {
         const reason = signalAbortReason(signal);
         terminate();
-        controller.error(reason);
-        void reader.cancel(reason).catch(() => {});
+        void collectCleanupFailures([async () => await reader.cancel(reason)]).then((cleanupFailures) => {
+          controller.error(failureWithCleanup(
+            reason,
+            cleanupFailures,
+            'HTTP response-body abort and reader cleanup both failed',
+          ));
+        });
       };
       if (signal.aborted) onAbort();
       else signal.addEventListener('abort', onAbort, { once: true });

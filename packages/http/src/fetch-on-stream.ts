@@ -2,6 +2,7 @@
 
 import { signalAbortReason } from './abort.ts';
 import { concat, utf8Bytes } from './bytes.ts';
+import { collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
@@ -42,16 +43,41 @@ const writeWithSignal = async (
     return;
   }
   if (signal.aborted) throw signalAbortReason(signal);
-  let rejectAbort!: (reason: unknown) => void;
-  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  type WriteOutcome =
+    | { readonly type: 'written' }
+    | { readonly type: 'write-error'; readonly error: unknown }
+    | { readonly type: 'aborted'; readonly reason: Error };
+  let resolveAbort!: (outcome: WriteOutcome) => void;
+  let abortCleanup: Promise<readonly unknown[]> | undefined;
+  const aborted = new Promise<WriteOutcome>(resolve => { resolveAbort = resolve; });
   const onAbort = (): void => {
     const reason = signalAbortReason(signal);
-    rejectAbort(reason);
-    void writer.abort(reason).catch(() => {});
+    // Initiate transport teardown synchronously, then let the caller wait for
+    // its bounded settlement so an abort failure remains attached to the
+    // execution abort instead of becoming an unhandled late rejection.
+    abortCleanup = collectCleanupFailures([async () => await writer.abort(reason)]);
+    resolveAbort({ type: 'aborted', reason });
   };
   signal.addEventListener('abort', onAbort, { once: true });
   try {
-    await Promise.race([writer.write(chunk), aborted]);
+    const write = Promise.resolve().then(async (): Promise<WriteOutcome> => {
+      try {
+        await writer.write(chunk);
+        return { type: 'written' };
+      } catch (error) {
+        return { type: 'write-error', error };
+      }
+    });
+    const outcome = await Promise.race([write, aborted]);
+    if (outcome.type === 'aborted') {
+      const cleanupFailures = await abortCleanup!;
+      throw failureWithCleanup(
+        outcome.reason,
+        cleanupFailures,
+        'HTTP request abort and writer cleanup both failed',
+      );
+    }
+    if (outcome.type === 'write-error') throw outcome.error;
   } finally {
     signal.removeEventListener('abort', onAbort);
   }
