@@ -18,7 +18,7 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-sea
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, Repo, WebSearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
@@ -26,6 +26,12 @@ import { ALL_PROVIDER_KINDS, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+
+const proxyRevision = async (repo: Repo, id: string): Promise<number> => {
+  const proxy = await repo.proxies.getById(id);
+  if (proxy === null) throw new Error(`missing proxy ${id}`);
+  return proxy.revision;
+};
 
 const KEY_A: ApiKey = {
   id: 'key-a',
@@ -1437,7 +1443,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, HTTP_PROXY_URL, 'transport reset');
+  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, await proxyRevision(repo, 'p_old'), 'transport reset');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
 
   const result = await doImport(app, 'replace', latestImportData({

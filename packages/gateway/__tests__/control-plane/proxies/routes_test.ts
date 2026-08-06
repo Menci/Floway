@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import type { SerializedBackoffRow, SerializedProxyRecord } from '../../../src/control-plane/proxies/serialize.ts';
+import type { Repo } from '../../../src/repo/types.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -11,6 +12,12 @@ afterEach(() => {
 
 const SOCKS_URL = 'socks5://user:pass@198.51.100.10:1080';
 const HTTP_URL = 'http://198.51.100.20:3128';
+
+const proxyRevision = async (repo: Repo, id: string): Promise<number> => {
+  const proxy = await repo.proxies.getById(id);
+  if (proxy === null) throw new Error(`missing proxy ${id}`);
+  return proxy.revision;
+};
 
 const authed = (adminSession: string, body?: unknown): RequestInit => ({
   method: body === undefined ? 'GET' : 'POST',
@@ -94,7 +101,7 @@ test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
 test('PATCH /api/proxies/:id rejects an invalid URL without mutating config or backoff', async () => {
   const { repo, adminSession } = await setupAppTest();
   const before = await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: 30 });
-  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', HTTP_URL, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', before.revision, 'boom');
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'New', url: 'not-a-proxy-uri' }));
   assertEquals(resp.status, 400);
@@ -112,8 +119,9 @@ test('PATCH /api/proxies/:id returns 404 for an unknown proxy', async () => {
 test('PATCH /api/proxies/:id with a new URL makes old-generation backoffs inactive', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p1', 'up_b', HTTP_URL, 'boom');
+  const revision = await proxyRevision(repo, 'p1');
+  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', revision, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p1', 'up_b', revision, 'boom');
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { url: SOCKS_URL }));
   assertEquals(resp.status, 200);
@@ -124,7 +132,7 @@ test('PATCH /api/proxies/:id with a new URL makes old-generation backoffs inacti
 test('PATCH /api/proxies/:id with the identical URL leaves backoff rows intact', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', HTTP_URL, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', await proxyRevision(repo, 'p1'), 'boom');
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed', url: HTTP_URL }));
   assertEquals(resp.status, 200);
@@ -184,7 +192,7 @@ test('proxy control schemas enforce inclusive resource boundaries and malformed 
   const maximum = await requestApp(`/api/proxies/${created.id}`, patchAuthed(adminSession, { dial_timeout_seconds: 600 }));
   assertEquals(maximum.status, 200);
   assertEquals(((await maximum.json()) as SerializedProxyRecord).dial_timeout_seconds, 600);
-  await repo.proxyBackoffs.recordDialFailure(created.id, 'up_x', SOCKS_URL, 'boom');
+  await repo.proxyBackoffs.recordDialFailure(created.id, 'up_x', await proxyRevision(repo, created.id), 'boom');
 
   const malformed: Array<readonly [string, RequestInit]> = [
     ['/api/proxies', authed(adminSession, { name: '', url: HTTP_URL })],
@@ -211,8 +219,8 @@ test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy'
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_keep', name: 'Kept', url: SOCKS_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p_del', 'up_a', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_keep', 'up_a', SOCKS_URL, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_del', 'up_a', await proxyRevision(repo, 'p_del'), 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_keep', 'up_a', await proxyRevision(repo, 'p_keep'), 'boom');
 
   const resp = await requestApp('/api/proxies/p_del', deleteAuthed(adminSession));
   assertEquals(resp.status, 204);
@@ -313,8 +321,8 @@ test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () 
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_b', name: 'B', url: SOCKS_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_a', SOCKS_URL, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', await proxyRevision(repo, 'p_a'), 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_a', await proxyRevision(repo, 'p_b'), 'boom');
   const [stored] = await repo.proxyBackoffs.listForProxy('p_a');
   assertExists(stored);
 
@@ -335,8 +343,8 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_b', name: 'B', url: SOCKS_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_b', SOCKS_URL, 'kaboom');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', await proxyRevision(repo, 'p_a'), 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_b', await proxyRevision(repo, 'p_b'), 'kaboom');
 
   const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
   assertEquals(resp.status, 200);
@@ -350,9 +358,10 @@ test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_b', name: 'B', url: SOCKS_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_x', SOCKS_URL, 'boom');
+  const revisionA = await proxyRevision(repo, 'p_a');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', revisionA, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', revisionA, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_b', 'up_x', await proxyRevision(repo, 'p_b'), 'boom');
 
   const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminSession, {}));
   assertEquals(resp.status, 200);
@@ -365,8 +374,9 @@ test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the
 test('POST /api/proxies/:id/backoffs/reset with upstream_id clears only the matching pair', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', HTTP_URL, 'boom');
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', HTTP_URL, 'boom');
+  const revision = await proxyRevision(repo, 'p_a');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', revision, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', revision, 'boom');
 
   const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminSession, { upstream_id: 'up_x' }));
   assertEquals(resp.status, 200);
