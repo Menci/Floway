@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { readRerankTranslationResponse } from '../../../src/data-plane/rerank/serve.ts';
 import type { Repo } from '../../../src/repo/types.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
@@ -51,6 +52,11 @@ const assertFailedRequestOnlySettlement = async (repo: Repo): Promise<void> => {
   assertEquals(performance[0]?.neutral, 0);
   assertEquals(performance[0]?.errorsNoOutput, 1);
 };
+
+test('cross-protocol rerank translation enforces its response byte budget', async () => {
+  await expect(readRerankTranslationResponse(new Response('{"results":[]}'), 4))
+    .rejects.toThrow(/exceeds the 4-byte limit/);
+});
 
 test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {
   const { apiKey, repo } = await setupAppTest();

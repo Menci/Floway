@@ -389,6 +389,12 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
       await flushAsyncWork();
     },
   );
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.metrics, []);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.requests, 1);
+  assertEquals(performance.errorsNoOutput, 1);
 });
 
 // A throw during candidate rollover attributes the error row to the

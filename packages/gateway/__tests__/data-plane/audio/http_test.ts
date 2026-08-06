@@ -520,6 +520,35 @@ test('/v1/audio/transcriptions preserves malformed declared usage and records re
   assertEquals(performance.errorsNoOutput, 0);
 });
 
+test('/v1/audio/transcriptions records a raw response body failure', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const failure = new Error('upstream VTT failed');
+  let pulls = 0;
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) controller.enqueue(new TextEncoder().encode('WEBVTT\n\n00:00.000 --> 00:01.000\nhello'));
+        else controller.error(failure);
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'text/vtt' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'vtt']]),
+      });
+      await expect(response.text()).rejects.toBe(failure);
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, []);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+  assertEquals(performance.neutral, 0);
+});
+
 test('/v1/audio/transcriptions does not invent a content type for an untyped raw response', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);

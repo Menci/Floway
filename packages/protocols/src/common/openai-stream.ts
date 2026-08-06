@@ -7,14 +7,9 @@
 // stream when the client did not opt in, mirroring upstream's own behavior
 // when the flag is off.
 //
-// The usage chunk's `choices` shape varies in the wild. Vanilla OpenAI and
-// vanilla vLLM emit `choices: []`. Vendor vLLM forks (e.g. the Zhipu/GLM
-// fork) emit `choices: [{ index: 0 }]` — a placeholder element with no
-// content fields. Some upstreams (Ollama) repeat a zeroed usage on every
-// content chunk, leaving the real numbers for a final `choices: []`
-// chunk. The predicate therefore identifies the usage chunk by "carries
-// usage" + "no choice element has any actual content", which matches the
-// LiteLLM / One-API / New-API consensus.
+// OpenAI's usage-only terminal chunk carries `choices: []`. Floway also
+// accepts non-empty structural placeholders, but never treats a choice with
+// text, delta content, finish reason, logprobs, or unknown fields as usage-only.
 
 const OPENAI_USAGE_PLACEHOLDER_CHOICE_KEYS = new Set(['index', 'text', 'delta', 'finish_reason', 'logprobs']);
 
@@ -23,10 +18,10 @@ export const isOpenAIUsageOnlyEventShape = (event: unknown): boolean => {
   const { choices, usage } = event as { choices?: unknown; usage?: unknown };
   if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) return false;
   if (!Array.isArray(choices)) return false;
-  // `every` over an empty array is true (the OpenAI / vanilla-vLLM shape).
+  // `every` over an empty array is true (the OpenAI shape).
   // A non-empty array passes only when every element is a structural
   // placeholder (no text, no delta keys, no finish_reason) — the
-  // Zhipu/GLM vendor-fork shape.
+  // compatibility shape.
   return choices.every(choice => {
     if (typeof choice !== 'object' || choice === null || Array.isArray(choice)) return false;
     if (Object.keys(choice).some(key => !OPENAI_USAGE_PLACEHOLDER_CHOICE_KEYS.has(key))) return false;

@@ -15,7 +15,7 @@ import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
+import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, readBoundedJsonResponse, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
@@ -47,6 +47,13 @@ const settleRerank = (
 };
 
 const unsupportedMessage = (model: string): string => `Model ${model} does not support rerank.`;
+
+export const MAX_RERANK_TRANSLATION_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+export const readRerankTranslationResponse = async (
+  response: Response,
+  maxBytes = MAX_RERANK_TRANSLATION_RESPONSE_BYTES,
+): Promise<unknown> => await readBoundedJsonResponse(response, maxBytes);
 
 export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
@@ -158,9 +165,12 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       return finalizeGatewayResponse(ctx, observedResponse);
     }
 
-    const upstreamBody = await successful.response.json() as unknown;
+    const upstreamBody = await readRerankTranslationResponse(successful.response);
     measuredUsage = parseRerankUsage(successful.target.protocol, upstreamBody);
     const canonical = parseRerankResponse(successful.target.protocol, upstreamBody);
+    if (canonical.results.length > request.documents.length) {
+      throw new Error('Rerank response contains more results than the request contains documents');
+    }
     const rendered = renderRerankResponse(sourceProtocol, successful.target.protocol, canonical, request);
     ctx.dump?.success(successful.identity, null);
     settleRerank(ctx, successful.performance, successful.identity, measuredUsage, false);

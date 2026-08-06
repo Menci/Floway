@@ -2,7 +2,7 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { measureAudioTranscriptionUsage } from './usage.ts';
-import { observeJsonResponse } from '../shared/json-response.ts';
+import { observeJsonResponse, observeResponseCompletion } from '../shared/json-response.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
@@ -15,9 +15,15 @@ import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream, ss
 const respondNonStreaming = ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
   if (!isJsonMediaType(response.headers.get('content-type'))) {
     const measurement = requestOnlyUsageMeasurement();
-    ctx.dump?.success(identity, null);
-    settleUsageMeasurement(ctx, performance, identity, measurement, false);
-    return forwardUpstreamResponse(response, { defaultContentType: null });
+    return observeResponseCompletion({
+      response,
+      defaultContentType: null,
+      settle: outcome => {
+        ctx.dump?.success(identity, null);
+        if (outcome.failed) ctx.dump?.failed(outcome.error ?? `${sourceApi} response body did not complete`);
+        settleUsageMeasurement(ctx, performance, identity, measurement, outcome.failed);
+      },
+    });
   }
   return observeJsonResponse({
     ctx,

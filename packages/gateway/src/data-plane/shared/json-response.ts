@@ -405,6 +405,63 @@ interface ObserveJsonResponseOptions {
   ) => void;
 }
 
+interface ObserveResponseCompletionOptions {
+  readonly response: Response;
+  readonly defaultContentType?: string | null;
+  readonly settle: (outcome: { readonly failed: boolean; readonly error?: unknown }) => void;
+}
+
+export const observeResponseCompletion = ({
+  response,
+  defaultContentType,
+  settle: settleCompletion,
+}: ObserveResponseCompletionOptions): Response => {
+  if (response.body === null) {
+    settleCompletion({ failed: false });
+    return forwardUpstreamResponse(response, { defaultContentType });
+  }
+  const reader = response.body.getReader();
+  let terminated = false;
+  const settleOnce = (failed: boolean, error?: unknown): void => {
+    if (terminated) return;
+    terminated = true;
+    settleCompletion({ failed, error });
+  };
+  const body = new ReadableStream<Uint8Array>({
+    type: 'bytes',
+    async pull(controller) {
+      try {
+        while (true) {
+          const next = await reader.read();
+          if (terminated) return;
+          if (next.done) {
+            settleOnce(false);
+            controller.close();
+            return;
+          }
+          if (next.value.byteLength === 0) continue;
+          controller.enqueue(next.value);
+          return;
+        }
+      } catch (error) {
+        if (terminated) return;
+        settleOnce(true, error);
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      if (terminated) return;
+      settleOnce(true, reason);
+      try {
+        void reader.cancel(reason).catch(error => console.error('Failed to cancel upstream response body:', error));
+      } catch (error) {
+        console.error('Failed to cancel upstream response body:', error);
+      }
+    },
+  });
+  return forwardUpstreamResponse(response, { body, defaultContentType });
+};
+
 export const observeJsonResponse = ({
   ctx,
   response,
