@@ -262,7 +262,8 @@ const runChild = async (): Promise<void> => {
   process.env.FLOWAY_DB_PATH = ':memory:';
   process.env.FLOWAY_FILES_DIR = join(tempRoot, 'files');
   process.env.ADMIN_KEY = 'memory-verifier-admin';
-  setGlobalDispatcher(createNodeGlobalDispatcher({}));
+  const dispatcher = createNodeGlobalDispatcher({});
+  setGlobalDispatcher(dispatcher);
 
   let phase: 'warmup' | 'large' = 'warmup';
   let releaseLarge!: () => void;
@@ -455,6 +456,7 @@ const runChild = async (): Promise<void> => {
   await cleanup(() => { globalThis.fetch = nativeFetch; });
   await cleanup(() => { fileObserver.restore(); });
   await cleanup(async () => { await background.flush(); });
+  await cleanup(async () => { await dispatcher.close(); });
   if (server !== undefined) await cleanup(async () => { await closeServer(server); });
   await cleanup(async () => {
     await new Promise<void>((resolve, reject) => {
