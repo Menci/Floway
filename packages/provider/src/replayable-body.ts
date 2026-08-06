@@ -123,8 +123,9 @@ export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
   return {
     init: { ...init, body: fixed.readable, headers, duplex: 'half' } as DuplexRequestInit,
     cancel: async reason => {
+      const cancelReadable = fixed.readable.cancel(reason).catch(() => {});
       pumpController.abort(reason);
-      await pumping.catch(() => {});
+      await Promise.all([cancelReadable, pumping.catch(() => {})]);
     },
   };
 };
