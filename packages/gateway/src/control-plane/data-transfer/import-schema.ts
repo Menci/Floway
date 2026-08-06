@@ -10,6 +10,7 @@ import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord
 import { isSupportedPasswordHash, PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
+import { isStorageId } from '../../shared/storage-id.ts';
 import { parseUpstreamIdsValue } from '../../shared/upstream-ids.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
@@ -80,8 +81,10 @@ const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must
   .transform(value => value.trim())
   .refine(value => value !== '', { error: `${field} must be a non-empty string` });
 const nonEmptyStringWithError = (message: string) => z.string({ error: message }).min(1, { error: message });
+const storageIdWithError = (message: string) => nonEmptyStringWithError(message)
+  .refine(isStorageId, { error: message });
 const storageIdSchema = (field: string) => nonEmptyStringSchema(field)
-  .refine(value => !value.includes('\0'), { error: `${field} must not contain NUL` });
+  .refine(isStorageId, { error: `${field} must not contain NUL or unpaired UTF-16 surrogates` });
 const nullableStringSchema = (field: string) => z.union([
   z.string(),
   z.null(),
@@ -212,7 +215,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
   const upstreamIds = parseValue(upstreamIdsSchema, wire.upstreamIds);
   const userId = parseValue(positiveSafeIntegerSchema('userId'), wire.userId);
   const deletedAt = parseValue(nullableStringSchema('deletedAt'), wire.deletedAt);
-  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  const id = parseValue(storageIdSchema('id'), wire.id);
   const name = parseValue(nonEmptyStringSchema('name'), wire.name);
   const key = parseValue(nonEmptyStringSchema('key'), wire.key);
   const serverSecret = parseValue(parsedBy(parseServerSecret), wire.serverSecret);
@@ -316,7 +319,7 @@ const metricsSchema = sequentialArraySchema(
 
 const invalidUsageField = 'record has invalid usage fields';
 const usageFieldsSchema = z.object({
-  keyId: nonEmptyStringWithError(invalidUsageField),
+  keyId: storageIdWithError(invalidUsageField),
   model: nonEmptyStringWithError(invalidUsageField),
   upstream: z.union([storageIdSchema('upstream'), z.null()], { error: invalidUsageField }),
   modelKey: nonEmptyStringWithError(invalidUsageField),
@@ -344,7 +347,7 @@ const usageSchema = parsedBy((value): UsageRecord => {
 const searchUsageSchema = parsedBy((value): WebSearchUsageRecord => {
   const wire = parseValue(objectIncludingArraySchema('record must be an object'), value);
   if (!isWebSearchProviderName(wire.provider)) throw new Error('invalid provider');
-  const keyId = parseValue(nonEmptyStringWithError('keyId must be a non-empty string'), wire.keyId);
+  const keyId = parseValue(storageIdWithError('keyId must be a non-empty string without NUL or unpaired UTF-16 surrogates'), wire.keyId);
   const action = parseValue(z.enum(['search', 'fetch_page'], { error: 'action must be "search" or "fetch_page"' }), wire.action);
   const hour = parseValue(z.string({ error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' })
     .regex(SEARCH_USAGE_HOUR_PATTERN, { error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' }), wire.hour);
@@ -378,9 +381,9 @@ const performanceBucketsSchema = sequentialArraySchema(
 
 const performanceFieldsSchema = z.object({
   hour: z.string({ error: malformedPerformance }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: malformedPerformance }),
-  keyId: nonEmptyStringWithError(malformedPerformance),
+  keyId: storageIdWithError(malformedPerformance),
   model: nonEmptyStringWithError(malformedPerformance),
-  upstream: nonEmptyStringWithError(malformedPerformance).refine(value => !isLegacyUpstreamIdentity(value), { error: malformedPerformance }),
+  upstream: storageIdWithError(malformedPerformance).refine(value => !isLegacyUpstreamIdentity(value), { error: malformedPerformance }),
   runtimeLocation: nonEmptyStringWithError(malformedPerformance),
   requests: performanceInteger,
   ttftSamplesOk: performanceInteger,

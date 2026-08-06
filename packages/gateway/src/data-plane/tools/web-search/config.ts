@@ -1,6 +1,7 @@
 import type { WebSearchConfig } from './types.ts';
 import { getRepo } from '../../../repo/index.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
+import { isStorageId } from '../../../shared/storage-id.ts';
 import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../../shared/web-search-providers.ts';
 
 export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
@@ -54,6 +55,9 @@ export const parseWebSearchConfigStrict = (input: unknown): WebSearchConfig => {
   }
   const upstreamId = passthrough.upstreamId.trim();
   const model = passthrough.model.trim();
+  if (upstreamId !== '' && !isStorageId(upstreamId)) {
+    throw new Error('search config passthroughOpenAiSearch.upstreamId must not contain NUL or unpaired UTF-16 surrogates');
+  }
   if (passthrough.enabled && (upstreamId === '' || model === '')) {
     throw new Error('enabled OpenAI search passthrough requires an upstream and model');
   }
