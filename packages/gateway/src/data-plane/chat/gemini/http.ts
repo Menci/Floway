@@ -53,8 +53,8 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
 // envelope (caller-input violation). A `ProviderModelsUnavailableError`
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
-// `internal-error` result rendered as the Gemini internal-error envelope
-// (status, code, message, stack, cause, errors, target_api). The throwing-
+// `internal-error` result rendered with the complete structured debug fields
+// in the Gemini error envelope. The throwing-
 // candidate telemetry stamped in serve.ts survives onto the error row via
 // `ctx.attempt.telemetry` so a mid-attempt throw still lands in
 // performance_summary against the throwing upstream.

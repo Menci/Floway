@@ -154,8 +154,9 @@ test('Gemini structured internal errors preserve every AggregateError branch', a
   assertEquals(body.error.cause.message, 'stream failed');
   assertEquals(body.error.cause.cause.message, 'malformed upstream event');
   assertEquals(body.error.errors.length, 2);
-  assertEquals(body.error.errors[0].stack, primary.stack);
-  assertEquals(body.error.errors[0].cause.stack, primaryCause.stack);
+  assertEquals(body.error.errors[0], { type: 'error_reference', reference: '$.cause' });
+  assertEquals(body.error.cause.stack, primary.stack);
+  assertEquals(body.error.cause.cause.stack, primaryCause.stack);
   assertEquals(body.error.errors[1].message, 'cleanup failed');
   assertEquals(body.error.errors[1].stack, cleanup.stack);
   assertEquals(body.error.errors[1].cause, { phase: 'return' });

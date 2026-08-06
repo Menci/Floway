@@ -42,8 +42,8 @@ export interface ApiErrorResult {
 }
 
 // Gateway-side bug surface (parser crash, interceptor throw, etc.). The
-// protocol's respond layer renders a debug envelope around `error`
-// (stack, cause, target_api) rather than passing through a wire body —
+// protocol's respond layer renders the complete structured debug `error`
+// rather than passing through a wire body —
 // the shape differs from `ApiErrorResult` for that reason.
 export interface InternalErrorResult {
   type: 'internal-error';

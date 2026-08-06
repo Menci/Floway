@@ -16,15 +16,20 @@ const readErrorProperty = (value: object, property: 'cause' | 'name'): unknown =
   }
 };
 
+const MAX_ABORT_CAUSE_STEPS = 4096;
+
 export const isAbortError = (err: unknown): boolean => {
   const seen = new Set<object>();
   let cur = err;
-  while (cur !== null && cur !== undefined) {
+  for (let step = 0; cur !== null && cur !== undefined && step < MAX_ABORT_CAUSE_STEPS; step++) {
     if (typeof cur !== 'object' && typeof cur !== 'function') return false;
     if (seen.has(cur)) return false;
     seen.add(cur);
     if (readErrorProperty(cur, 'name') === 'AbortError') return true;
     cur = readErrorProperty(cur, 'cause');
   }
+  // Cancellation is a positive classification. A dynamic chain that exhausts
+  // the traversal budget cannot establish it and must not hold the caller in
+  // an unbounded error-handling loop.
   return false;
 };

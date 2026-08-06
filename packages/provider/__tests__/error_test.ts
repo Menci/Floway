@@ -45,10 +45,8 @@ test('toInternalDebugError preserves every AggregateError branch and its cause c
   });
   expect(debug.errors).toMatchObject([
     {
-      name: 'TypeError',
-      message: 'stream failed',
-      stack: primary.stack,
-      cause: { name: 'SyntaxError', message: 'invalid payload', stack: parseError.stack },
+      type: 'error_reference',
+      reference: '$.cause',
     },
     {
       name: 'Error',
@@ -99,6 +97,16 @@ test('toInternalDebugError contains hostile and malformed AggregateError collect
     valueType: 'object',
   }]);
 
+  const invalidLength = new AggregateError([], 'invalid length');
+  const bigintLength = new Proxy([], {
+    get: (target, property, receiver) => property === 'length' ? 1n : Reflect.get(target, property, receiver),
+  });
+  Object.defineProperty(invalidLength, 'errors', { value: bigintLength });
+  expect(toInternalDebugError(invalidLength).errors).toEqual([{
+    type: 'invalid_aggregate_errors_length',
+    valueType: 'bigint',
+  }]);
+
   const first = new Error('first');
   const partiallyUnreadable = new AggregateError([first, new Error('second')], 'partially unreadable');
   Object.defineProperty(partiallyUnreadable.errors, 1, {
@@ -124,6 +132,64 @@ test('toInternalDebugError bounds AggregateError breadth with an explicit marker
     total: 40,
     omitted: 8,
   });
+});
+
+test('toInternalDebugError memoizes shared Error identities across aggregate DAG branches', () => {
+  let shared: Error = new Error('leaf');
+  for (let depth = 0; depth < 16; depth++) shared = new AggregateError([shared, shared], `depth ${depth}`);
+
+  const debug = toInternalDebugError(shared);
+  let current: unknown = debug;
+  for (let depth = 0; depth < 16; depth++) {
+    const errors = (current as { errors: unknown[] }).errors;
+    expect(errors[1]).toMatchObject({ type: 'error_reference' });
+    current = errors[0];
+  }
+  expect(current).toMatchObject({ name: 'Error', message: 'leaf' });
+  expect(new TextEncoder().encode(JSON.stringify(debug)).byteLength).toBeLessThan(64 * 1024);
+});
+
+test('toInternalDebugError enforces traversal-wide node, string, and output byte ceilings', () => {
+  const huge = '🚀'.repeat(100_000);
+  const tree = (depth: number): Error => {
+    if (depth === 0) return new Error('leaf');
+    return new AggregateError(Array.from({ length: 4 }, () => tree(depth - 1)), `node ${depth}`);
+  };
+  const hugeError = new Error(huge);
+  hugeError.stack = huge;
+
+  const debug = toInternalDebugError(new AggregateError([tree(4), hugeError], huge));
+  const serialized = JSON.stringify(debug);
+  expect(serialized).toMatch(/serialization_node_budget_exhausted|string budget exhausted|truncated/);
+  expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(64 * 1024);
+});
+
+test('toInternalDebugError contains hostile nested Error properties and revoked proxies', () => {
+  const hostile = new Error('hidden');
+  for (const property of ['name', 'message', 'stack', 'cause'] as const) {
+    Object.defineProperty(hostile, property, {
+      get: () => { throw new Error(`${property} getter failed`); },
+    });
+  }
+  const debug = toInternalDebugError(new Error('outer', { cause: hostile }));
+  expect(debug.cause).toMatchObject({
+    name: '[unreadable Error.name]',
+    message: '[unreadable Error.message]',
+    stack: '[unreadable Error.stack]',
+    cause: { type: 'unreadable_error_property', property: 'cause' },
+    unreadable: [
+      { type: 'unreadable_error_property', property: 'name' },
+      { type: 'unreadable_error_property', property: 'message' },
+      { type: 'unreadable_error_property', property: 'stack' },
+    ],
+  });
+
+  const revocable = Proxy.revocable(new Error('revoked'), {});
+  revocable.revoke();
+  expect(toInternalDebugError(new Error('outer', { cause: revocable.proxy })).cause).toEqual({
+    type: 'unreadable_error_value',
+  });
+  expect(() => JSON.stringify(debug)).not.toThrow();
 });
 
 test('toInternalDebugError snapshots stateful non-Error causes exactly once', () => {

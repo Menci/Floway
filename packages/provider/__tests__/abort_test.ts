@@ -30,3 +30,16 @@ test('isAbortError does not let hostile accessors replace the inspected error', 
   });
   expect(isAbortError(hostileCause)).toBe(false);
 });
+
+test('isAbortError bounds dynamic cause accessors that return fresh objects', () => {
+  let reads = 0;
+  const freshCause = (): object => Object.defineProperty({}, 'cause', {
+    get: () => {
+      reads++;
+      return freshCause();
+    },
+  });
+
+  expect(isAbortError(freshCause())).toBe(false);
+  expect(reads).toBe(4096);
+});
