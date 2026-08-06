@@ -49,15 +49,8 @@ const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   GROUP BY performance_summary.hour
   ORDER BY performance_summary.hour`;
 
-type PerformanceBreakdownAxis = Exclude<PerformanceOverviewAxis, 'series'>;
-
-interface PerformanceBreakdownSql {
-  axis: PerformanceBreakdownAxis;
-  group: (source: string) => string;
-  where?: (source: string) => string;
-}
-
-const seriesGroupSql = (source: string) => `CASE settings.series_group_by
+const axisGroupSql = (source: string) => `CASE axes.grouping
+  WHEN 'none' THEN 'all'
   WHEN 'keyId' THEN ${source}.key_id
   WHEN 'userId' THEN CAST(${source}.user_id AS TEXT)
   WHEN 'model' THEN ${source}.model
@@ -65,96 +58,9 @@ const seriesGroupSql = (source: string) => `CASE settings.series_group_by
   WHEN 'operation' THEN ${source}.operation
   WHEN 'runtimeLocation' THEN ${source}.runtime_location
 END`;
-const seriesWhereSql = (source: string) =>
-  `settings.series_group_by != 'userId' OR ${source}.user_id IS NOT NULL`;
-
-const performanceBreakdownSql: readonly PerformanceBreakdownSql[] = [
-  { axis: 'none', group: () => "'all'" },
-  { axis: 'keyId', group: source => `${source}.key_id`, where: source => `${source}.owned = 1` },
-  {
-    axis: 'userId',
-    group: source => `CAST(${source}.user_id AS TEXT)`,
-    where: source => `settings.is_admin = 1 AND ${source}.user_id IS NOT NULL`,
-  },
-  { axis: 'model', group: source => `${source}.model` },
-  { axis: 'upstream', group: source => `${source}.upstream` },
-  { axis: 'operation', group: source => `${source}.operation` },
-  { axis: 'runtimeLocation', group: source => `${source}.runtime_location` },
-];
-
-const summarySeriesSql = `
-  SELECT
-    'series' AS axis,
-    bucket_map.bucket,
-    ${seriesGroupSql('filtered_summary')} AS group_value,
-    SUM(filtered_summary.requests) AS requests,
-    SUM(filtered_summary.errors_with_output) + SUM(filtered_summary.errors_no_output) AS errors,
-    SUM(filtered_summary.ttft_samples_ok) + SUM(filtered_summary.errors_with_output) AS ttft_samples,
-    SUM(filtered_summary.tpot_samples) AS tpot_samples,
-    SUM(filtered_summary.neutral) AS neutral
-  FROM filtered_summary
-  CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
-  WHERE ${seriesWhereSql('filtered_summary')}
-  GROUP BY bucket_map.bucket, group_value`;
-
-const summaryBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
-  const source = 'summary_cube';
-  const groupSql = group(source);
-  return `
-  SELECT
-    '${axis}' AS axis,
-    'all' AS bucket,
-    ${groupSql} AS group_value,
-    SUM(${source}.requests) AS requests,
-    SUM(${source}.errors_with_output) + SUM(${source}.errors_no_output) AS errors,
-    SUM(${source}.ttft_samples_ok) + SUM(${source}.errors_with_output) AS ttft_samples,
-    SUM(${source}.tpot_samples) AS tpot_samples,
-    SUM(${source}.neutral) AS neutral
-  FROM ${source}
-  CROSS JOIN settings
-  ${where === undefined ? '' : `WHERE ${where(source)}`}
-  GROUP BY ${groupSql}`;
-}).join('\n  UNION ALL');
-
-const summaryAggregateSql = `${summarySeriesSql}
-  UNION ALL${summaryBreakdownSql}`;
-
-const histogramSeriesSql = `
-  SELECT
-    'series' AS axis,
-    bucket_map.bucket,
-    ${seriesGroupSql('filtered_histogram')} AS group_value,
-    filtered_histogram.metric,
-    filtered_histogram.lower,
-    MAX(filtered_histogram.upper) AS upper,
-    SUM(filtered_histogram.count) AS count
-  FROM filtered_histogram
-  CROSS JOIN settings
-  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
-  WHERE ${seriesWhereSql('filtered_histogram')}
-  GROUP BY bucket_map.bucket, group_value, filtered_histogram.metric, filtered_histogram.lower`;
-
-const histogramBreakdownSql = performanceBreakdownSql.map(({ axis, group, where }) => {
-  const source = 'histogram_cube';
-  const groupSql = group(source);
-  return `
-  SELECT
-    '${axis}' AS axis,
-    'all' AS bucket,
-    ${groupSql} AS group_value,
-    ${source}.metric,
-    ${source}.lower,
-    MAX(${source}.upper) AS upper,
-    SUM(${source}.count) AS count
-  FROM ${source}
-  CROSS JOIN settings
-  ${where === undefined ? '' : `WHERE ${where(source)}`}
-  GROUP BY ${groupSql}, ${source}.metric, ${source}.lower`;
-}).join('\n  UNION ALL');
-
-const histogramAggregateSql = `${histogramSeriesSql}
-  UNION ALL${histogramBreakdownSql}`;
+const axisAccessSql = (source: string) => `(axes.owned_only = 0 OR ${source}.owned = 1)
+    AND (axes.admin_only = 0 OR settings.is_admin = 1)
+    AND (axes.grouping != 'userId' OR ${source}.user_id IS NOT NULL)`;
 
 const performanceCubeDimensions = [
   'key_id', 'user_id', 'owned', 'model', 'upstream', 'operation', 'runtime_location',
@@ -163,8 +69,22 @@ const performanceCubeCoordinateSql = performanceCubeDimensions.join(', ');
 
 const overviewSql = (scoped: boolean) => `/* performance-overview */
 WITH
-settings(actor_user_id, is_admin, series_group_by) AS (
-  VALUES (?, ?, ?)
+settings(actor_user_id, is_admin) AS (
+  VALUES (?, ?)
+),
+-- workerd caps compound SELECTs at five terms. Keep the extensible overview
+-- axes in data so every projection below needs at most two SELECT terms.
+-- https://github.com/cloudflare/workerd/blob/c16efad94a926dff547d3e3d853feae4fc8988a6/src/workerd/util/sqlite.c%2B%2B#L1382-L1384
+axes(axis, grouping, bucketed, owned_only, admin_only, facet) AS (
+  VALUES
+    ('series', ?, 1, 0, 0, 0),
+    ('none', 'none', 0, 0, 0, 0),
+    ('keyId', 'keyId', 0, 1, 0, 1),
+    ('userId', 'userId', 0, 0, 1, 1),
+    ('model', 'model', 0, 0, 0, 1),
+    ('upstream', 'upstream', 0, 0, 0, 1),
+    ('operation', 'operation', 0, 0, 0, 1),
+    ('runtimeLocation', 'runtimeLocation', 0, 0, 0, 1)
 ),
 model_filter(value) AS MATERIALIZED (
   SELECT CAST(value AS TEXT) FROM json_each(?)
@@ -257,8 +177,50 @@ histogram_cube AS MATERIALIZED (
   FROM filtered_histogram
   GROUP BY ${performanceCubeCoordinateSql}, metric, lower
 ),
+summary_terms AS MATERIALIZED (
+  SELECT
+    axes.axis,
+    bucket_map.bucket,
+    ${axisGroupSql('filtered_summary')} AS group_value,
+    filtered_summary.requests,
+    filtered_summary.ttft_samples_ok,
+    filtered_summary.errors_with_output,
+    filtered_summary.errors_no_output,
+    filtered_summary.neutral,
+    filtered_summary.tpot_samples
+  FROM filtered_summary
+  CROSS JOIN axes
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_summary.hour
+  WHERE axes.bucketed = 1 AND ${axisAccessSql('filtered_summary')}
+  UNION ALL
+  SELECT
+    axes.axis,
+    'all',
+    ${axisGroupSql('summary_cube')},
+    summary_cube.requests,
+    summary_cube.ttft_samples_ok,
+    summary_cube.errors_with_output,
+    summary_cube.errors_no_output,
+    summary_cube.neutral,
+    summary_cube.tpot_samples
+  FROM summary_cube
+  CROSS JOIN axes
+  CROSS JOIN settings
+  WHERE axes.bucketed = 0 AND ${axisAccessSql('summary_cube')}
+),
 summary_aggregates AS MATERIALIZED (
-  ${summaryAggregateSql}
+  SELECT
+    axis,
+    bucket,
+    group_value,
+    SUM(requests) AS requests,
+    SUM(errors_with_output) + SUM(errors_no_output) AS errors,
+    SUM(ttft_samples_ok) + SUM(errors_with_output) AS ttft_samples,
+    SUM(tpot_samples) AS tpot_samples,
+    SUM(neutral) AS neutral
+  FROM summary_terms
+  GROUP BY axis, bucket, group_value
 ),
 invalid_histogram_bounds AS MATERIALIZED (
   SELECT 1 AS present
@@ -267,8 +229,45 @@ invalid_histogram_bounds AS MATERIALIZED (
   HAVING COUNT(DISTINCT COALESCE(CAST(upper AS TEXT), 'null')) > 1
   LIMIT 1
 ),
+histogram_terms AS MATERIALIZED (
+  SELECT
+    axes.axis,
+    bucket_map.bucket,
+    ${axisGroupSql('filtered_histogram')} AS group_value,
+    filtered_histogram.metric,
+    filtered_histogram.lower,
+    filtered_histogram.upper,
+    filtered_histogram.count
+  FROM filtered_histogram
+  CROSS JOIN axes
+  CROSS JOIN settings
+  JOIN bucket_map ON bucket_map.hour = filtered_histogram.hour
+  WHERE axes.bucketed = 1 AND ${axisAccessSql('filtered_histogram')}
+  UNION ALL
+  SELECT
+    axes.axis,
+    'all',
+    ${axisGroupSql('histogram_cube')},
+    histogram_cube.metric,
+    histogram_cube.lower,
+    histogram_cube.upper,
+    histogram_cube.count
+  FROM histogram_cube
+  CROSS JOIN axes
+  CROSS JOIN settings
+  WHERE axes.bucketed = 0 AND ${axisAccessSql('histogram_cube')}
+),
 histogram AS MATERIALIZED (
-  ${histogramAggregateSql}
+  SELECT
+    axis,
+    bucket,
+    group_value,
+    metric,
+    lower,
+    MAX(upper) AS upper,
+    SUM(count) AS count
+  FROM histogram_terms
+  GROUP BY axis, bucket, group_value, metric, lower
 ),
 ranked_histogram AS MATERIALIZED (
   SELECT
@@ -344,36 +343,16 @@ aggregate_rows AS (
 ),
 facet_rows AS (
   SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
-    'keyId' AS dimension, key_id AS facet_value,
+    axes.axis AS dimension, ${axisGroupSql('scoped_summary')} AS facet_value,
     NULL AS requests_text, NULL AS errors_text, NULL AS ttft_samples_text,
     NULL AS tpot_samples_text, NULL AS neutral_text,
     NULL AS ttft_ms_p50, NULL AS ttft_ms_p95, NULL AS ttft_ms_p99,
     NULL AS tpot_us_p50, NULL AS tpot_us_p95, NULL AS tpot_us_p99
   FROM scoped_summary
-  WHERE owned = 1
-  GROUP BY key_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'userId', CAST(user_id AS TEXT),
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary CROSS JOIN settings
-  WHERE settings.is_admin = 1 AND user_id IS NOT NULL
-  GROUP BY user_id
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'model', model,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY model
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'upstream', upstream,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY upstream
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'operation', operation,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY operation
-  UNION ALL
-  SELECT 'facet', NULL, NULL, NULL, 'runtimeLocation', runtime_location,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-  FROM scoped_summary GROUP BY runtime_location
+  CROSS JOIN axes
+  CROSS JOIN settings
+  WHERE axes.facet = 1 AND ${axisAccessSql('scoped_summary')}
+  GROUP BY axes.axis, facet_value
 ),
 orphan_rows AS (
   SELECT 'orphan' AS row_kind,

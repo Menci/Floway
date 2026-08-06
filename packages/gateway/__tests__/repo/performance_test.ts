@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { assertD1CompoundSelectLimit, createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
   ApiKey,
@@ -433,6 +433,7 @@ it('SQL Performance overview uses actor indexes and returns aggregate cardinalit
   const aggregates = completed.filter(statement => statement.query.startsWith('/* performance-overview */'));
   const aggregate = aggregates.at(-1);
   if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
+  assertD1CompoundSelectLimit(aggregate.query);
   const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${aggregate.query}`)
     .bind(...aggregate.binds)
     .all<{ detail: string }>();
