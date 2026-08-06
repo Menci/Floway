@@ -3,7 +3,7 @@ import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.t
 import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts';
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
-import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
+import { isDirectFallbackId, normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
   assertSameStoredResponsesItem,
   cloneStoredResponsesItem,
@@ -898,6 +898,16 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, UpstreamRecord>();
 
+  constructor(
+    private readonly mutations: MemoryMutationCoordinator,
+    private readonly proxyExists: (id: string) => boolean,
+  ) {}
+
+  referencesProxyNow(proxyId: string): boolean {
+    return [...this.store.values()].some(upstream =>
+      upstream.proxyFallbackList.some(entry => entry.id === proxyId));
+  }
+
   list(): Promise<UpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
   }
@@ -934,20 +944,23 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     patch: UpstreamFieldsPatch,
     options: { clearModelsCache?: boolean; expectedUpdatedAt?: string } = {},
   ): Promise<UpstreamRecord | null> {
-    if (Object.keys(patch).length === 0 && !options.clearModelsCache) return Promise.resolve(null);
-    const existing = this.store.get(id);
-    if (existing?.kind !== expectedKind) return Promise.resolve(null);
-    if (options.expectedUpdatedAt !== undefined && existing.updatedAt !== options.expectedUpdatedAt) return Promise.resolve(null);
-    const next = {
-      ...existing,
-      ...patch,
-      updatedAt: patch.updatedAt === undefined || patch.updatedAt < existing.updatedAt
-        ? existing.updatedAt
-        : patch.updatedAt,
-      modelsCache: options.clearModelsCache ? null : existing.modelsCache,
-    };
-    this.store.set(id, cloneUpstreamRecord(next));
-    return Promise.resolve(cloneUpstreamRecord(next));
+    return this.mutations.run(() => {
+      if (Object.keys(patch).length === 0 && !options.clearModelsCache) return null;
+      const existing = this.store.get(id);
+      if (existing?.kind !== expectedKind) return null;
+      if (options.expectedUpdatedAt !== undefined && existing.updatedAt !== options.expectedUpdatedAt) return null;
+      if (patch.proxyFallbackList?.some(entry => !isDirectFallbackId(entry.id) && !this.proxyExists(entry.id))) return null;
+      const next = {
+        ...existing,
+        ...patch,
+        updatedAt: patch.updatedAt === undefined || patch.updatedAt < existing.updatedAt
+          ? existing.updatedAt
+          : patch.updatedAt,
+        modelsCache: options.clearModelsCache ? null : existing.modelsCache,
+      };
+      this.store.set(id, cloneUpstreamRecord(next));
+      return cloneUpstreamRecord(next);
+    });
   }
 
   delete(id: string): Promise<boolean> {
@@ -1312,9 +1325,14 @@ class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
 
   constructor(
-    private upstreams: UpstreamRepo,
-    private resetBackoffs: (proxyId: string) => Promise<void>,
+    private readonly upstreams: MemoryUpstreamRepo,
+    private readonly resetBackoffs: (proxyId: string) => Promise<void>,
+    private readonly mutations: MemoryMutationCoordinator,
   ) {}
+
+  hasNow(id: string): boolean {
+    return this.store.has(id);
+  }
 
   list(): Promise<ProxyRecord[]> {
     return Promise.resolve(
@@ -1361,16 +1379,17 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(cloneProxyRecord(updated));
   }
 
-  async delete(id: string): Promise<boolean> {
+  delete(id: string): Promise<boolean> {
     // Mirror the SQL repo's atomic delete: refuse if any upstream's fallback
     // list still references the row, so an admin race adding the reference
     // between a prior findUpstreamsReferencing read and this delete is
     // rejected at the storage layer.
-    const upstreams = await this.upstreams.list();
-    if (upstreams.some(u => u.proxyFallbackList.some(e => e.id === id))) return false;
-    const deleted = this.store.delete(id);
-    if (deleted) await this.resetBackoffs(id);
-    return deleted;
+    return this.mutations.run(async () => {
+      if (this.upstreams.referencesProxyNow(id)) return false;
+      const deleted = this.store.delete(id);
+      if (deleted) await this.resetBackoffs(id);
+      return deleted;
+    });
   }
 
   async deleteAll(): Promise<void> {
@@ -1692,9 +1711,12 @@ export class InMemoryRepo implements Repo {
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
-    this.upstreams = new MemoryUpstreamRepo();
+    const proxyHolder: { current?: MemoryProxyRepo } = {};
+    const upstreams = new MemoryUpstreamRepo(mutations, id => proxyHolder.current?.hasNow(id) ?? false);
+    this.upstreams = upstreams;
     const proxyBackoffs = new MemoryProxyBackoffRepo(async id => await this.proxies.getById(id));
-    const proxies = new MemoryProxyRepo(this.upstreams, async id => await proxyBackoffs.resetForProxy(id));
+    const proxies = new MemoryProxyRepo(upstreams, async id => await proxyBackoffs.resetForProxy(id), mutations);
+    proxyHolder.current = proxies;
     this.proxies = proxies;
     this.proxyBackoffs = proxyBackoffs;
     this.modelAliases = new MemoryModelAliasesRepo();

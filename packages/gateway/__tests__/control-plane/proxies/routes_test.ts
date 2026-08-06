@@ -245,7 +245,11 @@ test('DELETE /api/proxies/:id returns 409 when a reference appears between looku
   await repo.proxies.insert({ id: 'p_race', name: 'Raced', url: HTTP_URL, dialTimeoutSeconds: null });
   const realDelete = repo.proxies.delete.bind(repo.proxies);
   repo.proxies.delete = async id => {
-    await repo.upstreams.save({ ...copilotUpstream, proxyFallbackList: [{ id }] });
+    const updated = await repo.upstreams.updateFields(copilotUpstream.id, 'copilot', {
+      proxyFallbackList: [{ id }],
+      updatedAt: new Date(Date.parse(copilotUpstream.updatedAt) + 1).toISOString(),
+    });
+    assertExists(updated);
     return await realDelete(id);
   };
 

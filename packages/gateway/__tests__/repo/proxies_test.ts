@@ -95,6 +95,20 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     expect(await repo.proxies.getById('a')).not.toBeNull();
   });
 
+  test(`[${backend}] upstream writes cannot reference a proxy after its deletion wins`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
+    await repo.upstreams.save(upstreamFixture('up', []));
+    const generation = (await repo.upstreams.getById('up'))!.updatedAt;
+
+    assertEquals(await repo.proxies.delete('a'), true);
+    assertEquals(await repo.upstreams.updateFields('up', 'custom', {
+      proxyFallbackList: [{ id: 'a' }],
+      updatedAt: '2026-06-01T00:00:01.000Z',
+    }, { expectedUpdatedAt: generation }), null);
+    assertEquals((await repo.upstreams.getById('up'))?.proxyFallbackList, []);
+  });
+
   test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
     const repo = await makeRepo();
     assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);

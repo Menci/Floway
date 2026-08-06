@@ -4,7 +4,7 @@ import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { decodeOpaqueSqlText, encodeOpaqueSqlText } from './opaque-sql-text.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
-import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+import { DIRECT_FETCH_ID, normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
@@ -1166,7 +1166,10 @@ class SqlUpstreamRepo implements UpstreamRepo {
     }
     if (patch.flagOverrides !== undefined) add('flag_overrides', JSON.stringify(normalizeFlagOverrides(patch.flagOverrides)));
     if (patch.disabledPublicModelIds !== undefined) add('disabled_public_model_ids', JSON.stringify(normalizeDisabledPublicModelIds(patch.disabledPublicModelIds)));
-    if (patch.proxyFallbackList !== undefined) add('proxy_fallback_list_json', JSON.stringify(normalizeProxyFallbackList(patch.proxyFallbackList)));
+    const proxyFallbackListJson = patch.proxyFallbackList === undefined
+      ? undefined
+      : JSON.stringify(normalizeProxyFallbackList(patch.proxyFallbackList));
+    if (proxyFallbackListJson !== undefined) add('proxy_fallback_list_json', proxyFallbackListJson);
     if (patch.modelPrefix !== undefined) add('model_prefix_json', patch.modelPrefix === null ? null : JSON.stringify(patch.modelPrefix));
     if (patch.hue !== undefined) add('hue', patch.hue);
     if (Object.hasOwn(patch, 'config')) add('config_json', serializeStoredConfig(patch.config));
@@ -1175,9 +1178,24 @@ class SqlUpstreamRepo implements UpstreamRepo {
     if (assignments.length === 0) return null;
 
     const generationPredicate = options.expectedUpdatedAt === undefined ? '' : ' AND updated_at = ?';
+    const proxyPredicate = proxyFallbackListJson === undefined
+      ? ''
+      : ` AND NOT EXISTS (
+          SELECT 1 FROM json_each(?) entry
+          WHERE json_extract(entry.value, '$.id') != ?
+            AND NOT EXISTS (
+              SELECT 1 FROM proxies WHERE proxies.id = json_extract(entry.value, '$.id')
+            )
+        )`;
     const row = await this.db
-      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate} RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
-      .bind(...values, id, expectedKind, ...(options.expectedUpdatedAt === undefined ? [] : [options.expectedUpdatedAt]))
+      .prepare(`UPDATE upstreams SET ${assignments.join(', ')} WHERE id = ? AND provider = ?${generationPredicate}${proxyPredicate} RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
+      .bind(
+        ...values,
+        id,
+        expectedKind,
+        ...(options.expectedUpdatedAt === undefined ? [] : [options.expectedUpdatedAt]),
+        ...(proxyFallbackListJson === undefined ? [] : [proxyFallbackListJson, DIRECT_FETCH_ID]),
+      )
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
   }
