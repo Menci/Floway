@@ -137,6 +137,7 @@ type CodexAccessTokenMintResult = CodexAccessTokenEntry | MintedCodexAccessToken
 
 interface CodexAccessTokenFlight {
   force: boolean;
+  lifetime: Promise<EnsuredCodexAccessToken> | null;
   promise: Promise<EnsuredCodexAccessToken>;
 }
 
@@ -186,18 +187,24 @@ export const ensureCodexAccessToken = async (
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureCodexAccessToken(upstreamId, accountId, mint, true, signal);
   }
-  const promise = runProviderModelsTask(sharedSignal => ensureCodexAccessTokenInner(
-    upstreamId,
-    accountId,
-    refreshToken => mint(refreshToken, sharedSignal),
-    true,
-    force,
-  ));
-  const flight: CodexAccessTokenFlight = { force, promise };
+  let flight!: CodexAccessTokenFlight;
+  const promise = runProviderModelsTask(sharedSignal => {
+    const lifetime = ensureCodexAccessTokenInner(
+      upstreamId,
+      accountId,
+      refreshToken => mint(refreshToken, sharedSignal),
+      true,
+      force,
+    );
+    flight.lifetime = lifetime;
+    void lifetime.finally(() => {
+      if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
+    }).catch(() => {});
+    return lifetime;
+  });
+  flight = { force, lifetime: null, promise };
   inFlightEnsures.set(key, flight);
-  void promise.finally(() => {
-    if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
-  }).catch(() => {});
+  void promise.catch(() => {});
   return (await waitForSignal(promise, signal)).entry;
 };
 

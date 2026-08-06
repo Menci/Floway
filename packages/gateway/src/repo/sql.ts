@@ -1255,8 +1255,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
     const result = await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig)
+      .prepare("UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ? AND (models_cache_json IS NULL OR CAST(json_extract(models_cache_json, '$.fetchedAt') AS INTEGER) <= ?)")
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig, cache.fetchedAt)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -1270,8 +1270,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
     const rawConfig = await this.modelsCacheWriteConfig(id, generation);
     if (rawConfig === null) return false;
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
+      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL AND CAST(json_extract(models_cache_json, '$.fetchedAt') AS INTEGER) <= ?")
+      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig, error.at)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }

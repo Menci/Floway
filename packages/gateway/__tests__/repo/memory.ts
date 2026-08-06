@@ -994,6 +994,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
+    if (existing.modelsCache !== null && existing.modelsCache.fetchedAt > cache.fetchedAt) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     return Promise.resolve(true);
   }
@@ -1005,7 +1006,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const cache = existing?.updatedAt === generation.updatedAt && serializeStoredConfig(existing.config) === serializeStoredConfig(generation.config)
       ? existing.modelsCache
       : null;
-    if (!cache) return Promise.resolve(false);
+    if (!cache || cache.fetchedAt > error.at) return Promise.resolve(false);
     cache.lastError = error;
     return Promise.resolve(true);
   }

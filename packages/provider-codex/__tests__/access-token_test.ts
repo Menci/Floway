@@ -56,7 +56,10 @@ beforeEach(() => {
   initProviderRepo(() => ({ upstreams: repo }));
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const storedState = (): CodexUpstreamState => current!.state as CodexUpstreamState;
 
@@ -279,6 +282,31 @@ describe('ensureCodexAccessToken', () => {
     const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
     mintGate.resolve(minted);
     await expect(first).resolves.toEqual(minted);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  test('a timed-out token flight remains reserved until its lifetime settles', async () => {
+    vi.useFakeTimers();
+    const mintEntered = Promise.withResolvers<void>();
+    const mintGate = Promise.withResolvers<CodexAccessTokenEntry>();
+    const mint = vi.fn(() => {
+      mintEntered.resolve();
+      return mintGate.promise;
+    });
+    const first = ensureCodexAccessToken(upstreamId, accountId, mint);
+    await mintEntered.promise;
+    const rejection = first.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(mint).toHaveBeenCalledTimes(1);
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    mintGate.resolve(minted);
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    expect(storedState().accounts[0].accessToken).toEqual(minted);
+    await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).resolves.toEqual(minted);
     expect(mint).toHaveBeenCalledTimes(1);
   });
 

@@ -147,6 +147,32 @@ test('SQL upstream repo saveModelsCacheError is a no-op on a row that never cach
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
+test('SQL upstream repo rejects late cache writes from an older flight in the same generation', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
+  await repo.save(baseRecord());
+  await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_002_000_000,
+    models: [stubProviderModel({ id: 'newer-model' })],
+  });
+
+  const staleCatalogSaved = await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_700_001_000_000,
+    models: [stubProviderModel({ id: 'stale-model' })],
+  });
+  const staleErrorSaved = await repo.saveModelsCacheError('up_test', generationFor(baseRecord()), {
+    message: 'stale error',
+    at: 1_700_001_500_000,
+  });
+
+  assertEquals(staleCatalogSaved, false);
+  assertEquals(staleErrorSaved, false);
+  const stored = (await repo.getById('up_test'))?.modelsCache;
+  assertEquals(stored?.models.map(model => model.id), ['newer-model']);
+  assertEquals(stored?.lastError, null);
+});
+
 test('SQL upstream repo saveClearingModelsCache updates the row and removes the cached catalog atomically', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());

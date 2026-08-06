@@ -8,7 +8,7 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { type Fetcher, readBoundedTextResponse } from '@floway-dev/provider';
+import { type Fetcher, readBoundedTextResponse, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 
@@ -172,6 +172,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   state: string;
   kind: ClaudeCodeOAuthFlowKind;
   fetcher: Fetcher;
+  totalTimeoutMs?: number;
 }): Promise<ClaudeCodeOAuthTokenResponse> => {
   const body: Record<string, string | number> = {
     grant_type: 'authorization_code',
@@ -188,7 +189,10 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   if (opts.kind === 'setup-token') {
     body.expires_in = CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS;
   }
-  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  return await runProviderModelsTask(
+    signal => claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher, signal),
+    { totalTimeoutMs: opts.totalTimeoutMs },
+  );
 };
 
 // `fetcher` is required because the refresh has an associated upstream

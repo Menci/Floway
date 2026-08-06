@@ -21,7 +21,10 @@ const tokenBody = {
   scope: 'org:create_api_key user:profile user:inference',
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('exchangeClaudeCodeAuthorizationCode', () => {
   test('POSTs JSON and returns parsed tokens', async () => {
@@ -83,6 +86,32 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
     await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher }))
       .rejects.toThrow('fetch failed');
+  });
+
+  test('applies a server-owned deadline while waiting for token response headers', async () => {
+    vi.useFakeTimers();
+    let upstreamSignal: AbortSignal | null = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      upstreamSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        upstreamSignal!.addEventListener('abort', () => reject(upstreamSignal!.reason), { once: true });
+      });
+    });
+    const result = exchangeClaudeCodeAuthorizationCode({
+      code: 'CODE',
+      codeVerifier: 'VER',
+      state: 'STATE',
+      kind: 'oauth',
+      fetcher: directFetcher,
+      totalTimeoutMs: 25,
+    });
+    const rejection = result.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect((upstreamSignal as unknown as AbortSignal).reason).toBe(error);
   });
 });
 

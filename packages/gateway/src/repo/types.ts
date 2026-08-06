@@ -398,6 +398,8 @@ export interface UpstreamRepo {
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.
+  // Within one generation, fetchedAt/error.at also fence a timed-out flight's
+  // late persistence behind any newer successful refresh.
   saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
   saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
 }

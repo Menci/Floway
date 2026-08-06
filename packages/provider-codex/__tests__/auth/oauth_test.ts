@@ -6,7 +6,10 @@ import { directFetcher } from '@floway-dev/provider';
 const okResponse = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const errorResponse = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 test('buildCodexAuthorizeUrl preserves the Codex CLI query surface and order', () => {
   expect(buildCodexAuthorizeUrl({ state: 'STATE', codeChallenge: 'CHALLENGE' })).toBe(
@@ -45,6 +48,30 @@ describe('exchangeCodexAuthorizationCode', () => {
   test('throws generic error on other 4xx, message includes status', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(400, { error: { code: 'invalid_grant', message: 'bad code' } }));
     await expect(exchangeCodexAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher })).rejects.toThrow(/400/);
+  });
+
+  test('applies a server-owned deadline while waiting for token response headers', async () => {
+    vi.useFakeTimers();
+    let upstreamSignal: AbortSignal | null = null;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      upstreamSignal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        upstreamSignal!.addEventListener('abort', () => reject(upstreamSignal!.reason), { once: true });
+      });
+    });
+    const result = exchangeCodexAuthorizationCode({
+      code: 'CODE',
+      codeVerifier: 'VER',
+      fetcher: directFetcher,
+      totalTimeoutMs: 25,
+    });
+    const rejection = result.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    const error = await rejection;
+    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect((upstreamSignal as unknown as AbortSignal).reason).toBe(error);
   });
 });
 

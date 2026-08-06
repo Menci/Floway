@@ -7,7 +7,7 @@ import {
   CODEX_ORIGINATOR,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
-import { type Fetcher, readBoundedTextResponse } from '@floway-dev/provider';
+import { type Fetcher, readBoundedTextResponse, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 
@@ -161,7 +161,12 @@ const codexTokenRequest = async (
 // egress) keeps every call site honest: callers that want direct egress
 // pass `directFetcher` themselves, and the import path can't accidentally
 // bypass an operator-configured proxy.
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexOAuthTokens> => {
+export const exchangeCodexAuthorizationCode = (opts: {
+  code: string;
+  codeVerifier: string;
+  fetcher: Fetcher;
+  totalTimeoutMs?: number;
+}): Promise<CodexOAuthTokens> => {
   // auth.openai.com rejects exchanges that include a `state` parameter with
   // 400 unknown_parameter (live-probed). The upstream Codex CLI's
   // `exchange_code_for_tokens` in codex-rs/login/src/server.rs deliberately
@@ -175,7 +180,10 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
     redirect_uri: CODEX_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   });
-  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  return runProviderModelsTask(
+    signal => codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher, signal),
+    { totalTimeoutMs: opts.totalTimeoutMs },
+  );
 };
 
 // `fetcher` is required because the refresh has an associated upstream

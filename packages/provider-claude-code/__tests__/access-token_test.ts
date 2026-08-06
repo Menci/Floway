@@ -428,6 +428,38 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('a timed-out token flight remains reserved until its lifetime settles', async () => {
+    vi.useFakeTimers();
+    const originalSave = saveStateSpy.getMockImplementation();
+    if (originalSave === undefined) throw new Error('saveState stub missing implementation');
+    const saveEntered = Promise.withResolvers<void>();
+    const saveGate = Promise.withResolvers<void>();
+    saveStateSpy.mockImplementationOnce(async (...args) => {
+      saveEntered.resolve();
+      await saveGate.promise;
+      return await originalSave(...args);
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    const first = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    await saveEntered.promise;
+    const rejection = first.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    saveGate.resolve();
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    expect((current!.state as ClaudeCodeUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .resolves.toMatchObject({ entry: { token: 'at_new' } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
     const refreshEntered = Promise.withResolvers<void>();
     const refreshGate = Promise.withResolvers<void>();

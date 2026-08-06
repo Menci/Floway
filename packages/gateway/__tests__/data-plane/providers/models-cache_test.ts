@@ -237,7 +237,15 @@ describe('fetchUpstreamModelsCached', () => {
   test('a stalled successful persistence leaves the in-flight slot reusable', async () => {
     vi.useFakeTimers();
     const repo = await setupRepo();
-    const save = vi.spyOn(repo.upstreams, 'saveModelsCache').mockReturnValue(new Promise(() => {}));
+    const originalSave = repo.upstreams.saveModelsCache.bind(repo.upstreams);
+    const saveGate = Promise.withResolvers<void>();
+    const lateSaveFinished = Promise.withResolvers<void>();
+    const save = vi.spyOn(repo.upstreams, 'saveModelsCache').mockImplementation(async (id, generation, cache) => {
+      await saveGate.promise;
+      await originalSave(id, generation, cache);
+      lateSaveFinished.resolve();
+      return true;
+    });
     const stalled = fetchUpstreamModelsCached(
       stubInstance(vi.fn(async () => [aModel('first')])),
       { scheduler: () => {}, fetcher: directFetcher },
@@ -253,12 +261,23 @@ describe('fetchUpstreamModelsCached', () => {
       { scheduler: () => {}, fetcher: directFetcher, force: true },
     );
     expect(recovered.map(model => model.id)).toEqual(['recovered']);
+    saveGate.resolve();
+    await lateSaveFinished.promise;
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['recovered']);
   });
 
   test('a stalled error persistence leaves the in-flight slot reusable', async () => {
     vi.useFakeTimers();
     const repo = await setupRepo();
-    const saveError = vi.spyOn(repo.upstreams, 'saveModelsCacheError').mockReturnValue(new Promise(() => {}));
+    const originalSaveError = repo.upstreams.saveModelsCacheError.bind(repo.upstreams);
+    const saveGate = Promise.withResolvers<void>();
+    const lateSaveFinished = Promise.withResolvers<void>();
+    const saveError = vi.spyOn(repo.upstreams, 'saveModelsCacheError').mockImplementation(async (id, generation, error) => {
+      await saveGate.promise;
+      await originalSaveError(id, generation, error);
+      lateSaveFinished.resolve();
+      return true;
+    });
     const stalled = fetchUpstreamModelsCached(
       stubInstance(vi.fn(async () => { throw new Error('catalog failed'); })),
       { scheduler: () => {}, fetcher: directFetcher },
@@ -274,6 +293,11 @@ describe('fetchUpstreamModelsCached', () => {
       { scheduler: () => {}, fetcher: directFetcher, force: true },
     );
     expect(recovered.map(model => model.id)).toEqual(['recovered']);
+    saveGate.resolve();
+    await lateSaveFinished.promise;
+    const stored = await storedCache(repo);
+    expect(stored?.models.map(model => model.id)).toEqual(['recovered']);
+    expect(stored?.lastError).toBeNull();
   });
 
   test('concurrent stale callers schedule one revalidation and refresh every joining provider instance', async () => {
