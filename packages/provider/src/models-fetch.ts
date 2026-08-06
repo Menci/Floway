@@ -29,13 +29,13 @@ interface NormalizedProviderModelsReadOptions {
 
 interface ProviderModelsDeadline {
   error: DOMException;
+  errorMappers: Array<(reason: unknown) => unknown>;
   expiresAt: number;
   expire: () => void;
 }
 
 const deadlines = new WeakMap<AbortSignal, ProviderModelsDeadline>();
 const deadlineErrors = new WeakSet<DOMException>();
-const deadlineErrorMappers = new WeakMap<AbortSignal, (reason: unknown) => unknown>();
 const monotonicNow = (): number => performance.now();
 
 const timeoutError = (scope: 'idle' | 'total', timeoutMs: number): DOMException =>
@@ -65,12 +65,26 @@ const isDeadlineAbort = (signal: AbortSignal): boolean => {
   return signal.aborted && signal.reason instanceof DOMException && deadlineErrors.has(signal.reason);
 };
 
+const registerDeadlineErrorMapper = (
+  signal: AbortSignal,
+  mapper: (reason: unknown) => unknown,
+): (() => void) => {
+  const deadline = deadlines.get(signal);
+  if (!deadline) return () => {};
+  deadline.errorMappers.push(mapper);
+  return () => {
+    const index = deadline.errorMappers.lastIndexOf(mapper);
+    if (index !== -1) deadline.errorMappers.splice(index, 1);
+  };
+};
+
 const raceWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
       let reason = signal.reason;
-      const mapper = isDeadlineAbort(signal) ? deadlineErrorMappers.get(signal) : undefined;
+      const errorMappers = isDeadlineAbort(signal) ? deadlines.get(signal)?.errorMappers : undefined;
+      const mapper = errorMappers?.[errorMappers.length - 1];
       if (mapper) {
         try {
           reason = mapper(reason);
@@ -110,6 +124,7 @@ export const runProviderModelsTask = async <T>(
   deadlineErrors.add(error);
   const ownDeadline: ProviderModelsDeadline = {
     error,
+    errorMappers: [],
     expiresAt: monotonicNow() + totalTimeoutMs,
     expire: () => controller.abort(error),
   };
@@ -460,7 +475,7 @@ export const fetchUpstreamModels = <T>(
       rewriteCapturedBodyHeaders(httpResponse.headers, true);
       return new ProviderModelsUnavailableError(httpResponse, cause);
     };
-    deadlineErrorMappers.set(signal, mapDeadlineError);
+    const unregisterDeadlineErrorMapper = registerDeadlineErrorMapper(signal, mapDeadlineError);
     try {
       const captured = await readErrorBody(response, maxErrorResponseBytes, { idleTimeoutMs: options.idleTimeoutMs, signal });
       httpResponse.body = captured.body;
@@ -469,7 +484,7 @@ export const fetchUpstreamModels = <T>(
       rewriteCapturedBodyHeaders(httpResponse.headers, true);
       throw new ProviderModelsUnavailableError(httpResponse, cause);
     } finally {
-      if (deadlineErrorMappers.get(signal) === mapDeadlineError) deadlineErrorMappers.delete(signal);
+      unregisterDeadlineErrorMapper();
     }
     throw new ProviderModelsUnavailableError(httpResponse);
   }

@@ -233,6 +233,45 @@ test('fetchUpstreamModels preserves a known non-2xx frame when its total deadlin
   }
 });
 
+test('fetchUpstreamModels preserves a non-2xx frame through an inherited task deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    let cancelReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('partial'));
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancelReason = reason;
+      },
+    });
+    const result = runProviderModelsTask(
+      outerSignal => fetchUpstreamModels(
+        () => Promise.resolve(new Response(body, {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '7' },
+        })),
+        value => value,
+        { idleTimeoutMs: 1000, signal: outerSignal, totalTimeoutMs: 1000 },
+      ),
+      { totalTimeoutMs: 25 },
+    );
+    const rejection = assertRejects(() => result, ProviderModelsUnavailableError) as Promise<ProviderModelsUnavailableError>;
+    await vi.advanceTimersByTimeAsync(25);
+    const error = await rejection;
+    expect(error.httpResponse).toMatchObject({ status: 429, body: '' });
+    expect(error.httpResponse?.headers.get('retry-after')).toBe('7');
+    expect(error.httpResponse?.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(error.cause).toMatchObject({ name: 'TimeoutError' });
+    expect(cancelReason).toBe(error.cause);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('model task timers reject durations the runtime cannot represent before dispatch', async () => {
   const task = vi.fn<() => Promise<void>>(() => Promise.resolve());
   await expect(runProviderModelsTask(task, { totalTimeoutMs: 2_147_483_648 })).rejects.toThrow(
