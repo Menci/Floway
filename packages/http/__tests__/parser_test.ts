@@ -981,8 +981,10 @@ describe('parseHttpResponse — body reader cleanup failures', () => {
       cancel: async () => { throw cancelError; },
     });
     const raw = await parseHttpResponse(source);
+    const reader = raw.body.getReader();
 
-    await expect(raw.body.getReader().read()).rejects.toBe(cancelError);
+    await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([0x41]) });
+    await expect(reader.read()).rejects.toBe(cancelError);
   });
 
   it('rejects EOF-framed body cancellation when transport cancellation fails', async () => {
