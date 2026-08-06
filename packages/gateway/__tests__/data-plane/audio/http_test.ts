@@ -166,6 +166,31 @@ test('audio transcription file validation enforces its byte boundary without a l
   );
 });
 
+test('/v1/audio/transcriptions rejects multipart part amplification before upstream dispatch', async () => {
+  const { apiKey } = await setupAppTest();
+  const form = transcriptionForm(Array.from({ length: 63 }, (_, index): [string, string] => [`extra-${index}`, '']));
+  let upstreamCalls = 0;
+
+  await withMockedFetch(
+    () => {
+      upstreamCalls += 1;
+      return Response.json({ text: 'unexpected dispatch' });
+    },
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey.key },
+        body: form,
+      });
+      assertEquals(response.status, 400);
+      assertEquals(await response.json(), {
+        error: { message: 'Multipart request body supports at most 64 parts.', type: 'api_error' },
+      });
+    },
+  );
+  assertEquals(upstreamCalls, 0);
+});
+
 test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, and token usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {

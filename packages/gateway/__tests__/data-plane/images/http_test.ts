@@ -278,6 +278,32 @@ test('/v1/images/edits applies its multipart wire budget before reading an overs
   assertEquals((await response.json()).error.max_bytes, MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES);
 });
 
+test('/v1/images/edits rejects multipart part amplification before upstream dispatch', async () => {
+  const { apiKey } = await setupAppTest();
+  const form = new FormData();
+  form.append('model', 'gpt-image-2');
+  form.append('image', new Blob([Uint8Array.of(1)]), 'image.png');
+  for (let index = 0; index < 63; index++) form.append(`extra-${index}`, '');
+  let upstreamCalls = 0;
+
+  await withMockedFetch(
+    () => {
+      upstreamCalls += 1;
+      return jsonResponse({ data: [] });
+    },
+    async () => {
+      const response = await requestApp('/v1/images/edits', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: form,
+      });
+      assertEquals(response.status, 400);
+      assertEquals(await response.json(), {
+        error: { message: 'Multipart request body supports at most 64 parts.', type: 'api_error' },
+      });
+    },
+  );
+  assertEquals(upstreamCalls, 0);
+});
+
 test('/v1/images/edits rejects seventeen multipart images and duplicate masks', async () => {
   const { apiKey } = await setupAppTest();
   for (const configure of [

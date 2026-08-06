@@ -6,6 +6,12 @@ export interface MultipartParseLimits {
   readonly fieldBytes: number;
 }
 
+// Image edits are the widest multipart schema: 16 images plus one mask. A
+// 64-part structural ceiling leaves 47 text fields, comfortably beyond the
+// endpoint's declared scalar surface, while preventing tiny-part amplification.
+// The 256 KiB field budget also covers the documented 32,000-character prompt
+// at four UTF-8 bytes per code point.
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L44745-L44820
 export const DEFAULT_MULTIPART_PARSE_LIMITS: MultipartParseLimits = {
   parts: 64,
   fields: 47,
@@ -35,6 +41,8 @@ const boundaryFromContentType = (contentType: string): Uint8Array | null => {
   const match = /(?:^|;)\s*boundary=(?:"((?:[^"\\]|\\.)*)"|([^;\s]+))/iu.exec(contentType);
   const quoted = match?.[1];
   const raw = quoted === undefined ? match?.[2] : quoted.replace(/\\(.)/gu, '$1');
+  // RFC 2046 §5.1.1 caps boundary values at 70 characters.
+  // https://www.rfc-editor.org/rfc/rfc2046#section-5.1.1
   if (raw === undefined || raw.length === 0 || raw.length > 70 || !/^[\x20-\x7E]+$/u.test(raw)) return null;
   return new TextEncoder().encode(raw);
 };
