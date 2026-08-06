@@ -255,7 +255,10 @@ test.each([
   { body: [], message: 'must be an object' },
   { body: { expires_at: 4_102_444_800, endpoints: { api: TOKEN_BASE_URL } }, message: 'missing token' },
   { body: { token: '', expires_at: 4_102_444_800, endpoints: { api: TOKEN_BASE_URL } }, message: 'missing token' },
-  { body: { token: 'tok', expires_at: null, endpoints: { api: TOKEN_BASE_URL } }, message: 'finite expires_at' },
+  { body: { token: 'tok', expires_at: null, endpoints: { api: TOKEN_BASE_URL } }, message: 'safe integer' },
+  { body: { token: 'tok', expires_at: -1, endpoints: { api: TOKEN_BASE_URL } }, message: 'safe integer' },
+  { body: { token: 'tok', expires_at: 0.5, endpoints: { api: TOKEN_BASE_URL } }, message: 'safe integer' },
+  { body: { token: 'tok', expires_at: Number.MAX_VALUE, endpoints: { api: TOKEN_BASE_URL } }, message: 'safe integer' },
   { body: { token: 'tok', expires_at: 4_102_444_800, endpoints: [] }, message: 'endpoints.api' },
 ])('exchangeCopilotToken rejects malformed success body %#', async ({ body, message }) => {
   await expect(exchangeCopilotToken('github.com', 'ghu_test', async () => jsonResponse(body))).rejects.toThrow(message);

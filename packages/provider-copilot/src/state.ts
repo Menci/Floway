@@ -70,8 +70,8 @@ const assertCopilotTokenEntry = (value: unknown, where: string): void => {
   if (typeof obj.token !== 'string' || obj.token === '') {
     throw new TypeError(`${where}.token must be a non-empty string`);
   }
-  if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
-    throw new TypeError(`${where}.expiresAt must be a finite number`);
+  if (typeof obj.expiresAt !== 'number' || !Number.isSafeInteger(obj.expiresAt) || obj.expiresAt <= 0) {
+    throw new TypeError(`${where}.expiresAt must be a positive safe integer`);
   }
   if (typeof obj.baseUrl !== 'string' || obj.baseUrl === '') {
     throw new TypeError(`${where}.baseUrl must be a non-empty string`);

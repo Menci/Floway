@@ -3,7 +3,7 @@ import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 import type { CopilotUpstreamConfig } from './config.ts';
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, UpstreamGenerationMismatchError, type Fetcher } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -53,12 +53,14 @@ const IN_PROCESS_TTL_MS = 60_000;
 const inProcessTokenCache = new Map<
   string,
   {
+    upstreamId: string;
     entry: CopilotTokenEntry;
     cachedAt: number;
   }
 >();
 
 interface InFlightTokenRefresh {
+  readonly upstreamId: string;
   readonly controller: AbortController;
   readonly promise: Promise<CopilotTokenEntry>;
   waiters: number;
@@ -66,13 +68,15 @@ interface InFlightTokenRefresh {
 }
 
 const inFlightTokenRefreshes = new Map<string, InFlightTokenRefresh>();
-let tokenCacheGeneration = 0;
 
-const reusableTokenRefresh = (upstreamId: string): InFlightTokenRefresh | undefined => {
-  const refresh = inFlightTokenRefreshes.get(upstreamId);
+const tokenCacheKey = (upstreamId: string, githubHost: string, githubToken: string): string =>
+  JSON.stringify([upstreamId, githubHost, githubToken]);
+
+const reusableTokenRefresh = (key: string): InFlightTokenRefresh | undefined => {
+  const refresh = inFlightTokenRefreshes.get(key);
   if (!refresh) return undefined;
   if (!refresh.settled && !refresh.controller.signal.aborted) return refresh;
-  inFlightTokenRefreshes.delete(upstreamId);
+  inFlightTokenRefreshes.delete(key);
   return undefined;
 };
 
@@ -90,13 +94,15 @@ export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenF
 // reset, and some tests deliberately want the next call to hydrate from
 // state_json instead of minting a fresh token. Cancelling an unfinished shared
 // refresh prevents it from writing into the next test's repository instance.
-export function clearInProcessCopilotTokenCache(): void {
-  tokenCacheGeneration += 1;
-  inProcessTokenCache.clear();
-  for (const refresh of inFlightTokenRefreshes.values()) {
-    refresh.controller.abort(new DOMException('Copilot token cache cleared', 'AbortError'));
+export function clearInProcessCopilotTokenCache(upstreamId?: string): void {
+  for (const [key, cached] of inProcessTokenCache) {
+    if (upstreamId === undefined || cached.upstreamId === upstreamId) inProcessTokenCache.delete(key);
   }
-  inFlightTokenRefreshes.clear();
+  for (const [key, refresh] of inFlightTokenRefreshes) {
+    if (upstreamId !== undefined && refresh.upstreamId !== upstreamId) continue;
+    refresh.controller.abort(new DOMException('Copilot token cache cleared', 'AbortError'));
+    inFlightTokenRefreshes.delete(key);
+  }
 }
 
 class RetryableError extends Error {
@@ -177,21 +183,27 @@ const awaitRefresh = async (
 };
 
 const refreshCopilotToken = (
+  key: string,
   upstreamId: string,
   githubHost: string,
   githubToken: string,
   expectedConfig: unknown,
   fetcher: Fetcher,
 ): InFlightTokenRefresh => {
-  const existing = reusableTokenRefresh(upstreamId);
+  const existing = reusableTokenRefresh(key);
   if (existing) return existing;
 
   const controller = new AbortController();
-  const generation = tokenCacheGeneration;
   const promise = retryCopilotTokenFetch(async () => {
     const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, controller.signal);
     if (controller.signal.aborted) throw controller.signal.reason;
-    inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
+    const current = await getRepo().upstreams.getById(upstreamId);
+    if (current?.kind !== 'copilot') throw new UpstreamGenerationMismatchError(upstreamId);
+    const config = current.config as CopilotUpstreamConfig;
+    if (config.githubHost !== githubHost || config.githubToken !== githubToken) {
+      throw new UpstreamGenerationMismatchError(upstreamId);
+    }
+    inProcessTokenCache.set(key, { upstreamId, entry, cachedAt: Date.now() });
     // Best-effort: the caller is about to satisfy a live request with this
     // token, so a storage failure costs the next cold isolate one extra mint
     // rather than the request. Swallowing here also keeps such a failure out
@@ -200,7 +212,6 @@ const refreshCopilotToken = (
     try {
       await getRepo().upstreams.saveState(upstreamId, current => {
         const state = readCopilotUpstreamState(current);
-        if (generation !== tokenCacheGeneration) return state;
         return {
           ...state,
           copilotToken: entry,
@@ -211,14 +222,14 @@ const refreshCopilotToken = (
     }
     return entry;
   }, controller.signal);
-  const refresh: InFlightTokenRefresh = { controller, promise, waiters: 0, settled: false };
-  inFlightTokenRefreshes.set(upstreamId, refresh);
+  const refresh: InFlightTokenRefresh = { upstreamId, controller, promise, waiters: 0, settled: false };
+  inFlightTokenRefreshes.set(key, refresh);
   // The lifecycle observer is attached before callers can join. Its catch owns
   // the rejection when every waiter has already cancelled.
   void promise.finally(() => {
     refresh.settled = true;
-    if (inFlightTokenRefreshes.get(upstreamId) === refresh) {
-      inFlightTokenRefreshes.delete(upstreamId);
+    if (inFlightTokenRefreshes.get(key) === refresh) {
+      inFlightTokenRefreshes.delete(key);
     }
   }).catch(() => undefined);
   return refresh;
@@ -226,21 +237,26 @@ const refreshCopilotToken = (
 
 async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
   if (signal?.aborted) throw signal.reason;
+  const key = tokenCacheKey(upstreamId, githubHost, githubToken);
+  const fresh = await getRepo().upstreams.getById(upstreamId);
+  if (!fresh || fresh.kind !== 'copilot') throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
+  const freshConfig = fresh.config as CopilotUpstreamConfig;
+  if (freshConfig.githubHost !== githubHost || freshConfig.githubToken !== githubToken) {
+    throw new UpstreamGenerationMismatchError(upstreamId);
+  }
   const now = Date.now();
-  const cached = inProcessTokenCache.get(upstreamId);
+  const cached = inProcessTokenCache.get(key);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
     return cached.entry;
   }
 
-  const activeRefresh = reusableTokenRefresh(upstreamId);
+  const activeRefresh = reusableTokenRefresh(key);
   if (activeRefresh) return await awaitRefresh(activeRefresh, signal);
 
-  const fresh = await getRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
   const state = readCopilotUpstreamState(fresh.state);
   const persisted = state.copilotToken;
   if (persisted && isTokenValid(persisted.token, persisted.expiresAt)) {
-    inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now });
+    inProcessTokenCache.set(key, { upstreamId, entry: persisted, cachedAt: now });
     return persisted;
   }
 
@@ -251,7 +267,7 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   // ~25 minutes per process. Concurrent misses share one exchange. Each caller
   // retains independent cancellation; the shared fetch is cancelled only after
   // its final waiter leaves.
-  return await awaitRefresh(refreshCopilotToken(upstreamId, githubHost, githubToken, fresh.config, fetcher), signal);
+  return await awaitRefresh(refreshCopilotToken(key, upstreamId, githubHost, githubToken, fresh.config, fetcher), signal);
 }
 
 // Pure exchange against /copilot_internal/v2/token — no caching, no
@@ -283,8 +299,12 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
   if (typeof fields.token !== 'string' || fields.token === '') {
     throw new TypeError('Copilot token exchange response missing token');
   }
-  if (typeof fields.expires_at !== 'number' || !Number.isFinite(fields.expires_at)) {
-    throw new TypeError('Copilot token exchange response missing finite expires_at');
+  if (
+    typeof fields.expires_at !== 'number'
+    || !Number.isSafeInteger(fields.expires_at)
+    || fields.expires_at <= Math.floor(Date.now() / 1000) + 60
+  ) {
+    throw new TypeError('Copilot token exchange response expires_at must be a safe integer at least 60 seconds in the future');
   }
   const endpoints = fields.endpoints;
   const baseUrl = typeof endpoints === 'object' && endpoints !== null && !Array.isArray(endpoints)

@@ -144,7 +144,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
       updatedAt: nextUpstreamUpdatedAt(dbRecord!),
     }, { clearModelsCache: true });
     if (!next) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
-    clearInProcessCopilotTokenCache();
+    clearInProcessCopilotTokenCache(record.id);
     await warmModelsCache(next, c, { readBack: false });
   } else {
     nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry };
