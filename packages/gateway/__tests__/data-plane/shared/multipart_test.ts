@@ -176,6 +176,55 @@ test('bounded multipart parser preserves the Worker runtime\'s LF-only framing s
   expect(parsed.form.get('value')).toBe('text');
 });
 
+test('bounded multipart parser accepts RFC preamble and epilogue bytes', () => {
+  const bytes = new TextEncoder().encode([
+    'preamble ignored by multipart parser',
+    '--real',
+    'Content-Disposition: form-data; name="value"',
+    '',
+    'text',
+    '--real--',
+    'epilogue ignored too',
+  ].join('\r\n'));
+  const parsed = parseMultipartEntries(bytes, 'multipart/form-data; boundary=real', limits());
+
+  expect(parsed).toEqual({ type: 'ok', entries: [{ name: 'value', value: 'text' }] });
+});
+
+test('bounded multipart parser finds only the real top-level boundary parameter', () => {
+  const bytes = new TextEncoder().encode([
+    '--real',
+    'Content-Disposition: form-data; name="value"',
+    '',
+    'text',
+    '--real--',
+    '',
+  ].join('\r\n'));
+  const parsed = parseMultipartEntries(
+    bytes,
+    'multipart/form-data; note="x; boundary=fake"; boundary="real"',
+    limits(),
+  );
+
+  expect(parsed).toEqual({ type: 'ok', entries: [{ name: 'value', value: 'text' }] });
+});
+
+test('bounded multipart parser rejects runtime-dependent Content-Transfer-Encoding', () => {
+  const bytes = new TextEncoder().encode([
+    '--b',
+    'Content-Disposition: form-data; name="file"; filename="x.bin"',
+    'Content-Type: application/octet-stream',
+    'Content-Transfer-Encoding: base64',
+    '',
+    'AQID',
+    '--b--',
+    '',
+  ].join('\r\n'));
+
+  expect(parseMultipartEntries(bytes, 'multipart/form-data; boundary=b', limits()))
+    .toEqual({ type: 'invalid' });
+});
+
 test('bounded multipart parser reports malformed framing without materializing FormData', async () => {
   const parsed = await parseMultipartFormData(
     new TextEncoder().encode('--broken\r\nmissing headers and close'),

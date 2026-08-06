@@ -64,16 +64,6 @@ const assertLimit = (name: keyof MultipartParseLimits, value: number): void => {
   }
 };
 
-const boundaryFromContentType = (contentType: string): Uint8Array | null => {
-  const match = /(?:^|;)\s*boundary=(?:"((?:[^"\\]|\\.)*)"|([^;\s]+))/iu.exec(contentType);
-  const quoted = match?.[1];
-  const raw = quoted === undefined ? match?.[2] : quoted.replace(/\\(.)/gu, '$1');
-  // RFC 2046 §5.1.1 caps boundary values at 70 characters.
-  // https://www.rfc-editor.org/rfc/rfc2046#section-5.1.1
-  if (raw === undefined || raw.length === 0 || raw.length > 70 || !/^[\x20-\x7E]+$/u.test(raw)) return null;
-  return new TextEncoder().encode(raw);
-};
-
 const startsWithBytes = (source: Uint8Array, expected: Uint8Array, offset: number): boolean => {
   if (offset < 0 || offset + expected.byteLength > source.byteLength) return false;
   for (let index = 0; index < expected.byteLength; index++) {
@@ -158,6 +148,26 @@ const headerParameterValue = (raw: string): string | null => {
   return decoded;
 };
 
+const boundaryFromContentType = (contentType: string): Uint8Array | null => {
+  const segments = headerSegments(contentType);
+  if (segments === null || segments[0]?.toLowerCase() !== 'multipart/form-data') return null;
+  let raw: string | undefined;
+  for (const segment of segments.slice(1)) {
+    const separator = segment.indexOf('=');
+    if (separator <= 0) return null;
+    const name = segment.slice(0, separator).trim().toLowerCase();
+    if (name !== 'boundary') continue;
+    if (raw !== undefined) return null;
+    const value = headerParameterValue(segment.slice(separator + 1));
+    if (value === null) return null;
+    raw = value;
+  }
+  // RFC 2046 §5.1.1 caps boundary values at 70 characters.
+  // https://www.rfc-editor.org/rfc/rfc2046#section-5.1.1
+  if (raw === undefined || raw.length === 0 || raw.length > 70 || !/^[\x20-\x7E]+$/u.test(raw)) return null;
+  return new TextEncoder().encode(raw);
+};
+
 interface ParsedPartHeaders {
   readonly name: string;
   readonly filename: string | undefined;
@@ -182,6 +192,12 @@ const parsePartHeaders = (headerBytes: Uint8Array): ParsedPartHeaders | null => 
 
   const disposition = headers.get('content-disposition');
   if (disposition === undefined) return null;
+  // Node decodes legacy Content-Transfer-Encoding while workerd ignores it.
+  // Reject it at the shared boundary so the same bytes cannot become different
+  // uploads depending on the deployment runtime.
+  // https://github.com/nodejs/undici/blob/01a912e49a50c48009ed2639d2a457a6ec26752a/lib/web/fetch/formdata-parser.js#L372-L390
+  // https://github.com/cloudflare/workerd/blob/80c80a712532b012cbeaef4d08ff6ab15407e960/src/workerd/api/form-data.c%2B%2B#L213-L230
+  if (headers.has('content-transfer-encoding')) return null;
   const segments = headerSegments(disposition);
   if (segments === null || segments[0]?.toLowerCase() !== 'form-data') return null;
   const parameters = new Map<string, string>();
@@ -271,8 +287,14 @@ const preflightMultipart = (
   innerDelimiter[0] = LF;
   innerDelimiter.set(delimiter, 1);
 
-  if (!startsWithBytes(bytes, delimiter, 0)) return { type: 'invalid' };
-  let cursor = delimiter.byteLength;
+  const firstDelimiter = startsWithBytes(bytes, delimiter, 0)
+    ? 0
+    : (() => {
+        const prefixed = indexOfBytes(bytes, innerDelimiter, 0);
+        return prefixed === -1 ? -1 : prefixed + 1;
+      })();
+  if (firstDelimiter === -1) return { type: 'invalid' };
+  let cursor = firstDelimiter + delimiter.byteLength;
   let parts = 0;
   let fields = 0;
   let files = 0;
@@ -283,10 +305,12 @@ const preflightMultipart = (
     if (bytes[cursor] === DASH && bytes[cursor + 1] === DASH) {
       cursor += 2;
       if (cursor === bytes.byteLength) return { type: 'ok', parts: parsedParts };
-      if (bytes[cursor] === LF && cursor + 1 === bytes.byteLength) return { type: 'ok', parts: parsedParts };
-      if (bytes[cursor] === CR && bytes[cursor + 1] === LF && cursor + 2 === bytes.byteLength) {
-        return { type: 'ok', parts: parsedParts };
-      }
+      // RFC 2046 permits an arbitrary epilogue after the closing boundary's
+      // line ending. Preserve the runtime parser behavior while still
+      // rejecting bytes glued directly to the closing `--` marker.
+      // https://www.rfc-editor.org/rfc/rfc2046#section-5.1.1
+      if (bytes[cursor] === LF) return { type: 'ok', parts: parsedParts };
+      if (bytes[cursor] === CR && bytes[cursor + 1] === LF) return { type: 'ok', parts: parsedParts };
       return { type: 'invalid' };
     }
     if (bytes[cursor] === LF) cursor += 1;
