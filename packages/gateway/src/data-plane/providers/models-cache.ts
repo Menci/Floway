@@ -98,20 +98,27 @@ const runFetch = (
   loadProvidedModels?: (signal: AbortSignal) => Promise<ProviderModel[]>,
 ): Promise<ModelsFetchResult> => runProviderModelsTask(async signal => {
   const generation = instance.modelsCacheGeneration;
-  const startedAt = Date.now();
+  const flight = await getRepo().upstreams.claimModelsCacheFlight(key, generation);
+  signal.throwIfAborted();
   try {
     const loaded = loadProvidedModels === undefined
       ? instance.instance.getProvidedModels({ fetcher, signal })
       : loadProvidedModels(signal);
     const models = assertUniqueModelIds(instance, [...await loaded]);
-    const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: startedAt, models, lastError: null };
-    const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
+    signal.throwIfAborted();
+    const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
+    const persisted = flight === null
+      ? false
+      : await getRepo().upstreams.saveModelsCache(key, generation, entry, flight);
     return { models, persistedCache: persisted ? entry : null };
   } catch (err) {
+    if (signal.aborted) throw signal.reason;
     // A no-op on an upstream with no cached catalog: a brand-new upstream that
     // fails its first fetch surfaces the error to the caller with nothing
     // persisted.
-    await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: startedAt });
+    if (flight !== null) {
+      await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() }, flight);
+    }
     throw err;
   }
 });

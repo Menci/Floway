@@ -147,24 +147,27 @@ test('SQL upstream repo saveModelsCacheError is a no-op on a row that never cach
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
-test('SQL upstream repo rejects late cache writes from an older flight in the same generation', async () => {
+test('SQL upstream repo rejects equal-timestamp writes from a superseded cache flight', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
+  const oldFlight = await repo.claimModelsCacheFlight('up_test', generationFor(baseRecord()));
+  const newFlight = await repo.claimModelsCacheFlight('up_test', generationFor(baseRecord()));
+  if (oldFlight === null || newFlight === null) throw new Error('cache flight claim failed');
   await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_002_000_000,
+    fetchedAt: 1_700_001_000_000,
     models: [stubProviderModel({ id: 'newer-model' })],
-  });
+  }, newFlight);
 
   const staleCatalogSaved = await repo.saveModelsCache('up_test', generationFor(baseRecord()), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_001_000_000,
     models: [stubProviderModel({ id: 'stale-model' })],
-  });
+  }, oldFlight);
   const staleErrorSaved = await repo.saveModelsCacheError('up_test', generationFor(baseRecord()), {
     message: 'stale error',
-    at: 1_700_001_500_000,
-  });
+    at: 1_700_001_000_000,
+  }, oldFlight);
 
   assertEquals(staleCatalogSaved, false);
   assertEquals(staleErrorSaved, false);

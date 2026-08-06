@@ -85,6 +85,33 @@ afterEach(() => {
 });
 
 describe('fetchUpstreamModelsCached', () => {
+  test('memory repo rejects equal-timestamp writes from a superseded cache flight', async () => {
+    const repo = await setupRepo();
+    const oldFlight = await repo.upstreams.claimModelsCacheFlight(UPSTREAM_ID, CACHE_GENERATION);
+    const newFlight = await repo.upstreams.claimModelsCacheFlight(UPSTREAM_ID, CACHE_GENERATION);
+    if (oldFlight === null || newFlight === null) throw new Error('cache flight claim failed');
+    const cache = {
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: 1_700_001_000_000,
+      models: [aModel('newer-model')],
+    };
+    await repo.upstreams.saveModelsCache(UPSTREAM_ID, CACHE_GENERATION, cache, newFlight);
+
+    const staleCatalogSaved = await repo.upstreams.saveModelsCache(UPSTREAM_ID, CACHE_GENERATION, {
+      ...cache,
+      models: [aModel('stale-model')],
+    }, oldFlight);
+    const staleErrorSaved = await repo.upstreams.saveModelsCacheError(UPSTREAM_ID, CACHE_GENERATION, {
+      message: 'stale error',
+      at: cache.fetchedAt,
+    }, oldFlight);
+
+    expect(staleCatalogSaved).toBe(false);
+    expect(staleErrorSaved).toBe(false);
+    expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['newer-model']);
+    expect((await storedCache(repo))?.lastError).toBeNull();
+  });
+
   test('cold cache: fetches, stores, returns models', async () => {
     const repo = await setupRepo();
     const fetchFn = vi.fn(async () => [aModel('m1')]);
@@ -269,11 +296,11 @@ describe('fetchUpstreamModelsCached', () => {
     const originalSave = repo.upstreams.saveModelsCache.bind(repo.upstreams);
     const saveGate = Promise.withResolvers<void>();
     const lateSaveFinished = Promise.withResolvers<void>();
-    const save = vi.spyOn(repo.upstreams, 'saveModelsCache').mockImplementation(async (id, generation, cache) => {
+    const save = vi.spyOn(repo.upstreams, 'saveModelsCache').mockImplementation(async (id, generation, cache, flight) => {
       await saveGate.promise;
-      await originalSave(id, generation, cache);
+      const saved = await originalSave(id, generation, cache, flight);
       lateSaveFinished.resolve();
-      return true;
+      return saved;
     });
     const stalled = fetchUpstreamModelsCached(
       stubInstance(vi.fn(async () => [aModel('first')])),
@@ -301,11 +328,11 @@ describe('fetchUpstreamModelsCached', () => {
     const originalSaveError = repo.upstreams.saveModelsCacheError.bind(repo.upstreams);
     const saveGate = Promise.withResolvers<void>();
     const lateSaveFinished = Promise.withResolvers<void>();
-    const saveError = vi.spyOn(repo.upstreams, 'saveModelsCacheError').mockImplementation(async (id, generation, error) => {
+    const saveError = vi.spyOn(repo.upstreams, 'saveModelsCacheError').mockImplementation(async (id, generation, error, flight) => {
       await saveGate.promise;
-      await originalSaveError(id, generation, error);
+      const saved = await originalSaveError(id, generation, error, flight);
       lateSaveFinished.resolve();
-      return true;
+      return saved;
     });
     const stalled = fetchUpstreamModelsCached(
       stubInstance(vi.fn(async () => { throw new Error('catalog failed'); })),

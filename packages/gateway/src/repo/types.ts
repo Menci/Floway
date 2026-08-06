@@ -398,10 +398,12 @@ export interface UpstreamRepo {
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.
-  // Within one generation, fetchedAt/error.at also fence a timed-out flight's
-  // late persistence behind any newer successful refresh.
-  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
-  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
+  // Each refresh claims a monotonically increasing row-local flight number.
+  // Success and error writes land only while that claim remains current, so a
+  // timed-out flight cannot publish after a replacement flight starts.
+  claimModelsCacheFlight(id: string, generation: ModelsCacheGeneration): Promise<number | null>;
+  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>, flight?: number): Promise<boolean>;
+  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>, flight?: number): Promise<boolean>;
 }
 
 export type UpstreamFieldsPatch = Partial<Pick<UpstreamRecord,

@@ -897,6 +897,7 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, UpstreamRecord>();
+  private modelsCacheFlights = new Map<string, number>();
 
   constructor(
     private readonly mutations: MemoryMutationCoordinator,
@@ -964,11 +965,13 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   delete(id: string): Promise<boolean> {
+    this.modelsCacheFlights.delete(id);
     return Promise.resolve(this.store.delete(id));
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.modelsCacheFlights.clear();
     return Promise.resolve();
   }
 
@@ -991,24 +994,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
+  claimModelsCacheFlight(id: string, generation: ModelsCacheGeneration): Promise<number | null> {
     const existing = this.store.get(id);
-    if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(false);
-    if (existing.modelsCache !== null && existing.modelsCache.fetchedAt > cache.fetchedAt) return Promise.resolve(false);
+    if (!existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return Promise.resolve(null);
+    const flight = (this.modelsCacheFlights.get(id) ?? 0) + 1;
+    this.modelsCacheFlights.set(id, flight);
+    return Promise.resolve(flight);
+  }
+
+  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>, flight?: number): Promise<boolean> {
+    const activeFlight = flight ?? await this.claimModelsCacheFlight(id, generation);
+    const existing = this.store.get(id);
+    if (activeFlight === null || this.modelsCacheFlights.get(id) !== activeFlight || !existing || existing.updatedAt !== generation.updatedAt || serializeStoredConfig(existing.config) !== serializeStoredConfig(generation.config)) return false;
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
-    return Promise.resolve(true);
+    return true;
   }
 
   // No-op on a row that has never cached a catalog: the annotation belongs to a
   // previously-successful fetch.
-  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
+  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>, flight?: number): Promise<boolean> {
+    const activeFlight = flight ?? await this.claimModelsCacheFlight(id, generation);
     const existing = this.store.get(id);
     const cache = existing?.updatedAt === generation.updatedAt && serializeStoredConfig(existing.config) === serializeStoredConfig(generation.config)
       ? existing.modelsCache
       : null;
-    if (!cache || cache.fetchedAt > error.at) return Promise.resolve(false);
+    if (activeFlight === null || this.modelsCacheFlights.get(id) !== activeFlight || !cache) return false;
     cache.lastError = error;
-    return Promise.resolve(true);
+    return true;
   }
 }
 

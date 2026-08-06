@@ -1,0 +1,1 @@
+ALTER TABLE upstreams ADD COLUMN models_cache_flight INTEGER NOT NULL DEFAULT 0;
