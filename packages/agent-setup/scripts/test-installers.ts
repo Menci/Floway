@@ -2058,7 +2058,7 @@ sleep 12
   const run = await runPowerShellProbe(ws, `$ErrorActionPreference = 'Stop'
 ${SETUP_POWERSHELL_COMMON}
 try {
-  Invoke-SetupInterpreterBody -Body ('x' * (2 * 1024 * 1024)) -TimeoutSeconds 2 -Exe ${powerShellLiteral(interpreter)} -Arguments ''
+  Invoke-SetupInterpreterBody -Body ('x' * (4 * 1024 * 1024)) -TimeoutSeconds 4 -Exe ${powerShellLiteral(interpreter)} -Arguments ''
   exit 0
 } catch {
   exit 1
@@ -2067,7 +2067,7 @@ try {
 
   t.ok(run.code !== 0, 'blocked stdin delivery must fail the setup');
   t.ok(Date.now() - started < 8_000, 'stdin delivery shares the interpreter deadline');
-  t.includes(run.combined, 'installer timed out after 2 seconds', 'the failure identifies the shared deadline');
+  t.includes(run.combined, 'installer timed out after 4 seconds', 'the failure identifies the shared deadline');
   t.ok(existsSync(installerChildPid(ws)), 'the non-reading interpreter records its PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8'));
   t.ok(!processExists(childPid), `timed-out non-reading interpreter ${childPid} must be dead`);
