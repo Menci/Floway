@@ -1,7 +1,6 @@
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
-import { collaborationShimSupportsTarget } from './interceptors/collaboration-shim.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
@@ -69,6 +68,15 @@ export type ResponsesServePlan =
     readonly candidates: readonly ModelCandidate[];
   };
 
+const requiresNativeResponsesTarget = (payload: CanonicalResponsesPayload): boolean => {
+  if (payload.input.some(item => item.type === 'additional_tools' || item.type === 'tool_search_output')) return true;
+  const choice = payload.tool_choice;
+  if (choice === null || typeof choice !== 'object') return false;
+  return choice.type === 'allowed_tools'
+    || choice.type === 'namespace'
+    || ('namespace' in choice && typeof choice.namespace === 'string');
+};
+
 // Runs the native source preparation both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
 // expand any `previous_response_id`, load and hydrate stored items, prepare
@@ -102,8 +110,9 @@ export const prepareResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
-  const viable = endpointViable.filter(candidate =>
-    collaborationShimSupportsTarget(hydrated.payload, responsesTarget.pick(candidate.model.endpoints)));
+  const viable = requiresNativeResponsesTarget(hydrated.payload)
+    ? endpointViable.filter(candidate => responsesTarget.pick(candidate.model.endpoints) === 'responses')
+    : endpointViable;
   const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };

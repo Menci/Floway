@@ -7,7 +7,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
@@ -597,9 +597,27 @@ test('generate falls through translate-out to chat-completions target', async ()
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 
-test('generate excludes chat-completions targets for collaboration namespaces', async () => {
+test('generate lowers plaintext collaboration through Chat Completions', async () => {
   installRepo();
-  const callChatCompletions = vi.fn();
+  let captured: ChatCompletionsPayload | undefined;
+  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    captured = body as ChatCompletionsPayload;
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        {
+          id: 'chatcmpl_collaboration', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'hi' }, finish_reason: null }],
+        },
+        {
+          id: 'chatcmpl_collaboration', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        },
+      ]),
+      modelKey: 'chat-completions-key',
+      headers: new Headers(),
+    };
+  });
   queueResolution([makeCandidate({
     upstream: 'up_c',
     endpoints: { chatCompletions: {} },
@@ -618,8 +636,16 @@ test('generate excludes chat-completions targets for collaboration namespaces', 
     headers: new Headers(),
   });
 
-  assert(result.type !== 'events');
-  assertEquals(callChatCompletions.mock.calls.length, 0);
+  assertEquals(result.type, 'events');
+  if (result.type === 'events') await collectEvents(result.events);
+  assertEquals(callChatCompletions.mock.calls.length, 1);
+  assertEquals(captured?.tools?.[0], {
+    type: 'function',
+    function: {
+      name: 'collaboration_2_spawn_agent',
+      parameters: { type: 'object' },
+    },
+  });
 });
 
 test.each(['item_reference', 'previous_response_id'] as const)(
@@ -687,7 +713,7 @@ test.each(['item_reference', 'previous_response_id'] as const)(
   },
 );
 
-test('generate excludes Messages targets for collaboration allowed_tools choices', async () => {
+test('generate requires native Responses for allowed_tools choices', async () => {
   installRepo();
   const callMessages = vi.fn();
   queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages })]);
@@ -696,13 +722,13 @@ test('generate excludes Messages targets for collaboration allowed_tools choices
     payload: makePayload({
       tools: [{
         type: 'namespace',
-        name: 'collaboration',
-        tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+        name: 'operations',
+        tools: [{ type: 'function', name: 'run', parameters: { type: 'object' } }],
       } as ResponsesTool],
       tool_choice: {
         type: 'allowed_tools',
         mode: 'required',
-        tools: [{ type: 'namespace', name: 'collaboration' }],
+        tools: [{ type: 'namespace', name: 'operations' }],
       },
     }),
     ctx: makeGatewayCtx(),

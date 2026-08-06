@@ -342,6 +342,45 @@ test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });
 
+test('translateChatCompletionsChunkToResponsesEvents restores flattened namespace calls', () => {
+  const state = createChatCompletionsToResponsesStreamState(
+    new Set(),
+    new Map([['collaboration_2_spawn_agent', { namespace: 'collaboration_2', name: 'spawn_agent' }]]),
+  );
+  const events = [
+    ...translateChatCompletionsChunkToResponsesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{
+        index: 0,
+        id: 'call_spawn',
+        type: 'function',
+        function: { name: 'collaboration_2_spawn_agent', arguments: '{"task_name":"worker"}' },
+      }],
+    }), state),
+    ...translateChatCompletionsChunkToResponsesEvents(chunk({}, 'tool_calls'), state),
+    ...flushChatCompletionsToResponsesEvents(state),
+  ];
+
+  const items = events.flatMap(event =>
+    event.type === 'response.output_item.added' || event.type === 'response.output_item.done'
+      ? [event.item]
+      : []);
+  assertEquals(items, [
+    expect.objectContaining({
+      type: 'function_call',
+      call_id: 'call_spawn',
+      namespace: 'collaboration_2',
+      name: 'spawn_agent',
+    }),
+    expect.objectContaining({
+      type: 'function_call',
+      call_id: 'call_spawn',
+      namespace: 'collaboration_2',
+      name: 'spawn_agent',
+    }),
+  ]);
+});
+
 test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prior scalar reasoning text', () => {
   const state = createChatCompletionsToResponsesStreamState();
   const events = [

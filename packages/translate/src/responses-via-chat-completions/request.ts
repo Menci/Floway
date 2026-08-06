@@ -3,6 +3,7 @@ import { responsesContentToChatCompletionsContent, responsesContentToText } from
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { flattenNamespaceFunctions, type NamespaceToolNames } from '../shared/responses-via/namespace-tools.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
@@ -84,18 +85,16 @@ const projectFunctionCallOutput = (item: ResponsesFunctionCallOutputItem): Funct
   };
 };
 
-const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): ChatCompletionsTool[] | undefined => {
-  // Translated Chat Completions targets do not currently have a faithful
-  // bridge for hosted/deferred Responses tools (`web_search`,
-  // `tool_search`, `namespace`, `image_generation`, and future builtin
-  // names). Native Responses targets receive those entries unchanged; this
-  // translator narrows to function and Freeform `custom` tools, recording
-  // the latter in `customToolNames` so the events translator can recover
-  // the freeform shape on the way back. The shim's web_search
-  // function tool is in `payload.tools` under its resolved name (the shim
-  // injects it on every request that uses hosted web_search) and reaches
-  // here as an ordinary function tool — no special carve-out needed.
+const translateResponsesTools = (
+  tools: ResponsesTool[] | null | undefined,
+  customToolNames: Set<string>,
+): { tools: ChatCompletionsTool[] | undefined; namespaceToolNames: NamespaceToolNames } => {
+  // Chat Completions has no namespace container. Namespace functions are
+  // flattened with the same collision-safe mapping used by Messages, while
+  // hosted/deferred Responses tools still require their owning boundary shim.
+  // Wrapped custom tools retain their separate reverse mapping.
   const out: ChatCompletionsTool[] = [];
+  const flattened = flattenNamespaceFunctions(tools, 'Chat Completions');
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
@@ -126,16 +125,32 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
     }
   }
 
-  return out.length > 0 ? out : undefined;
+  out.push(...flattened.functions.map(tool => ({
+    type: 'function' as const,
+    function: {
+      name: tool.targetName,
+      parameters: tool.parameters,
+      ...(tool.strict !== undefined ? { strict: tool.strict } : {}),
+      ...(tool.description !== undefined ? { description: tool.description } : {}),
+    },
+  })));
+
+  return {
+    tools: out.length > 0 ? out : undefined,
+    namespaceToolNames: flattened.names,
+  };
 };
 
-const translateResponsesToolChoice = (choice?: ResponsesToolChoice | null): ChatCompletionsPayload['tool_choice'] => {
+const translateResponsesToolChoice = (
+  choice: ResponsesToolChoice | null | undefined,
+  namespaceSourceToTarget: ReadonlyMap<string, string>,
+): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
   // choices since they share the function-tool wire shape after translation.
   if (choice.type !== 'function' && choice.type !== 'custom') return undefined;
-  return { type: 'function', function: { name: choice.name } };
+  return { type: 'function', function: { name: namespaceSourceToTarget.get(choice.name) ?? choice.name } };
 };
 
 const buildChatCompletionsResponseFormat = (text: ResponsesPayload['text']): ChatCompletionsPayload['response_format'] | undefined => {
@@ -172,12 +187,14 @@ export interface TargetRequestResult {
    * `custom_tool_call` outputs.
    */
   customToolNames: Set<string>;
+  namespaceToolNames: NamespaceToolNames;
 }
 
 export const buildTargetRequest = (source: ResponsesRequestPayload): TargetRequestResult => {
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
+  const { tools, namespaceToolNames } = translateResponsesTools(payload.tools, customToolNames);
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
   const pendingToolOutputImages: ChatCompletionsContentPart[] = [];
@@ -217,7 +234,11 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
     }
 
     if (item.type === 'function_call') {
-      assistant = appendAssistantToolCall(assistant, item);
+      const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
+      assistant = appendAssistantToolCall(assistant, {
+        ...item,
+        name: namespaceToolNames.sourceToTarget.get(sourceName) ?? item.name,
+      });
       continue;
     }
 
@@ -294,7 +315,6 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
   flushAssistant();
   flushToolOutputImages();
 
-  const tools = translateResponsesTools(payload.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // Responses-only state such as `previous_response_id` remains native-only.
   const target: ChatCompletionsPayload = {
@@ -316,8 +336,8 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
     // Chat Completions has no request-level counterpart for Responses
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
-    tool_choice: translateResponsesToolChoice(payload.tool_choice),
+    tool_choice: translateResponsesToolChoice(payload.tool_choice, namespaceToolNames.sourceToTarget),
   };
 
-  return { target, customToolNames };
+  return { target, customToolNames, namespaceToolNames };
 };

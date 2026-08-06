@@ -40,6 +40,65 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
   }]);
 });
 
+test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', () => {
+  const namespaceTool: ResponsesTool = {
+    type: 'namespace',
+    name: 'collaboration_2',
+    tools: [{
+      type: 'function',
+      name: 'spawn_agent',
+      description: 'Start an agent',
+      parameters: { type: 'object', properties: { task_name: { type: 'string' } } },
+      strict: true,
+    }],
+  } as ResponsesTool;
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'function_call',
+      call_id: 'call_spawn',
+      namespace: 'collaboration_2',
+      name: 'spawn_agent',
+      arguments: '{"task_name":"worker"}',
+      status: 'completed',
+    }],
+    tools: [
+      { type: 'function', name: 'collaboration_2_spawn_agent', parameters: { type: 'object' } },
+      namespaceTool,
+    ],
+    tool_choice: { type: 'function', name: 'collaboration_2.spawn_agent' },
+  });
+
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([
+    ['collaboration_2.spawn_agent', 'collaboration_2_spawn_agent_2'],
+  ]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([
+    ['collaboration_2_spawn_agent_2', { namespace: 'collaboration_2', name: 'spawn_agent' }],
+  ]));
+  assertEquals(result.target.tools?.[1], {
+    type: 'function',
+    function: {
+      name: 'collaboration_2_spawn_agent_2',
+      description: 'Start an agent',
+      parameters: { type: 'object', properties: { task_name: { type: 'string' } } },
+      strict: true,
+    },
+  });
+  assertEquals(result.target.messages[0], {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{
+      id: 'call_spawn',
+      type: 'function',
+      function: { name: 'collaboration_2_spawn_agent_2', arguments: '{"task_name":"worker"}' },
+    }],
+  });
+  assertEquals(result.target.tool_choice, {
+    type: 'function',
+    function: { name: 'collaboration_2_spawn_agent_2' },
+  });
+});
+
 test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

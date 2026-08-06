@@ -201,15 +201,16 @@ test('projects Messages targets through the same plaintext namespace', async () 
   expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
 });
 
-test('rejects direct Chat Completions projection', async () => {
+test('projects Chat Completions targets through the same plaintext namespace', async () => {
   const ctx = invocation('chat-completions');
-  await expect(withCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
-    'Collaboration shim cannot project a chat-completions target',
-  );
+  ctx.payload = { ...ctx.payload, tool_choice: 'auto' };
+  await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
+    expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration_2');
+    return eventResult((async function* () {})(), testTelemetryModelIdentity);
+  });
 });
 
-test('projects history-only collaboration calls and applies target eligibility', async () => {
+test('projects history-only collaboration calls independently of target protocol', async () => {
   const ctx = invocation();
   ctx.payload = { ...ctx.payload, tools: undefined, tool_choice: undefined };
   await withCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
@@ -222,10 +223,10 @@ test('projects history-only collaboration calls and applies target eligibility',
 
   const chatCtx = invocation('chat-completions');
   chatCtx.payload = { ...chatCtx.payload, tools: undefined, tool_choice: undefined };
-  await expect(withCollaborationShim(chatCtx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* () {})(), testTelemetryModelIdentity))).rejects.toThrow(
-    'Collaboration shim cannot project a chat-completions target',
-  );
+  await withCollaborationShim(chatCtx, mockChatGatewayCtx(), async () => {
+    expect(chatCtx.payload.input[0]).toMatchObject({ type: 'function_call', namespace: 'collaboration_2' });
+    return eventResult((async function* () {})(), testTelemetryModelIdentity);
+  });
 });
 
 test('keeps one plaintext projection across a multi-turn downstream loop', async () => {

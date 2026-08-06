@@ -114,9 +114,13 @@ interface ChatCompletionsToResponsesStreamState {
   pendingFinishReason?: ChatCompletionsFinishReason;
   completed: boolean;
   customToolNames: ReadonlySet<string>;
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }>;
 }
 
-export const createChatCompletionsToResponsesStreamState = (customToolNames: ReadonlySet<string> = new Set()): ChatCompletionsToResponsesStreamState => ({
+export const createChatCompletionsToResponsesStreamState = (
+  customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
+): ChatCompletionsToResponsesStreamState => ({
   responseCreated: false,
   outputIndex: 0,
   sequenceNumber: 0,
@@ -129,6 +133,7 @@ export const createChatCompletionsToResponsesStreamState = (customToolNames: Rea
   reasoningItemsSeen: false,
   completed: false,
   customToolNames,
+  namespaceTargetToSource,
 });
 
 const buildResult = (state: ChatCompletionsToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult =>
@@ -228,7 +233,15 @@ const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): Respo
       continue;
     }
 
-    const item = responses.functionCallItem(itemId, functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
+    const sourceTool = state.namespaceTargetToSource.get(functionCall.name);
+    const item = responses.functionCallItem(
+      itemId,
+      functionCall.callId,
+      sourceTool?.name ?? functionCall.name,
+      functionCall.arguments,
+      'completed',
+      sourceTool?.namespace,
+    );
 
     state.completedItems[outputIndex] = item;
     events.push(...responses.functionCallDone(state, outputIndex, itemId, functionCall.arguments, item));
@@ -291,7 +304,15 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompleti
     return responses.itemAdded(state, outputIndex, responses.customToolCallItem(streamItem.itemId, current.callId, current.name, ''));
   }
 
-  const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(streamItem.itemId, current.callId, current.name, '', 'in_progress'));
+  const sourceTool = state.namespaceTargetToSource.get(current.name);
+  const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(
+    streamItem.itemId,
+    current.callId,
+    sourceTool?.name ?? current.name,
+    '',
+    'in_progress',
+    sourceTool?.namespace,
+  ));
 
   if (current.arguments) {
     events.push(...responses.argumentsDelta(state, outputIndex, streamItem.itemId, current.arguments));
@@ -488,8 +509,9 @@ export const flushChatCompletionsToResponsesEvents = (state: ChatCompletionsToRe
 export const translateToSourceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const state = createChatCompletionsToResponsesStreamState(customToolNames);
+  const state = createChatCompletionsToResponsesStreamState(customToolNames, namespaceTargetToSource);
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     for (const event of translateChatCompletionsChunkToResponsesEvents(chunk, state)) {

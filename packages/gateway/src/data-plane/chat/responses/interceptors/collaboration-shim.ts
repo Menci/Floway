@@ -11,7 +11,6 @@ import {
   type ResponsesTool,
   type ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
-import type { ChatTargetApi } from '@floway-dev/provider';
 
 const CLIENT_NAMESPACE = 'collaboration';
 const UPSTREAM_NAMESPACE_PREFIX = 'collaboration_';
@@ -40,25 +39,6 @@ export const hasCollaborationNamespace = (payload: CanonicalResponsesPayload): b
   toolInventories(payload).some(tools =>
     (tools ?? []).some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE))
   || payload.input.some(item => item.type === 'function_call' && item.namespace === CLIENT_NAMESPACE);
-
-export const collaborationShimSupportsTarget = (
-  payload: CanonicalResponsesPayload,
-  targetApi: ChatTargetApi,
-): boolean => {
-  if (!hasCollaborationNamespace(payload)) return true;
-  if (targetApi === 'responses') return true;
-  if (targetApi === 'chat-completions') return false;
-  const deferredCollaboration = payload.input.some(item =>
-    (item.type === 'additional_tools' || item.type === 'tool_search_output')
-    && item.tools.some(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE));
-  if (deferredCollaboration) return false;
-  const choice = payload.tool_choice;
-  if (!isRecord(choice)) return true;
-  const choiceRecord = choice as Record<string, unknown>;
-  return choice.type !== 'allowed_tools'
-    && choice.type !== 'namespace'
-    && typeof choiceRecord.namespace !== 'string';
-};
 
 const namespaceNames = (payload: CanonicalResponsesPayload): Set<string> => {
   const names = new Set<string>();
@@ -229,9 +209,6 @@ export const withCollaborationShim: ResponsesInterceptor = async (ctx, _gatewayC
   const collaborationCounts = toolLists.map(tools =>
     (tools ?? []).filter(tool => namespaceTool(tool)?.name === CLIENT_NAMESPACE).length);
   if (!hasCollaborationNamespace(ctx.payload)) return await run();
-  if (!collaborationShimSupportsTarget(ctx.payload, ctx.targetApi)) {
-    throw new TypeError(`Collaboration shim cannot project a ${ctx.targetApi} target`);
-  }
   if (collaborationCounts.some(count => count > 1)) {
     throw new TypeError('Responses request carries multiple collaboration namespaces in one tool inventory');
   }
