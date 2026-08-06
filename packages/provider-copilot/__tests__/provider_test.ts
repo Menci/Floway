@@ -7,7 +7,7 @@ import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/stat
 import type { CopilotModelsResponse } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord, UpstreamsRepoSlim } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, assertRejects, assertThrows, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -71,7 +71,7 @@ interface CopilotTestRepo {
   setUpstreamState: (state: unknown) => void;
   getCurrentState: () => unknown;
   overrideGetById: (impl: () => Promise<UpstreamRecord | null>) => void;
-  overrideSaveState: (impl: (id: string, mutate: (current: unknown) => unknown) => Promise<void>) => void;
+  overrideSaveState: (impl: UpstreamsRepoSlim['saveState']) => void;
 }
 
 const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): Promise<CopilotTestRepo> => {
@@ -79,7 +79,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   const savedStates: unknown[] = [];
   let getByIdImpl: () => Promise<UpstreamRecord | null> = async () => upstream;
   // Applies the mutator to the row as it stands, the way the repo does.
-  let saveStateImpl: (id: string, mutate: (current: unknown) => unknown) => Promise<void> = async (_id, mutate) => {
+  let saveStateImpl: UpstreamsRepoSlim['saveState'] = async (_id, mutate, _guard) => {
     const next = mutate(upstream.state);
     savedStates.push(next);
     upstream = { ...upstream, state: next };
@@ -87,7 +87,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   initProviderRepo(() => ({
     upstreams: {
       getById: () => getByIdImpl(),
-      saveState: (id, mutate) => saveStateImpl(id, mutate),
+      saveState: (id, mutate, guard) => saveStateImpl(id, mutate, guard),
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());

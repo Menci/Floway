@@ -97,7 +97,7 @@ beforeEach(() => {
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => currentRecord,
-      saveState: async (_id, mutate) => {
+      saveState: async (_id, mutate, _guard) => {
         currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
       },
     },

@@ -256,7 +256,7 @@ test('SQL upstream repo saveState applies the mutator to the stored state', asyn
   await repo.saveState('up_test', current => {
     assertEquals(current, { accounts: [goodAccount] });
     return { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] };
-  });
+  }, { kind: 'codex' });
   assertEquals((await repo.getById('up_test'))?.state, { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] });
 });
 
@@ -303,7 +303,7 @@ test('SQL upstream repo saveState re-applies the mutator against the write that 
     const [account] = (current as { accounts: { state_message?: string }[] }).accounts;
     seen.push(account.state_message ?? '(none)');
     return { accounts: [{ ...account, refresh_token: 'rt_v2' }] };
-  });
+  }, { kind: 'codex' });
 
   // First attempt read the pre-race state, the retry read the sibling's.
   assertEquals(seen, ['(none)', 'written by a sibling']);
@@ -359,7 +359,7 @@ test('SQL upstream repo saveState gives up after a bounded number of lost races'
       attempts += 1;
       const [account] = (current as { accounts: Record<string, unknown>[] }).accounts;
       return { accounts: [{ ...account, refresh_token: 'rt_v2' }] };
-    }),
+    }, { kind: 'codex' }),
     Error,
     'consecutive races',
   );
@@ -371,14 +371,14 @@ test('SQL upstream repo saveState gives up after a bounded number of lost races'
 
 test('SQL upstream repo saveState throws when the row is gone', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await assertRejects(() => repo.saveState('up_missing', current => current), Error, 'disappeared');
+  await assertRejects(() => repo.saveState('up_missing', current => current, { kind: 'codex' }), Error, 'disappeared');
 });
 
 // A mutator that decided there is nothing to do hands back what it was given.
 test('SQL upstream repo saveState skips the write when the mutator changes nothing', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await repo.save(baseRecord());
-  await repo.saveState('up_test', current => current);
+  await repo.saveState('up_test', current => current, { kind: 'codex' });
   assertEquals((await repo.getById('up_test'))?.state, { accounts: [goodAccount] });
 });
 

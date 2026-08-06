@@ -12,12 +12,12 @@ import type { UpstreamProviderKind, UpstreamRecord } from './model.ts';
 // or have to re-derive the change itself. The mutator is re-run against
 // whatever state won, so both writers' changes survive. It must therefore be
 // pure, and returning the state unchanged skips the write.
-// The optional guard participates in the storage CAS. Its kind blocks
-// cross-provider replacement, while config binds identity-sensitive writes to
-// the credential configuration that originated the upstream operation.
+// The guard participates in every storage CAS. Its kind blocks cross-provider
+// replacement, while the optional config binds identity-sensitive writes to the
+// credential configuration that originated the upstream operation.
 export interface UpstreamsRepoSlim {
   getById(id: string): Promise<UpstreamRecord | null>;
-  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void>;
+  saveState(id: string, mutate: (current: unknown) => unknown, guard: UpstreamStateWriteGuard): Promise<void>;
 }
 
 export interface UpstreamStateWriteGuard {

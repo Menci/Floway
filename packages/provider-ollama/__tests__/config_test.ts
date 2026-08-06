@@ -85,7 +85,7 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
   for (const model of [
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
     { upstreamModelId: 'reranker', kind: 'chat', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
-    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} } },
+    { upstreamModelId: 'mixed', kind: 'embedding', endpoints: { embeddings: {}, rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
   ]) {
     assertThrows(
       () => assertOllamaUpstreamRecord({

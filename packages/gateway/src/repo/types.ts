@@ -392,9 +392,9 @@ export interface UpstreamRepo {
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
-  // is a function. The optional guard is checked in the same CAS as the state
-  // document to close provider and credential-generation replacement races.
-  saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void>;
+  // is a function. The provider-kind guard is checked in every CAS; its
+  // optional config also closes credential-generation replacement races.
+  saveState(id: string, mutate: (current: unknown) => unknown, guard: UpstreamStateWriteGuard): Promise<void>;
   // Catalog-cache writes are conditional on the row generation that started
   // the fetch. A superseded provider can finish serving its own request, but
   // cannot publish models or errors under newer credentials/configuration.

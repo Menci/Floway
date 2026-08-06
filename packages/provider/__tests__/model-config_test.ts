@@ -256,11 +256,16 @@ describe('modelsField metadata integration', () => {
 });
 
 describe('modelsField rerank targets', () => {
-  test('requires an explicit target for a rerank model', () => {
+  test('requires an explicit target whenever the rerank endpoint is present', () => {
     expect(() => modelsField([{
       upstreamModelId: 'reranker',
       kind: 'rerank',
       endpoints: { rerank: {} },
+    }], 'p')).toThrow(/rerankTarget is required/);
+
+    expect(() => modelsField([{
+      upstreamModelId: 'mixed-reranker',
+      endpoints: { embeddings: {}, rerank: {} },
     }], 'p')).toThrow(/rerankTarget is required/);
   });
 
@@ -297,6 +302,17 @@ describe('modelsField rerank targets', () => {
       rerankTarget: { protocol: 'cohere-v2' },
     }], 'p');
     expect(model.kind).toBe('chat');
+    expect(model.rerankTarget).toEqual({ protocol: 'cohere-v2' });
+  });
+
+  test('accepts a target for a mixed endpoint map whose primary kind is not rerank', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'mixed-reranker',
+      endpoints: { embeddings: {}, rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }], 'p');
+
+    expect(model.kind).toBe('embedding');
     expect(model.rerankTarget).toEqual({ protocol: 'cohere-v2' });
   });
 });

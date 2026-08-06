@@ -61,7 +61,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => upstream,
-      saveState: async () => {},
+      saveState: async (_id, _mutate, _guard) => {},
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());

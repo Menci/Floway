@@ -1,10 +1,10 @@
 import { vi } from 'vitest';
 
-import { UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
+import { UpstreamGoneError, UpstreamKindMismatchError, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
 
 export interface UpstreamStateRepoStub {
   getById: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
-  saveState: ReturnType<typeof vi.fn<(id: string, mutate: (current: unknown) => unknown) => Promise<void>>>;
+  saveState: ReturnType<typeof vi.fn<(id: string, mutate: (current: unknown) => unknown, guard: UpstreamStateWriteGuard) => Promise<void>>>;
   // Documents actually written, in order. A mutator that hands back the state
   // it was given leaves this empty, which is how a suite asserts that a write
   // path decided there was nothing to do.
@@ -21,9 +21,10 @@ export const createUpstreamStateRepoStub = (
   const writes: unknown[] = [];
   return {
     getById: vi.fn(async () => read()),
-    saveState: vi.fn(async (id, mutate) => {
+    saveState: vi.fn(async (id, mutate, guard) => {
       const row = read();
       if (!row) throw new UpstreamGoneError(id);
+      if (row.kind !== guard.kind) throw new UpstreamKindMismatchError(id, guard.kind, row.kind);
       const next = mutate(row.state);
       if (JSON.stringify(next) === JSON.stringify(row.state)) return;
       writes.push(next);

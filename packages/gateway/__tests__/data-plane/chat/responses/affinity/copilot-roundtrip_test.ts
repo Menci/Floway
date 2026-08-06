@@ -66,7 +66,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => upstream,
-      saveState: async () => {},
+      saveState: async (_id, _mutate, _guard) => {},
     },
   }));
   clearInProcessCopilotTokenCache();

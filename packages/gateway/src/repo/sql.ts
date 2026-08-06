@@ -1300,17 +1300,17 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // retries is not, because the caller's change — a rotated refresh token the
   // vendor has already invalidated — cannot be reconstructed later, so it
   // throws rather than returning a flag a caller can drop.
-  async saveState(id: string, mutate: (current: unknown) => unknown, guard?: UpstreamStateWriteGuard): Promise<void> {
+  async saveState(id: string, mutate: (current: unknown) => unknown, guard: UpstreamStateWriteGuard): Promise<void> {
     for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
         .prepare('SELECT provider, config_json, state_json FROM upstreams WHERE id = ?')
         .bind(id)
         .first<{ provider: string; config_json: string; state_json: string | null }>();
       if (!row) throw new UpstreamGoneError(id);
-      if (guard !== undefined && row.provider !== guard.kind) {
+      if (row.provider !== guard.kind) {
         throw new UpstreamKindMismatchError(id, guard.kind, row.provider);
       }
-      const expectedConfig = guard?.config === undefined ? null : serializeStoredConfig(guard.config);
+      const expectedConfig = guard.config === undefined ? null : serializeStoredConfig(guard.config);
       if (expectedConfig !== null && serializeStoredConfig(JSON.parse(row.config_json)) !== expectedConfig) {
         throw new UpstreamGenerationMismatchError(id);
       }
@@ -1320,8 +1320,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
       // given, which serializes back to the stored text.
       if (next === row.state_json) return;
       const result = await this.db
-        .prepare(`UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?${guard === undefined ? '' : ' AND provider = ?'}${expectedConfig === null ? '' : ' AND config_json = ?'}`)
-        .bind(next, id, row.state_json, ...(guard === undefined ? [] : [guard.kind]), ...(expectedConfig === null ? [] : [row.config_json]))
+        .prepare(`UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND provider = ?${expectedConfig === null ? '' : ' AND config_json = ?'}`)
+        .bind(next, id, row.state_json, guard.kind, ...(expectedConfig === null ? [] : [row.config_json]))
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }

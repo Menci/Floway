@@ -2149,7 +2149,7 @@ test('POST /api/upstreams/claude-code/probe returns the concurrent credential st
               accessToken: { token: 'at_concurrent', expiresAt: Date.now() + 3_600_000, refreshedAt: '2026-06-01T00:01:00.000Z' },
             })),
           };
-        });
+        }, { kind: 'claude-code' });
         return jsonResponse(usageProbeBody);
       }
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -2708,7 +2708,7 @@ test('GET /api/upstreams/:id returns the full record with fresh Codex quota for 
   state.accounts[0].quotaSnapshot = {
     premium: { fetchedAt: Date.now(), data: quota },
   };
-  await repo.upstreams.saveState(created.id, () => state);
+  await repo.upstreams.saveState(created.id, () => state, { kind: 'codex' });
 
   const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
@@ -2789,7 +2789,7 @@ test('POST /api/upstreams/copilot/quota projects the GitHub body and persists it
 test('POST /api/upstreams/copilot/quota propagates a durable state-write failure', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
-  repo.upstreams.saveState = () => Promise.reject(new Error('quota state write failed'));
+  repo.upstreams.saveState = (_id, _mutate, _guard) => Promise.reject(new Error('quota state write failed'));
 
   await withMockedFetch(
     () => jsonResponse(sampleCopilotQuotaBody),
@@ -2834,7 +2834,7 @@ test('POST /api/upstreams/copilot/quota cannot write after its target is replace
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
   const originalSaveState = repo.upstreams.saveState.bind(repo.upstreams);
-  repo.upstreams.saveState = async (id, mutate, expectedKind) => {
+  repo.upstreams.saveState = async (id, mutate, guard) => {
     await repo.upstreams.delete(id);
     await repo.upstreams.save({
       id,
@@ -2853,7 +2853,7 @@ test('POST /api/upstreams/copilot/quota cannot write after its target is replace
       config: customConfig,
       state: null,
     });
-    await originalSaveState(id, mutate, expectedKind);
+    await originalSaveState(id, mutate, guard);
   };
 
   await withMockedFetch(
@@ -2931,6 +2931,7 @@ test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when th
   await repo.upstreams.saveState(
     copilotUpstream.id,
     current => ({ ...(current as Record<string, unknown>), quotaSnapshot: harvested }),
+    { kind: 'copilot' },
   );
 
   const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));

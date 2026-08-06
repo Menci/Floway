@@ -54,7 +54,7 @@ const baseAccount: ClaudeCodeUpstreamState['accounts'][number] = {
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
-type SaveStateSpy = ReturnType<typeof vi.fn<(id: string, mutate: (current: unknown) => unknown) => Promise<void>>>;
+type SaveStateSpy = ReturnType<typeof vi.fn<UpstreamsRepoSlim['saveState']>>;
 type GetByIdSpy = ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
 
 let current: UpstreamRecord | null;
@@ -74,8 +74,9 @@ beforeEach(() => {
   // mutator, skip the write when the result serializes identically, and fail a
   // write against a row that is gone. Read-after-write matters for the cache
   // tests, which rely on getById observing the just-persisted state.
-  saveStateSpy = vi.fn(async (id, mutate) => {
+  saveStateSpy = vi.fn(async (id, mutate, guard) => {
     if (!current) throw new UpstreamGoneError(id);
+    if (current.kind !== guard.kind) throw new Error(`unexpected write guard ${guard.kind}`);
     const next = mutate(current.state) as ClaudeCodeUpstreamState;
     if (JSON.stringify(next) === JSON.stringify(current.state)) return;
     current = { ...current, state: next };

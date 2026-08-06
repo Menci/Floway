@@ -151,7 +151,7 @@ export function ModelDetail({
           </div>
         </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.endpoints.rerank !== undefined && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 

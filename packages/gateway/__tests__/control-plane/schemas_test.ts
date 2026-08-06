@@ -218,10 +218,16 @@ describe('upstreamModelSchema rerank', () => {
     const chat = customRerank();
     (chat.config.models[0] as Record<string, unknown>).kind = 'chat';
     expect(createUpstreamBody.safeParse(chat).success).toBe(true);
+  });
 
+  test('validates rerank targets by endpoint presence for mixed primary kinds', () => {
     const mixed = customRerank();
-    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
+    (mixed.config.models[0] as Record<string, unknown>).kind = 'embedding';
+    (mixed.config.models[0] as Record<string, unknown>).endpoints = { embeddings: {}, rerank: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
+
+    delete (mixed.config.models[0] as Partial<typeof mixed.config.models[0]>).rerankTarget;
+    expect(createUpstreamBody.safeParse(mixed).success).toBe(false);
   });
 });
 

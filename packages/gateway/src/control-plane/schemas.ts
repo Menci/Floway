@@ -21,7 +21,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -59,12 +59,6 @@ const modelEndpointsSchema = z.object({
   audioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
 });
-
-const hasChatEndpoint = (endpoints: z.infer<typeof modelEndpointsSchema>): boolean =>
-  endpoints.completions !== undefined
-  || endpoints.chatCompletions !== undefined
-  || endpoints.responses !== undefined
-  || endpoints.messages !== undefined;
 
 const priceSchema = z.string().transform((value, ctx) => {
   try {
@@ -167,13 +161,13 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || hasChatEndpoint(m.endpoints),
+  m => m.chat === undefined || endpointsSupportKind(m.endpoints, 'chat'),
   { message: 'chat metadata requires at least one chat endpoint', path: ['chat'] },
 ).refine(
-  m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
+  m => !endpointsSupportKind(m.endpoints, 'rerank') || m.rerankTarget !== undefined,
   { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },
 ).refine(
-  m => m.rerankTarget === undefined || kindForEndpoints(m.endpoints) === 'rerank',
+  m => m.rerankTarget === undefined || endpointsSupportKind(m.endpoints, 'rerank'),
   { message: 'rerankTarget is only allowed when endpoints select rerank', path: ['rerankTarget'] },
 );
 
