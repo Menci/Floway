@@ -130,6 +130,7 @@ export const retainResponse = (
     ? undefined
     : disconnectClockFor(options.clientDisconnectSignal);
   const reader = sourceBody.getReader();
+  const totalDeadlineAt = Date.now() + limits.totalTimeoutMs;
   let resolveLifetime!: () => void;
   let rejectLifetime!: (error: unknown) => void;
   const lifetime = new Promise<void>((resolve, reject) => {
@@ -243,8 +244,29 @@ export const retainResponse = (
     tightenPostDisconnectDeadline(disconnectedAt + limits.postDisconnectDrainTimeoutMs);
     armPostDisconnectTimer();
   };
+  const expiredAbsoluteTimeout = (): RetainedResponseTimeoutError | undefined => {
+    const now = Date.now();
+    const postDisconnectDeadlineAt = chain.postDisconnectDeadlineAt;
+    if (
+      postDisconnectDeadlineAt !== undefined
+      && postDisconnectDeadlineAt <= totalDeadlineAt
+      && now >= postDisconnectDeadlineAt
+    ) {
+      return chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+    }
+    if (now >= totalDeadlineAt) return new RetainedResponseTimeoutError('total');
+    if (postDisconnectDeadlineAt !== undefined && now >= postDisconnectDeadlineAt) {
+      return chain.deadlineError ?? new RetainedResponseTimeoutError('post-disconnect');
+    }
+    return undefined;
+  };
 
   const readOneFromSource = async (): Promise<void> => {
+    const expired = expiredAbsoluteTimeout();
+    if (expired !== undefined) {
+      stopWithTimeout(expired);
+      return;
+    }
     try {
       const next = await reader.read();
       if (settled) return;
@@ -320,7 +342,7 @@ export const retainResponse = (
   armIdleTimer();
   totalTimer = setTimeout(() => {
     stopWithTimeout(new RetainedResponseTimeoutError('total'));
-  }, limits.totalTimeoutMs);
+  }, Math.max(0, totalDeadlineAt - Date.now()));
   unrefTimer(totalTimer);
   options.backgroundScheduler(lifetime);
 

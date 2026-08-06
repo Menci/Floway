@@ -329,6 +329,50 @@ test('nested retained bodies share one absolute post-disconnect deadline', async
   }
 });
 
+test.each([
+  { kind: 'total' as const, configuredLimits: limits(1_000, 10, 1_000) },
+  { kind: 'post-disconnect' as const, configuredLimits: limits(1_000, 1_000, 10) },
+])('a synchronous drain cannot starve the $kind deadline', async ({ kind, configuredLimits }) => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  try {
+    const initialTimerCount = vi.getTimerCount();
+    let pulls = 0;
+    let sourceCancelReason: unknown;
+    const background = captureBackgroundTasks();
+    const retained = retainResponse(
+      new Response(new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          vi.setSystemTime(pulls);
+          controller.enqueue(Uint8Array.of(pulls));
+          if (pulls === 100) controller.close();
+        },
+        cancel(reason) {
+          sourceCancelReason = reason;
+        },
+      }, { highWaterMark: 0 })),
+      {
+        backgroundScheduler: background.scheduler,
+        limits: configuredLimits,
+      },
+    );
+    const reader = retained.body!.getReader();
+    const pending = reader.read();
+    await reader.cancel('client left');
+
+    const lifetimeOutcome = await outcomeOf(background.tasks[0]!);
+    await pending.catch(() => {});
+
+    expectTimeout(sourceCancelReason, kind);
+    expect(lifetimeOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
+    expect(pulls).toBeLessThan(100);
+    expect(vi.getTimerCount()).toBe(initialTimerCount);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('retained response limits reject every invalid timer field and accept timer boundaries', () => {
   const backgroundScheduler: BackgroundScheduler = () => {};
   const valid = limits(1, 1, 1);
