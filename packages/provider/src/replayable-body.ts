@@ -182,7 +182,7 @@ export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
   // Observe settlement at creation time: fetch may reject before cancellation
   // reaches this pump, and a synchronous destination failure must never spend
   // that gap as an unhandled rejection.
-  const pumpingOutcome = pumping.then<CleanupOutcome>(
+  const pumpingOutcome = pumping.then<CleanupOutcome, CleanupOutcome>(
     () => ({ type: 'settled' }),
     error => ({ type: 'failed', error }),
   );
