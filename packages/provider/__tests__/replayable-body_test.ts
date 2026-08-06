@@ -181,8 +181,9 @@ test.each([
   }
 });
 
-test('direct fetch bounds late FixedLengthStream cleanup rejection and observes its eventual failure', async () => {
+test('direct fetch reports late FixedLengthStream cleanup rejection without delaying fetch failure', async () => {
   vi.useFakeTimers();
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
   const original = Reflect.get(globalThis, 'FixedLengthStream');
   const fetchError = new Error('fetch rejected');
   const pumpError = new Error('pump failed');
@@ -214,22 +215,56 @@ test('direct fetch bounds late FixedLengthStream cleanup rejection and observes 
     }).catch((error: unknown) => error) as Promise<AggregateError>;
     await writeStarted;
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(0);
     const rejection = await rejectionPending;
 
     expect(rejection).toBeInstanceOf(AggregateError);
-    expect(rejection.errors[0]).toBe(fetchError);
-    expect(rejection.errors[1]).toMatchObject({
-      name: 'NativeFetchCleanupTimeoutError',
-      operationIndex: 0,
-      timeoutMs: 5_000,
-    });
-    expect(rejection.errors[2]).toBe(pumpError);
+    expect(rejection.errors).toEqual([fetchError, pumpError]);
     rejectReadableCancel(lateCancelError);
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(log).toHaveBeenCalledWith(
+      '[abort-cleanup] FixedLengthStream readable cancel failed after prompt native-fetch settlement:',
+      lateCancelError,
+    );
   } finally {
     vi.useRealTimers();
+    log.mockRestore();
+    vi.unstubAllGlobals();
+    if (original === undefined) Reflect.deleteProperty(globalThis, 'FixedLengthStream');
+    else Reflect.set(globalThis, 'FixedLengthStream', original);
+  }
+});
+
+test('direct fetch reports a never-settling FixedLengthStream cleanup without waiting five seconds', async () => {
+  vi.useFakeTimers();
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const original = Reflect.get(globalThis, 'FixedLengthStream');
+  const fetchError = new Error('fetch rejected');
+  class StalledFixedLengthStream {
+    readonly readable = new ReadableStream<Uint8Array>({
+      cancel: () => new Promise<void>(() => {}),
+    });
+    readonly writable = new WritableStream<Uint8Array>();
+  }
+  Reflect.set(globalThis, 'FixedLengthStream', StalledFixedLengthStream);
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(fetchError));
+  try {
+    const rejectionPending = directFetcher('https://example.test', {
+      method: 'POST',
+      body: createReplayableBody([Uint8Array.of(1, 2, 3)]),
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await rejectionPending).toBe(fetchError);
+    expect(log).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(log).toHaveBeenCalledWith(
+      '[abort-cleanup] FixedLengthStream readable cancel did not settle after prompt native-fetch settlement:',
+      expect.objectContaining({ message: 'Cleanup did not settle within 5000ms' }),
+    );
+  } finally {
+    vi.useRealTimers();
+    log.mockRestore();
     vi.unstubAllGlobals();
     if (original === undefined) Reflect.deleteProperty(globalThis, 'FixedLengthStream');
     else Reflect.set(globalThis, 'FixedLengthStream', original);

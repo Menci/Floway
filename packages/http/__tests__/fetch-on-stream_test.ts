@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { collectBody, makeFakeDuplex } from './test-utils.ts';
 import { fetchOnStream } from '../src/fetch-on-stream.ts';
@@ -383,6 +383,7 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 
 describe('fetchOnStream — request body serialization', () => {
   it('rejects promptly when cancellation interrupts a blocked body write', async () => {
+    vi.useFakeTimers();
     const reason = new Error('stop upload');
     const controller = new AbortController();
     let writes = 0;
@@ -393,9 +394,7 @@ describe('fetchOnStream — request body serialization', () => {
         writes += 1;
         if (writes === 1) return;
         bodyWriteStarted();
-        return new Promise<void>((_resolve, reject) => {
-          controller.signal.addEventListener('abort', () => reject(reason), { once: true });
-        });
+        return new Promise<void>(() => {});
       },
     });
     const response = new ReadableStream<Uint8Array>();
@@ -408,7 +407,10 @@ describe('fetchOnStream — request body serialization', () => {
     await started;
     controller.abort(reason);
 
+    await vi.advanceTimersByTimeAsync(0);
     await expect(pending).rejects.toBe(reason);
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it.each([

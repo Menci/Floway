@@ -70,6 +70,7 @@ export const collectPromptCleanupFailures = async (
         new CleanupTimeoutError(0, CLEANUP_OPERATION_DEADLINE_MS),
       );
     }, CLEANUP_OPERATION_DEADLINE_MS);
+    if (typeof timeoutId === 'object' && 'unref' in timeoutId) timeoutId.unref();
     void observation.settlement.then(outcome => {
       clearTimeout(timeoutId);
       if (outcome.type === 'failed' && !Object.is(outcome.error, primary)) {

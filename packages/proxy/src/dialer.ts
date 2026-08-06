@@ -165,7 +165,7 @@ export const runDirectConnectRequest = async (
 
   try {
     const response = await runRequestOnStream(socket, target, request, options);
-    return closeSocketWithResponse(response, socket);
+    return await closeSocketWithResponse(response, socket);
   } catch (error) {
     const cleanup = startPromptCleanup(
       'direct-connect socket close',
@@ -257,7 +257,7 @@ const runRequestOnStream = async (
   }
 };
 
-const closeSocketWithResponse = (response: Response, socket: DialedSocket): Response => {
+const closeSocketWithResponse = async (response: Response, socket: DialedSocket): Promise<Response> => {
   let closePromise: Promise<void> | null = null;
   const close = (): Promise<void> => {
     closePromise ??= socket.close();
@@ -265,7 +265,8 @@ const closeSocketWithResponse = (response: Response, socket: DialedSocket): Resp
   };
 
   if (response.body === null) {
-    void close();
+    const failures = await collectCleanupFailures([close]);
+    if (failures.length > 0) throw cleanupFailure(failures, 'Direct-connect response socket close failed');
     return response;
   }
 

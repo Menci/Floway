@@ -61,6 +61,7 @@ const collectDistinctCleanupFailures = async (
         new Error(`Cleanup did not settle within ${CLEANUP_DIAGNOSTIC_DEADLINE_MS}ms`),
       );
     }, CLEANUP_DIAGNOSTIC_DEADLINE_MS);
+    if (typeof timeoutId === 'object' && 'unref' in timeoutId) timeoutId.unref();
     void observation.settlement.then(outcome => {
       clearTimeout(timeoutId);
       if (outcome.type === 'failed' && !Object.is(outcome.error, primary)) {
