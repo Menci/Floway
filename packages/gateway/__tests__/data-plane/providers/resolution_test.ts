@@ -270,10 +270,11 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       await fetchUpstreamModels(providers[0], directFetcher);
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { catalogFetcherForUpstream: () => directFetcher, scheduler: testScheduler });
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
+      expect(candidates[0]?.fetcher).toBe(directFetcher);
       // Every enumerated candidate seeds `providerModels[provider.upstreamId]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
       assertEquals(Object.keys(realProviderModels(candidates[0]?.model)), ['up_first']);
@@ -313,8 +314,8 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { catalogFetcherForUpstream: () => directFetcher, scheduler: testScheduler });
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { catalogFetcherForUpstream: () => directFetcher, scheduler: testScheduler });
+  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
+  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
 });

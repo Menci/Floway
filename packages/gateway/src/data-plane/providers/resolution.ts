@@ -6,7 +6,6 @@ import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
-import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
@@ -30,12 +29,11 @@ const enumerateOneUpstreamCandidates = async (
   modelId: string,
   kind: ModelKind,
   context: {
-    catalogFetcher: Fetcher;
-    candidateFetcher: Fetcher;
+    fetcher: Fetcher;
     scheduler: BackgroundScheduler;
   },
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
-  const { catalogFetcher, candidateFetcher, scheduler } = context;
+  const { fetcher, scheduler } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -48,7 +46,7 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: catalogFetcher });
+  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
@@ -57,7 +55,7 @@ const enumerateOneUpstreamCandidates = async (
     if (!match) continue;
     sawAnyId = true;
     if (match.kind === kind) {
-      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher: candidateFetcher });
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
   return { candidates, sawAnyId, modelsError: provider.modelsCache?.lastError != null };
@@ -66,8 +64,8 @@ const enumerateOneUpstreamCandidates = async (
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
 // Client disconnect prevents snapshot work that has not dispatched. Once a
-// refresh is scheduled, its raw fetcher belongs to the background lifecycle;
-// only inference candidates receive the retained client-aware wrapper.
+// refresh is scheduled, the scheduler owns its lifetime. Inference lifecycle
+// policy is applied later, where a selected candidate is actually dispatched.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
@@ -79,8 +77,7 @@ export const enumerateRealModelCandidates = async (
   kind: ModelKind,
   providers: readonly GatewayProvider[],
   context: {
-    catalogFetcherForUpstream: (upstreamId: string) => Fetcher;
-    candidateFetcherForUpstream?: (upstreamId: string) => Fetcher;
+    fetcherForUpstream: (upstreamId: string) => Fetcher;
     scheduler: BackgroundScheduler;
     clientDisconnectSignal?: AbortSignal;
   },
@@ -89,8 +86,7 @@ export const enumerateRealModelCandidates = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const { catalogFetcherForUpstream, scheduler, clientDisconnectSignal } = context;
-  const candidateFetcherForUpstream = context.candidateFetcherForUpstream ?? catalogFetcherForUpstream;
+  const { fetcherForUpstream, scheduler, clientDisconnectSignal } = context;
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(
@@ -98,8 +94,7 @@ export const enumerateRealModelCandidates = async (
       modelId,
       kind,
       {
-        catalogFetcher: catalogFetcherForUpstream(provider.upstreamId),
-        candidateFetcher: candidateFetcherForUpstream(provider.upstreamId),
+        fetcher: fetcherForUpstream(provider.upstreamId),
         scheduler,
       },
     );
@@ -228,16 +223,9 @@ export const enumerateModelCandidates = async ({
   readonly failedUpstreams: readonly string[];
 }> => {
   const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const candidateFetcherForUpstream = (upstreamId: string): Fetcher => {
-    const fetcher = createFetcherForUpstream(upstreamId);
-    return clientDisconnectSignal === undefined
-      ? fetcher
-      : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
-  };
   const providers = await listModelProviders(upstreamIds);
   const resolutionContext = {
-    catalogFetcherForUpstream: createFetcherForUpstream,
-    candidateFetcherForUpstream,
+    fetcherForUpstream: createFetcherForUpstream,
     scheduler,
     clientDisconnectSignal,
   };
