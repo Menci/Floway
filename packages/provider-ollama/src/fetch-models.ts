@@ -38,6 +38,10 @@ class OllamaCatalogResourceLimitError extends Error {
   }
 }
 
+const isResponseByteBudgetFailure = (error: unknown): boolean =>
+  error instanceof ResponseByteBudgetExceededError
+  || (error instanceof AggregateError && error.cause instanceof ResponseByteBudgetExceededError);
+
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
   // `nomic-embed-text:latest`). This is the value the gateway sends back to
@@ -157,7 +161,7 @@ const fetchShowForTag = (
   try {
     parsed = await readBoundedJsonResponse(response, maxResponseBytes, responseByteBudget, { idleTimeoutMs, signal: taskSignal });
   } catch (error) {
-    if (isAbortError(error) || error instanceof ResponseByteBudgetExceededError) throw error;
+    if (isAbortError(error) || isResponseByteBudgetFailure(error)) throw error;
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
@@ -223,7 +227,7 @@ export const fetchOllamaCatalog = (
         );
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (isAbortError(error) || error instanceof ResponseByteBudgetExceededError) {
+        if (isAbortError(error) || isResponseByteBudgetFailure(error)) {
           if (fatalAbort === undefined) {
             fatalAbort = error;
             rejectFatalAbort(error);
@@ -264,7 +268,7 @@ export const fetchOllamaCatalog = (
   return { data };
 }, options).catch((cause: unknown) => {
   if (options.signal?.aborted) throw options.signal.reason;
-  if (cause instanceof OllamaCatalogResourceLimitError || cause instanceof ResponseByteBudgetExceededError) {
+  if (cause instanceof OllamaCatalogResourceLimitError || isResponseByteBudgetFailure(cause)) {
     throw new ProviderModelsUnavailableError(null, cause);
   }
   if (cause instanceof DOMException && cause.name === 'TimeoutError') {

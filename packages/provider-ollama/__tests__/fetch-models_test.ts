@@ -280,6 +280,38 @@ test('fetchOllamaCatalog makes aggregate exhaustion fatal before a per-detail ov
   expect(showCalls).toEqual(['oversized', 'valid']);
 });
 
+test('fetchOllamaCatalog retains a detail cancellation failure without downgrading aggregate exhaustion', async () => {
+  const cleanupError = new Error('detail cancellation failed');
+  const exhaustedBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('1234'));
+    },
+    cancel() {
+      return Promise.reject(cleanupError);
+    },
+  });
+  const fetcher: Fetcher = (url, init) => {
+    if (new URL(url).pathname === '/api/tags') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'exhausted' }, { name: 'valid' }] }));
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    return Promise.resolve(name === 'exhausted' ? new Response(exhaustedBody) : jsonResponse({}));
+  };
+
+  const error = await assertRejects(
+    () => fetchOllamaCatalog(config, fetcher, {
+      maxShowResponseBytes: 8,
+      maxTotalShowResponseBytes: 3,
+    }),
+    ProviderModelsUnavailableError,
+  );
+
+  expect(error.cause).toBeInstanceOf(AggregateError);
+  const aggregate = error.cause as AggregateError;
+  expect(aggregate.cause).toMatchObject({ name: 'ResponseByteBudgetExceededError' });
+  expect(aggregate.errors[1]).toBe(cleanupError);
+});
+
 test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {
   const fetcher: Fetcher = url => new URL(url).pathname === '/api/tags'
     ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
