@@ -95,7 +95,7 @@ describe('Codex model-provider routes', () => {
   it('writes both context-window fields from the registry and leaves automatic compaction at the Codex default', async () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
+      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000, supported_endpoints: ['/responses'] }]),
       async () => {
         const response = await buildCodexApp().request('/azure-api.codex/models', {
           headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
@@ -115,7 +115,7 @@ describe('Codex model-provider routes', () => {
   it('downgrades a bundled maximum when the registry advertises a smaller limit', async () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
+      copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000, supported_endpoints: ['/responses'] }]),
       async () => {
         const response = await buildCodexApp().request('/azure-api.codex/models', {
           headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
@@ -133,7 +133,7 @@ describe('Codex model-provider routes', () => {
   it('emits only bundled entries resolved from registry models', async () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
+      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000, supported_endpoints: ['/responses'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
         headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
       })).json() as CodexModelsResponse,
