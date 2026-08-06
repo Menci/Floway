@@ -292,10 +292,11 @@ test('fetchOllamaCatalog retains a detail cancellation failure without downgradi
   });
   const fetcher: Fetcher = (url, init) => {
     if (new URL(url).pathname === '/api/tags') {
-      return Promise.resolve(jsonResponse({ models: [{ name: 'exhausted' }, { name: 'valid' }] }));
+      return Promise.resolve(jsonResponse({ models: [{ name: 'exhausted' }] }));
     }
     const name = (JSON.parse(String(init.body)) as { name: string }).name;
-    return Promise.resolve(name === 'exhausted' ? new Response(exhaustedBody) : jsonResponse({}));
+    expect(name).toBe('exhausted');
+    return Promise.resolve(new Response(exhaustedBody));
   };
 
   const error = await assertRejects(
