@@ -310,9 +310,8 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   const request = stub.editsRequests[0];
   assertEquals(request.images.length, 1);
   const image = request.images[0];
-  assert(image.type === 'upload');
-  const bytes = await image.file.text();
-  assertEquals(bytes, 'AAAA');
+  assert(image.type === 'raw-upload');
+  assertEquals(new TextDecoder().decode(image.upload.bytes), 'AAAA');
 });
 
 test('a prefetched remote edit source remains visible to orchestration and is reused by the edits backend', async () => {
@@ -350,8 +349,8 @@ test('a prefetched remote edit source remains visible to orchestration and is re
   assertEquals(stub.editsRequests.length, 1);
   const request = stub.editsRequests[0];
   const image = request.images[0];
-  assert(image.type === 'upload');
-  assertEquals(new Uint8Array(await image.file.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+  assert(image.type === 'raw-upload');
+  assertEquals(image.upload.bytes, Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 });
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
@@ -377,11 +376,11 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   const request = stub.editsRequests[0];
   const image = request.images[0];
   const mask = request.mask;
-  assert(image.type === 'upload');
-  assert(mask?.type === 'upload');
-  assertEquals(image.file.type, 'image/webp');
-  assertEquals(mask.file.type, 'image/webp');
-  assertEquals(await image.file.text(), 'WEBP');
+  assert(image.type === 'raw-upload');
+  assert(mask?.type === 'raw-upload');
+  assertEquals(image.upload.type, 'image/webp');
+  assertEquals(mask.upload.type, 'image/webp');
+  assertEquals(new TextDecoder().decode(image.upload.bytes), 'WEBP');
   assertEquals(await mask.file.text(), 'WEBP');
 });
 
@@ -409,10 +408,10 @@ test('identical GIF source and mask share one transcode', async () => {
   assertEquals(processorCalls, 1);
   const request = stub.editsRequests[0];
   const image = request.images[0];
-  assert(image.type === 'upload');
-  assert(request.mask?.type === 'upload');
-  assertEquals(await image.file.text(), 'WEBP');
-  assertEquals(await request.mask.file.text(), 'WEBP');
+  assert(image.type === 'raw-upload');
+  assert(request.mask?.type === 'raw-upload');
+  assertEquals(new TextDecoder().decode(image.upload.bytes), 'WEBP');
+  assertEquals(new TextDecoder().decode(request.mask.upload.bytes), 'WEBP');
 });
 
 test('image transcoding failure becomes a terminal image tool failure', async () => {

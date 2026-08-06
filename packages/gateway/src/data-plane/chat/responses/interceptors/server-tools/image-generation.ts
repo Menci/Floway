@@ -98,7 +98,8 @@ export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHo
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
+// Bytes stay in one concrete ArrayBuffer so outbound raw-upload views can
+// borrow them without a Blob/File copy.
 interface ImageSource {
   bytes: ArrayBuffer;
   mimeType: string;
@@ -961,15 +962,23 @@ const buildEditsRequest = (
     ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
   };
   const images = sources.map((source, index) => ({
-    type: 'upload' as const,
-    file: new File([source.bytes], `image_${index}.${editFileExt(source.mimeType)}`, { type: source.mimeType }),
+    type: 'raw-upload' as const,
+    upload: {
+      name: `image_${index}.${editFileExt(source.mimeType)}`,
+      type: source.mimeType,
+      bytes: new Uint8Array(source.bytes),
+    },
   }));
-  const maskFile = mask === undefined
+  const maskUpload = mask === undefined
     ? undefined
-    : new File([mask.bytes], `mask.${editFileExt(mask.mimeType)}`, { type: mask.mimeType });
+    : {
+        name: `mask.${editFileExt(mask.mimeType)}`,
+        type: mask.mimeType,
+        bytes: new Uint8Array(mask.bytes),
+      };
   return {
     images,
-    ...(maskFile === undefined ? {} : { mask: { type: 'upload' as const, file: maskFile } }),
+    ...(maskUpload === undefined ? {} : { mask: { type: 'raw-upload' as const, upload: maskUpload } }),
     parameters,
   };
 };
