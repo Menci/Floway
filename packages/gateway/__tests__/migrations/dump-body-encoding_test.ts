@@ -15,8 +15,8 @@ test('dump body encoding migration marks every existing body as gzip', () => {
         .run(
           'key',
           'record',
-          JSON.stringify({ key: 'dumps/v1/key/request.gz', type: 'bytes' }),
-          JSON.stringify({ key: 'dumps/v1/key/response.gz', type: 'events' }),
+          JSON.stringify({ key: 'dumps/v1/key/1970010100/record.req.gz', type: 'bytes' }),
+          JSON.stringify({ key: 'dumps/v1/key/1970010100/record.resp.gz', type: 'events' }),
         );
     }
     db.exec(sql);
@@ -30,12 +30,12 @@ test('dump body encoding migration marks every existing body as gzip', () => {
   db.close();
 
   assertEquals(JSON.parse(row.request_body_descriptor), {
-    key: 'dumps/v1/key/request.gz',
+    key: 'dumps/v1/key/1970010100/record.req.gz',
     type: 'bytes',
     encoding: 'gzip',
   });
   assertEquals(JSON.parse(row.response_body_descriptor), {
-    key: 'dumps/v1/key/response.gz',
+    key: 'dumps/v1/key/1970010100/record.resp.gz',
     type: 'events',
     encoding: 'gzip',
   });
