@@ -35,7 +35,17 @@ export const completions = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(request.model);
-  const streamOptions = request.body.stream_options as { include_usage?: unknown } | null | undefined;
+  const rawStreamOptions = request.body.stream_options;
+  if (
+    wantsStream
+    && rawStreamOptions !== null
+    && rawStreamOptions !== undefined
+    && (typeof rawStreamOptions !== 'object' || Array.isArray(rawStreamOptions))
+  ) {
+    ctx.dump?.error('gateway');
+    return finalizeGatewayResponse(ctx, passthroughApiError(c, 'Completions stream_options must be an object or null.', 400));
+  }
+  const streamOptions = rawStreamOptions as { include_usage?: unknown } | null | undefined;
   const clientWantsUsageChunk = streamOptions?.include_usage === true;
   // Strip the inbound model; the provider re-stamps the upstream-resolved
   // model id. For streaming requests we force `stream_options.include_usage`
@@ -64,7 +74,7 @@ export const completions = async (c: Context): Promise<Response> => {
     if (eventRoot.service_tier !== undefined) streamingServiceTier = eventRoot.service_tier;
     if (!isOpenAIUsageOnlyEventShape(frame.event)) return frame;
     streamingUsageBlock = eventRoot.usage;
-    return clientWantsUsageChunk ? frame : null;
+    return !wantsStream || clientWantsUsageChunk ? frame : null;
   };
   const settleUsage = (): TokenUsage | null =>
     streamingUsageBlock === null ? null : tokenUsageFromCompletionsUsage(streamingUsageBlock, streamingServiceTier, declaredExclusive(), servingIdentity());
@@ -81,9 +91,10 @@ export const completions = async (c: Context): Promise<Response> => {
       serving = { model, upstreamId: provider.upstreamId };
       return provider.instance.callCompletions(model, upstreamBody, undefined, opts);
     },
-    response: wantsStream
-      ? { format: 'sse', transformFrame, settleUsage }
-      : {
+    response: {
+      format: 'media-type',
+      sse: { format: 'sse', transformFrame, settleUsage },
+      json: {
           format: 'json',
           extractBilling: (body: unknown) => {
             if (!body || typeof body !== 'object') return null;
@@ -91,6 +102,7 @@ export const completions = async (c: Context): Promise<Response> => {
             return tokenUsageFromCompletionsUsage(usage, tier, declaredExclusive(), servingIdentity());
           },
         },
+    },
   });
   return finalizeGatewayResponse(ctx, response);
 };

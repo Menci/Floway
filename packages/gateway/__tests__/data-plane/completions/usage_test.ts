@@ -112,3 +112,16 @@ test('tokenUsageFromCompletionsUsage returns null on malformed input', () => {
   assertEquals(tokenUsageFromCompletionsUsage({}, undefined, false, 'up/model'), null);
   assertEquals(tokenUsageFromCompletionsUsage({ prompt_tokens: 'no' }, undefined, false, 'up/model'), null);
 });
+
+test.each([
+  { prompt_tokens: -1, completion_tokens: 0 },
+  { prompt_tokens: 0, completion_tokens: -1 },
+  { prompt_tokens: 0, completion_tokens: 1.5 },
+  { prompt_tokens: 0, completion_tokens: Number.NaN },
+  { prompt_tokens: 0, completion_tokens: Number.MAX_VALUE },
+  { prompt_tokens: 0, completion_tokens: 0, total_tokens: -1 },
+  { prompt_tokens: 0, completion_tokens: 0, total_tokens: '0' },
+])('tokenUsageFromCompletionsUsage rejects invalid core counts %#', usage => {
+  expect(() => tokenUsageFromCompletionsUsage(usage, undefined, false, 'up/model'))
+    .toThrow(/non-negative safe integer/);
+});

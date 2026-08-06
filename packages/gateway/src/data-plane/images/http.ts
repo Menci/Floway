@@ -26,6 +26,11 @@ type PreparedImagesEdit =
   | { type: 'ok'; request: ImagesEditsRequest }
   | { type: 'invalid'; message: string };
 
+// OpenAI bounds both the JSON `images` array and multipart `image` array at
+// sixteen inputs.
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L47542-L47673
+export const MAX_IMAGE_EDIT_INPUTS = 16;
+
 const imageEditSource = (value: unknown, path: string): ImagesEditsSource | string => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return `${path} must be an object.`;
@@ -50,6 +55,9 @@ const prepareJsonImagesEdit = (body: Record<string, unknown>): PreparedImagesEdi
   }
   if (body.images.length === 0) {
     return { type: 'invalid', message: 'Image edits request body must include at least one image.' };
+  }
+  if (body.images.length > MAX_IMAGE_EDIT_INPUTS) {
+    return { type: 'invalid', message: `Image edits request body supports at most ${MAX_IMAGE_EDIT_INPUTS} images.` };
   }
   const images: ImagesEditsSource[] = [];
   for (const [index, value] of body.images.entries()) {
@@ -161,6 +169,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   const images: File[] = [];
   let mask: File | undefined;
   const parameters: Record<string, string | number | boolean> = {};
+  const parameterNames = new Set<string>();
   for (const [name, value] of form.entries()) {
     if (name === 'model') continue;
     if (name === 'image' || name === 'image[]') {
@@ -168,14 +177,20 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       images.push(value);
     } else if (name === 'mask') {
       if (!(value instanceof File)) return invalid('Image edits mask field must be a file.');
+      if (mask !== undefined) return invalid('Image edits request body supports at most one mask file.');
       mask = value;
     } else {
       if (typeof value !== 'string') return invalid(`Image edits ${name} field must be text.`);
+      if (parameterNames.has(name)) return invalid(`Image edits ${name} field must appear at most once.`);
+      parameterNames.add(name);
       parameters[name] = value;
     }
   }
   if (images.length === 0) {
     return invalid('Image edits request body must include at least one image file.');
+  }
+  if (images.length > MAX_IMAGE_EDIT_INPUTS) {
+    return invalid(`Image edits request body supports at most ${MAX_IMAGE_EDIT_INPUTS} images.`);
   }
   return await serveImagesEditRequest(c, requestBody, model, {
     images: images.map(file => ({ type: 'upload', file })),

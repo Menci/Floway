@@ -27,7 +27,7 @@ import { forwardUpstreamHeaders, forwardUpstreamResponse } from './upstream-resp
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
-import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, isEventStreamMediaType, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -36,19 +36,28 @@ import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, 
 // stream, `transformFrame` mutates or drops frames (return null), then
 // `settleUsage` reports billing once the stream ends. `strategy` delegates
 // response handling after candidate selection to the owning endpoint.
+interface JsonPassthroughResponseHandling {
+  readonly format: 'json';
+  readonly extractBilling: (body: unknown) => TokenUsage | null;
+}
+
+interface SsePassthroughResponseHandling {
+  readonly format: 'sse';
+  readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
+  readonly settleUsage: () => TokenUsage | null;
+}
+
 type PassthroughResponseHandling =
-  | {
-    readonly format: 'json';
-    readonly extractBilling: (body: unknown) => TokenUsage | null;
-  }
-  | {
-    readonly format: 'sse';
-    readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
-    readonly settleUsage: () => TokenUsage | null;
-  }
+  | JsonPassthroughResponseHandling
+  | SsePassthroughResponseHandling
   | {
     readonly format: 'strategy';
     readonly respond: (context: PassthroughResponseStrategyContext) => Promise<Response>;
+  }
+  | {
+    readonly format: 'media-type';
+    readonly json: JsonPassthroughResponseHandling;
+    readonly sse: SsePassthroughResponseHandling;
   };
 
 export interface PassthroughResponseStrategyContext {
@@ -155,28 +164,33 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }),
     );
     const { response, performance: performanceContext, identity } = result;
+    const selectedHandling = responseHandling.format === 'media-type'
+      ? isEventStreamMediaType(response.headers.get('content-type'))
+        ? responseHandling.sse
+        : responseHandling.json
+      : responseHandling;
 
-    if (responseHandling.format === 'strategy') {
-      return await responseHandling.respond({ c, ctx, sourceApi, response, performance: performanceContext, identity });
+    if (selectedHandling.format === 'strategy') {
+      return await selectedHandling.respond({ c, ctx, sourceApi, response, performance: performanceContext, identity });
     }
 
     if (!response.ok) {
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
-      recordFailedRequest(ctx, performanceContext);
+      settle(ctx, performanceContext, identity, null, true);
       ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
     }
 
-    if (responseHandling.format === 'json') {
+    if (selectedHandling.format === 'json') {
       return observeJsonResponse({
         ctx,
         response,
         performance: performanceContext,
         identity,
         sourceApi,
-        extractBilling: responseHandling.extractBilling,
+        extractBilling: selectedHandling.extractBilling,
       });
     }
 
@@ -212,7 +226,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
             // when the caller drops a frame from the client-facing stream.
             ctx.dump?.frame(inputFrame);
             if (inputFrame.type === 'done') terminalFrameSeen = true;
-            const outputFrame = responseHandling.transformFrame(inputFrame);
+            const outputFrame = selectedHandling.transformFrame(inputFrame);
             if (outputFrame !== null) {
               yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
             }
@@ -228,18 +242,15 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       } finally {
         let usage: TokenUsage | null = null;
         try {
-          usage = responseHandling.settleUsage();
+          usage = selectedHandling.settleUsage();
         } catch (error) {
           streamError = streamError === undefined
             ? error
             : new AggregateError([streamError, error], 'Passthrough stream and usage settlement both failed', { cause: streamError });
         }
         const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
-        if (failed) {
-          ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
-        } else {
-          ctx.dump?.success(identity, usage);
-        }
+        ctx.dump?.success(identity, usage);
+        if (failed) ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
         // Record any accumulated usage regardless of the failed flag —
         // tokens already metered upstream should bill even when the
         // downstream half of the round-trip turned out badly. The chat

@@ -83,8 +83,8 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
       streamError = error;
     } finally {
       const failed = streamError !== undefined || protocolError !== undefined || completion === 'error' || !terminalEventSeen;
+      ctx.dump?.success(identity, measurement.dumpTokenUsage);
       if (failed) ctx.dump?.failed(streamError ?? protocolError ?? `${sourceApi} stream ended with completion=${completion}`);
-      else ctx.dump?.success(identity, measurement.dumpTokenUsage);
       settleUsageMeasurement(ctx, performance, identity, measurement, failed);
     }
   });

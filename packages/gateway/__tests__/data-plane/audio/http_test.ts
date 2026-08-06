@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
+import { audioTranscriptionFileError } from '../../../src/data-plane/audio/http.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
@@ -101,6 +102,8 @@ test('/v1/audio/transcriptions rejects malformed multipart and invalid field typ
   stringFile.append('file', 'not-a-file');
   const mixedFiles = transcriptionForm();
   mixedFiles.append('file', 'not-a-file');
+  const duplicateFiles = transcriptionForm();
+  appendTranscriptionFile(duplicateFiles);
 
   const cases: readonly {
     readonly name: string;
@@ -125,9 +128,10 @@ test('/v1/audio/transcriptions rejects malformed multipart and invalid field typ
     { name: 'file-valued model', body: fileModel, message: 'Audio transcription request body must include a model field.' },
     { name: 'mixed model values', body: mixedModelValues, message: 'Audio transcription request body must include a model field.' },
     { name: 'duplicate model values', body: duplicateModels, message: 'Audio transcription request body must include a model field.' },
-    { name: 'missing file', body: missingFile, message: 'Audio transcription request body must include a file upload.' },
-    { name: 'string-valued file', body: stringFile, message: 'Audio transcription request body must include a file upload.' },
-    { name: 'mixed file values', body: mixedFiles, message: 'Audio transcription request body must include a file upload.' },
+    { name: 'missing file', body: missingFile, message: 'Audio transcription request body must include exactly one file upload.' },
+    { name: 'string-valued file', body: stringFile, message: 'Audio transcription request body must include exactly one file upload.' },
+    { name: 'mixed file values', body: mixedFiles, message: 'Audio transcription request body must include exactly one file upload.' },
+    { name: 'duplicate file values', body: duplicateFiles, message: 'Audio transcription request body must include exactly one file upload.' },
   ];
   let upstreamCalls = 0;
   await withMockedFetch(
@@ -152,6 +156,14 @@ test('/v1/audio/transcriptions rejects malformed multipart and invalid field typ
     },
   );
   assertEquals(upstreamCalls, 0);
+});
+
+test('audio transcription file validation enforces its byte boundary without a large fixture', () => {
+  assertEquals(audioTranscriptionFileError([new File([Uint8Array.of(1, 2, 3, 4)], 'ok.wav')], 4), null);
+  assertEquals(
+    audioTranscriptionFileError([new File([Uint8Array.of(1, 2, 3, 4, 5)], 'large.wav')], 4),
+    'Audio transcription file must not exceed 4 bytes.',
+  );
 });
 
 test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, and token usage', async () => {

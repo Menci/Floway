@@ -15,6 +15,21 @@ import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../s
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
 
+// https://platform.openai.com/docs/guides/speech-to-text#overview
+export const MAX_AUDIO_TRANSCRIPTION_FILE_BYTES = 25 * 1024 * 1024;
+
+export const audioTranscriptionFileError = (
+  values: readonly FormDataEntryValue[],
+  maxBytes = MAX_AUDIO_TRANSCRIPTION_FILE_BYTES,
+): string | null => {
+  if (values.length !== 1 || !(values[0] instanceof File)) {
+    return 'Audio transcription request body must include exactly one file upload.';
+  }
+  return values[0].size > maxBytes
+    ? `Audio transcription file must not exceed ${maxBytes} bytes.`
+    : null;
+};
+
 type PreparedTranscription =
   | {
     readonly type: 'ok';
@@ -41,9 +56,8 @@ const prepareTranscription = async (bytes: Uint8Array, contentType: string | und
     return { type: 'invalid', message: 'Audio transcription request body must include a model field.' };
   }
   const files = form.getAll('file');
-  if (files.length === 0 || files.some(file => !(file instanceof File))) {
-    return { type: 'invalid', message: 'Audio transcription request body must include a file upload.' };
-  }
+  const fileError = audioTranscriptionFileError(files);
+  if (fileError !== null) return { type: 'invalid', message: fileError };
 
   const entries: AudioTranscriptionFormEntry[] = [];
   for (const [name, value] of form.entries()) {

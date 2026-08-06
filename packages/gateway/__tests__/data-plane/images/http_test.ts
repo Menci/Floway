@@ -207,6 +207,70 @@ test('/v1/images/edits requires at least one image for JSON and multipart reques
   assertEquals(await multipart.json(), { error: { message: 'Image edits request body must include at least one image file.', type: 'api_error' } });
 });
 
+test('/v1/images/edits accepts sixteen JSON images and rejects a seventeenth pre-dispatch', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesUpstream(repo);
+  const sixteen = Array.from({ length: 16 }, (_, index) => ({ file_id: `file-${index}` }));
+  let forwarded: Record<string, unknown> | undefined;
+  await withMockedFetch(
+    async request => {
+      forwarded = await request.json() as Record<string, unknown>;
+      return jsonResponse({ data: [{ b64_json: 'ZWRpdA==' }] });
+    },
+    async () => {
+      const accepted = await requestApp('/v1/images/edits', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'edit', images: sixteen }),
+      });
+      assertEquals(accepted.status, 200);
+      await accepted.json();
+    },
+  );
+  assertEquals((forwarded?.images as unknown[]).length, 16);
+
+  let upstreamCalls = 0;
+  await withMockedFetch(
+    () => {
+      upstreamCalls += 1;
+      return jsonResponse({ data: [] });
+    },
+    async () => {
+      const rejected = await requestApp('/v1/images/edits', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'edit', images: [...sixteen, { file_id: 'file-16' }] }),
+      });
+      assertEquals(rejected.status, 400);
+      await rejected.json();
+    },
+  );
+  assertEquals(upstreamCalls, 0);
+});
+
+test('/v1/images/edits rejects seventeen multipart images and duplicate masks', async () => {
+  const { apiKey } = await setupAppTest();
+  for (const configure of [
+    (form: FormData) => {
+      for (let index = 0; index < 17; index++) form.append('image', new Blob([Uint8Array.of(index)]), `image-${index}.png`);
+    },
+    (form: FormData) => {
+      form.append('image', new Blob([Uint8Array.of(1)]), 'image.png');
+      form.append('mask', new Blob([Uint8Array.of(2)]), 'mask-a.png');
+      form.append('mask', new Blob([Uint8Array.of(3)]), 'mask-b.png');
+    },
+  ]) {
+    const form = new FormData();
+    form.append('model', 'gpt-image-2');
+    configure(form);
+    const response = await requestApp('/v1/images/edits', {
+      method: 'POST', headers: { 'x-api-key': apiKey.key }, body: form,
+    });
+    assertEquals(response.status, 400);
+    await response.json();
+  }
+});
+
 test('/v1/images/generations rejects a model of the wrong kind', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -572,7 +636,6 @@ test('/v1/images/edits streams multipart text true and preserves image and mask 
       form.append('model', 'gpt-image-2');
       form.append('prompt', 'replace the sky');
       form.append('quality', 'high');
-      form.append('stream', 'false');
       form.append('stream', 'true');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'source.png');
       form.append('mask', new Blob([new Uint8Array([4, 5])], { type: 'image/webp' }), 'mask.webp');

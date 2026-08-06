@@ -34,12 +34,18 @@ export const tokenUsageFromCompletionsUsage = (
     completion_tokens?: unknown;
   };
   if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number') return null;
+  for (const [name, value] of [['prompt_tokens', promptTokens], ['completion_tokens', completionTokens]] as const) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new RangeError(`${name} must be a non-negative safe integer`);
+  }
   const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(usage);
   const { total_tokens: totalTokens } = usage as { total_tokens?: unknown };
+  if (totalTokens !== undefined && (typeof totalTokens !== 'number' || !Number.isSafeInteger(totalTokens) || totalTokens < 0)) {
+    throw new RangeError('total_tokens must be a non-negative safe integer');
+  }
   const fold = foldsExclusiveCacheTokens(declaredExclusive, {
     inputTokens: promptTokens,
     outputTokens: completionTokens,
-    totalTokens: typeof totalTokens === 'number' ? totalTokens : undefined,
+    totalTokens,
     cacheRead,
     cacheWrite,
   }, identity);

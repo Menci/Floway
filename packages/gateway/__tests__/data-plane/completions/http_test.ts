@@ -163,6 +163,72 @@ test('/v1/completions streaming forces stream_options.include_usage upstream', a
   assertEquals((forwardedBody.stream_options as { include_usage?: boolean } | undefined)?.include_usage, true);
 });
 
+test.each([1, 'invalid', []])('/v1/completions rejects invalid streaming stream_options %#', async streamOptions => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+  let upstreamCalls = 0;
+  await withMockedFetch(
+    () => {
+      upstreamCalls += 1;
+      return completionStream();
+    },
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true, stream_options: streamOptions }),
+      });
+      assertEquals(response.status, 400);
+      await response.json();
+    },
+  );
+  assertEquals(upstreamCalls, 0);
+});
+
+test('/v1/completions preserves a JSON response to a streaming request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+  await withMockedFetch(
+    () => jsonResponse({
+      id: 'cmpl_json_mismatch',
+      choices: [{ index: 0, text: 'done', finish_reason: 'stop' }],
+      usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+    }),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals((await response.json()).id, 'cmpl_json_mismatch');
+    },
+  );
+  await flushAsyncWork();
+  assertEquals(tokenCountsFromUsage((await repo.usage.listAll())[0]!), { input: 3, output: 2 });
+});
+
+test('/v1/completions preserves an SSE response to a non-streaming request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+  await withMockedFetch(
+    () => completionStream(),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+      });
+      assertEquals(response.headers.get('content-type'), 'text/event-stream');
+      const text = await response.text();
+      assertEquals(text.includes('"usage"'), true);
+      assertEquals(text.includes('[DONE]'), true);
+    },
+  );
+  await flushAsyncWork();
+  assertEquals(tokenCountsFromUsage((await repo.usage.listAll())[0]!), { input: 4, output: 2 });
+});
+
 test('/v1/completions streaming strips usage chunk when client did not request include_usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerCompletionsUpstream(repo);
