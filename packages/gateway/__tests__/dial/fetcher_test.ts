@@ -560,6 +560,49 @@ describe('createFetcher', () => {
     expect(proxyCalls).toBe(0);
   });
 
+  it.each([
+    ['hostile cause accessor', () => Object.defineProperty(new Error('hostile'), 'cause', {
+      get: () => { throw new Error('cause getter must not run'); },
+    })],
+    ['cyclic cause', () => {
+      const error = new Error('cycle');
+      error.cause = error;
+      return error;
+    }],
+    ['over-deep cause chain', (reason: Error) => {
+      let error = reason;
+      for (let index = 0; index < 80; index++) error = new Error(`layer ${index}`, { cause: error });
+      return error;
+    }],
+  ])('safely aggregates cancellation with a %s', async (_label, makeFailure) => {
+    const repo = new InMemoryRepo();
+    const reason = new Error('execution deadline');
+    const transportFailure = makeFailure(reason);
+    const controller = new AbortController();
+    let proxyCalls = 0;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { proxyCalls += 1; return new Response('proxy'); },
+      runDirectFetch: async () => {
+        controller.abort(reason);
+        throw transportFailure;
+      },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    const rejection = await fetcher('https://api.openai.com', {
+      method: 'GET', signal: controller.signal,
+    }).catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([reason, transportFailure]);
+    expect(rejection.cause).toBe(reason);
+    expect(proxyCalls).toBe(0);
+  });
+
   it('replays materialized bytes to a direct fallback without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
     let directBody: BodyInit | null | undefined;

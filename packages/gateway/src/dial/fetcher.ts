@@ -42,14 +42,32 @@ interface CreateFetcherInput {
   socketDial: () => SocketDial;
 }
 
-const containsFailure = (failure: unknown, target: unknown, seen = new Set<object>()): boolean => {
-  if (Object.is(failure, target)) return true;
-  if (!(failure instanceof Error) || seen.has(failure)) return false;
-  seen.add(failure);
-  if (failure instanceof AggregateError && failure.errors.some(error => containsFailure(error, target, seen))) {
-    return true;
+const containsFailure = (failure: unknown, target: unknown): boolean => {
+  const pending: unknown[] = [failure];
+  const seen = new Set<object>();
+  for (let visited = 0; pending.length > 0 && visited < 64; visited++) {
+    const current = pending.shift();
+    if (Object.is(current, target)) return true;
+    if ((typeof current !== 'object' && typeof current !== 'function') || current === null) continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    try {
+      const cause = Object.getOwnPropertyDescriptor(current, 'cause');
+      if (cause !== undefined && 'value' in cause) pending.push(cause.value);
+      const errors = Object.getOwnPropertyDescriptor(current, 'errors');
+      if (errors === undefined || !('value' in errors) || !Array.isArray(errors.value)) continue;
+      for (let index = 0; index < Math.min(errors.value.length, 64); index++) {
+        const item = Object.getOwnPropertyDescriptor(errors.value, String(index));
+        if (item !== undefined && 'value' in item) pending.push(item.value);
+      }
+    } catch {
+      // A hostile accessor/proxy is not evidence that the caught transport
+      // failure already preserves the abort. The caller will aggregate the
+      // untouched value behind the original signal reason below.
+      return false;
+    }
   }
-  return containsFailure(failure.cause, target, seen);
+  return false;
 };
 
 const abortedRequestFailure = (signal: AbortSignal, caught: unknown): unknown => {
