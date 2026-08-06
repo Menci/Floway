@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
+import { ProviderStreamCleanupTimeoutError, providerStreamResultToExecuteResult } from '../../../../src/data-plane/chat/shared/provider-stream-result.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ProviderStreamResult } from '@floway-dev/provider';
@@ -15,6 +15,16 @@ const okStreamResult = <T>(events: AsyncIterable<ProtocolFrame<T>>): ProviderStr
   events,
   modelKey: 'test-model-key',
 });
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
 
 const drainEvents = async <T>(result: Awaited<ReturnType<typeof providerStreamResultToExecuteResult<T>>>): Promise<ProtocolFrame<T>[]> => {
   if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
@@ -172,4 +182,129 @@ test('usage observation failure preserves its cause while the retained source dr
   await expect(iterator.return?.()).rejects.toBe(badUsage);
   expect(sourceFinished).toBe(true);
   await expect(result.finalMetadata).resolves.toMatchObject({ billableUsage: terminalUsage });
+});
+
+test('a rejecting source next cannot wait forever for source cleanup', async () => {
+  vi.useFakeTimers();
+  try {
+    const sourceFailure = new Error('provider next failed');
+    const returnStarted = deferred<void>();
+    const neverReturns = new Promise<IteratorResult<ProtocolFrame<unknown>>>(() => {});
+    const events: AsyncIterable<ProtocolFrame<unknown>> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => { throw sourceFailure; },
+          return: () => {
+            returnStarted.resolve();
+            return neverReturns;
+          },
+        };
+      },
+    };
+    const executionController = new AbortController();
+    const ctx = mockGatewayCtx({ executionController, executionSignal: executionController.signal });
+    const result = await providerStreamResultToExecuteResult(
+      okStreamResult(events),
+      stubModelCandidate(),
+      'responses',
+      ctx,
+      () => null,
+      { cleanupTimeoutMs: 10, cleanupYieldEveryFrames: 2 },
+    );
+    if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+    const pending = result.events[Symbol.asyncIterator]().next();
+    await returnStarted.promise;
+    await vi.advanceTimersByTimeAsync(10);
+    const error = await pending.catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AggregateError);
+    const aggregate = error as AggregateError;
+    expect(aggregate.cause).toBe(sourceFailure);
+    expect(aggregate.errors[0]).toBe(sourceFailure);
+    expect(aggregate.errors[1]).toBeInstanceOf(ProviderStreamCleanupTimeoutError);
+    expect(ctx.executionSignal.aborted).toBe(true);
+    expect(ctx.executionSignal.reason).toBe(aggregate.errors[1]);
+    await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('source cleanup failure remains attached to the primary read failure', async () => {
+  const sourceFailure = new Error('provider next failed');
+  const cleanupFailure = new Error('provider return failed');
+  const events: AsyncIterable<ProtocolFrame<unknown>> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: async () => { throw sourceFailure; },
+        return: async () => { throw cleanupFailure; },
+      };
+    },
+  };
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(events),
+    stubModelCandidate(),
+    'responses',
+    mockGatewayCtx(),
+    () => null,
+    { cleanupTimeoutMs: 10, cleanupYieldEveryFrames: 2 },
+  );
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+  const error = await result.events[Symbol.asyncIterator]().next().catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(AggregateError);
+  const aggregate = error as AggregateError;
+  expect(aggregate.cause).toBe(sourceFailure);
+  expect(aggregate.errors).toEqual([sourceFailure, cleanupFailure]);
+  await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+});
+
+test('cleanup yields to a pre-scheduled execution deadline while draining ready frames', async () => {
+  vi.useFakeTimers();
+  try {
+    const executionController = new AbortController();
+    const executionFailure = new Error('execution deadline reached');
+    const firstRead = deferred<void>();
+    let reads = 0;
+    let returnCalled = false;
+    const events: AsyncIterable<ProtocolFrame<unknown>> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            reads += 1;
+            firstRead.resolve();
+            return { done: false, value: { type: 'event', event: { type: 'response.in_progress' } } };
+          },
+          return: async () => {
+            returnCalled = true;
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    };
+    const ctx = mockGatewayCtx({ executionController, executionSignal: executionController.signal });
+    const result = await providerStreamResultToExecuteResult(
+      okStreamResult(events),
+      stubModelCandidate(),
+      'responses',
+      ctx,
+      () => null,
+      { cleanupTimeoutMs: 100, cleanupYieldEveryFrames: 2 },
+    );
+    if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+    setTimeout(() => executionController.abort(executionFailure), 0);
+    const pending = result.events[Symbol.asyncIterator]().return?.();
+    if (pending === undefined) throw new Error('expected the event iterator to implement return()');
+    await firstRead.promise;
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(pending).rejects.toBe(executionFailure);
+    expect(reads).toBeLessThanOrEqual(2);
+    expect(returnCalled).toBe(true);
+    await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+  } finally {
+    vi.useRealTimers();
+  }
 });
