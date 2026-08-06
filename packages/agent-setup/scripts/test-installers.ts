@@ -17,6 +17,7 @@
 // Run the whole suite with `pnpm run test:agent-setup-installers`, or scope it
 // with `--agent claude` / `--agent codex` and `--match <name substring>`.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -76,9 +77,10 @@ const makeAssert = (): Assert => ({
 });
 
 type TestFn = (t: Assert) => void | Promise<void>;
-interface Case { agent: ScriptAgent; name: string; fn: TestFn }
+interface Case { agent: ScriptAgent; name: string; fn: TestFn; exclusive: boolean }
 const cases: Case[] = [];
-const test = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn }); };
+const test = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, exclusive: false }); };
+const exclusiveTest = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, exclusive: true }); };
 
 // --- shared fixtures --------------------------------------------------------
 
@@ -341,8 +343,23 @@ interface ModelServer {
   readonly requests: { method: string; path: string }[];
   mode: ModelServerMode;
   reset(): void;
+  dispose(): void;
+}
+interface ModelServerHost {
+  createFixture(id: number): ModelServer;
   close(): Promise<void>;
 }
+
+const modelServerStorage = new AsyncLocalStorage<ModelServer>();
+const currentModelServer = (): ModelServer => {
+  const fixture = modelServerStorage.getStore();
+  if (fixture === undefined) throw new Error('installer case has no model-server fixture');
+  return fixture;
+};
+const modelServer = new Proxy({} as ModelServer, {
+  get: (_target, property) => Reflect.get(currentModelServer(), property),
+  set: (_target, property, value) => Reflect.set(currentModelServer(), property, value),
+});
 
 const PS1_FAKE_INSTALLER_BODY = (binName: string, src: string): string =>
   `if ($env:SETUP_API_KEY) { throw 'installer inherited secret' }
@@ -369,14 +386,20 @@ New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
 
 const COMMAND_BOUNDARY_SECRET = 'secret-from-downloaded-script-密钥';
 
-const startModelServer = async (): Promise<ModelServer> => {
-  const state = {
-    mode: 'ok' as ModelServerMode,
-    requests: [] as { method: string; path: string }[],
-  };
+const startModelServer = async (): Promise<ModelServerHost> => {
+  const states = new Map<string, { mode: ModelServerMode; requests: { method: string; path: string }[] }>();
   const HTML_BODY = '<!DOCTYPE html><HTML><BODY>blocked</BODY></HTML>';
   const server: Server = createServer((req, res) => {
-    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const requestPath = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const separator = requestPath.indexOf('/', 1);
+    const fixtureId = decodeURIComponent(requestPath.slice(1, separator === -1 ? undefined : separator));
+    const state = states.get(fixtureId);
+    if (state === undefined) {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end('{"error":"unknown test fixture"}');
+      return;
+    }
+    const pathname = separator === -1 ? '/' : requestPath.slice(separator);
     state.requests.push({ method: req.method ?? '', path: pathname });
     // Unauthenticated probe bodies for the command-injection-semantics tests:
     // each echoes the base URL the wrapping command injected into the executing
@@ -466,12 +489,27 @@ const startModelServer = async (): Promise<ModelServer> => {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
+  const origin = `http://127.0.0.1:${port}`;
   return {
-    url: `http://127.0.0.1:${port}`,
-    get requests() { return state.requests; },
-    get mode() { return state.mode; },
-    set mode(value) { state.mode = value; },
-    reset() { state.requests.length = 0; state.mode = 'ok'; },
+    createFixture(id) {
+      const fixtureId = `case-${id}`;
+      const state = {
+        mode: 'ok' as ModelServerMode,
+        requests: [] as { method: string; path: string }[],
+      };
+      if (states.has(fixtureId)) throw new Error(`duplicate model-server fixture ${fixtureId}`);
+      states.set(fixtureId, state);
+      return {
+        url: `${origin}/${fixtureId}`,
+        get requests() { return state.requests; },
+        get mode() { return state.mode; },
+        set mode(value) { state.mode = value; },
+        reset() { state.requests.length = 0; state.mode = 'ok'; },
+        dispose() {
+          if (!states.delete(fixtureId)) throw new Error(`model-server fixture ${fixtureId} was already disposed`);
+        },
+      };
+    },
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
   };
 };
@@ -787,6 +825,9 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.bootstrapJqLocally) placeLocalJqDownload(workspace);
   if (options.timeoutSeconds !== undefined) placeDeadlineShims(workspace, options.excludeTimeoutTools === true);
   if (options.expireAppServerDeadline && options.timeoutSeconds === undefined) placeDeadlineShims(workspace, true);
+  if (agent === 'codex' && options.timeoutSeconds === undefined && !options.expireAppServerDeadline) {
+    placeDeadlineShims(workspace, true);
+  }
   if (options.lockWaitMarker) placeLockWaitShim(workspace);
   if (options.expireLockDeadline || options.expireAppServerDeadline) placeExpiredClock(workspace);
   if (options.failBackupPrune) {
@@ -822,7 +863,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FLOWAY_HARNESS_REAL_TIMEOUT: resolveTool('timeout') ?? resolveTool('gtimeout') ?? '',
     FLOWAY_HARNESS_CURL_URI: redirectedInstallerUrl ?? '',
     FLOWAY_HARNESS_DEADLINE_SECONDS: String(options.timeoutSeconds ?? ''),
-    FLOWAY_HARNESS_SHORT_GRACE: options.expireAppServerDeadline ? '1' : '0',
+    FLOWAY_HARNESS_SHORT_GRACE: agent === 'codex' ? '1' : '0',
     FLOWAY_HARNESS_CLOCK_STATE: join(workspace.root, 'clock-state'),
     FLOWAY_HARNESS_CLOCK_MODE: options.expireAppServerDeadline ? 'app-server' : 'lock',
     FLOWAY_HARNESS_LOCK_WAIT_MARKER: options.lockWaitMarker ?? '',
@@ -1152,8 +1193,6 @@ out_error 'error detail'
 
 // --- Claude cases -----------------------------------------------------------
 
-let modelServer: ModelServer;
-
 test('claude', 'existing CLI is used without invoking the package manager', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1303,7 +1342,7 @@ test('claude', 'successful re-runs retain only the latest settings backup', asyn
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), firstSettings, 'the retained backup is the state before the latest run');
 });
 
-test('claude', 'Bash serializes one config root and a failing successor restores the committed settings', async t => {
+exclusiveTest('claude', 'Bash serializes one config root and a failing successor restores the committed settings', async t => {
   const holderWs = makeWorkspace();
   const successorWs = makeWorkspace();
   placeFakeClaude(holderWs.binDir);
@@ -1388,14 +1427,14 @@ test('claude', 'present null env fails closed without mutating the file', async 
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before validation');
 });
 
-test('claude', 'an interrupt during the Claude install stops the selected script and cleans up', async t => {
+exclusiveTest('claude', 'an interrupt during the Claude install stops the selected script and cleans up', async t => {
   for (const [signal, expectedCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
     const ws = makeWorkspace();
     // No fake claude on PATH, so the agent fragment runs the sleeping installer;
     // the signal lands while it is mid-install.
     const run = await runShellInstaller({
       workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude',
-      installerSleep: 5, signalDuringInstall: signal,
+      installerSleep: 2, signalDuringInstall: signal,
     });
     t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
     t.includes(run.combined, 'Claude Code', `${signal}: the run had entered the Claude phase`);
@@ -1665,7 +1704,7 @@ test('claude', 'PowerShell: successful re-runs retain only the latest settings b
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), firstSettings, 'the retained backup is the state before the latest run');
 });
 
-test('claude', 'Bash and PowerShell serialize one Claude config root and a failing successor restores the committed settings', async t => {
+exclusiveTest('claude', 'Bash and PowerShell serialize one Claude config root and a failing successor restores the committed settings', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const holderWs = makeWorkspace();
   const successorWs = makeWorkspace();
@@ -1804,7 +1843,7 @@ exit 0
   t.equal(run.code, 0, `the vanished contention must retry successfully:\n${run.combined}`);
 });
 
-test('claude', 'Bash cleanup preserves a lock whose owner changed while setup was running', async t => {
+exclusiveTest('claude', 'Bash cleanup preserves a lock whose owner changed while setup was running', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const configDir = join(ws.root, 'bash-owner-change-config');
@@ -1828,7 +1867,7 @@ test('claude', 'Bash cleanup preserves a lock whose owner changed while setup wa
   t.equal(readFileSync(ownerPath, 'utf8'), 'replacement-owner', 'Bash does not remove another owner token');
 });
 
-test('claude', 'PowerShell cleanup preserves a lock whose owner changed while setup was running', async t => {
+exclusiveTest('claude', 'PowerShell cleanup preserves a lock whose owner changed while setup was running', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2056,7 +2095,7 @@ test('claude', 'Bash claude --version is bounded before configuration', async t 
   t.ok(!existsSync(settingsPathFor(ws)), 'configuration does not begin after a version timeout');
 });
 
-test('claude', 'PowerShell downloaded installer is bounded', async t => {
+exclusiveTest('claude', 'PowerShell downloaded installer is bounded', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-ps1';
@@ -2079,7 +2118,7 @@ try {
   t.ok(!processExists(childPid), `timed-out PowerShell installer child ${childPid} must be dead`);
 });
 
-test('claude', 'PowerShell bounds stdin delivery to an interpreter that never reads', async t => {
+exclusiveTest('claude', 'PowerShell bounds stdin delivery to an interpreter that never reads', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const interpreter = join(ws.binDir, 'non-reading-pwsh');
@@ -2477,7 +2516,7 @@ test('codex', 'a delayed batch response within the deadline succeeds because std
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
-    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 2,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 0.25,
   });
   t.equal(run.code, 0, `a response delayed under the deadline must still succeed:\n${run.combined}`);
   const record = readCodexRecord(ws);
@@ -2585,7 +2624,7 @@ test('codex', 'successful re-runs retain one config backup and no provider-token
   t.equal(readdirSync(home).filter(name => name.startsWith('auth.json.floway-backup.')).length, 0, 'account auth is not backed up because it is not managed');
 });
 
-test('codex', 'Bash and PowerShell serialize config and token as one cross-language transaction', async t => {
+exclusiveTest('codex', 'Bash and PowerShell serialize config and token as one cross-language transaction', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const holderWs = makeWorkspace();
   const successorWs = makeWorkspace();
@@ -3121,7 +3160,7 @@ test('codex', 'PowerShell: a Codex script never configures Claude when Codex fai
 
 // --- Codex real-binary smoke test -------------------------------------------
 
-test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server writes config.toml', async t => {
+exclusiveTest('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server writes config.toml', async t => {
   if (!hostCodex) skip('real Codex 0.144.5 is not installed on this host');
   const ws = makeWorkspace();
   symlinkSync(hostCodex, join(ws.binDir, 'codex'));
@@ -3377,62 +3416,138 @@ const parseNameFilter = (): string | null => {
 const profilingEnabled = (): boolean => process.argv.includes('--profile');
 const elapsedMilliseconds = (startedAt: bigint): number => Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 const profileSuffix = (milliseconds: number): string => ` (${milliseconds.toFixed(1)} ms)`;
+const parseWorkerCount = (): number => {
+  const index = process.argv.indexOf('--workers');
+  if (index === -1) return 3;
+  const value = Number(process.argv[index + 1]);
+  if (!Number.isInteger(value) || value < 1 || value > 4) {
+    throw new Error(`--workers must be an integer from 1 through 4, got ${JSON.stringify(process.argv[index + 1])}`);
+  }
+  return value;
+};
+
+interface SelectedCase {
+  index: number;
+  testCase: Case;
+}
+interface CaseResult {
+  index: number;
+  label: string;
+  status: 'PASS' | 'FAIL' | 'SKIP';
+  milliseconds: number;
+  detail?: string;
+}
+
+const runInstallerCase = async (host: ModelServerHost, selected: SelectedCase): Promise<CaseResult> => {
+  const { index, testCase } = selected;
+  const fixture = host.createFixture(index);
+  const label = `[${testCase.agent}] ${testCase.name}`;
+  const startedAt = process.hrtime.bigint();
+  try {
+    return await modelServerStorage.run(fixture, async () => {
+      fixture.reset();
+      const assert = makeAssert();
+      try {
+        await testCase.fn(assert);
+        return { index, label, status: 'PASS', milliseconds: elapsedMilliseconds(startedAt) };
+      } catch (error) {
+        if (error instanceof SkipError) {
+          return { index, label, status: 'SKIP', milliseconds: elapsedMilliseconds(startedAt), detail: error.message };
+        }
+        return {
+          index,
+          label,
+          status: 'FAIL',
+          milliseconds: elapsedMilliseconds(startedAt),
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
+  } finally {
+    fixture.dispose();
+  }
+};
+
+const runConcurrentBatch = async (
+  host: ModelServerHost,
+  batch: readonly SelectedCase[],
+  workerCount: number,
+  results: Map<number, CaseResult>,
+): Promise<void> => {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < batch.length) {
+      const selected = batch[cursor++];
+      if (selected === undefined) return;
+      results.set(selected.index, await runInstallerCase(host, selected));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(workerCount, batch.length) }, worker));
+};
+
+const runSelectedCases = async (
+  host: ModelServerHost,
+  selectedCases: readonly SelectedCase[],
+  workerCount: number,
+): Promise<CaseResult[]> => {
+  const results = new Map<number, CaseResult>();
+  let parallelBatch: SelectedCase[] = [];
+  for (const selected of selectedCases) {
+    if (!selected.testCase.exclusive) {
+      parallelBatch.push(selected);
+      continue;
+    }
+    await runConcurrentBatch(host, parallelBatch, workerCount, results);
+    parallelBatch = [];
+    results.set(selected.index, await runInstallerCase(host, selected));
+  }
+  await runConcurrentBatch(host, parallelBatch, workerCount, results);
+  return selectedCases.map(({ index }) => {
+    const result = results.get(index);
+    if (result === undefined) throw new Error(`installer case ${index} did not produce a result`);
+    return result;
+  });
+};
 
 const main = async (): Promise<void> => {
   const filter = parseAgentFilter();
   const nameFilter = parseNameFilter();
   const profile = profilingEnabled();
-  modelServer = await startModelServer();
-
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
-  const failures: string[] = [];
-  const durations: { label: string; milliseconds: number }[] = [];
-
+  const workerCount = parseWorkerCount();
+  const host = await startModelServer();
+  const selectedCases = cases
+    .map((testCase, index) => ({ index, testCase }))
+    .filter(({ testCase }) => (filter === 'all' || testCase.agent === filter)
+      && (nameFilter === null || testCase.name.includes(nameFilter)));
+  let results: CaseResult[] = [];
   try {
-    for (const testCase of cases) {
-      if (filter !== 'all' && testCase.agent !== filter) continue;
-      if (nameFilter !== null && !testCase.name.includes(nameFilter)) continue;
-      modelServer.reset();
-      const assert = makeAssert();
-      const label = `[${testCase.agent}] ${testCase.name}`;
-      const startedAt = process.hrtime.bigint();
-      try {
-        await testCase.fn(assert);
-        const milliseconds = elapsedMilliseconds(startedAt);
-        durations.push({ label, milliseconds });
-        passed += 1;
-        console.log(`  PASS ${label}${profile ? profileSuffix(milliseconds) : ''}`);
-      } catch (error) {
-        const milliseconds = elapsedMilliseconds(startedAt);
-        durations.push({ label, milliseconds });
-        if (error instanceof SkipError) {
-          skipped += 1;
-          console.log(`  SKIP ${label} — ${error.message}${profile ? profileSuffix(milliseconds) : ''}`);
-          continue;
-        }
-        failed += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push(`${label}\n${message}`);
-        console.log(`  FAIL ${label}${profile ? profileSuffix(milliseconds) : ''}`);
-      }
-    }
+    results = await runSelectedCases(host, selectedCases, workerCount);
   } finally {
-    await modelServer.close();
+    await host.close();
     for (const path of cleanupPaths) rmSync(path, { recursive: true, force: true });
   }
 
+  for (const result of results) {
+    const suffix = profile ? profileSuffix(result.milliseconds) : '';
+    if (result.status === 'SKIP') console.log(`  SKIP ${result.label} — ${result.detail}${suffix}`);
+    else console.log(`  ${result.status} ${result.label}${suffix}`);
+  }
+  const passed = results.filter(({ status }) => status === 'PASS').length;
+  const failed = results.filter(({ status }) => status === 'FAIL').length;
+  const skipped = results.filter(({ status }) => status === 'SKIP').length;
   console.log(`\nagent-setup installers: ${passed} passed, ${failed} failed, ${skipped} skipped`);
   if (profile) {
+    console.log(`installer scheduling: ${workerCount} workers, ${selectedCases.filter(({ testCase }) => testCase.exclusive).length} exclusive cases`);
     console.log('\nslowest installer cases:');
-    for (const duration of durations.toSorted((left, right) => right.milliseconds - left.milliseconds).slice(0, 20)) {
-      console.log(`  ${profileSuffix(duration.milliseconds).trim()} ${duration.label}`);
+    for (const result of results.toSorted((left, right) => right.milliseconds - left.milliseconds).slice(0, 20)) {
+      console.log(`  ${profileSuffix(result.milliseconds).trim()} ${result.label}`);
     }
   }
   if (failed > 0) {
     console.error('\nFailures:');
-    for (const failure of failures) console.error(`\n${failure}`);
+    for (const result of results) {
+      if (result.status === 'FAIL') console.error(`\n${result.label}\n${result.detail}`);
+    }
     process.exit(1);
   }
 };
