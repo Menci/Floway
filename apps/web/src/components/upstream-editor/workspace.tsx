@@ -294,7 +294,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     // A failed apply keeps the text as the draft, so the message stays attached
     // to the buffer that produced it.
     const applyAndLeave = () => {
-      const parsed = parseModels(text, { allowRerank: record.kind === 'custom' });
+      const parsed = parseModels(text, { providerKind: record.kind });
       if (!parsed.ok) { onYamlDraftChange({ text, error: parsed.message }); return; }
       replace(parsed.models);
       onViewChange('list');

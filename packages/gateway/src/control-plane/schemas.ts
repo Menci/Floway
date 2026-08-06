@@ -211,6 +211,9 @@ const ollamaConfigSchema = z.object({
 }).refine(config => config.models?.every(model => !endpointsSupportKind(model.endpoints, 'rerank')) !== false, {
   message: 'rerank models require a custom upstream',
   path: ['models'],
+}).refine(config => config.models?.every(model => !endpointsSupportKind(model.endpoints, 'image')) !== false, {
+  message: 'image models require a custom or azure upstream',
+  path: ['models'],
 });
 
 // --- auth ---

@@ -7,6 +7,7 @@ import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { customProviderModule } from '@floway-dev/provider-custom';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const MIGRATION = '0080_drop_targetless_mixed_rerank_endpoints.sql';
@@ -74,6 +75,16 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
         baseUrl: 'https://ollama.example.com',
         models: [mixedModel({ embeddings: {}, rerank: {} })],
       }), JSON.stringify({ revision: 1 }));
+      insert.run('ollama_images', 'ollama', 'ollama_images', JSON.stringify({
+        baseUrl: 'https://ollama-images.example.com',
+        models: [
+          { upstreamModelId: 'pure-generation', kind: 'image', endpoints: { imagesGenerations: {} } },
+          { upstreamModelId: 'pure-edit', kind: 'image', endpoints: { imagesEdits: {} } },
+          { upstreamModelId: 'chat-image', kind: 'image', endpoints: { chatCompletions: {}, imagesGenerations: {} } },
+          { upstreamModelId: 'embedding-image-rerank', kind: 'embedding', endpoints: { embeddings: {}, imagesEdits: {}, rerank: {} } },
+          { upstreamModelId: 'audio-image', kind: 'image', endpoints: { audioTranscriptions: {}, imagesGenerations: {} } },
+        ],
+      }), JSON.stringify({ revision: 1 }));
       insert.run('custom_targeted', 'custom', 'custom_targeted', JSON.stringify({
         baseUrl: 'https://targeted.example.com',
         authStyle: 'none',
@@ -125,7 +136,7 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
   db.close();
 
   const byId = new Map(rows.map(row => [row.id, row]));
-  for (const id of ['custom_embedding', 'custom_image', 'azure_embedding', 'ollama_embedding', 'custom_cache_only']) {
+  for (const id of ['custom_embedding', 'custom_image', 'azure_embedding', 'ollama_embedding', 'ollama_images', 'custom_cache_only']) {
     assertEquals(byId.get(id)?.models_cache_json, null);
   }
   for (const id of ['custom_targeted', 'custom_chat', 'codex_unrelated']) {
@@ -137,10 +148,15 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
   assertEquals(endpoints('custom_image'), [{ imagesGenerations: {} }, { imagesEdits: {} }]);
   assertEquals(endpoints('azure_embedding'), [{ embeddings: {} }]);
   assertEquals(endpoints('ollama_embedding'), [{ embeddings: {} }]);
+  assertEquals(endpoints('ollama_images'), [
+    { chatCompletions: {} },
+    { embeddings: {} },
+    { audioTranscriptions: {} },
+  ]);
   assertEquals(endpoints('custom_targeted'), [{ embeddings: {}, rerank: {} }]);
   assertEquals(endpoints('codex_unrelated'), [{ embeddings: {}, rerank: {} }]);
 
-  for (const id of ['custom_embedding', 'custom_image', 'azure_embedding', 'ollama_embedding', 'custom_targeted', 'custom_cache_only'] as const) {
+  for (const id of ['custom_embedding', 'custom_image', 'azure_embedding', 'ollama_embedding', 'ollama_images', 'custom_targeted', 'custom_cache_only'] as const) {
     const row = byId.get(id)!;
     const record = baseRecord(row.id, row.provider, JSON.parse(row.config_json));
     // Serialization is the control-plane boundary that invokes the owning
@@ -153,6 +169,14 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
     if (id === 'custom_cache_only') {
       const models = await customProviderModule.create(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
       assertEquals(models, []);
+    }
+    if (id === 'ollama_images') {
+      const models = assertOllamaUpstreamRecord(record).config.models;
+      assertEquals(models.map(model => ({ kind: model.kind, endpoints: model.endpoints })), [
+        { kind: 'chat', endpoints: { chatCompletions: {} } },
+        { kind: 'embedding', endpoints: { embeddings: {} } },
+        { kind: 'transcription', endpoints: { audioTranscriptions: {} } },
+      ]);
     }
   }
 });

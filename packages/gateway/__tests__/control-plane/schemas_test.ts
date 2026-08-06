@@ -233,6 +233,29 @@ describe('upstreamModelSchema rerank', () => {
     for (const body of bodies) expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
+  test('rejects every image endpoint on Ollama regardless of primary kind', () => {
+    for (const endpoints of [
+      { imagesGenerations: {} },
+      { imagesEdits: {} },
+      { embeddings: {}, imagesGenerations: {} },
+    ]) {
+      const body = {
+        kind: 'ollama',
+        name: 'ollama',
+        hue: 210,
+        config: {
+          baseUrl: 'https://ollama.example.com',
+          models: [{
+            upstreamModelId: 'image',
+            kind: endpoints.embeddings === undefined ? 'image' : 'embedding',
+            endpoints,
+          }],
+        },
+      };
+      expect(createUpstreamBody.safeParse(body).success).toBe(false);
+    }
+  });
+
   test('treats explicit kind conflicts like existing image endpoint conflicts', () => {
     const chat = customRerank();
     (chat.config.models[0] as Record<string, unknown>).kind = 'chat';

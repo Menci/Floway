@@ -118,7 +118,9 @@ export function ModelDetail({
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
               <Dropdown readOnly={fieldsReadOnly} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
-                <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
+                <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option>
+                {record.kind !== 'ollama' && <Option value="image">Image</Option>}
+                <Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
               </Dropdown>

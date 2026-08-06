@@ -45,3 +45,32 @@ test('selecting the current kind keeps a mixed model contract untouched', () => 
   fireEvent.click(screen.getByRole('option', { name: 'Embedding' }));
   expect(onChange).not.toHaveBeenCalled();
 });
+
+test('Ollama does not offer an image kind that its provider rejects', () => {
+  const ollamaModel: UpstreamModelConfig = {
+    upstreamModelId: 'chat',
+    kind: 'chat',
+    endpoints: { chatCompletions: {} },
+  };
+  const record = upstreamRecord('up_ollama', {
+    kind: 'ollama',
+    config: {
+      baseUrl: 'https://ollama.example.com',
+      models: [ollamaModel],
+    },
+    state: null,
+  });
+  renderInApp(<ModelDetail
+    onChange={vi.fn()}
+    onDelete={vi.fn()}
+    onSourceChange={vi.fn()}
+    readOnly={false}
+    record={record}
+    row={{ key: 'chat', source: 'manual', config: ollamaModel, manualIndex: 0, hasAuto: false }}
+    section="details"
+    upstreamFlags={{}}
+  />);
+
+  fireEvent.click(screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.models.kind') }));
+  expect(screen.queryByRole('option', { name: 'Image' })).toBeNull();
+});
