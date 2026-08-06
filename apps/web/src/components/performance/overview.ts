@@ -148,3 +148,30 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   serializeHiddenSeries(search, 'hide', state.hidden);
   return search;
 };
+
+type PerformanceDimensionState = Pick<PerformanceUrlState, 'groupBy' | 'filters' | 'hidden'>;
+type NormalizedPerformanceDimensions<State extends PerformanceDimensionState> = {
+  changed: boolean;
+  state: Omit<State, keyof PerformanceDimensionState> & PerformanceDimensionState;
+};
+
+export const normalizePerformanceDimensionsForRuntime = <State extends PerformanceDimensionState>(
+  state: State,
+  cloudflare: boolean,
+): NormalizedPerformanceDimensions<State> => {
+  if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) {
+    return { changed: false, state };
+  }
+  const groupedByRegion = state.groupBy === 'runtimeLocation';
+  const groupBy = groupedByRegion ? 'model' : state.groupBy;
+  const filtersWithoutRegion = { ...state.filters, runtimeLocation: [] };
+  return {
+    changed: true,
+    state: {
+      ...state,
+      groupBy,
+      filters: groupedByRegion ? clearGroupedTelemetryFilters(filtersWithoutRegion, groupBy) : filtersWithoutRegion,
+      hidden: groupedByRegion ? [] : state.hidden,
+    },
+  };
+};

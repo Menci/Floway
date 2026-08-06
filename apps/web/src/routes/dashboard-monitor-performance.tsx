@@ -1,5 +1,5 @@
 import { InfoRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -10,6 +10,7 @@ import { api, callApi, type GlobalError } from '../api/client';
 import { PerformanceChartSection } from '../components/performance/chart';
 import {
   buildPerformanceQuery,
+  normalizePerformanceDimensionsForRuntime,
   parsePerformanceUrlState,
   performanceLabels,
   serializePerformanceUrlState,
@@ -46,8 +47,6 @@ const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
 
 interface UpstreamName { id: string; name: string }
 
-const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
-
 interface LoaderData {
   currentUserId: string;
   error: GlobalError | null;
@@ -59,6 +58,7 @@ interface LoaderData {
   // Null on the same terms: without the names, a group labels itself with an
   // upstream id the page would be presenting as a name.
   upstreamNames: UpstreamName[] | null;
+  regionAvailable: boolean | null;
   view: PerformanceView;
 }
 
@@ -72,20 +72,32 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     userDimensionAvailable: view === 'all-by-user',
   });
   const loadedAt = Date.now();
-  const query = buildPerformanceQuery(state.range, scoped.groupBy, scoped.filters, loadedAt);
+  const requestedState = { ...state, ...scoped };
+  const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
   // The page opens for every signed-in account, so the names come from the
   // non-admin upstream picker; /api/upstreams answers 403 to an operator and
   // would leave the whole page unavailable to them.
-  const [overview, upstreams] = await Promise.all([
+  const [initialOverview, upstreams, runtime] = await Promise.all([
     callApi(() => api.api.performance.overview.$get({ query })),
     callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api['runtime-info'].$get()),
   ]);
+  const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
+  const normalization = regionAvailable === null
+    ? { changed: false, state: requestedState }
+    : normalizePerformanceDimensionsForRuntime(requestedState, regionAvailable);
+  const overview = !normalization.changed
+    ? initialOverview
+    : await callApi(() => api.api.performance.overview.$get({
+        query: buildPerformanceQuery(normalization.state.range, normalization.state.groupBy, normalization.state.filters, loadedAt),
+      }));
   return {
     currentUserId: String(user.id),
-    error: overview.error ?? upstreams.error ?? null,
+    error: overview.error ?? upstreams.error ?? runtime.error ?? null,
     loadedAt,
     overview: overview.data ?? null,
-    state: { ...state, ...scoped },
+    regionAvailable,
+    state: normalization.state,
     upstreamNames: upstreams.data?.map(({ id, name }) => ({ id, name })) ?? null,
     view,
   };
@@ -99,6 +111,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
+  const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
   const [query, setQuery] = useState(() => ({
     filters: initialState.filters,
     groupBy: initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' as const : initialState.groupBy,
@@ -111,6 +124,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
   const [upstreamNames] = useState(() => loaderData.upstreamNames && new Map(loaderData.upstreamNames.map(record => [record.id, record.name])));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
+  const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const locale = useLocale();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
@@ -122,18 +136,77 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
     const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
-    const result = await callApi(() => api.api.performance.overview.$get(
-      { query: search },
-      { init: { signal } },
-    ));
+    if (regionAvailable !== null) {
+      const result = await callApi(() => api.api.performance.overview.$get(
+        { query: search },
+        { init: { signal } },
+      ));
+      if (signal.aborted) return false;
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      setOverview(result.data);
+      return true;
+    }
+
+    const discovery = pendingRegionAvailableRef.current === null
+      ? await Promise.all([
+          callApi(() => api.api.performance.overview.$get(
+            { query: search },
+            { init: { signal } },
+          )),
+          callApi(() => api.api['runtime-info'].$get({}, { init: { signal } })),
+        ]).then(([overviewResult, runtimeResult]) => ({ overviewResult, runtimeResult }))
+      : null;
+    if (signal.aborted) return false;
+    let nextRegionAvailable: boolean;
+    if (pendingRegionAvailableRef.current === null) {
+      if (discovery === null) throw new Error('Runtime capability discovery was not started');
+      if (discovery.runtimeResult.error) {
+        setError(discovery.overviewResult.error ?? discovery.runtimeResult.error);
+        return false;
+      }
+      nextRegionAvailable = discovery.runtimeResult.data.kind === 'cloudflare';
+      pendingRegionAvailableRef.current = nextRegionAvailable;
+    } else {
+      nextRegionAvailable = pendingRegionAvailableRef.current;
+    }
+    const normalization = normalizePerformanceDimensionsForRuntime({
+      ...query,
+      hidden: [] as string[],
+    }, nextRegionAvailable);
+    const committedQuery = normalization.changed
+      ? {
+          filters: normalization.state.filters,
+          groupBy: normalization.state.groupBy,
+          range: query.range,
+        }
+      : query;
+    let result;
+    if (normalization.changed) {
+      result = await callApi(() => api.api.performance.overview.$get(
+        { query: buildPerformanceQuery(committedQuery.range, committedQuery.groupBy, committedQuery.filters, requestedAt) },
+        { init: { signal } },
+      ));
+    } else {
+      if (discovery === null) throw new Error('Overview was not loaded with runtime capability discovery');
+      result = discovery.overviewResult;
+    }
     if (signal.aborted) return false;
     if (result.error) {
+      if (!normalization.changed) {
+        pendingRegionAvailableRef.current = null;
+        setRegionAvailable(nextRegionAvailable);
+      }
       setError(result.error);
       return false;
     }
+    pendingRegionAvailableRef.current = null;
+    setRegionAvailable(nextRegionAvailable);
     setOverview(result.data);
-    return true;
-  }, [query]);
+    return normalization.changed ? committedQuery : true;
+  }, [query, regionAvailable]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
     if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());
@@ -202,12 +275,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {(() => {
-      if (overview === null || chart === null || labels === null) return <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>;
-      const breakdowns = groupByValues
-        .filter(key => key !== 'userId' || view === 'all-by-user')
-        .map(key => ({ key, rows: overview.axes[key] }));
-      const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
-      if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
+      if (overview === null || chart === null || labels === null || regionAvailable === null) return <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>;
       const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
         { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
         { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
@@ -226,7 +294,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         },
         { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
       ];
-      const availableDimensions = dimensions.filter(dimension => dimension.key !== 'userId' || view === 'all-by-user');
+      const availableDimensions = dimensions.filter(dimension => (
+        (dimension.key !== 'runtimeLocation' || regionAvailable)
+        && (dimension.key !== 'userId' || view === 'all-by-user')
+      ));
+      const breakdowns = availableDimensions.map(({ key }) => ({ key, rows: overview.axes[key] }));
+      const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
+      if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
           <TelemetryDimensionControls

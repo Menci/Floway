@@ -15,7 +15,10 @@ export interface RefreshOnChangeControl<Query> extends RefreshControl {
   loadedQuery: Query;
 }
 
-interface QueryRefreshOptions { background: boolean; requestedAt: number }
+interface QueryRefreshOptions {
+  background: boolean;
+  requestedAt: number;
+}
 
 export const useRefresh = (
   reload: (signal: AbortSignal, options: { background: boolean }) => Promise<void>,
@@ -58,9 +61,10 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
 
 /**
  * A page whose data is a function of a query refetches whenever the query
- * changes. The query is committed only when `reload` returns true, keeping the
- * controls and URL paired with the usable response on screen. A "have I
- * mounted yet" flag would make StrictMode's double invocation
+ * changes. A usable response commits the requested query when `reload` returns
+ * true or the canonical query returned by `reload`; false restores the last
+ * loaded query. This keeps controls and URLs paired with the response on
+ * screen. A "have I mounted yet" flag would make StrictMode's double invocation
  * indistinguishable from a real change and refetch on every visit; recording
  * the query at request time would strand a run torn down before it answered.
  *
@@ -70,8 +74,8 @@ const sameQuery = <Query extends Record<string, unknown>>(left: Query, right: Qu
 export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   query: Query,
   initialLoadedAt: number,
-  reload: (signal: AbortSignal, options: QueryRefreshOptions) => Promise<boolean>,
-  restore: (query: Query) => void,
+  reload: (signal: AbortSignal, options: QueryRefreshOptions) => Promise<boolean | Query>,
+  setQuery: (query: Query) => void,
   onCommit?: (previous: Query, next: Query) => void,
 ): RefreshOnChangeControl<Query> => {
   const loadedFor = useRef(query);
@@ -79,18 +83,20 @@ export const useRefreshOnChange = <Query extends Record<string, unknown>>(
   const [loadedQuery, setLoadedQuery] = useState(query);
   const control = useRefresh(useCallback(async (signal: AbortSignal, options: { background: boolean }) => {
     const requestedAt = Date.now();
-    const succeeded = await reload(signal, { ...options, requestedAt });
+    const result = await reload(signal, { ...options, requestedAt });
     if (signal.aborted) return;
-    if (!succeeded) {
-      restore(loadedFor.current);
+    if (result === false) {
+      setQuery(loadedFor.current);
       return;
     }
+    const committedQuery = result === true ? query : result;
     const previous = loadedFor.current;
-    loadedFor.current = query;
-    setLoadedQuery(query);
+    loadedFor.current = committedQuery;
+    setLoadedQuery(committedQuery);
     setLoadedAt(requestedAt);
-    onCommit?.(previous, query);
-  }, [onCommit, query, reload, restore]));
+    if (committedQuery !== query) setQuery(committedQuery);
+    onCommit?.(previous, committedQuery);
+  }, [onCommit, query, reload, setQuery]));
   const { cancel, refresh } = control;
 
   useEffect(() => {

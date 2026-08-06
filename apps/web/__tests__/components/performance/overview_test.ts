@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -81,6 +81,19 @@ describe('performance overview query', () => {
     expect(first.get('hidev')).toBe('2');
     expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
     expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
+  });
+
+  it('removes Region state outside the Cloudflare runtime', () => {
+    const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
+    expect(normalizePerformanceDimensionsForRuntime(state, false)).toMatchObject({
+      changed: true,
+      state: {
+        groupBy: 'model',
+        filters: { model: [], runtimeLocation: [] },
+        hidden: [],
+      },
+    });
+    expect(normalizePerformanceDimensionsForRuntime(state, true)).toEqual({ changed: false, state });
   });
 });
 
