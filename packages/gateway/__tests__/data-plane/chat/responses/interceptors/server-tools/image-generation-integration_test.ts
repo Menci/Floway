@@ -381,7 +381,7 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assertEquals(image.upload.type, 'image/webp');
   assertEquals(mask.upload.type, 'image/webp');
   assertEquals(new TextDecoder().decode(image.upload.bytes), 'WEBP');
-  assertEquals(await mask.file.text(), 'WEBP');
+  assertEquals(new TextDecoder().decode(mask.upload.bytes), 'WEBP');
 });
 
 test('identical GIF source and mask share one transcode', async () => {
