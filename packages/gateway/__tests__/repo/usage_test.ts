@@ -146,7 +146,7 @@ for (const backend of backends) {
     assertEquals(tokenRatesFromUsage(rows[1]), longPricing);
   });
 
-  test(`${backend.name} usage repo keeps NUL-bearing opaque model dimensions in separate buckets`, async () => {
+  test(`${backend.name} usage repo keeps NUL-bearing opaque model dimensions separate across set and additive writes`, async () => {
     const repo = await backend.make();
     await repo.usage.set(record({
       model: 'a\0b',
@@ -162,6 +162,20 @@ for (const backend of backends) {
       requests: 2,
       metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
     }));
+    await repo.usage.record(record({
+      model: 'a\0b',
+      upstream: 'c',
+      modelKey: 'd',
+      requests: 10,
+      metrics: [{ metric: 'input_tokens', quantity: '10', unitPrice: null }],
+    }));
+    await repo.usage.record(record({
+      model: 'a',
+      upstream: 'b',
+      modelKey: 'c\0d',
+      requests: 20,
+      metrics: [{ metric: 'output_tokens', quantity: '20', unitPrice: null }],
+    }));
 
     const rows = await query(repo);
     assertEquals(rows.length, 2);
@@ -170,8 +184,8 @@ for (const backend of backends) {
         model: 'a',
         upstream: 'b',
         modelKey: 'c\0d',
-        requests: 2,
-        metrics: [{ metric: 'output_tokens', quantity: '2', unitPrice: null }],
+        requests: 22,
+        metrics: [{ metric: 'output_tokens', quantity: '22', unitPrice: null }],
       }),
     });
     assertEquals(rows.find(row => row.model === 'a\0b'), {
@@ -179,18 +193,17 @@ for (const backend of backends) {
         model: 'a\0b',
         upstream: 'c',
         modelKey: 'd',
-        requests: 1,
-        metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
+        requests: 11,
+        metrics: [{ metric: 'input_tokens', quantity: '11', unitPrice: null }],
       }),
     });
   });
 
-  test(`${backend.name} usage repo preserves null, empty, and NUL-bearing upstream identities across replacement and additive writes`, async () => {
+  test(`${backend.name} usage repo preserves null and empty upstream identities across replacement and additive writes`, async () => {
     const repo = await backend.make();
     for (const [upstream, requests, quantity] of [
       [null, 1, '1'],
       ['', 2, '2'],
-      ['up\0opaque', 3, '3'],
     ] as const) {
       await repo.usage.set(record({
         upstream,
@@ -210,7 +223,7 @@ for (const backend of backends) {
     }));
 
     const rows = await query(repo);
-    assertEquals(rows.length, 3);
+    assertEquals(rows.length, 2);
     assertEquals(rows.find(row => row.upstream === null), record({
       upstream: null,
       requests: 11,
@@ -220,11 +233,6 @@ for (const backend of backends) {
       upstream: '',
       requests: 20,
       metrics: [{ metric: 'input_tokens', quantity: '20', unitPrice: null }],
-    }));
-    assertEquals(rows.find(row => row.upstream === 'up\0opaque'), record({
-      upstream: 'up\0opaque',
-      requests: 13,
-      metrics: [{ metric: 'input_tokens', quantity: '13', unitPrice: null }],
     }));
   });
 
@@ -334,7 +342,9 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
 test('SQL usage point mutations constrain the complete expression-index identity', async () => {
   const db = await createSqliteTestDb();
   const identity = record({
-    upstream: 'up\0opaque',
+    model: 'model\0opaque',
+    upstream: null,
+    modelKey: 'storage\0opaque',
     metrics: [{ metric: 'input_tokens', quantity: '1', unitPrice: null }],
   });
   await new SqlRepo(db).usage.set(identity);
@@ -342,11 +352,15 @@ test('SQL usage point mutations constrain the complete expression-index identity
   const repo = new SqlRepo(recordBoundStatements(db, captured));
 
   await repo.usage.record(record({
+    model: identity.model,
     upstream: identity.upstream,
+    modelKey: identity.modelKey,
     metrics: [{ metric: 'input_tokens', quantity: '2', unitPrice: null }],
   }));
   await repo.usage.set(record({
+    model: identity.model,
     upstream: identity.upstream,
+    modelKey: identity.modelKey,
     metrics: [{ metric: 'output_tokens', quantity: '3', unitPrice: null }],
   }));
 
