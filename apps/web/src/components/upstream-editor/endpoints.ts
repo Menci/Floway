@@ -1,5 +1,4 @@
 import type { ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/common';
-import { endpointsWithoutRerank } from '@floway-dev/provider';
 
 // The path each endpoint is addressed by, unversioned: the editor labels its
 // checkboxes and its per-path overrides with the public route rather than with
@@ -34,13 +33,6 @@ export const endpointOptionsFor = (
 // so a rerank row the gateway will accept has to start on some target and the
 // operator confirms or changes it.
 const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
-
-// What a discovered model declares when it names no kind of its own, or names
-// `chat`. Provider projection and auto-to-manual conversion share the same
-// callable endpoint set. Rerank is withheld because an auto row has no
-// operator-chosen target protocol; a manual row can add it with that target.
-export const configuredEndpoints = (configured: ModelEndpoints): ModelEndpoints =>
-  endpointsWithoutRerank(configured);
 
 // Everything a model's kind decides about its own shape, for every place that
 // puts a model into a kind: the discovered-model projection of a model that

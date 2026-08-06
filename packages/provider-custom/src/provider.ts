@@ -2,13 +2,13 @@ import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
 import { customFetchAlphaSearch, customFetchAudioTranscriptions, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchRerank, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
-import { inferEndpointsFromModelId } from './infer-endpoints.ts';
+import { customAutoModelEndpoints } from './model-projection.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { endpointsWithoutRerank, headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -35,25 +35,6 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   return partial;
 };
 
-// A published embedding/image/transcription kind maps directly to its endpoint;
-// chat takes the upstream default. Rerank rows are removed before this helper
-// because a kind alone cannot select their target wire. Unknown kinds use the
-// id heuristic, then fall back to the configured endpoints. Auto rows have no
-// operator-authored rerankTarget, so an inherited rerank endpoint is withheld
-// until the row is made manual and its wire protocol is selected.
-const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
-  const endpoints = model.kind === 'embedding'
-    ? { embeddings: {} }
-    : model.kind === 'image'
-      ? { imagesGenerations: {}, imagesEdits: {} }
-      : model.kind === 'transcription'
-        ? { audioTranscriptions: {} }
-        : model.kind === 'chat'
-          ? configured
-          : inferEndpointsFromModelId(model.id) ?? configured;
-  return endpointsWithoutRerank(endpoints);
-};
-
 const hasChatEndpoint = (endpoints: ModelEndpoints): boolean =>
   endpoints.completions !== undefined
   || endpoints.chatCompletions !== undefined
@@ -72,7 +53,7 @@ const finalizeCustomModels = (
     // wires. The auto row remains visible in the dashboard's fetch result, but
     // only a manual row with rerankTarget enters the routable provider catalog.
     if (rawModel.kind === 'rerank') continue;
-    const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
+    const endpoints = customAutoModelEndpoints(rawModel, configuredEndpoints);
     if (Object.keys(endpoints).length === 0) continue;
     const kind = kindForEndpoints(endpoints);
     models.push({

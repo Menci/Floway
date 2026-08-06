@@ -43,16 +43,6 @@ export const publicModelId = (model: UpstreamModelConfig): string => {
   return configured && configured.length > 0 ? configured : model.upstreamModelId;
 };
 
-// An auto-discovered row cannot invent the provider-specific wire target that
-// makes a rerank endpoint callable. Both provider projection and dashboard
-// auto-to-manual conversion use this immutable projection until the operator
-// selects a RerankTarget on a manual row.
-export const endpointsWithoutRerank = (endpoints: ModelEndpoints): ModelEndpoints => {
-  const projected = { ...endpoints };
-  delete projected.rerank;
-  return projected;
-};
-
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

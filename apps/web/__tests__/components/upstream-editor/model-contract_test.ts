@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/data';
 import { modelsAreValid } from '../../../src/components/upstream-editor/model-detail';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import { projectCustomModels, type CustomModelsResponse } from '@floway-dev/provider-custom';
 
 describe('custom discovered model projection', () => {
   it('maps fixed kinds to their own endpoint families', () => {
@@ -37,6 +38,61 @@ describe('custom discovered model projection', () => {
     expect(models.map(model => model.endpoints)).toEqual([{ embeddings: {} }, { embeddings: {} }]);
     expect(models.every(model => model.rerankTarget === undefined)).toBe(true);
     expect(modelsAreValid(models)).toBe(true);
+  });
+
+  it('matches provider projection for inferred, declared, and mixed endpoint families', () => {
+    const endpoints = { chatCompletions: {}, embeddings: {}, imagesEdits: {}, rerank: {} };
+    const chat = { reasoning: { effort: { supported: ['low'], default: 'low' } } };
+    const response: CustomModelsResponse = {
+      data: [
+        { id: 'text-embedding-3-small' },
+        { id: 'gpt-image-1' },
+        { id: 'whisper-large-v3' },
+        { id: 'declared-image', kind: 'image' },
+        { id: 'declared-chat', kind: 'chat', chat },
+        { id: 'unknown-model', chat },
+      ],
+    };
+    const record: UpstreamRecord = {
+      id: 'up_custom',
+      kind: 'custom',
+      name: 'Custom',
+      enabled: true,
+      sortOrder: 0,
+      createdAt: '2026-08-06T00:00:00.000Z',
+      updatedAt: '2026-08-06T00:00:00.000Z',
+      config: {
+        baseUrl: 'https://custom.example.com',
+        authStyle: 'none',
+        endpoints,
+        ingressHeadersRules: [],
+        modelsFetch: { enabled: true },
+        models: [],
+      },
+      state: null,
+      flagOverrides: {},
+      disabledPublicModelIds: [],
+      proxyFallbackList: [],
+      modelPrefix: null,
+      modelsCache: null,
+      hue: 210,
+    };
+
+    const providerModels = projectCustomModels(record, response).map(model => ({
+      id: model.id,
+      kind: model.kind,
+      endpoints: model.endpoints,
+      chat: model.chat,
+    }));
+    const dashboardModels = discoveredModelsFromResponse({ kind: 'custom', data: response.data }, endpoints)
+      .map(model => ({
+        id: model.upstreamModelId,
+        kind: model.kind,
+        endpoints: model.endpoints,
+        chat: model.chat,
+      }));
+
+    expect(dashboardModels).toEqual(providerModels);
   });
 
   it('preserves chat metadata exactly when the configured endpoints resolve to chat', () => {

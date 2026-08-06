@@ -1,6 +1,6 @@
 import type { InferRequestType } from 'hono/client';
 
-import { configuredEndpoints, PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
+import { PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
@@ -10,10 +10,11 @@ import type {
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
-import { kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
+import { endpointsSupportKind, kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import { customAutoModelEndpoints } from '@floway-dev/provider-custom/model-projection';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -322,9 +323,12 @@ export const discoveredModelsFromResponse = (
 ): UpstreamModelConfig[] => {
   if (response.kind !== 'custom') return response.data;
   return response.data.flatMap(model => {
-    const kind = model.kind ?? 'chat';
-    const shape = kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints });
-    if (Object.keys(shape.endpoints).length === 0) return [];
+    const projectedEndpoints = customAutoModelEndpoints(model, endpoints);
+    if (Object.keys(projectedEndpoints).length === 0) return [];
+    const kind = kindForEndpoints(projectedEndpoints);
+    const shape = kind === 'rerank'
+      ? shapeForKind(kind, { endpoints: projectedEndpoints })
+      : { endpoints: projectedEndpoints };
     return [{
       upstreamModelId: model.id,
       publicModelId: model.id,
@@ -333,7 +337,7 @@ export const discoveredModelsFromResponse = (
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),
-      ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
+      ...(model.chat !== undefined && endpointsSupportKind(shape.endpoints, 'chat') ? { chat: model.chat } : {}),
     }];
   });
 };
