@@ -1,4 +1,9 @@
 const STREAM_CHUNK_BYTES = 64 * 1024;
+// Detached cleanup diagnostics use the same five-second boundary as the HTTP
+// layer. The caller is released after one task; this timer only makes a broken
+// never-settling runtime stream observable.
+// https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/platform/limits.mdx#L152-L168
+const CLEANUP_DIAGNOSTIC_DEADLINE_MS = 5_000;
 
 type CleanupOutcome =
   | { readonly type: 'settled' }
@@ -50,7 +55,14 @@ const collectDistinctCleanupFailures = async (
       continue;
     }
     if (observation.outcome !== undefined) continue;
+    const timeoutId = setTimeout(() => {
+      console.error(
+        `[abort-cleanup] ${observation.context} did not settle after prompt native-fetch settlement:`,
+        new Error(`Cleanup did not settle within ${CLEANUP_DIAGNOSTIC_DEADLINE_MS}ms`),
+      );
+    }, CLEANUP_DIAGNOSTIC_DEADLINE_MS);
     void observation.settlement.then(outcome => {
+      clearTimeout(timeoutId);
       if (outcome.type === 'failed' && !Object.is(outcome.error, primary)) {
         console.error(`[abort-cleanup] ${observation.context} failed after prompt native-fetch settlement:`, outcome.error);
       }

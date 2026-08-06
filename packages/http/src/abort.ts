@@ -1,6 +1,8 @@
 // Reshape an already-aborted signal into a throwable Error. A structured
 // Error reason rethrows as-is so its stack/cause survive; a primitive or
 // absent reason becomes a DOMException('AbortError').
+import { CLEANUP_OPERATION_DEADLINE_MS, CleanupTimeoutError } from './cleanup.ts';
+
 export const signalAbortReason = (signal: AbortSignal): Error => {
   const reason = signal.reason;
   if (reason instanceof Error) return reason;
@@ -62,7 +64,14 @@ export const collectPromptCleanupFailures = async (
       continue;
     }
     if (observation.outcome !== undefined) continue;
+    const timeoutId = setTimeout(() => {
+      console.error(
+        `[abort-cleanup] ${observation.context} did not settle after prompt abort:`,
+        new CleanupTimeoutError(0, CLEANUP_OPERATION_DEADLINE_MS),
+      );
+    }, CLEANUP_OPERATION_DEADLINE_MS);
     void observation.settlement.then(outcome => {
+      clearTimeout(timeoutId);
       if (outcome.type === 'failed' && !Object.is(outcome.error, primary)) {
         console.error(`[abort-cleanup] ${observation.context} failed after prompt abort settlement:`, outcome.error);
       }
