@@ -98,10 +98,21 @@ const escapeHeaderValue = (value: string): string => value
   .replace(/\n/gu, '%0A')
   .replace(/"/gu, '%22');
 
+const normalizeLinefeeds = (value: string): string => value.replace(/\r\n|\r|\n/gu, '\r\n');
+
+const normalizeMediaType = (value: string): string => {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code > 0x7E) return '';
+  }
+  return value.toLowerCase();
+};
+
 const multipartHeader = (boundary: string, name: string, filename?: string, type?: string): Uint8Array => {
   const disposition = `--${boundary}\r\nContent-Disposition: form-data; name="${escapeHeaderValue(name)}"`;
   if (filename === undefined) return encoder.encode(`${disposition}\r\n\r\n`);
-  const contentType = type === undefined || type === '' ? 'application/octet-stream' : type;
+  const normalizedType = normalizeMediaType(type ?? '');
+  const contentType = normalizedType === '' ? 'application/octet-stream' : normalizedType;
   return encoder.encode(`${disposition}; filename="${escapeHeaderValue(filename)}"\r\nContent-Type: ${contentType}\r\n\r\n`);
 };
 
@@ -123,7 +134,7 @@ const multipartBody = async (request: ImagesEditsRequest, model: string): Promis
   const boundary = `floway-${crypto.randomUUID()}`;
   const segments: Uint8Array[] = [];
   const appendText = (name: string, value: string): void => {
-    segments.push(multipartHeader(boundary, name), encoder.encode(value), encoder.encode('\r\n'));
+    segments.push(multipartHeader(boundary, name), encoder.encode(normalizeLinefeeds(value)), encoder.encode('\r\n'));
   };
   const appendUpload = (name: string, upload: UploadBytes): void => {
     segments.push(

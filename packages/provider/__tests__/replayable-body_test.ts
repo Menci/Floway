@@ -5,7 +5,7 @@ import { createReplayableBody, nativeFetchInit, replayableBodySource, replayable
 const read = async (body: BodyInit): Promise<number[]> =>
   Array.from(new Uint8Array(await new Response(body).arrayBuffer()));
 
-test('replayable body streams immutable segment views without concatenating them', async () => {
+test('replayable body streams borrowed segment views without concatenating them', async () => {
   const first = Uint8Array.of(1, 2);
   const second = Uint8Array.of(3, 4);
   const stream = createReplayableBody([first, second]);

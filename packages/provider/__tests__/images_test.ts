@@ -100,3 +100,19 @@ test('serializeOpenAIImagesEditsRequest retains raw upload byte views as replaya
   if (!(file instanceof File)) throw new Error('expected image file');
   assertEquals(Array.from(new Uint8Array(await file.arrayBuffer())), [1, 2, 3]);
 });
+
+test('serializeOpenAIImagesEditsRequest matches FormData linefeed and media-type normalization', async () => {
+  const serialized = await serializeOpenAIImagesEditsRequest({
+    images: [{
+      type: 'raw-upload',
+      upload: { name: 'raw.png', type: 'IMAGE/PNG\r\nX-Evil: yes', bytes: Uint8Array.of(1) },
+    }],
+    parameters: { prompt: 'a\nb\rc\r\nd' },
+  }, 'gpt-image');
+
+  const form = await new Response(serialized.body, { headers: { 'content-type': serialized.contentType } }).formData();
+  assertEquals(form.get('prompt'), 'a\r\nb\r\nc\r\nd');
+  const file = form.get('image');
+  if (!(file instanceof File)) throw new Error('expected image file');
+  assertEquals(file.type, 'application/octet-stream');
+});

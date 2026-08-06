@@ -1,6 +1,8 @@
 const STREAM_CHUNK_BYTES = 64 * 1024;
 
 export interface ReplayableBodySource {
+  // Segments are borrowed until the fetch settles. The array shape is frozen,
+  // but callers that own a Uint8Array must not mutate its bytes in flight.
   readonly segments: readonly Uint8Array[];
   readonly byteLength: number;
 }
