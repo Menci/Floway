@@ -45,6 +45,7 @@ interface MemoryObservation {
   readonly liveBodyBytes: number;
   readonly rss: number;
   readonly rssDelta: number;
+  readonly maxRss: number;
   readonly inboundBytes: number;
   readonly outboundBytes: number;
   readonly uploadBytes: number;
@@ -102,8 +103,7 @@ class BackgroundWork {
   private readonly failures: unknown[] = [];
 
   readonly schedule = (work: Promise<unknown>): void => {
-    let tracked!: Promise<void>;
-    tracked = work.then(
+    const tracked: Promise<void> = work.then(
       () => {},
       error => { this.failures.push(error); },
     ).finally(() => { this.pending.delete(tracked); });
@@ -264,12 +264,14 @@ const runChild = async (): Promise<void> => {
   let resolveLargeUpstreamDrain!: () => void;
   const largeUpstreamDrained = new Promise<void>(resolve => { resolveLargeUpstreamDrain = resolve; });
   let largeUpstreamBytes = 0;
+  let largeUpstreamContentLength: string | undefined;
   const upstreamServer = createServer((request, response) => {
     void (async () => {
       let receivedBytes = 0;
       for await (const chunk of request) receivedBytes += (chunk as Uint8Array).byteLength;
       if (phase === 'large') {
         largeUpstreamBytes = receivedBytes;
+        largeUpstreamContentLength = request.headers['content-length'];
         invariant(request.headers['transfer-encoding'] === undefined, 'upstream received Transfer-Encoding for fixed replayable body');
         resolveLargeUpstreamDrain();
         await largeReleased;
@@ -368,6 +370,7 @@ const runChild = async (): Promise<void> => {
 
     await largeUpstreamDrained;
     invariant(largeUpstreamBytes === source.byteLength, `loopback upstream received ${largeUpstreamBytes} bytes, expected ${source.byteLength}`);
+    invariant(largeUpstreamContentLength === String(source.byteLength), `loopback upstream Content-Length was ${String(largeUpstreamContentLength)}, expected ${source.byteLength}`);
 
     await forceGc();
     const current = process.memoryUsage();
@@ -380,6 +383,7 @@ const runChild = async (): Promise<void> => {
       liveBodyBytes,
       rss: current.rss,
       rssDelta: current.rss - baseline.rss,
+      maxRss: process.resourceUsage().maxRSS * 1024,
       inboundBytes: largeBacking.byteLength,
       outboundBytes: source.byteLength,
       uploadBytes: uploadSegments[0]!.byteLength,
@@ -434,6 +438,7 @@ const runChild = async (): Promise<void> => {
       });
     });
   } finally {
+    releaseLarge();
     globalThis.fetch = nativeFetch;
     fileObserver.restore();
     if (server !== undefined) await closeServer(server);
@@ -558,7 +563,13 @@ const runParent = async (): Promise<void> => {
   try {
     const ready = await messages.waitFor('ready');
     const response = sendLargeRequest(ready.port);
-    await messages.waitFor('hold');
+    const first = await Promise.race([
+      messages.waitFor('hold').then(() => ({ type: 'hold' as const })),
+      response.then(result => ({ type: 'response' as const, result })),
+    ]);
+    if (first.type === 'response') {
+      throw new Error(`large endpoint completed before the memory hold with ${first.result.status}: ${first.result.body}`);
+    }
     sendParentMessage(child, { type: 'release' });
     const result = await response;
     invariant(result.status === 200, `large endpoint returned ${result.status}: ${result.body}`);
@@ -573,6 +584,7 @@ const runParent = async (): Promise<void> => {
       liveBodyMiB: Number((observation.liveBodyBytes / MIB).toFixed(2)),
       rssMiB: Number((observation.rss / MIB).toFixed(2)),
       rssDeltaMiB: Number((observation.rssDelta / MIB).toFixed(2)),
+      maxRssMiB: Number((observation.maxRss / MIB).toFixed(2)),
       limitMiB: LIVE_MEMORY_LIMIT_BYTES / MIB,
     }, null, 2));
   } catch (error) {
