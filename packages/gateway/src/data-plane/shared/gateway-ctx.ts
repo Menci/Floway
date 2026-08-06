@@ -103,20 +103,24 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const controller = opts.clientDisconnectController ?? createRequestLinkedAbortController(c.req.raw.signal);
   const executionController = opts.executionController ?? new AbortController();
   let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let executionFinished = false;
   const executionTimer = setTimeout(() => {
     executionController.abort(new Error('Gateway upstream execution exceeded one hour'));
   }, RETAINED_RESPONSE_LIMITS.totalTimeoutMs);
   unrefTimer(executionTimer);
-  const finishExecution = (): void => {
-    clearTimeout(executionTimer);
-    if (disconnectTimer !== undefined) clearTimeout(disconnectTimer);
-  };
   const scheduleDisconnectDeadline = (): void => {
-    if (disconnectTimer !== undefined || executionController.signal.aborted) return;
+    if (executionFinished || disconnectTimer !== undefined || executionController.signal.aborted) return;
     disconnectTimer = setTimeout(() => {
       executionController.abort(new Error('Gateway upstream drain exceeded the post-disconnect deadline'));
     }, RETAINED_RESPONSE_LIMITS.postDisconnectDrainTimeoutMs);
     unrefTimer(disconnectTimer);
+  };
+  const finishExecution = (): void => {
+    if (executionFinished) return;
+    executionFinished = true;
+    clearTimeout(executionTimer);
+    if (disconnectTimer !== undefined) clearTimeout(disconnectTimer);
+    controller.signal.removeEventListener('abort', scheduleDisconnectDeadline);
   };
   if (controller.signal.aborted) scheduleDisconnectDeadline();
   else controller.signal.addEventListener('abort', scheduleDisconnectDeadline, { once: true });

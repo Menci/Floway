@@ -12,6 +12,7 @@ import {
 } from '../../../../src/data-plane/chat/responses/websocket-policy.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
+import { RETAINED_RESPONSE_LIMITS } from '../../../../src/data-plane/shared/retained-response.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
@@ -212,13 +213,6 @@ const promiseWithin = async <T>(promise: Promise<T>, failureMessage: string, tim
     ]);
   } finally {
     if (timeoutId !== undefined) timeoutClearTimeout(timeoutId);
-  }
-};
-
-const flushImmediateFakeTime = async (time: FakeTime): Promise<void> => {
-  for (let i = 0; i < 10; i++) {
-    await new Promise<void>(resolve => { timeoutSetTimeout(resolve, 0); });
-    await time.tickAsync(0);
   }
 };
 
@@ -1777,7 +1771,7 @@ test('Responses WebSocket drains terminal usage without aborting upstream after 
   );
 });
 
-test('Responses WebSocket close stops downstream keep-alives while draining an idle upstream turn', async () => {
+test('Responses WebSocket close stops keep-alives and aborts execution at the drain deadline', async () => {
   const { apiKey } = await setupAppTest();
   const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
   const time = new FakeTime();
@@ -1798,7 +1792,15 @@ test('Responses WebSocket close stops downstream keep-alives while draining an i
       assertEquals((await turn.signal).aborted, true);
       await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
       assertEquals(recorded.messages.length, 1);
-      assertEquals((await turn.executionSignal).aborted, false);
+      const executionSignal = await turn.executionSignal;
+      await time.tickAsync(RETAINED_RESPONSE_LIMITS.postDisconnectDrainTimeoutMs - DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS - 1);
+      assertEquals(executionSignal.aborted, false);
+      await time.tickAsync(1);
+      assertEquals(executionSignal.aborted, true);
+      assertEquals(
+        (executionSignal.reason as Error).message,
+        'Gateway upstream drain exceeded the post-disconnect deadline',
+      );
       finishControlledResponsesEvents(events);
       await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the drained turn after the client closed');
       recorded.stop();
@@ -1912,6 +1914,7 @@ test('Responses WebSocket bounds pipelined response.create retention and aborts 
     assertEquals(client.closeCode, 1008);
     assertEquals(client.closeReason, RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE);
     assertEquals((await turn.signal).aborted, true);
+    assertEquals((await turn.executionSignal).aborted, true);
 
     finishControlledResponsesEvents(events, true);
     await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle its overflow-aborted turn');
@@ -1956,6 +1959,7 @@ test('Responses WebSocket send failures close downstream delivery and drain the 
 
     assertEquals(signal.aborted, true);
     assert(signal.reason === sendFailure, 'expected the original send error to become the abort reason');
+    assertEquals((await turn.executionSignal).aborted, false);
     assertEquals(client.readyState, WebSocket.CLOSED);
     assertEquals(client.closeCode, 1011);
     assertEquals(client.closeReason, 'downstream_send_failed');
@@ -1985,6 +1989,7 @@ test('Responses WebSocket closes a session whose downstream buffer is full while
     assertEquals(client.readyState, WebSocket.CLOSED);
     assertEquals(client.closeCode, 1011);
     assertEquals(client.closeReason, 'downstream_send_failed');
+    assertEquals((await turn.executionSignal).aborted, false);
     assertEquals(turn.calls(), 1);
   });
 });
@@ -2012,7 +2017,6 @@ test('Responses WebSocket keep-alive readiness failures stop delivery and drain 
       type: 'response.create',
       response: { model: 'gpt-direct-responses', input: 'fail the keep-alive readiness check' },
     }));
-    await flushImmediateFakeTime(time);
     const events = await promiseWithin(
       turn.events,
       'Responses WebSocket did not create the controlled keep-alive stream',
@@ -2030,6 +2034,7 @@ test('Responses WebSocket keep-alive readiness failures stop delivery and drain 
 
     assertEquals(sendCalls, 1);
     assertEquals((await turn.signal).aborted, true);
+    assertEquals((await turn.executionSignal).aborted, false);
     client.close();
   });
 });

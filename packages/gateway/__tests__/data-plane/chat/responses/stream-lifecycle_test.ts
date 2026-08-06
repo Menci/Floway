@@ -5,6 +5,9 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
+const visibleFrameTypes = (frames: readonly ProtocolFrame<ResponsesStreamEvent>[]): string[] =>
+  frames.map(frame => frame.type === 'event' ? frame.event.type : frame.type);
+
 test('an upstream error without response.failed is closed with a failed response before the sentinel', async () => {
   const created: ResponsesResult = {
     id: 'resp_upstream',
@@ -20,14 +23,15 @@ test('an upstream error without response.failed is closed with a failed response
     yield eventFrame({ type: 'error', sequence_number: 1, code: 'overloaded', message: 'try later' });
     yield doneFrame();
   };
-  const events: ResponsesStreamEvent[] = [];
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [];
 
   for await (const frame of normalizeResponsesStreamLifecycle(source())) {
-    if (frame.type === 'event') events.push(frame.event);
+    frames.push(frame);
   }
 
-  assertEquals(events.map(event => event.type), ['response.created', 'error', 'response.failed']);
-  const failed = events[2];
+  assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed', 'done']);
+  const failedFrame = frames[2];
+  const failed = failedFrame?.type === 'event' ? failedFrame.event : undefined;
   if (failed?.type !== 'response.failed') throw new Error('expected a synthesized response.failed');
   assertEquals(failed.sequence_number, 2);
   assertEquals(failed.response.status, 'failed');
@@ -54,13 +58,13 @@ test('a response terminal remains the last visible frame', async () => {
     yield eventFrame({ type: 'response.output_text.delta', sequence_number: 2, item_id: 'item', output_index: 0, content_index: 0, delta: 'late', logprobs: [] });
     yield doneFrame();
   };
-  const events: ResponsesStreamEvent[] = [];
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [];
 
   for await (const frame of normalizeResponsesStreamLifecycle(source())) {
-    if (frame.type === 'event') events.push(frame.event);
+    frames.push(frame);
   }
 
-  assertEquals(events.map(event => event.type), ['response.created', 'response.completed']);
+  assertEquals(visibleFrameTypes(frames), ['response.created', 'response.completed', 'done']);
 });
 
 for (const terminalType of ['response.completed', 'response.incomplete'] as const) {
@@ -80,14 +84,15 @@ for (const terminalType of ['response.completed', 'response.incomplete'] as cons
       } as ResponsesStreamEvent);
       yield doneFrame();
     };
-    const events: ResponsesStreamEvent[] = [];
+    const frames: ProtocolFrame<ResponsesStreamEvent>[] = [];
 
     for await (const frame of normalizeResponsesStreamLifecycle(source())) {
-      if (frame.type === 'event') events.push(frame.event);
+      frames.push(frame);
     }
 
-    assertEquals(events.map(event => event.type), ['response.created', 'error', 'response.failed']);
-    const failed = events[2];
+    assertEquals(visibleFrameTypes(frames), ['response.created', 'error', 'response.failed', 'done']);
+    const failedFrame = frames[2];
+    const failed = failedFrame?.type === 'event' ? failedFrame.event : undefined;
     if (failed?.type !== 'response.failed') throw new Error('expected response.failed');
     assertEquals(failed.response.status, 'failed');
     assertEquals(failed.response.error, { code: 'overloaded', message: 'try later' });

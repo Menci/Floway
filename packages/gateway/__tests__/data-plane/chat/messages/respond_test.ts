@@ -144,12 +144,10 @@ const controlledMessagesEvents = (): {
   readonly events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
   readonly emit: (event: MessagesStreamEvent) => void;
   readonly close: () => void;
-  readonly stopped: Promise<void>;
 } => {
   const queued: ProtocolFrame<MessagesStreamEvent>[] = [];
   let pending: Deferred<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> | undefined;
   let closed = false;
-  const stopped = deferred<void>();
   const events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>> = {
     [Symbol.asyncIterator]() {
       return {
@@ -162,7 +160,6 @@ const controlledMessagesEvents = (): {
         },
         return(): Promise<IteratorResult<ProtocolFrame<MessagesStreamEvent>>> {
           pending?.resolve({ done: true, value: undefined });
-          stopped.resolve();
           return Promise.resolve({ done: true, value: undefined });
         },
       };
@@ -183,9 +180,7 @@ const controlledMessagesEvents = (): {
       closed = true;
       pending?.resolve({ done: true, value: undefined });
       pending = undefined;
-      stopped.resolve();
     },
-    stopped: stopped.promise,
   };
 };
 
@@ -236,7 +231,6 @@ test('respondMessages drains terminal upstream usage after the client disconnect
   controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 23 } });
   controlled.emit({ type: 'message_stop' });
   controlled.close();
-  await controlled.stopped;
   await (await scheduledUsage.promise);
 
   assertEquals(clientDisconnectController.signal.aborted, true);
