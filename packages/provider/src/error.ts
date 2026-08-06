@@ -44,6 +44,7 @@ interface SerializationState {
   errorMemo: WeakMap<object, ErrorMemoEntry>;
   nodes: number;
   remainingBytes: number;
+  remainingStackBytes: number;
   remainingStringBytes: number;
 }
 
@@ -63,7 +64,8 @@ type AggregateErrorsSnapshot =
 const MAX_SERIALIZED_CAUSE_DEPTH = 32;
 const MAX_SERIALIZED_AGGREGATE_ERRORS = 32;
 const MAX_SERIALIZED_NODES = 256;
-const MAX_SERIALIZED_STRING_BYTES = 32 * 1024;
+const MAX_SERIALIZED_STRING_BYTES = 16 * 1024;
+const MAX_SERIALIZED_STACK_BYTES = 24 * 1024;
 const MAX_SERIALIZED_SINGLE_STRING_BYTES = 8 * 1024;
 const MAX_SERIALIZED_VALUE_BYTES = 48 * 1024;
 const MAX_INTERNAL_DEBUG_ERROR_BYTES = 64 * 1024;
@@ -118,17 +120,19 @@ const utf8Prefix = (value: string, maxBytes: number): { bytes: number; complete:
   return { bytes, complete: end === value.length, end };
 };
 
-const consumeString = (state: SerializationState, value: string): string => {
+const consumeString = (state: SerializationState, value: string, stack = false): string => {
+  const remaining = stack ? state.remainingStackBytes : state.remainingStringBytes;
   const available = Math.min(
     MAX_SERIALIZED_SINGLE_STRING_BYTES,
-    state.remainingStringBytes,
+    remaining,
     state.remainingBytes,
   );
   if (available <= 0) return STRING_BUDGET_MARKER;
 
   const complete = utf8Prefix(value, available);
   if (complete.complete) {
-    state.remainingStringBytes -= complete.bytes;
+    if (stack) state.remainingStackBytes -= complete.bytes;
+    else state.remainingStringBytes -= complete.bytes;
     state.remainingBytes -= complete.bytes;
     return value;
   }
@@ -137,7 +141,8 @@ const consumeString = (state: SerializationState, value: string): string => {
   const prefix = utf8Prefix(value, Math.max(0, available - suffixBytes));
   const truncated = `${value.slice(0, prefix.end)}${STRING_TRUNCATION_SUFFIX}`;
   const used = prefix.bytes + suffixBytes;
-  state.remainingStringBytes = Math.max(0, state.remainingStringBytes - used);
+  if (stack) state.remainingStackBytes = Math.max(0, state.remainingStackBytes - used);
+  else state.remainingStringBytes = Math.max(0, state.remainingStringBytes - used);
   state.remainingBytes = Math.max(0, state.remainingBytes - used);
   return truncated;
 };
@@ -173,7 +178,7 @@ const readIdentityString = (
       value: `[unreadable Error.${property}]`,
     };
   }
-  return { value: consumeString(state, result.value) };
+  return { value: consumeString(state, result.value, property === 'stack') };
 };
 
 const snapshotErrorIdentity = (state: SerializationState, error: object): SerializedErrorIdentity => {
@@ -384,6 +389,7 @@ export const toInternalDebugError = (error: unknown, targetApi?: string): Intern
     errorMemo: new WeakMap(),
     nodes: 0,
     remainingBytes: MAX_SERIALIZED_VALUE_BYTES,
+    remainingStackBytes: MAX_SERIALIZED_STACK_BYTES,
     remainingStringBytes: MAX_SERIALIZED_STRING_BYTES,
   };
   const serialized = serializeValue(normalizedThrownError(error), state, -1, '$') as SerializedError;
