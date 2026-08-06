@@ -118,17 +118,25 @@ export const ensureClaudeCodeAccessToken = async (
     return await ensureClaudeCodeAccessToken(args);
   }
   let flight!: ClaudeCodeAccessTokenFlight;
+  let publishedFailure: { error: unknown } | undefined;
   const promise = runProviderModelsTask(signal => {
     const lifetime = ensureClaudeCodeAccessTokenInner({ ...args, signal }, true);
     flight.lifetime = lifetime;
     void lifetime.finally(() => {
       if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
-    }).catch(() => {});
+    }).catch(error => {
+      if (publishedFailure !== undefined && error !== publishedFailure.error) {
+        console.error(
+          'Claude Code token flight failed after its deadline:',
+          new AggregateError([publishedFailure.error, error], 'Claude Code token flight and late persistence failed', { cause: publishedFailure.error }),
+        );
+      }
+    });
     return lifetime;
   });
   flight = { force: args.force === true, lifetime: null, promise };
   inFlightEnsures.set(key, flight);
-  void promise.catch(() => {});
+  void promise.catch(error => { publishedFailure = { error }; });
   return await waitForSignal(promise, args.signal);
 };
 

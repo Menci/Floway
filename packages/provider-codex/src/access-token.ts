@@ -188,6 +188,7 @@ export const ensureCodexAccessToken = async (
     return await ensureCodexAccessToken(upstreamId, accountId, mint, true, signal);
   }
   let flight!: CodexAccessTokenFlight;
+  let publishedFailure: { error: unknown } | undefined;
   const promise = runProviderModelsTask(sharedSignal => {
     const lifetime = ensureCodexAccessTokenInner(
       upstreamId,
@@ -199,12 +200,19 @@ export const ensureCodexAccessToken = async (
     flight.lifetime = lifetime;
     void lifetime.finally(() => {
       if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
-    }).catch(() => {});
+    }).catch(error => {
+      if (publishedFailure !== undefined && error !== publishedFailure.error) {
+        console.error(
+          'Codex token flight failed after its deadline:',
+          new AggregateError([publishedFailure.error, error], 'Codex token flight and late persistence failed', { cause: publishedFailure.error }),
+        );
+      }
+    });
     return lifetime;
   });
   flight = { force, lifetime: null, promise };
   inFlightEnsures.set(key, flight);
-  void promise.catch(() => {});
+  void promise.catch(error => { publishedFailure = { error }; });
   return (await waitForSignal(promise, signal)).entry;
 };
 
