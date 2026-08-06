@@ -4,8 +4,16 @@ import { isHttpFieldValue } from '../src/http-field-value.ts';
 
 test('isHttpFieldValue preserves RFC field-value byte boundaries', () => {
   expect(isHttpFieldValue('')).toBe(true);
-  expect(isHttpFieldValue('\u0009\u0020\u007e\u0080\u00ff')).toBe(true);
+  expect(isHttpFieldValue('\u0021\u0009\u0020\u007e\u0080\u00ff')).toBe(true);
   for (const invalid of ['\u0000', '\u0008', '\u000a', '\u001f', '\u007f', '\u0100', '\ud800', '😀']) {
+    expect(isHttpFieldValue(invalid)).toBe(false);
+  }
+});
+
+test('isHttpFieldValue permits whitespace only inside a non-empty value', () => {
+  expect(isHttpFieldValue('a b')).toBe(true);
+  expect(isHttpFieldValue('a\tb')).toBe(true);
+  for (const invalid of [' ', '\t', ' value', '\tvalue', 'value ', 'value\t']) {
     expect(isHttpFieldValue(invalid)).toBe(false);
   }
 });
