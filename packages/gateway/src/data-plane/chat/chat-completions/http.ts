@@ -5,7 +5,7 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -47,7 +47,7 @@ export const chatCompletionsHttp = {
     const requestBody = await readRequestBody(c);
     let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ChatCompletionsPayload;
+      const payload = JSON.parse(new TextDecoder().decode(completeRequestBodyBytes(requestBody))) as ChatCompletionsPayload;
       const wantsStream = payload.stream === true;
       // Read the caller's intent BEFORE any interceptor mutates
       // `payload.stream_options.include_usage`. Capturing it here means the

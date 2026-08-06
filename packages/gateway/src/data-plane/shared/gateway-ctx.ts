@@ -1,4 +1,4 @@
-import type { RequestBody } from './request-body.ts';
+import type { OwnedRequestBody } from './request-body.ts';
 import { retainResponse } from './retained-response.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -56,7 +56,7 @@ export interface CreateGatewayCtxOptions {
   // upgrades carry no HTTP body — the WS Responses path passes the
   // per-turn JSON message bytes here so the dump captures the turn's
   // input verbatim.
-  requestBody: RequestBody;
+  requestBody: OwnedRequestBody;
   // Override the HTTP method recorded on the dump's request snapshot. The
   // WS Responses path uses `'WS'` so a dumped turn reads as
   // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.

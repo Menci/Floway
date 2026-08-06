@@ -7,7 +7,7 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -68,7 +68,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 };
 
 const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
-  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(completeRequestBodyBytes(requestBody))) as ResponsesRequestPayload);
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

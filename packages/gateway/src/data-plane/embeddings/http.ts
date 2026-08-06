@@ -8,11 +8,11 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 
 export const embeddings = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareJsonModelRequest(requestBody.bytes, 'Embeddings');
+  const request = prepareJsonModelRequest(completeRequestBodyBytes(requestBody), 'Embeddings');
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');

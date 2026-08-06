@@ -9,7 +9,7 @@ import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { observeJsonResponse } from '../shared/json-response.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
@@ -52,7 +52,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   const requestBody = await readRequestBody(c);
   let parsedRequest: ParsedRerankRequest;
   try {
-    parsedRequest = parseRerankRequest(sourceProtocol, parseJson(requestBody.bytes));
+    parsedRequest = parseRerankRequest(sourceProtocol, parseJson(completeRequestBodyBytes(requestBody)));
   } catch (error) {
     const ctx = createGatewayCtxFromHono(c, {
       wantsStream: false,

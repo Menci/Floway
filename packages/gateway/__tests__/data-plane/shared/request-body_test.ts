@@ -7,20 +7,20 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 test('takeRequestBody transfers bytes and clears the source owner', () => {
   const bytes = new Uint8Array([1, 2, 3]);
-  const source = { bytes, streamError: 'partial upload' };
+  const source = { capturedBytes: bytes, streamError: 'partial upload' };
 
   const owned = takeRequestBody(source);
 
   expect(owned.bytes).toBe(bytes);
   assertEquals(owned.streamError, 'partial upload');
-  assertEquals(source.bytes.byteLength, 0);
+  assertEquals(source.capturedBytes.byteLength, 0);
 });
 
 const requestBodyApp = (maxBytes: number) => {
   const app = new Hono().onError(internalErrorResponse);
   app.post('/body', async c => {
     const body = await readRequestBody(c, { maxBytes });
-    return c.json({ bytes: [...body.bytes], streamError: body.streamError });
+    return c.json({ bytes: [...body.capturedBytes], streamError: body.streamError });
   });
   return app;
 };

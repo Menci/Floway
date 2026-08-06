@@ -7,17 +7,25 @@ import { MAX_BUFFERED_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from '../..
 // bytes without a second read). `streamError` surfaces a client mid-upload
 // abort as a non-null message; the dump records it as `meta.error`.
 export interface RequestBody {
+  capturedBytes: Uint8Array;
+  readonly streamError: string | null;
+}
+
+export interface OwnedRequestBody {
   bytes: Uint8Array;
   readonly streamError: string | null;
 }
+
+export const completeRequestBodyBytes = (source: RequestBody): Uint8Array =>
+  source.streamError === null ? source.capturedBytes : new Uint8Array();
 
 // Transfers the byte buffer into the request context after payload parsing.
 // Async HTTP handlers keep their local RequestBody across the upstream wait;
 // clearing that slot prevents it from retaining the full wire body after the
 // dump pipeline (when enabled) has started preparing its own representation.
-export const takeRequestBody = (source: RequestBody): RequestBody => {
-  const owned = { bytes: source.bytes, streamError: source.streamError };
-  source.bytes = new Uint8Array();
+export const takeRequestBody = (source: RequestBody): OwnedRequestBody => {
+  const owned = { bytes: source.capturedBytes, streamError: source.streamError };
+  source.capturedBytes = new Uint8Array();
   return owned;
 };
 
@@ -63,7 +71,7 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     throw new TypeError(`readRequestBody maxBytes must be a non-negative safe integer, got ${maxBytes}`);
   }
-  if (c.req.raw.body === null) return { bytes: new Uint8Array(), streamError: null };
+  if (c.req.raw.body === null) return { capturedBytes: new Uint8Array(), streamError: null };
 
   const declared = declaredContentLength(c);
   if (declared !== null && declared > maxBytes) {
@@ -97,9 +105,9 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
       bytes.set(value, length);
       length = required;
     }
-    return { bytes: bytes.subarray(0, length), streamError: null };
+    return { capturedBytes: bytes.subarray(0, length), streamError: null };
   } catch (err) {
     if (err instanceof RequestBodyTooLargeError) throw err;
-    return { bytes: bytes.subarray(0, length), streamError: normalizedStreamError(err) };
+    return { capturedBytes: bytes.subarray(0, length), streamError: normalizedStreamError(err) };
   }
 };

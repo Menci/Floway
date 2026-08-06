@@ -680,3 +680,36 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
 
   assertEquals(dispatched, false);
 });
+
+test('/v1/embeddings never dispatches a complete-looking body from a failed upload', async () => {
+  const { apiKey } = await setupAppTest();
+  const encoded = new TextEncoder().encode(JSON.stringify({ model: 'custom-embed-model', input: 'hello' }));
+  let pulls = 0;
+  let upstreamCalls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls += 1;
+      if (pulls === 1) controller.enqueue(encoded);
+      else controller.error(new Error('upload transport failed'));
+    },
+  }, { highWaterMark: 0 });
+
+  await withMockedFetch(
+    () => {
+      upstreamCalls += 1;
+      return jsonResponse({ object: 'list', data: [] });
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' });
+      assertEquals(response.status, 400);
+      await response.json();
+    },
+  );
+
+  assertEquals(upstreamCalls, 0);
+});

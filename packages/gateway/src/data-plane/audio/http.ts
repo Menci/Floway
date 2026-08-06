@@ -11,7 +11,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
 
@@ -59,7 +59,7 @@ const prepareTranscription = async (bytes: Uint8Array, contentType: string | und
 
 export const audioTranscriptions = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = await prepareTranscription(requestBody.bytes, c.req.header('content-type'));
+  const request = await prepareTranscription(completeRequestBodyBytes(requestBody), c.req.header('content-type'));
   const ctx = createGatewayCtxFromHono(c, {
     wantsStream: request.type === 'ok' ? request.wantsStream : false,
     requestBody: takeRequestBody(requestBody),

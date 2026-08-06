@@ -16,7 +16,7 @@ import type {
   PreparedDumpRequestBody,
   StoredDumpResponseBody,
 } from './types.ts';
-import type { RequestBody } from '../data-plane/shared/request-body.ts';
+import type { OwnedRequestBody } from '../data-plane/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -496,7 +496,7 @@ export const openDumpAccumulator = (
   c: Context,
   method: string,
   apiKey: ApiKey,
-  requestBody: RequestBody,
+  requestBody: OwnedRequestBody,
   backgroundScheduler: BackgroundScheduler,
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;

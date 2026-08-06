@@ -21,7 +21,7 @@ import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../..
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { utf8ByteLength } from '../../../shared/utf8.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { takeRequestBody } from '../../shared/request-body.ts';
+import { completeRequestBodyBytes, takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
@@ -397,7 +397,7 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBody = { bytes: requestBytes, streamError: null };
+    const requestBody = { capturedBytes: requestBytes, streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       turnFailure.fail(401, {
         type: 'authentication_error',
@@ -409,7 +409,7 @@ const handleClientMessage = async (
     apiKeyId = apiKeyFromContext(c).id;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
+      parsed = JSON.parse(new TextDecoder().decode(completeRequestBodyBytes(requestBody))) as unknown;
     } catch (cause) {
       throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
     }

@@ -5,7 +5,7 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
@@ -40,7 +40,7 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
 
 const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {
   try {
-    const raw = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
+    const raw = JSON.parse(new TextDecoder().decode(completeRequestBodyBytes(requestBody))) as unknown;
     return project(raw);
   } catch (error) {
     return geminiInternalRpcErrorResponse(500, error);

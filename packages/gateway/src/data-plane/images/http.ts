@@ -17,7 +17,7 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gat
 import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';
@@ -76,7 +76,7 @@ const prepareJsonImagesEdit = (body: Record<string, unknown>): PreparedImagesEdi
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareJsonModelRequest(requestBody.bytes, 'Images generations');
+  const request = prepareJsonModelRequest(completeRequestBodyBytes(requestBody), 'Images generations');
   const wantsStream = request.type === 'ok' && request.body.stream === true;
   const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
@@ -138,7 +138,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
   if (isJsonMediaType(contentType)) {
-    const body = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
+    const body = prepareJsonModelRequest(completeRequestBodyBytes(requestBody), 'Image edits');
     if (body.type === 'invalid') return invalid(body.message);
     const request = prepareJsonImagesEdit(body.body);
     if (request.type === 'invalid') return invalid(request.message);
@@ -150,7 +150,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   }
   let form: FormData;
   try {
-    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': contentType } }).formData();
+    form = await new Response(completeRequestBodyBytes(requestBody) as BodyInit, { headers: { 'content-type': contentType } }).formData();
   } catch {
     return invalid('Image edits request body must be valid multipart/form-data.');
   }

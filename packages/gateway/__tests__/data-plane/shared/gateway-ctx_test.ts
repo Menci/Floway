@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import { describe, test, vi } from 'vitest';
 
 import { createGatewayCtxFromHono, type AttemptState, stampUpstreamCallStart } from '../../../src/data-plane/shared/gateway-ctx.ts';
-import type { RequestBody } from '../../../src/data-plane/shared/request-body.ts';
+import type { OwnedRequestBody } from '../../../src/data-plane/shared/request-body.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import type { ApiKey, User } from '../../../src/repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const EMPTY_REQUEST_BODY: RequestBody = { bytes: new Uint8Array(), streamError: null };
+const EMPTY_REQUEST_BODY: OwnedRequestBody = { bytes: new Uint8Array(), streamError: null };
 const NOOP_SCHEDULER: BackgroundScheduler = () => {};
 
 const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({

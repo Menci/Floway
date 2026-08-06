@@ -14,13 +14,13 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ProviderModel } from '@floway-dev/provider';
 
 export const completions = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareJsonModelRequest(requestBody.bytes, 'Completions');
+  const request = prepareJsonModelRequest(completeRequestBodyBytes(requestBody), 'Completions');
   // `stream` decides the response shape, so the gateway context has to learn
   // it before the invalid branch — which has no body to read it from.
   const wantsStream = request.type === 'ok' && request.body.stream === true;
