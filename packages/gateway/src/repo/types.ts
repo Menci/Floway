@@ -425,6 +425,9 @@ export interface ProxyRecord {
   id: string;
   name: string;
   url: string;
+  // Monotonic dial-config generation. It changes when the URL or dial timeout
+  // changes and stays within JavaScript's exact-integer range.
+  revision: number;
   createdAt: string;
   updatedAt: string;
   // Operator-set per-proxy override of the dial-stage deadline (seconds).
@@ -458,11 +461,11 @@ export interface BackoffRow {
 }
 
 export interface ProxyBackoffRepo {
-  // Apply an outcome only while the proxy still exists at the URL that was
-  // actually dialled. A request can outlive an operator URL edit or deletion;
-  // its stale outcome must not throttle or clear the replacement endpoint.
-  recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean>;
-  recordDialSuccess(proxyId: string, upstreamId: string, proxyUrl: string): Promise<boolean>;
+  // Apply an outcome only while the proxy still exists at the revision that
+  // was actually dialled. A request can outlive multiple URL edits; its stale
+  // outcome must not throttle or clear a later endpoint, even after A -> B -> A.
+  recordDialFailure(proxyId: string, upstreamId: string, proxyRevision: number, errorMessage: string): Promise<boolean>;
+  recordDialSuccess(proxyId: string, upstreamId: string, proxyRevision: number): Promise<boolean>;
   listForUpstream(upstreamId: string): Promise<BackoffRow[]>;
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;

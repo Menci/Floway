@@ -3,11 +3,18 @@ import { afterEach, beforeEach, expect, test } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import type { Repo } from '../../../src/repo/types.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type JsonObject = Record<string, any>;
+
+const proxyRevision = async (repo: Repo, id: string): Promise<number> => {
+  const proxy = await repo.proxies.getById(id);
+  if (proxy === null) throw new Error(`missing proxy ${id}`);
+  return proxy.revision;
+};
 
 const runtimeFetch = globalThis.fetch;
 let unexpectedNetworkRequests: string[] = [];
@@ -1712,14 +1719,18 @@ test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown pr
 test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping direct transports', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_gone', name: 'Gone', url: 'socks5://198.51.100.11:1080', dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_live', name: 'Live', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_live' }, { id: 'direct_fetch' }] })));
   const created = (await create.json()) as { id: string };
-  // A proxy delete is refused while an upstream still names it, so reach past
-  // the route to reproduce a raced delete or a hand-edited row.
+  // deleteAll is the restore primitive that can deliberately clear a referenced
+  // catalog. Use it to reproduce a corrupt/dangling persisted row without
+  // bypassing the full-save invariant under test elsewhere.
   const stored = await repo.upstreams.getById(created.id);
   await repo.upstreams.save({ ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
+  await repo.proxies.deleteAll();
+  await repo.proxies.insert({ id: 'p_live', name: 'Live', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
   const single = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(single.status, 200);
@@ -1741,9 +1752,9 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_a' }] })));
   const created = (await create.json()) as { id: string };
 
-  const proxyUrl = 'socks5://198.51.100.10:1080';
-  await repo.proxyBackoffs.recordDialFailure('p_a', created.id, proxyUrl, 'tcp refused');
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'other_upstream', proxyUrl, 'tcp refused');
+  const revision = await proxyRevision(repo, 'p_a');
+  await repo.proxyBackoffs.recordDialFailure('p_a', created.id, revision, 'tcp refused');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'other_upstream', revision, 'tcp refused');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 2);
 
   const del = await requestApp(`/api/upstreams/${created.id}`, {
