@@ -120,7 +120,7 @@ const drainSSEFrames = async (
     recordClientDisconnect();
     return { type: 'abort' };
   });
-  let pendingNext = pendingFrameResult(iterator.next());
+  let pendingNext: Promise<NextFrameResult>;
   let completed = false;
   let failure: StreamFailure | undefined;
   const writeFrame = async (frame: SseWritableFrame): Promise<void> => {
@@ -137,6 +137,7 @@ const drainSSEFrames = async (
   };
 
   try {
+    pendingNext = pendingFrameResult(iterator.next());
     while (true) {
       if (!clientDisconnected && (stream.aborted || stream.closed)) {
         recordClientDisconnect();

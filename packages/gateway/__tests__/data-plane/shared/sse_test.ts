@@ -308,6 +308,50 @@ test('writeSSEFrames does not cancel an upstream SSE reader when the downstream 
   }
 });
 
+test('writeSSEFrames drains without writing when the client signal aborts first', async () => {
+  const idle = createIdleSSEEvents();
+  const clientDisconnectController = new AbortController();
+  let writes = 0;
+  const stream = fakeSSEStream(async () => { writes += 1; });
+  const completion = writeSSEFrames(stream, idle.events, { clientDisconnectController });
+  await waitForIteratorStart(idle);
+
+  clientDisconnectController.abort('client left');
+  await flushMicrotasks();
+  idle.emit(sseFrame('{"usage":1}'));
+  await waitForIteratorStart(idle);
+  idle.close();
+
+  assertEquals(await completion, 'cancel');
+  assertEquals(writes, 0);
+  assertEquals(idle.returnCalled(), false);
+});
+
+test('writeSSEFrames preserves a synchronous first-next failure when cleanup also fails', async () => {
+  const primaryError = new Error('synchronous next failed');
+  const cleanupError = new Error('iterator cleanup failed');
+  let returnCalls = 0;
+  const events: AsyncIterable<SseFrame> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<SseFrame>> {
+          throw primaryError;
+        },
+        async return() {
+          returnCalls += 1;
+          throw cleanupError;
+        },
+      };
+    },
+  };
+
+  const thrown = await writeSSEFrames(fakeSSEStream(), events).catch(error => error);
+  expect(thrown).toBeInstanceOf(AggregateError);
+  expect((thrown as AggregateError).errors).toEqual([primaryError, cleanupError]);
+  expect((thrown as AggregateError).cause).toBe(primaryError);
+  assertEquals(returnCalls, 1);
+});
+
 for (const failurePoint of ['next', 'write'] as const) {
   test(`writeSSEFrames preserves a ${failurePoint} failure when iterator cleanup also fails`, async () => {
     const primaryError = new Error(`${failurePoint} failed`);
