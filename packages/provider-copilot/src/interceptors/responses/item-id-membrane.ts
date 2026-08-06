@@ -20,7 +20,7 @@ const COPILOT_OUTPUT_ITEM_POLICIES = {
   tool_search_output: { prefix: 'tso', carrier: null },
   program: { prefix: 'cm', carrier: 'fingerprint' },
   program_output: { prefix: 'cmo', carrier: null },
-  agent_message: { prefix: 'amsg', carrier: null },
+  agent_message: { prefix: 'amsg', carrier: 'agent_content' },
   compaction: { prefix: 'cmp', carrier: 'encrypted_content' },
   shell_call: { prefix: 'sh', carrier: null },
   shell_call_output: { prefix: 'sho', carrier: null },
@@ -57,6 +57,16 @@ const mapCarrierValues = <TItem extends CarrierItem>(
   case 'fingerprint': {
     const record = item as CarrierItem & { fingerprint: string };
     return { ...item, fingerprint: transform(record.fingerprint) } as TItem;
+  }
+  case 'agent_content': {
+    const record = item as Extract<CarrierItem, { type: 'agent_message' }>;
+    return {
+      ...item,
+      content: record.content.map(content =>
+        content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
+          ? { ...content, encrypted_content: transform(content.encrypted_content) }
+          : content),
+    } as TItem;
   }
   case null:
     return item;
