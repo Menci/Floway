@@ -234,6 +234,48 @@ describe('fetchUpstreamModelsCached', () => {
     expect(succeedingFetch).toHaveBeenCalledTimes(1);
   });
 
+  test('a stalled successful persistence leaves the in-flight slot reusable', async () => {
+    vi.useFakeTimers();
+    const repo = await setupRepo();
+    const save = vi.spyOn(repo.upstreams, 'saveModelsCache').mockReturnValue(new Promise(() => {}));
+    const stalled = fetchUpstreamModelsCached(
+      stubInstance(vi.fn(async () => [aModel('first')])),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    const rejection = stalled.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    save.mockRestore();
+    const recovered = await fetchUpstreamModelsCached(
+      stubInstance(vi.fn(async () => [aModel('recovered')])),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    expect(recovered.map(model => model.id)).toEqual(['recovered']);
+  });
+
+  test('a stalled error persistence leaves the in-flight slot reusable', async () => {
+    vi.useFakeTimers();
+    const repo = await setupRepo();
+    const saveError = vi.spyOn(repo.upstreams, 'saveModelsCacheError').mockReturnValue(new Promise(() => {}));
+    const stalled = fetchUpstreamModelsCached(
+      stubInstance(vi.fn(async () => { throw new Error('catalog failed'); })),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    const rejection = stalled.catch(error => error as unknown);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await rejection).toMatchObject({ name: 'TimeoutError' });
+    saveError.mockRestore();
+    const recovered = await fetchUpstreamModelsCached(
+      stubInstance(vi.fn(async () => [aModel('recovered')])),
+      { scheduler: () => {}, fetcher: directFetcher, force: true },
+    );
+    expect(recovered.map(model => model.id)).toEqual(['recovered']);
+  });
+
   test('concurrent stale callers schedule one revalidation and refresh every joining provider instance', async () => {
     const repo = await setupRepo();
     const cache = await seedCache(repo, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });

@@ -91,17 +91,17 @@ const assertUniqueModelIds = (instance: GatewayProvider, models: ProviderModel[]
   return models;
 };
 
-const runFetch = async (
+const runFetch = (
   instance: GatewayProvider,
   fetcher: Fetcher,
   key: string,
   loadProvidedModels?: (signal: AbortSignal) => Promise<ProviderModel[]>,
-): Promise<ModelsFetchResult> => {
+): Promise<ModelsFetchResult> => runProviderModelsTask(async signal => {
   const generation = instance.modelsCacheGeneration;
   try {
-    const loaded = runProviderModelsTask(signal => loadProvidedModels === undefined
+    const loaded = loadProvidedModels === undefined
       ? instance.instance.getProvidedModels({ fetcher, signal })
-      : loadProvidedModels(signal));
+      : loadProvidedModels(signal);
     const models = assertUniqueModelIds(instance, [...await loaded]);
     const entry = { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models, lastError: null };
     const persisted = await getRepo().upstreams.saveModelsCache(key, generation, entry);
@@ -113,7 +113,7 @@ const runFetch = async (
     await getRepo().upstreams.saveModelsCacheError(key, generation, { message: errorMessage(err), at: Date.now() });
     throw err;
   }
-};
+});
 
 export const fetchUpstreamModelsCached = async (
   instance: GatewayProvider,
