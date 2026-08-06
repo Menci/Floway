@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CleanupTimeoutError, cleanupFailure, collectCleanupFailures, failureWithCleanup } from '../src/cleanup.ts';
+import { CLEANUP_OPERATION_DEADLINE_MS, CleanupTimeoutError, cleanupFailure, collectCleanupFailures, failureWithCleanup } from '../src/cleanup.ts';
 
 afterEach(() => vi.useRealTimers());
 
@@ -48,9 +48,9 @@ describe('cleanup failure composition', () => {
     const settlement = collectCleanupFailures([
       async () => await never,
       afterTimeout,
-    ], { timeoutMs: 20 });
+    ]);
 
-    await vi.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(CLEANUP_OPERATION_DEADLINE_MS);
     const failures = await settlement;
     expect(failures).toHaveLength(1);
     expect(failures[0]).toBeInstanceOf(CleanupTimeoutError);

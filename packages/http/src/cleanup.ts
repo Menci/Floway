@@ -1,5 +1,10 @@
 export type CleanupOperation = () => void | PromiseLike<void>;
 
+// Transport teardown gets five seconds to settle. This leaves most of
+// Cloudflare's 30-second post-disconnect `waitUntil()` allowance available to
+// gateway finalization while preventing a broken reader or socket from holding
+// every remaining cleanup operation indefinitely.
+// https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/platform/limits.mdx#L152-L168
 export const CLEANUP_OPERATION_DEADLINE_MS = 5_000;
 
 export class CleanupTimeoutError extends Error {
@@ -14,18 +19,10 @@ export class CleanupTimeoutError extends Error {
   }
 }
 
-export interface CleanupOptions {
-  readonly timeoutMs?: number;
-}
-
 export const collectCleanupFailures = async (
   operations: readonly CleanupOperation[],
-  options: CleanupOptions = {},
 ): Promise<readonly unknown[]> => {
-  const timeoutMs = options.timeoutMs ?? CLEANUP_OPERATION_DEADLINE_MS;
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 0x7fffffff) {
-    throw new TypeError(`Cleanup timeout must be an integer from 0 to 2147483647, got ${timeoutMs}`);
-  }
+  const timeoutMs = CLEANUP_OPERATION_DEADLINE_MS;
   const deadline = performance.now() + timeoutMs;
   const failures: unknown[] = [];
   for (let operationIndex = 0; operationIndex < operations.length; operationIndex++) {
