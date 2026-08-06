@@ -505,6 +505,32 @@ describe('createFetcher', () => {
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
+  it('rethrows a generic execution-signal reason without continuing the chain', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const reason = new Error('execution deadline');
+    const controller = new AbortController();
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { calls.push('proxy'); return new Response('proxy'); },
+      runDirectFetch: async () => {
+        calls.push('direct');
+        controller.abort(reason);
+        throw reason;
+      },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    await expect(fetcher('https://api.openai.com', { method: 'GET', signal: controller.signal }))
+      .rejects.toBe(reason);
+    expect(calls).toEqual(['direct']);
+  });
+
   it('replays materialized bytes to a direct fallback without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
     let directBody: BodyInit | null | undefined;
@@ -576,7 +602,7 @@ describe('createFetcher', () => {
     }
   });
 
-  it.each(['GET', 'HEAD', 'OPTIONS'])('falls through after an ambiguous bodyless %s direct-fetch failure', async (method) => {
+  it.each(['GET', 'OPTIONS'])('falls through after an ambiguous bodyless %s direct-fetch failure', async (method) => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];
     const fetcher = createFetcher({
@@ -604,7 +630,7 @@ describe('createFetcher', () => {
     expect(calls).toEqual(['direct', 'proxy']);
   });
 
-  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('keeps an ambiguous bodyless %s direct-fetch failure terminal', async (method) => {
+  it.each(['HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'])('keeps an ambiguous bodyless %s direct-fetch failure terminal', async (method) => {
     const repo = new InMemoryRepo();
     const directFailure = new TypeError('direct fetch may have reached upstream');
     let proxyCalls = 0;
@@ -622,6 +648,53 @@ describe('createFetcher', () => {
 
     await expect(fetcher('https://api.openai.com/v1/mutation', { method })).rejects.toBe(directFailure);
     expect(proxyCalls).toBe(0);
+  });
+
+  it('does not replay a mutating request after a lazy proxy error may follow HTTP dispatch', async () => {
+    const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyAUrl, proxyA);
+    const ambiguous = new ProxyDialError('lazy proxy authentication failed', 'proxy-handshake')
+      .markRequestMayHaveBeenSent();
+    let directCalls = 0;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }, { id: 'direct_fetch' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw ambiguous; },
+      runDirectFetch: async () => { directCalls += 1; return new Response('direct'); },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    await expect(fetcher('https://api.openai.com/v1/responses', {
+      method: 'POST', body: 'request body',
+    })).rejects.toBe(ambiguous);
+    expect(directCalls).toBe(0);
+    expect((await repo.proxyBackoffs.listForUpstream('u'))[0]?.lastError)
+      .toBe('[proxy-handshake] lazy proxy authentication failed');
+  });
+
+  it('can fail over a bodyless GET after a lazy proxy error', async () => {
+    const repo = new InMemoryRepo();
+    await insertProxy(repo, 'a', proxyAUrl, proxyA);
+    const ambiguous = new ProxyDialError('lazy proxy authentication failed', 'proxy-handshake')
+      .markRequestMayHaveBeenSent();
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }, { id: 'direct_fetch' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw ambiguous; },
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    const response = await fetcher('https://api.openai.com/v1/models', { method: 'GET' });
+    expect(await response.text()).toBe('direct');
   });
 
   it('forwards init.signal to runProxied so the dialer can honour client cancellation', async () => {

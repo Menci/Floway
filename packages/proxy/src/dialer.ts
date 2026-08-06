@@ -216,7 +216,16 @@ const runRequestOnStream = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = { ...headers, Host: hostValue };
     }
-    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, { signal: options.signal });
+    try {
+      return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, { signal: options.signal });
+    } catch (error) {
+      // Some encrypted proxy protocols validate their first response lazily.
+      // Once HTTP dispatch has begun, a proxy-handshake error no longer proves
+      // that the upstream missed the request; mark that ambiguity for the
+      // gateway's method/body retry policy.
+      if (error instanceof ProxyDialError) error.markRequestMayHaveBeenSent();
+      throw error;
+    }
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when

@@ -22,6 +22,7 @@
 
 export class ProxyDialError extends Error {
   override readonly name = 'ProxyDialError';
+  private _requestMayHaveBeenSent = false;
 
   constructor(
     message: string,
@@ -35,6 +36,15 @@ export class ProxyDialError extends Error {
     options?: { cause?: unknown },
   ) {
     super(message, options);
+  }
+
+  get requestMayHaveBeenSent(): boolean {
+    return this._requestMayHaveBeenSent;
+  }
+
+  markRequestMayHaveBeenSent(): this {
+    this._requestMayHaveBeenSent = true;
+    return this;
   }
 }
 

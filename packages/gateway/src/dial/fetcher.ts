@@ -2,7 +2,7 @@ import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
-import type { HttpRequest } from '@floway-dev/http';
+import { signalAbortReason, type HttpRequest } from '@floway-dev/http';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError, replayableBodySource } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
@@ -199,6 +199,9 @@ const tryOne = async (
   } catch (err) {
     // Explicit request cancellation propagates immediately so the dial chain
     // does not continue against later fallback entries.
+    if (request.signal?.aborted) {
+      throw signalAbortReason(request.signal);
+    }
     if (isAbortError(err)) {
       throw err;
     }
@@ -214,7 +217,7 @@ const tryOne = async (
       // https://github.com/golang/go/blob/d90b98e65320778f3b1f99a6951ab20f04d218b3/src/net/http/request.go#L1534-L1547
       // https://github.com/whtsky/copilot2api/blob/c6db16158d5a5d01b2ac4964071b2c6c5c6b6a25/internal/upstream/client.go#L132-L213
       // https://github.com/BerriAI/litellm/blob/ba917681461b1ad04d30f91da26e75b3521996f3/litellm/llms/custom_httpx/http_handler.py#L628-L678
-      if (!request.canRetryAfterDirectFetchFailure) throw err;
+      if (!request.canRetryAfterAmbiguousFailure) throw err;
       errors.push(err);
       return null;
     }
@@ -226,7 +229,6 @@ const tryOne = async (
       throw err;
     }
     if (err instanceof ProxyDialError && attemptedProxy !== undefined) {
-      errors.push(err);
       // Tag the persisted message with the dial stage so a dashboard reader
       // can tell a tcp-connect refusal from an inner-tls cert mismatch
       // without cracking the proxy library open. A transient backoff-store
@@ -237,6 +239,8 @@ const tryOne = async (
       } catch (recordErr) {
         console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
       }
+      if (err.requestMayHaveBeenSent && !request.canRetryAfterAmbiguousFailure) throw err;
+      errors.push(err);
       return null;
     }
     throw err;

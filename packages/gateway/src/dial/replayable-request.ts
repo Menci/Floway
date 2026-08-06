@@ -8,25 +8,27 @@ interface MaterializedRequest {
   request: HttpRequest;
 }
 
-// RFC 9110 defines GET, HEAD, and OPTIONS as safe methods. A runtime fetch
-// rejection does not say whether request bytes reached the network, so only a
-// bodyless safe request can move to another transport without risking a
-// duplicate side effect. TRACE is intentionally absent: Floway does not own a
-// TRACE surface, and RFC 9110 §9.3.8 imposes additional credential stripping.
+// A runtime fetch rejection does not say whether request bytes reached the
+// network, so only a bodyless method on Floway's owned safe-read surface can
+// move to another transport without risking a duplicate side effect. TRACE is
+// intentionally absent: Floway does not own a TRACE surface, and RFC 9110
+// §9.3.8 imposes additional credential stripping.
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.1
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.8
-const SAFE_BODYLESS_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// HEAD is intentionally absent until the raw HTTP response layer can frame a
+// no-body HEAD response instead of rejecting HEAD_REQUEST_REJECTED.
+const SAFE_BODYLESS_RETRY_METHODS = new Set(['GET', 'OPTIONS']);
 
 export interface ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  readonly canRetryAfterDirectFetchFailure: boolean;
+  readonly canRetryAfterAmbiguousFailure: boolean;
   fetchInit(): RequestInit;
   materialized(): Promise<MaterializedRequest>;
 }
 
 class ReplayableRequestOwner implements ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  readonly canRetryAfterDirectFetchFailure: boolean;
+  readonly canRetryAfterAmbiguousFailure: boolean;
   private fetch: RequestInit;
   private materializedRequest: MaterializedRequest | undefined;
   private rebuildFetchBody = false;
@@ -37,7 +39,7 @@ class ReplayableRequestOwner implements ReplayableRequest {
     init: RequestInit,
   ) {
     this.signal = init.signal ?? undefined;
-    this.canRetryAfterDirectFetchFailure = init.body == null
+    this.canRetryAfterAmbiguousFailure = init.body == null
       && SAFE_BODYLESS_RETRY_METHODS.has((init.method ?? 'GET').toUpperCase());
     this.replayableSource = replayableBodySource(init.body);
     this.fetch = this.replayableSource === null ? init : { ...init, body: null };
