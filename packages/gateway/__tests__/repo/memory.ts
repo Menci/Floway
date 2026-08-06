@@ -74,6 +74,7 @@ import type {
 import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
 import { usageBucketIdentityKey, usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
+import { assertStorageId } from '../../src/shared/storage-id.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, multiplyDecimalStrings, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
@@ -921,6 +922,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // an existing row keeps whatever the refresh path last wrote there, and a new
   // row starts uncached whatever the caller's record carried.
   save(upstream: UpstreamRecord): Promise<void> {
+    assertStorageId(upstream.id, 'upstream id');
     const existing = this.store.get(upstream.id);
     const preserved = existing
       ? { ...upstream, createdAt: existing.createdAt, modelsCache: existing.modelsCache }
@@ -930,6 +932,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
+    assertStorageId(upstream.id, 'upstream id');
     const existing = this.store.get(upstream.id);
     const next = existing
       ? { ...upstream, createdAt: existing.createdAt, modelsCache: null }
@@ -1348,6 +1351,7 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+    assertStorageId(input.id, 'proxy id');
     const now = new Date().toISOString();
     const record: ProxyRecord = {
       id: input.id,
@@ -1399,6 +1403,7 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
+    assertStorageId(record.id, 'proxy id');
     // Upsert that mirrors the SQL ON CONFLICT path: preserve the existing
     // row's createdAt on collision so the import never overwrites the
     // local deployment's first-seen timestamp.

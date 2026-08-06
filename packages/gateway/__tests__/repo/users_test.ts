@@ -74,6 +74,17 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(await repo.apiKeys.getById('key_default')).toBeNull();
   });
 
+  test('createAccount cannot attach a Default key to an existing username at the id boundary', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: Number.MAX_SAFE_INTEGER, username: 'alice' }));
+
+    const result = await repo.users.createAccount(accountTemplate('Alice'), defaultKey());
+
+    expect(result).toEqual({ status: 'username-taken' });
+    expect(await repo.apiKeys.getById('key_default')).toBeNull();
+    expect(await repo.apiKeys.listByUserId(Number.MAX_SAFE_INTEGER)).toEqual([]);
+  });
+
   test('concurrent duplicate createAccount calls return one account and one username conflict', async () => {
     const repo = await makeRepo();
     const results = await Promise.all([
@@ -118,6 +129,19 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.users.getById(2))?.passwordHash).toBe(sampleUser().passwordHash);
     expect(await repo.sessions.getByIdAndTouch(keep.id)).not.toBeNull();
     expect(await repo.sessions.getByIdAndTouch(revoke.id)).toBeNull();
+  });
+
+  test('a stale self-service password write cannot revoke sibling sessions when the proposed hash is current', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: 2, passwordHash: 'current-hash' }));
+    const keep = await repo.sessions.create(2);
+    const sibling = await repo.sessions.create(2);
+
+    const result = await repo.users.changeOwnPassword(2, keep.id, 'stale-hash', 'current-hash');
+
+    expect(result).toEqual({ status: 'stale' });
+    expect(await repo.sessions.getByIdAndTouch(keep.id)).not.toBeNull();
+    expect(await repo.sessions.getByIdAndTouch(sibling.id)).not.toBeNull();
   });
 
   test('deleteAccount atomically removes sessions and soft-deletes all active keys', async () => {

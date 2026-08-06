@@ -365,6 +365,27 @@ test('import rejects storage identifiers containing NUL', async () => {
   assertEquals(String(result.body.error).includes('must not contain NUL'), true);
 });
 
+test.each(['\uD800', '\uDC00'])('import rejects a storage identifier containing lone surrogate %#', async surrogate => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', latestImportData({
+    proxies: [{ id: `proxy${surrogate}`, name: 'invalid', url: 'socks5://host:1080', dial_timeout_seconds: null }],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(String(result.body.error).includes('unpaired UTF-16 surrogates'), true);
+});
+
+test('import preserves a storage identifier containing a valid surrogate pair', async () => {
+  const { app, repo } = setup();
+  const id = 'proxy-\uD83D\uDE00';
+  const result = await doImport(app, 'replace', latestImportData({
+    proxies: [{ id, name: 'valid', url: 'socks5://host:1080', dial_timeout_seconds: null }],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals((await repo.proxies.getById(id))?.id, id);
+});
+
 test('import validates generic pricing selectors', async () => {
   const { app } = setup();
   const unknown = await doImport(app, 'replace', latestImportData({ usage: [{ ...USAGE_2, pricingSelector: { unknown: 'x' } }] }));

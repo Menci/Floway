@@ -157,6 +157,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(after?.createdAt, originalCreatedAt);
   });
 
+  test(`[${backend}] proxies repo rejects lossy UTF-16 ids and preserves a valid surrogate pair`, async () => {
+    const repo = await makeRepo();
+    for (const id of ['proxy\uD800', 'proxy\uDC00']) {
+      await expect(Promise.resolve().then(async () => await repo.proxies.save({
+        id,
+        name: 'Invalid',
+        url: 'socks5://invalid.example.test:1080',
+        dialTimeoutSeconds: null,
+      }))).rejects.toThrow('unpaired UTF-16 surrogates');
+    }
+
+    const id = 'proxy-\uD83D\uDE00';
+    await repo.proxies.save({ id, name: 'Valid', url: 'socks5://valid.example.test:1080', dialTimeoutSeconds: null });
+    expect(await repo.proxies.getById(id)).toMatchObject({ id, name: 'Valid' });
+  });
+
   test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
     const repo = await makeRepo();
     await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });

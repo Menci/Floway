@@ -21,6 +21,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { MODEL_ALIAS_TARGET_LIMIT } from '../shared/model-aliases.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
+import { isStorageId } from '../shared/storage-id.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, tokenUsageUnattributedUserId } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
 
@@ -43,6 +44,13 @@ const flagOverridesSchema = z.unknown().transform((value, ctx): FlagOverrides =>
 // There is no id allowlist to enforce — any string is a legal public model id —
 // so this only trims and de-dupes rather than rejecting unknown ids.
 const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisabledPublicModelIds);
+
+const storageIdSchema = z.string().min(1)
+  .refine(isStorageId, { message: 'must not contain NUL or unpaired UTF-16 surrogates' });
+const trimmedStorageIdSchema = z.string().trim().min(1)
+  .refine(isStorageId, { message: 'must not contain NUL or unpaired UTF-16 surrogates' });
+const optionalStorageIdSchema = z.string()
+  .refine(value => value === '' || isStorageId(value), { message: 'must not contain NUL or unpaired UTF-16 surrogates' });
 
 // The structured endpoint capability map, shared by per-model config and the
 // custom upstream-level fallback. A present key declares the endpoint is served.
@@ -249,7 +257,7 @@ const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because zero upstreams cannot serve any model.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
+const upstreamIdsValueSchema = z.array(storageIdSchema)
   .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
@@ -326,7 +334,7 @@ export const updateKeyBody = z.object({
 // enumerated. When present it must be non-empty: stored and wire shapes stay
 // symmetric, so "all colos" is always the absent field.
 const proxyFallbackListSchema = z.array(z.object({
-  id: z.string().trim().min(1),
+  id: trimmedStorageIdSchema,
   colos: z.array(z.string().trim().min(1)).min(1).optional(),
 }));
 
@@ -409,11 +417,11 @@ export const updateUpstreamBody = z.object({
 // action endpoint (OAuth exchange/refresh, quota, probe, list-models,
 // etc.). The client posts its full draft record; the server reads only
 // fields relevant to the specific action (credentials in config/state,
-// proxy_fallback_list for routing) and produces a targeted patch. Kind
-// and id validation is deferred to the handler so a single schema
-// serves every provider.
+// proxy_fallback_list for routing) and produces a targeted patch. The schema
+// rejects lossy storage ids; provider-kind and row-existence checks remain in
+// the handler so one envelope serves every provider.
 export const upstreamRecordEnvelope = z.object({
-  id: z.string(),
+  id: optionalStorageIdSchema,
   kind: z.string(),
   config: z.unknown(),
   state: z.unknown(),
@@ -560,7 +568,7 @@ export const testProxyBody = z.object({
 // would otherwise read the empty string as a real id, deleting nothing and
 // reporting success on malformed input.
 export const resetBackoffBody = z.object({
-  upstream_id: z.string().min(1).optional(),
+  upstream_id: storageIdSchema.optional(),
 });
 
 // --- search config ---
@@ -572,7 +580,7 @@ export const webSearchConfigSchema = z.object({
   jina: z.object({ apiKey: z.string() }),
   passthroughOpenAiSearch: z.object({
     enabled: z.boolean(),
-    upstreamId: z.string(),
+    upstreamId: optionalStorageIdSchema,
     model: z.string(),
   }),
 }).superRefine((config, ctx) => {

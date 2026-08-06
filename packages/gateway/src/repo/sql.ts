@@ -76,6 +76,7 @@ import { usageBucketIdentityKey, usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
+import { assertStorageId } from '../shared/storage-id.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError, isAgentSetupToken } from '@floway-dev/agent-setup';
@@ -391,13 +392,12 @@ class SqlUsersRepo implements UsersRepo {
       );
     const insertDefaultKey = this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (
-           ?, (SELECT id FROM users WHERE username = ? AND deleted_at IS NULL), ?, ?, ?, ?, ?, ?, NULL, ?, ?
-         )`,
+        `INSERT INTO api_keys (${API_KEY_COLUMNS})
+         SELECT ?, id, ?, ?, ?, ?, ?, ?, NULL, ?, ? FROM users
+         WHERE id = last_insert_rowid() AND username = ? AND deleted_at IS NULL AND changes() = 1`,
       )
       .bind(
         defaultKey.id,
-        template.username,
         defaultKey.name,
         defaultKey.key,
         defaultKey.serverSecret,
@@ -406,12 +406,16 @@ class SqlUsersRepo implements UsersRepo {
         serializeUpstreamIds(defaultKey.upstreamIds),
         defaultKey.dumpRetentionSeconds,
         defaultKey.responsesRetentionSeconds,
+        template.username,
       );
 
     try {
       const results = await this.atomicBatch([insertUser, insertDefaultKey]);
       const [userRow] = results[0].results as unknown as UserRow[];
       if (!userRow || results[0].results.length !== 1) {
+        if (await this.findByUsername(template.username)) return { status: 'username-taken' };
+        const max = await this.db.prepare('SELECT MAX(id) AS id FROM users').first<{ id: number | null }>();
+        if (max?.id === Number.MAX_SAFE_INTEGER) return { status: 'id-exhausted' };
         throw new Error('createAccount: atomic user insert did not return exactly one row');
       }
       return { status: 'created', user: toUser(userRow) };
@@ -488,6 +492,7 @@ class SqlUsersRepo implements UsersRepo {
     ).bind(passwordHash, id, expectedPasswordHash, sessionId);
     const deleteSiblingSessions = this.db.prepare(
       `DELETE FROM sessions WHERE user_id = ? AND id != ?
+       AND changes() = 1
        AND EXISTS (
          SELECT 1 FROM users
          WHERE id = ? AND deleted_at IS NULL AND password_hash = ?
@@ -1201,6 +1206,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
+    assertStorageId(upstream.id, 'upstream id');
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
@@ -1418,6 +1424,7 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+    assertStorageId(input.id, 'proxy id');
     const now = new Date().toISOString();
     await this.db
       .prepare('INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?)')
@@ -1487,6 +1494,7 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
+    assertStorageId(record.id, 'proxy id');
     const now = new Date().toISOString();
     await this.db
       .prepare(

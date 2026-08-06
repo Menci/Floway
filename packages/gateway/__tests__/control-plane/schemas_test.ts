@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { authLoginBody, createAliasBody, createUpstreamBody, createUserBody } from '../../src/control-plane/schemas.ts';
+import { authLoginBody, createAliasBody, createUpstreamBody, createUserBody, resetBackoffBody, upstreamRecordEnvelope, webSearchConfigSchema } from '../../src/control-plane/schemas.ts';
 import { MODEL_ALIAS_TARGET_LIMIT } from '../../src/shared/model-aliases.ts';
 
 const baseAzure = {
@@ -262,5 +262,35 @@ describe('account password schemas', () => {
   test('allows the empty ADMIN_KEY login password but rejects an empty account password', () => {
     expect(authLoginBody.safeParse({ username: '', password: '' }).success).toBe(true);
     expect(createUserBody.safeParse({ username: 'alice', password: '' }).success).toBe(false);
+  });
+});
+
+describe('storage identifier schemas', () => {
+  test.each(['\uD800', '\uDC00'])('reject lone surrogate %# across control-plane storage references', surrogate => {
+    expect(createUserBody.safeParse({ username: 'alice', password: 'password', upstreamIds: [`up-${surrogate}`] }).success).toBe(false);
+    expect(createUpstreamBody.safeParse({
+      ...baseAzure,
+      proxy_fallback_list: [{ id: `proxy-${surrogate}` }],
+    }).success).toBe(false);
+    expect(upstreamRecordEnvelope.safeParse({ id: `up-${surrogate}`, kind: 'azure', config: {}, state: null }).success).toBe(false);
+    expect(resetBackoffBody.safeParse({ upstream_id: `up-${surrogate}` }).success).toBe(false);
+    expect(webSearchConfigSchema.safeParse({
+      provider: 'disabled',
+      tavily: { apiKey: '' },
+      microsoftWebIq: { apiKey: '' },
+      jina: { apiKey: '' },
+      passthroughOpenAiSearch: { enabled: false, upstreamId: `up-${surrogate}`, model: '' },
+    }).success).toBe(false);
+  });
+
+  test('accepts a valid surrogate pair across control-plane storage references', () => {
+    const upstreamId = 'up-\uD83D\uDE00';
+    expect(createUserBody.safeParse({ username: 'alice', password: 'password', upstreamIds: [upstreamId] }).success).toBe(true);
+    expect(createUpstreamBody.safeParse({
+      ...baseAzure,
+      proxy_fallback_list: [{ id: 'proxy-\uD83D\uDE00' }],
+    }).success).toBe(true);
+    expect(upstreamRecordEnvelope.safeParse({ id: upstreamId, kind: 'azure', config: {}, state: null }).success).toBe(true);
+    expect(resetBackoffBody.safeParse({ upstream_id: upstreamId }).success).toBe(true);
   });
 });
