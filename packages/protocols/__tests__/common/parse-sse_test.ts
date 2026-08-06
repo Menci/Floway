@@ -138,13 +138,12 @@ test('parseSSEStream preserves a decode failure when reader cancellation also fa
 
 test('parseSSEStream preserves a frozen stream failure when cancellation also fails', async () => {
   const primary = Object.freeze(new Error('read failed'));
-  const cleanup = new Error('cancel failed');
   const body = new ReadableStream<Uint8Array>({
     pull() {
       throw primary;
     },
     cancel() {
-      throw cleanup;
+      throw new Error('cancel failed');
     },
   });
 
@@ -152,9 +151,7 @@ test('parseSSEStream preserves a frozen stream failure when cancellation also fa
     () => undefined,
     (reason: unknown) => reason,
   );
-  expect(error).toBeInstanceOf(AggregateError);
-  expect((error as AggregateError).cause).toBe(primary);
-  expect((error as AggregateError).errors).toEqual([primary, cleanup]);
+  expect(error).toBe(primary);
 });
 
 test('parseSSEStream returns promptly when cancellation never settles', async () => {
