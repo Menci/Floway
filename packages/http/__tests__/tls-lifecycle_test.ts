@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { makeFakeDuplex } from './test-utils.ts';
+import { userspaceTls } from '../src/tls.ts';
 
 interface MockTlsOptions {
   write(record: { header: Uint8Array; content: Uint8Array }): void;
@@ -54,8 +56,6 @@ vi.mock('@reclaimprotocol/tls', () => ({
     return client;
   }),
 }));
-
-import { userspaceTls } from '../src/tls.ts';
 
 const makeTransport = (write?: (chunk: Uint8Array) => void | Promise<void>) => {
   let readableController!: ReadableStreamDefaultController<Uint8Array>;
