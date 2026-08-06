@@ -27,6 +27,7 @@ const MIB = 1024 * 1024;
 const IMAGE_BYTES = 49 * MIB;
 const DUMP_CAPTURE_BYTES = MIB;
 const LIVE_MEMORY_LIMIT_BYTES = 128 * MIB;
+const PHASE_DEADLINE_MS = 60_000;
 const API_KEY_ID = 'key_image_memory_verifier';
 const API_KEY = 'floway-image-memory-verifier-key';
 const MODEL = 'gpt-image-2';
@@ -43,6 +44,7 @@ interface MemoryObservation {
   readonly arrayBuffersDelta: number;
   readonly positiveHeapUsedDelta: number;
   readonly liveBodyBytes: number;
+  readonly peakBodyBytes: number;
   readonly rss: number;
   readonly rssDelta: number;
   readonly maxRss: number;
@@ -184,7 +186,7 @@ interface FileObserver {
 const observeLargeFiles = (): FileObserver => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'File');
   if (descriptor === undefined || typeof descriptor.value !== 'function' || descriptor.configurable !== true) {
-    return { largeInstances: () => 0, reset: () => {}, restore: () => {} };
+    throw new Error('Node 22 File constructor cannot be observed; refusing a false-pass large-File assertion');
   }
   let count = 0;
   const NativeFile = descriptor.value as typeof File;
@@ -348,6 +350,14 @@ const runChild = async (): Promise<void> => {
   let baseline!: NodeJS.MemoryUsage;
   let observation: MemoryObservation | undefined;
   let largeOutboundCalls = 0;
+  let peakBodyBytes = 0;
+  let peakSampler: ReturnType<typeof setInterval> | undefined;
+  const samplePeak = (): void => {
+    const current = process.memoryUsage();
+    const liveBytes = Math.max(0, current.arrayBuffers - baseline.arrayBuffers)
+      + Math.max(0, current.heapUsed - baseline.heapUsed);
+    peakBodyBytes = Math.max(peakBodyBytes, liveBytes);
+  };
 
   globalThis.fetch = async (input, init): Promise<Response> => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
@@ -358,8 +368,7 @@ const runChild = async (): Promise<void> => {
     invariant(Reflect.get(init, 'duplex') === 'half', 'Node image edit stream omitted duplex=half');
     invariant(new Headers(init.headers).get('content-length') === String(source.byteLength), 'outbound Content-Length did not match replayable segments');
 
-    const response = nativeFetch(input, init);
-    if (phase === 'warmup') return await response;
+    if (phase === 'warmup') return await nativeFetch(input, init);
     largeOutboundCalls += 1;
 
     const uploadSegments = source.segments.filter(segment => segment.byteLength === IMAGE_BYTES);
@@ -373,10 +382,15 @@ const runChild = async (): Promise<void> => {
     const dumpCapture = dumpStore.preparedCapture();
     invariant(dumpCapture.buffer !== largeBacking, 'dump capture unexpectedly aliases the full multipart owner');
     dumpStore.assertLargePutPending();
+    samplePeak();
+
+    const response = nativeFetch(input, init);
 
     await largeUpstreamDrained;
     invariant(largeUpstreamBytes === source.byteLength, `loopback upstream received ${largeUpstreamBytes} bytes, expected ${source.byteLength}`);
     invariant(largeUpstreamContentLength === String(source.byteLength), `loopback upstream Content-Length was ${String(largeUpstreamContentLength)}, expected ${source.byteLength}`);
+    samplePeak();
+    if (peakSampler !== undefined) clearInterval(peakSampler);
 
     await forceGc();
     const current = process.memoryUsage();
@@ -387,6 +401,7 @@ const runChild = async (): Promise<void> => {
       arrayBuffersDelta,
       positiveHeapUsedDelta,
       liveBodyBytes,
+      peakBodyBytes,
       rss: current.rss,
       rssDelta: current.rss - baseline.rss,
       maxRss: process.resourceUsage().maxRSS * 1024,
@@ -400,6 +415,7 @@ const runChild = async (): Promise<void> => {
     invariant(observation.largeFileInstances === 0, `raw upload constructed ${observation.largeFileInstances} production-sized File object(s)`);
     invariant(arrayBuffersDelta >= IMAGE_BYTES, `memory sample saw only ${arrayBuffersDelta} live ArrayBuffer bytes; the 49 MiB body was not resident`);
     invariant(liveBodyBytes < LIVE_MEMORY_LIMIT_BYTES, `live image-edit memory ${liveBodyBytes} reached the ${LIVE_MEMORY_LIMIT_BYTES}-byte Worker limit`);
+    invariant(peakBodyBytes < LIVE_MEMORY_LIMIT_BYTES, `transient image-edit memory ${peakBodyBytes} reached the ${LIVE_MEMORY_LIMIT_BYTES}-byte Worker limit`);
     sendIpc({ type: 'hold', observation });
 
     return await response;
@@ -415,6 +431,7 @@ const runChild = async (): Promise<void> => {
     fileObserver.reset();
     await forceGc();
     baseline = process.memoryUsage();
+    peakSampler = setInterval(samplePeak, 1);
     const largeShape = multipartShape(IMAGE_BYTES);
     dumpStore.beginLarge(largeShape.contentLength);
     phase = 'large';
@@ -453,6 +470,7 @@ const runChild = async (): Promise<void> => {
     try { await operation(); } catch (error) { cleanupFailures.push(error); }
   };
   await cleanup(() => { releaseLarge(); });
+  await cleanup(() => { if (peakSampler !== undefined) clearInterval(peakSampler); });
   await cleanup(() => { globalThis.fetch = nativeFetch; });
   await cleanup(() => { fileObserver.restore(); });
   await cleanup(async () => { await background.flush(); });
@@ -532,6 +550,21 @@ class ChildMessages {
   }
 }
 
+const withDeadline = async <T>(work: Promise<T>, phase: string): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${phase} did not complete within ${PHASE_DEADLINE_MS}ms`)),
+      PHASE_DEADLINE_MS,
+    );
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+};
+
 const sendParentMessage = (child: ChildProcess, message: ParentMessage): void => {
   invariant(child.connected, 'memory verifier child IPC channel is closed');
   child.send(message);
@@ -582,6 +615,7 @@ const runParent = async (): Promise<void> => {
   );
   const messages = new ChildMessages(child);
   let completed = false;
+  const terminated = new Promise<void>(resolve => { child.once('exit', () => resolve()); });
   const exited = new Promise<void>((resolve, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => {
@@ -591,27 +625,28 @@ const runParent = async (): Promise<void> => {
   });
   void exited.catch(error => { messages.reportFailure(error as Error); });
   try {
-    const ready = await messages.waitFor('ready');
+    const ready = await withDeadline(messages.waitFor('ready'), 'child startup');
     const response = sendLargeRequest(ready.port);
-    const first = await Promise.race([
+    const first = await withDeadline(Promise.race([
       messages.waitFor('hold').then(() => ({ type: 'hold' as const })),
       response.then(result => ({ type: 'response' as const, result })),
-    ]);
+    ]), '49 MiB upload and memory hold');
     if (first.type === 'response') {
       throw new Error(`large endpoint completed before the memory hold with ${first.result.status}: ${first.result.body}`);
     }
     sendParentMessage(child, { type: 'release' });
-    const result = await response;
+    const result = await withDeadline(response, 'large gateway response');
     invariant(result.status === 200, `large endpoint returned ${result.status}: ${result.body}`);
     sendParentMessage(child, { type: 'verify' });
-    const complete = await messages.waitFor('complete');
+    const complete = await withDeadline(messages.waitFor('complete'), 'dump persistence verification');
     completed = true;
-    await exited;
+    await withDeadline(exited, 'child shutdown');
     const observation = complete.observation;
     console.log('49 MiB image-edit memory verification passed');
     console.log(JSON.stringify({
       ...observation,
       liveBodyMiB: Number((observation.liveBodyBytes / MIB).toFixed(2)),
+      peakBodyMiB: Number((observation.peakBodyBytes / MIB).toFixed(2)),
       rssMiB: Number((observation.rss / MIB).toFixed(2)),
       rssDeltaMiB: Number((observation.rssDelta / MIB).toFixed(2)),
       maxRssMiB: Number((observation.maxRss / MIB).toFixed(2)),
@@ -619,6 +654,15 @@ const runParent = async (): Promise<void> => {
     }, null, 2));
   } catch (error) {
     if (!child.killed) child.kill();
+    try {
+      await withDeadline(terminated, 'failed child termination');
+    } catch (terminationError) {
+      throw new AggregateError(
+        [error, terminationError],
+        'image memory verifier failed and child termination also failed',
+        { cause: error },
+      );
+    }
     throw error;
   }
 };
