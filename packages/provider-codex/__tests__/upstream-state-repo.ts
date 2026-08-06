@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
-import { UpstreamGoneError, UpstreamKindMismatchError, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
+import { UpstreamGoneError, type UpstreamRecord, type UpstreamStateWriteGuard } from '@floway-dev/provider';
+import { assertUpstreamStateWriteGuard } from '@floway-dev/test-utils';
 
 export interface UpstreamStateRepoStub {
   getById: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
@@ -24,7 +25,7 @@ export const createUpstreamStateRepoStub = (
     saveState: vi.fn(async (id, mutate, guard) => {
       const row = read();
       if (!row) throw new UpstreamGoneError(id);
-      if (row.kind !== guard.kind) throw new UpstreamKindMismatchError(id, guard.kind, row.kind);
+      assertUpstreamStateWriteGuard(row, guard);
       const next = mutate(row.state);
       if (JSON.stringify(next) === JSON.stringify(row.state)) return;
       writes.push(next);

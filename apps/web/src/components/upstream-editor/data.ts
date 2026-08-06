@@ -321,10 +321,11 @@ export const discoveredModelsFromResponse = (
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] => {
   if (response.kind !== 'custom') return response.data;
-  return response.data.map(model => {
+  return response.data.flatMap(model => {
     const kind = model.kind ?? 'chat';
     const shape = kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints });
-    return {
+    if (Object.keys(shape.endpoints).length === 0) return [];
+    return [{
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind,
@@ -333,7 +334,7 @@ export const discoveredModelsFromResponse = (
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.pricing ? { pricing: model.pricing } : {}),
       ...(model.chat !== undefined && kindForEndpoints(shape.endpoints) === 'chat' ? { chat: model.chat } : {}),
-    };
+    }];
   });
 };
 

@@ -8,7 +8,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
-import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+import { assertUpstreamStateWriteGuard, noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream: UpstreamRecord = {
   id: 'up-copilot',
@@ -66,7 +66,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => upstream,
-      saveState: async (_id, _mutate, _guard) => {},
+      saveState: async (_id, _mutate, guard) => { assertUpstreamStateWriteGuard(upstream, guard); },
     },
   }));
   clearInProcessCopilotTokenCache();

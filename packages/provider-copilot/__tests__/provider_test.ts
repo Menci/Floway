@@ -9,7 +9,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord, UpstreamsRepoSlim } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, assertThrows, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows, assertUpstreamStateWriteGuard, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const mergeClaudeVariantsControl = vi.hoisted<{
   override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
@@ -79,7 +79,8 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   const savedStates: unknown[] = [];
   let getByIdImpl: () => Promise<UpstreamRecord | null> = async () => upstream;
   // Applies the mutator to the row as it stands, the way the repo does.
-  let saveStateImpl: UpstreamsRepoSlim['saveState'] = async (_id, mutate, _guard) => {
+  let saveStateImpl: UpstreamsRepoSlim['saveState'] = async (_id, mutate, guard) => {
+    assertUpstreamStateWriteGuard(upstream, guard);
     const next = mutate(upstream.state);
     savedStates.push(next);
     upstream = { ...upstream, state: next };

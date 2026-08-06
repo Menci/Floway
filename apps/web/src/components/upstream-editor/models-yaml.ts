@@ -1,6 +1,7 @@
 import { parse, stringify } from 'yaml';
 
 import { errorMessage } from '../../lib/error-message';
+import { endpointsSupportKind } from '@floway-dev/protocols/common';
 import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
 
 export const serializeModels = (models: UpstreamModelConfig[]): string => stringify(models, {
@@ -25,7 +26,7 @@ export const parseModels = (text: string, { allowRerank }: { allowRerank: boolea
   } catch (error) {
     return { ok: false, message: errorMessage(error) };
   }
-  if (!allowRerank && models.some(model => model.kind === 'rerank')) {
+  if (!allowRerank && models.some(model => endpointsSupportKind(model.endpoints, 'rerank'))) {
     return { ok: false, message: 'Rerank models require a custom upstream' };
   }
   return { ok: true, models };

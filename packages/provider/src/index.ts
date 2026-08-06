@@ -94,6 +94,7 @@ export type {
 } from './model-config.ts';
 export {
   chatField,
+  endpointsWithoutRerank,
   endpointsField,
   isRecord,
   modelsField,

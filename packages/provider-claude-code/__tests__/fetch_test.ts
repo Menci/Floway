@@ -9,7 +9,7 @@ import type {
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
 import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { assertUpstreamStateWriteGuard, noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 
@@ -97,7 +97,8 @@ beforeEach(() => {
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => currentRecord,
-      saveState: async (_id, mutate, _guard) => {
+      saveState: async (_id, mutate, guard) => {
+        assertUpstreamStateWriteGuard(currentRecord, guard);
         currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
       },
     },

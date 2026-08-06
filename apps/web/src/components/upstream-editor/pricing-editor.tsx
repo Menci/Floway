@@ -28,7 +28,7 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
+import { PRICING_AXES, type BillingMetric, type ModelEndpoints, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
 const { Button, Field, List, ListItem, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const usePricingStyles = makeStyles({
@@ -94,8 +94,8 @@ const issueAffectsEntry = (issue: ModelPricingIssue, index: number): boolean => 
   return true;
 };
 
-export function PricingEditor({ kind, onChange, readOnly, value }: {
-  kind: ModelKind;
+export function PricingEditor({ endpoints, onChange, readOnly, value }: {
+  endpoints: ModelEndpoints;
   onChange: (value: ModelPricing | undefined) => void;
   readOnly: boolean;
   value: ModelPricing | undefined;
@@ -115,7 +115,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   const selectedDraftIndex = drafts.findIndex(draft => draft.id === selectedId);
   const selectedIndex = selectedDraftIndex === -1 ? 0 : selectedDraftIndex;
   const active = drafts[selectedIndex];
-  const fields = useMemo(() => visiblePricingFields(drafts, kind), [drafts, kind]);
+  const fields = useMemo(() => visiblePricingFields(drafts, endpoints), [drafts, endpoints]);
   const issues = useMemo(() => collectDraftIssues(drafts, value), [drafts, value]);
   const baseIndex = drafts.findIndex(isBaseEntry);
 

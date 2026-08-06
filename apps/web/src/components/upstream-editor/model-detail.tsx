@@ -62,13 +62,10 @@ export function ModelDetail({
     }
     onChange(updated);
   };
-  const setKind = (kind: UpstreamModelConfig['kind']) => patch({
-    kind,
-    chat: kind === 'chat' ? row.config.chat : undefined,
-    rerankTarget: undefined,
-    ...(kind === 'image' ? { limits: undefined } : {}),
-    ...shapeForKind(kind, row.config),
-  });
+  const setKind = (kind: UpstreamModelConfig['kind']) => {
+    const next = kindPatchForModel(row.config, kind);
+    if (next !== null) patch(next);
+  };
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
     const limits = { ...(row.config.limits ?? {}) };
@@ -187,8 +184,8 @@ export function ModelDetail({
 
         <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
           <PricingEditor
+            endpoints={row.config.endpoints}
             readOnly={fieldsReadOnly}
-            kind={row.config.kind}
             onChange={pricing => patch({ pricing })}
             value={row.config.pricing}
           />
@@ -201,6 +198,19 @@ export function ModelDetail({
     </div>
   );
 }
+
+export const kindPatchForModel = (
+  model: UpstreamModelConfig,
+  kind: UpstreamModelConfig['kind'],
+): Partial<UpstreamModelConfig> | null => kind === model.kind
+  ? null
+  : {
+      kind,
+      chat: kind === 'chat' ? model.chat : undefined,
+      rerankTarget: undefined,
+      ...(kind === 'image' ? { limits: undefined } : {}),
+      ...shapeForKind(kind, model),
+    };
 
 function NumberField({ label, onChange, placeholder, readOnly, value }: { label: string; onChange: (raw: string) => void; placeholder: string; readOnly: boolean; value?: number }) {
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;

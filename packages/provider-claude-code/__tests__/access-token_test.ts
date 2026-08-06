@@ -9,6 +9,7 @@ import { ClaudeCodeOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { ClaudeCodeUpstreamConfig } from '../src/config.ts';
 import type { ClaudeCodeQuotaSnapshotEntry, ClaudeCodeUpstreamState } from '../src/state.ts';
 import { directFetcher, UpstreamGoneError, type UpstreamRecord, type UpstreamsRepoSlim } from '@floway-dev/provider';
+import { assertUpstreamStateWriteGuard } from '@floway-dev/test-utils';
 
 const accountUuid = 'acc-uuid-1';
 const upstreamId = 'up-claude-1';
@@ -76,7 +77,7 @@ beforeEach(() => {
   // tests, which rely on getById observing the just-persisted state.
   saveStateSpy = vi.fn(async (id, mutate, guard) => {
     if (!current) throw new UpstreamGoneError(id);
-    if (current.kind !== guard.kind) throw new Error(`unexpected write guard ${guard.kind}`);
+    assertUpstreamStateWriteGuard(current, guard);
     const next = mutate(current.state) as ClaudeCodeUpstreamState;
     if (JSON.stringify(next) === JSON.stringify(current.state)) return;
     current = { ...current, state: next };

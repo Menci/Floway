@@ -1,12 +1,15 @@
 import {
   BILLING_METRICS,
+  MODEL_KINDS,
   PRICING_AXES,
   collectModelPricingIssues,
   divideDecimalString,
+  endpointsSupportKind,
   multiplyDecimalStrings,
   parseNonNegativeDecimalString,
   type BillingMetric,
   type DecimalString,
+  type ModelEndpoints,
   type ModelKind,
   type ModelPricing,
   type ModelPricingIssue,
@@ -81,10 +84,14 @@ export const isBaseEntry = (draft: PricingEntryDraft): boolean =>
 export const baseEntryOf = (drafts: readonly PricingEntryDraft[]): PricingEntryDraft | undefined =>
   drafts.find(isBaseEntry);
 
-// An upstream may bill on a metric this kind does not declare; hiding that field would
-// silently drop the rate on the next write.
-export const visiblePricingFields = (drafts: readonly PricingEntryDraft[], kind: ModelKind): readonly PricingField[] => {
-  const fields = new Map(PRICING_FIELDS_BY_KIND[kind].map(field => [field.metric, field]));
+// An upstream may bill on a metric its endpoint map does not declare; hiding
+// that field would silently drop the rate on the next write.
+export const visiblePricingFields = (drafts: readonly PricingEntryDraft[], endpoints: ModelEndpoints): readonly PricingField[] => {
+  const fields = new Map<BillingMetric, PricingField>();
+  for (const kind of MODEL_KINDS) {
+    if (!endpointsSupportKind(endpoints, kind)) continue;
+    for (const field of PRICING_FIELDS_BY_KIND[kind]) fields.set(field.metric, field);
+  }
   for (const metric of BILLING_METRICS) {
     if (drafts.some(draft => draft.rates[metric] !== undefined)) fields.set(metric, PRICING_FIELD_BY_METRIC[metric]);
   }

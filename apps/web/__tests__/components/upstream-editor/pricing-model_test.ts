@@ -57,9 +57,16 @@ describe('pricing editor model', () => {
 
   it('shows a priced metric the kind does not declare', () => {
     const drafts = pricingEntryDraftsFor(baseOnly({ input_tokens: '0.000003', rerank_searches: '0.002' }));
-    const metrics = visiblePricingFields(drafts, 'chat').map(field => field.metric);
+    const metrics = visiblePricingFields(drafts, { chatCompletions: {} }).map(field => field.metric);
 
     expect(metrics).toContain('rerank_searches');
+  });
+
+  it('derives authorable metrics from every endpoint family in a mixed model', () => {
+    const drafts = pricingEntryDraftsFor(baseOnly({}));
+    const metrics = visiblePricingFields(drafts, { embeddings: {}, rerank: {} }).map(field => field.metric);
+
+    expect(metrics).toEqual(['input_tokens', 'rerank_searches']);
   });
 
   it('keeps selectors and rates when editing an override', () => {

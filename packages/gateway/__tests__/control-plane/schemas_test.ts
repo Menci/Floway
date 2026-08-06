@@ -205,13 +205,32 @@ describe('upstreamModelSchema rerank', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
-  test('rejects rerank models on Azure', () => {
-    const body = structuredClone(baseAzure);
-    const model = body.config.models[0] as Record<string, unknown>;
-    model.kind = 'rerank';
-    model.endpoints = { rerank: {} };
-    model.rerankTarget = { protocol: 'cohere-v2' };
-    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  test('rejects every rerank endpoint on Azure and Ollama regardless of primary kind', () => {
+    const bodies: unknown[] = [];
+    for (const endpoints of [{ rerank: {} }, { embeddings: {}, rerank: {} }]) {
+      const azure = structuredClone(baseAzure);
+      const azureModel = azure.config.models[0] as Record<string, unknown>;
+      azureModel.kind = endpoints.embeddings === undefined ? 'rerank' : 'embedding';
+      azureModel.endpoints = endpoints;
+      azureModel.rerankTarget = { protocol: 'cohere-v2' };
+      bodies.push(azure);
+
+      bodies.push({
+        kind: 'ollama',
+        name: 'ollama',
+        hue: 210,
+        config: {
+          baseUrl: 'https://ollama.example.com',
+          models: [{
+            upstreamModelId: 'mixed',
+            kind: endpoints.embeddings === undefined ? 'rerank' : 'embedding',
+            endpoints,
+            rerankTarget: { protocol: 'cohere-v2' },
+          }],
+        },
+      });
+    }
+    for (const body of bodies) expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
   test('treats explicit kind conflicts like existing image endpoint conflicts', () => {

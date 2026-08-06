@@ -316,6 +316,10 @@ test('SQL upstream repo saveState cannot cross a provider replacement race', asy
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await repo.save(baseRecord());
+  const stateBefore = await db.prepare('SELECT state_json FROM upstreams WHERE id = ?')
+    .bind('up_test')
+    .first<{ state_json: string }>();
+  if (stateBefore === null) throw new Error('seeded upstream state missing');
   const replacementConfig = {
     baseUrl: 'https://replacement.example.com',
     authStyle: 'none',
@@ -325,7 +329,7 @@ test('SQL upstream repo saveState cannot cross a provider replacement race', asy
     models: [],
   };
   const racing = new SqlRepo(withWriterRacingReads(db, () =>
-    db.prepare('UPDATE upstreams SET provider = ?, config_json = ?, state_json = NULL WHERE id = ?')
+    db.prepare('UPDATE upstreams SET provider = ?, config_json = ? WHERE id = ?')
       .bind('custom', JSON.stringify(replacementConfig), 'up_test')
       .run(), 1)).upstreams;
 
@@ -334,9 +338,38 @@ test('SQL upstream repo saveState cannot cross a provider replacement race', asy
     Error,
     'changed from codex to custom',
   );
-  const replacement = await repo.getById('up_test');
-  assertEquals(replacement?.kind, 'custom');
-  assertEquals(replacement?.state, null);
+  const replacement = await db.prepare('SELECT provider, state_json FROM upstreams WHERE id = ?')
+    .bind('up_test')
+    .first<{ provider: string; state_json: string }>();
+  assertEquals(replacement, { provider: 'custom', state_json: stateBefore.state_json });
+});
+
+test('SQL upstream repo saveState cannot cross a same-provider config generation race', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  const original = baseRecord();
+  await repo.save(original);
+  const stateBefore = await db.prepare('SELECT state_json FROM upstreams WHERE id = ?')
+    .bind('up_test')
+    .first<{ state_json: string }>();
+  if (stateBefore === null) throw new Error('seeded upstream state missing');
+  const replacementConfig = {
+    accounts: [{ email: 'replacement@example.com', chatgptAccountId: 'replacement', chatgptUserId: 'replacement', planType: 'team' }],
+  };
+  const racing = new SqlRepo(withWriterRacingReads(db, () =>
+    db.prepare('UPDATE upstreams SET config_json = ? WHERE id = ?')
+      .bind(JSON.stringify(replacementConfig), 'up_test')
+      .run(), 1)).upstreams;
+
+  await assertRejects(
+    () => racing.saveState('up_test', () => ({ accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] }), { kind: 'codex', config: original.config }),
+    Error,
+    'credentials changed',
+  );
+  const replacement = await db.prepare('SELECT config_json, state_json FROM upstreams WHERE id = ?')
+    .bind('up_test')
+    .first<{ config_json: string; state_json: string }>();
+  assertEquals(replacement, { config_json: JSON.stringify(replacementConfig), state_json: stateBefore.state_json });
 });
 
 // A writer that never wins gives up rather than looping, and says so instead

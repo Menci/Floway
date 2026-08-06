@@ -216,6 +216,22 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
   assertEquals(models.map(model => model.id), ['chat-model']);
 });
 
+test('auto-fetched models cannot inherit a rerank endpoint without an operator target', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    endpoints: { embeddings: {}, chatCompletions: {}, rerank: {} },
+  }));
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'chat-model', kind: 'chat' }, { id: 'unknown-model' }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+
+  assertEquals(models.map(model => model.endpoints), [
+    { embeddings: {}, chatCompletions: {} },
+    { embeddings: {}, chatCompletions: {} },
+  ]);
+  assertEquals(models.every(model => model.rerankTarget === undefined), true);
+});
+
 test('auto-fetched non-chat models omit contradictory chat metadata', async () => {
   const chat = { reasoning: { effort: { supported: ['low'], default: 'low' } } };
   const instance = createCustomProvider(buildCustomUpstream());

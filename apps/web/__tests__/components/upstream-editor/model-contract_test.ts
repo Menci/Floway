@@ -28,6 +28,17 @@ describe('custom discovered model projection', () => {
     expect(models[1]?.endpoints).toEqual({ embeddings: {} });
   });
 
+  it('withholds inherited rerank until an auto row becomes manual with a target', () => {
+    const models = discoveredModelsFromResponse({
+      kind: 'custom',
+      data: [{ id: 'mixed' }, { id: 'talker', kind: 'chat' }],
+    }, { embeddings: {}, rerank: {} });
+
+    expect(models.map(model => model.endpoints)).toEqual([{ embeddings: {} }, { embeddings: {} }]);
+    expect(models.every(model => model.rerankTarget === undefined)).toBe(true);
+    expect(modelsAreValid(models)).toBe(true);
+  });
+
   it('preserves chat metadata exactly when the configured endpoints resolve to chat', () => {
     const chat = {
       modalities: { input: ['text', 'image'], output: ['text'] },

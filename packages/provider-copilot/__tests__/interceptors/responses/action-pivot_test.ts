@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import type { ResponsesBoundaryCtx } from '../../../src/interceptors/responses/types.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProviderResponsesResult } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertUpstreamStateWriteGuard } from '@floway-dev/test-utils';
 
 // `provider.callResponses` runs the boundary chain and the terminal
 // switches on `ctx.action`, not on the closure-captured `action` parameter
@@ -61,7 +61,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => upstream,
-      saveState: async (_id, _mutate, _guard) => {},
+      saveState: async (_id, _mutate, guard) => { assertUpstreamStateWriteGuard(upstream, guard); },
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());

@@ -4,7 +4,7 @@ import { copilotAuthedFetch, exchangeCopilotToken } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
 import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertUpstreamStateWriteGuard, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
 const TOKEN_BASE_URL = 'https://api.individual.githubcopilot.com';
@@ -42,7 +42,8 @@ const installRepoAndClearCache = async (config: UpstreamRecord['config'] = {
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => ({ ...stub, state }),
-      saveState: async (_id, mutate, _guard) => {
+      saveState: async (_id, mutate, guard) => {
+        assertUpstreamStateWriteGuard(stub, guard);
         state = mutate(state);
       },
     },
@@ -583,7 +584,8 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => ({ ...stub, state }),
-      saveState: async (_id, mutate, _guard) => {
+      saveState: async (_id, mutate, guard) => {
+        assertUpstreamStateWriteGuard(stub, guard);
         state = mutate(state);
       },
     },

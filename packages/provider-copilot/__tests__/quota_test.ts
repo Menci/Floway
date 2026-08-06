@@ -223,7 +223,8 @@ test('putCopilotQuota keeps a newer observation when an older save wins the stor
   initProviderRepo(() => ({
     upstreams: {
       getById: async () => null,
-      saveState: (_id, mutate, _guard) => new Promise<void>(resolve => {
+      saveState: (_id, mutate, guard) => new Promise<void>(resolve => {
+        if (guard.kind !== 'copilot') throw new Error(`unexpected write guard ${guard.kind}`);
         pending.push(() => {
           state = mutate(state);
           resolve();

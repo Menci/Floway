@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { endpointsWithoutRerank, headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -38,13 +38,20 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 // A published embedding/image/transcription kind maps directly to its endpoint;
 // chat takes the upstream default. Rerank rows are removed before this helper
 // because a kind alone cannot select their target wire. Unknown kinds use the
-// id heuristic, then fall back to the configured endpoints.
+// id heuristic, then fall back to the configured endpoints. Auto rows have no
+// operator-authored rerankTarget, so an inherited rerank endpoint is withheld
+// until the row is made manual and its wire protocol is selected.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
-  if (model.kind === 'embedding') return { embeddings: {} };
-  if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
-  if (model.kind === 'transcription') return { audioTranscriptions: {} };
-  if (model.kind === 'chat') return configured;
-  return inferEndpointsFromModelId(model.id) ?? configured;
+  const endpoints = model.kind === 'embedding'
+    ? { embeddings: {} }
+    : model.kind === 'image'
+      ? { imagesGenerations: {}, imagesEdits: {} }
+      : model.kind === 'transcription'
+        ? { audioTranscriptions: {} }
+        : model.kind === 'chat'
+          ? configured
+          : inferEndpointsFromModelId(model.id) ?? configured;
+  return endpointsWithoutRerank(endpoints);
 };
 
 const hasChatEndpoint = (endpoints: ModelEndpoints): boolean =>

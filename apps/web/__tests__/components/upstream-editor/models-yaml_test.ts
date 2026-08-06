@@ -40,6 +40,18 @@ describe('models YAML rejection', () => {
     expect(parseModels(serializeModels([{ ...RERANK_MODEL }]), { allowRerank: true }).ok).toBe(true);
   });
 
+  it('rejects a mixed primary kind when any endpoint selects rerank', () => {
+    const mixed = {
+      upstreamModelId: 'mixed',
+      kind: 'embedding' as const,
+      endpoints: { embeddings: {}, rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' as const },
+    };
+    expect(parseModels(serializeModels([mixed]), { allowRerank: false }))
+      .toEqual({ ok: false, message: 'Rerank models require a custom upstream' });
+    expect(parseModels(serializeModels([mixed]), { allowRerank: true }).ok).toBe(true);
+  });
+
   it('rejects a rerank model with no target, which the gateway would refuse', () => {
     const parsed = parseModels('- upstreamModelId: r\n  kind: rerank\n  endpoints:\n    rerank: {}\n', { allowRerank: true });
     expect(parsed.ok).toBe(false);
