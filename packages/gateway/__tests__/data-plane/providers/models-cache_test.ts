@@ -165,9 +165,9 @@ describe('fetchUpstreamModelsCached', () => {
     );
 
     expect(result.map(m => m.id)).toEqual(['stale']);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(scheduled).not.toBeNull();
     await scheduled!;
+    expect(fetchFn).toHaveBeenCalledTimes(1);
     expect((await storedCache(repo))?.models.map(m => m.id)).toEqual(['fresh']);
   });
 
@@ -228,8 +228,7 @@ describe('fetchUpstreamModelsCached', () => {
     const p1 = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
     const p2 = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });
 
-    // Yield once so both calls reach the L1 lookup before we resolve the fetch.
-    await Promise.resolve();
+    await vi.waitFor(() => expect(resolveFetch).not.toBeNull());
     resolveFetch!([aModel('m1')]);
     const [r1, r2] = await Promise.all([p1, p2]);
 
