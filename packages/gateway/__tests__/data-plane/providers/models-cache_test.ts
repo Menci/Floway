@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import type { ModelsCacheGeneration } from '../../../src/repo/types.ts';
@@ -75,10 +75,6 @@ const seedCache = async (
 
 const storedCache = async (repo: InMemoryRepo): Promise<UpstreamModelsCache | null> =>
   (await repo.upstreams.getById(UPSTREAM_ID))?.modelsCache ?? null;
-
-beforeEach(() => {
-  clearInFlightForTesting();
-});
 
 describe('fetchUpstreamModelsCached', () => {
   test('cold cache: fetches, stores, returns models', async () => {
@@ -205,6 +201,33 @@ describe('fetchUpstreamModelsCached', () => {
     expect(r1.map(m => m.id)).toEqual(['m1']);
     expect(r2.map(m => m.id)).toEqual(['m1']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  test('identical fetches in different repository compositions remain isolated', async () => {
+    const firstRepo = await setupRepo();
+    let resolveFirstFetch: ((models: ProviderModel[]) => void) | null = null;
+    const firstFetch = vi.fn(() => new Promise<ProviderModel[]>(resolve => { resolveFirstFetch = resolve; }));
+    const firstRequest = fetchUpstreamModelsCached(
+      stubInstance(firstFetch),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+    await Promise.resolve();
+
+    const secondRepo = await setupRepo();
+    const secondFetch = vi.fn(async () => [aModel('second-repo-model')]);
+    const secondResult = await fetchUpstreamModelsCached(
+      stubInstance(secondFetch),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+
+    expect(secondResult.map(model => model.id)).toEqual(['second-repo-model']);
+    expect(secondFetch).toHaveBeenCalledTimes(1);
+    expect((await storedCache(secondRepo))?.models.map(model => model.id)).toEqual(['second-repo-model']);
+
+    resolveFirstFetch!([aModel('first-repo-model')]);
+    expect((await firstRequest).map(model => model.id)).toEqual(['first-repo-model']);
+    expect((await storedCache(firstRepo))?.models.map(model => model.id)).toEqual(['first-repo-model']);
+    expect((await storedCache(secondRepo))?.models.map(model => model.id)).toEqual(['second-repo-model']);
   });
 
   test('concurrent stale callers schedule one revalidation and refresh every joining provider instance', async () => {

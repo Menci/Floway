@@ -1,7 +1,6 @@
 import { describe, test } from 'vitest';
 
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
-import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
@@ -242,7 +241,6 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 });
 
 test('catalog assembly starts every upstream fetch before waiting for any response', { timeout: 5_000 }, async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -291,7 +289,6 @@ test('catalog assembly starts every upstream fetch before waiting for any respon
 });
 
 test('catalog abort does not wait for another upstream whose fetch never settles', { timeout: 1_000 }, async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -325,7 +322,6 @@ test('catalog abort does not wait for another upstream whose fetch never settles
       } catch (error) {
         thrown = error;
       } finally {
-        clearInFlightForTesting();
       }
       assertEquals(isAbortError(thrown), true);
       assertEquals(calls.sort(), ['aborting.example.com', 'hanging.example.com']);
@@ -337,7 +333,6 @@ test('catalog abort does not wait for another upstream whose fetch never settles
 // recorded against `sawSuccess === true`; the public catalog still includes
 // every successful upstream's models.
 test('catalog assembly: a rejected provider does not block other providers', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 

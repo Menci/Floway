@@ -9,9 +9,7 @@ import { RESPONSES_WEBSOCKET_LIMITS } from '@floway-dev/gateway';
 // exhaustion class that maxPayload alone cannot stop.
 // https://github.com/websockets/ws/blob/787ebf22ce3d091fb6f931d20b4c7e914ba7cf85/lib/websocket-server.js#L31-L89
 // https://github.com/advisories/GHSA-96hv-2xvq-fx4p
-export const createResponsesWebSocketServer = (
-  maxPayload: number = RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes,
-): WebSocketServer => new WebSocketServer({
+export const createResponsesWebSocketServer = (): WebSocketServer => new WebSocketServer({
   noServer: true,
-  maxPayload,
+  maxPayload: RESPONSES_WEBSOCKET_LIMITS.maxMessageBytes,
 });
