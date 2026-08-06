@@ -42,6 +42,17 @@ export const isClaudeCodeCredentialGeneration = (
   && account.stateUpdatedAt === generation.stateUpdatedAt
   && account.accessToken?.token === generation.accessToken;
 
+// Quota and terminal observations belong to the imported account generation,
+// not to one short-lived OAuth token. Successful refresh rotation deliberately
+// keeps stateUpdatedAt unchanged, while re-importing the account advances it.
+export const isClaudeCodeAccountGeneration = (
+  account: ClaudeCodeAccountCredential,
+  generation: ClaudeCodeCredentialGeneration,
+): boolean => account.state === 'active'
+  && account.accountUuid === generation.accountUuid
+  && account.tokenKind === generation.tokenKind
+  && account.stateUpdatedAt === generation.stateUpdatedAt;
+
 // Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when
 // this call shared in a real /v1/oauth/token round-trip (either drove the
 // mint itself, or coalesced onto an in-flight mint kicked off by a

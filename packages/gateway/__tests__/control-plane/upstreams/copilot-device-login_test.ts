@@ -314,7 +314,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   await repo.upstreams.save(existing);
 
   await withMockedFetch(
-    request => {
+    async request => {
       const url = new URL(request.url);
       if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse(githubAccessToken('ghu_refreshed'));
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);

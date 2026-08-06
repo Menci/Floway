@@ -1,7 +1,7 @@
 import {
   ensureClaudeCodeAccessToken,
   invalidateClaudeCodeAccessToken,
-  isClaudeCodeCredentialGeneration,
+  isClaudeCodeAccountGeneration,
   type ClaudeCodeCredentialGeneration,
   type EnsuredAccessToken,
 } from './access-token.ts';
@@ -113,7 +113,7 @@ const persistQuotaSnapshot = async (
     applied = false;
     const state = readClaudeCodeUpstreamState(current);
     const account = state.accounts[0];
-    if (!isClaudeCodeCredentialGeneration(account, generation)) return state;
+    if (!isClaudeCodeAccountGeneration(account, generation)) return state;
     if (account.quotaSnapshot !== null && account.quotaSnapshot.fetchedAt >= fetchedAt) return state;
     previousAccount = account;
     applied = true;
@@ -243,7 +243,7 @@ const persistTerminalAccountState = async (
     applied = false;
     const state = readClaudeCodeUpstreamState(current);
     const account = state.accounts[0];
-    if (!isClaudeCodeCredentialGeneration(account, generation)) return state;
+    if (!isClaudeCodeAccountGeneration(account, generation)) return state;
     previousAccount = account;
     applied = true;
     return replaceSoleAccount(state, account => ({

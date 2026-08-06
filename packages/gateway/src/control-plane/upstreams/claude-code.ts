@@ -20,7 +20,7 @@ import {
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
-  isClaudeCodeCredentialGeneration,
+  isClaudeCodeAccountGeneration,
   logInfo,
   readClaudeCodeUpstreamState,
 } from '@floway-dev/provider-claude-code';
@@ -275,7 +275,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     await repo.saveState(record.id, current => {
       const currentState = readClaudeCodeUpstreamState(current);
       const account = currentState.accounts[0];
-      if (persistedGeneration === null || !isClaudeCodeCredentialGeneration(account, persistedGeneration)) return currentState;
+      if (persistedGeneration === null || !isClaudeCodeAccountGeneration(account, persistedGeneration)) return currentState;
       if (
         account.usageProbeSnapshot !== null
         && account.usageProbeSnapshot.fetchedAt >= snapshotPatch.usageProbeSnapshot.fetchedAt
