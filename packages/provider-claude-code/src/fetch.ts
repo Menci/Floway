@@ -107,21 +107,25 @@ const persistQuotaSnapshot = async (
   // The prior status comes from the state the mutator was handed: the write is
   // retried against whoever won the row, so only that view describes the
   // snapshot this write actually replaced.
-  let previousAccount: ClaudeCodeAccountCredential | null = null;
-  let applied = false;
+  const outcome: { previousAccount: ClaudeCodeAccountCredential | null; applied: boolean } = {
+    previousAccount: null,
+    applied: false,
+  };
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    applied = false;
+    outcome.previousAccount = null;
+    outcome.applied = false;
     const state = readClaudeCodeUpstreamState(current);
     const account = state.accounts[0];
     if (!isClaudeCodeAccountGeneration(account, generation)) return state;
     if (account.quotaSnapshot !== null && account.quotaSnapshot.fetchedAt >= fetchedAt) return state;
-    previousAccount = account;
-    applied = true;
+    outcome.previousAccount = account;
+    outcome.applied = true;
     return replaceSoleAccount(state, account => ({
       ...account,
       quotaSnapshot: { fetchedAt, data: snapshot },
     }));
   }, { kind: 'claude-code' });
+  const { applied, previousAccount } = outcome;
   if (!applied || previousAccount === null) return;
   const priorStatus = previousAccount.quotaSnapshot === null ? null : previousAccount.quotaSnapshot.data.status;
   // Emit only on transition. Persisting every response would flood the log
@@ -237,15 +241,18 @@ const persistTerminalAccountState = async (
   // Stamped before the write for the same reason as the quota snapshot: a
   // replay must produce the same document.
   const flippedAt = new Date().toISOString();
-  let previousAccount: ClaudeCodeAccountCredential | null = null;
-  let applied = false;
+  const outcome: { previousAccount: ClaudeCodeAccountCredential | null; applied: boolean } = {
+    previousAccount: null,
+    applied: false,
+  };
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    applied = false;
+    outcome.previousAccount = null;
+    outcome.applied = false;
     const state = readClaudeCodeUpstreamState(current);
     const account = state.accounts[0];
     if (!isClaudeCodeAccountGeneration(account, generation)) return state;
-    previousAccount = account;
-    applied = true;
+    outcome.previousAccount = account;
+    outcome.applied = true;
     return replaceSoleAccount(state, account => ({
       ...account,
       state: 'refresh_failed',
@@ -254,6 +261,7 @@ const persistTerminalAccountState = async (
       accessToken: null,
     }));
   }, { kind: 'claude-code' });
+  const { applied, previousAccount } = outcome;
   if (!applied || previousAccount === null) return;
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
