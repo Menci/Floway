@@ -232,6 +232,50 @@ test('retainResponse cancels a stalled source at the post-disconnect deadline', 
   }
 });
 
+test('a client disconnect signal starts the deadline without canceling the downstream body', async () => {
+  vi.useFakeTimers();
+  try {
+    const initialTimerCount = vi.getTimerCount();
+    let sourceCancelReason: unknown;
+    let sourceCancelCount = 0;
+    const controller = new AbortController();
+    const onSettled = vi.fn();
+    const background = captureBackgroundTasks();
+    const retained = retainResponse(
+      new Response(new ReadableStream<Uint8Array>({
+        pull: () => new Promise<void>(() => {}),
+        cancel(reason) {
+          sourceCancelCount += 1;
+          sourceCancelReason = reason;
+        },
+      }, { highWaterMark: 0 })),
+      {
+        backgroundScheduler: background.scheduler,
+        clientDisconnectSignal: controller.signal,
+        limits: limits(100, 100, 10),
+        onSettled,
+      },
+    );
+    const terminal = outcomeOf(retained.body!.getReader().read());
+
+    controller.abort(new Error('client left'));
+    await vi.advanceTimersByTimeAsync(9);
+    expect(sourceCancelCount).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const terminalOutcome = await terminal;
+    const lifetimeOutcome = await outcomeOf(background.tasks[0]!);
+    expectTimeout(sourceCancelReason, 'post-disconnect');
+    expect(terminalOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
+    expect(lifetimeOutcome).toEqual({ status: 'rejected', reason: sourceCancelReason });
+    expect(sourceCancelCount).toBe(1);
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(initialTimerCount);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('nested retained bodies share one absolute post-disconnect deadline', async () => {
   vi.useFakeTimers();
   try {
