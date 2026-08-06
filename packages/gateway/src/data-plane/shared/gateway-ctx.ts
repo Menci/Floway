@@ -2,6 +2,7 @@ import type { OwnedRequestBody } from './request-body.ts';
 import { retainResponse, RETAINED_RESPONSE_LIMITS } from './retained-response.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import type { ApiKey } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -83,6 +84,15 @@ export interface CreateGatewayCtxOptions {
   backgroundScheduler: BackgroundScheduler;
 }
 
+export type RegisterGatewayCtx = <Ctx extends GatewayCtx>(ctx: Ctx) => Ctx;
+
+type GatewayResponseOperation = (registerCtx: RegisterGatewayCtx) => Promise<Response>;
+type GatewayResponseRecovery = (
+  error: unknown,
+  ctx: GatewayCtx | undefined,
+  registerCtx: RegisterGatewayCtx,
+) => Promise<Response>;
+
 const createRequestLinkedAbortController = (requestSignal: AbortSignal): AbortController => {
   const controller = new AbortController();
   const abortFromRequest = (): void => controller.abort(requestSignal.reason);
@@ -99,7 +109,24 @@ const createRequestLinkedAbortController = (requestSignal: AbortSignal): AbortCo
   return controller;
 };
 
-export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
+export const createGatewayCtxFromHono = <Extension extends object = Record<never, never>>(
+  c: AuthedContext,
+  opts: CreateGatewayCtxOptions,
+  extensionFactory?: (construction: { readonly apiKey: ApiKey; readonly requestStartedAt: number }) => Extension,
+): GatewayCtx & Extension => {
+  const apiKey = apiKeyFromContext(c);
+  const requestStartedAt = Date.now();
+  // Extension construction is part of the same transaction as the base
+  // context. Chat affinity and item stores can reject persisted state, so all
+  // of them must exist before the first lifecycle timer is armed.
+  const extension = extensionFactory === undefined
+    ? {} as Extension
+    : { ...extensionFactory({ apiKey, requestStartedAt }) };
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
+  const runtimeLocation = getRuntimeLocation(c.req.raw);
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
+  if (opts.model !== undefined) dump?.requestedModel(opts.model);
+
   const controller = opts.clientDisconnectController ?? createRequestLinkedAbortController(c.req.raw.signal);
   const executionController = opts.executionController ?? new AbortController();
   let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -124,13 +151,10 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   };
   if (controller.signal.aborted) scheduleDisconnectDeadline();
   else controller.signal.addEventListener('abort', scheduleDisconnectDeadline, { once: true });
-  const apiKey = apiKeyFromContext(c);
-  const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
-  if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
+    ...extension,
     apiKeyId: apiKey.id,
-    requestStartedAt: Date.now(),
+    requestStartedAt,
     upstreamIds,
     clientDisconnectSignal: controller.signal,
     wantsStream: opts.wantsStream,
@@ -140,9 +164,46 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     finishExecution,
     backgroundScheduler: opts.backgroundScheduler,
     attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-    runtimeLocation: getRuntimeLocation(c.req.raw),
+    runtimeLocation,
     dump,
   };
+};
+
+// Owns the only response finalization point for an HTTP operation. A context
+// is registered immediately after its transactional construction; normal and
+// recovered responses then pass through the same finalizer exactly once.
+export const runGatewayResponse = async (
+  operation: GatewayResponseOperation,
+  recover: GatewayResponseRecovery,
+): Promise<Response> => {
+  let ctx: GatewayCtx | undefined;
+  const registerCtx: RegisterGatewayCtx = candidate => {
+    if (ctx !== undefined) {
+      candidate.finishExecution();
+      throw new Error('Gateway response operation registered more than one context');
+    }
+    ctx = candidate;
+    return candidate;
+  };
+
+  let response: Response;
+  try {
+    response = await operation(registerCtx);
+  } catch (error) {
+    try {
+      response = await recover(error, ctx, registerCtx);
+    } catch (recoveryError) {
+      ctx?.finishExecution();
+      throw recoveryError;
+    }
+  }
+  if (ctx === undefined) return response;
+  try {
+    return finalizeGatewayResponse(ctx, response);
+  } catch (error) {
+    ctx.finishExecution();
+    throw error;
+  }
 };
 
 // Finalize the optional dump tee, then retain the outgoing body independently
