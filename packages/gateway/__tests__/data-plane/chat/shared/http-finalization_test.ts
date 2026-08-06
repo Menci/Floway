@@ -2,10 +2,10 @@ import { Hono } from 'hono';
 import { afterEach, test, vi } from 'vitest';
 
 import { observeExecutionTimers } from '../../shared/execution-timer-audit.ts';
-import { initDumpBroker, initDumpStore } from '../../../../../src/dump/registry.ts';
-import type { AuthVars } from '../../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../../src/repo/types.ts';
+import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import type { AuthVars } from '../../../../src/middleware/auth.ts';
+import { initRepo } from '../../../../src/repo/index.ts';
+import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
@@ -13,14 +13,14 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const enumerateModelCandidates = vi.hoisted(() => vi.fn());
-vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
   return { ...original, enumerateModelCandidates };
 });
 
-const { chatCompletionsHttp } = await import('../../../../../src/data-plane/chat/chat-completions/http.ts');
-const { messagesHttp } = await import('../../../../../src/data-plane/chat/messages/http.ts');
-const { responsesHttp } = await import('../../../../../src/data-plane/chat/responses/http.ts');
+const { chatCompletionsHttp } = await import('../../../../src/data-plane/chat/chat-completions/http.ts');
+const { messagesHttp } = await import('../../../../src/data-plane/chat/messages/http.ts');
+const { responsesHttp } = await import('../../../../src/data-plane/chat/responses/http.ts');
 
 const API_KEY_ID = 'key_http_finalization_test';
 
@@ -97,8 +97,7 @@ const catalogFailureCases: readonly CatalogFailureCase[] = [
   },
 ];
 
-afterEach(async () => {
-  await flushBackground();
+afterEach(() => {
   enumerateModelCandidates.mockReset();
 });
 
@@ -120,9 +119,10 @@ test.each(catalogFailureCases)('$name finalizes a verbatim catalog failure exact
       body: requestBody,
     });
 
+    const responseBody = await response.text();
     assertEquals(response.status, 503);
     assertEquals(response.headers.get('x-catalog-error'), 'upstream-models');
-    assertEquals(await response.text(), catalogBody);
+    assertEquals(responseBody, catalogBody);
     await flushBackground();
 
     timers.assertLifecycleCount(1);
@@ -150,8 +150,9 @@ test('a corrupt affinity secret leaves only the finalized fallback lifecycle', a
       body: requestBody,
     });
 
+    const responseBody = await response.text();
     assertEquals(response.status, 502);
-    await response.text();
+    assertEquals(responseBody.length > 0, true);
     await flushBackground();
 
     timers.assertLifecycleCount(1);
