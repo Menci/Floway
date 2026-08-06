@@ -117,7 +117,10 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
       sourceReadInterrupted = true;
       // Promise.race observes the mapped outcome, but a late raw rejection has
       // crossed into cleanup ownership and still needs a top-level signal.
-      void pendingRead.catch(error => console.error('[provider-stream] source read failed after interruption', error));
+      void pendingRead.catch(error => {
+        if (ctx.executionSignal.aborted && Object.is(error, ctx.executionSignal.reason)) return;
+        console.error('[provider-stream] source read failed after interruption', error);
+      });
       if (outcome.kind === 'execution-abort') throw outcome.error;
       throw SOURCE_READ_INTERRUPTED;
     } finally {
