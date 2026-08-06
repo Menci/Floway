@@ -8,6 +8,12 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 const UPSTREAM_ID = 'up_copilot_test';
 const TOKEN_BASE_URL = 'https://api.individual.githubcopilot.com';
+const DEFAULT_COPILOT_CONFIG = {
+  githubHost: 'github.com',
+  githubToken: 'ghu_test',
+  user: { id: 1, login: 't', name: null, avatar_url: '' },
+};
+const authFor = (config = DEFAULT_COPILOT_CONFIG) => ({ id: UPSTREAM_ID, config });
 
 const tokenResponse = (): Response => jsonResponse({
   token: 'tok-test',
@@ -16,11 +22,7 @@ const tokenResponse = (): Response => jsonResponse({
   endpoints: { api: TOKEN_BASE_URL },
 });
 
-const installRepoAndClearCache = async (config: UpstreamRecord['config'] = {
-  githubHost: 'github.com',
-  githubToken: 'ghu_test',
-  user: { id: 1, login: 't', name: null, avatar_url: '' },
-}) => {
+const installRepoAndClearCache = async (config: UpstreamRecord['config'] = DEFAULT_COPILOT_CONFIG) => {
   let state: unknown = null;
   const stub: UpstreamRecord = {
     id: UPSTREAM_ID,
@@ -78,7 +80,7 @@ const mockTokenAndCapture = async (
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        authFor(),
         extraHeaders ? { headers: extraHeaders, fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall } : { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -93,7 +95,7 @@ const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<R
   return await copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    authFor(),
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 };
@@ -289,7 +291,7 @@ test('concurrent cache misses share one Copilot token exchange', async () => {
   const call = () => copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}' },
-    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    authFor(),
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 
@@ -361,7 +363,7 @@ test('a token exchange cannot publish after its credential generation is replace
   const stale = copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}' },
-    { id: UPSTREAM_ID, githubHost: oldConfig.githubHost, githubToken: oldConfig.githubToken, config: oldConfig },
+    authFor(oldConfig),
     { fetcher: oldFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
   await exchangeStarted.promise;
@@ -385,7 +387,7 @@ test('a token exchange cannot publish after its credential generation is replace
   await copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}' },
-    { id: UPSTREAM_ID, githubHost: newConfig.githubHost, githubToken: newConfig.githubToken, config: newConfig },
+    authFor(newConfig),
     { fetcher: newFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
   expect(dataAuthorizations).toEqual(['Bearer copilot-new']);
@@ -449,7 +451,7 @@ test('clearing one upstream leaves another upstream token refresh running', asyn
   const call = (id: 'up_a' | 'up_b') => copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}' },
-    { id, ...configFor(id), config: configFor(id) },
+    { id, config: configFor(id) },
     { fetcher: fetcherFor(id), wrapUpstreamCall: identityWrapUpstreamCall },
   );
 
@@ -484,7 +486,7 @@ test('one cancelled waiter does not abort a token refresh another request still 
   const call = (signal?: AbortSignal) => copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    authFor(),
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 
@@ -523,7 +525,7 @@ test('a request arriving after the sole waiter cancels starts a fresh token exch
   const call = (signal?: AbortSignal) => copilotAuthedFetch(
     '/v1/messages',
     { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    authFor(),
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
 
@@ -593,7 +595,7 @@ test('copilotAuthedFetch persists the minted Copilot token (with baseUrl) into s
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        authFor(),
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -627,7 +629,7 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        authFor(),
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -636,11 +638,12 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
 });
 
 test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
-  await installRepoAndClearCache({
+  const gheConfig = {
     githubHost: 'octocorp.ghe.com',
     githubToken: 'ghu_ghe',
     user: { id: 1, login: 't', name: null, avatar_url: '' },
-  });
+  };
+  await installRepoAndClearCache(gheConfig);
   const observed: string[] = [];
   await withMockedFetch(
     async request => {
@@ -660,7 +663,7 @@ test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still 
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' },
+        authFor(gheConfig),
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
@@ -697,7 +700,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       const args = [
         '/v1/messages',
         { method: 'POST' as const, body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        authFor(),
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       ] as const;
       await copilotAuthedFetch(...args);
@@ -772,7 +775,7 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+        authFor(),
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },

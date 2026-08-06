@@ -203,7 +203,7 @@ const finalizeCopilotModels = (
 
 export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken, config: copilot.config };
+  const upstreamConfig = { id: copilot.id, config: copilot.config };
 
   const call = async (
     transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,

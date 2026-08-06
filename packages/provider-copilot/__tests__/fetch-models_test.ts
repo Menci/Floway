@@ -32,7 +32,7 @@ const installRepoAndConfig = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-  return { id, githubHost: 'github.com', githubToken };
+  return { id, config: stub.config };
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {
