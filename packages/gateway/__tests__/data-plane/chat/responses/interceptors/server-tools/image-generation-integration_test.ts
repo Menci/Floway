@@ -355,10 +355,11 @@ test('a prefetched remote edit source remains visible to orchestration and is re
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
   let processorCalls = 0;
+  const encoded = new TextEncoder().encode('WEBP');
   initImageProcessor({
     compressToWebp: () => {
       processorCalls += 1;
-      return Promise.resolve(new TextEncoder().encode('WEBP'));
+      return Promise.resolve(encoded);
     },
   });
   const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
@@ -382,6 +383,8 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assertEquals(mask.upload.type, 'image/webp');
   assertEquals(new TextDecoder().decode(image.upload.bytes), 'WEBP');
   assertEquals(new TextDecoder().decode(mask.upload.bytes), 'WEBP');
+  assert(image.upload.bytes.buffer === encoded.buffer);
+  assert(mask.upload.bytes.buffer === encoded.buffer);
 });
 
 test('identical GIF source and mask share one transcode', async () => {

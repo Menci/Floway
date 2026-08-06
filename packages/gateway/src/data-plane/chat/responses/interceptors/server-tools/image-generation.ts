@@ -109,6 +109,19 @@ interface PreparedImageSource extends ImageSource {
   mimeType: EditMime;
 }
 
+// Native Responses accepts at most 50 MB across distinct remote images; the
+// standalone edit endpoint also rejects an individual source at 50 MB. Apply
+// the same bound to locally transcoded output before it becomes an upload.
+// https://platform.openai.com/docs/guides/images-vision#image-input-requirements
+export const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
+
+const ownedArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.byteOffset === 0
+  && bytes.buffer instanceof ArrayBuffer
+  && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer
+    : Uint8Array.from(bytes).buffer;
+
 interface RemoteImageSource {
   wireUrl: string;
   invalidUrlParam: string;
@@ -144,8 +157,10 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
       // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
       // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
       prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
-        const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-        return { bytes, mimeType: 'image/webp' } satisfies PreparedImageSource;
+        if (encoded.byteLength >= MAX_REMOTE_IMAGE_TOTAL_BYTES) {
+          throw new RangeError(`Transcoded image edit source must be smaller than ${MAX_REMOTE_IMAGE_TOTAL_BYTES} bytes`);
+        }
+        return { bytes: ownedArrayBuffer(encoded), mimeType: 'image/webp' } satisfies PreparedImageSource;
       });
       preparedByContent.set(key, prepared);
     }
@@ -576,9 +591,6 @@ const remoteInputError = (source: RemoteImageSource, failure: RemoteImageFailure
 // Responses additionally accepts at most 50 MB across all distinct successful
 // image downloads, so account each memoized result once across sources and the
 // mask.
-// https://platform.openai.com/docs/guides/images-vision#image-input-requirements
-export const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
-
 const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   if (dimensionsFromBytes(bytes) === null) return null;
   if (
@@ -630,11 +642,7 @@ const createRemoteImageMaterializer = (
     }
 
     materializedBytes += fetched.data.byteLength;
-    const bytes = fetched.data.byteOffset === 0
-      && fetched.data.buffer instanceof ArrayBuffer
-      && fetched.data.byteLength === fetched.data.buffer.byteLength
-      ? fetched.data.buffer
-      : Uint8Array.from(fetched.data).buffer;
+    const bytes = ownedArrayBuffer(fetched.data);
     const result = { bytes, mimeType };
     materializedByData.set(fetched.data, result);
     return { ok: true, source: result };
