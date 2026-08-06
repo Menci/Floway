@@ -1,5 +1,11 @@
 import { test } from 'vitest';
 
+import {
+  imageEditUploadSizeError,
+  MAX_IMAGE_EDIT_FILE_BYTES,
+  MAX_IMAGE_EDIT_MASK_BYTES,
+  MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES,
+} from '../../../src/data-plane/images/http.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
@@ -246,6 +252,30 @@ test('/v1/images/edits accepts sixteen JSON images and rejects a seventeenth pre
     },
   );
   assertEquals(upstreamCalls, 0);
+});
+
+test('image edit upload byte limits are exact without allocating production-sized files', () => {
+  assertEquals(MAX_IMAGE_EDIT_FILE_BYTES, 50 * 1024 * 1024);
+  assertEquals(MAX_IMAGE_EDIT_MASK_BYTES, 4 * 1024 * 1024);
+  assertEquals(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES, 56 * 1024 * 1024);
+  assertEquals(imageEditUploadSizeError({ size: 3 }, 'image', 4), null);
+  assertEquals(imageEditUploadSizeError({ size: 4 }, 'image', 4), 'Image edits image file must be smaller than 4 bytes.');
+  assertEquals(imageEditUploadSizeError({ size: 4 }, 'mask', 4), 'Image edits mask file must be smaller than 4 bytes.');
+});
+
+test('/v1/images/edits applies its multipart wire budget before reading an oversized upload', async () => {
+  const response = await requestApp('/v1/images/edits', {
+    method: 'POST',
+    headers: {
+      'content-type': 'multipart/form-data; boundary=unused',
+      'content-length': String(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES + 1),
+    },
+    body: new ReadableStream<Uint8Array>(),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+
+  assertEquals(response.status, 413);
+  assertEquals((await response.json()).error.max_bytes, MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES);
 });
 
 test('/v1/images/edits rejects seventeen multipart images and duplicate masks', async () => {

@@ -81,6 +81,18 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   assertEquals(Array.from(fetched.request.body), Array.from(raw));
 });
 
+test('FileDumpStore keeps incompressible request bodies in their smaller identity representation', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const raw = Uint8Array.from({ length: 64 }, (_, index) => index);
+
+  const prepared = await store.prepareRequestBody(raw);
+
+  assertEquals(prepared.encoding, 'identity');
+  assertEquals(prepared.bytes, raw);
+  assertEquals(prepared.decodedByteLength, raw.byteLength);
+});
+
 test('FileDumpStore round-trips a JSON record through gzip', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();

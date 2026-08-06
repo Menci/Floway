@@ -9,7 +9,7 @@ import type { Context } from 'hono';
 import { respondAudioTranscription } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
+import { multipartLimitMessage, parseMultipartFormData, singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { completeRequestBodyBytes, readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
@@ -44,12 +44,12 @@ const prepareTranscription = async (bytes: Uint8Array, contentType: string | und
     return { type: 'invalid', message: 'Audio transcription request body must use multipart/form-data.' };
   }
 
-  let form: FormData;
-  try {
-    form = await new Response(bytes as BodyInit, { headers: { 'content-type': contentType } }).formData();
-  } catch {
+  const parsed = await parseMultipartFormData(bytes, contentType);
+  if (parsed.type === 'invalid') {
     return { type: 'invalid', message: 'Audio transcription request body must be valid multipart/form-data.' };
   }
+  if (parsed.type === 'limit') return { type: 'invalid', message: multipartLimitMessage(parsed) };
+  const { form } = parsed;
 
   const model = singleNonEmptyMultipartTextField(form, 'model');
   if (model === undefined) {

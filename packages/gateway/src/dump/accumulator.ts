@@ -44,6 +44,7 @@ interface ResponseSnapshot {
 }
 
 interface DumpCaptureLimits {
+  readonly requestBodyBytes: number;
   readonly responseBodyBytes: number;
   readonly streamEventBytes: number;
   readonly streamEvents: number;
@@ -54,6 +55,7 @@ interface DumpCaptureLimits {
 // count remains in metadata; bodies and canonical frames retain a useful
 // prefix and surface an explicit capture failure when either ceiling is hit.
 const DEFAULT_CAPTURE_LIMITS: DumpCaptureLimits = {
+  requestBodyBytes: 8 * 1024 * 1024,
   responseBodyBytes: 8 * 1024 * 1024,
   streamEventBytes: 8 * 1024 * 1024,
   streamEvents: 10_000,
@@ -307,7 +309,15 @@ export class DumpAccumulator {
     for (const [name, value] of Object.entries(captureLimits) as Array<[keyof DumpCaptureLimits, number]>) {
       assertCaptureLimit(name, value);
     }
-    this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
+    const requestCapture = new BoundedByteCapture(captureLimits.requestBodyBytes);
+    requestCapture.append(requestBody);
+    const capturedRequest = requestCapture.take();
+    if (capturedRequest.truncated) {
+      this.recordCaptureFailure(
+        `Dump request body capture exceeded the ${captureLimits.requestBodyBytes}-byte limit; stored body is truncated`,
+      );
+    }
+    this.preparedRequestBody = getDumpStore().prepareRequestBody(capturedRequest.bytes);
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
     // a rejection handled immediately so a long upstream wait cannot surface
     // it as an unhandled promise before `write()` records the dump failure.

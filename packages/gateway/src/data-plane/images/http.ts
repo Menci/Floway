@@ -14,7 +14,7 @@ import type { Context } from 'hono';
 import { respondImages } from './respond.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
+import { multipartLimitMessage, parseMultipartFormData, singleNonEmptyMultipartTextField } from '../shared/multipart.ts';
 import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { completeRequestBodyBytes, readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
@@ -30,6 +30,23 @@ type PreparedImagesEdit =
 // sixteen inputs.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L47542-L47673
 export const MAX_IMAGE_EDIT_INPUTS = 16;
+
+// The upstream accepts each GPT-image edit source below 50 MB, as many as 16
+// sources, and a PNG mask below 4 MB. Floway keeps a separate aggregate wire
+// budget because the Worker must hold the original multipart bytes while the
+// runtime constructs its bounded FormData representation.
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L44745-L44790
+export const MAX_IMAGE_EDIT_FILE_BYTES = 50 * 1024 * 1024;
+export const MAX_IMAGE_EDIT_MASK_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES = 56 * 1024 * 1024;
+
+export const imageEditUploadSizeError = (
+  file: Pick<File, 'size'>,
+  kind: 'image' | 'mask',
+  maxBytes = kind === 'image' ? MAX_IMAGE_EDIT_FILE_BYTES : MAX_IMAGE_EDIT_MASK_BYTES,
+): string | null => file.size >= maxBytes
+  ? `Image edits ${kind} file must be smaller than ${maxBytes} bytes.`
+  : null;
 
 const imageEditSource = (value: unknown, path: string): ImagesEditsSource | string => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -134,14 +151,16 @@ const serveImagesEditRequest = async (
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
+  const contentType = c.req.header('content-type');
+  const requestBody = await readRequestBody(c, isMultipartFormDataMediaType(contentType)
+    ? { maxBytes: MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES }
+    : {});
   const invalid = (message: string): Response => {
     const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
     errorCtx.dump?.error('gateway');
     return finalizeGatewayResponse(errorCtx, passthroughApiError(c, message, 400));
   };
 
-  const contentType = c.req.header('content-type');
   if (contentType === undefined) {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
@@ -156,12 +175,12 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   if (!isMultipartFormDataMediaType(contentType)) {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
-  let form: FormData;
-  try {
-    form = await new Response(completeRequestBodyBytes(requestBody) as BodyInit, { headers: { 'content-type': contentType } }).formData();
-  } catch {
+  const parsed = await parseMultipartFormData(completeRequestBodyBytes(requestBody), contentType);
+  if (parsed.type === 'invalid') {
     return invalid('Image edits request body must be valid multipart/form-data.');
   }
+  if (parsed.type === 'limit') return invalid(multipartLimitMessage(parsed));
+  const { form } = parsed;
   const model = singleNonEmptyMultipartTextField(form, 'model');
   if (model === undefined) {
     return invalid('Image edits request body must include a model field.');
@@ -174,10 +193,14 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     if (name === 'model') continue;
     if (name === 'image' || name === 'image[]') {
       if (!(value instanceof File)) return invalid(`Image edits ${name} fields must be files.`);
+      const sizeError = imageEditUploadSizeError(value, 'image');
+      if (sizeError !== null) return invalid(sizeError);
       images.push(value);
     } else if (name === 'mask') {
       if (!(value instanceof File)) return invalid('Image edits mask field must be a file.');
       if (mask !== undefined) return invalid('Image edits request body supports at most one mask file.');
+      const sizeError = imageEditUploadSizeError(value, 'mask');
+      if (sizeError !== null) return invalid(sizeError);
       mask = value;
     } else {
       if (typeof value !== 'string') return invalid(`Image edits ${name} field must be text.`);

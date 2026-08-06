@@ -38,6 +38,7 @@ export const dumpHeadersSchema = z.array(z.tuple([z.string(), z.string()]));
 export const dumpBodyDescriptorSchema = z.object({
   key: z.string(),
   type: z.enum(['bytes', 'events']),
+  encoding: z.enum(['identity', 'gzip']),
 }).strict();
 
 const dumpProtocolFrameSchema = z.discriminatedUnion('type', [

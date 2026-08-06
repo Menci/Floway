@@ -22,7 +22,7 @@ const apiKey: ApiKey = {
   responsesRetentionSeconds: 0,
 };
 
-const createHarness = (captureLimits?: CaptureLimits) => {
+const createHarness = (captureLimits?: CaptureLimits, requestBody = new Uint8Array()) => {
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const backgroundTasks: Promise<unknown>[] = [];
   const args = [
@@ -31,10 +31,10 @@ const createHarness = (captureLimits?: CaptureLimits) => {
       method: 'POST',
       path: '/v1/test',
       headers: [] as Array<[string, string]>,
-      bodyByteLength: 0,
+      bodyByteLength: requestBody.byteLength,
       streamError: null,
     },
-    new Uint8Array(),
+    requestBody,
     Date.now(),
     (task: Promise<unknown>) => { backgroundTasks.push(task); },
   ] as const;
@@ -133,6 +133,7 @@ test('response capture applies downstream backpressure and counts chunks as they
 
 test('non-frame response capture stores a bounded prefix and reports the full delivered byte count', async () => {
   const { accumulator, dumps, settle } = createHarness({
+    requestBodyBytes: 4,
     responseBodyBytes: 4,
     streamEventBytes: 1024,
     streamEvents: 10,
@@ -158,6 +159,7 @@ test('non-frame response capture stores a bounded prefix and reports the full de
 
 test('canonical frames suppress duplicate wire-body retention', async () => {
   const { accumulator, dumps, settle } = createHarness({
+    requestBodyBytes: 4,
     responseBodyBytes: 0,
     streamEventBytes: 1024,
     streamEvents: 10,
@@ -177,6 +179,7 @@ test('canonical frames suppress duplicate wire-body retention', async () => {
 
 test('stream event capture stops at its event-count ceiling and surfaces truncation', async () => {
   const { accumulator, dumps, settle } = createHarness({
+    requestBodyBytes: 4,
     responseBodyBytes: 4,
     streamEventBytes: 1024,
     streamEvents: 1,
@@ -201,6 +204,7 @@ test('stream event capture stops at its event-count ceiling and surfaces truncat
 
 test('stream event capture rejects an individually oversized canonical frame', async () => {
   const { accumulator, dumps, settle } = createHarness({
+    requestBodyBytes: 4,
     responseBodyBytes: 4,
     streamEventBytes: 2,
     streamEvents: 10,
@@ -237,4 +241,25 @@ test('hostile canonical frame serialization failures stay inside dump capture', 
   }
   if (record.response.body.type !== 'stream') throw new Error('expected stream dump body');
   assertEquals(record.response.body.events, []);
+});
+
+test('request capture stores a bounded prefix while metadata retains the delivered byte count', async () => {
+  const { accumulator, dumps, settle } = createHarness({
+    requestBodyBytes: 4,
+    responseBodyBytes: 0,
+    streamEventBytes: 1024,
+    streamEvents: 10,
+  }, Uint8Array.of(1, 2, 3, 4, 5, 6));
+
+  accumulator.finalize(200, []);
+  await settle();
+
+  const record = onlyRecord(dumps.stored);
+  assertEquals(record.meta.requestBytes, 6);
+  assertEquals(Array.from(record.request.body), [1, 2, 3, 4]);
+  assertEquals(record.meta.error?.kind, 'failed');
+  if (record.meta.error?.kind === 'failed') {
+    assertStringIncludes(record.meta.error.reason, '4-byte limit');
+    assertStringIncludes(record.meta.error.reason, 'stored body is truncated');
+  }
 });
