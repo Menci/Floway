@@ -476,28 +476,12 @@ test('fetchUpstreamModels validates idle timeouts and byte budgets before dispat
   expect(exhaustedBudgetFetch).not.toHaveBeenCalled();
 });
 
-test('ResponseByteBudget reserves concurrent capacity atomically and refunds only unused bytes', () => {
-  const budget = ResponseByteBudget.create(10);
-  const first = budget.reserve(6);
-  const second = budget.reserve(6);
-
-  expect(first.remainingBytes).toBe(6);
-  expect(second.remainingBytes).toBe(4);
+test('ResponseByteBudget charges actual bytes synchronously at the aggregate boundary', () => {
+  const budget = ResponseByteBudget.create(4);
+  budget.consume(1);
+  budget.consume(3);
   expect(budget.remainingBytes).toBe(0);
-  expect(() => budget.reserve(1)).toThrow('Provider model listing exhausted its response byte budget');
-
-  first.consume(4);
-  first.release();
-  expect(budget.remainingBytes).toBe(2);
-  second.consume(4);
-  second.release();
-  expect(budget.remainingBytes).toBe(2);
-
-  const final = budget.reserve(2);
-  final.consume(2);
-  final.release();
-  expect(budget.remainingBytes).toBe(0);
-  expect(() => first.remainingBytes).toThrow('Response byte budget reservation was already released');
+  expect(() => budget.consume(1)).toThrow('Provider model listing exhausted its response byte budget');
 });
 
 test('readBoundedJsonResponse cancels bodies it owns when pre-read validation rejects', async () => {

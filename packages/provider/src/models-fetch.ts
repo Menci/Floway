@@ -200,23 +200,18 @@ export class ResponseByteBudgetExceededError extends Error {
   }
 }
 
-// A budget may be consumed directly by a sequential catalog or split into
-// reservations before concurrent work is dispatched. Reserving synchronously
-// removes capacity from the parent, so concurrent readers can never all observe
-// the same remaining value and oversubscribe it. Releasing a reservation
-// returns only bytes that its reader never consumed.
+// Every chunk is charged synchronously before the reader retains it. JavaScript
+// cannot interleave another task between the capacity check and decrement, so
+// concurrent readers sharing this object account actual bytes without either a
+// lost update or pessimistic per-response reservations.
 export class ResponseByteBudget {
   static create(maxBytes: number): ResponseByteBudget {
-    return new ResponseByteBudget(maxBytes, null);
+    return new ResponseByteBudget(maxBytes);
   }
 
   #remainingBytes: number;
-  #released = false;
 
-  private constructor(
-    maxBytes: number,
-    private readonly parent: ResponseByteBudget | null,
-  ) {
+  private constructor(maxBytes: number) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
       throw new TypeError('response byte budget must be a non-negative safe integer');
     }
@@ -224,12 +219,10 @@ export class ResponseByteBudget {
   }
 
   get remainingBytes(): number {
-    this.assertActive();
     return this.#remainingBytes;
   }
 
   consume(byteLength: number): void {
-    this.assertActive();
     if (!Number.isSafeInteger(byteLength) || byteLength < 0) {
       throw new TypeError('response byte budget consumption must be a non-negative safe integer');
     }
@@ -239,42 +232,6 @@ export class ResponseByteBudget {
       throw new ResponseByteBudgetExceededError(remainingBytes, byteLength);
     }
     this.#remainingBytes -= byteLength;
-  }
-
-  reserve(maxBytes: number): ResponseByteBudget {
-    this.assertActive();
-    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
-      throw new TypeError('response byte budget reservation must be a positive safe integer');
-    }
-    if (this.#remainingBytes === 0) {
-      throw new ResponseByteBudgetExceededError(0, maxBytes);
-    }
-    const reservedBytes = Math.min(maxBytes, this.#remainingBytes);
-    this.#remainingBytes -= reservedBytes;
-    return new ResponseByteBudget(reservedBytes, this);
-  }
-
-  release(): void {
-    this.assertActive();
-    if (this.parent === null) {
-      throw new Error('Only a response byte budget reservation can be released');
-    }
-    const unusedBytes = this.#remainingBytes;
-    this.#remainingBytes = 0;
-    this.#released = true;
-    this.parent.refund(unusedBytes);
-  }
-
-  private refund(byteLength: number): void {
-    this.assertActive();
-    this.#remainingBytes += byteLength;
-    if (!Number.isSafeInteger(this.#remainingBytes)) {
-      throw new RangeError('response byte budget refund exceeded the safe integer range');
-    }
-  }
-
-  private assertActive(): void {
-    if (this.#released) throw new Error('Response byte budget reservation was already released');
   }
 }
 

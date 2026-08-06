@@ -26,8 +26,8 @@ const MAX_CONCURRENT_SHOW_REQUESTS = 8;
 const MAX_SHOW_RESPONSE_BYTES = 4 * 1024 * 1024;
 // Catalog discovery is control-plane metadata. These ceilings admit a large
 // self-hosted fleet while bounding both the number of detail requests and the
-// cumulative response work. The aggregate budget holds one worst-case
-// reservation per worker, so it does not silently reduce the configured pool.
+// cumulative response work. Readers charge the shared aggregate synchronously
+// per chunk, retaining the full configured concurrency for small responses.
 const MAX_CATALOG_MODELS = 1024;
 const MAX_TOTAL_SHOW_RESPONSE_BYTES = MAX_CONCURRENT_SHOW_REQUESTS * MAX_SHOW_RESPONSE_BYTES;
 
@@ -210,16 +210,14 @@ export const fetchOllamaCatalog = (
     while (fatalAbort === undefined && !controller.signal.aborted) {
       const index = nextIndex++;
       if (index >= tags.length) return;
-      let reservation: ResponseByteBudget | undefined;
       try {
-        reservation = responseByteBudget.reserve(maxShowResponseBytes);
         results[index] = await fetchShowForTag(
           config,
           fetcher,
           tags[index],
           controller.signal,
           maxShowResponseBytes,
-          reservation,
+          responseByteBudget,
           options.idleTimeoutMs,
           options.totalTimeoutMs,
         );
@@ -235,8 +233,6 @@ export const fetchOllamaCatalog = (
         }
         if (firstShowError === undefined) firstShowError = error;
         results[index] = null;
-      } finally {
-        reservation?.release();
       }
     }
   };

@@ -218,7 +218,7 @@ test('fetchOllamaCatalog accepts detail bodies at the exact aggregate byte bound
   expect(catalog.data.map(model => model.id)).toEqual(['first', 'second']);
 });
 
-test('fetchOllamaCatalog aborts sibling detail bodies when their shared reservation is exhausted', async () => {
+test('fetchOllamaCatalog aborts sibling detail bodies when their shared byte budget is exhausted', async () => {
   const encoder = new TextEncoder();
   const cancellations = new Map<string, unknown>();
   const showCalls: string[] = [];
@@ -236,21 +236,21 @@ test('fetchOllamaCatalog aborts sibling detail bodies when their shared reservat
     }
     const name = (JSON.parse(String(init.body)) as { name: string }).name;
     showCalls.push(name);
-    return Promise.resolve(new Response(responseBody(name, name === 'first' ? '{' : '{}')));
+    return Promise.resolve(new Response(responseBody(name, name === 'first' ? '{' : '{}x')));
   };
 
   const error = await assertRejects(
     () => fetchOllamaCatalog(config, fetcher, {
       maxShowResponseBytes: 4,
-      maxTotalShowResponseBytes: 5,
+      maxTotalShowResponseBytes: 3,
     }),
     ProviderModelsUnavailableError,
   );
 
   expect(error.cause).toMatchObject({
     name: 'ResponseByteBudgetExceededError',
-    remainingBytes: 1,
-    requestedBytes: 2,
+    remainingBytes: 2,
+    requestedBytes: 3,
   });
   expect(showCalls).toEqual(['first', 'second']);
   expect(cancellations.get('second')).toBe(error.cause);
