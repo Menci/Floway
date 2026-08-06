@@ -898,12 +898,36 @@ class SqlUpstreamRepo implements UpstreamRepo {
     return this.saveRecord(upstream);
   }
 
+  async insertForModels(upstream: UpstreamRecord): Promise<boolean> {
+    const result = await this.db
+      .prepare('INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING')
+      .bind(
+        upstream.id,
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.sortOrder,
+        upstream.createdAt,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+      )
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
   async replaceForModels(input: {
     previous: UpstreamRecord;
     upstream: UpstreamRecord;
     cachePolicy: 'preserve' | 'reset-refresh' | 'clear';
   }): Promise<boolean> {
     const { previous, upstream, cachePolicy } = input;
+    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
     const modelsRefreshUpdate = cachePolicy === 'preserve'
       ? "CASE WHEN models_refresh_json IS NULL THEN NULL ELSE json_set(models_refresh_json, '$.claimToken', NULL, '$.claimedAt', NULL) END"
       : 'NULL';
@@ -917,7 +941,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            sort_order = ?,
            updated_at = ?,
            config_json = ?,
-           state_json = ?,
+           state_json = CASE WHEN ? THEN ? ELSE state_json END,
            flag_overrides = ?,
            disabled_public_model_ids = ?,
            proxy_fallback_list_json = ?,
@@ -931,7 +955,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            AND sort_order = ?
            AND updated_at = ?
            AND config_json = ?
-           AND state_json IS ?
+           AND (? = 0 OR state_json IS ?)
            AND flag_overrides = ?
            AND disabled_public_model_ids = ?
            AND proxy_fallback_list_json = ?
@@ -945,6 +969,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.sortOrder,
         upstream.updatedAt,
         serializeStoredConfig(upstream.config),
+        sqliteBoolean(replaceState),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
@@ -958,6 +983,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         previous.sortOrder,
         previous.updatedAt,
         serializeStoredConfig(previous.config),
+        sqliteBoolean(replaceState),
         serializeStoredState(previous.state),
         JSON.stringify(normalizeFlagOverrides(previous.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(previous.disabledPublicModelIds)),
@@ -1043,9 +1069,11 @@ class SqlUpstreamRepo implements UpstreamRepo {
         `UPDATE upstreams SET
            models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
            models_refresh_json = json_object('failCount', ?, 'retryAt', ?, 'claimToken', NULL, 'claimedAt', NULL)
-         WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ? AND json_extract(models_refresh_json, '$.claimToken') = ?`,
+         WHERE id = ? AND updated_at = ? AND provider = ? AND config_json = ? AND proxy_fallback_list_json = ?
+           AND json_extract(models_refresh_json, '$.claimToken') = ?
+           AND coalesce(json_extract(models_refresh_json, '$.failCount'), 0) = ?`,
       )
-      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token)
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, token, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -1075,13 +1103,13 @@ class SqlUpstreamRepo implements UpstreamRepo {
              )
              OR (
                ? IS NOT NULL
-               AND json_extract(models_refresh_json, '$.claimToken') = ?
+               AND json_extract(models_refresh_json, '$.claimToken') IS NOT NULL
                AND json_extract(models_refresh_json, '$.claimedAt') <= ?
              )
            )
            RETURNING json_extract(models_refresh_json, '$.failCount') AS fail_count`,
         )
-        .bind(token, now, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, observedActiveToken, sqliteBoolean(bypassBackoff), now, staleClaimedBefore, observedActiveToken, observedActiveToken, staleClaimedBefore)
+        .bind(token, now, id, generation.updatedAt, fence.provider, fence.config, fence.proxyFallbackList, observedActiveToken, sqliteBoolean(bypassBackoff), now, staleClaimedBefore, observedActiveToken, staleClaimedBefore)
         .first<{ fail_count: number }>();
       if (row !== null) return { kind: 'claimed', failureCount: row.fail_count };
 

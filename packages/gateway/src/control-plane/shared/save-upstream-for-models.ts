@@ -1,10 +1,9 @@
 import type { Context } from 'hono';
 
-import { warmUpstreamModels } from '../../data-plane/providers/models-cache.ts';
-import { modelsCatalogIdentity, createProvider } from '../../data-plane/providers/registry.ts';
+import { warmUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
+import { modelsCatalogIdentity, modelsOperatorRefreshIdentity, createProvider } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
-import { modelsOperatorRefreshIdentity } from '../../repo/models-cache-contract.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { logInfo } from '@floway-dev/provider-claude-code';
@@ -19,7 +18,8 @@ const errorMessage = (error: unknown): string => error instanceof Error ? error.
 const saveUpstreamForModels = async ({ previous, next }: UpstreamModelsChange): Promise<void> => {
   const upstreams = getRepo().upstreams;
   if (previous === null) {
-    await upstreams.save(next);
+    const inserted = await upstreams.insertForModels(next);
+    if (!inserted) throw new Error(`Upstream ${next.id} changed concurrently`);
     return;
   }
   let cachePolicy: 'preserve' | 'reset-refresh' | 'clear';

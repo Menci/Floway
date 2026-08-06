@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { clearInFlightForTesting } from '../../../../src/data-plane/providers/models-cache.ts';
+import { clearModelsRefreshesForTesting } from '../../../../src/data-plane/providers/models-refresh.ts';
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
 import { directFetcher } from '@floway-dev/provider';
@@ -15,7 +15,7 @@ describe('enumerateAddressableModelIds', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord());
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
 
     await withMockedFetch(
       request => {
@@ -45,7 +45,7 @@ describe('enumerateAddressableModelIds', () => {
       // public id.
       modelPrefix: { prefix: 'cust/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     }));
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
 
     await withMockedFetch(
       request => {
@@ -71,7 +71,7 @@ describe('enumerateAddressableModelIds', () => {
   test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
 
     await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground))
       .rejects.toThrow('No upstream provider configured');

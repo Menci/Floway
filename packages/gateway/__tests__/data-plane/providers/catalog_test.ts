@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
-import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearModelsRefreshesForTesting } from '../../../src/data-plane/providers/models-refresh.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
@@ -254,7 +254,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 // directly observes concurrency without a wall-clock threshold that load can
 // satisfy or violate independently of execution order.
 test('catalog refresh triggers fan out per upstream in parallel', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -302,7 +302,7 @@ test('catalog refresh triggers fan out per upstream in parallel', async () => {
 // recorded against `sawSuccess === true`; the public catalog still includes
 // every successful upstream's models.
 test('catalog assembly: a rejected provider does not block other providers', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 

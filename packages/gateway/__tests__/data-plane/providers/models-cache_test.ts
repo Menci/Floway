@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModels, readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION, warmUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearModelsRefreshesForTesting, fetchUpstreamModels, warmUpstreamModels } from '../../../src/data-plane/providers/models-refresh.ts';
 import type { GatewayProvider } from '../../../src/data-plane/providers/registry.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { modelsFetchIdentity } from '../../../src/repo/models-cache-contract.ts';
@@ -89,7 +90,7 @@ const captureScheduled = () => {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
 });
 
 describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
@@ -188,7 +189,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: firstScheduled.scheduler, fetcher: directFetcher }).models.map(model => model.id)).toEqual(['stale']);
     await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
 
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const secondScheduled = captureScheduled();
     expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: secondScheduled.scheduler, fetcher: directFetcher }).models.map(model => model.id)).toEqual(['stale']);
     await expect(secondScheduled.promises[0]).resolves.toBeUndefined();
@@ -208,14 +209,14 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     await expect(firstScheduled.promises[0]).rejects.toThrow('boom');
     expect(await storedCache(repo)).toMatchObject({ fetchedAt: 0, models: [], lastError: { message: 'boom' } });
 
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     now += 59_999;
     const backedOff = captureScheduled();
     expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: backedOff.scheduler, fetcher: directFetcher }).models).toEqual([]);
     await expect(backedOff.promises[0]).resolves.toBeUndefined();
     expect(fetchFn).toHaveBeenCalledTimes(1);
 
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     now += 1;
     const retry = captureScheduled();
     expect(readUpstreamModelsSnapshotAndScheduleRefresh(instance, { scheduler: retry.scheduler, fetcher: directFetcher }).models).toEqual([]);
@@ -231,7 +232,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     const scheduled = captureScheduled();
     readUpstreamModelsSnapshotAndScheduleRefresh(failing, { scheduler: scheduled.scheduler, fetcher: directFetcher });
     await expect(scheduled.promises[0]).rejects.toThrow('boom');
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
 
     const fetchFn = vi.fn(async () => [aModel('recovered')]);
     const cache = await storedCache(repo);
@@ -290,6 +291,27 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     expect((await warming).map(model => model.id)).toEqual(['remote-model']);
   });
 
+  test('explicit fetch retries after a remote owner records failure', async () => {
+    const repo = await setupRepo();
+    const now = Date.now();
+    await repo.upstreams.claimModelsRefresh({ id: UPSTREAM_ID, generation: CACHE_GENERATION, token: 'remote-owner', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
+    const fetchFn = vi.fn(async () => [aModel('explicit-recovery-model')]);
+    const explicit = fetchUpstreamModels(stubInstance(fetchFn), directFetcher);
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    await repo.upstreams.finalizeModelsRefreshFailure({
+      id: UPSTREAM_ID,
+      generation: CACHE_GENERATION,
+      token: 'remote-owner',
+      error: { message: 'remote failure', at: now + 1 },
+      previousFailureCount: 0,
+      failedAt: now + 1,
+    });
+
+    await expect(explicit).resolves.toEqual([aModel('explicit-recovery-model')]);
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
   test('explicit fetch joins a warm that already owns the durable refresh', async () => {
     await setupRepo();
     let resolveWarm: ((models: ProviderModel[]) => void) | null = null;
@@ -304,16 +326,16 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  test('an atomic success-finalize failure does not install upstream failure backoff', async () => {
+  test('a transient success-finalize error is retried without installing failure backoff', async () => {
     const repo = await setupRepo();
     const finalizeFailure = vi.spyOn(repo.upstreams, 'finalizeModelsRefreshFailure');
-    vi.spyOn(repo.upstreams, 'finalizeModelsRefreshSuccess').mockRejectedValueOnce(new Error('finalize failed'));
+    const finalizeSuccess = vi.spyOn(repo.upstreams, 'finalizeModelsRefreshSuccess').mockRejectedValueOnce(new Error('finalize failed'));
     const instance = stubInstance(async () => [aModel('published-model')]);
 
-    await expect(fetchUpstreamModels(instance, directFetcher))
-      .rejects.toThrow('finalize failed');
+    await expect(fetchUpstreamModels(instance, directFetcher)).resolves.toEqual([aModel('published-model')]);
+    expect(finalizeSuccess).toHaveBeenCalledTimes(2);
     expect(finalizeFailure).not.toHaveBeenCalled();
-    expect(await storedCache(repo)).toBeNull();
+    expect((await storedCache(repo))?.models).toEqual([aModel('published-model')]);
   });
 
   test('a superseded generation neither joins nor overwrites the current catalog', async () => {
@@ -363,7 +385,7 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     expect((await storedCache(repo))?.models.map(model => model.id)).toEqual(['late-old-model']);
   });
 
-  test('explicit fetch surfaces failure from an older background owner', async () => {
+  test('explicit fetch retries with its own transport after an older background owner fails', async () => {
     const repo = await setupRepo();
     let rejectOld: ((error: Error) => void) | null = null;
     const oldFetch = vi.fn(() => new Promise<ProviderModel[]>((_resolve, reject) => { rejectOld = reject; }));
@@ -374,13 +396,13 @@ describe('readUpstreamModelsSnapshotAndScheduleRefresh', () => {
     );
     await vi.waitFor(() => expect(oldFetch).toHaveBeenCalledTimes(1));
 
-    const explicitFetch = vi.fn(async () => [aModel('duplicate-explicit-model')]);
+    const explicitFetch = vi.fn(async () => [aModel('explicit-recovery-model')]);
     const explicit = fetchUpstreamModels(stubInstance(explicitFetch), directFetcher);
     rejectOld!(new Error('late old failure'));
     await expect(oldScheduled.promises[0]).rejects.toThrow('late old failure');
-    await expect(explicit).rejects.toThrow('late old failure');
-    expect(explicitFetch).not.toHaveBeenCalled();
-    expect(await storedCache(repo)).toMatchObject({ models: [], lastError: { message: 'late old failure' } });
+    await expect(explicit).resolves.toEqual([aModel('explicit-recovery-model')]);
+    expect(explicitFetch).toHaveBeenCalledOnce();
+    expect(await storedCache(repo)).toMatchObject({ models: [{ id: 'explicit-recovery-model' }], lastError: null });
   });
 
   test('catalog revision mismatch is cold and refreshes without blocking', async () => {

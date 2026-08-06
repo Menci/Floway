@@ -762,6 +762,12 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
+  insertForModels(upstream: UpstreamRecord): Promise<boolean> {
+    if (this.store.has(upstream.id)) return Promise.resolve(false);
+    this.store.set(upstream.id, cloneUpstreamRecord({ ...upstream, modelsCache: null }));
+    return Promise.resolve(true);
+  }
+
   replaceForModels(input: {
     previous: UpstreamRecord;
     upstream: UpstreamRecord;
@@ -769,10 +775,15 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }): Promise<boolean> {
     const { previous, upstream, cachePolicy } = input;
     const existing = this.store.get(upstream.id);
-    if (existing === undefined || serializeStoredConfig({ ...existing, modelsCache: null }) !== serializeStoredConfig({ ...previous, modelsCache: null })) return Promise.resolve(false);
+    if (existing === undefined) return Promise.resolve(false);
+    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
+    const comparableExisting = { ...existing, modelsCache: null, state: replaceState ? existing.state : null };
+    const comparablePrevious = { ...previous, modelsCache: null, state: replaceState ? previous.state : null };
+    if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(false);
     const next = cloneUpstreamRecord({
       ...upstream,
       createdAt: existing.createdAt,
+      state: replaceState ? upstream.state : existing.state,
       modelsCache: cachePolicy === 'clear' ? null : existing.modelsCache,
     });
     this.store.set(upstream.id, next);
@@ -823,7 +834,8 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const { id, generation, token, error, previousFailureCount, failedAt } = input;
     const failureCount = previousFailureCount + 1;
     const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
-    if (this.modelsRefreshes.get(id)?.claimToken !== token) return Promise.resolve(false);
+    const refresh = this.modelsRefreshes.get(id);
+    if (refresh?.claimToken !== token || refresh.failCount !== previousFailureCount) return Promise.resolve(false);
     const existing = this.store.get(id);
     if (!existing || existing.updatedAt !== generation.updatedAt || modelsFetchIdentity(existing) !== generation.fetchIdentity) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModels } from '../../../src/data-plane/providers/models-cache.ts';
+import { clearModelsRefreshesForTesting, fetchUpstreamModels } from '../../../src/data-plane/providers/models-refresh.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
@@ -352,7 +352,7 @@ test('a recorded refresh failure is irrelevant when the prefix policy cannot add
 // upstream's display name flows back via `failedUpstreams` while its empty
 // or last-known-good snapshot stays independent of the current request.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -404,7 +404,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // attempt, so the resolver returns immediately rather than walking the
 // stripped form.
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -445,7 +445,7 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 // failedUpstreams across the two retry attempts must dedupe: a single broken
 // upstream that rejects both walks reports its name once, not twice.
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -481,7 +481,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 });
 
 test('an AbortError from background catalog refresh does not abort model resolution', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -519,7 +519,7 @@ test('an AbortError from background catalog refresh does not abort model resolut
 // upstream fetch. The failure renderer surfaces this as a model-missing 404
 // without re-deriving the empty-cap branch.
 test('enumerateModelCandidates returns the empty triple when the visible upstream list is empty', async () => {
-  clearInFlightForTesting();
+  clearModelsRefreshesForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // A populated catalog is the case under test: the empty cap, not an empty
@@ -577,7 +577,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   };
 
   test('flattens across targets in declaration order for first-available', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -605,7 +605,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -638,7 +638,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -665,7 +665,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -697,7 +697,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -723,7 +723,7 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
-    clearInFlightForTesting();
+    clearModelsRefreshesForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({

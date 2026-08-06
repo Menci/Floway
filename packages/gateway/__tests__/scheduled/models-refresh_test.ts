@@ -90,8 +90,15 @@ test('one malformed upstream does not prevent later refreshes from being schedul
 test('locationless scheduled events skip colo-scoped-only egress policies', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  await repo.proxies.save({ id: 'bad-scoped', name: 'Bad scoped proxy', url: 'not a URL', dialTimeoutSeconds: null });
   await repo.upstreams.save({ ...custom('scoped', true), proxyFallbackList: [{ id: 'direct_fetch', colos: ['HKG'] }] });
-  await repo.upstreams.save(custom('global', true));
+  await repo.upstreams.save({
+    ...custom('global', true),
+    proxyFallbackList: [
+      { id: 'bad-scoped', colos: ['HKG'] },
+      { id: 'direct_fetch' },
+    ],
+  });
   const background: Promise<unknown>[] = [];
   const requested: string[] = [];
 

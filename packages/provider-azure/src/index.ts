@@ -6,6 +6,7 @@ import type { ProviderModule } from '@floway-dev/provider';
 export const azureProviderModule: ProviderModule = {
   create: createAzureProvider,
   modelCatalogIdentity: record => assertAzureUpstreamRecord(record).config,
+  modelRefreshIdentity: record => assertAzureUpstreamRecord(record).config,
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
 export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';

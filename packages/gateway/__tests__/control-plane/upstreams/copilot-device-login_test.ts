@@ -5,14 +5,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 // exchange and persistence.
 const modelsCacheMock = vi.hoisted<{ calls: number; error: Error | null; pending: Promise<void> | null }>(() => ({ calls: 0, error: null, pending: null }));
 
-vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
+vi.mock('../../../src/data-plane/providers/models-refresh.ts', () => ({
   warmUpstreamModels: async () => {
     modelsCacheMock.calls++;
     if (modelsCacheMock.pending) await modelsCacheMock.pending;
     if (modelsCacheMock.error) throw modelsCacheMock.error;
     return [];
   },
-  clearInFlightForTesting: () => {},
+  clearModelsRefreshesForTesting: () => {},
 }));
 
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';

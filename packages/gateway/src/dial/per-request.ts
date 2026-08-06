@@ -1,7 +1,7 @@
 import { createFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
-import { isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
+import { entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
@@ -20,7 +20,10 @@ export const createPerRequestFetcher = async (
 ): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
   const upstreams = preFetchedUpstreams ?? await repo.upstreams.list();
-  const fallbackById = new Map(upstreams.map(u => [u.id, u.proxyFallbackList] as const));
+  const fallbackById = new Map(upstreams.map(u => [
+    u.id,
+    u.proxyFallbackList.filter(entry => entryMatchesColo(entry, runtimeLocation)),
+  ] as const));
 
   const referencedProxyIds = new Set<string>();
   for (const list of fallbackById.values()) {

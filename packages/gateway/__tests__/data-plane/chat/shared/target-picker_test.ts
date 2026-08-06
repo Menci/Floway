@@ -7,8 +7,6 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// Drains the separately scheduled snapshot refresh so a rejection surfaces in the runner
-// instead of being swallowed.
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };

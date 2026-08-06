@@ -344,6 +344,7 @@ export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
+  insertForModels(upstream: UpstreamRecord): Promise<boolean>;
   replaceForModels(input: {
     previous: UpstreamRecord;
     upstream: UpstreamRecord;

@@ -1,4 +1,4 @@
-import { scheduleUpstreamModelsRefresh } from '../data-plane/providers/models-cache.ts';
+import { scheduleUpstreamModelsRefresh } from '../data-plane/providers/models-refresh.ts';
 import { createProvider } from '../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';

@@ -2,12 +2,11 @@ import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { fetchUpstreamModels } from '../../data-plane/providers/models-cache.ts';
-import { createProvider, modelsCatalogIdentity } from '../../data-plane/providers/registry.ts';
+import { fetchUpstreamModels } from '../../data-plane/providers/models-refresh.ts';
+import { createProvider, modelsOperatorRefreshIdentity } from '../../data-plane/providers/registry.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
-import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { listModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
@@ -72,8 +71,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     modelsCache: null,
   };
   const canRefreshPersistedCache = persisted !== null
-    && modelsCatalogIdentity(persisted) === modelsCatalogIdentity(synthRecord)
-    && serializeStoredConfig(persisted.proxyFallbackList) === serializeStoredConfig(synthRecord.proxyFallbackList);
+    && modelsOperatorRefreshIdentity(persisted) === modelsOperatorRefreshIdentity(synthRecord);
 
   let fetcher: Fetcher;
   try {

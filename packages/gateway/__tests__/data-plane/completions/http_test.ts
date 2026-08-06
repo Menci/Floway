@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -44,6 +44,45 @@ const completionStream = (): Response => {
     headers: { 'content-type': 'text/event-stream' },
   });
 };
+
+test('/v1/completions cold resolution schedules the catalog and a later request dispatches', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+  let upstreamCalls = 0;
+  const request = {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+  };
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname !== 'passthrough.example.com' || url.pathname !== '/v1/completions') {
+        throw new Error(`Unhandled fetch ${request.url}`);
+      }
+      upstreamCalls++;
+      return jsonResponse({
+        id: 'cmpl_resp',
+        object: 'text_completion',
+        created: 1,
+        model: 'davinci-002',
+        choices: [{ index: 0, text: ' world', finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
+      });
+    },
+    async () => {
+      const cold = await requestAppCold('/v1/completions', request);
+      assertEquals(cold.status, 404);
+      assertEquals(upstreamCalls, 0);
+
+      await flushAsyncWork();
+      const warm = await requestAppCold('/v1/completions', request);
+      assertEquals(warm.status, 200);
+      assertEquals(upstreamCalls, 1);
+    },
+  );
+});
 
 test('/v1/completions non-streaming forwards body to upstream /v1/completions and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();

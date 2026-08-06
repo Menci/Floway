@@ -17,17 +17,6 @@ export const modelsFetchIdentity = (
   proxyFallbackList: record.proxyFallbackList,
 });
 
-// Control-plane replacements reset cooldown when any operator-owned fetch
-// input changes, including credential state updated by OAuth/import flows.
-export const modelsOperatorRefreshIdentity = (
-  record: Pick<UpstreamRecord, 'kind' | 'config' | 'state' | 'proxyFallbackList'>,
-): string => serializeStoredConfig({
-  kind: record.kind,
-  config: record.config,
-  state: record.state ?? null,
-  proxyFallbackList: record.proxyFallbackList,
-});
-
 export const modelsCacheGeneration = (
   record: Pick<UpstreamRecord, 'updatedAt' | 'kind' | 'config' | 'proxyFallbackList'>,
 ): ModelsCacheGeneration => ({

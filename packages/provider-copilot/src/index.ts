@@ -9,6 +9,10 @@ export const copilotProviderModule: ProviderModule = {
     const upstream = assertCopilotUpstreamRecord(record);
     return { githubHost: upstream.config.githubHost, userId: upstream.config.user.id };
   },
+  modelRefreshIdentity: record => {
+    const upstream = assertCopilotUpstreamRecord(record);
+    return { config: upstream.config, state: upstream.state };
+  },
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 

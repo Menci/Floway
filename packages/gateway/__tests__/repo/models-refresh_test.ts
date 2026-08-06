@@ -162,11 +162,55 @@ describe.each(factories)('%s models refresh coordination', (_name, createRepo) =
   test('catalog-aware replacement rejects a stale control-plane writer', async () => {
     const repo = await createRepo();
     await repo.upstreams.save(record);
+    await repo.upstreams.saveState(record.id, () => ({ providerManaged: 'newer' }));
     const winner = { ...record, name: 'Winner', updatedAt: '2026-08-01T00:01:00.000Z' };
     const stale = { ...record, name: 'Stale', updatedAt: '2026-08-01T00:02:00.000Z' };
 
     await expect(repo.upstreams.replaceForModels({ previous: record, upstream: winner, cachePolicy: 'preserve' })).resolves.toBe(true);
     await expect(repo.upstreams.replaceForModels({ previous: record, upstream: stale, cachePolicy: 'clear' })).resolves.toBe(false);
     expect((await repo.upstreams.getById(record.id))?.name).toBe('Winner');
+    expect((await repo.upstreams.getById(record.id))?.state).toEqual({ providerManaged: 'newer' });
+  });
+
+  test('catalog-aware insertion never overwrites a concurrent winner', async () => {
+    const repo = await createRepo();
+    await expect(repo.upstreams.insertForModels(record)).resolves.toBe(true);
+    await expect(repo.upstreams.insertForModels({ ...record, name: 'Loser' })).resolves.toBe(false);
+    expect((await repo.upstreams.getById(record.id))?.name).toBe(record.name);
+  });
+
+  test('a waiter can reclaim a replacement owner after its lease also expires', async () => {
+    const repo = await createRepo();
+    await repo.upstreams.save(record);
+    const firstNow = 1_800_000_000_000;
+    await repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'owner-a', now: firstNow, staleClaimedBefore: firstNow - 900_000, bypassBackoff: false, observedActiveToken: null });
+    const secondNow = firstNow + 900_001;
+    await repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'owner-b', now: secondNow, staleClaimedBefore: firstNow + 1, bypassBackoff: false, observedActiveToken: null });
+
+    await expect(repo.upstreams.claimModelsRefresh({
+      id: record.id,
+      generation,
+      token: 'waiter',
+      now: secondNow + 900_001,
+      staleClaimedBefore: secondNow + 1,
+      bypassBackoff: false,
+      observedActiveToken: 'owner-a',
+    })).resolves.toEqual({ kind: 'claimed', failureCount: 0 });
+  });
+
+  test('failure finalization rejects a count not issued with the claim', async () => {
+    const repo = await createRepo();
+    await repo.upstreams.save(record);
+    const now = 1_800_000_000_000;
+    await repo.upstreams.claimModelsRefresh({ id: record.id, generation, token: 'owner', now, staleClaimedBefore: now - 900_000, bypassBackoff: false, observedActiveToken: null });
+
+    await expect(repo.upstreams.finalizeModelsRefreshFailure({
+      id: record.id,
+      generation,
+      token: 'owner',
+      error: { message: 'failure', at: now },
+      previousFailureCount: 99,
+      failedAt: now,
+    })).resolves.toBe(false);
   });
 });

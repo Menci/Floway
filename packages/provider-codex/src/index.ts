@@ -9,6 +9,10 @@ export const codexProviderModule: ProviderModule = {
     assertCodexUpstreamRecord(record);
     return record.config;
   },
+  modelRefreshIdentity: record => {
+    assertCodexUpstreamRecord(record);
+    return { config: record.config, state: record.state };
+  },
   defaultFlags: CODEX_DEFAULT_FLAGS,
 };
 
