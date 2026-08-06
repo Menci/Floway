@@ -35,6 +35,7 @@ interface ProviderModelsDeadline {
 
 const deadlines = new WeakMap<AbortSignal, ProviderModelsDeadline>();
 const deadlineErrors = new WeakSet<DOMException>();
+const deadlineErrorMappers = new WeakMap<AbortSignal, (reason: unknown) => unknown>();
 const monotonicNow = (): number => performance.now();
 
 const timeoutError = (scope: 'idle' | 'total', timeoutMs: number): DOMException =>
@@ -64,46 +65,30 @@ const isDeadlineAbort = (signal: AbortSignal): boolean => {
   return signal.aborted && signal.reason instanceof DOMException && deadlineErrors.has(signal.reason);
 };
 
-const errorChainIncludes = (error: unknown, expected: unknown): boolean => {
-  const seen = new Set<Error>();
-  let current = error;
-  while (current instanceof Error && !seen.has(current)) {
-    if (current === expected) return true;
-    seen.add(current);
-    current = current.cause;
-  }
-  return current === expected;
-};
-
 const raceWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   if (signal.aborted) return Promise.reject(signal.reason);
   return new Promise<T>((resolve, reject) => {
-    let abortTimer: ReturnType<typeof setTimeout> | undefined;
-    let deadlineAborted = false;
-    let settled = false;
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      if (abortTimer !== undefined) clearTimeout(abortTimer);
-      callback();
-    };
     const onAbort = () => {
-      if (isDeadlineAbort(signal)) {
-        // Body readers get one event-loop turn to attach an already-received HTTP frame to the timeout.
-        deadlineAborted = true;
-        abortTimer = setTimeout(() => finish(() => reject(signal.reason)), 0);
-      } else {
-        finish(() => reject(signal.reason));
+      let reason = signal.reason;
+      const mapper = isDeadlineAbort(signal) ? deadlineErrorMappers.get(signal) : undefined;
+      if (mapper) {
+        try {
+          reason = mapper(reason);
+        } catch (error) {
+          reason = error;
+        }
       }
+      reject(reason);
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(
       value => {
-        if (!deadlineAborted) finish(() => resolve(value));
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
       },
       error => {
-        if (!deadlineAborted || errorChainIncludes(error, signal.reason)) finish(() => reject(error));
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
       },
     );
   });
@@ -426,6 +411,11 @@ export const fetchUpstreamModels = <T>(
       headers: new Headers(response.headers),
       body: '',
     };
+    const mapDeadlineError = (cause: unknown): ProviderModelsUnavailableError => {
+      rewriteCapturedBodyHeaders(httpResponse.headers, true);
+      return new ProviderModelsUnavailableError(httpResponse, cause);
+    };
+    deadlineErrorMappers.set(signal, mapDeadlineError);
     try {
       const captured = await readErrorBody(response, maxErrorResponseBytes, { idleTimeoutMs: options.idleTimeoutMs, signal });
       httpResponse.body = captured.body;
@@ -433,6 +423,8 @@ export const fetchUpstreamModels = <T>(
     } catch (cause) {
       rewriteCapturedBodyHeaders(httpResponse.headers, true);
       throw new ProviderModelsUnavailableError(httpResponse, cause);
+    } finally {
+      if (deadlineErrorMappers.get(signal) === mapDeadlineError) deadlineErrorMappers.delete(signal);
     }
     throw new ProviderModelsUnavailableError(httpResponse);
   }
