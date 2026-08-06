@@ -23,13 +23,13 @@ interface ProviderModelsReadOptions {
 }
 
 interface NormalizedProviderModelsReadOptions {
+  idleExpiresAt: number;
   idleTimeoutMs: number;
   signal?: AbortSignal;
 }
 
 interface ProviderModelsDeadline {
   error: DOMException;
-  errorMappers: Array<(reason: unknown) => unknown>;
   expiresAt: number;
   expire: () => void;
 }
@@ -37,6 +37,8 @@ interface ProviderModelsDeadline {
 const deadlines = new WeakMap<AbortSignal, ProviderModelsDeadline>();
 const deadlineErrors = new WeakSet<DOMException>();
 const monotonicNow = (): number => performance.now();
+// Nested tasks may need a few promise turns to attach their own HTTP frame to a shared timeout.
+const DEADLINE_SETTLEMENT_MICROTASKS = 64;
 
 const timeoutError = (scope: 'idle' | 'total', timeoutMs: number): DOMException =>
   new DOMException(`Provider model listing ${scope} timeout after ${timeoutMs}ms`, 'TimeoutError');
@@ -48,10 +50,10 @@ const validateTimeoutMs = (name: 'idleTimeoutMs' | 'totalTimeoutMs', value: numb
   return value;
 };
 
-const normalizeReadOptions = (options: ProviderModelsReadOptions): NormalizedProviderModelsReadOptions => ({
-  idleTimeoutMs: validateTimeoutMs('idleTimeoutMs', options.idleTimeoutMs ?? PROVIDER_MODELS_IDLE_TIMEOUT_MS),
-  signal: options.signal,
-});
+const normalizeReadOptions = (options: ProviderModelsReadOptions): NormalizedProviderModelsReadOptions => {
+  const idleTimeoutMs = validateTimeoutMs('idleTimeoutMs', options.idleTimeoutMs ?? PROVIDER_MODELS_IDLE_TIMEOUT_MS);
+  return { idleExpiresAt: monotonicNow() + idleTimeoutMs, idleTimeoutMs, signal: options.signal };
+};
 
 const expireElapsedDeadline = (signal: AbortSignal | undefined): void => {
   if (!signal) return;
@@ -65,46 +67,74 @@ const isDeadlineAbort = (signal: AbortSignal): boolean => {
   return signal.aborted && signal.reason instanceof DOMException && deadlineErrors.has(signal.reason);
 };
 
-const registerDeadlineErrorMapper = (
-  signal: AbortSignal,
-  mapper: (reason: unknown) => unknown,
-): (() => void) => {
-  const deadline = deadlines.get(signal);
-  if (!deadline) return () => {};
-  deadline.errorMappers.push(mapper);
-  return () => {
-    const index = deadline.errorMappers.lastIndexOf(mapper);
-    if (index !== -1) deadline.errorMappers.splice(index, 1);
-  };
+const errorTreeIncludes = (error: unknown, expected: unknown, seen = new Set<object>()): boolean => {
+  if (error === expected) return true;
+  if (typeof error !== 'object' || error === null || seen.has(error)) return false;
+  seen.add(error);
+  if (error instanceof AggregateError) {
+    for (const nested of error.errors) {
+      if (errorTreeIncludes(nested, expected, seen)) return true;
+    }
+  }
+  return error instanceof Error && errorTreeIncludes(error.cause, expected, seen);
 };
 
-const raceWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
-  if (signal.aborted) return Promise.reject(signal.reason);
+const errorTreeIncludesDeadline = (error: unknown, seen = new Set<object>()): boolean => {
+  if (error instanceof DOMException && deadlineErrors.has(error)) return true;
+  if (typeof error !== 'object' || error === null || seen.has(error)) return false;
+  seen.add(error);
+  if (error instanceof AggregateError && error.errors.some(nested => errorTreeIncludesDeadline(nested, seen))) return true;
+  return error instanceof Error && errorTreeIncludesDeadline(error.cause, seen);
+};
+
+const expireDeadlineIfElapsed = (signal: AbortSignal): void => {
+  const deadline = deadlines.get(signal);
+  if (deadline && monotonicNow() >= deadline.expiresAt) deadline.expire();
+};
+
+const settleTaskWithSignal = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let graceStarted = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const rejectDeadlineAfterGrace = async () => {
+      for (let turn = 0; turn < DEADLINE_SETTLEMENT_MICROTASKS && !settled; turn++) await Promise.resolve();
+      finish(() => reject(signal.reason));
+    };
     const onAbort = () => {
-      let reason = signal.reason;
-      const errorMappers = isDeadlineAbort(signal) ? deadlines.get(signal)?.errorMappers : undefined;
-      const mapper = errorMappers?.[errorMappers.length - 1];
-      if (mapper) {
-        try {
-          reason = mapper(reason);
-        } catch (error) {
-          reason = error;
+      if (isDeadlineAbort(signal)) {
+        if (!graceStarted) {
+          graceStarted = true;
+          void rejectDeadlineAfterGrace();
         }
+      } else {
+        finish(() => reject(signal.reason));
       }
-      reject(reason);
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(
       value => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(value);
+        expireDeadlineIfElapsed(signal);
+        if (signal.aborted) finish(() => reject(signal.reason));
+        else finish(() => resolve(value));
       },
       error => {
-        signal.removeEventListener('abort', onAbort);
-        reject(error);
+        expireDeadlineIfElapsed(signal);
+        if (isDeadlineAbort(signal)) {
+          finish(() => reject(errorTreeIncludes(error, signal.reason) ? error : signal.reason));
+        } else if (signal.aborted) {
+          finish(() => reject(signal.reason));
+        } else {
+          finish(() => reject(error));
+        }
       },
     );
+    if (signal.aborted) onAbort();
   });
 };
 
@@ -124,7 +154,6 @@ export const runProviderModelsTask = async <T>(
   deadlineErrors.add(error);
   const ownDeadline: ProviderModelsDeadline = {
     error,
-    errorMappers: [],
     expiresAt: monotonicNow() + totalTimeoutMs,
     expire: () => controller.abort(error),
   };
@@ -135,7 +164,7 @@ export const runProviderModelsTask = async <T>(
   try {
     expireElapsedDeadline(controller.signal);
     timer = setTimeout(deadline.expire, Math.max(0, deadline.expiresAt - monotonicNow()));
-    return await raceWithSignal(Promise.resolve().then(() => task(controller.signal)), controller.signal);
+    return await settleTaskWithSignal(Promise.resolve().then(() => task(controller.signal)), controller.signal);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     deadlines.delete(controller.signal);
@@ -145,6 +174,8 @@ export const runProviderModelsTask = async <T>(
 
 const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
+// Cleanup errors are useful only when they settle promptly; a hostile cancel hook cannot hold the request open.
+const CLEANUP_SETTLEMENT_MICROTASKS = 16;
 const READS_PER_EVENT_LOOP_YIELD = 64;
 const TRUNCATED_BODY_MARKER = '...[truncated]';
 const REWRITTEN_BODY_HEADERS = [
@@ -175,14 +206,35 @@ const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string 
   return new TextDecoder().decode(bytes);
 };
 
-const cancelReader = (reader: ReadableStreamDefaultReader<Uint8Array>, reason?: unknown): void => {
-  void reader.cancel(reason).catch(() => undefined);
+type CleanupResult = { status: 'fulfilled' | 'pending' } | { error: unknown; status: 'rejected' };
+
+const boundedCleanup = async (cleanup: () => Promise<unknown>): Promise<CleanupResult> => {
+  let result: CleanupResult = { status: 'pending' };
+  try {
+    void cleanup().then(
+      () => { result = { status: 'fulfilled' }; },
+      error => { result = { error, status: 'rejected' }; },
+    );
+  } catch (error) {
+    return { error, status: 'rejected' };
+  }
+  for (let turn = 0; turn < CLEANUP_SETTLEMENT_MICROTASKS && result.status === 'pending'; turn++) await Promise.resolve();
+  return result;
 };
 
-const cancelBody = (body: ReadableStream<Uint8Array> | null, reason: unknown): void => {
-  if (!body) return;
-  void body.cancel(reason).catch(() => undefined);
-};
+const cancelReader = (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reason?: unknown,
+): Promise<CleanupResult> => boundedCleanup(() => reader.cancel(reason));
+
+const cancelBody = (
+  body: ReadableStream<Uint8Array> | null,
+  reason: unknown,
+): Promise<CleanupResult> => body ? boundedCleanup(() => body.cancel(reason)) : Promise.resolve({ status: 'fulfilled' });
+
+const withCleanupError = (primary: unknown, cleanup: CleanupResult): unknown => cleanup.status === 'rejected'
+  ? new AggregateError([primary, cleanup.error], primary instanceof Error ? primary.message : String(primary), { cause: primary })
+  : primary;
 
 const yieldToEventLoop = (signal: AbortSignal | undefined): Promise<void> => {
   if (signal?.aborted) return Promise.reject(signal.reason);
@@ -209,9 +261,13 @@ const yieldReadLoop = async (
   try {
     await yieldToEventLoop(signal);
   } catch (error) {
-    cancelReader(reader, signal?.aborted ? signal.reason : error);
+    void cancelReader(reader, signal?.aborted ? signal.reason : error);
     throw error;
   }
+};
+
+const expireIdleTimeout = (options: NormalizedProviderModelsReadOptions): void => {
+  if (monotonicNow() >= options.idleExpiresAt) throw timeoutError('idle', options.idleTimeoutMs);
 };
 
 const readWithIdleTimeout = (
@@ -222,12 +278,18 @@ const readWithIdleTimeout = (
   try {
     expireElapsedDeadline(signal);
   } catch (error) {
-    cancelReader(reader, error);
+    void cancelReader(reader, error);
     return Promise.reject(error);
   }
   if (signal?.aborted) {
-    cancelReader(reader, signal.reason);
+    void cancelReader(reader, signal.reason);
     return Promise.reject(signal.reason);
+  }
+  try {
+    expireIdleTimeout(options);
+  } catch (error) {
+    void cancelReader(reader, error);
+    return Promise.reject(error);
   }
   const operation = reader.read();
   return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
@@ -240,22 +302,24 @@ const readWithIdleTimeout = (
       callback();
     };
     const onAbort = () => {
-      cancelReader(reader, signal?.reason);
+      void cancelReader(reader, signal?.reason);
       finish(() => reject(signal?.reason));
     };
     const timer = setTimeout(() => {
       const error = timeoutError('idle', options.idleTimeoutMs);
-      cancelReader(reader, error);
+      void cancelReader(reader, error);
       finish(() => reject(error));
-    }, options.idleTimeoutMs);
+    }, Math.max(0, options.idleExpiresAt - monotonicNow()));
     signal?.addEventListener('abort', onAbort, { once: true });
     operation.then(
       value => {
         try {
           expireElapsedDeadline(signal);
+          expireIdleTimeout(options);
+          if (!value.done && value.value.byteLength > 0) options.idleExpiresAt = monotonicNow() + options.idleTimeoutMs;
           finish(() => resolve(value));
         } catch (error) {
-          cancelReader(reader, error);
+          void cancelReader(reader, error);
           finish(() => reject(error));
         }
       },
@@ -289,20 +353,24 @@ const readErrorBody = async (response: Response, maxBytes: number, options: Prov
     for (;;) {
       const { done, value } = await readWithIdleTimeout(reader, normalizedOptions);
       if (done) return { body: bytesToText(chunks, totalBytes), truncated: false };
+      readsSinceYield++;
+      const shouldYield = readsSinceYield === READS_PER_EVENT_LOOP_YIELD;
+      if (shouldYield) readsSinceYield = 0;
+      if (value.byteLength === 0) {
+        if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
+        continue;
+      }
       const remaining = maxBytes - totalBytes;
       if (value.byteLength > remaining) {
         if (remaining > 0) chunks.push(value.slice(0, remaining));
         totalBytes += Math.max(remaining, 0);
-        cancelReader(reader);
+        const cleanup = await cancelReader(reader);
+        if (cleanup.status === 'rejected') throw cleanup.error;
         return { body: `${bytesToText(chunks, totalBytes)}${TRUNCATED_BODY_MARKER}`, truncated: true };
       }
       chunks.push(value);
       totalBytes += value.byteLength;
-      readsSinceYield++;
-      if (readsSinceYield === READS_PER_EVENT_LOOP_YIELD) {
-        readsSinceYield = 0;
-        await yieldReadLoop(reader, normalizedOptions.signal);
-      }
+      if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
     }
   } finally {
     releaseReader(reader);
@@ -394,8 +462,8 @@ export const readBoundedJsonResponse = async (
     allowedBytes = Math.min(maxBytes, budget?.remainingBytes ?? maxBytes);
     if (allowedBytes === 0) throw new Error('Provider model listing exhausted its response byte budget');
   } catch (error) {
-    cancelBody(response.body, error);
-    throw error;
+    const cleanup = await cancelBody(response.body, error);
+    throw withCleanupError(error, cleanup);
   }
   if (!response.body) throw new Error('Provider model listing returned an empty body');
   const reader = response.body.getReader();
@@ -406,18 +474,22 @@ export const readBoundedJsonResponse = async (
     for (;;) {
       const { done, value } = await readWithIdleTimeout(reader, normalizedOptions);
       if (done) break;
+      readsSinceYield++;
+      const shouldYield = readsSinceYield === READS_PER_EVENT_LOOP_YIELD;
+      if (shouldYield) readsSinceYield = 0;
+      if (value.byteLength === 0) {
+        if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
+        continue;
+      }
       totalBytes += value.byteLength;
       if (totalBytes > allowedBytes) {
         if (budget) budget.remainingBytes = 0;
-        cancelReader(reader);
-        throw new Error(`Provider model listing exceeded ${allowedBytes} response bytes`);
+        const primary = new Error(`Provider model listing exceeded ${allowedBytes} response bytes`);
+        const cleanup = await cancelReader(reader, primary);
+        throw withCleanupError(primary, cleanup);
       }
       chunks.push(value);
-      readsSinceYield++;
-      if (readsSinceYield === READS_PER_EVENT_LOOP_YIELD) {
-        readsSinceYield = 0;
-        await yieldReadLoop(reader, normalizedOptions.signal);
-      }
+      if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
     }
   } finally {
     releaseReader(reader);
@@ -470,11 +542,6 @@ export const fetchUpstreamModels = <T>(
       headers: new Headers(response.headers),
       body: '',
     };
-    const mapDeadlineError = (cause: unknown): ProviderModelsUnavailableError => {
-      rewriteCapturedBodyHeaders(httpResponse.headers, true);
-      return new ProviderModelsUnavailableError(httpResponse, cause);
-    };
-    const unregisterDeadlineErrorMapper = registerDeadlineErrorMapper(signal, mapDeadlineError);
     try {
       const captured = await readErrorBody(response, maxErrorResponseBytes, { idleTimeoutMs: options.idleTimeoutMs, signal });
       httpResponse.body = captured.body;
@@ -482,8 +549,6 @@ export const fetchUpstreamModels = <T>(
     } catch (cause) {
       rewriteCapturedBodyHeaders(httpResponse.headers, true);
       throw new ProviderModelsUnavailableError(httpResponse, cause);
-    } finally {
-      unregisterDeadlineErrorMapper();
     }
     throw new ProviderModelsUnavailableError(httpResponse);
   }
@@ -500,7 +565,7 @@ export const fetchUpstreamModels = <T>(
   }
   return result;
 }, options).catch((cause: unknown) => {
-  if (options.signal?.aborted && !isDeadlineAbort(options.signal)) throw options.signal.reason;
+  if (options.signal?.aborted && !errorTreeIncludesDeadline(cause)) throw options.signal.reason;
   if (cause instanceof DOMException && cause.name === 'TimeoutError') {
     throw new ProviderModelsUnavailableError(null, cause);
   }

@@ -9,6 +9,18 @@ import {
 } from '../src/models-fetch.ts';
 import { assertRejects } from '@floway-dev/test-utils';
 
+const runReadyMicrotasksFor = async (durationMs: number): Promise<void> => {
+  const deadline = performance.now() + durationMs;
+  while (performance.now() < deadline) await Promise.resolve();
+};
+
+const blockEventLoopFor = (durationMs: number): number => {
+  const deadline = performance.now() + durationMs;
+  let iterations = 0;
+  while (performance.now() < deadline) iterations++;
+  return iterations;
+};
+
 test('fetchUpstreamModels accepts the byte boundary and cancels an oversized success body', async () => {
   const json = '{"ok":true}';
   const bytes = new TextEncoder().encode(json);
@@ -40,6 +52,31 @@ test('fetchUpstreamModels accepts the byte boundary and cancels an oversized suc
     cause: expect.objectContaining({ message: `Provider model listing exceeded ${bytes.byteLength - 1} response bytes` }),
   } satisfies Partial<ProviderModelsUnavailableError>);
   expect(cancelled).toBe(true);
+});
+
+test('fetchUpstreamModels aggregates response overflow with a prompt cancellation failure', async () => {
+  const cleanupError = new Error('response cancellation failed');
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1]));
+      controller.enqueue(new Uint8Array([2]));
+    },
+    cancel() {
+      return Promise.reject(cleanupError);
+    },
+  });
+  const result = fetchUpstreamModels(
+    () => Promise.resolve(new Response(body)),
+    value => value,
+    { maxResponseBytes: 1 },
+  );
+  const error = await assertRejects(() => result, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(error.cause).toBeInstanceOf(AggregateError);
+  const aggregate = error.cause as AggregateError;
+  expect(aggregate.errors).toHaveLength(2);
+  expect(aggregate.errors[0]).toMatchObject({ message: 'Provider model listing exceeded 1 response bytes' });
+  expect(aggregate.errors[1]).toBe(cleanupError);
+  expect(aggregate.cause).toBe(aggregate.errors[0]);
 });
 
 test('fetchUpstreamModels bounds non-2xx bodies while preserving status and headers', async () => {
@@ -144,6 +181,49 @@ test('fetchUpstreamModels enforces the total deadline while body reads remain co
   expect(reads).toBeLessThan(50_001);
 });
 
+test('runProviderModelsTask gives elapsed deadlines precedence at opaque task settlement', async () => {
+  const completed = runProviderModelsTask(async () => {
+    await runReadyMicrotasksFor(8);
+    return 'completed';
+  }, { totalTimeoutMs: 1 });
+  await expect(completed).rejects.toMatchObject({ name: 'TimeoutError' });
+
+  const lateFailure = new Error('late task failure');
+  const rejected = runProviderModelsTask(async () => {
+    await runReadyMicrotasksFor(8);
+    throw lateFailure;
+  }, { totalTimeoutMs: 1 });
+  const rejection = await rejected.catch(error => error as unknown);
+  expect(rejection).toMatchObject({ name: 'TimeoutError' });
+  expect(rejection).not.toBe(lateFailure);
+});
+
+test('fetchUpstreamModels enforces the deadline after blocking parse and late bodyless errors', async () => {
+  const parsed = fetchUpstreamModels(
+    () => Promise.resolve(new Response('{}')),
+    value => {
+      expect(blockEventLoopFor(8)).toBeGreaterThan(0);
+      return value;
+    },
+    { totalTimeoutMs: 1 },
+  );
+  const parseError = await assertRejects(() => parsed, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(parseError.httpResponse).toBeNull();
+  expect(parseError.cause).toMatchObject({ name: 'TimeoutError' });
+
+  const bodyless = fetchUpstreamModels(
+    () => {
+      expect(blockEventLoopFor(8)).toBeGreaterThan(0);
+      return Promise.resolve(new Response(null, { status: 503, headers: { 'retry-after': '9' } }));
+    },
+    value => value,
+    { totalTimeoutMs: 1 },
+  );
+  const bodylessError = await assertRejects(() => bodyless, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(bodylessError.httpResponse).toBeNull();
+  expect(bodylessError.cause).toMatchObject({ name: 'TimeoutError' });
+});
+
 test('fetchUpstreamModels yields ready success and error bodies to caller cancellation', async () => {
   for (const status of [200, 500]) {
     const controller = new AbortController();
@@ -172,6 +252,33 @@ test('fetchUpstreamModels yields ready success and error bodies to caller cancel
     expect(pulls).toBeGreaterThan(0);
     expect(pulls).toBeLessThan(1000);
   }
+});
+
+test('zero-byte chunks neither reset the idle deadline nor enter the captured body', async () => {
+  let cancelReason: unknown;
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls++;
+      controller.enqueue(new Uint8Array());
+    },
+    cancel(reason) {
+      cancelReason = reason;
+    },
+  }, { highWaterMark: 0 });
+  const result = fetchUpstreamModels(
+    () => Promise.resolve(new Response(body)),
+    value => value,
+    { idleTimeoutMs: 5, maxResponseBytes: 1, totalTimeoutMs: 35 },
+  );
+  const error = await assertRejects(() => result, ProviderModelsUnavailableError) as ProviderModelsUnavailableError;
+  expect(error.cause).toMatchObject({
+    message: 'Provider model listing idle timeout after 5ms',
+    name: 'TimeoutError',
+  });
+  expect(cancelReason).toBe(error.cause);
+  expect(pulls).toBeGreaterThan(0);
+  expect(pulls).toBeLessThan(1000);
 });
 
 test('readBoundedJsonResponse observes an abort raised synchronously by the source pull', async () => {
@@ -267,6 +374,57 @@ test('fetchUpstreamModels preserves a non-2xx frame through an inherited task de
     expect(error.httpResponse?.headers.get('content-type')).toBe('text/plain; charset=utf-8');
     expect(error.cause).toMatchObject({ name: 'TimeoutError' });
     expect(cancelReason).toBe(error.cause);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('parallel inherited deadlines preserve each child frame without cross-contamination', async () => {
+  vi.useFakeTimers();
+  try {
+    const childPromises: Array<Promise<unknown>> = [];
+    const cancellations = new Map<string, unknown>();
+    const result = runProviderModelsTask(outerSignal => {
+      const children = ['A', 'B'].map(child => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(`partial-${child}`));
+          },
+          pull() {
+            return new Promise<void>(() => {});
+          },
+          cancel(reason) {
+            cancellations.set(child, reason);
+          },
+        });
+        return fetchUpstreamModels(
+          () => Promise.resolve(new Response(body, {
+            status: 429,
+            headers: { 'content-type': 'application/json', 'x-child': child },
+          })),
+          value => value,
+          { idleTimeoutMs: 1000, signal: outerSignal, totalTimeoutMs: 1000 },
+        );
+      });
+      childPromises.push(...children);
+      return Promise.all(children);
+    }, { totalTimeoutMs: 25 });
+    const outerRejection = result.catch(error => error as unknown);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(childPromises).toHaveLength(2);
+    const childRejections = childPromises.map(child => child.catch(error => error as unknown));
+    await vi.advanceTimersByTimeAsync(25);
+    const [outerError, childA, childB] = await Promise.all([outerRejection, ...childRejections]);
+    expect(childA).toBeInstanceOf(ProviderModelsUnavailableError);
+    expect(childB).toBeInstanceOf(ProviderModelsUnavailableError);
+    const errorA = childA as ProviderModelsUnavailableError;
+    const errorB = childB as ProviderModelsUnavailableError;
+    expect(errorA.httpResponse?.headers.get('x-child')).toBe('A');
+    expect(errorB.httpResponse?.headers.get('x-child')).toBe('B');
+    expect(errorA.cause).toBe(errorB.cause);
+    expect(cancellations.get('A')).toBe(errorA.cause);
+    expect(cancellations.get('B')).toBe(errorB.cause);
+    expect([errorA, errorB]).toContain(outerError);
   } finally {
     vi.useRealTimers();
   }
@@ -380,6 +538,34 @@ test('fetchUpstreamModels aborts total stalls and preserves caller cancellation 
     const cancellationAssertion = expect(cancelled).rejects.toBe(cancellation);
     controller.abort(cancellation);
     await cancellationAssertion;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('an internal deadline keeps precedence when its abort handler triggers a later caller abort', async () => {
+  vi.useFakeTimers();
+  try {
+    const caller = new AbortController();
+    const laterAbort = new DOMException('later caller abort', 'AbortError');
+    let internalReason: unknown;
+    const result = fetchUpstreamModels(
+      signal => new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          internalReason = signal.reason;
+          caller.abort(laterAbort);
+          reject(signal.reason);
+        }, { once: true });
+      }),
+      value => value,
+      { signal: caller.signal, totalTimeoutMs: 25 },
+    );
+    const rejection = assertRejects(() => result, ProviderModelsUnavailableError) as Promise<ProviderModelsUnavailableError>;
+    await vi.advanceTimersByTimeAsync(25);
+    const error = await rejection;
+    expect(error.cause).toBe(internalReason);
+    expect(error.cause).toMatchObject({ name: 'TimeoutError' });
+    expect(error.cause).not.toBe(laterAbort);
   } finally {
     vi.useRealTimers();
   }
