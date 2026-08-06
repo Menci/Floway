@@ -84,11 +84,6 @@ export interface CreateGatewayCtxOptions {
   backgroundScheduler: BackgroundScheduler;
 }
 
-export interface GatewayCtxConstruction {
-  readonly apiKey: ApiKey;
-  readonly requestStartedAt: number;
-}
-
 export type RegisterGatewayCtx = <Ctx extends GatewayCtx>(ctx: Ctx) => Ctx;
 
 type GatewayResponseOperation = (registerCtx: RegisterGatewayCtx) => Promise<Response>;
@@ -117,7 +112,7 @@ const createRequestLinkedAbortController = (requestSignal: AbortSignal): AbortCo
 export const createGatewayCtxFromHono = <Extension extends object = Record<never, never>>(
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  extensionFactory?: (construction: GatewayCtxConstruction) => Extension,
+  extensionFactory?: (construction: { readonly apiKey: ApiKey; readonly requestStartedAt: number }) => Extension,
 ): GatewayCtx & Extension => {
   const apiKey = apiKeyFromContext(c);
   const requestStartedAt = Date.now();

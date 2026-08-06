@@ -25,9 +25,8 @@ export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
   storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulResponsesStore,
-): ChatGatewayCtx => {
-  return createGatewayCtxFromHono(c, opts, ({ apiKey, requestStartedAt }) => ({
+): ChatGatewayCtx =>
+  createGatewayCtxFromHono(c, opts, ({ apiKey, requestStartedAt }) => ({
     affinity: new AffinityRequestContext(apiKey.serverSecret),
     store: storeFactory(apiKey, requestStartedAt),
   }));
-};

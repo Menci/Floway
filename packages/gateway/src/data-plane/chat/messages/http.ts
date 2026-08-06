@@ -41,8 +41,8 @@ const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
 // outer `ctx` when one was already constructed (so the dump row preserves
 // the model attribution the request-time `requestedModel` stamped, and the
 // throwing-candidate telemetry stamped in serve.ts survives onto the error
-// row); a fresh ctx is minted only for pre-parse failures where no payload
-// was available to read model from.
+// row); a fresh ctx is minted when the failure happened before a chat context
+// was successfully constructed.
 const respondWithInternalError = async (
   c: AuthedContext,
   error: unknown,
