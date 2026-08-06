@@ -75,6 +75,9 @@ const withDialDeadline = async <T>(
   try {
     return await run(innerOptions);
   } catch (err) {
+    if (callerSignal?.aborted) {
+      throw signalAbortReason(callerSignal);
+    }
     if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
       throw internal.signal.reason;
     }

@@ -151,6 +151,30 @@ describe('dial deadline', () => {
     await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
   });
 
+  it('rethrows a generic caller abort reason instead of its dial-error wrapper', async () => {
+    let startedResolve!: () => void;
+    const started = new Promise<void>(resolve => { startedResolve = resolve; });
+    vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
+      startedResolve();
+      await new Promise<DialResult>((_resolve, reject) => {
+        opts.signal?.addEventListener('abort', () => reject(new Error('dial wrapper', {
+          cause: opts.signal!.reason,
+        })), { once: true });
+      });
+      throw new Error('unreachable');
+    });
+    const reason = new Error('execution deadline');
+    const controller = new AbortController();
+    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+    const pending = dial(config, target, {
+      ...baseOptions(), signal: controller.signal, dialTimeoutMs: 5_000,
+    });
+    await started;
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+  });
+
   it('refuses to dial when the caller signal is already aborted', async () => {
     const ac = new AbortController();
     ac.abort(new DOMException('already gone', 'AbortError'));

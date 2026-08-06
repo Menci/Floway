@@ -42,6 +42,26 @@ interface CreateFetcherInput {
   socketDial: () => SocketDial;
 }
 
+const containsFailure = (failure: unknown, target: unknown, seen = new Set<object>()): boolean => {
+  if (Object.is(failure, target)) return true;
+  if (!(failure instanceof Error) || seen.has(failure)) return false;
+  seen.add(failure);
+  if (failure instanceof AggregateError && failure.errors.some(error => containsFailure(error, target, seen))) {
+    return true;
+  }
+  return containsFailure(failure.cause, target, seen);
+};
+
+const abortedRequestFailure = (signal: AbortSignal, caught: unknown): unknown => {
+  const reason = signalAbortReason(signal);
+  if (containsFailure(caught, reason)) return caught;
+  return new AggregateError(
+    [reason, caught],
+    'Request cancellation raced with a transport failure',
+    { cause: reason },
+  );
+};
+
 // Two-pass dial strategy. First pass walks the fallback list skipping any
 // entry whose (proxy, upstream) backoff row is still active, so a flaky
 // proxy gets shed in steady state. The second pass walks the entries that
@@ -200,7 +220,7 @@ const tryOne = async (
     // Explicit request cancellation propagates immediately so the dial chain
     // does not continue against later fallback entries.
     if (request.signal?.aborted) {
-      throw signalAbortReason(request.signal);
+      throw abortedRequestFailure(request.signal, err);
     }
     if (isAbortError(err)) {
       throw err;

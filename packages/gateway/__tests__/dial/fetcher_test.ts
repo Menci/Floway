@@ -531,6 +531,35 @@ describe('createFetcher', () => {
     expect(calls).toEqual(['direct']);
   });
 
+  it('keeps a concurrent transport failure behind a generic execution-signal reason', async () => {
+    const repo = new InMemoryRepo();
+    const reason = new Error('execution deadline');
+    const transportFailure = new TypeError('socket failed concurrently');
+    const controller = new AbortController();
+    let proxyCalls = 0;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { proxyCalls += 1; return new Response('proxy'); },
+      runDirectFetch: async () => {
+        controller.abort(reason);
+        throw transportFailure;
+      },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    const rejection = await fetcher('https://api.openai.com', {
+      method: 'GET', signal: controller.signal,
+    }).catch((error: unknown) => error) as AggregateError;
+    expect(rejection.errors).toEqual([reason, transportFailure]);
+    expect(rejection.cause).toBe(reason);
+    expect(proxyCalls).toBe(0);
+  });
+
   it('replays materialized bytes to a direct fallback without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
     let directBody: BodyInit | null | undefined;
