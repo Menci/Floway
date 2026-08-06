@@ -423,30 +423,20 @@ test('buildTargetRequest returns undefined tools when only builtin tools are pre
   assertEquals(result.target.tools, undefined);
 });
 
-test('buildTargetRequest drops forced builtin tool_choice but keeps function tool_choice', () => {
-  // Forced builtin tool choices have no Chat Completions analogue;
-  // they should be dropped (falling back to auto/default).
-  const resultWithBuiltinChoice = buildTargetRequest({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: null,
-    tool_choice: {
-      type: 'web_search_preview',
-    } as unknown as ResponsesToolChoice,
-    metadata: null,
-    stream: null,
-    store: null,
-    parallel_tool_calls: null,
-    text: null,
-  });
+test('buildTargetRequest rejects unsupported forced tool choices', () => {
+  assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: 'Hi' }],
+      tools: null,
+      tool_choice: { type: 'web_search_preview' } as unknown as ResponsesToolChoice,
+    }),
+    Error,
+    "Cannot translate tool_choice type 'web_search_preview' to Chat Completions.",
+  );
+});
 
-  assertEquals(resultWithBuiltinChoice.target.tool_choice, undefined);
-
-  // Forced function tool_choice should be preserved.
+test('buildTargetRequest keeps forced function tool_choice', () => {
   const resultWithFunctionChoice = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],

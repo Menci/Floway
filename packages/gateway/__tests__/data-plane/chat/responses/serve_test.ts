@@ -12,7 +12,7 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -649,7 +649,7 @@ test('generate lowers plaintext collaboration through Chat Completions', async (
 });
 
 test.each(['item_reference', 'previous_response_id'] as const)(
-  'generate discovers collaboration in hydrated %s state before candidate selection',
+  'generate lets translation reject hydrated %s state that the target cannot represent',
   async source => {
     const repo = installRepo();
     const itemId = 'tso_collaboration';
@@ -697,45 +697,48 @@ test.each(['item_reference', 'previous_response_id'] as const)(
       makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses }),
     ]);
 
-    const result = await responsesServe.generate({
-      payload: source === 'item_reference'
-        ? makePayload({ input: [{ type: 'item_reference', id: itemId }] })
-        : makePayload({ previous_response_id: 'resp_collaboration' }),
-      ctx: makeGatewayCtx(),
-      headers: new Headers(),
-    });
-
-    assertEquals(result.type, 'events');
-    if (result.type === 'events') await collectEvents(result.events);
+    await assertRejects(
+      async () => await responsesServe.generate({
+        payload: source === 'item_reference'
+          ? makePayload({ input: [{ type: 'item_reference', id: itemId }] })
+          : makePayload({ previous_response_id: 'resp_collaboration' }),
+        ctx: makeGatewayCtx(),
+        headers: new Headers(),
+      }),
+      Error,
+      "Invalid input item type 'tool_search_output'",
+    );
     assertEquals(callChatCompletions.mock.calls.length, 0);
     assertEquals(callMessages.mock.calls.length, 0);
-    assertEquals(callResponses.mock.calls.length, 1);
+    assertEquals(callResponses.mock.calls.length, 0);
   },
 );
 
-test('generate requires native Responses for allowed_tools choices', async () => {
+test('generate lets the Messages translator reject allowed_tools choices', async () => {
   installRepo();
   const callMessages = vi.fn();
   queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages })]);
 
-  const result = await responsesServe.generate({
-    payload: makePayload({
-      tools: [{
-        type: 'namespace',
-        name: 'operations',
-        tools: [{ type: 'function', name: 'run', parameters: { type: 'object' } }],
-      } as ResponsesTool],
-      tool_choice: {
-        type: 'allowed_tools',
-        mode: 'required',
-        tools: [{ type: 'namespace', name: 'operations' }],
-      },
+  await assertRejects(
+    async () => await responsesServe.generate({
+      payload: makePayload({
+        tools: [{
+          type: 'namespace',
+          name: 'operations',
+          tools: [{ type: 'function', name: 'run', parameters: { type: 'object' } }],
+        } as ResponsesTool],
+        tool_choice: {
+          type: 'allowed_tools',
+          mode: 'required',
+          tools: [{ type: 'namespace', name: 'operations' }],
+        },
+      }),
+      ctx: makeGatewayCtx(),
+      headers: new Headers(),
     }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assert(result.type !== 'events');
+    Error,
+    "Cannot translate tool_choice type 'allowed_tools' to Messages.",
+  );
   assertEquals(callMessages.mock.calls.length, 0);
 });
 

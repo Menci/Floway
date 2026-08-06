@@ -382,9 +382,12 @@ const translateToolChoice = (
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
+    const sourceName = 'namespace' in toolChoice && typeof toolChoice.namespace === 'string'
+      ? `${toolChoice.namespace}.${toolChoice.name}`
+      : toolChoice.name;
+    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(sourceName) ?? toolChoice.name } : undefined;
   }
-  return undefined;
+  throw new TranslatorInputError(`Cannot translate tool_choice type '${toolChoice.type}' to Messages.`);
 };
 
 export const buildTargetRequest = async (source: ResponsesRequestPayload, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {

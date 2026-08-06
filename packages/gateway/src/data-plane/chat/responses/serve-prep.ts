@@ -68,15 +68,6 @@ export type ResponsesServePlan =
     readonly candidates: readonly ModelCandidate[];
   };
 
-const requiresNativeResponsesTarget = (payload: CanonicalResponsesPayload): boolean => {
-  if (payload.input.some(item => item.type === 'additional_tools' || item.type === 'tool_search_output')) return true;
-  const choice = payload.tool_choice;
-  if (choice === null || typeof choice !== 'object') return false;
-  return choice.type === 'allowed_tools'
-    || choice.type === 'namespace'
-    || ('namespace' in choice && typeof choice.namespace === 'string');
-};
-
 // Runs the native source preparation both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
 // expand any `previous_response_id`, load and hydrate stored items, prepare
@@ -110,11 +101,8 @@ export const prepareResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
-  const viable = requiresNativeResponsesTarget(hydrated.payload)
-    ? endpointViable.filter(candidate => responsesTarget.pick(candidate.model.endpoints) === 'responses')
-    : endpointViable;
   const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const selection = selectAffinityCandidates(viable, affinity);
+  const selection = selectAffinityCandidates(endpointViable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks

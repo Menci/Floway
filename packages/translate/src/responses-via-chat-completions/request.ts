@@ -149,8 +149,13 @@ const translateResponsesToolChoice = (
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
   // choices since they share the function-tool wire shape after translation.
-  if (choice.type !== 'function' && choice.type !== 'custom') return undefined;
-  return { type: 'function', function: { name: namespaceSourceToTarget.get(choice.name) ?? choice.name } };
+  if (choice.type !== 'function' && choice.type !== 'custom') {
+    throw new TranslatorInputError(`Cannot translate tool_choice type '${choice.type}' to Chat Completions.`);
+  }
+  const sourceName = 'namespace' in choice && typeof choice.namespace === 'string'
+    ? `${choice.namespace}.${choice.name}`
+    : choice.name;
+  return { type: 'function', function: { name: namespaceSourceToTarget.get(sourceName) ?? choice.name } };
 };
 
 const buildChatCompletionsResponseFormat = (text: ResponsesPayload['text']): ChatCompletionsPayload['response_format'] | undefined => {
