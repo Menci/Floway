@@ -2605,8 +2605,10 @@ test('codex', 'Bash and PowerShell serialize config and token as one cross-langu
     await waitForFile(successorAtCli, 'PowerShell to acquire the released lock');
   } catch (error) {
     writeFileSync(successorGate, 'release');
-    await successorRun;
-    throw error;
+    const successor = await successorRun;
+    throw new Error(`${String(error)}
+PowerShell successor exited ${successor.code}:
+${successor.combined}`);
   }
   const holderConfig = readFileSync(codexConfigPath(holderWs, codexHome), 'utf8');
   t.equal(readCodexToken(holderWs, codexHome), 'key-holder', 'the holder config and token commit together');
