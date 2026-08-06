@@ -58,8 +58,8 @@ const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
 
 const overviewSql = (scoped: boolean) => `/* usage-overview */
 WITH
-settings(actor_user_id, is_admin, series_group_by, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
-  VALUES (?, ?, ?, ?, ?, ?)
+settings(actor_user_id, is_admin, unattributed_user_id, no_upstream_value, upstream_prefix) AS (
+  VALUES (?, ?, ?, ?, ?)
 ),
 model_filter(value) AS MATERIALIZED (
   SELECT CAST(value AS TEXT) FROM json_each(?)
@@ -127,13 +127,17 @@ filtered AS MATERIALIZED (
     AND (NOT EXISTS (SELECT 1 FROM user_filter) OR user_id IN (SELECT value FROM user_filter))
     AND (NOT EXISTS (SELECT 1 FROM key_filter) OR key_id IN (SELECT value FROM key_filter))
 ),
+-- workerd caps compound SELECTs at five terms, so this extensible axis catalog
+-- is a VALUES table rather than a UNION ALL chain.
+-- https://github.com/cloudflare/workerd/blob/243fd41f8944c2446c46e415373b107ecb9bc789/src/workerd/util/sqlite.c%2B%2B#L1380-L1385
 axes(axis, grouping, bucketed, owned_only, admin_only) AS (
-  SELECT 'series', series_group_by, 1, 0, 0 FROM settings
-  UNION ALL SELECT 'none', 'none', 0, 0, 0
-  UNION ALL SELECT 'keyId', 'keyId', 0, 1, 0
-  UNION ALL SELECT 'userId', 'userId', 0, 0, 1
-  UNION ALL SELECT 'model', 'model', 0, 0, 0
-  UNION ALL SELECT 'upstream', 'upstream', 0, 0, 0
+  VALUES
+    ('series', ?, 1, 0, 0),
+    ('none', 'none', 0, 0, 0),
+    ('keyId', 'keyId', 0, 1, 0),
+    ('userId', 'userId', 0, 0, 1),
+    ('model', 'model', 0, 0, 0),
+    ('upstream', 'upstream', 0, 0, 0)
 ),
 projected AS MATERIALIZED (
   SELECT
@@ -405,7 +409,6 @@ export const querySqlUsageOverview = async (
     const binds: SqlBindValue[] = [
       opts.actorUserId,
       opts.isAdmin ? 1 : 0,
-      opts.groupBy,
       tokenUsageUnattributedUserId,
       usageWithoutUpstreamDimensionValue,
       usageUpstreamDimensionPrefix,
@@ -416,6 +419,7 @@ export const querySqlUsageOverview = async (
       JSON.stringify(buckets),
       ...range,
       ...range,
+      opts.groupBy,
     ];
     const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<UsageOverviewSqlRow>();
     const missingHours = results
