@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { retainResponse } from '../../../src/data-plane/shared/retained-response.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -35,4 +35,33 @@ test('retainResponse drains the source without canceling it when its consumer di
   sourceController.close();
   await Promise.all(backgroundTasks);
   assertEquals(sourceCanceled, false);
+});
+
+test('retainResponse cancels a stalled source at the post-disconnect deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    let sourceCanceled = false;
+    const backgroundTasks: Promise<unknown>[] = [];
+    const retained = retainResponse(
+      new Response(new ReadableStream<Uint8Array>({
+        pull: () => new Promise<void>(() => {}),
+        cancel() {
+          sourceCanceled = true;
+        },
+      }, { highWaterMark: 0 })),
+      task => { backgroundTasks.push(task); },
+      undefined,
+      { idleTimeoutMs: 1_000, totalTimeoutMs: 1_000, postDisconnectDrainTimeoutMs: 10 },
+    );
+    const reader = retained.body!.getReader();
+    const pending = reader.read();
+    await reader.cancel('client left');
+
+    await vi.advanceTimersByTimeAsync(10);
+    await Promise.all(backgroundTasks);
+    await pending.catch(() => {});
+    assertEquals(sourceCanceled, true);
+  } finally {
+    vi.useRealTimers();
+  }
 });
