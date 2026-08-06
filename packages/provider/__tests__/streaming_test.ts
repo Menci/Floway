@@ -98,7 +98,7 @@ test('streamingProviderCall surfaces "unknown" content-type when the header is m
   }, Error);
 });
 
-test('streamingProviderCall truncates oversized bodies in the error message', async () => {
+test('streamingProviderCall truncates oversized bodies without waiting for cancellation that never settles', async () => {
   let cancelled = false;
   const decodeSpy = vi.spyOn(TextDecoder.prototype, 'decode');
   const body = new ReadableStream<Uint8Array>({
@@ -291,6 +291,27 @@ test('streamingProviderCall preserves a diagnostic body read failure as the cont
   assertStringIncludes(error.message, 'Body: <unreadable>');
 });
 
+test('streamingProviderCall preserves an undefined diagnostic body read failure', async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.error(undefined);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertEquals(Object.hasOwn(error, 'cause'), true);
+  assertEquals(error.cause, undefined);
+});
+
 test('streamingProviderCall preserves immediate diagnostic cancellation failures', async () => {
   const cleanupError = new Error('cancel failed');
   const body = new ReadableStream<Uint8Array>({
@@ -299,6 +320,58 @@ test('streamingProviderCall preserves immediate diagnostic cancellation failures
     },
     cancel() {
       return Promise.reject(cleanupError);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertEquals(error.cause, cleanupError);
+});
+
+test('streamingProviderCall preserves an undefined diagnostic cancellation failure', async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('x'.repeat(8192)));
+    },
+    cancel() {
+      return Promise.reject(undefined);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertEquals(Object.hasOwn(error, 'cause'), true);
+  assertEquals(error.cause, undefined);
+});
+
+test('streamingProviderCall observes cancellation rejection after an arbitrary finite microtask chain', async () => {
+  const cleanupError = new Error('delayed cancel failed');
+  const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('x'.repeat(8192)));
+    },
+    cancel() {
+      return new Promise<void>((_resolve, reject) => {
+        let pending = Promise.resolve();
+        for (let turn = 0; turn < 16; turn++) pending = pending.then(() => undefined);
+        void pending.then(() => reject(cleanupError));
+      });
     },
   });
 

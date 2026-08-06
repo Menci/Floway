@@ -12,7 +12,6 @@ const BODY_SNIPPET_IDLE_TIMEOUT_MS = 1_000;
 const BODY_SNIPPET_TOTAL_TIMEOUT_MS = 5_000;
 const BODY_SNIPPET_MAX_EMPTY_CHUNKS = 64;
 const BODY_SNIPPET_TIMER_YIELD_INTERVAL = 32;
-const CANCELLATION_SETTLEMENT_MICROTASKS = 4;
 
 interface Failure {
   readonly error: unknown;
@@ -26,7 +25,7 @@ interface ReaderCancellation {
 
 interface BodySnippet {
   readonly text: string;
-  readonly cleanupFailure?: unknown;
+  readonly cleanupFailure?: Failure;
 }
 
 const timeoutError = (scope: 'idle' | 'total', timeoutMs: number): DOMException =>
@@ -85,19 +84,28 @@ const beginReaderCancellation = (
   return state;
 };
 
-const observeImmediateCancellation = async (cancellation: ReaderCancellation): Promise<Failure | undefined> => {
-  for (let turn = 0; turn < CANCELLATION_SETTLEMENT_MICROTASKS && !cancellation.settled; turn++) {
-    await Promise.resolve();
-  }
+const observeBoundedCancellation = async (cancellation: ReaderCancellation): Promise<Failure | undefined> => {
+  if (cancellation.settled) return cancellation.failure;
+  let settlementWindow: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    cancellation.settlement,
+    new Promise<void>(resolve => {
+      settlementWindow = setTimeout(() => {
+        settlementWindow = undefined;
+        resolve();
+      }, 0);
+    }),
+  ]);
+  if (settlementWindow !== undefined) clearTimeout(settlementWindow);
   return cancellation.failure;
 };
 
-const reportLateCancellationFailure = (cancellation: ReaderCancellation, primaryFailure: unknown): void => {
+const reportLateCancellationFailure = (cancellation: ReaderCancellation, primaryFailure: Failure | undefined): void => {
   void cancellation.settlement.then(() => {
     if (!cancellation.failure) return;
     const error = primaryFailure === undefined
       ? cancellation.failure.error
-      : aggregateFailure(primaryFailure, [cancellation.failure.error], 'Upstream stream diagnostic cleanup failed');
+      : aggregateFailure(primaryFailure.error, [cancellation.failure.error], 'Upstream stream diagnostic cleanup failed');
     console.error('Failed to cancel upstream stream diagnostic body:', error);
   });
 };
@@ -186,9 +194,11 @@ const readBodySnippet = async (response: Response, callerSignal: AbortSignal | u
 
     if (!completed) {
       cancelReader(failure?.error);
-      const cancellationFailure = await observeImmediateCancellation(cancellation!);
-      if (cancellationFailure && cancellationFailure.error !== failure?.error) cleanupFailures.push(cancellationFailure.error);
-      if (!cancellation!.settled) reportLateCancellationFailure(cancellation!, failure?.error);
+      const cancellationFailure = await observeBoundedCancellation(cancellation!);
+      if (cancellationFailure && (failure === undefined || cancellationFailure.error !== failure.error)) {
+        cleanupFailures.push(cancellationFailure.error);
+      }
+      if (!cancellation!.settled) reportLateCancellationFailure(cancellation!, failure);
     }
     try {
       reader.releaseLock();
@@ -202,17 +212,17 @@ const readBodySnippet = async (response: Response, callerSignal: AbortSignal | u
   }
   return cleanupFailures.length === 0
     ? { text: snippet! }
-    : { text: snippet!, cleanupFailure: aggregateCleanupFailures(cleanupFailures) };
+    : { text: snippet!, cleanupFailure: { error: aggregateCleanupFailures(cleanupFailures) } };
 };
 
-const streamRequiredError = (response: Response, contentType: string, snippet: string, cause?: unknown): Error =>
+const streamRequiredError = (response: Response, contentType: string, snippet: string, cause: Failure | undefined = undefined): Error =>
   new Error(
     `Upstream returned ${response.status} with content-type "${contentType || 'unknown'}" but stream is required (provider must force stream=true and return text/event-stream when response.ok). Body: ${snippet}`,
-    cause === undefined ? undefined : { cause },
+    cause === undefined ? undefined : { cause: cause.error },
   );
 
 const carriesCause = (failure: unknown, cause: unknown): boolean =>
-  failure === cause || (failure instanceof Error && failure.cause === cause);
+  failure === cause || (failure instanceof Error && Object.hasOwn(failure, 'cause') && failure.cause === cause);
 
 // A 2xx non-SSE upstream is a provider-contract violation: every streaming
 // endpoint is called with stream=true. The throw bubbles to the target
@@ -241,12 +251,12 @@ export const streamingProviderCall = async <TEvent>(
       snippet = await readBodySnippet(response, signal);
     } catch (cause) {
       if (signal?.aborted && carriesCause(cause, signal.reason)) throw cause;
-      throw streamRequiredError(response, contentType, '<unreadable>', cause);
+      throw streamRequiredError(response, contentType, '<unreadable>', { error: cause });
     }
     if (signal?.aborted) {
       throw snippet.cleanupFailure === undefined
         ? signal.reason
-        : aggregateFailure(signal.reason, [snippet.cleanupFailure], 'Upstream stream diagnostic cleanup failed');
+        : aggregateFailure(signal.reason, [snippet.cleanupFailure.error], 'Upstream stream diagnostic cleanup failed');
     }
     throw streamRequiredError(response, contentType, snippet.text, snippet.cleanupFailure);
   }
