@@ -17,9 +17,6 @@ _run_with_timeout() {
 
   _rwt_marker=$(mktemp "$SETUP_TMPDIR/timeout.XXXXXX") || return 1
   rm -f "$_rwt_marker"
-  if [ -n "${AGENT_SETUP_TEST_TRACE_TIMEOUT:-}" ]; then
-    printf 'Agent Setup test: timeout fallback: process-tree\n'
-  fi
   set -m
   "$@" &
   _rwt_pid=$!

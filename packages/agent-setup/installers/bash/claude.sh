@@ -51,42 +51,33 @@ claude_ensure_installed() {
     return 0
   fi
 
-  if [ -n "${AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    out_info 'Claude Code CLI not found; running the test installer'
-    _ic_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_ic_timeout" env -u SETUP_API_KEY bash "$AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT" </dev/null || return 1
-  elif [ -n "${AGENT_SETUP_TEST_CLAUDE_URL:-}" ]; then
-    out_info 'Claude Code CLI not found; running the test installer download'
-    _download_and_run_installer "$AGENT_SETUP_TEST_CLAUDE_URL" || return 1
-  else
-    case "$(uname -s)" in
-      Darwin)
-        if command -v brew >/dev/null 2>&1; then
-          out_info 'Claude Code CLI not found; installing with Homebrew'
-          _install_brew_cask claude-code || return 1
-        elif command -v npm >/dev/null 2>&1; then
-          out_info 'Claude Code CLI not found; installing with npm'
-          _install_npm_package '@anthropic-ai/claude-code' || return 1
-        else
-          out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
-          _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
-        fi
-        ;;
-      Linux)
-        if command -v npm >/dev/null 2>&1; then
-          out_info 'Claude Code CLI not found; installing with npm'
-          _install_npm_package '@anthropic-ai/claude-code' || return 1
-        else
-          out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
-          _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
-        fi
-        ;;
-      *)
-        out_error 'automatic Claude Code installation supports macOS and Linux only in the Bash installer.'
-        return 1
-        ;;
-    esac
-  fi
+  case "$(uname -s)" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then
+        out_info 'Claude Code CLI not found; installing with Homebrew'
+        _install_brew_cask claude-code || return 1
+      elif command -v npm >/dev/null 2>&1; then
+        out_info 'Claude Code CLI not found; installing with npm'
+        _install_npm_package '@anthropic-ai/claude-code' || return 1
+      else
+        out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
+        _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+      fi
+      ;;
+    Linux)
+      if command -v npm >/dev/null 2>&1; then
+        out_info 'Claude Code CLI not found; installing with npm'
+        _install_npm_package '@anthropic-ai/claude-code' || return 1
+      else
+        out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
+        _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+      fi
+      ;;
+    *)
+      out_error 'automatic Claude Code installation supports macOS and Linux only in the Bash installer.'
+      return 1
+      ;;
+  esac
   hash -r 2>/dev/null || true
   _discover_cli claude \
     "$HOME/.local/bin/claude" \
@@ -180,11 +171,6 @@ claude_write_settings() {
     claude_rollback_settings
     return 1
   fi
-  if [ -n "${AGENT_SETUP_TEST_FAIL_CLAUDE_AFTER_REPLACE:-}" ]; then
-    out_error 'test-injected failure after replacing Claude settings.'
-    claude_rollback_settings
-    return 1
-  fi
   if ! _prune_managed_backups "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
     claude_rollback_settings
     return 1
@@ -192,9 +178,8 @@ claude_write_settings() {
 }
 
 claude_write_version() {
-  _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
   _cv_version_file="$SETUP_TMPDIR/claude-version.out"
-  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" --version > "$_cv_version_file" 2>&1; then
+  if _run_with_timeout 30 "$CLAUDE_BIN" --version > "$_cv_version_file" 2>&1; then
     _cv_version=$(cat "$_cv_version_file")
   else
     _cv_version_status=$?

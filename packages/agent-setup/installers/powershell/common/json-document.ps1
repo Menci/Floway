@@ -74,7 +74,7 @@ function Read-SetupJsonDocument {
   # is JSON-equivalent and forces ordinary property handling for every value type.
   $jsonForReader = $Json.Replace('"__type"', '"\u005f_type"')
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($jsonForReader)
-  $maxBytes = if ($env:AGENT_SETUP_TEST_JSON_MAX_BYTES) { [int]$env:AGENT_SETUP_TEST_JSON_MAX_BYTES } else { 8388608 }
+  $maxBytes = 8388608
   if ($bytes.Length -gt $maxBytes) { throw 'JSON exceeds the 8 MiB size limit.' }
   $bound = [Math]::Max(16384, $bytes.Length)
   $quotas = New-Object System.Xml.XmlDictionaryReaderQuotas

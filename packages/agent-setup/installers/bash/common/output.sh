@@ -19,7 +19,6 @@
 # warnings, errors, and rollback notices go to stderr.
 _stream_color() {
   [ -z "${NO_COLOR:-}" ] || return 1
-  [ -n "${AGENT_SETUP_TEST_FORCE_COLOR:-}" ] && return 0
   [ -t "$1" ]
 }
 _init_output() {

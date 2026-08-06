@@ -18,31 +18,22 @@ codex_ensure_installed() {
     return 0
   fi
 
-  if [ -n "${AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
-    out_info 'Codex CLI not found; running the test installer'
-    _icx_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_icx_timeout" env -u SETUP_API_KEY CODEX_NON_INTERACTIVE=true bash "$AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT" </dev/null || return 1
-  elif [ -n "${AGENT_SETUP_TEST_CODEX_URL:-}" ]; then
-    out_info 'Codex CLI not found; running the test installer download'
-    CODEX_NON_INTERACTIVE=true _download_and_run_installer "$AGENT_SETUP_TEST_CODEX_URL" || return 1
+  case "$(uname -s)" in
+    Darwin | Linux) ;;
+    *)
+      out_error 'automatic Codex installation supports macOS and Linux only in the Bash installer.'
+      return 1
+      ;;
+  esac
+  if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+    out_info 'Codex CLI not found; installing with Homebrew'
+    _install_brew_cask codex || return 1
+  elif command -v npm >/dev/null 2>&1; then
+    out_info 'Codex CLI not found; installing with npm'
+    _install_npm_package '@openai/codex' || return 1
   else
-    case "$(uname -s)" in
-      Darwin | Linux) ;;
-      *)
-        out_error 'automatic Codex installation supports macOS and Linux only in the Bash installer.'
-        return 1
-        ;;
-    esac
-    if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
-      out_info 'Codex CLI not found; installing with Homebrew'
-      _install_brew_cask codex || return 1
-    elif command -v npm >/dev/null 2>&1; then
-      out_info 'Codex CLI not found; installing with npm'
-      _install_npm_package '@openai/codex' || return 1
-    else
-      out_info 'Codex CLI not found; installing from GitHub'
-      CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
-    fi
+    out_info 'Codex CLI not found; installing from GitHub'
+    CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
   fi
   hash -r 2>/dev/null || true
   _discover_cli codex \
@@ -118,17 +109,14 @@ codex_commit_files() {
 _codex_kill_group() {
   _ckg_pid=$1
   _ckg_marker=$2
-  # The harness shortens both real waits while preserving the escalation order.
-  _ckg_term_grace=${AGENT_SETUP_TEST_CODEX_TERM_GRACE_SECONDS:-1}
-  _ckg_kill_grace=${AGENT_SETUP_TEST_CODEX_KILL_GRACE_SECONDS:-0.5}
   rm -f "$_ckg_marker"
   (
     exec </dev/null >/dev/null 2>&1
-    sleep "$_ckg_term_grace"
+    sleep 1
     if kill -0 -- "-$_ckg_pid" 2>/dev/null || kill -0 "$_ckg_pid" 2>/dev/null; then
       : > "$_ckg_marker"
       kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
-      sleep "$_ckg_kill_grace"
+      sleep 0.5
       kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
     fi
   ) &
@@ -187,7 +175,6 @@ _codex_read_response() {
 # only thing written to stdout (progress and errors go to stderr).
 codex_app_server_batch_write() {
   _cas_edits=$1
-  _cas_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-60}
   _cas_dir=$(mktemp -d "$SETUP_TMPDIR/codex-appserver.XXXXXX") || return 1
   _cas_req="$_cas_dir/req"
   _cas_res="$_cas_dir/res"
@@ -206,7 +193,7 @@ codex_app_server_batch_write() {
   exec 3>"$_cas_req"
   exec 4<"$_cas_res"
 
-  CODEX_APPSERVER_DEADLINE=$(( $(date +%s) + _cas_timeout ))
+  CODEX_APPSERVER_DEADLINE=$(( $(date +%s) + 60 ))
   CODEX_APPSERVER_RESPONSE=""
   _cas_status=0
 
@@ -341,9 +328,8 @@ codex_stage_token() {
 }
 
 codex_write_version() {
-  _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
   _cv_version_file="$SETUP_TMPDIR/codex-version.out"
-  if _run_with_timeout "$_cv_timeout" "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
+  if _run_with_timeout 30 "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
     out_info "Codex version: $(cat "$_cv_version_file")"
   else
     _cv_version_status=$?
