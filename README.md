@@ -148,8 +148,8 @@ pnpm run lint
 pnpm run typecheck
 ```
 
-More detail lives in [AGENTS.md](./AGENTS.md) — architecture, workspace layout,
-verification, and contributor rules.
+[AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
+indexes its CI workflows, skills, workspace packages, and their responsibilities.
 
 ## License
 
