@@ -9,7 +9,7 @@ import {
   type ClaudeCodeAccessTokenEntry,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
-import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
+import { runProviderModelsTask, type Fetcher, type UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
 
@@ -84,25 +84,45 @@ interface ClaudeCodeAccessTokenFlight {
 
 const inFlightEnsures = new Map<string, ClaudeCodeAccessTokenFlight>();
 
+const waitForSignal = <T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+  if (signal === undefined) return operation;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const onAbort = (): void => finish(() => reject(signal.reason));
+    signal.addEventListener('abort', onAbort, { once: true });
+    operation.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error)),
+    );
+    if (signal.aborted) onAbort();
+  });
+};
+
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
 ): Promise<EnsuredAccessToken> => {
   const key = args.upstreamId;
   const existing = inFlightEnsures.get(key);
   if (existing) {
-    const ensured = await existing.promise;
+    const ensured = await waitForSignal(existing.promise, args.signal);
     if (!args.force || existing.force || ensured.freshlyMinted) return ensured;
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
     return await ensureClaudeCodeAccessToken(args);
   }
-  const promise = ensureClaudeCodeAccessTokenInner(args, true);
+  const promise = runProviderModelsTask(signal => ensureClaudeCodeAccessTokenInner({ ...args, signal }, true));
   const flight: ClaudeCodeAccessTokenFlight = { force: args.force === true, promise };
   inFlightEnsures.set(key, flight);
-  try {
-    return await promise;
-  } finally {
+  void promise.finally(() => {
     if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
-  }
+  }).catch(() => {});
+  return await waitForSignal(promise, args.signal);
 };
 
 // Reads, refreshes, and persists. The rotated refresh token and the new

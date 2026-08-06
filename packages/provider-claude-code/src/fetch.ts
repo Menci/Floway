@@ -309,6 +309,7 @@ const ensureOrSession503 = async (
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
       fetcher: opts.call.fetcher,
+      signal: opts.signal,
     });
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {

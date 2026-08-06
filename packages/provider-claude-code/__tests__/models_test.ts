@@ -4,6 +4,7 @@ import {
   aliasFromApiId,
   buildClaudeCodeCatalog,
   chatFromCapabilities,
+  ClaudeCodeModelsFetchError,
   fetchClaudeCodeModelsList,
   type ClaudeCodeApiModel,
   type ClaudeCodeProviderData,
@@ -111,6 +112,8 @@ describe('fetchClaudeCodeModelsList', () => {
     ).catch(cause => cause as unknown);
 
     expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(ClaudeCodeModelsFetchError);
+    expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
     expect((error as Error).message).toBe('Claude Code /v1/models fetch failed: 503 unav...[truncated]');
     expect((error as Error).cause).toBeInstanceOf(ProviderModelsUnavailableError);
   });

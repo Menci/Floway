@@ -71,6 +71,46 @@ describe('refreshCodexAccessToken', () => {
     await expect(refreshCodexAccessToken('rt_replayed', directFetcher)).rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);
   });
 
+  test('caller abort cancels a stalled token response body', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('stopped', 'AbortError');
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(cause) {
+        cancellationReason = cause;
+      },
+    }, { highWaterMark: 0 });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body));
+    const result = refreshCodexAccessToken('rt_old', directFetcher, controller.signal);
+    await Promise.resolve();
+
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(cancellationReason).toBe(reason);
+  });
+
+  test('rejects and cancels an oversized token response body', async () => {
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      start(stream) {
+        stream.enqueue(new Uint8Array(64 * 1024 + 1));
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body));
+
+    const error = await refreshCodexAccessToken('rt_old', directFetcher).catch(cause => cause as unknown);
+
+    expect(error).toMatchObject({ message: 'Upstream response exceeded 65536 bytes' });
+    expect(cancellationReason).toBe(error);
+  });
+
   test.each([0, -1, 0.5, Number.MAX_SAFE_INTEGER])(
     'rejects unusable expires_in=%s before it can corrupt cached state',
     async expiresIn => {

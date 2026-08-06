@@ -370,6 +370,64 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     expect(minted).toBe(2);
   });
 
+  test('the first waiter aborts without canceling a joined token flight', async () => {
+    const firstController = new AbortController();
+    const firstReason = new DOMException('first stopped', 'AbortError');
+    const fetchEntered = Promise.withResolvers<AbortSignal>();
+    const fetchGate = Promise.withResolvers<Response>();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      fetchEntered.resolve(init?.signal as AbortSignal);
+      return fetchGate.promise;
+    });
+    const first = ensureClaudeCodeAccessToken({
+      upstreamId,
+      repo,
+      fetcher: directFetcher,
+      signal: firstController.signal,
+    });
+    const sharedSignal = await fetchEntered.promise;
+    const joined = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+
+    firstController.abort(firstReason);
+
+    await expect(first).rejects.toBe(firstReason);
+    expect(sharedSignal.aborted).toBe(false);
+    fetchGate.resolve(new Response(JSON.stringify({
+      access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    await expect(joined).resolves.toMatchObject({ entry: { token: 'at_new' } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('a joined waiter aborts without canceling the original token flight', async () => {
+    const joinedController = new AbortController();
+    const joinedReason = new DOMException('joined stopped', 'AbortError');
+    const fetchEntered = Promise.withResolvers<AbortSignal>();
+    const fetchGate = Promise.withResolvers<Response>();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      fetchEntered.resolve(init?.signal as AbortSignal);
+      return fetchGate.promise;
+    });
+    const first = ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    const sharedSignal = await fetchEntered.promise;
+    const joined = ensureClaudeCodeAccessToken({
+      upstreamId,
+      repo,
+      fetcher: directFetcher,
+      signal: joinedController.signal,
+    });
+
+    joinedController.abort(joinedReason);
+
+    await expect(joined).rejects.toBe(joinedReason);
+    expect(sharedSignal.aborted).toBe(false);
+    fetchGate.resolve(new Response(JSON.stringify({
+      access_token: 'at_new', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200 }));
+    await expect(first).resolves.toMatchObject({ entry: { token: 'at_new' } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
     const refreshEntered = Promise.withResolvers<void>();
     const refreshGate = Promise.withResolvers<void>();

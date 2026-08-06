@@ -104,14 +104,14 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // failure and surfaces it to the operator.
       const ensureCatalogAccess = async (force = false) => {
         try {
-          return await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken => {
+          return await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, (refreshToken, flightSignal) => {
             return mintCodexAccessToken(
               refreshToken,
               fetcher,
               newRefreshToken => persistRefreshTokenRotation(refreshToken, newRefreshToken),
-              signal,
+              flightSignal,
             );
-          }, force);
+          }, force, signal);
         } catch (err) {
           if (err instanceof CodexCredentialRefreshTerminatedError) {
             await persistTerminalState('refresh_failed', err.upstreamMessage, err.generation);

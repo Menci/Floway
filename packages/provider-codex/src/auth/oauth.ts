@@ -7,7 +7,9 @@ import {
   CODEX_ORIGINATOR,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { type Fetcher, readBoundedTextResponse } from '@floway-dev/provider';
+
+const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 
 export interface CodexOAuthTokens {
   access_token: string;
@@ -98,7 +100,7 @@ const codexTokenRequest = async (
     signal,
   });
 
-  const rawText = await response.text();
+  const rawText = await readBoundedTextResponse(response, MAX_OAUTH_RESPONSE_BYTES, { signal });
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};

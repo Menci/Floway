@@ -8,7 +8,9 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { type Fetcher } from '@floway-dev/provider';
+import { type Fetcher, readBoundedTextResponse } from '@floway-dev/provider';
+
+const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 
 // Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
 // sign-in: three-scope grant that mints a short-lived access token + rotating
@@ -85,7 +87,7 @@ const claudeCodeTokenRequest = async (
     signal,
   });
 
-  const rawText = await response.text();
+  const rawText = await readBoundedTextResponse(response, MAX_OAUTH_RESPONSE_BYTES, { signal });
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};

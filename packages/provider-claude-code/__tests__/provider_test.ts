@@ -144,7 +144,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     ]);
   });
 
-  test('getProvidedModels applies its deadline to an OAuth refresh before catalog dispatch', async () => {
+  test('getProvidedModels leaves a timed-out OAuth refresh on its bounded shared flight', async () => {
     vi.useFakeTimers();
     currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: null }] });
     let oauthSignal: AbortSignal | null = null;
@@ -165,8 +165,10 @@ describe('createClaudeCodeProvider — factory surface', () => {
 
     const error = await rejection;
     expect(error).toMatchObject({ name: 'TimeoutError' });
-    expect((oauthSignal as unknown as AbortSignal).reason).toBe(error);
+    expect((oauthSignal as unknown as AbortSignal).aborted).toBe(false);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((oauthSignal as unknown as AbortSignal).reason).toMatchObject({ name: 'TimeoutError' });
   });
 
   test('getProvidedModels stamps the effective flag set onto every model', async () => {

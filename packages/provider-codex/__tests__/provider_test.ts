@@ -155,7 +155,7 @@ describe('createCodexProvider', () => {
     expect((current!.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at');
   });
 
-  test('getProvidedModels applies its deadline to an OAuth mint before catalog dispatch', async () => {
+  test('getProvidedModels leaves a timed-out OAuth mint on its bounded shared flight', async () => {
     vi.useFakeTimers();
     current = baseRecord;
     let oauthSignal: AbortSignal | null = null;
@@ -173,8 +173,10 @@ describe('createCodexProvider', () => {
 
     const error = await rejection;
     expect(error).toMatchObject({ name: 'TimeoutError' });
-    expect((oauthSignal as unknown as AbortSignal).reason).toBe(error);
+    expect((oauthSignal as unknown as AbortSignal).aborted).toBe(false);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((oauthSignal as unknown as AbortSignal).reason).toMatchObject({ name: 'TimeoutError' });
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {

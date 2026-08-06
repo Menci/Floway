@@ -17,7 +17,7 @@ export interface ProviderModelsTaskOptions {
   totalTimeoutMs?: number;
 }
 
-interface ProviderModelsReadOptions {
+export interface ProviderModelsReadOptions {
   idleTimeoutMs?: number;
   signal?: AbortSignal;
 }
@@ -423,6 +423,50 @@ const readErrorBody = async (response: Response, maxBytes: number, options: Prov
       }
       chunks.push(value);
       totalBytes += value.byteLength;
+      if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
+    }
+  } finally {
+    releaseReader(reader);
+  }
+};
+
+export const readBoundedTextResponse = async (
+  response: Response,
+  maxBytes: number,
+  options: ProviderModelsReadOptions = {},
+): Promise<string> => {
+  let normalizedOptions: NormalizedProviderModelsReadOptions;
+  try {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new TypeError('maxBytes must be a positive safe integer');
+    normalizedOptions = normalizeReadOptions(options);
+  } catch (error) {
+    const cleanup = await cancelBody(response.body, error);
+    throw withCleanupError(error, cleanup);
+  }
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let readsSinceYield = 0;
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await readWithIdleTimeout(reader, normalizedOptions);
+      if (done) return bytesToText(chunks, totalBytes);
+      readsSinceYield++;
+      const shouldYield = readsSinceYield === READS_PER_EVENT_LOOP_YIELD;
+      if (shouldYield) readsSinceYield = 0;
+      if (value.byteLength === 0) {
+        if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
+        continue;
+      }
+      const nextTotalBytes = totalBytes + value.byteLength;
+      if (nextTotalBytes > maxBytes) {
+        const primary = new Error(`Upstream response exceeded ${maxBytes} bytes`);
+        const cleanup = await cancelReader(reader, primary);
+        throw withCleanupError(primary, cleanup);
+      }
+      totalBytes = nextTotalBytes;
+      chunks.push(value);
       if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
     }
   } finally {

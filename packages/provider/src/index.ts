@@ -79,9 +79,10 @@ export {
   fetchUpstreamModels,
   httpResponseToResponse,
   readBoundedJsonResponse,
+  readBoundedTextResponse,
   runProviderModelsTask,
 } from './models-fetch.ts';
-export type { ProviderModelsTaskOptions } from './models-fetch.ts';
+export type { ProviderModelsReadOptions, ProviderModelsTaskOptions } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {

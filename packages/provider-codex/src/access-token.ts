@@ -1,6 +1,6 @@
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry, type CodexAccountCredential } from './state.ts';
-import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
+import { getProviderRepo, runProviderModelsTask, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
 export type { CodexAccessTokenEntry };
 
@@ -142,36 +142,63 @@ interface CodexAccessTokenFlight {
 
 const inFlightEnsures = new Map<string, CodexAccessTokenFlight>();
 
+const waitForSignal = <T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+  if (signal === undefined) return operation;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const onAbort = (): void => finish(() => reject(signal.reason));
+    signal.addEventListener('abort', onAbort, { once: true });
+    operation.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error)),
+    );
+    if (signal.aborted) onAbort();
+  });
+};
+
 export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
-  mint: (refreshToken: string) => Promise<CodexAccessTokenMintResult>,
+  mint: (refreshToken: string, signal: AbortSignal) => Promise<CodexAccessTokenMintResult>,
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always mint a fresh one. Dashboard's Refresh button sets this so the
   // operator sees the row's tokens actually rotate; the data plane leaves
   // it false so a live request served from cache stays cheap.
   force = false,
+  signal?: AbortSignal,
 ): Promise<CodexAccessTokenEntry> => {
   const key = JSON.stringify([upstreamId, accountId]);
   const existing = inFlightEnsures.get(key);
   if (existing) {
     if (!force && existing.force) {
-      const cached = await freshCodexAccessToken(upstreamId, accountId);
+      const cached = await waitForSignal(freshCodexAccessToken(upstreamId, accountId), signal);
       if (cached !== null) return cached;
     }
-    const ensured = await existing.promise;
+    const ensured = await waitForSignal(existing.promise, signal);
     if (!force || existing.force || ensured.freshlyMinted) return ensured.entry;
     if (inFlightEnsures.get(key) === existing) inFlightEnsures.delete(key);
-    return await ensureCodexAccessToken(upstreamId, accountId, mint, true);
+    return await ensureCodexAccessToken(upstreamId, accountId, mint, true, signal);
   }
-  const promise = ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
+  const promise = runProviderModelsTask(sharedSignal => ensureCodexAccessTokenInner(
+    upstreamId,
+    accountId,
+    refreshToken => mint(refreshToken, sharedSignal),
+    true,
+    force,
+  ));
   const flight: CodexAccessTokenFlight = { force, promise };
   inFlightEnsures.set(key, flight);
-  try {
-    return (await promise).entry;
-  } finally {
+  void promise.finally(() => {
     if (inFlightEnsures.get(key) === flight) inFlightEnsures.delete(key);
-  }
+  }).catch(() => {});
+  return (await waitForSignal(promise, signal)).entry;
 };
 
 const ensureCodexAccessTokenInner = async (

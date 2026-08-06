@@ -21,6 +21,15 @@ export interface ClaudeCodeProviderData {
   readonly upstreamModelId: string;
 }
 
+export class ClaudeCodeModelsFetchError extends ProviderModelsUnavailableError {
+  constructor(failure: ProviderModelsUnavailableError) {
+    if (failure.httpResponse === null) throw new TypeError('Claude Code HTTP failure requires a response frame');
+    super(failure.httpResponse, failure);
+    this.name = 'ClaudeCodeModelsFetchError';
+    this.message = `Claude Code /v1/models fetch failed: ${failure.httpResponse.status} ${failure.httpResponse.body.slice(0, 200)}`;
+  }
+}
+
 const ANTHROPIC_MODELS_ENDPOINT = 'https://api.anthropic.com/v1/models?limit=100';
 
 // Anthropic extended-thinking minimum `budget_tokens`. Uniform across every
@@ -90,10 +99,7 @@ export const fetchClaudeCodeModelsList = (
   options,
 ).catch((cause: unknown) => {
   if (cause instanceof ProviderModelsUnavailableError && cause.httpResponse !== null) {
-    throw new Error(
-      `Claude Code /v1/models fetch failed: ${cause.httpResponse.status} ${cause.httpResponse.body.slice(0, 200)}`,
-      { cause },
-    );
+    throw new ClaudeCodeModelsFetchError(cause);
   }
   throw cause;
 });

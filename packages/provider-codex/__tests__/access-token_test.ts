@@ -97,7 +97,7 @@ describe('ensureCodexAccessToken', () => {
     const mint = vi.fn().mockResolvedValue(minted);
     const out = await ensureCodexAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
+    expect(mint).toHaveBeenCalledWith('rt_v1', expect.any(AbortSignal));
     expect(storedState().accounts[0].accessToken).toEqual(minted);
   });
 
@@ -148,7 +148,7 @@ describe('ensureCodexAccessToken', () => {
     const mint = vi.fn().mockResolvedValue(minted);
     const out = await ensureCodexAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
+    expect(mint).toHaveBeenCalledWith('rt_v1', expect.any(AbortSignal));
   });
 
   test('throws when the upstream row is missing', async () => {
@@ -234,6 +234,52 @@ describe('ensureCodexAccessToken', () => {
     ]);
     expect(mint).toHaveBeenCalledTimes(1);
     expect(results).toEqual([minted, minted]);
+  });
+
+  test('the first waiter aborts without canceling a joined token flight', async () => {
+    const firstController = new AbortController();
+    const firstReason = new DOMException('first stopped', 'AbortError');
+    const mintEntered = Promise.withResolvers<AbortSignal>();
+    const mintGate = Promise.withResolvers<CodexAccessTokenEntry>();
+    const mint = vi.fn((_refreshToken: string, signal: AbortSignal) => {
+      mintEntered.resolve(signal);
+      return mintGate.promise;
+    });
+    const first = ensureCodexAccessToken(upstreamId, accountId, mint, false, firstController.signal);
+    const sharedSignal = await mintEntered.promise;
+    const joined = ensureCodexAccessToken(upstreamId, accountId, mint);
+
+    firstController.abort(firstReason);
+
+    await expect(first).rejects.toBe(firstReason);
+    expect(sharedSignal.aborted).toBe(false);
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    mintGate.resolve(minted);
+    await expect(joined).resolves.toEqual(minted);
+    expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  test('a joined waiter aborts without canceling the original token flight', async () => {
+    const joinedController = new AbortController();
+    const joinedReason = new DOMException('joined stopped', 'AbortError');
+    const mintEntered = Promise.withResolvers<AbortSignal>();
+    const mintGate = Promise.withResolvers<CodexAccessTokenEntry>();
+    const mint = vi.fn((_refreshToken: string, signal: AbortSignal) => {
+      mintEntered.resolve(signal);
+      return mintGate.promise;
+    });
+    const first = ensureCodexAccessToken(upstreamId, accountId, mint);
+    const sharedSignal = await mintEntered.promise;
+    const joined = ensureCodexAccessToken(upstreamId, accountId, mint, false, joinedController.signal);
+
+    joinedController.abort(joinedReason);
+
+    await expect(joined).rejects.toBe(joinedReason);
+    expect(sharedSignal.aborted).toBe(false);
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    mintGate.resolve(minted);
+    await expect(first).resolves.toEqual(minted);
+    expect(mint).toHaveBeenCalledTimes(1);
   });
 
   test('lazy and forced callers never rotate the same refresh token concurrently', async () => {
