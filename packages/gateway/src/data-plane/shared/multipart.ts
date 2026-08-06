@@ -27,8 +27,8 @@ export type MultipartFormDataResult =
   | { readonly type: 'invalid' }
   | { readonly type: 'limit'; readonly kind: MultipartLimitKind; readonly max: number };
 
-const CRLF = Uint8Array.of(0x0D, 0x0A);
-const HEADER_TERMINATOR = Uint8Array.of(0x0D, 0x0A, 0x0D, 0x0A);
+const LF = 0x0A;
+const CR = 0x0D;
 const DASH = 0x2D;
 
 const assertLimit = (name: keyof MultipartParseLimits, value: number): void => {
@@ -137,22 +137,16 @@ interface ParsedPartHeaders {
   readonly contentType: string;
 }
 
-const decodeExtendedFilename = (value: string): string | null => {
-  const match = /^utf-8'[^']*'(.*)$/iu.exec(value);
-  if (match === null) return null;
-  try {
-    return decodeURIComponent(match[1]!);
-  } catch {
-    return null;
-  }
-};
-
 const parsePartHeaders = (headerBytes: Uint8Array): ParsedPartHeaders | null => {
   const headers = new Map<string, string>();
-  for (const line of new TextDecoder().decode(headerBytes).split('\r\n')) {
+  for (const line of new TextDecoder().decode(headerBytes).split(/\r?\n/u)) {
     const separator = line.indexOf(':');
     if (separator <= 0) return null;
     const name = line.slice(0, separator).trim().toLowerCase();
+    if (!/^[!#$%&'*+\-.^_`|~0-9a-z]+$/u.test(name)) return null;
+    // Node retains the last duplicate while workerd comma-combines indexed
+    // headers. Neither behavior is portable for Content-Disposition, so reject
+    // ambiguous part metadata at the common gateway boundary.
     if (headers.has(name)) return null;
     headers.set(name, line.slice(separator + 1).trim());
   }
@@ -172,15 +166,45 @@ const parsePartHeaders = (headerBytes: Uint8Array): ParsedPartHeaders | null => 
   }
   const name = parameters.get('name');
   if (name === undefined) return null;
-  const encodedFilename = parameters.get('filename*');
-  const filename = parameters.get('filename')
-    ?? (encodedFilename === undefined ? undefined : decodeExtendedFilename(encodedFilename));
-  if (encodedFilename !== undefined && filename === null) return null;
+  // The parsers this replaces only recognize the quoted `filename` parameter.
+  // Treating RFC 5987 `filename*` as a file would turn a previously-invalid
+  // request into an upstream upload.
+  if (parameters.has('filename*')) return null;
   return {
     name,
-    filename: filename ?? undefined,
+    filename: parameters.get('filename'),
     contentType: headers.get('content-type') ?? 'application/octet-stream',
   };
+};
+
+interface HeaderTerminator {
+  readonly headersEnd: number;
+  readonly bodyStart: number;
+}
+
+const findHeaderTerminator = (
+  source: Uint8Array,
+  start: number,
+  maxHeaderBytes: number,
+): HeaderTerminator | 'limit' | null => {
+  const boundedEnd = Math.min(source.byteLength, start + maxHeaderBytes + 4);
+  let sawFirstNewline = false;
+  let firstNewlineStart = -1;
+  for (let index = start; index < source.byteLength; index++) {
+    if (index >= boundedEnd) return 'limit';
+    if (source[index] !== LF) continue;
+    const newlineStart = index > start && source[index - 1] === CR ? index - 1 : index;
+    if (sawFirstNewline) {
+      return { headersEnd: firstNewlineStart, bodyStart: index + 1 };
+    }
+    sawFirstNewline = true;
+    firstNewlineStart = newlineStart;
+    if (index + 1 < source.byteLength && source[index + 1] !== LF && source[index + 1] !== CR) {
+      sawFirstNewline = false;
+      firstNewlineStart = -1;
+    }
+  }
+  return null;
 };
 
 interface MultipartPart {
@@ -208,9 +232,9 @@ const preflightMultipart = (
   delimiter[0] = DASH;
   delimiter[1] = DASH;
   delimiter.set(boundary, 2);
-  const innerDelimiter = new Uint8Array(delimiter.byteLength + 2);
-  innerDelimiter.set(CRLF);
-  innerDelimiter.set(delimiter, 2);
+  const innerDelimiter = new Uint8Array(delimiter.byteLength + 1);
+  innerDelimiter[0] = LF;
+  innerDelimiter.set(delimiter, 1);
 
   if (!startsWithBytes(bytes, delimiter, 0)) return { type: 'invalid' };
   let cursor = delimiter.byteLength;
@@ -223,20 +247,20 @@ const preflightMultipart = (
     if (bytes[cursor] === DASH && bytes[cursor + 1] === DASH) {
       cursor += 2;
       if (cursor === bytes.byteLength) return { type: 'ok', parts: parsedParts };
-      return startsWithBytes(bytes, CRLF, cursor) && cursor + CRLF.byteLength === bytes.byteLength
-        ? { type: 'ok', parts: parsedParts }
-        : { type: 'invalid' };
+      if (bytes[cursor] === LF && cursor + 1 === bytes.byteLength) return { type: 'ok', parts: parsedParts };
+      if (bytes[cursor] === CR && bytes[cursor + 1] === LF && cursor + 2 === bytes.byteLength) {
+        return { type: 'ok', parts: parsedParts };
+      }
+      return { type: 'invalid' };
     }
-    if (!startsWithBytes(bytes, CRLF, cursor)) return { type: 'invalid' };
-    cursor += CRLF.byteLength;
+    if (bytes[cursor] === LF) cursor += 1;
+    else if (bytes[cursor] === CR && bytes[cursor + 1] === LF) cursor += 2;
+    else return { type: 'invalid' };
 
-    const headerSearchEnd = Math.min(bytes.byteLength, cursor + limits.headerBytes + HEADER_TERMINATOR.byteLength);
-    const headerEnd = indexOfBytes(bytes, HEADER_TERMINATOR, cursor, headerSearchEnd);
-    if (headerEnd === -1) {
-      return indexOfBytes(bytes, HEADER_TERMINATOR, cursor) === -1
-        ? { type: 'invalid' }
-        : { type: 'limit', kind: 'header-bytes', max: limits.headerBytes };
-    }
+    const headerTerminator = findHeaderTerminator(bytes, cursor, limits.headerBytes);
+    if (headerTerminator === null) return { type: 'invalid' };
+    if (headerTerminator === 'limit') return { type: 'limit', kind: 'header-bytes', max: limits.headerBytes };
+    const { headersEnd: headerEnd, bodyStart } = headerTerminator;
 
     parts += 1;
     if (parts > limits.parts) return { type: 'limit', kind: 'parts', max: limits.parts };
@@ -251,19 +275,20 @@ const preflightMultipart = (
       if (fields > limits.fields) return { type: 'limit', kind: 'fields', max: limits.fields };
     }
 
-    const bodyStart = headerEnd + HEADER_TERMINATOR.byteLength;
-    let next = indexOfBytes(bytes, innerDelimiter, bodyStart);
-    for (;;) {
-      if (next === -1) return { type: 'invalid' };
-      const suffix = next + innerDelimiter.byteLength;
-      if (startsWithBytes(bytes, CRLF, suffix) || (bytes[suffix] === DASH && bytes[suffix + 1] === DASH)) break;
-      next = indexOfBytes(bytes, innerDelimiter, next + CRLF.byteLength);
+    const next = indexOfBytes(bytes, innerDelimiter, bodyStart);
+    if (next === -1) return { type: 'invalid' };
+    const suffix = next + innerDelimiter.byteLength;
+    if (!(bytes[suffix] === LF
+      || (bytes[suffix] === CR && bytes[suffix + 1] === LF)
+      || (bytes[suffix] === DASH && bytes[suffix + 1] === DASH))) {
+      return { type: 'invalid' };
     }
-    if (!file && next - bodyStart > limits.fieldBytes) {
+    const bodyEnd = next > bodyStart && bytes[next - 1] === CR ? next - 1 : next;
+    if (!file && bodyEnd - bodyStart > limits.fieldBytes) {
       return { type: 'limit', kind: 'field-bytes', max: limits.fieldBytes };
     }
-    parsedParts.push({ headers, bodyStart, bodyEnd: next });
-    cursor = next + CRLF.byteLength + delimiter.byteLength;
+    parsedParts.push({ headers, bodyStart, bodyEnd });
+    cursor = suffix;
   }
 };
 
