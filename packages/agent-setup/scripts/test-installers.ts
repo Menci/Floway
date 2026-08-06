@@ -3374,15 +3374,21 @@ const parseNameFilter = (): string | null => {
   throw new Error('--match requires a non-empty test-name substring');
 };
 
+const profilingEnabled = (): boolean => process.argv.includes('--profile');
+const elapsedMilliseconds = (startedAt: bigint): number => Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+const profileSuffix = (milliseconds: number): string => ` (${milliseconds.toFixed(1)} ms)`;
+
 const main = async (): Promise<void> => {
   const filter = parseAgentFilter();
   const nameFilter = parseNameFilter();
+  const profile = profilingEnabled();
   modelServer = await startModelServer();
 
   let passed = 0;
   let failed = 0;
   let skipped = 0;
   const failures: string[] = [];
+  const durations: { label: string; milliseconds: number }[] = [];
 
   try {
     for (const testCase of cases) {
@@ -3391,20 +3397,25 @@ const main = async (): Promise<void> => {
       modelServer.reset();
       const assert = makeAssert();
       const label = `[${testCase.agent}] ${testCase.name}`;
+      const startedAt = process.hrtime.bigint();
       try {
         await testCase.fn(assert);
+        const milliseconds = elapsedMilliseconds(startedAt);
+        durations.push({ label, milliseconds });
         passed += 1;
-        console.log(`  PASS ${label}`);
+        console.log(`  PASS ${label}${profile ? profileSuffix(milliseconds) : ''}`);
       } catch (error) {
+        const milliseconds = elapsedMilliseconds(startedAt);
+        durations.push({ label, milliseconds });
         if (error instanceof SkipError) {
           skipped += 1;
-          console.log(`  SKIP ${label} — ${error.message}`);
+          console.log(`  SKIP ${label} — ${error.message}${profile ? profileSuffix(milliseconds) : ''}`);
           continue;
         }
         failed += 1;
         const message = error instanceof Error ? error.message : String(error);
         failures.push(`${label}\n${message}`);
-        console.log(`  FAIL ${label}`);
+        console.log(`  FAIL ${label}${profile ? profileSuffix(milliseconds) : ''}`);
       }
     }
   } finally {
@@ -3413,6 +3424,12 @@ const main = async (): Promise<void> => {
   }
 
   console.log(`\nagent-setup installers: ${passed} passed, ${failed} failed, ${skipped} skipped`);
+  if (profile) {
+    console.log('\nslowest installer cases:');
+    for (const duration of durations.toSorted((left, right) => right.milliseconds - left.milliseconds).slice(0, 20)) {
+      console.log(`  ${profileSuffix(duration.milliseconds).trim()} ${duration.label}`);
+    }
+  }
   if (failed > 0) {
     console.error('\nFailures:');
     for (const failure of failures) console.error(`\n${failure}`);
