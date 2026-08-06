@@ -144,6 +144,59 @@ test('fetchUpstreamModels enforces the total deadline while body reads remain co
   expect(reads).toBeLessThan(50_001);
 });
 
+test('fetchUpstreamModels yields ready success and error bodies to caller cancellation', async () => {
+  for (const status of [200, 500]) {
+    const controller = new AbortController();
+    const reason = new DOMException(`cancel ${status}`, 'AbortError');
+    let cancelReason: unknown;
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(streamController) {
+        pulls++;
+        streamController.enqueue(new Uint8Array());
+      },
+      cancel(cause) {
+        cancelReason = cause;
+      },
+    }, { highWaterMark: 0 });
+    const result = fetchUpstreamModels(
+      () => Promise.resolve(new Response(body, { status })),
+      value => value,
+      { idleTimeoutMs: 1000, signal: controller.signal, totalTimeoutMs: 1000 },
+    );
+    const timer = setTimeout(() => controller.abort(reason), 0);
+    await expect(result).rejects.toBe(reason);
+    clearTimeout(timer);
+    await Promise.resolve();
+    expect(cancelReason).toBe(reason);
+    expect(pulls).toBeGreaterThan(0);
+    expect(pulls).toBeLessThan(1000);
+  }
+});
+
+test('readBoundedJsonResponse observes an abort raised synchronously by the source pull', async () => {
+  const controller = new AbortController();
+  const reason = new DOMException('pull cancelled', 'AbortError');
+  let cancelReason: unknown;
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      controller.abort(reason);
+      return new Promise<void>(() => {});
+    },
+    cancel(cause) {
+      cancelReason = cause;
+    },
+  }, { highWaterMark: 0 });
+  await expect(readBoundedJsonResponse(
+    new Response(body),
+    16,
+    undefined,
+    { idleTimeoutMs: 1000, signal: controller.signal },
+  )).rejects.toBe(reason);
+  expect(cancelReason).toBe(reason);
+  expect(body.locked).toBe(false);
+});
+
 test('fetchUpstreamModels preserves a known non-2xx frame when its total deadline expires while reading the body', async () => {
   vi.useFakeTimers();
   try {

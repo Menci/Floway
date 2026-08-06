@@ -130,6 +130,7 @@ export const runProviderModelsTask = async <T>(
 
 const DEFAULT_MAX_MODELS_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_MODELS_ERROR_RESPONSE_BYTES = 64 * 1024;
+const READS_PER_EVENT_LOOP_YIELD = 64;
 const TRUNCATED_BODY_MARKER = '...[truncated]';
 const REWRITTEN_BODY_HEADERS = [
   'content-length',
@@ -166,6 +167,37 @@ const cancelReader = (reader: ReadableStreamDefaultReader<Uint8Array>, reason?: 
 const cancelBody = (body: ReadableStream<Uint8Array> | null, reason: unknown): void => {
   if (!body) return;
   void body.cancel(reason).catch(() => undefined);
+};
+
+const yieldToEventLoop = (signal: AbortSignal | undefined): Promise<void> => {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const onAbort = () => finish(() => reject(signal?.reason));
+    timer = setTimeout(() => finish(resolve), 0);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
+};
+
+const yieldReadLoop = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  try {
+    await yieldToEventLoop(signal);
+  } catch (error) {
+    cancelReader(reader, signal?.aborted ? signal.reason : error);
+    throw error;
+  }
 };
 
 const readWithIdleTimeout = (
@@ -215,6 +247,7 @@ const readWithIdleTimeout = (
       },
       error => finish(() => reject(error)),
     );
+    if (signal?.aborted) onAbort();
   });
 };
 
@@ -236,6 +269,7 @@ const readErrorBody = async (response: Response, maxBytes: number, options: Prov
   if (!response.body) return { body: '', truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
+  let readsSinceYield = 0;
   let totalBytes = 0;
   try {
     for (;;) {
@@ -250,6 +284,11 @@ const readErrorBody = async (response: Response, maxBytes: number, options: Prov
       }
       chunks.push(value);
       totalBytes += value.byteLength;
+      readsSinceYield++;
+      if (readsSinceYield === READS_PER_EVENT_LOOP_YIELD) {
+        readsSinceYield = 0;
+        await yieldReadLoop(reader, normalizedOptions.signal);
+      }
     }
   } finally {
     releaseReader(reader);
@@ -347,6 +386,7 @@ export const readBoundedJsonResponse = async (
   if (!response.body) throw new Error('Provider model listing returned an empty body');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
+  let readsSinceYield = 0;
   let totalBytes = 0;
   try {
     for (;;) {
@@ -359,6 +399,11 @@ export const readBoundedJsonResponse = async (
         throw new Error(`Provider model listing exceeded ${allowedBytes} response bytes`);
       }
       chunks.push(value);
+      readsSinceYield++;
+      if (readsSinceYield === READS_PER_EVENT_LOOP_YIELD) {
+        readsSinceYield = 0;
+        await yieldReadLoop(reader, normalizedOptions.signal);
+      }
     }
   } finally {
     releaseReader(reader);
