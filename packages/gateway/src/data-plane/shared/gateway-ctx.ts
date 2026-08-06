@@ -147,12 +147,15 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
   retainResponse(
     ctx.dump?.finalize(response) ?? response,
-    ctx.backgroundScheduler,
-    reason => {
-      if (!ctx.clientDisconnectSignal.aborted) ctx.clientDisconnectController.abort(reason);
+    {
+      backgroundScheduler: ctx.backgroundScheduler,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
+      onCancel: reason => {
+        if (!ctx.clientDisconnectSignal.aborted) ctx.clientDisconnectController.abort(reason);
+      },
+      limits: RETAINED_RESPONSE_LIMITS,
+      onSettled: ctx.finishExecution,
     },
-    RETAINED_RESPONSE_LIMITS,
-    ctx.finishExecution,
   );
 
 const unrefTimer = (timer: unknown): void => {
