@@ -197,7 +197,7 @@ const refreshCopilotToken = (
   upstreamId: string,
   githubHost: string,
   githubToken: string,
-  expectedConfig: unknown,
+  expectedConfig: CopilotUpstreamConfig,
   fetcher: Fetcher,
 ): InFlightTokenRefresh => {
   const existing = reusableTokenRefresh(key);

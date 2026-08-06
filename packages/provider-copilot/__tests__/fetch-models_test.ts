@@ -8,6 +8,7 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 const installRepoAndConfig = async () => {
   const id = 'up_copilot_fetch_models_test';
   const githubToken = `ghu_${crypto.randomUUID().replace(/-/g, '')}`;
+  const config = { githubHost: 'github.com', githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } };
   const stub: UpstreamRecord = {
     id,
     kind: 'copilot',
@@ -23,7 +24,7 @@ const installRepoAndConfig = async () => {
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { githubHost: 'github.com', githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config,
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -32,7 +33,7 @@ const installRepoAndConfig = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-  return { id, config: stub.config };
+  return { id, config };
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {
