@@ -4,6 +4,7 @@ import { internalModelFromProviderModel } from './catalog.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -30,11 +31,10 @@ const enumerateOneUpstreamCandidates = async (
   kind: ModelKind,
   context: {
     fetcher: Fetcher;
-    scheduler: BackgroundScheduler;
-    runtimeLocation: string;
+    scheduleRefresh: ModelsRefreshScheduler;
   },
 ): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
-  const { fetcher, scheduler, runtimeLocation } = context;
+  const { fetcher, scheduleRefresh } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -47,7 +47,7 @@ const enumerateOneUpstreamCandidates = async (
   }
   if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, runtimeLocation });
+  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, scheduleRefresh);
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
@@ -65,7 +65,7 @@ const enumerateOneUpstreamCandidates = async (
 // Walk every visible upstream in configured order. Snapshot reads never wait
 // for upstream model-list I/O; cold and stale rows submit background refresh.
 // Client disconnect prevents snapshot work that has not dispatched. Once a
-// refresh is scheduled, the scheduler owns its lifetime. Inference lifecycle
+// refresh reaches its execution cell, it is detached from the request. Inference lifecycle
 // policy is applied later, where a selected candidate is actually dispatched.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
@@ -79,8 +79,7 @@ export const enumerateRealModelCandidates = async (
   providers: readonly GatewayProvider[],
   context: {
     fetcherForUpstream: (upstreamId: string) => Fetcher;
-    scheduler: BackgroundScheduler;
-    runtimeLocation: string;
+    scheduleRefresh: ModelsRefreshScheduler;
     clientDisconnectSignal?: AbortSignal;
   },
 ): Promise<{
@@ -88,7 +87,7 @@ export const enumerateRealModelCandidates = async (
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const { fetcherForUpstream, scheduler, runtimeLocation, clientDisconnectSignal } = context;
+  const { fetcherForUpstream, scheduleRefresh, clientDisconnectSignal } = context;
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
     return enumerateOneUpstreamCandidates(
@@ -97,8 +96,7 @@ export const enumerateRealModelCandidates = async (
       kind,
       {
         fetcher: fetcherForUpstream(provider.upstreamId),
-        scheduler,
-        runtimeLocation,
+        scheduleRefresh,
       },
     );
   }));
@@ -227,8 +225,7 @@ export const enumerateModelCandidates = async ({
   const providers = await listModelProviders(upstreamIds);
   const resolutionContext = {
     fetcherForUpstream: createFetcherForUpstream,
-    scheduler,
-    runtimeLocation,
+    scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
     clientDisconnectSignal,
   };
 

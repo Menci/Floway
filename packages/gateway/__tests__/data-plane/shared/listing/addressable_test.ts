@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
+import { createModelsRefreshScheduler } from '../../../../src/execution/models-refresh.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../../test-utils/app.ts';
-import { directFetcher } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const noBackground = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+const scheduleRefresh = createModelsRefreshScheduler('TEST', noBackground);
 
 describe('enumerateAddressableModelIds', () => {
   test('returns the listed catalog as listed entries when no provider contributes addressable-only forms', async () => {
@@ -25,7 +26,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         await warmModelsForTest();
-        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST');
+        const surface = await enumerateAddressableModelIds(null, scheduleRefresh);
         expect(surface.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
           { id: 'shared-model', unlisted: undefined },
         ]);
@@ -54,7 +55,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         await warmModelsForTest();
-        const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST');
+        const surface = await enumerateAddressableModelIds(null, scheduleRefresh);
         const byId = new Map(surface.map(e => [e.id, e]));
         expect(byId.get('cust/gpt-5.4')?.unlisted).toBeUndefined();
         expect(byId.get('gpt-5.4')?.unlisted).toBe(true);
@@ -69,7 +70,7 @@ describe('enumerateAddressableModelIds', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
 
-    await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground, 'TEST'))
+    await expect(enumerateAddressableModelIds(null, scheduleRefresh))
       .rejects.toThrow('No upstream provider configured');
   });
 });

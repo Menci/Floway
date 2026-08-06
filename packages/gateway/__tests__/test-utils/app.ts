@@ -314,7 +314,7 @@ export const requestAppWithWarmModels = async (path: string, init: RequestInit):
 export const warmModelsForTest = async (): Promise<void> => {
   const upstreams = await getRepo().upstreams.list();
   await Promise.allSettled(upstreams.map(async upstream =>
-    await refreshModels(modelsRefreshTarget(upstream), 'TEST', { bypassBackoff: false, includeDiscovered: false })));
+    await refreshModels(modelsRefreshTarget(upstream), 'TEST')));
 };
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {

@@ -12,7 +12,7 @@
 // Deep upstream-config validation (e.g. Azure URL hostname rules, custom
 // pathOverrides and modelsFetch.endpoint URL parsing, per-model endpoint path
 // checks) stays with provider validators and handlers, which own the canonical
-// error messages. Repository model-aware writes own catalog generations and
+// error messages. Repository model-aware writes own catalog versions and
 // invalidation. The schemas here describe the shape the dashboard sends.
 
 import { z } from 'zod';

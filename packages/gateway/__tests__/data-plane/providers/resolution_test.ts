@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
-import { modelsRefreshTarget, refreshModels } from '../../../src/execution/models-refresh.ts';
+import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -23,6 +23,7 @@ const realProviderModels = (model: InternalModel | undefined): Record<string, Pr
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
 test('enumerateModelCandidates blocks a cold catalog fetch after client disconnect', async () => {
   const { repo } = await setupAppTest();
@@ -269,10 +270,10 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     async () => {
       const first = await repo.upstreams.getById(providers[0].upstreamId);
       if (first === null) throw new Error('first upstream missing');
-      await refreshModels(modelsRefreshTarget(first), 'TEST', { bypassBackoff: true, includeDiscovered: false });
+      await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST', false);
       const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
       if (!warmed) throw new Error('warmed provider missing');
-      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
@@ -316,8 +317,8 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
 
   await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduler: testScheduler, runtimeLocation: 'TEST' });
+  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
 });

@@ -1,5 +1,7 @@
 import { iterateReadableStream, type ChannelBroker, type ChannelCodec, type ExecutionCellNamespace } from '@floway-dev/platform';
 
+const broadcastCellId = (channelId: string): string => JSON.stringify(['broadcast', channelId]);
+
 export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   constructor(
     private readonly cells: ExecutionCellNamespace,
@@ -7,7 +9,7 @@ export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   ) {}
 
   async publish(channelId: string, payload: T): Promise<void> {
-    const response = await this.cells.fetch(channelId, new Request('https://execution.do/broadcast', {
+    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
       method: 'POST',
       body: this.codec.encode(payload),
     }));
@@ -15,7 +17,7 @@ export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   }
 
   async closeChannel(channelId: string, reason: string): Promise<void> {
-    const response = await this.cells.fetch(channelId, new Request('https://execution.do/broadcast/close', {
+    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast/close', {
       method: 'POST',
       body: reason,
     }));
@@ -101,7 +103,7 @@ const iterateFromExecutionSocket = <T>(
       pull = flushError;
 
       const openPromise = (async (): Promise<void> => {
-        const response = await cells.fetch(channelId, new Request('https://execution.do/broadcast', {
+        const response = await cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
           headers: { Upgrade: 'websocket' },
         }));
         if (response.status !== 101) {

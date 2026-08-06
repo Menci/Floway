@@ -3,8 +3,8 @@ import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
-// Persistence-owned catalog generation. Provider config, flag overrides, and
-// catalog transport advance it; runtime state and non-model metadata do not.
+// Provider config, flag overrides, and catalog transport advance this version;
+// runtime state and non-model metadata do not.
 export type StoredUpstreamRecord = UpstreamRecord & { configVersion: number };
 
 export interface ApiKey {
@@ -367,39 +367,30 @@ export interface UpstreamRepo {
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
 
-export interface ModelsRefreshBeginInput {
+export interface ModelsRefreshIdentity {
   id: string;
-  generation: ModelsCacheGeneration;
+  configVersion: number;
+  cacheEpoch: number;
+}
+
+export interface ModelsRefreshBeginInput extends ModelsRefreshIdentity {
   now: number;
   bypassBackoff: boolean;
 }
 
-export interface ModelsRefreshSuccessInput {
-  id: string;
-  generation: ModelsCacheGeneration;
+export interface ModelsRefreshSuccessInput extends ModelsRefreshIdentity {
   cache: Omit<UpstreamModelsCache, 'lastError'>;
 }
 
-export interface ModelsRefreshFailureInput {
-  id: string;
-  generation: ModelsCacheGeneration;
+export interface ModelsRefreshFailureInput extends ModelsRefreshIdentity {
   error: NonNullable<UpstreamModelsCache['lastError']>;
   previousFailureCount: number;
   failedAt: number;
 }
 
-export interface ModelsRefreshReady {
-  kind: 'ready';
-  failureCount: number;
-}
-
-export type ModelsRefreshBeginResult = ModelsRefreshReady
+export type ModelsRefreshBeginResult = { kind: 'ready'; failureCount: number }
   | { kind: 'backoff' }
-  | { kind: 'generation-mismatch' };
-
-export interface ModelsCacheGeneration {
-  configVersion: number;
-}
+  | { kind: 'superseded' };
 
 export interface ProxyRecord {
   id: string;

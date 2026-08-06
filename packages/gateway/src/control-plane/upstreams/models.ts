@@ -3,7 +3,7 @@ import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import { MODEL_LISTING_FAILURE_CODE, MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { createPreviewProvider } from '../../data-plane/providers/registry.ts';
-import { modelsRefreshTarget, refreshModels } from '../../execution/models-refresh.ts';
+import { isModelsRefreshConfigurationError, modelsRefreshTarget, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -105,22 +105,21 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (record === null) return c.json({ error: 'Upstream not found' }, 404);
+  const runtimeLocation = getRuntimeLocation(c.req.raw);
 
   try {
-    const result = await refreshModels(modelsRefreshTarget(record), getRuntimeLocation(c.req.raw), {
-      bypassBackoff: true,
-      includeDiscovered: record.kind === 'custom',
-    });
+    const result = await refreshModelsExplicit(modelsRefreshTarget(record), runtimeLocation, record.kind === 'custom');
     if (result.kind !== 'refreshed') throw new Error(`Upstream ${id} changed during models refresh`);
     const refreshed = await getRepo().upstreams.getById(id);
     if (refreshed === null) throw new Error(`Upstream ${id} disappeared after models refresh`);
-    const data = result.discovered ?? refreshed.modelsCache?.models.map(reshapeModelForDashboard);
+    const data = record.kind === 'custom' ? result.discovered : refreshed.modelsCache?.models.map(reshapeModelForDashboard);
     if (data === undefined) throw new Error(`Upstream ${id} models refresh did not publish a catalog`);
     return c.json({ data, modelsCache: modelsCacheStatus(refreshed) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error', code: MODEL_LISTING_FAILURE_CODE } }, 502);
     }
+    if (isModelsRefreshConfigurationError(e)) return c.json({ error: errorMessage(e) }, 400);
     if (malformedConfigResponse(e)) return c.json({ error: errorMessage(e) }, 400);
     throw e;
   }

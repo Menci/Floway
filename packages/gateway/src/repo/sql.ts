@@ -876,6 +876,12 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 // declaring the row unwritable, not a derived figure.
 export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
 
+const MODELS_CACHE_EPOCH_SQL = `CASE
+  WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
+  THEN coalesce(json_extract(models_cache_json, '$.fetchedAt'), 0)
+  ELSE 0
+END`;
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -1058,16 +1064,16 @@ class SqlUpstreamRepo implements UpstreamRepo {
   }
 
   async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, generation, cache } = input;
+    const { id, configVersion, cacheEpoch, cache } = input;
     const result = await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ?')
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.configVersion)
+      .prepare(`UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ? AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion, cacheEpoch)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, generation, error, previousFailureCount, failedAt } = input;
+    const { id, configVersion, cacheEpoch, error, previousFailureCount, failedAt } = input;
     const failureCount = previousFailureCount + 1;
     const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
     // A cold failure remains immediately stale while preserving the error for
@@ -1079,22 +1085,25 @@ class SqlUpstreamRepo implements UpstreamRepo {
            models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
            models_refresh_json = json_object('failureCount', CAST(? AS INTEGER), 'retryAt', CAST(? AS INTEGER))
          WHERE id = ? AND config_version = ?
+           AND ${MODELS_CACHE_EPOCH_SQL} = ?
            AND coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) = ?`,
       )
-      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, generation.configVersion, previousFailureCount)
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, configVersion, cacheEpoch, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
-    const { id, generation, now, bypassBackoff } = input;
+    const { id, configVersion, cacheEpoch, now, bypassBackoff } = input;
     const row = await this.db.prepare(
       `SELECT
          coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) AS failure_count,
          coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) AS retry_at
-       FROM upstreams WHERE id = ? AND config_version = ?`,
-    ).bind(id, generation.configVersion).first<{ failure_count: number; retry_at: number }>();
-    if (row === null) return { kind: 'generation-mismatch' };
+       FROM upstreams
+       WHERE id = ? AND config_version = ?
+         AND ${MODELS_CACHE_EPOCH_SQL} = ?`,
+    ).bind(id, configVersion, cacheEpoch).first<{ failure_count: number; retry_at: number }>();
+    if (row === null) return { kind: 'superseded' };
     if (!bypassBackoff && row.retry_at > now) return { kind: 'backoff' };
     return { kind: 'ready', failureCount: row.failure_count };
   }

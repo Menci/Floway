@@ -3,8 +3,9 @@ import { describe, expect, test, vi } from 'vitest';
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { createModelsRefreshScheduler } from '../../../src/execution/models-refresh.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
-import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const withMockedFetch = <T>(
@@ -25,6 +26,7 @@ const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareMod
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
 test('compareModelIds pushes ids containing "/" to the tail', () => {
   assertEquals(sortedIds(['accounts/msft/x', 'gpt-4o', 'accounts/msft/y', 'claude-opus-4-7']), [
@@ -145,7 +147,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const { models, upstreamsByPublicId } = await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST');
+      const { models, upstreamsByPublicId } = getModelsFromProviders(await listModelProviders(null), scheduleRefresh);
       const model = models.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
@@ -233,7 +235,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   }));
 
   await warmModelsForTest();
-  const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+  const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
@@ -289,7 +291,7 @@ test('catalog refresh triggers fan out per upstream in parallel', async () => {
       await vi.waitFor(() => expect(started.toSorted()).toEqual(upstreams.map(upstream => upstream.host).toSorted()));
       for (const release of releases.values()) release();
       await warming;
-      const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+      const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
     },
@@ -337,7 +339,7 @@ test('catalog assembly: a rejected provider does not block other providers', asy
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+      const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
       assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
     },
   );
@@ -365,7 +367,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals(catalog.map(m => m.id), ['gpt-4o']);
       },
     );
@@ -390,7 +392,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
         // Prefixed surface gets a synthesized display_name prepending the
         // upstream's display name so the dashboard tells the operator at a
@@ -437,7 +439,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
 
         const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
@@ -485,7 +487,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-4o', 'or/gpt-4o']);
 
         // Both upstreams enumerate against the bare id: up_plain via its only
@@ -577,7 +579,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = (await getModelsFromProviders(await listModelProviders(null), () => directFetcher, testScheduler, 'TEST')).models;
+        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
         assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-mini', 'or/gpt-mini']);
       },
     );

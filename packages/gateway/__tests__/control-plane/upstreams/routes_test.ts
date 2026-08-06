@@ -3,12 +3,11 @@ import { test } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_LISTING_FAILURE_CODE } from '../../../src/data-plane/models/shared.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { modelsCacheGeneration } from '../../../src/repo/models-cache-contract.ts';
 import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
-import { seedModelsCache, seedModelsCacheError, storedModelsCacheGeneration } from '../../repo/models-cache-fixture.ts';
-import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type JsonObject = Record<string, any>;
 
@@ -286,7 +285,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // Plant a stale row so the post-PATCH read can verify the warm overwrote
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
-  await seedModelsCache(repo.upstreams, created.id, await getCacheGeneration(repo, created.id), {
+  await seedModelsCache(repo.upstreams, created.id, await getRefreshIdentity(repo, created.id), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
@@ -448,18 +447,17 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save(warmRecord);
   await repo.upstreams.save(failedRecord);
 
-  await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsCacheGeneration(repo.upstreams, 'up_warm'), {
+  await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsRefreshIdentity(repo.upstreams, 'up_warm'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  const failedGeneration = await storedModelsCacheGeneration(repo.upstreams, 'up_failed');
-  await seedModelsCache(repo.upstreams, 'up_failed', failedGeneration, {
+  await seedModelsCache(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
-  await seedModelsCacheError(repo.upstreams, 'up_failed', failedGeneration, { message: 'boom', at: 1_700_000_500_000 });
+  await seedModelsCacheError(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), { message: 'boom', at: 1_700_000_500_000 });
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
@@ -496,7 +494,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
   // comes from the catalog it stored while it was on.
-  await seedModelsCache(repo.upstreams, 'up_disabled_custom', await getCacheGeneration(repo, 'up_disabled_custom'), {
+  await seedModelsCache(repo.upstreams, 'up_disabled_custom', await getRefreshIdentity(repo, 'up_disabled_custom'), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
@@ -715,6 +713,18 @@ test('POST /api/upstreams/:id/list-models rejects a missing saved upstream', asy
   assertEquals(response.status, 404);
 });
 
+test('POST /api/upstreams/:id/list-models rejects an unknown saved proxy', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_bad_proxy', proxyFallbackList: [{ id: 'missing', colos: ['NRT'] }] }));
+
+  const response = await requestApp('/api/upstreams/up_bad_proxy/list-models', {
+    method: 'POST',
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 400);
+  assertStringIncludes(JSON.stringify(await response.json()), 'unknown proxy id');
+});
+
 test('POST /api/upstreams/preview-models rejects an invalid kind with 400', async () => {
   const { adminSession } = await setupAppTest();
 
@@ -869,9 +879,9 @@ const getRecord = async (repo: { upstreams: { getById: (id: string) => Promise<S
   return record;
 };
 
-const getCacheGeneration = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string) => {
+const getRefreshIdentity = async (repo: { upstreams: { getById: (id: string) => Promise<StoredUpstreamRecord | null> } }, id: string) => {
   const record = await getRecord(repo, id);
-  return modelsCacheGeneration(record);
+  return modelsRefreshIdentity(record);
 };
 
 test('POST /api/upstreams/codex/oauth/authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {

@@ -748,7 +748,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  // Mirrors the SQL upsert: config changes advance the generation and clear
+  // Mirrors the SQL upsert: config changes advance the version and clear
   // the snapshot; other writes preserve it. New rows always start uncached.
   save(upstream: UpstreamRecord): Promise<void> {
     const existing = this.store.get(upstream.id);
@@ -833,22 +833,22 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, generation, cache } = input;
+    const { id, configVersion, cacheEpoch, cache } = input;
     const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     existing.modelsCache = { revision: cache.revision, fetchedAt: cache.fetchedAt, models: [...cache.models], lastError: null };
     this.modelsRefreshes.delete(id);
     return Promise.resolve(true);
   }
 
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, generation, error, previousFailureCount, failedAt } = input;
+    const { id, configVersion, cacheEpoch, error, previousFailureCount, failedAt } = input;
     const failureCount = previousFailureCount + 1;
     const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
     const refresh = this.modelsRefreshes.get(id);
     if ((refresh?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
     const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== generation.configVersion) return Promise.resolve(false);
+    if (!existing || existing.configVersion !== configVersion || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
     if (existing.modelsCache) existing.modelsCache.lastError = error;
     else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error };
     this.modelsRefreshes.set(id, { failureCount, retryAt });
@@ -856,9 +856,9 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
-    const { id, generation, now, bypassBackoff } = input;
+    const { id, configVersion, cacheEpoch, now, bypassBackoff } = input;
     const stored = this.store.get(id);
-    if (!stored || stored.configVersion !== generation.configVersion) return Promise.resolve({ kind: 'generation-mismatch' });
+    if (!stored || stored.configVersion !== configVersion || (stored.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve({ kind: 'superseded' });
     const existing = this.modelsRefreshes.get(id);
     if (!bypassBackoff && existing !== undefined && existing.retryAt > now) return Promise.resolve({ kind: 'backoff' });
     return Promise.resolve({ kind: 'ready', failureCount: existing?.failureCount ?? 0 });

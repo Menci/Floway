@@ -2,7 +2,7 @@ export { app } from './app.ts';
 export { initRepo } from './repo/index.ts';
 export { FileDumpStore } from './repo/dump-store.ts';
 export { SqlRepo } from './repo/sql.ts';
-export { MODEL_CATALOG_REVISION, modelsCacheGeneration } from './repo/models-cache-contract.ts';
+export { MODEL_CATALOG_REVISION } from './repo/models-cache-contract.ts';
 export { initBackgroundSchedulerResolver } from './runtime/background.ts';
 export { initExecutionCellNamespace } from './runtime/execution.ts';
 export { initDumpBroker, initDumpStore } from './dump/registry.ts';

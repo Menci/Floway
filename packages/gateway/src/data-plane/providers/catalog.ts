@@ -1,9 +1,9 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import type { GatewayProvider } from './registry.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, Provider, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -12,10 +12,7 @@ interface ProviderModelsResult {
   // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
   // the alias listing reads it to project per-target upstream chips.
   upstreamsByPublicId: Map<string, Provider[]>;
-  sawSuccess: boolean;
-  lastError: unknown;
-  // Upstreams carrying a persisted catalog-refresh error, plus any provider
-  // whose snapshot access failed synchronously, in provider order.
+  // Upstreams carrying a persisted catalog-refresh error, in provider order.
   failedUpstreams: string[];
 }
 
@@ -81,45 +78,21 @@ const mergeIntoCatalog = (
   instances.push(instance);
 };
 
-const collectProviderModels = async (
+const collectProviderModels = (
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  runtimeLocation: string,
-): Promise<ProviderModelsResult> => {
+  scheduleRefresh: ModelsRefreshScheduler,
+): ProviderModelsResult => {
   const byId = new Map<string, InternalModel>();
   const upstreamsByPublicId = new Map<string, Provider[]>();
-  let sawSuccess = false;
-  let lastError: unknown = null;
   const failedUpstreams: string[] = [];
 
   // Catalog reads never await upstream I/O. Each result is the persisted
   // snapshot carried by the provider; a cold or stale snapshot separately
   // triggers background refresh through the supplied scheduler.
-  const fetchOne = (instance: GatewayProvider) => {
-    const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, {
-      scheduler,
-      runtimeLocation,
-    });
-    return { instance, models: snapshot.models, lastError: snapshot.lastError };
-  };
-
-  const settled = await Promise.allSettled(providers.map(async provider => fetchOne(provider)));
-
-  for (const [index, result] of settled.entries()) {
-    if (result.status === 'rejected') {
-      // Snapshot setup failures stay isolated per provider. Cancellation is
-      // the exception because the caller has withdrawn the whole operation.
-      const error = result.reason;
-      if (isAbortError(error)) throw error;
-      lastError = error;
-      failedUpstreams.push(providers[index].name);
-      continue;
-    }
-    sawSuccess = true;
-    const { instance, models: providedModels, lastError: cachedError } = result.value;
+  for (const instance of providers) {
+    const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, scheduleRefresh);
+    const { models: providedModels, lastError: cachedError } = snapshot;
     if (cachedError) {
-      lastError = new Error(cachedError.message);
       failedUpstreams.push(instance.name);
     }
     // Operator-disabled public model ids vanish entirely for this upstream:
@@ -157,7 +130,7 @@ const collectProviderModels = async (
     }
   }
 
-  return { models: [...byId.values()], upstreamsByPublicId, sawSuccess, lastError, failedUpstreams };
+  return { models: [...byId.values()], upstreamsByPublicId, failedUpstreams };
 };
 
 // How many catalog entries this upstream's stored catalog would surface, under
@@ -219,21 +192,17 @@ export const compareModelIds = (a: string, b: string): number => {
 // shares its provider list across the alias resolver and the candidate
 // walk — pass providers through to avoid the duplicate upstreams.list()
 // DB query.
-export const getModelsFromProviders = async (
+export const getModelsFromProviders = (
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  runtimeLocation: string,
-): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
+  scheduleRefresh: ModelsRefreshScheduler,
+): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
   if (providers.length === 0) {
     throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
-  const { models, upstreamsByPublicId, sawSuccess, lastError, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler, runtimeLocation);
+  const { models, upstreamsByPublicId, failedUpstreams } = collectProviderModels(providers, scheduleRefresh);
 
   // TODO: surface `failedUpstreams` on each listing endpoint's wire response
   // so partial-listing failures reach clients.
-  if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
-  if (lastError) throw lastError;
-  return { models: [], upstreamsByPublicId, failedUpstreams };
+  return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
 };

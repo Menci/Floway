@@ -11,12 +11,12 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
+import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
 import type { StoredUpstreamRecord } from '../../../repo/types.ts';
 import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
-import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../../providers/models-cache.ts';
+import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type Provider } from '@floway-dev/provider';
+import type { InternalModel, Provider } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -53,9 +53,7 @@ export const listedRealModels = (entries: readonly AddressableIdEntry[]): readon
 // same separate background refresh trigger.
 export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  runtimeLocation: string,
+  scheduleRefresh: ModelsRefreshScheduler,
   preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
@@ -66,7 +64,7 @@ export const enumerateAddressableModelIds = async (
   // hint behavior on a brand-new gateway. `preFetchedUpstreams` avoids
   // an additional round-trip when the caller has the list already.
   const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
-  const { models: realModels, upstreamsByPublicId } = await getModelsFromProviders(providers, fetcherForUpstream, scheduler, runtimeLocation);
+  const { models: realModels, upstreamsByPublicId } = getModelsFromProviders(providers, scheduleRefresh);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
@@ -78,20 +76,19 @@ export const enumerateAddressableModelIds = async (
   };
 
   for (const model of realModels) {
-    push({ id: model.id, unlisted: undefined, model, upstreams: upstreamsByPublicId.get(model.id) ?? [] });
+    const upstreams = upstreamsByPublicId.get(model.id);
+    if (upstreams === undefined) throw new Error(`Listed model ${model.id} has no upstream index`);
+    push({ id: model.id, unlisted: undefined, model, upstreams });
   }
 
-  // Prefix alternates reuse the same persisted provider snapshots as the
-  // listed surface. Repeated access may join the same L1 refresh trigger, but
-  // never performs upstream model-list I/O in this request.
-  const perUpstream = await Promise.allSettled(providers.map(async provider => {
+  // Prefix alternates reuse the provider snapshots read by the listed surface.
+  for (const provider of providers) {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
-    if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
+    if (cfg === null || addressableOnly.length === 0) continue;
 
-    const upstreamModels = readUpstreamModelsSnapshotAndScheduleRefresh(provider, { scheduler, runtimeLocation }).models;
+    const upstreamModels = provider.modelsCache?.revision === MODEL_CATALOG_REVISION ? provider.modelsCache.models : [];
     const disabled = new Set(provider.disabledPublicModelIds);
-    const out: AddressableIdEntry[] = [];
 
     // The canonical listed form for this upstream — the row the listing
     // surface emitted, and the row an addressable-only prefix alternate
@@ -104,25 +101,14 @@ export const enumerateAddressableModelIds = async (
         ? `${cfg.prefix}${upstreamModel.id}`
         : upstreamModel.id;
       const canonical = byId.get(canonicalPublicId);
-      if (canonical === undefined) continue;
-      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId) ?? [];
+      if (canonical === undefined) throw new Error(`Addressable model ${canonicalPublicId} is missing from the listed catalog`);
+      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId);
+      if (canonicalUpstreams === undefined) throw new Error(`Addressable model ${canonicalPublicId} has no upstream index`);
       for (const form of addressableOnly) {
         const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-        out.push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
+        push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
       }
     }
-
-    return out;
-  }));
-
-  for (const result of perUpstream) {
-    if (result.status === 'rejected') {
-      // Snapshot setup failures omit only that provider; cancellation still
-      // withdraws the whole caller operation.
-      if (isAbortError(result.reason)) throw result.reason;
-      continue;
-    }
-    for (const entry of result.value) push(entry);
   }
 
   // Stable id ordering matches the listed surface so consumers can rely on

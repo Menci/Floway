@@ -49,11 +49,14 @@ const buildNamespace = (
   socket: FakeServerSocket,
   broadcasts: string[] = [],
   closeAlls: string[] = [],
-  fetches?: { count: number },
+  fetches?: { count: number; cellIds?: string[] },
 ) => {
   const ns: ExecutionCellNamespace = {
-    async fetch(_cellId, request) {
-      if (fetches) fetches.count += 1;
+    async fetch(cellId, request) {
+      if (fetches) {
+        fetches.count += 1;
+        fetches.cellIds?.push(cellId);
+      }
       const url = new URL(request.url);
       if (url.pathname === '/broadcast' && request.method === 'POST') {
         broadcasts.push(await request.text());
@@ -133,11 +136,13 @@ test('ExecutionCellChannelBroker.subscribe resolves concurrent reads in socket o
 
 test('ExecutionCellChannelBroker.publish encodes the payload through the codec', async () => {
   const broadcasts: string[] = [];
-  const ns = buildNamespace(new FakeServerSocket(), broadcasts);
+  const fetches = { count: 0, cellIds: [] as string[] };
+  const ns = buildNamespace(new FakeServerSocket(), broadcasts, [], fetches);
   const broker = new ExecutionCellChannelBroker<string>(ns, stringCodec);
   await broker.publish('k', 'frame-a');
   assertEquals(broadcasts.length, 1);
   assertEquals(broadcasts[0], 'frame-a');
+  assertEquals(fetches.cellIds, [JSON.stringify(['broadcast', 'k'])]);
 });
 
 test('ExecutionCellChannelBroker.closeChannel forwards the reason to the actor', async () => {

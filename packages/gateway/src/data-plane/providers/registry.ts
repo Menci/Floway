@@ -1,6 +1,5 @@
 import { getRepo } from '../../repo/index.ts';
-import { modelsCacheGeneration } from '../../repo/models-cache-contract.ts';
-import type { ModelsCacheGeneration, StoredUpstreamRecord } from '../../repo/types.ts';
+import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
@@ -19,7 +18,7 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 };
 
 export type GatewayProvider = Provider & {
-  readonly modelsCacheGeneration: ModelsCacheGeneration;
+  readonly configVersion: number;
 };
 
 export const createProvider = (
@@ -28,7 +27,7 @@ export const createProvider = (
   const provider = providersByKind[record.kind].create(record);
   return {
     ...provider,
-    modelsCacheGeneration: modelsCacheGeneration(record),
+    configVersion: record.configVersion,
   };
 };
 

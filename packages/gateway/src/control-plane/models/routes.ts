@@ -1,7 +1,7 @@
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -82,23 +82,21 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    // Fetch the upstream list once at the request boundary and thread it
-    // into every downstream consumer (`createPerRequestFetcher`,
-    // `enumerateAddressableModelIds`, the hue-join map) so this request
-    // pays a single `upstreams.list()` round-trip.
+    // Fetch the upstream list once at the request boundary and thread it into
+    // catalog enumeration and the hue join.
     const upstreamRows = await getRepo().upstreams.list();
     const runtimeLocation = getRuntimeLocation(c.req.raw);
-    const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation, upstreamRows);
+    const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, backgroundSchedulerFromContext(c));
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + pricing — every caller
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
     const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c), runtimeLocation, upstreamRows),
+      enumerateAddressableModelIds(upstreamScope, scheduleRefresh, upstreamRows),
       isAdmin
         ? Promise.resolve(null)
-        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c), runtimeLocation, upstreamRows),
+        : enumerateAddressableModelIds(null, scheduleRefresh, upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
     const hueByUpstream = new Map<string, number>(upstreamRows.map(row => [row.id, row.hue]));

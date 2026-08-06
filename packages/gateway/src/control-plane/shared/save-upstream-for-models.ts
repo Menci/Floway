@@ -47,7 +47,7 @@ export const saveUpstreamsAndWarmChangedModels = async (
   const runtimeLocation = getRuntimeLocation(c.req.raw);
   const warmedEntries = await Promise.all(recordsToWarm.map(async record => {
     try {
-      await refreshModels(modelsRefreshTarget(record), runtimeLocation, { bypassBackoff: false, includeDiscovered: false });
+      await refreshModels(modelsRefreshTarget(record), runtimeLocation);
     } catch (error) {
       logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(error) });
     }

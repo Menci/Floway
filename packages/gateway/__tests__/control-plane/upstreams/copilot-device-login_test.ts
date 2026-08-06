@@ -15,7 +15,7 @@ vi.mock('../../../src/execution/models-refresh.ts', async importOriginal => ({
   },
 }));
 
-import { seedModelsCache, storedModelsCacheGeneration } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -370,7 +370,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(existing);
-  await seedModelsCache(repo.upstreams, existing.id, await storedModelsCacheGeneration(repo.upstreams, existing.id), {
+  await seedModelsCache(repo.upstreams, existing.id, await storedModelsRefreshIdentity(repo.upstreams, existing.id), {
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],

@@ -1,30 +1,36 @@
-import { modelsCacheGeneration } from '../../src/repo/models-cache-contract.ts';
-import type { ModelsCacheGeneration, UpstreamRepo } from '../../src/repo/types.ts';
+import type { ModelsRefreshIdentity, UpstreamRepo } from '../../src/repo/types.ts';
 import type { UpstreamModelsCache } from '@floway-dev/provider';
 
-export const storedModelsCacheGeneration = async (
+type ModelsRefreshRowIdentity = Omit<ModelsRefreshIdentity, 'id'>;
+
+export const modelsRefreshIdentity = (record: { configVersion: number; modelsCache: UpstreamModelsCache | null }): ModelsRefreshRowIdentity => ({
+  configVersion: record.configVersion,
+  cacheEpoch: record.modelsCache?.fetchedAt ?? 0,
+});
+
+export const storedModelsRefreshIdentity = async (
   repo: UpstreamRepo,
   id: string,
-): Promise<ModelsCacheGeneration> => {
+): Promise<ModelsRefreshRowIdentity> => {
   const record = await repo.getById(id);
   if (record === null) throw new Error(`Upstream ${id} not found`);
-  return modelsCacheGeneration(record);
+  return modelsRefreshIdentity(record);
 };
 
 export const seedModelsCache = async (
   repo: UpstreamRepo,
   id: string,
-  generation: ModelsCacheGeneration,
+  identity: ModelsRefreshRowIdentity,
   cache: Omit<UpstreamModelsCache, 'lastError'>,
 ): Promise<boolean> => {
-  return await repo.publishModelsRefresh({ id, generation, cache });
+  return await repo.publishModelsRefresh({ id, ...identity, cache });
 };
 
 export const seedModelsCacheError = async (
   repo: UpstreamRepo,
   id: string,
-  generation: ModelsCacheGeneration,
+  identity: ModelsRefreshRowIdentity,
   error: NonNullable<UpstreamModelsCache['lastError']>,
 ): Promise<boolean> => {
-  return await repo.recordModelsRefreshFailure({ id, generation, error, previousFailureCount: 0, failedAt: -60_000 });
+  return await repo.recordModelsRefreshFailure({ id, ...identity, error, previousFailureCount: 0, failedAt: -60_000 });
 };

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
@@ -9,9 +9,8 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
-import type { InternalModel, Fetcher } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
 
@@ -64,16 +63,14 @@ const geminiModelLoadError = (error: unknown): Response =>
 // step with /v1/models and the dashboard's /api/models.
 const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  runtimeLocation: string,
+  scheduleRefresh: ModelsRefreshScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<GeminiModel[]> => {
   const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler, runtimeLocation),
+    enumerateAddressableModelIds(upstreamFilter, scheduleRefresh),
     upstreamFilter === null
       ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler, runtimeLocation),
+      : enumerateAddressableModelIds(null, scheduleRefresh),
     aliasRepo.list(),
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
@@ -93,8 +90,8 @@ const loadGeminiModels = async (
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRuntimeLocation(c.req.raw), getRepo().modelAliases) });
+    const scheduleRefresh = createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c));
+    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), scheduleRefresh, getRepo().modelAliases) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -106,8 +103,8 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
 
   const modelId = rawModelId.replace(/^models\//, '');
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRuntimeLocation(c.req.raw), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const scheduleRefresh = createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c));
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), scheduleRefresh, getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {
