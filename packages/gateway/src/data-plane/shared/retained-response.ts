@@ -59,7 +59,7 @@ const disconnectClockFor = (signal: AbortSignal): DisconnectClock => {
 
   const clock: DisconnectClock = { disconnectedAt: undefined };
   const markDisconnected = (): void => {
-    if (clock.disconnectedAt === undefined) clock.disconnectedAt = Date.now();
+    clock.disconnectedAt ??= Date.now();
   };
   disconnectClockBySignal.set(signal, clock);
   if (signal.aborted) markDisconnected();
