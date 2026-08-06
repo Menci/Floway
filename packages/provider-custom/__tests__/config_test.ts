@@ -46,7 +46,7 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
   assertEquals(config.models[0].display_name, 'Pinned');
 });
 
-test('assertCustomUpstreamRecord canonicalizes ingress header rules without collapsing empty values', () => {
+test('assertCustomUpstreamRecord canonicalizes ingress header names without collapsing empty values', () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -54,7 +54,7 @@ test('assertCustomUpstreamRecord canonicalizes ingress header rules without coll
       ingressHeadersRules: [
         { key: ' X-Request-ID ', value: null },
         { key: 'X-Empty', value: '' },
-        { key: 'X-Route', value: ' configured ' },
+        { key: 'X-Route', value: 'configured' },
         { key: 'API-Key', value: 'resource-key' },
       ],
     },
@@ -76,6 +76,7 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 'x-route', value: 'control\u0001byte' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: 'delete\u007fbyte' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: 'non-byte-\u0100' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: ' configured ' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: null, extra: true }], 'must contain only key and value'],
     ['not-an-array', 'ingressHeadersRules must be an array'],
     [[null], 'must contain only key and value'],
