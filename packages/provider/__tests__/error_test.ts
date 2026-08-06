@@ -85,6 +85,47 @@ test('toInternalDebugError bounds cyclic and deeply nested AggregateError branch
   expect(() => JSON.stringify(debug)).not.toThrow();
 });
 
+test('toInternalDebugError contains hostile and malformed AggregateError collections', () => {
+  const unreadable = new AggregateError([], 'unreadable');
+  Object.defineProperty(unreadable, 'errors', {
+    get: () => { throw new Error('errors getter failed'); },
+  });
+  expect(toInternalDebugError(unreadable).errors).toEqual([{ type: 'unreadable_aggregate_errors' }]);
+
+  const malformed = new AggregateError([], 'malformed');
+  Object.defineProperty(malformed, 'errors', { value: { 0: new Error('hidden'), length: 1 } });
+  expect(toInternalDebugError(malformed).errors).toEqual([{
+    type: 'invalid_aggregate_errors',
+    valueType: 'object',
+  }]);
+
+  const first = new Error('first');
+  const partiallyUnreadable = new AggregateError([first, new Error('second')], 'partially unreadable');
+  Object.defineProperty(partiallyUnreadable.errors, 1, {
+    get: () => { throw new Error('entry getter failed'); },
+  });
+  expect(toInternalDebugError(partiallyUnreadable).errors).toMatchObject([
+    { name: 'Error', message: 'first', stack: first.stack },
+    { type: 'unreadable_aggregate_error', index: 1 },
+  ]);
+});
+
+test('toInternalDebugError bounds AggregateError breadth with an explicit marker', () => {
+  const errors = Array.from({ length: 40 }, (_, index) => new Error(`branch ${index}`));
+  const debug = toInternalDebugError(new AggregateError(errors, 'wide'));
+
+  expect(debug.errors).toHaveLength(33);
+  expect(debug.errors?.slice(0, 32).map(error => (error as { message: string }).message)).toEqual(
+    Array.from({ length: 32 }, (_, index) => `branch ${index}`),
+  );
+  expect(debug.errors?.[32]).toEqual({
+    type: 'aggregate_errors_truncated',
+    limit: 32,
+    total: 40,
+    omitted: 8,
+  });
+});
+
 test('toInternalDebugError snapshots stateful non-Error causes exactly once', () => {
   let calls = 0;
   const cause = {
