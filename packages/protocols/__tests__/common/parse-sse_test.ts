@@ -138,12 +138,13 @@ test('parseSSEStream preserves a decode failure when reader cancellation also fa
 
 test('parseSSEStream preserves a frozen stream failure when cancellation also fails', async () => {
   const primary = Object.freeze(new Error('read failed'));
+  const cleanup = new Error('cancel failed');
   const body = new ReadableStream<Uint8Array>({
     pull() {
       throw primary;
     },
     cancel() {
-      throw new Error('cancel failed');
+      throw cleanup;
     },
   });
 
@@ -151,7 +152,105 @@ test('parseSSEStream preserves a frozen stream failure when cancellation also fa
     () => undefined,
     (reason: unknown) => reason,
   );
-  expect(error).toBe(primary);
+  expect(error).toBeInstanceOf(AggregateError);
+  expect((error as AggregateError).cause).toBe(primary);
+  expect((error as AggregateError).errors).toEqual([primary, cleanup]);
+});
+
+test('parseSSEStream returns promptly when cancellation never settles', async () => {
+  const controller = new AbortController();
+  controller.abort(new DOMException('stopped', 'AbortError'));
+  let cancellations = 0;
+  const body = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancellations++;
+      return new Promise<void>(() => {});
+    },
+  });
+
+  const result = parseSSEStream(body, { signal: controller.signal }).next();
+  await expect(Promise.race([
+    result,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('parser remained pending')), 50)),
+  ])).resolves.toEqual({ done: true, value: undefined });
+  expect(cancellations).toBe(1);
+  expect(body.locked).toBe(false);
+});
+
+test('parseSSEStream surfaces prompt cancellation rejection after abort', async () => {
+  const cleanup = new Error('cancel failed');
+  const controller = new AbortController();
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      return new Promise<void>(() => {});
+    },
+    cancel() {
+      return Promise.reject(cleanup);
+    },
+  }, { highWaterMark: 0 });
+  const pending = parseSSEStream(body, { signal: controller.signal }).next();
+  await waitForMicrotasks();
+
+  controller.abort(new DOMException('stopped', 'AbortError'));
+
+  await expect(pending).rejects.toBe(cleanup);
+  expect(body.locked).toBe(false);
+});
+
+test('parseSSEStream counts raw event bytes across chunks and resets at blank lines', async () => {
+  const first = new TextEncoder().encode('data:x\r\n\r\n');
+  const second = new TextEncoder().encode('data:y\r\n\r\n');
+  const chunks = [...first, ...second].map(byte => Uint8Array.of(byte));
+
+  await expect(collectAsync(parseSSEStream(byteStream(...chunks), {
+    maxEventBytes: first.byteLength,
+  }))).resolves.toEqual([
+    { type: 'sse', event: undefined, data: 'x' },
+    { type: 'sse', event: undefined, data: 'y' },
+  ]);
+});
+
+test('parseSSEStream rejects an oversized raw event before decoding its tail', async () => {
+  const bytes = new TextEncoder().encode('data:oversized\n\n');
+  let cancellationReason: unknown;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+    },
+    cancel(reason) {
+      cancellationReason = reason;
+    },
+  });
+
+  const error = await collectAsync(parseSSEStream(body, { maxEventBytes: bytes.byteLength - 1 })).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toMatchObject({
+    maxEventBytes: bytes.byteLength - 1,
+    message: `Upstream SSE event exceeded ${bytes.byteLength - 1} raw bytes`,
+    name: 'SseEventByteLimitError',
+  });
+  expect(cancellationReason).toBe(error);
+  expect(body.locked).toBe(false);
+});
+
+test('parseSSEStream bounds consecutive empty chunks', async () => {
+  let cancellations = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array());
+    },
+    cancel() {
+      cancellations++;
+    },
+  }, { highWaterMark: 0 });
+
+  await expect(collectAsync(parseSSEStream(body, {
+    maxConsecutiveEmptyChunks: 2,
+  }))).rejects.toThrow('Upstream SSE stream exceeded 2 consecutive empty chunks');
+  expect(cancellations).toBe(1);
+  expect(body.locked).toBe(false);
 });
 
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {
