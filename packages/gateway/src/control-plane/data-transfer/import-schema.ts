@@ -80,6 +80,8 @@ const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must
   .transform(value => value.trim())
   .refine(value => value !== '', { error: `${field} must be a non-empty string` });
 const nonEmptyStringWithError = (message: string) => z.string({ error: message }).min(1, { error: message });
+const storageIdSchema = (field: string) => nonEmptyStringSchema(field)
+  .refine(value => !value.includes('\0'), { error: `${field} must not contain NUL` });
 const nullableStringSchema = (field: string) => z.union([
   z.string(),
   z.null(),
@@ -100,7 +102,7 @@ const upstreamIdsSchema = parsedBy(value => {
 });
 
 const proxyFallbackEntrySchema = z.object({
-  id: z.string({ error: 'proxy_fallback_list entry .id must be a string' }),
+  id: storageIdSchema('proxy_fallback_list entry .id'),
   colos: z.array(z.string({ error: 'proxy_fallback_list entry .colos members must be strings' }), {
     error: 'proxy_fallback_list entry .colos must be an array',
   }).optional(),
@@ -148,7 +150,7 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
   const kind = parseValue(upstreamKindSchema, wire.kind);
   const enabled = parseValue(z.boolean({ error: 'enabled must be a boolean' }), wire.enabled);
   const sortOrder = Math.floor(parseValue(finiteSortOrderSchema, wire.sort_order));
-  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  const id = parseValue(storageIdSchema('id'), wire.id);
   if (isLegacyUpstreamIdentity(id)) {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
@@ -175,7 +177,7 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
 
 const proxySchema = parsedBy((value): SerializedProxy => {
   const wire = parseRecord(value, 'record must be an object');
-  const id = parseValue(nonEmptyStringSchema('id'), wire.id);
+  const id = parseValue(storageIdSchema('id'), wire.id);
   if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
   const name = parseValue(nonEmptyStringSchema('name'), wire.name);
   const url = parseValue(nonEmptyStringSchema('url'), wire.url);
@@ -316,7 +318,7 @@ const invalidUsageField = 'record has invalid usage fields';
 const usageFieldsSchema = z.object({
   keyId: nonEmptyStringWithError(invalidUsageField),
   model: nonEmptyStringWithError(invalidUsageField),
-  upstream: z.union([z.string(), z.null()], { error: invalidUsageField }),
+  upstream: z.union([storageIdSchema('upstream'), z.null()], { error: invalidUsageField }),
   modelKey: nonEmptyStringWithError(invalidUsageField),
   hour: z.string({ error: invalidUsageField }).regex(SEARCH_USAGE_HOUR_PATTERN, { error: invalidUsageField }),
   requests: nonNegativeSafeIntegerSchema(invalidUsageField),

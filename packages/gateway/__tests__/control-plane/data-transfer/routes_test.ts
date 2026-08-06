@@ -355,6 +355,16 @@ test('import round-trips a usage record carrying a positive input-length coordin
   assertEquals(await repo.usage.listAll(), [longRow]);
 });
 
+test('import rejects storage identifiers containing NUL', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', latestImportData({
+    proxies: [{ id: 'proxy\0suffix', name: 'invalid', url: 'socks5://host:1080', dial_timeout_seconds: null }],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(String(result.body.error).includes('must not contain NUL'), true);
+});
+
 test('import validates generic pricing selectors', async () => {
   const { app } = setup();
   const unknown = await doImport(app, 'replace', latestImportData({ usage: [{ ...USAGE_2, pricingSelector: { unknown: 'x' } }] }));
