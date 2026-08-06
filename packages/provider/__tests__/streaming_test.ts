@@ -128,6 +128,216 @@ test('streamingProviderCall truncates oversized bodies in the error message', as
   assertEquals(cancelled, true);
 });
 
+test('streamingProviderCall propagates an already-aborted signal and cancels the diagnostic body with its reason', async () => {
+  const reason = new DOMException('caller stopped', 'AbortError');
+  const controller = new AbortController();
+  controller.abort(reason);
+  let cancellationReason: unknown;
+  const body = new ReadableStream<Uint8Array>({
+    cancel(cancelReason) {
+      cancellationReason = cancelReason;
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      controller.signal,
+    ),
+    Error,
+  );
+
+  assertEquals(error, reason);
+  assertEquals(cancellationReason, reason);
+});
+
+test('streamingProviderCall yields through ready empty chunks so a timer can abort diagnostic work', async () => {
+  const reason = new DOMException('caller stopped', 'AbortError');
+  const controller = new AbortController();
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(stream) {
+      pulls++;
+      stream.enqueue(new Uint8Array());
+    },
+  });
+  const call = streamingProviderCall(
+    Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+    stubParser,
+    'm-1',
+    controller.signal,
+  );
+  const timer = setTimeout(() => controller.abort(reason), 0);
+
+  try {
+    const error = await assertRejects(() => call, Error);
+    assertEquals(error, reason);
+    assertEquals(pulls <= 34, true);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+test('streamingProviderCall bounds empty diagnostic chunks even without a cancellation signal', async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(stream) {
+      pulls++;
+      stream.enqueue(new Uint8Array());
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertStringIncludes((error.cause as Error).message, '64 empty body chunks');
+  assertEquals(pulls <= 66, true);
+  assertEquals(cancelled, true);
+});
+
+test('streamingProviderCall gives stalled diagnostics an idle timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    });
+    const call = streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    );
+
+    await vi.advanceTimersToNextTimerAsync();
+    const error = await assertRejects(() => call, Error);
+    assertEquals((error.cause as DOMException).name, 'TimeoutError');
+    assertStringIncludes((error.cause as DOMException).message, 'idle timeout');
+    assertEquals(cancellationReason, error.cause);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('streamingProviderCall gives progressing diagnostics an independent total timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    let chunks = 0;
+    let cancellationReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(stream) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        chunks++;
+        stream.enqueue(Uint8Array.of(120));
+      },
+      cancel(reason) {
+        cancellationReason = reason;
+      },
+    });
+    const call = streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    );
+
+    await vi.runAllTimersAsync();
+    const error = await assertRejects(() => call, Error);
+    assertEquals((error.cause as DOMException).name, 'TimeoutError');
+    assertStringIncludes((error.cause as DOMException).message, 'total timeout');
+    assertEquals(cancellationReason, error.cause);
+    assertEquals(chunks > 1, true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('streamingProviderCall preserves a diagnostic body read failure as the contract error cause', async () => {
+  const sourceError = new Error('wire exploded');
+  const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.error(sourceError);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertEquals(error.cause, sourceError);
+  assertStringIncludes(error.message, 'Body: <unreadable>');
+});
+
+test('streamingProviderCall preserves immediate diagnostic cancellation failures', async () => {
+  const cleanupError = new Error('cancel failed');
+  const body = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new TextEncoder().encode('x'.repeat(8192)));
+    },
+    cancel() {
+      return Promise.reject(cleanupError);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      undefined,
+    ),
+    Error,
+  );
+
+  assertEquals(error.cause, cleanupError);
+});
+
+test('streamingProviderCall retains both abort and cleanup failures', async () => {
+  const reason = new DOMException('caller stopped', 'AbortError');
+  const cleanupError = new Error('cancel failed');
+  const controller = new AbortController();
+  controller.abort(reason);
+  const body = new ReadableStream<Uint8Array>({
+    cancel() {
+      return Promise.reject(cleanupError);
+    },
+  });
+
+  const error = await assertRejects(
+    () => streamingProviderCall(
+      Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })),
+      stubParser,
+      'm-1',
+      controller.signal,
+    ),
+    AggregateError,
+  ) as AggregateError;
+
+  assertEquals(error.cause, reason);
+  assertEquals(error.errors, [reason, cleanupError]);
+});
+
 test('streamingProviderCall returns ok:true with parsed frames on 2xx SSE', async () => {
   const response = new Response('alpha\nbeta\n', {
     status: 200,
