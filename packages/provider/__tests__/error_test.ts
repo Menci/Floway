@@ -189,6 +189,21 @@ test('toInternalDebugError contains hostile nested Error properties and revoked 
   expect(toInternalDebugError(new Error('outer', { cause: revocable.proxy })).cause).toEqual({
     type: 'unreadable_error_value',
   });
+
+  let prototypeReads = 0;
+  const statefulProxy = new Proxy(new Error('stateful'), {
+    getPrototypeOf: target => {
+      prototypeReads++;
+      if (prototypeReads === 1) return Reflect.getPrototypeOf(target);
+      throw new Error('prototype getter failed');
+    },
+  });
+  expect(toInternalDebugError(statefulProxy)).toMatchObject({
+    type: 'internal_error',
+    name: 'Error',
+    message: '[unreadable thrown value]',
+    cause: { type: 'unreadable_error_value' },
+  });
   expect(() => JSON.stringify(debug)).not.toThrow();
 });
 

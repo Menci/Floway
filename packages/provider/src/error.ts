@@ -383,6 +383,22 @@ const outputBudgetFallback = (error: InternalDebugError): InternalDebugError => 
   ...(error.target_api === undefined ? {} : { target_api: error.target_api }),
 });
 
+const serializedRootError = (value: unknown): SerializedError => {
+  if (typeof value === 'object'
+    && value !== null
+    && 'name' in value
+    && typeof value.name === 'string'
+    && 'message' in value
+    && typeof value.message === 'string') {
+    return value as SerializedError;
+  }
+  return {
+    name: 'Error',
+    message: '[unreadable thrown value]',
+    cause: value,
+  };
+};
+
 export const toInternalDebugError = (error: unknown, targetApi?: string): InternalDebugError => {
   const state: SerializationState = {
     activeErrors: new WeakSet(),
@@ -392,10 +408,10 @@ export const toInternalDebugError = (error: unknown, targetApi?: string): Intern
     remainingStackBytes: MAX_SERIALIZED_STACK_BYTES,
     remainingStringBytes: MAX_SERIALIZED_STRING_BYTES,
   };
-  const serialized = serializeValue(normalizedThrownError(error), state, -1, '$') as SerializedError;
+  const serialized = serializedRootError(serializeValue(normalizedThrownError(error), state, -1, '$'));
   const debug: InternalDebugError = {
-    type: 'internal_error',
     ...serialized,
+    type: 'internal_error',
     ...(targetApi ? { target_api: consumeString(state, targetApi) } : {}),
   };
   return withinOutputBudget(debug) ? debug : outputBudgetFallback(debug);
