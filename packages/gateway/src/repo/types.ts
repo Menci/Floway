@@ -278,7 +278,8 @@ export type NewUserDefaultKey = Omit<ApiKey, 'userId' | 'deletedAt'>;
 
 export type CreateUserAccountResult =
   | { status: 'created'; user: User }
-  | { status: 'username-taken' };
+  | { status: 'username-taken' }
+  | { status: 'id-exhausted' };
 
 export type UpdateActiveUserResult =
   | { status: 'updated'; user: User }

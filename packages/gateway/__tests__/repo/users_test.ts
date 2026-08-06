@@ -63,6 +63,17 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.apiKeys.listByUserId(result.user.id)).map(key => key.id)).toEqual(['key_default']);
   });
 
+  test('createAccount refuses to cross the safe-integer user id boundary', async () => {
+    const repo = await makeRepo();
+    await repo.users.save(sampleUser({ id: Number.MAX_SAFE_INTEGER, username: 'last-safe-user' }));
+
+    const result = await repo.users.createAccount(accountTemplate('alice'), defaultKey());
+
+    expect(result).toEqual({ status: 'id-exhausted' });
+    expect(await repo.users.findByUsername('alice')).toBeNull();
+    expect(await repo.apiKeys.getById('key_default')).toBeNull();
+  });
+
   test('concurrent duplicate createAccount calls return one account and one username conflict', async () => {
     const repo = await makeRepo();
     const results = await Promise.all([

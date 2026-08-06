@@ -56,6 +56,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (result.status === 'username-taken') {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
+  if (result.status === 'id-exhausted') {
+    return c.json({ error: 'User id space is exhausted.' }, 409);
+  }
 
   return c.json({ user: userToAdminWire(result.user, knownUpstreamIds) }, 201);
 };

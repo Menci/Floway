@@ -144,7 +144,9 @@ class MemoryUsersRepo implements UsersRepo {
     return this.mutate(() => {
       const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
       if (collision) return { status: 'username-taken' };
-      const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
+      const maxId = this.users.reduce((max, u) => Math.max(max, u.id), 0);
+      if (maxId >= Number.MAX_SAFE_INTEGER) return { status: 'id-exhausted' };
+      const id = maxId + 1;
       const user: User = { ...template, id, deletedAt: null };
       this.apiKeys.insertAccountKey({ ...defaultKey, userId: id, deletedAt: null });
       this.users.push(user);

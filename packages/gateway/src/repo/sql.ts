@@ -378,6 +378,7 @@ class SqlUsersRepo implements UsersRepo {
       .prepare(
         `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
          SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, NULL FROM users
+         HAVING COALESCE(MAX(id), 0) < ?
          RETURNING ${USER_COLUMNS}`,
       )
       .bind(
@@ -386,6 +387,7 @@ class SqlUsersRepo implements UsersRepo {
         template.isAdmin ? 1 : 0,
         serializeUpstreamIds(template.upstreamIds),
         template.createdAt,
+        Number.MAX_SAFE_INTEGER,
       );
     const insertDefaultKey = this.db
       .prepare(
@@ -415,6 +417,8 @@ class SqlUsersRepo implements UsersRepo {
       return { status: 'created', user: toUser(userRow) };
     } catch (error) {
       if (isUsernameTakenError(error)) return { status: 'username-taken' };
+      const max = await this.db.prepare('SELECT MAX(id) AS id FROM users').first<{ id: number | null }>();
+      if (max?.id === Number.MAX_SAFE_INTEGER) return { status: 'id-exhausted' };
       throw error;
     }
   }
