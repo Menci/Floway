@@ -42,6 +42,7 @@ export const takeRequestBody = (source: RequestBody): OwnedRequestBody =>
 // the handler still sees a parse error of its own.
 interface ReadRequestBodyOptions {
   readonly maxBytes?: number;
+  readonly maxBytesWithoutContentLength?: number;
 }
 
 const normalizedStreamError = (error: unknown): string => {
@@ -87,11 +88,23 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     throw new TypeError(`readRequestBody maxBytes must be a non-negative safe integer, got ${maxBytes}`);
   }
+  const maxBytesWithoutContentLength = options.maxBytesWithoutContentLength ?? maxBytes;
+  if (!Number.isSafeInteger(maxBytesWithoutContentLength)
+    || maxBytesWithoutContentLength < 0
+    || maxBytesWithoutContentLength > maxBytes) {
+    throw new TypeError(`readRequestBody maxBytesWithoutContentLength must be a non-negative safe integer no greater than maxBytes, got ${maxBytesWithoutContentLength}`);
+  }
   if (c.req.raw.body === null) return { capturedBytes: new Uint8Array(), streamError: null };
 
   const declared = declaredContentLength(c);
+  let usesUndeclaredLimit = declared === null;
+  let effectiveMaxBytes = usesUndeclaredLimit ? maxBytesWithoutContentLength : maxBytes;
+  const sizeError = (): RequestBodyTooLargeError => new RequestBodyTooLargeError(
+    effectiveMaxBytes,
+    usesUndeclaredLimit && maxBytesWithoutContentLength < maxBytes ? maxBytes : null,
+  );
   if (declared !== null && declared > maxBytes) {
-    return cancelOversizedBody(c.req.raw.body, new RequestBodyTooLargeError(maxBytes));
+    return cancelOversizedBody(c.req.raw.body, sizeError());
   }
 
   const reader = c.req.raw.body.getReader();
@@ -99,23 +112,35 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
   // owner exactly once. Unknown-length uploads retain the runtime's bounded
   // chunks and coalesce once at the end instead of geometrically reallocating
   // and briefly retaining both an old and a new near-limit buffer.
-  let declaredBytes = declared === null ? null : new Uint8Array(declared);
+  let declaredBytes: Uint8Array | null = null;
   let chunks: Uint8Array[] | null = declared === null ? [] : null;
   let length = 0;
   const capturedBytes = (): Uint8Array => {
-    if (declaredBytes === null) return coalesceChunks(chunks!, length);
+    if (chunks !== null) return coalesceChunks(chunks, length);
+    if (declaredBytes === null) return new Uint8Array();
     if (length === declaredBytes.byteLength) return declaredBytes;
-    // A short or failed body must not keep an over-declared near-limit backing
-    // allocation alive through parsing and dump finalization.
-    return declaredBytes.slice(0, length);
+    // Keep a view of an over-declared allocation. Copying a 49 MiB short body
+    // out of a 52 MiB owner would create the very near-limit overlap this path
+    // exists to avoid; downstream multipart and replayable segments borrow the
+    // same backing and release it after request finalization.
+    return declaredBytes.subarray(0, length);
   };
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (value.byteLength === 0) continue;
       const required = length + value.byteLength;
-      if (required > maxBytes) {
-        const error = new RequestBodyTooLargeError(maxBytes);
+      if (!usesUndeclaredLimit && required > declared!) {
+        // Once observed bytes contradict Content-Length, its larger fixed-size
+        // allowance is no longer trustworthy. Switch before retaining the
+        // offending chunk so a forged tiny declaration cannot unlock a 52 MiB
+        // chunked/coalesced path.
+        usesUndeclaredLimit = true;
+        effectiveMaxBytes = maxBytesWithoutContentLength;
+      }
+      if (required > effectiveMaxBytes) {
+        const error = sizeError();
         try {
           void reader.cancel(error).catch(() => {});
         } catch {
@@ -123,8 +148,19 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
         }
         throw error;
       }
-      if (declaredBytes !== null && required <= declaredBytes.byteLength) {
-        declaredBytes.set(value, length);
+      if (chunks === null && required <= declared!) {
+        if (length === 0
+          && value.byteLength === declared
+          && value.byteOffset === 0
+          && value.buffer.byteLength === declared) {
+          // Workerd and Node can deliver a fixed-length request as one owning
+          // chunk. Adopt it directly so a 49 MiB upload never overlaps an
+          // equally large preallocation merely to copy identical bytes.
+          declaredBytes = value;
+        } else {
+          declaredBytes ??= new Uint8Array(declared!);
+          declaredBytes.set(value, length);
+        }
       } else {
         // A body exceeding its declared length should normally be rejected by
         // the HTTP runtime. Preserve the prior tolerant capture behavior for a

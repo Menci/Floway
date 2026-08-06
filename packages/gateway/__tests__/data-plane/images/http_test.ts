@@ -5,6 +5,7 @@ import {
   MAX_IMAGE_EDIT_FILE_BYTES,
   MAX_IMAGE_EDIT_MASK_BYTES,
   MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES,
+  MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES,
 } from '../../../src/data-plane/images/http.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
@@ -260,6 +261,7 @@ test('image edit upload byte limits are exact without allocating production-size
   assertEquals(MAX_IMAGE_EDIT_FILE_BYTES, 50 * 1024 * 1024);
   assertEquals(MAX_IMAGE_EDIT_MASK_BYTES, 4 * 1024 * 1024);
   assertEquals(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES, 52 * 1024 * 1024);
+  assertEquals(MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES, 26 * 1024 * 1024);
   assertEquals(imageEditUploadSizeError({ size: 3 }, 'image', 4), null);
   assertEquals(imageEditUploadSizeError({ size: 4 }, 'image', 4), 'Image edits image file must be smaller than 4 bytes.');
   assertEquals(imageEditUploadSizeError({ size: 4 }, 'mask', 4), 'Image edits mask file must be smaller than 4 bytes.');
@@ -280,6 +282,40 @@ test('/v1/images/edits applies its multipart wire budget before reading an overs
 
   assertEquals(response.status, 413);
   assertEquals((await response.json()).error.max_bytes, MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES);
+});
+
+test('/v1/images/edits applies the smaller undeclared multipart wire budget', async () => {
+  const { apiKey } = await setupAppTest();
+  const chunk = new Uint8Array(64 * 1024);
+  let remaining = MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES + 1;
+  const response = await requestApp('/v1/images/edits', {
+    method: 'POST',
+    headers: {
+      'content-type': 'multipart/form-data; boundary=unused',
+      'x-api-key': apiKey.key,
+    },
+    body: new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (remaining === 0) return controller.close();
+        const size = Math.min(remaining, chunk.byteLength);
+        controller.enqueue(size === chunk.byteLength ? chunk : chunk.subarray(0, size));
+        remaining -= size;
+      },
+    }, { highWaterMark: 0 }),
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+
+  assertEquals(response.status, 413);
+  assertEquals(await response.json(), {
+    error: {
+      type: 'request_too_large',
+      message: `Request body without a valid Content-Length exceeds Floway's ${MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES}-byte buffered request limit. Send a valid Content-Length for requests up to ${MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES} bytes.`,
+      max_bytes: MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES,
+      max_bytes_with_content_length: MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES,
+      method: 'POST',
+      path: '/v1/images/edits',
+    },
+  });
 });
 
 test('/v1/images/edits rejects multipart part amplification before upstream dispatch', async () => {

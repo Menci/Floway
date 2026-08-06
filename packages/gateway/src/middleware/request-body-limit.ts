@@ -9,10 +9,14 @@ export const MAX_BUFFERED_REQUEST_BODY_BYTES = 26 * 1024 * 1024;
 
 export class RequestBodyTooLargeError extends Error {
   readonly maxBytes: number;
+  readonly maxBytesWithContentLength: number | null;
 
-  constructor(maxBytes: number) {
-    super(`Request body exceeds Floway's ${maxBytes}-byte buffered request limit.`);
+  constructor(maxBytes: number, maxBytesWithContentLength: number | null = null) {
+    super(maxBytesWithContentLength === null
+      ? `Request body exceeds Floway's ${maxBytes}-byte buffered request limit.`
+      : `Request body without a valid Content-Length exceeds Floway's ${maxBytes}-byte buffered request limit. Send a valid Content-Length for requests up to ${maxBytesWithContentLength} bytes.`);
     this.name = 'RequestBodyTooLargeError';
     this.maxBytes = maxBytes;
+    this.maxBytesWithContentLength = maxBytesWithContentLength;
   }
 }

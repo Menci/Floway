@@ -52,6 +52,9 @@ export const internalErrorResponse = (error: Error, c: Context): Response => {
         type: 'request_too_large',
         message: error.message,
         max_bytes: error.maxBytes,
+        ...(error.maxBytesWithContentLength === null
+          ? {}
+          : { max_bytes_with_content_length: error.maxBytesWithContentLength }),
         method: c.req.method,
         path: c.req.path,
       },

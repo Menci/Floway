@@ -205,11 +205,12 @@ const tryOne = async (
     if (id === DIRECT_FETCH_ID) {
       // Runtime fetch collapses failures from before connect through after a
       // complete request write into plain Error/TypeError, so an ambiguous
-      // body-bearing failure cannot be replayed without at-least-once duplicate
-      // semantics. Continue only for the bodyless safe methods classified by
-      // ReplayableRequest. This matches Go's post-write replay gate and the
-      // active copilot2api gateway's single-dispatch behavior; LiteLLM instead
-      // explicitly accepts ambiguous POST replay, which Floway does not.
+      // unsafe-method or body-bearing failure cannot be replayed without
+      // at-least-once duplicate semantics. Continue only for the bodyless safe
+      // methods classified by ReplayableRequest. This matches Go's post-write
+      // replay gate and the active copilot2api gateway's single-dispatch
+      // behavior; LiteLLM instead explicitly accepts ambiguous POST replay,
+      // which Floway does not.
       // https://github.com/golang/go/blob/d90b98e65320778f3b1f99a6951ab20f04d218b3/src/net/http/request.go#L1534-L1547
       // https://github.com/whtsky/copilot2api/blob/c6db16158d5a5d01b2ac4964071b2c6c5c6b6a25/internal/upstream/client.go#L132-L213
       // https://github.com/BerriAI/litellm/blob/ba917681461b1ad04d30f91da26e75b3521996f3/litellm/llms/custom_httpx/http_handler.py#L628-L678

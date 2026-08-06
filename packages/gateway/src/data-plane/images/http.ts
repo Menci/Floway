@@ -12,6 +12,7 @@
 import type { Context } from 'hono';
 
 import { respondImages } from './respond.ts';
+import { MAX_BUFFERED_REQUEST_BODY_BYTES } from '../../middleware/request-body-limit.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { multipartLimitMessage, parseMultipartEntries, singleNonEmptyMultipartTextEntry } from '../shared/multipart.ts';
@@ -33,16 +34,18 @@ export const MAX_IMAGE_EDIT_INPUTS = 16;
 
 // The upstream accepts each GPT-image edit source below 50 MB, as many as 16
 // sources, and a PNG mask below 4 MB. Floway keeps a separate aggregate wire
-// budget because the Worker must hold the original multipart bytes while the
-// runtime constructs its bounded FormData representation. The 52 MiB aggregate
-// admits one maximum image plus multipart framing, or up to sixteen smaller
-// images; it deliberately does not promise the upstream's
+// budget because parsing, dump capture, and outbound framing can coexist. The
+// 52 MiB fixed-length aggregate admits one maximum image plus multipart
+// framing, or up to sixteen smaller images; an undeclared/chunked body keeps
+// the general 26 MiB ceiling because its retained chunks overlap the one final
+// coalesced buffer. Floway deliberately does not promise the upstream's
 // theoretical 16 × 50 MB aggregate inside a 128 MB Worker isolate.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L44745-L44790
 // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/platform/limits.mdx#L119-L127
 export const MAX_IMAGE_EDIT_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_IMAGE_EDIT_MASK_BYTES = 4 * 1024 * 1024;
 export const MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES = 52 * 1024 * 1024;
+export const MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES = MAX_BUFFERED_REQUEST_BODY_BYTES;
 
 export const imageEditUploadSizeError = (
   file: Pick<File, 'size'>,
@@ -157,7 +160,10 @@ const serveImagesEditRequest = async (
 export const imagesEdits = async (c: Context): Promise<Response> => {
   const contentType = c.req.header('content-type');
   const requestBody = await readRequestBody(c, isMultipartFormDataMediaType(contentType)
-    ? { maxBytes: MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES }
+    ? {
+        maxBytes: MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES,
+        maxBytesWithoutContentLength: MAX_IMAGE_EDIT_UNDECLARED_MULTIPART_BODY_BYTES,
+      }
     : {});
   const invalid = (message: string): Response => {
     const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
