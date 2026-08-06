@@ -3,9 +3,11 @@
 //
 // Plain CSS because the prerendered HTML paints the boot screen before any
 // Griffel rule exists; it restates the medium Spinner that ../../winui/controls/progress.css.ts
-// later restyles into WinUI's ProgressRing. Each colour goes through the Fluent
-// custom property that layer rewrites, with the literal beside it covering the
-// frames before.
+// later restyles into WinUI's ProgressRing. The foreground and text colours go
+// through the Fluent custom properties that layer rewrites, with literals
+// covering the frames before. The track is the transparent value WinUI states
+// in both themes; keeping that literal here makes this critical surface
+// complete even when the linked WinUI stylesheet is unavailable.
 //
 // No reduced-motion branch, unlike Fluent: WinUI's ProgressRing is an
 // AnimatedVisualPlayer and keeps its animation with animations off.
@@ -45,7 +47,7 @@ export const loadingCss = `
   .floway-loading .fui-Spinner__spinner {
     --fui-Spinner--strokeWidth: 25%;
     animation: floway-loading-spin 1.5s linear infinite;
-    background-color: var(--colorBrandStroke2Contrast, #ffffff00);
+    background-color: #ffffff00;
     color: var(--colorBrandStroke1, #0067c0);
     flex-shrink: 0;
     height: 32px;

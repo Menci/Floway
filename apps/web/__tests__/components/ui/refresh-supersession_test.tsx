@@ -80,10 +80,10 @@ test('query-driven refresh commits the query only when its response arrives', as
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
   const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
-  const restore = vi.fn();
+  const setQuery = vi.fn();
   const onCommit = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, 100, reload, restore, onCommit),
+    ({ query }) => useRefreshOnChange(query, 100, reload, setQuery, onCommit),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -103,9 +103,9 @@ test('query-driven refresh keeps the displayed query after a failed response', a
   const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
   const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
     new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
-  const restore = vi.fn();
+  const setQuery = vi.fn();
   const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, 100, reload, restore),
+    ({ query }) => useRefreshOnChange(query, 100, reload, setQuery),
     { initialProps: { query: { groupBy: 'model' } } },
   );
 
@@ -115,10 +115,28 @@ test('query-driven refresh keeps the displayed query after a failed response', a
 
   expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
   expect(result.current.loadedAt).toBe(100);
-  expect(restore).toHaveBeenCalledWith({ groupBy: 'model' });
+  expect(setQuery).toHaveBeenCalledWith({ groupBy: 'model' });
 
   await act(async () => { void result.current.refresh(); });
   expect(runs).toHaveLength(2);
+});
+
+test('query-driven refresh commits a canonical query returned with the response', async () => {
+  const canonical = { groupBy: 'model' };
+  const reload = vi.fn(async () => canonical);
+  const setQuery = vi.fn();
+  const onCommit = vi.fn();
+  const { result, rerender } = renderHook(
+    ({ query }) => useRefreshOnChange(query, 100, reload, setQuery, onCommit),
+    { initialProps: { query: canonical } },
+  );
+
+  rerender({ query: { groupBy: 'runtimeLocation' } });
+  await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+  await waitFor(() => expect(result.current.loadedQuery).toBe(canonical));
+
+  expect(setQuery).toHaveBeenCalledWith(canonical);
+  expect(onCommit).toHaveBeenCalledWith(canonical, canonical);
 });
 
 test.each(['superseded-first', 'newest-first'] as const)(
@@ -132,7 +150,7 @@ test.each(['superseded-first', 'newest-first'] as const)(
       signal: AbortSignal;
     }> = [];
     const responses: string[] = [];
-    const restore = vi.fn();
+    const setQuery = vi.fn();
     const onCommit = vi.fn();
     const { result, rerender } = renderHook(
       ({ query }) => {
@@ -144,7 +162,7 @@ test.each(['superseded-first', 'newest-first'] as const)(
           if (succeeded) responses.push(query.groupBy);
           return succeeded;
         }, [query]);
-        return useRefreshOnChange(query, 100, reload, restore, onCommit);
+        return useRefreshOnChange(query, 100, reload, setQuery, onCommit);
       },
       { initialProps: { query: { groupBy: 'model' } } },
     );
@@ -174,7 +192,7 @@ test.each(['superseded-first', 'newest-first'] as const)(
     expect(responses).toEqual(['keyId']);
     expect(result.current.loadedQuery).toEqual({ groupBy: 'keyId' });
     expect(result.current.loadedAt).toBe(runs[1]!.requestedAt);
-    expect(restore).not.toHaveBeenCalled();
+    expect(setQuery).not.toHaveBeenCalled();
     expect(onCommit).toHaveBeenCalledTimes(1);
     expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'keyId' });
     now.mockRestore();

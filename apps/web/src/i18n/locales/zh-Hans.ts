@@ -253,8 +253,8 @@ const zhHansCN = {
           confirmPassword: '确认新密码',
           administrator: '管理员',
           administratorDescription: '可以管理用户、上游、搜索配置和数据迁移',
-          userOneLocked: '初始管理员不能被降级。',
-          selfLocked: '不能降级自己的账号。',
+          userOneLocked: '初始管理员不能被降级',
+          selfLocked: '不能降级自己的账号',
         },
         validation: {
           username: '用户名须为 1-64 位字母、数字、下划线、点或连字符。',
@@ -271,7 +271,7 @@ const zhHansCN = {
       },
       upstreamAccess: {
         title: '限制可用上游',
-        description: '关闭时，访问权限会继承上一级范围内的全部上游。',
+        description: '关闭时，访问权限会继承上一级范围内的全部上游',
         tableLabel: '可用上游',
         enabled: '启用',
         order: '顺序',
@@ -348,7 +348,7 @@ const zhHansCN = {
           responsesRetention: 'Stateful Responses 保留',
           responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
-              '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录。',
+              '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
         },
         validation: {
           nameRequired: '名称不能为空。',
@@ -1044,7 +1044,7 @@ const zhHansCN = {
           microsoftWebIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
-        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游。', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
+        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
         unavailable: '{{id}}（不可用）',
         getKeyLink: '获取 API 密钥',
         apiKeyLabel: 'API 密钥',
@@ -1065,7 +1065,7 @@ const zhHansCN = {
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
         actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
         dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
-        form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求。' },
+        form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
         target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number, number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_other: '{{count, number}} 个目标' },
         rules: { effort: '思考强度', budget: '思考预算 token', adaptive: '自适应思考', adaptiveAuto: '自动（遵循模型）', adaptiveOn: '开启（强制自适应）', adaptiveOff: '关闭（强制非自适应）', summary: '思考摘要', verbosity: '详细程度', serviceTier: '服务等级' },

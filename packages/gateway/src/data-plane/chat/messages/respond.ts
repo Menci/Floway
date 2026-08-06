@@ -70,7 +70,7 @@ export const respondMessages = async (
     try {
       completion = await writeSSEFrames(stream, messagesSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+        clientDisconnectController: ctx.clientDisconnectController,
       });
     } finally {
       const metadata = await eventResultMetadata(result);
