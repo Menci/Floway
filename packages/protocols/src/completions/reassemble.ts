@@ -55,9 +55,7 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
 
     if (!Array.isArray(chunk.choices)) throw new TypeError('Completions chunk choices must be an array');
     for (const choice of chunk.choices) {
-      // Placeholder choices (only `index`, no `text` / `finish_reason`)
-      // appear in the Zhipu/GLM vLLM fork's final usage chunk; they
-      // contribute nothing here.
+      // Contentless placeholder choices contribute nothing here.
       if (!Number.isSafeInteger(choice.index) || choice.index < 0) throw new RangeError(`Completions choice index must be a non-negative safe integer: ${choice.index}`);
       const accumulator = choices.get(choice.index) ?? { text: '', finishReason: null, logprobs: undefined };
       if (accumulator.finishReason !== null && (choice.text !== undefined || choice.finish_reason !== undefined || choice.logprobs !== undefined)) {

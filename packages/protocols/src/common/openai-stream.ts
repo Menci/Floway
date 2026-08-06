@@ -10,6 +10,9 @@
 // OpenAI's usage-only terminal chunk carries `choices: []`. Floway also
 // accepts non-empty structural placeholders, but never treats a choice with
 // text, delta content, finish reason, logprobs, or unknown fields as usage-only.
+// https://github.com/openai/openai-node/blob/3c261d3d5fa39dda1346bfb586edda5c227a5f37/src/resources/chat/completions/completions.ts#L1847-L1856
+// https://github.com/openai/openai-node/blob/3c261d3d5fa39dda1346bfb586edda5c227a5f37/src/resources/chat/completions/completions.ts#L871-L897
+// https://github.com/openai/openai-node/blob/3c261d3d5fa39dda1346bfb586edda5c227a5f37/src/resources/completions.ts#L91-L105
 
 const OPENAI_USAGE_PLACEHOLDER_CHOICE_KEYS = new Set(['index', 'text', 'delta', 'finish_reason', 'logprobs']);
 

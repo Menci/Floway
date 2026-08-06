@@ -17,6 +17,24 @@ const responseSnapshot = (event: ResponsesStreamEvent): ResponsesResult | undefi
   }
 };
 
+const failedResponseEvent = (
+  response: ResponsesResult,
+  upstreamError: Extract<ResponsesStreamEvent, { type: 'error' }>,
+  sequenceNumber: number | undefined,
+): Extract<ResponsesStreamEvent, { type: 'response.failed' }> => ({
+  type: 'response.failed',
+  response: {
+    ...response,
+    status: 'failed',
+    error: {
+      code: upstreamError.code ?? 'server_error',
+      message: upstreamError.message,
+    },
+    incomplete_details: null,
+  },
+  ...(sequenceNumber === undefined ? {} : { sequence_number: sequenceNumber }),
+});
+
 // The upstream transport sentinel is never a client-facing success signal by
 // itself. A response terminal owns that decision; if an upstream error omits
 // the response.failed event the protocol requires after it, close the observed
@@ -39,6 +57,15 @@ export const normalizeResponsesStreamLifecycle = async function* (
     if (event.type === 'error') upstreamError = event;
     if (event.sequence_number !== undefined) lastSequenceNumber = event.sequence_number;
 
+    if (
+      upstreamError !== undefined
+      && (event.type === 'response.completed' || event.type === 'response.incomplete')
+    ) {
+      yield eventFrame(failedResponseEvent(event.response, upstreamError, event.sequence_number));
+      terminalSeen = true;
+      continue;
+    }
+
     yield frame;
     if (isResponsesResponseTerminalEvent(event)) terminalSeen = true;
   }
@@ -46,19 +73,14 @@ export const normalizeResponsesStreamLifecycle = async function* (
   if (terminalSeen) return;
 
   if (announced !== undefined && upstreamError !== undefined) {
-    yield eventFrame({
-      type: 'response.failed',
-      response: {
-        ...announced,
-        status: 'failed',
-        error: {
-          code: upstreamError.code ?? 'server_error',
-          message: upstreamError.message,
-        },
-        incomplete_details: null,
-      },
-      ...(lastSequenceNumber === undefined ? {} : { sequence_number: lastSequenceNumber + 1 }),
-    });
+    if (lastSequenceNumber === Number.MAX_SAFE_INTEGER) {
+      throw new RangeError('Responses sequence_number space exhausted before synthesized response.failed');
+    }
+    yield eventFrame(failedResponseEvent(
+      announced,
+      upstreamError,
+      lastSequenceNumber === undefined ? undefined : lastSequenceNumber + 1,
+    ));
     return;
   }
 

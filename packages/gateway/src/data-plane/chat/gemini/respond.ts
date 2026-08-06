@@ -198,14 +198,21 @@ const geminiStreamErrorEvent = (error: unknown): GeminiStreamEvent =>
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   const isTerminalEvent = createGeminiTerminalDetector();
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
-    const terminal = frame.type === 'done' || (frame.type === 'event' && isTerminalEvent(frame.event));
-    if (failed) state.failed = true;
-    if (terminal && !failed) state.completed = true;
-    yield frame;
-    if (terminal) return;
+  let terminalDelivered = false;
+  try {
+    for await (const frame of frames) {
+      ctx.dump?.frame(frame);
+      const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
+      const terminal = frame.type === 'done' || (frame.type === 'event' && isTerminalEvent(frame.event));
+      if (failed) state.failed = true;
+      if (terminal && !failed) state.completed = true;
+      if (terminal) terminalDelivered = true;
+      yield frame;
+      if (terminal) return;
+    }
+  } catch (error) {
+    if (terminalDelivered) return;
+    throw error;
   }
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };

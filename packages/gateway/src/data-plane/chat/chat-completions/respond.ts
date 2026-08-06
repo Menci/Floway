@@ -104,13 +104,21 @@ const isChatCompletionsFailureFrame = (frame: ProtocolFrame<ChatCompletionsStrea
 const isChatCompletionsTerminalFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>) => frame.type === 'done' || isChatCompletionsFailureFrame(frame);
 
 const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = isChatCompletionsFailureFrame(frame);
-    if (failed) state.failed = true;
-    if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isChatCompletionsTerminalFrame(frame)) return;
+  let terminalDelivered = false;
+  try {
+    for await (const frame of frames) {
+      ctx.dump?.frame(frame);
+      const failed = isChatCompletionsFailureFrame(frame);
+      const terminal = isChatCompletionsTerminalFrame(frame);
+      if (failed) state.failed = true;
+      if (terminal && !failed) state.completed = true;
+      if (terminal) terminalDelivered = true;
+      yield frame;
+      if (terminal) return;
+    }
+  } catch (error) {
+    if (terminalDelivered) return;
+    throw error;
   }
   throw new Error(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
 };

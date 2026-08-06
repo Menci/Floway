@@ -63,7 +63,9 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed || response.status === 'failed');
+      const failed = state.failed || response.status === 'failed';
+      if (failed) ctx.dump?.failed(response.error?.message ?? 'Responses request failed');
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, failed);
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
@@ -135,13 +137,21 @@ const internalResponsesStreamErrorEvent = (error: unknown): ClientResponsesStrea
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesResponseTerminalEvent(frame.event);
 
 const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
-    if (failed) state.failed = true;
-    if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isResponsesTerminalFrame(frame)) return;
+  let terminalDelivered = false;
+  try {
+    for await (const frame of frames) {
+      ctx.dump?.frame(frame);
+      const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
+      const terminal = isResponsesTerminalFrame(frame);
+      if (failed) state.failed = true;
+      if (terminal && !failed) state.completed = true;
+      if (terminal) terminalDelivered = true;
+      yield frame;
+      if (terminal) return;
+    }
+  } catch (error) {
+    if (terminalDelivered) return;
+    throw error;
   }
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };

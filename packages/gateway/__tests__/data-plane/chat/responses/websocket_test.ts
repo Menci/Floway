@@ -3,6 +3,7 @@ import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
 import {
   RESPONSES_WEBSOCKET_CONNECTION_LIMIT_ERROR,
@@ -50,6 +51,8 @@ const closedResponsesIteratorResult = (): IteratorResult<ResponsesFrame> => ({
   value: undefined,
 });
 
+const releaseControlledStreams = new Set<() => void>();
+
 const createControlledResponsesEvents = (
   firstFrame?: ResponsesFrame,
 ) => {
@@ -95,7 +98,7 @@ const createControlledResponsesEvents = (
     },
   };
 
-  return {
+  const controlled = {
     events,
     nextCalls: () => nextCalls,
     firstNextStarted: firstNextStarted.promise,
@@ -108,8 +111,11 @@ const createControlledResponsesEvents = (
       if (closed) return;
       closed = true;
       offer(closedResponsesIteratorResult());
+      releaseControlledStreams.delete(controlled.close);
     },
   };
+  releaseControlledStreams.add(controlled.close);
+  return controlled;
 };
 
 type ControlledResponsesEvents = ReturnType<typeof createControlledResponsesEvents>;
@@ -300,6 +306,7 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
     return await run();
   } finally {
     try {
+      for (const release of [...releaseControlledStreams]) release();
       for (const { client } of runtime.pairs) {
         if (client.readyState === WebSocket.OPEN) client.close();
       }
@@ -1760,7 +1767,8 @@ test('Responses WebSocket drains terminal usage without aborting upstream after 
       upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
       upstreamController.close();
       await flushAsyncWork();
-      await vi.waitFor(async () => assertEquals((await repo.usage.listAll()).length, 1));
+      const [usage] = await repo.usage.listAll();
+      assertEquals(tokenCountsFromUsage(usage), { input: 7, output: 3 });
       assertEquals(upstreamCanceled, false);
     }),
   );
@@ -1768,31 +1776,32 @@ test('Responses WebSocket drains terminal usage without aborting upstream after 
 
 test('Responses WebSocket close stops downstream keep-alives while draining an idle upstream turn', async () => {
   const { apiKey } = await setupAppTest();
-  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents());
+  const turn = mockControlledResponsesTurn(() => createControlledResponsesEvents(responseCreatedFrame()));
+  const time = new FakeTime();
 
-  await withWorkerWebSocketRuntime(async () => {
-    const client = await connectResponsesWebSocket(apiKey.key);
-    client.send(JSON.stringify({
-      type: 'response.create',
-      response: { model: 'gpt-direct-responses', input: 'idle until closed' },
-    }));
+  try {
+    await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'idle until closed' },
+      }));
 
-    const events = await promiseWithin(
-      turn.events,
-      'Responses WebSocket did not create the controlled idle stream',
-    );
-    await promiseWithin(
-      events.firstNextStarted,
-      'Responses WebSocket did not begin its idle frame wait',
-    );
-    client.close();
-    assertEquals((await turn.signal).aborted, true);
-    finishControlledResponsesEvents(events, true);
-    await promiseWithin(
-      turn.metadataRead,
-      'Responses WebSocket did not settle the drained turn after the client closed',
-    );
-  });
+      const events = await promiseWithin(turn.events, 'Responses WebSocket did not create the controlled idle stream');
+      await promiseWithin(events.secondNextStarted, 'Responses WebSocket did not enter the idle frame wait');
+      assertEquals(recorded.messages.length, 1);
+      client.close();
+      assertEquals((await turn.signal).aborted, true);
+      await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS * 3);
+      assertEquals(recorded.messages.length, 1);
+      finishControlledResponsesEvents(events);
+      await promiseWithin(turn.metadataRead, 'Responses WebSocket did not settle the drained turn after the client closed');
+      recorded.stop();
+    });
+  } finally {
+    time.restore();
+  }
 });
 
 test('Responses WebSocket expires an active connection at exactly 60 minutes', async () => {
@@ -1849,10 +1858,12 @@ test('Responses WebSocket close clears its lifetime timer and reciprocates the c
       assertEquals(pair.server.binaryType, 'arraybuffer');
       assertEquals(vi.getTimerCount(), 1);
 
+      const reciprocalClose = vi.spyOn(pair.server, 'close');
       client.close(1000, 'client done');
       await time.tickAsync(0);
 
       assertEquals(vi.getTimerCount(), 0);
+      assertEquals(reciprocalClose.mock.calls.length, 1);
       assertEquals(pair.server.readyState, WebSocket.CLOSED);
     });
   } finally {

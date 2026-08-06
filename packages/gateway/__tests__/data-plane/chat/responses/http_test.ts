@@ -831,3 +831,37 @@ test('POST /v1/responses preserves upstream error then response.failed and marks
   assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, failedEvent.response.id, 0), null);
   assert(body.endsWith('data: [DONE]\n\n'));
 });
+
+test('POST /v1/responses non-streaming returns the response.failed resource that follows an error', async () => {
+  const repo = installRepo();
+  const created = { ...makeResponsesResult('resp_nonstream_failed'), status: 'in_progress' as const, output: [] };
+  const failed = {
+    ...created,
+    status: 'failed' as const,
+    error: { code: 'server_error', message: 'upstream failed' },
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: makeProviderEvents([
+      { type: 'response.created', sequence_number: 0, response: created },
+      { type: 'error', sequence_number: 1, code: 'server_error', message: 'upstream failed' },
+      { type: 'response.failed', sequence_number: 2, response: failed },
+    ]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', store: true }),
+  });
+  const body = await response.json() as ResponsesResult & { store: boolean };
+
+  assertEquals(response.status, 200);
+  assertEquals(body.status, 'failed');
+  assertEquals(body.store, false);
+  assertEquals(body.error, { code: 'server_error', message: 'upstream failed' });
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
+});

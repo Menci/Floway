@@ -14,10 +14,8 @@ export interface CompletionsPayload {
 }
 
 // One choice in a streaming chunk. `text` accumulates across chunks (the
-// streaming contract). The Zhipu/GLM vLLM fork seen in the wild emits a
-// final placeholder choice carrying only `index` (no `text`, no
-// `finish_reason`) alongside the usage block — so `text` and
-// `finish_reason` are optional, matching that shape on the typed surface.
+// streaming contract). A contentless final usage placeholder may carry only
+// `index`, so `text` and `finish_reason` are optional on the typed surface.
 // `logprobs` is opaque to the gateway — passed through as-is.
 interface CompletionsChoiceStreaming {
   index: number;

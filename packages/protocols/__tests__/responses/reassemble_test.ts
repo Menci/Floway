@@ -103,6 +103,32 @@ test('reassembleResponsesEvents throws on error event', async () => {
   await assertRejects(() => reassembleResponsesEvents(body), Error, 'bad request');
 });
 
+test('reassembleResponsesEvents returns a response.failed that follows an error event', async () => {
+  const failed: ResponsesResult = {
+    id: 'resp_failed', object: 'response', model: 'gpt-test', status: 'failed',
+    output: [], error: { code: 'overloaded', message: 'try later' }, incomplete_details: null,
+  };
+  const result = await reassembleResponsesEvents(makeEvents([
+    { data: { type: 'error', message: 'try later' } },
+    { data: { type: 'response.failed', response: failed } },
+  ]));
+
+  assertEquals(result, failed);
+});
+
+test('reassembleResponsesEvents rejects a success terminal after an error event', async () => {
+  await assertRejects(() => reassembleResponsesEvents(makeEvents([
+    { data: { type: 'error', message: 'try later' } },
+    { data: {
+      type: 'response.completed',
+      response: {
+        id: 'resp_bad', object: 'response', model: 'gpt-test', status: 'completed',
+        output: [], error: null, incomplete_details: null,
+      },
+    } },
+  ])), Error, 'try later');
+});
+
 test('reassembleResponsesEvents throws when stream ends without terminal event', async () => {
   const body = makeEvents([
     {

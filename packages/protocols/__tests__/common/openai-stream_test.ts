@@ -7,14 +7,7 @@ test('isOpenAIUsageOnlyEventShape identifies the OpenAI / vanilla-vLLM shape (em
   assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }), true);
 });
 
-test('isOpenAIUsageOnlyEventShape identifies the Zhipu/GLM vLLM-fork shape (placeholder choice + usage)', () => {
-  // Zhipu's vLLM fork (e.g. endpoint.runa.moe) emits the final usage chunk
-  // with a one-element `choices` whose entry only carries `index` — no
-  // `text`, no `delta`, no `finish_reason`. LiteLLM, One-API, New-API, and
-  // Portkey all treat such an entry as a structural placeholder and key
-  // off the usage block. Floway follows the same predicate so the chunk
-  // is correctly captured for billing and stripped when the client did
-  // not opt into include_usage.
+test('isOpenAIUsageOnlyEventShape identifies a contentless placeholder choice with usage', () => {
   assertEquals(isOpenAIUsageOnlyEventShape({ choices: [{ index: 0 }], usage: { prompt_tokens: 4, completion_tokens: 20, total_tokens: 24 } }), true);
 });
 

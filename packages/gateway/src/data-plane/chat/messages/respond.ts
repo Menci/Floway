@@ -106,13 +106,21 @@ const observeMessagesFrames = async function* (
   state: SourceStreamState,
   ctx: GatewayCtx,
 ) {
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = frame.type === 'event' && frame.event.type === 'error';
-    if (failed) state.failed = true;
-    if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isMessagesTerminalFrame(frame)) return;
+  let terminalDelivered = false;
+  try {
+    for await (const frame of frames) {
+      ctx.dump?.frame(frame);
+      const failed = frame.type === 'event' && frame.event.type === 'error';
+      const terminal = isMessagesTerminalFrame(frame);
+      if (failed) state.failed = true;
+      if (terminal && !failed) state.completed = true;
+      if (terminal) terminalDelivered = true;
+      yield frame;
+      if (terminal) return;
+    }
+  } catch (error) {
+    if (terminalDelivered) return;
+    throw error;
   }
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
 };

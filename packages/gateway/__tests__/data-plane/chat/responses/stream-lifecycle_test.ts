@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { normalizeResponsesStreamLifecycle } from '../../../../src/data-plane/chat/responses/stream-lifecycle.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -51,6 +51,7 @@ test('a response terminal remains the last visible frame', async () => {
       sequence_number: 1,
       response: { ...created, status: 'completed' },
     });
+    yield eventFrame({ type: 'response.output_text.delta', sequence_number: 2, item_id: 'item', output_index: 0, content_index: 0, delta: 'late', logprobs: [] });
     yield doneFrame();
   };
   const events: ResponsesStreamEvent[] = [];
@@ -60,4 +61,51 @@ test('a response terminal remains the last visible frame', async () => {
   }
 
   assertEquals(events.map(event => event.type), ['response.created', 'response.completed']);
+});
+
+for (const terminalType of ['response.completed', 'response.incomplete'] as const) {
+  test(`an upstream error converts a contradictory ${terminalType} into response.failed`, async () => {
+    const created: ResponsesResult = {
+      id: 'resp_contradictory', object: 'response', model: 'model', status: 'in_progress',
+      output: [], error: null, incomplete_details: null,
+    };
+    const terminalStatus = terminalType === 'response.completed' ? 'completed' : 'incomplete';
+    const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.created', sequence_number: 0, response: created });
+      yield eventFrame({ type: 'error', sequence_number: 1, code: 'overloaded', message: 'try later' });
+      yield eventFrame({
+        type: terminalType,
+        sequence_number: 2,
+        response: { ...created, status: terminalStatus },
+      } as ResponsesStreamEvent);
+      yield doneFrame();
+    };
+    const events: ResponsesStreamEvent[] = [];
+
+    for await (const frame of normalizeResponsesStreamLifecycle(source())) {
+      if (frame.type === 'event') events.push(frame.event);
+    }
+
+    assertEquals(events.map(event => event.type), ['response.created', 'error', 'response.failed']);
+    const failed = events[2];
+    if (failed?.type !== 'response.failed') throw new Error('expected response.failed');
+    assertEquals(failed.response.status, 'failed');
+    assertEquals(failed.response.error, { code: 'overloaded', message: 'try later' });
+  });
+}
+
+test('synthesized response.failed rejects exhausted sequence space', async () => {
+  const created: ResponsesResult = {
+    id: 'resp_sequence', object: 'response', model: 'model', status: 'in_progress',
+    output: [], error: null, incomplete_details: null,
+  };
+  const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.created', sequence_number: Number.MAX_SAFE_INTEGER - 1, response: created });
+    yield eventFrame({ type: 'error', sequence_number: Number.MAX_SAFE_INTEGER, code: 'overloaded', message: 'try later' });
+    yield doneFrame();
+  };
+
+  await expect(async () => {
+    for await (const _frame of normalizeResponsesStreamLifecycle(source())) { /* drain */ }
+  }).rejects.toThrow(/sequence_number space exhausted/);
 });

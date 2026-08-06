@@ -1,5 +1,5 @@
 import type { ClientResponseResource, ClientResponsesStreamEvent } from './client-resource.ts';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from './index.ts';
+import type { ResponsesResult, ResponsesStreamEvent } from './index.ts';
 import { reassembleResponsesEvents } from './reassemble.ts';
 import { type ProtocolFrame } from '../common/index.ts';
 
@@ -19,7 +19,11 @@ export async function collectResponsesProtocolEventsToResult(frames: AsyncIterab
       if (frame.type === 'done') continue;
 
       yield frame.event;
-      if (isResponsesTerminalEvent(frame.event)) return;
+      if (
+        frame.event.type === 'response.completed'
+        || frame.event.type === 'response.incomplete'
+        || frame.event.type === 'response.failed'
+      ) return;
     }
 
     throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);

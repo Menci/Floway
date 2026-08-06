@@ -8,13 +8,21 @@ type ResponsesReassembleEvent =
   };
 
 export async function reassembleResponsesEvents(events: AsyncIterable<ResponsesReassembleEvent>): Promise<ResponsesResult> {
+  let upstreamError: Error | undefined;
   for await (const event of events) {
     const rawEvent = event as unknown as Record<string, unknown>;
     const type = rawEvent.type as string;
 
     if (type === 'error') {
-      const message = (rawEvent.message as string | undefined) ?? JSON.stringify(event);
-      throw new Error(`Upstream SSE error: ${message}`);
+      const nested = rawEvent.error;
+      const nestedMessage = typeof nested === 'object' && nested !== null
+        ? (nested as { message?: unknown }).message
+        : undefined;
+      const message = (rawEvent.message as string | undefined)
+        ?? (typeof nestedMessage === 'string' ? nestedMessage : undefined)
+        ?? JSON.stringify(event);
+      upstreamError = new Error(`Upstream SSE error: ${message}`);
+      continue;
     }
 
     if (type === 'response.completed' || type === 'response.incomplete' || type === 'response.failed') {
@@ -28,9 +36,11 @@ export async function reassembleResponsesEvents(events: AsyncIterable<ResponsesR
       if (status !== expectedStatus && !completedCompaction) {
         throw new TypeError(`${type} cannot carry Responses status ${JSON.stringify(status)}`);
       }
+      if (upstreamError !== undefined && type !== 'response.failed') throw upstreamError;
       return response as ResponsesResult;
     }
   }
 
+  if (upstreamError !== undefined) throw upstreamError;
   throw new Error('SSE stream ended without a terminal response event');
 }

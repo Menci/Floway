@@ -66,11 +66,7 @@ test('reassembleCompletionsEvents merges multiple choices by index', async () =>
   ]);
 });
 
-test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', async () => {
-  // The Zhipu/GLM fork emits a final `choices: [{ index: 0 }]` (no text,
-  // no finish_reason) carrying the usage block instead of OpenAI's
-  // `choices: []`. The reassembler folds it as a no-op while still
-  // surfacing the usage onto the result.
+test('reassembleCompletionsEvents folds a contentless final usage placeholder as a no-op', async () => {
   const result = await reassembleCompletionsEvents(fromArray([
     chunk('hi'),
     chunk('!', 'stop'),

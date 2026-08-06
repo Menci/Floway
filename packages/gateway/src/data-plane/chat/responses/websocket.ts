@@ -565,6 +565,7 @@ const respondResponsesWebSocket = async (input: {
       onDownstreamLoss(reason);
     };
 
+    let iterationError: unknown;
     try {
       while (true) {
         if (signal.aborted || isClosed()) {
@@ -691,8 +692,24 @@ const respondResponsesWebSocket = async (input: {
         }
         streamed = true;
       }
+    } catch (error) {
+      iterationError = error;
+      throw error;
     } finally {
-      if (!completed) await iterator.return?.(undefined);
+      if (!completed) {
+        try {
+          await iterator.return?.(undefined);
+        } catch (cleanupError) {
+          if (iterationError !== undefined) {
+            throw new AggregateError(
+              [iterationError, cleanupError],
+              'Responses WebSocket stream and iterator cleanup both failed',
+              { cause: iterationError },
+            );
+          }
+          throw cleanupError;
+        }
+      }
     }
 
     if (terminalEvent === undefined) {
@@ -714,6 +731,7 @@ const respondResponsesWebSocket = async (input: {
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
+    ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
     if (failed) {
       // `fail` cannot carry the eviction for every failed turn: one that
       // streamed an `error` or `response.failed` terminal answered the client
@@ -723,7 +741,7 @@ const respondResponsesWebSocket = async (input: {
       // connection-local cache dies with the socket.
       turnFailure.evict();
       ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-    } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
+    }
     ctx.dump?.finalize(failed ? 500 : 200, []);
     settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
   }
