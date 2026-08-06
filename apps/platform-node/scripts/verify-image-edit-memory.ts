@@ -1,15 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { rm, mkdtemp } from 'node:fs/promises';
-import { request as httpRequest } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer, request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { serve, type ServerType } from '@hono/node-server';
+import { setGlobalDispatcher } from 'undici';
 
 import { bootstrapNodePlatform } from '../src/bootstrap.ts';
 import { FsFileStore } from '../src/fs-file-store.ts';
+import { createNodeGlobalDispatcher } from '../src/global-dispatcher.ts';
 import { applyMigrations } from '../src/migrate.ts';
 import {
   app,
@@ -163,6 +165,10 @@ class ObservedDumpStore extends FileDumpStore {
     invariant(this.largePutCount === 1, `expected one large dump write, observed ${this.largePutCount}`);
   }
 
+  assertLargePutPending(): void {
+    invariant(this.largePutCount === 0, `dump persisted before response completion (${this.largePutCount} write(s))`);
+  }
+
   preparedCapture(): Uint8Array {
     invariant(this.capturedRequest !== undefined, 'large request dump preparation was not observed');
     return this.capturedRequest;
@@ -226,16 +232,6 @@ const responseForImageEdit = (): Response => new Response(JSON.stringify({
   },
 }), { headers: { 'content-type': 'application/json' } });
 
-const drainBody = async (body: ReadableStream<Uint8Array>): Promise<number> => {
-  const reader = body.getReader();
-  let bytes = 0;
-  for (;;) {
-    const result = await reader.read();
-    if (result.done) return bytes;
-    bytes += result.value.byteLength;
-  }
-};
-
 const warmupEndpoint = async (fetchImpl: typeof fetch, port: number): Promise<void> => {
   const shape = multipartShape(1);
   const body = new Uint8Array(shape.contentLength);
@@ -260,6 +256,36 @@ const runChild = async (): Promise<void> => {
   process.env.FLOWAY_DB_PATH = ':memory:';
   process.env.FLOWAY_FILES_DIR = join(tempRoot, 'files');
   process.env.ADMIN_KEY = 'memory-verifier-admin';
+  setGlobalDispatcher(createNodeGlobalDispatcher({}));
+
+  let phase: 'warmup' | 'large' = 'warmup';
+  let releaseLarge!: () => void;
+  const largeReleased = new Promise<void>(resolve => { releaseLarge = resolve; });
+  let resolveLargeUpstreamDrain!: () => void;
+  const largeUpstreamDrained = new Promise<void>(resolve => { resolveLargeUpstreamDrain = resolve; });
+  let largeUpstreamBytes = 0;
+  const upstreamServer = createServer((request, response) => {
+    void (async () => {
+      let receivedBytes = 0;
+      for await (const chunk of request) receivedBytes += (chunk as Uint8Array).byteLength;
+      if (phase === 'large') {
+        largeUpstreamBytes = receivedBytes;
+        invariant(request.headers['transfer-encoding'] === undefined, 'upstream received Transfer-Encoding for fixed replayable body');
+        resolveLargeUpstreamDrain();
+        await largeReleased;
+      }
+      const body = await responseForImageEdit().text();
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) });
+      response.end(body);
+    })().catch(error => response.destroy(error as Error));
+  });
+  const upstreamPort = await new Promise<number>(resolve => {
+    upstreamServer.listen(0, '127.0.0.1', () => {
+      const address = upstreamServer.address();
+      invariant(address !== null && typeof address !== 'string', 'memory verifier upstream has no TCP address');
+      resolve(address.port);
+    });
+  });
 
   const background = new BackgroundWork();
   initBackgroundSchedulerResolver(() => background.schedule);
@@ -296,10 +322,10 @@ const runChild = async (): Promise<void> => {
     modelsCache: null,
     hue: 210,
     config: {
-      baseUrl: 'https://memory-upstream.invalid',
-      authStyle: 'bearer',
+      baseUrl: `http://127.0.0.1:${upstreamPort}`,
+      authStyle: 'none',
       ingressHeadersRules: [],
-      apiKey: 'sk-memory-verifier',
+      apiKey: '',
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{ upstreamModelId: MODEL, endpoints: { imagesEdits: {} } }],
@@ -311,25 +337,22 @@ const runChild = async (): Promise<void> => {
   initDumpStore(dumpStore);
   const fileObserver = observeLargeFiles();
   const nativeFetch = globalThis.fetch;
-  let phase: 'warmup' | 'large' = 'warmup';
-  let releaseLarge!: () => void;
-  const largeReleased = new Promise<void>(resolve => { releaseLarge = resolve; });
   let baseline!: NodeJS.MemoryUsage;
   let observation: MemoryObservation | undefined;
+  let largeOutboundCalls = 0;
 
   globalThis.fetch = async (input, init): Promise<Response> => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    if (url.hostname !== 'memory-upstream.invalid') return await nativeFetch(input, init);
+    if (url.hostname !== '127.0.0.1' || url.port !== String(upstreamPort)) return await nativeFetch(input, init);
     invariant(init?.body instanceof ReadableStream, 'image edit egress did not use a streaming body');
     const source = replayableBodySource(init.body);
     invariant(source !== null, 'image edit egress stream was not replayable');
     invariant(Reflect.get(init, 'duplex') === 'half', 'Node image edit stream omitted duplex=half');
     invariant(new Headers(init.headers).get('content-length') === String(source.byteLength), 'outbound Content-Length did not match replayable segments');
 
-    if (phase === 'warmup') {
-      await drainBody(init.body);
-      return responseForImageEdit();
-    }
+    const response = nativeFetch(input, init);
+    if (phase === 'warmup') return await response;
+    largeOutboundCalls += 1;
 
     const uploadSegments = source.segments.filter(segment => segment.byteLength === IMAGE_BYTES);
     invariant(uploadSegments.length === 1, `expected one ${IMAGE_BYTES}-byte upload segment, observed ${uploadSegments.length}`);
@@ -341,6 +364,10 @@ const runChild = async (): Promise<void> => {
     invariant(uploadSegments[0]!.buffer === largeBacking, 'upload segment does not borrow the inbound multipart backing');
     const dumpCapture = dumpStore.preparedCapture();
     invariant(dumpCapture.buffer !== largeBacking, 'dump capture unexpectedly aliases the full multipart owner');
+    dumpStore.assertLargePutPending();
+
+    await largeUpstreamDrained;
+    invariant(largeUpstreamBytes === source.byteLength, `loopback upstream received ${largeUpstreamBytes} bytes, expected ${source.byteLength}`);
 
     await forceGc();
     const current = process.memoryUsage();
@@ -361,13 +388,11 @@ const runChild = async (): Promise<void> => {
       largeFileInstances: fileObserver.largeInstances(),
     };
     invariant(observation.largeFileInstances === 0, `raw upload constructed ${observation.largeFileInstances} production-sized File object(s)`);
+    invariant(arrayBuffersDelta >= IMAGE_BYTES, `memory sample saw only ${arrayBuffersDelta} live ArrayBuffer bytes; the 49 MiB body was not resident`);
     invariant(liveBodyBytes < LIVE_MEMORY_LIMIT_BYTES, `live image-edit memory ${liveBodyBytes} reached the ${LIVE_MEMORY_LIMIT_BYTES}-byte Worker limit`);
     sendIpc({ type: 'hold', observation });
 
-    await largeReleased;
-    const drainedBytes = await drainBody(init.body);
-    invariant(drainedBytes === source.byteLength, `drained ${drainedBytes} outbound bytes, expected ${source.byteLength}`);
-    return responseForImageEdit();
+    return await response;
   };
 
   let server: ServerType | undefined;
@@ -394,6 +419,7 @@ const runChild = async (): Promise<void> => {
         if (command.type !== 'verify') return;
         void (async () => {
           await background.flush();
+          invariant(largeOutboundCalls === 1, `expected one outbound dispatch, observed ${largeOutboundCalls}`);
           dumpStore.assertLargePut();
           const [metadata] = await dumpStore.list(API_KEY_ID, { limit: 1 });
           invariant(metadata !== undefined, 'large request dump metadata was not persisted');
@@ -411,6 +437,9 @@ const runChild = async (): Promise<void> => {
     globalThis.fetch = nativeFetch;
     fileObserver.restore();
     if (server !== undefined) await closeServer(server);
+    await new Promise<void>((resolve, reject) => {
+      upstreamServer.close(error => { if (error) reject(error); else resolve(); });
+    });
     await rm(tempRoot, { recursive: true, force: true });
   }
 };
@@ -424,12 +453,9 @@ class ChildMessages {
     child.on('message', raw => {
       const message = raw as ChildMessage;
       if (message.type === 'failure') {
-        this.failure = new Error(message.message);
-        if (message.stack !== undefined) this.failure.stack = message.stack;
-        for (const waiters of this.waiters.values()) {
-          for (const resolve of waiters) resolve(message);
-        }
-        this.waiters.clear();
+        const error = new Error(message.message);
+        if (message.stack !== undefined) error.stack = message.stack;
+        this.reportFailure(error);
         return;
       }
       const waiters = this.waiters.get(message.type);
@@ -437,6 +463,20 @@ class ChildMessages {
       if (resolve !== undefined) resolve(message);
       else this.queued.push(message);
     });
+  }
+
+  reportFailure(error: Error): void {
+    if (this.failure !== undefined) return;
+    this.failure = error;
+    const message: ChildMessage = {
+      type: 'failure',
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+    for (const waiters of this.waiters.values()) {
+      for (const resolve of waiters) resolve(message);
+    }
+    this.waiters.clear();
   }
 
   async waitFor<Type extends ChildMessage['type']>(type: Type): Promise<Extract<ChildMessage, { readonly type: Type }>> {
@@ -474,6 +514,7 @@ const sendLargeRequest = async (port: number): Promise<{ readonly status: number
         'content-type': `multipart/form-data; boundary=${BOUNDARY}`,
         'content-length': String(shape.contentLength),
         'x-api-key': API_KEY,
+        connection: 'close',
       },
     }, incoming => {
       incoming.setEncoding('utf8');
@@ -513,10 +554,11 @@ const runParent = async (): Promise<void> => {
       else reject(new Error(`memory verifier child exited with code=${String(code)} signal=${String(signal)}`));
     });
   });
+  void exited.catch(error => { messages.reportFailure(error as Error); });
   try {
     const ready = await messages.waitFor('ready');
     const response = sendLargeRequest(ready.port);
-    const held = await messages.waitFor('hold');
+    await messages.waitFor('hold');
     sendParentMessage(child, { type: 'release' });
     const result = await response;
     invariant(result.status === 200, `large endpoint returned ${result.status}: ${result.body}`);
