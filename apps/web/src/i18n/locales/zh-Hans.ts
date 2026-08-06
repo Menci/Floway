@@ -361,11 +361,15 @@ const zhHansCN = {
           inheritsTitle: '继承全局上游顺序',
         },
         retention: {
-          presets: { oneHour: '1 小时', sixHours: '6 小时', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天' },
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',
-          durationPlaceholder: '例如 30m、2h、3d',
-          daysPlaceholder: '例如 14',
+          durationPlaceholder: '例如 2、30m、3d',
+          units: {
+            second_one: '秒', second_other: '秒',
+            minute_one: '分钟', minute_other: '分钟',
+            hour_one: '小时', hour_other: '小时',
+            day_one: '天', day_other: '天',
+          },
           invalid: '请输入有效的保留时长。',
           warningDisable: '保存后会删除该 API 密钥的已捕获请求。',
           warningShrink: '保存后会删除超过新窗口的已捕获请求。',

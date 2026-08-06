@@ -28,15 +28,15 @@ interface KeyFormValues { name: string; keySource: KeySource; customKey: string;
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
 const DUMP_RETENTION_PRESETS = [
-  { seconds: 3600, labelKey: 'oneHour' },
-  { seconds: 6 * 3600, labelKey: 'sixHours' },
-  { seconds: 24 * 3600, labelKey: 'oneDay' },
-  { seconds: 7 * 86400, labelKey: 'sevenDays' },
+  { seconds: 3600 },
+  { seconds: 6 * 3600 },
+  { seconds: 24 * 3600 },
+  { seconds: 7 * 86400 },
 ] as const;
 
 const RESPONSES_RETENTION_PRESETS = [
-  { seconds: 7 * 86400, labelKey: 'sevenDays' },
-  { seconds: 30 * 86400, labelKey: 'thirtyDays' },
+  { seconds: 7 * 86400 },
+  { seconds: 30 * 86400 },
 ] as const;
 
 interface KeyDialogCommonProps {
@@ -109,14 +109,6 @@ export function KeyDialog(props: KeyDialogProps) {
   const values = useWatch({ control }) as KeyFormValues;
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
-  const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
-    seconds: preset.seconds,
-    label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
-  }));
-  const responsesRetentionPresets = RESPONSES_RETENTION_PRESETS.map(preset => ({
-    seconds: preset.seconds,
-    label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
-  }));
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
@@ -240,7 +232,7 @@ export function KeyDialog(props: KeyDialogProps) {
               label={t('dashboard.apiKeys.form.retention')}
               offLabel={t('dashboard.apiKeys.retention.offCapture')}
               offValue={null}
-              presets={dumpRetentionPresets}
+              presets={DUMP_RETENTION_PRESETS}
               value={field.value}
               onChange={field.onChange}
             >
@@ -265,16 +257,17 @@ export function KeyDialog(props: KeyDialogProps) {
         render={({ field }) => (
           <>
             <RetentionField
-              customInputUnit="days"
+              defaultUnit="d"
               description={t('dashboard.apiKeys.form.responsesRetentionHint')}
               disabled={saving}
               icon={<Database24Regular />}
               label={t('dashboard.apiKeys.form.responsesRetention')}
               maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
               minimumSeconds={86400}
+              multipleOfSeconds={86400}
               offLabel={t('dashboard.apiKeys.retention.offPersist')}
               offValue={0}
-              presets={responsesRetentionPresets}
+              presets={RESPONSES_RETENTION_PRESETS}
               value={field.value}
               onChange={field.onChange}
             />

@@ -375,11 +375,15 @@ const en = {
           inheritsTitle: 'Inherits the global upstream order',
         },
         retention: {
-          presets: { oneHour: '1 hour', sixHours: '6 hours', oneDay: '1 day', sevenDays: '7 days', thirtyDays: '30 days' },
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',
-          durationPlaceholder: 'e.g. 30m, 2h, 3d',
-          daysPlaceholder: 'e.g. 14',
+          durationPlaceholder: 'e.g. 2, 30m, 3d',
+          units: {
+            second_one: 'second', second_other: 'seconds',
+            minute_one: 'minute', minute_other: 'minutes',
+            hour_one: 'hour', hour_other: 'hours',
+            day_one: 'day', day_other: 'days',
+          },
           invalid: 'Enter a valid retention window.',
           warningDisable:
               'Saving will delete this key\'s captured requests.',
