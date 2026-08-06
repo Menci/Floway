@@ -9,11 +9,15 @@ export interface DumpListOptions {
   limit: number;
 }
 
+export interface DumpRequestBodyPreparationOptions {
+  readonly compression: 'adaptive' | 'identity';
+}
+
 export interface DumpStore {
-  // Starts body preparation while the request is in flight. Implementations
-  // may return identity bytes, but persistent stores compress here so the
-  // accumulator can release the original request buffer before terminal IO.
-  prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody>;
+  // Starts bounded body preparation while the request is in flight. Multipart
+  // owners choose identity to avoid another binary-body representation;
+  // adaptive preparation keeps gzip only when it actually reduces storage.
+  prepareRequestBody(body: Uint8Array, options: DumpRequestBodyPreparationOptions): Promise<PreparedDumpRequestBody>;
 
   // Write body files BEFORE the metadata row so a partial failure leaves
   // orphan files (sweep-collectable), not orphan rows (broken records).

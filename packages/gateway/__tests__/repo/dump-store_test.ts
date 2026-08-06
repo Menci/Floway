@@ -59,7 +59,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
-  const prepared = await store.prepareRequestBody(raw);
+  const prepared = await store.prepareRequestBody(raw, { compression: 'adaptive' });
   const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
   const record: DumpWriteRecord = {
     ...base,
@@ -86,11 +86,22 @@ test('FileDumpStore keeps incompressible request bodies in their smaller identit
   const store = new FileDumpStore(db, new MemoryFileStore());
   const raw = Uint8Array.from({ length: 64 }, (_, index) => index);
 
-  const prepared = await store.prepareRequestBody(raw);
+  const prepared = await store.prepareRequestBody(raw, { compression: 'adaptive' });
 
   assertEquals(prepared.encoding, 'identity');
   assertEquals(prepared.bytes, raw);
   assertEquals(prepared.decodedByteLength, raw.byteLength);
+});
+
+test('FileDumpStore skips compression when the request owner requires identity bytes', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const raw = utf8('repeatable '.repeat(1024));
+
+  const prepared = await store.prepareRequestBody(raw, { compression: 'identity' });
+
+  assertEquals(prepared.encoding, 'identity');
+  assertEquals(prepared.bytes, raw);
 });
 
 test('FileDumpStore round-trips a JSON record through gzip', async () => {

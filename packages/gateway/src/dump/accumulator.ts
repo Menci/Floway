@@ -21,7 +21,7 @@ import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, isMultipartFormDataMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
@@ -45,6 +45,7 @@ interface ResponseSnapshot {
 
 interface DumpCaptureLimits {
   readonly requestBodyBytes: number;
+  readonly multipartRequestBodyBytes: number;
   readonly responseBodyBytes: number;
   readonly streamEventBytes: number;
   readonly streamEvents: number;
@@ -56,6 +57,7 @@ interface DumpCaptureLimits {
 // prefix and surface an explicit capture failure when either ceiling is hit.
 const DEFAULT_CAPTURE_LIMITS: DumpCaptureLimits = {
   requestBodyBytes: 8 * 1024 * 1024,
+  multipartRequestBodyBytes: 1024 * 1024,
   responseBodyBytes: 8 * 1024 * 1024,
   streamEventBytes: 8 * 1024 * 1024,
   streamEvents: 10_000,
@@ -309,15 +311,22 @@ export class DumpAccumulator {
     for (const [name, value] of Object.entries(captureLimits) as Array<[keyof DumpCaptureLimits, number]>) {
       assertCaptureLimit(name, value);
     }
-    const requestCapture = new BoundedByteCapture(captureLimits.requestBodyBytes);
+    const contentType = requestSnapshot.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
+    const multipart = isMultipartFormDataMediaType(contentType);
+    const requestCaptureLimit = multipart
+      ? Math.min(captureLimits.requestBodyBytes, captureLimits.multipartRequestBodyBytes)
+      : captureLimits.requestBodyBytes;
+    const requestCapture = new BoundedByteCapture(requestCaptureLimit);
     requestCapture.append(requestBody);
     const capturedRequest = requestCapture.take();
     if (capturedRequest.truncated) {
       this.recordCaptureFailure(
-        `Dump request body capture exceeded the ${captureLimits.requestBodyBytes}-byte limit; stored body is truncated`,
+        `Dump request body capture exceeded the ${requestCaptureLimit}-byte limit; stored body is truncated`,
       );
     }
-    this.preparedRequestBody = getDumpStore().prepareRequestBody(capturedRequest.bytes);
+    this.preparedRequestBody = getDumpStore().prepareRequestBody(capturedRequest.bytes, {
+      compression: multipart ? 'identity' : 'adaptive',
+    });
     // Preparation starts eagerly and is awaited at terminal persistence. Mark
     // a rejection handled immediately so a long upstream wait cannot surface
     // it as an unhandled promise before `write()` records the dump failure.

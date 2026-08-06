@@ -34,15 +34,15 @@ export const MAX_IMAGE_EDIT_INPUTS = 16;
 // The upstream accepts each GPT-image edit source below 50 MB, as many as 16
 // sources, and a PNG mask below 4 MB. Floway keeps a separate aggregate wire
 // budget because the Worker must hold the original multipart bytes while the
-// runtime constructs its bounded FormData representation. The 56 MiB aggregate
-// admits one maximum image, one maximum mask, and multipart framing, or up to
-// sixteen smaller images; it deliberately does not promise the upstream's
+// runtime constructs its bounded FormData representation. The 52 MiB aggregate
+// admits one maximum image plus multipart framing, or up to sixteen smaller
+// images; it deliberately does not promise the upstream's
 // theoretical 16 × 50 MB aggregate inside a 128 MB Worker isolate.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L44745-L44790
 // https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/platform/limits.mdx#L119-L127
 export const MAX_IMAGE_EDIT_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_IMAGE_EDIT_MASK_BYTES = 4 * 1024 * 1024;
-export const MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES = 56 * 1024 * 1024;
+export const MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES = 52 * 1024 * 1024;
 
 export const imageEditUploadSizeError = (
   file: Pick<File, 'size'>,

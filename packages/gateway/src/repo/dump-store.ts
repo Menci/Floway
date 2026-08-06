@@ -11,7 +11,7 @@ import {
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
-import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
+import type { DumpListOptions, DumpRequestBodyPreparationOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
   DumpRecordId,
@@ -85,6 +85,16 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
 };
 
 const prepareBody = async (bytes: Uint8Array): Promise<PreparedDumpRequestBody> => {
+  const probe = bytes.subarray(0, Math.min(bytes.byteLength, 64 * 1024));
+  if (probe.byteLength > 0) {
+    const compressedProbe = await gzip(probe);
+    if (compressedProbe.byteLength >= probe.byteLength) {
+      return { encoding: 'identity', bytes, decodedByteLength: bytes.byteLength };
+    }
+    if (probe.byteLength === bytes.byteLength) {
+      return { encoding: 'gzip', bytes: compressedProbe, decodedByteLength: bytes.byteLength };
+    }
+  }
   const compressed = await gzip(bytes);
   return compressed.byteLength < bytes.byteLength
     ? { encoding: 'gzip', bytes: compressed, decodedByteLength: bytes.byteLength }
@@ -120,8 +130,10 @@ const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Prom
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
-  async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
-    return await prepareBody(body);
+  async prepareRequestBody(body: Uint8Array, options: DumpRequestBodyPreparationOptions): Promise<PreparedDumpRequestBody> {
+    return options.compression === 'identity'
+      ? { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }
+      : await prepareBody(body);
   }
 
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {

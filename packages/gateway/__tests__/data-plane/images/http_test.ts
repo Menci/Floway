@@ -257,7 +257,7 @@ test('/v1/images/edits accepts sixteen JSON images and rejects a seventeenth pre
 test('image edit upload byte limits are exact without allocating production-sized files', () => {
   assertEquals(MAX_IMAGE_EDIT_FILE_BYTES, 50 * 1024 * 1024);
   assertEquals(MAX_IMAGE_EDIT_MASK_BYTES, 4 * 1024 * 1024);
-  assertEquals(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES, 56 * 1024 * 1024);
+  assertEquals(MAX_IMAGE_EDIT_MULTIPART_BODY_BYTES, 52 * 1024 * 1024);
   assertEquals(imageEditUploadSizeError({ size: 3 }, 'image', 4), null);
   assertEquals(imageEditUploadSizeError({ size: 4 }, 'image', 4), 'Image edits image file must be smaller than 4 bytes.');
   assertEquals(imageEditUploadSizeError({ size: 4 }, 'mask', 4), 'Image edits mask file must be smaller than 4 bytes.');
