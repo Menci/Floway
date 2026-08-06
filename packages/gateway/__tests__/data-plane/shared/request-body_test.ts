@@ -45,6 +45,7 @@ test('readRequestBody cancels a chunked upload at maxBytes + 1 and returns 413',
     },
     cancel() {
       canceled = true;
+      return new Promise<void>(() => {});
     },
   }, { highWaterMark: 0 });
   const request = new Request('http://localhost/body', {
@@ -67,6 +68,28 @@ test('readRequestBody cancels a chunked upload at maxBytes + 1 and returns 413',
       path: '/body',
     },
   });
+});
+
+test('readRequestBody rejects an oversized declared length without awaiting cancellation', { timeout: 2_000 }, async () => {
+  let canceled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      canceled = true;
+      return new Promise<void>(() => {});
+    },
+  });
+  const request = new Request('http://localhost/body', {
+    method: 'POST',
+    headers: { 'content-length': '5' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+
+  const response = await requestBodyApp(4).request(request);
+
+  assertEquals(response.status, 413);
+  assertEquals(canceled, true);
+  assertEquals((await response.json()).error.max_bytes, 4);
 });
 
 test('readRequestBody retains bytes received before a stream failure', async () => {

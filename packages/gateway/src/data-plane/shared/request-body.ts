@@ -48,9 +48,9 @@ const declaredContentLength = (c: Context): number | null => {
   return Number.isSafeInteger(parsed) ? parsed : null;
 };
 
-const cancelOversizedBody = async (body: ReadableStream<Uint8Array>, error: RequestBodyTooLargeError): Promise<never> => {
+const cancelOversizedBody = (body: ReadableStream<Uint8Array>, error: RequestBodyTooLargeError): never => {
   try {
-    await body.cancel(error);
+    void body.cancel(error).catch(() => {});
   } catch {
     // The size violation remains the client-visible failure even when the
     // already-broken upload stream rejects cancellation.
@@ -67,7 +67,7 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
 
   const declared = declaredContentLength(c);
   if (declared !== null && declared > maxBytes) {
-    return await cancelOversizedBody(c.req.raw.body, new RequestBodyTooLargeError(maxBytes));
+    return cancelOversizedBody(c.req.raw.body, new RequestBodyTooLargeError(maxBytes));
   }
 
   const reader = c.req.raw.body.getReader();
@@ -81,7 +81,7 @@ export const readRequestBody = async (c: Context, options: ReadRequestBodyOption
       if (required > maxBytes) {
         const error = new RequestBodyTooLargeError(maxBytes);
         try {
-          await reader.cancel(error);
+          void reader.cancel(error).catch(() => {});
         } catch {
           // The bounded-size error owns this response even if teardown fails.
         }
