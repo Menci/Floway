@@ -376,7 +376,7 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     const refreshStarted = Promise.withResolvers<void>();
     const releaseRefresh = Promise.withResolvers<void>();
     const lazyFetcher = vi.fn<Fetcher>(async (_url, init) => {
-      expect(new URLSearchParams(String(init.body)).get('refresh_token')).toBe('rt_v1');
+      expect((JSON.parse(String(init.body)) as { refresh_token: string }).refresh_token).toBe('rt_v1');
       refreshStarted.resolve();
       await releaseRefresh.promise;
       return new Response(JSON.stringify({
@@ -384,7 +384,7 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
       }), { status: 200 });
     });
     const forcedFetcher = vi.fn<Fetcher>(async (_url, init) => {
-      expect(new URLSearchParams(String(init.body)).get('refresh_token')).toBe('rt_v2');
+      expect((JSON.parse(String(init.body)) as { refresh_token: string }).refresh_token).toBe('rt_v2');
       return new Response(JSON.stringify({
         access_token: 'at_forced', expires_in: 3600, refresh_token: 'rt_v3', scope: 'user:inference',
       }), { status: 200 });
