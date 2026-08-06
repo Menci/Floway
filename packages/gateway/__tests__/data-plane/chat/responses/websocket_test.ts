@@ -10,8 +10,8 @@ import {
   RESPONSES_WEBSOCKET_QUEUE_LIMIT_CODE,
 } from '../../../../src/data-plane/chat/responses/websocket-policy.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { RETAINED_RESPONSE_LIMITS } from '../../../../src/data-plane/shared/retained-response.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';

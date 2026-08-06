@@ -2,8 +2,8 @@ import { expect, test, vi } from 'vitest';
 
 import { audioTranscriptionFileError } from '../../../src/data-plane/audio/http.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { flushBackgroundExpectingFailures } from '../../test-utils/background-tracker.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackgroundExpectingFailures } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
