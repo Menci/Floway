@@ -26,11 +26,16 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   // generator so final metadata can resolve after the transport drains the
   // complete upstream stream.
   let billableUsage: BillableUsage | undefined;
-  const settleMetadata = (): void => resolveFinal({
-    modelIdentity: identity,
-    ...(context !== undefined ? { performance: context } : {}),
-    ...(billableUsage !== undefined ? { billableUsage } : {}),
-  });
+  let metadataSettled = false;
+  const settleMetadata = (): void => {
+    if (metadataSettled) return;
+    metadataSettled = true;
+    resolveFinal({
+      modelIdentity: identity,
+      ...(context !== undefined ? { performance: context } : {}),
+      ...(billableUsage !== undefined ? { billableUsage } : {}),
+    });
+  };
   const observeFrame = (frame: ProtocolFrame<TEvent>): void => {
     if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
       ctx.attempt.firstOutputTokenAt = performance.now();
@@ -40,39 +45,111 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
       if (reported !== null) billableUsage = reported;
     }
   };
-  const stampedEvents = (async function* () {
-    // Downstream protocol wrappers are allowed to finish at their terminal
-    // event. Keep ownership of the provider iterator here so IteratorClose
-    // still consumes trailing usage and transport sentinels before metadata
-    // settles.
-    const iterator = providerResult.events[Symbol.asyncIterator]();
-    let sourceOpen = true;
-    const readSource = async (): Promise<IteratorResult<ProtocolFrame<TEvent>>> => {
-      let next: IteratorResult<ProtocolFrame<TEvent>>;
-      try {
-        next = await iterator.next();
-      } catch (error) {
-        sourceOpen = false;
-        throw error;
-      }
-      if (next.done) sourceOpen = false;
-      else observeFrame(next.value);
-      return next;
-    };
+  // Downstream protocol wrappers finish at their terminal event, and an async
+  // generator's suspended-start return() skips its body entirely. This owned
+  // iterator makes every exit path enter the same drain and metadata lifecycle.
+  let source: AsyncIterator<ProtocolFrame<TEvent>> | undefined;
+  let sourceDone = false;
+  let sourceReadFailed = false;
+  let consumerDone = false;
+  let operationTail: Promise<void> = Promise.resolve();
+
+  const sourceIterator = (): AsyncIterator<ProtocolFrame<TEvent>> => {
+    source ??= providerResult.events[Symbol.asyncIterator]();
+    return source;
+  };
+  const readSource = async (): Promise<IteratorResult<ProtocolFrame<TEvent>>> => {
+    if (sourceDone) return { done: true, value: undefined };
     try {
-      while (true) {
-        const next = await readSource();
+      const next = await sourceIterator().next();
+      if (next.done) sourceDone = true;
+      return next;
+    } catch (error) {
+      sourceReadFailed = true;
+      throw error;
+    }
+  };
+  const closeSource = async (errors: unknown[]): Promise<void> => {
+    if (sourceDone) return;
+    sourceDone = true;
+    try {
+      await source?.return?.();
+    } catch (error) {
+      errors.push(error);
+    }
+  };
+  const drainSource = async (errors: unknown[]): Promise<void> => {
+    try {
+      if (sourceReadFailed) {
+        await closeSource(errors);
+        return;
+      }
+      while (!sourceDone) {
+        let next: IteratorResult<ProtocolFrame<TEvent>>;
+        try {
+          next = await readSource();
+        } catch (error) {
+          errors.push(error);
+          await closeSource(errors);
+          break;
+        }
         if (next.done) break;
-        yield next.value;
+        try {
+          observeFrame(next.value);
+        } catch (error) {
+          errors.push(error);
+        }
       }
     } finally {
-      try {
-        while (sourceOpen) await readSource();
-      } finally {
-        settleMetadata();
-      }
+      settleMetadata();
     }
-  })();
+  };
+  const throwCollected = (errors: readonly unknown[], message: string): never => {
+    if (errors.length === 1) throw errors[0];
+    throw new AggregateError(errors, message, { cause: errors[0] });
+  };
+  const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = operationTail.then(operation, operation);
+    operationTail = result.then(() => {}, () => {});
+    return result;
+  };
+
+  const stampedEvents: AsyncIterableIterator<ProtocolFrame<TEvent>> = {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    next: () => serialize(async () => {
+      if (consumerDone) return { done: true, value: undefined };
+      try {
+        const next = await readSource();
+        if (next.done) {
+          consumerDone = true;
+          settleMetadata();
+          return next;
+        }
+        observeFrame(next.value);
+        return next;
+      } catch (error) {
+        consumerDone = true;
+        const errors = [error];
+        await drainSource(errors);
+        return throwCollected(errors, 'Provider event stream and retained drain both failed');
+      }
+    }),
+    return: value => serialize(async () => {
+      consumerDone = true;
+      const errors: unknown[] = [];
+      await drainSource(errors);
+      if (errors.length > 0) return throwCollected(errors, 'Retained provider event drain failed');
+      return { done: true, value };
+    }),
+    throw: error => serialize(async () => {
+      consumerDone = true;
+      const errors = [error];
+      await drainSource(errors);
+      return throwCollected(errors, 'Provider event consumer and retained drain both failed');
+    }),
+  };
   return {
     ...eventResult(stampedEvents, identity, { performance: context, headers: providerResult.headers }),
     finalMetadata,

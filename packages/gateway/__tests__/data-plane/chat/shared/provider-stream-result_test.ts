@@ -72,7 +72,7 @@ test('consumer return drains terminal usage before metadata settles', async () =
   const terminalUsage = { input: 7, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 3 };
   let releaseTerminal!: (frame: ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>) => void;
   const terminal = new Promise<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>>(resolve => { releaseTerminal = resolve; });
-  const events = (async function* () {
+  const events: AsyncIterable<ProtocolFrame<{ type: string; usage?: typeof terminalUsage }>> = (async function* () {
     yield { type: 'event', event: { type: 'response.created' } } as const;
     yield await terminal;
   })();
@@ -102,4 +102,74 @@ test('consumer return drains terminal usage before metadata settles', async () =
   releaseTerminal({ type: 'event', event: { type: 'response.completed', usage: terminalUsage } });
   await returned;
   expect((await result.finalMetadata!).billableUsage).toEqual(terminalUsage);
+});
+
+test('return before the first read still drains the provider and settles metadata', async () => {
+  let reads = 0;
+  const events: AsyncIterable<ProtocolFrame<unknown>> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: async () => {
+          reads += 1;
+          return reads === 1
+            ? { done: false, value: { type: 'event', event: { type: 'response.created' } } }
+            : { done: true, value: undefined };
+        },
+      };
+    },
+  };
+  const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'responses', mockGatewayCtx(), () => null);
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+  const iterator = result.events[Symbol.asyncIterator]();
+  await iterator.return?.();
+
+  expect(reads).toBe(2);
+  await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+});
+
+test('iterator factory failure propagates and still settles metadata', async () => {
+  const failure = new Error('iterator factory failed');
+  const events: AsyncIterable<ProtocolFrame<unknown>> = {
+    [Symbol.asyncIterator]() {
+      throw failure;
+    },
+  };
+  const result = await providerStreamResultToExecuteResult(okStreamResult(events), stubModelCandidate(), 'responses', mockGatewayCtx(), () => null);
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+
+  await expect(result.events[Symbol.asyncIterator]().next()).rejects.toBe(failure);
+  await expect(result.finalMetadata).resolves.toMatchObject({ modelIdentity: expect.any(Object) });
+});
+
+test('usage observation failure preserves its cause while the retained source drains', async () => {
+  const badUsage = new Error('invalid trailing usage');
+  const terminalUsage = { input: 5, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
+  let sourceFinished = false;
+  const events = (async function* () {
+    try {
+      yield { type: 'event', event: { type: 'response.created' } } as const;
+      yield { type: 'event', event: { type: 'bad-usage' } } as const;
+      yield { type: 'event', event: { type: 'response.completed', usage: terminalUsage } } as const;
+    } finally {
+      sourceFinished = true;
+    }
+  })();
+  const result = await providerStreamResultToExecuteResult(
+    okStreamResult(events),
+    stubModelCandidate(),
+    'responses',
+    mockGatewayCtx(),
+    event => {
+      if (event.type === 'bad-usage') throw badUsage;
+      return event.usage ?? null;
+    },
+  );
+  if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
+  const iterator = result.events[Symbol.asyncIterator]();
+  await iterator.next();
+
+  await expect(iterator.return?.()).rejects.toBe(badUsage);
+  expect(sourceFinished).toBe(true);
+  await expect(result.finalMetadata).resolves.toMatchObject({ billableUsage: terminalUsage });
 });
