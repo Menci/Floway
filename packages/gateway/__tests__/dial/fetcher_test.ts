@@ -151,11 +151,6 @@ describe('createFetcher', () => {
   });
 
   it('does not let an old generation mutate backoff after an A -> B -> A edit', async () => {
-    const replacement: ProxyEntry = {
-      revision: 2,
-      config: { kind: 'socks5', host: 'replacement', port: 1, name: 'replacement' },
-      dialTimeoutMs: null,
-    };
     const replacementUrl = 'socks5://replacement:1';
     const returnedToA: ProxyEntry = { ...proxyA, revision: 3 };
 

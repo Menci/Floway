@@ -1752,7 +1752,6 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_a' }] })));
   const created = (await create.json()) as { id: string };
 
-  const proxyUrl = 'socks5://198.51.100.10:1080';
   const revision = await proxyRevision(repo, 'p_a');
   await repo.proxyBackoffs.recordDialFailure('p_a', created.id, revision, 'tcp refused');
   await repo.proxyBackoffs.recordDialFailure('p_a', 'other_upstream', revision, 'tcp refused');

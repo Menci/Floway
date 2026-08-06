@@ -1491,14 +1491,14 @@ class SqlProxyRepo implements ProxyRepo {
          WHERE id = ?
          RETURNING id, name, url, revision, created_at, updated_at, dial_timeout_seconds`,
       )
-      .bind(
-        hasName, patch.name ?? null,
-        ...configChangedValues,
-        hasUrl, patch.url ?? null,
-        hasDialTimeout, hasDialTimeout ? patch.dialTimeoutSeconds! : null,
-        updatedAt,
-        id,
-      ),
+        .bind(
+          hasName, patch.name ?? null,
+          ...configChangedValues,
+          hasUrl, patch.url ?? null,
+          hasDialTimeout, hasDialTimeout ? patch.dialTimeoutSeconds! : null,
+          updatedAt,
+          id,
+        ),
     ]);
     const row = updated?.results[0] as unknown as ProxyRow | undefined;
     return row === undefined ? null : toProxyRecord(row);
@@ -1556,7 +1556,7 @@ class SqlProxyRepo implements ProxyRepo {
            updated_at = excluded.updated_at,
            dial_timeout_seconds = excluded.dial_timeout_seconds`,
       )
-      .bind(record.id, record.name, record.url, now, now, record.dialTimeoutSeconds),
+        .bind(record.id, record.name, record.url, now, now, record.dialTimeoutSeconds),
     ]);
   }
 
