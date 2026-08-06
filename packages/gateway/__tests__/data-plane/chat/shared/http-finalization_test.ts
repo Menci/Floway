@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { afterEach, test, vi } from 'vitest';
 
-import { observeExecutionTimers } from '../../shared/execution-timer-audit.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
@@ -9,6 +8,7 @@ import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
+import { observeExecutionTimers } from '../../shared/execution-timer-audit.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
