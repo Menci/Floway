@@ -77,10 +77,12 @@ const makeAssert = (): Assert => ({
 });
 
 type TestFn = (t: Assert) => void | Promise<void>;
-interface Case { agent: ScriptAgent; name: string; fn: TestFn; exclusive: boolean }
+type CaseLane = 'general' | 'powershell' | 'exclusive';
+interface Case { agent: ScriptAgent; name: string; fn: TestFn; lane: CaseLane }
 const cases: Case[] = [];
-const test = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, exclusive: false }); };
-const exclusiveTest = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, exclusive: true }); };
+const test = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, lane: 'general' }); };
+const powerShellTest = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, lane: 'powershell' }); };
+const exclusiveTest = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn, lane: 'exclusive' }); };
 
 // --- shared fixtures --------------------------------------------------------
 
@@ -1538,7 +1540,7 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 
 // --- PowerShell parse + execution ------------------------------------------
 
-test('claude', 'PowerShell installer body parses without syntax errors', async t => {
+powerShellTest('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const body = powerShellBody('claude');
   const entry = powerShellEntry('claude');
@@ -1557,7 +1559,7 @@ test('claude', 'PowerShell installer body parses without syntax errors', async t
   t.equal(result.status, 0, `PowerShell parse errors:\n${result.stdout}${result.stderr}`);
 });
 
-test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys', async t => {
+powerShellTest('claude', 'PowerShell: existing CLI configures and preserves unrelated keys', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1585,7 +1587,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');
 });
 
-test('claude', 'PowerShell: deep and case-distinct settings survive managed updates', async t => {
+powerShellTest('claude', 'PowerShell: deep and case-distinct settings survive managed updates', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1616,7 +1618,7 @@ test('claude', 'PowerShell: deep and case-distinct settings survive managed upda
   t.equal(cursor.sentinel, 'preserved-at-depth', 'data beyond the old depth-100 ceiling remains structured');
 });
 
-test('claude', 'PowerShell: optional keys are removed when unset', async t => {
+powerShellTest('claude', 'PowerShell: optional keys are removed when unset', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1639,7 +1641,7 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved');
 });
 
-test('claude', 'PowerShell: existing permissive settings are replaced with mode 0600 on Unix', async t => {
+powerShellTest('claude', 'PowerShell: existing permissive settings are replaced with mode 0600 on Unix', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1652,7 +1654,7 @@ test('claude', 'PowerShell: existing permissive settings are replaced with mode 
   t.equal(statSync(settingsPathFor(ws)).mode & 0o777, 0o600, 'replacement settings must be mode 0600');
 });
 
-test('claude', 'PowerShell: chmod failure leaves original untouched and no secret stage', async t => {
+powerShellTest('claude', 'PowerShell: chmod failure leaves original untouched and no secret stage', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1670,7 +1672,7 @@ test('claude', 'PowerShell: chmod failure leaves original untouched and no secre
   t.excludes(run.combined, SENTINEL_KEY, 'chmod failure logs must not expose the key');
 });
 
-test('claude', 'PowerShell: a pre-existing settings file is backed up', async t => {
+powerShellTest('claude', 'PowerShell: a pre-existing settings file is backed up', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1685,7 +1687,7 @@ test('claude', 'PowerShell: a pre-existing settings file is backed up', async t 
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'backup captures the original bytes');
 });
 
-test('claude', 'PowerShell: successful re-runs retain only the latest settings backup', async t => {
+powerShellTest('claude', 'PowerShell: successful re-runs retain only the latest settings backup', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1786,7 +1788,7 @@ test('claude', 'Bash times out on an occupied lock before invoking the CLI or mu
   t.equal(readFileSync(join(bashLock, 'owner'), 'utf8'), 'stale-owner', 'Bash does not break an unowned lock');
 });
 
-test('claude', 'PowerShell times out on an occupied lock before invoking the CLI or mutating settings', async t => {
+powerShellTest('claude', 'PowerShell times out on an occupied lock before invoking the CLI or mutating settings', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const psWs = makeWorkspace();
   placeFakeClaude(psWs.binDir);
@@ -1810,7 +1812,7 @@ test('claude', 'PowerShell times out on an occupied lock before invoking the CLI
   t.equal(readFileSync(join(psLock, 'owner'), 'utf8'), 'stale-owner', 'PowerShell does not break an unowned lock');
 });
 
-test('claude', 'PowerShell retries when a lock owner releases after exclusive create reports contention', async t => {
+powerShellTest('claude', 'PowerShell retries when a lock owner releases after exclusive create reports contention', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const target = join(ws.root, 'release-race-config');
@@ -1892,7 +1894,7 @@ exclusiveTest('claude', 'PowerShell cleanup preserves a lock whose owner changed
   t.equal(readFileSync(ownerPath, 'utf8'), 'replacement-owner', 'PowerShell does not remove another owner token');
 });
 
-test('claude', 'PowerShell: existing settings use File.Replace with a real null backup path', async t => {
+powerShellTest('claude', 'PowerShell: existing settings use File.Replace with a real null backup path', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1910,7 +1912,7 @@ test('claude', 'PowerShell: existing settings use File.Replace with a real null 
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'the replacement carries the selected key');
 });
 
-test('claude', 'PowerShell: invalid existing JSON fails without mutating the file', async t => {
+powerShellTest('claude', 'PowerShell: invalid existing JSON fails without mutating the file', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1924,7 +1926,7 @@ test('claude', 'PowerShell: invalid existing JSON fails without mutating the fil
   t.equal(backupFiles(configDir).length, 0, 'no backup is created when validation fails before mutation');
 });
 
-test('claude', 'PowerShell: present null env fails closed without mutation', async t => {
+powerShellTest('claude', 'PowerShell: present null env fails closed without mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1938,7 +1940,7 @@ test('claude', 'PowerShell: present null env fails closed without mutation', asy
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before validation');
 });
 
-test('claude', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', async t => {
+powerShellTest('claude', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', async t => {
   const body = powerShellBody('claude');
   const createIndex = body.indexOf('[System.IO.File]::Create($stage).Dispose()');
   const protectStageIndex = body.indexOf('Protect-SetupFile $stage', createIndex);
@@ -1955,7 +1957,7 @@ test('claude', 'PowerShell stages secret data only after protection and hardens 
   t.includes(body, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
 });
 
-test('claude', 'PowerShell Windows file protection writes only an owner DACL', t => {
+powerShellTest('claude', 'PowerShell Windows file protection writes only an owner DACL', t => {
   const helperStart = SETUP_POWERSHELL_COMMON.indexOf('function Protect-SetupFile');
   const helperEnd = SETUP_POWERSHELL_COMMON.indexOf('\nfunction ', helperStart);
   t.ok(helperStart >= 0, 'Protect-SetupFile function marker exists');
@@ -1968,7 +1970,7 @@ test('claude', 'PowerShell Windows file protection writes only an owner DACL', t
   t.excludes(helper, '\n  Set-Acl ', 'the filesystem provider cannot request an SACL write');
 });
 
-test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
+powerShellTest('claude', 'PowerShell: missing CLI triggers the installer', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
@@ -1977,7 +1979,7 @@ test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
 });
 
-test('claude', 'PowerShell ignores a non-executable file at a CLI candidate path', async t => {
+powerShellTest('claude', 'PowerShell ignores a non-executable file at a CLI candidate path', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const candidateDir = join(ws.home, '.local', 'bin');
@@ -1990,7 +1992,7 @@ test('claude', 'PowerShell ignores a non-executable file at a CLI candidate path
   t.ok(existsSync(installerMarker(ws)), 'the installer runs after rejecting the invalid candidate');
 });
 
-test('claude', 'PowerShell prefers npm over the direct installer when npm is available', async t => {
+powerShellTest('claude', 'PowerShell prefers npm over the direct installer when npm is available', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeNpm(ws);
@@ -2013,7 +2015,7 @@ test('claude', 'local Bash installer accepts shell content and rejects HTML', as
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
 });
 
-test('claude', 'local PowerShell installer accepts script content and rejects HTML', async t => {
+powerShellTest('claude', 'local PowerShell installer accepts script content and rejects HTML', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const accepted = makeWorkspace();
   modelServer.mode = 'installer-ps1';
@@ -2034,7 +2036,7 @@ test('claude', 'local PowerShell installer accepts script content and rejects HT
   t.ok(!existsSync(installerMarker(disguised)), 'bannered HTML never executes');
 });
 
-test('claude', 'PowerShell rejects an oversized installer before execution', async t => {
+powerShellTest('claude', 'PowerShell rejects an oversized installer before execution', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-oversized-ps1';
@@ -2045,7 +2047,7 @@ test('claude', 'PowerShell rejects an oversized installer before execution', asy
   t.ok(!existsSync(installerMarker(ws)), 'an oversized body never reaches an interpreter');
 });
 
-test('claude', 'PowerShell rejects an unsupported installer charset with its encoding cause', async t => {
+powerShellTest('claude', 'PowerShell rejects an unsupported installer charset with its encoding cause', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-unsupported-charset';
@@ -2145,7 +2147,7 @@ try {
   t.ok(!processExists(childPid), `timed-out non-reading interpreter ${childPid} must be dead`);
 });
 
-test('claude', 'PowerShell claude --version is bounded', async t => {
+powerShellTest('claude', 'PowerShell claude --version is bounded', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2159,7 +2161,7 @@ test('claude', 'PowerShell claude --version is bounded', async t => {
   t.ok(!existsSync(settingsPathFor(ws)), 'configuration does not begin after a version timeout');
 });
 
-test('claude', 'PowerShell removes an ambient exported API key before installer and CLI subprocesses', async t => {
+powerShellTest('claude', 'PowerShell removes an ambient exported API key before installer and CLI subprocesses', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const run = await runPowerShellInstaller({
@@ -2169,7 +2171,7 @@ test('claude', 'PowerShell removes an ambient exported API key before installer 
   t.ok(existsSync(installerMarker(ws)), 'fake installer ran and verified its environment');
 });
 
-test('claude', 'PowerShell keeps the API key out of output and performs no gateway request', async t => {
+powerShellTest('claude', 'PowerShell keeps the API key out of output and performs no gateway request', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2275,7 +2277,7 @@ const powerShellSetupCommand = (origin: string, path: string) => {
   return `& { $SetupEndpoint = ${endpoint}; $PowerShell = $null; foreach ($Name in @('pwsh.exe', 'pwsh', 'powershell.exe')) { $Candidate = [System.IO.Path]::Combine($PSHOME, $Name); if ([System.IO.File]::Exists($Candidate)) { $PowerShell = $Candidate; break } }; if (-not $PowerShell) { throw 'Unable to locate a PowerShell application under $PSHOME.' }; $PreviousOutputEncoding = $OutputEncoding; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false); @(${childEndpointAssignment}, (Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri ($SetupEndpoint + ${powerShellLiteral(path)})), ${childExit}) | & $PowerShell -NoProfile -NonInteractive -Command - } finally { $OutputEncoding = $PreviousOutputEncoding } }`;
 };
 
-test('claude', 'the copyable PowerShell command isolates the downloaded installer from its caller', async t => {
+powerShellTest('claude', 'the copyable PowerShell command isolates the downloaded installer from its caller', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const origin = modelServer.url;
   const command = [
@@ -2290,7 +2292,7 @@ test('claude', 'the copyable PowerShell command isolates the downloaded installe
   t.includes(run.stdout, `PROBE_UNICODE=[${COMMAND_BOUNDARY_SECRET}]`, 'UTF-8 stdin preserved the downloaded body');
 });
 
-test('claude', 'the copyable PowerShell command propagates the downloaded installer status', async t => {
+powerShellTest('claude', 'the copyable PowerShell command propagates the downloaded installer status', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const command = `${powerShellSetupCommand(modelServer.url, '/probe/setup-fail.ps1')}; exit $global:LASTEXITCODE`;
   const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
@@ -2325,7 +2327,7 @@ test('claude', 'a non-http(s) SETUP_ENDPOINT fails before any mutation', async t
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
-test('claude', 'PowerShell: a missing $SetupEndpoint fails before any mutation', async t => {
+powerShellTest('claude', 'PowerShell: a missing $SetupEndpoint fails before any mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2340,7 +2342,7 @@ test('claude', 'PowerShell: a missing $SetupEndpoint fails before any mutation',
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
-test('claude', 'PowerShell: a non-http(s) $SetupEndpoint fails before any mutation', async t => {
+powerShellTest('claude', 'PowerShell: a non-http(s) $SetupEndpoint fails before any mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2893,7 +2895,7 @@ test('codex', 'multiple installations produce a warning and PATH wins', async t 
 
 // --- Codex PowerShell parse + execution -------------------------------------
 
-test('codex', 'PowerShell: existing CLI configures via the app-server and stages the provider token', async t => {
+powerShellTest('codex', 'PowerShell: existing CLI configures via the app-server and stages the provider token', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2909,7 +2911,7 @@ test('codex', 'PowerShell: existing CLI configures via the app-server and stages
   assertStagedToken(t, ws);
 });
 
-test('codex', 'PowerShell: successful setup removes the provider-token backup', async t => {
+powerShellTest('codex', 'PowerShell: successful setup removes the provider-token backup', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2927,7 +2929,7 @@ test('codex', 'PowerShell: successful setup removes the provider-token backup', 
   t.equal(codexBackupFiles(home, 'floway-token').length, 0, 'the provider-token rollback copy is removed after commit');
 });
 
-test('codex', 'PowerShell: provider token is UTF-8 without a BOM under a non-default culture', async t => {
+powerShellTest('codex', 'PowerShell: provider token is UTF-8 without a BOM under a non-default culture', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2941,7 +2943,7 @@ test('codex', 'PowerShell: provider token is UTF-8 without a BOM under a non-def
   t.ok(!(token[0] === 0xef && token[1] === 0xbb && token[2] === 0xbf), 'provider token has no UTF-8 BOM');
 });
 
-test('codex', 'PowerShell: the batch clears model and effort when unset', async t => {
+powerShellTest('codex', 'PowerShell: the batch clears model and effort when unset', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2952,7 +2954,7 @@ test('codex', 'PowerShell: the batch clears model and effort when unset', async 
   t.equal(edits.get('model_reasoning_effort'), null, 'unset effort clears via JSON null');
 });
 
-test('codex', 'PowerShell: okOverridden counts as success and reports non-secret metadata only', async t => {
+powerShellTest('codex', 'PowerShell: okOverridden counts as success and reports non-secret metadata only', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2962,7 +2964,7 @@ test('codex', 'PowerShell: okOverridden counts as success and reports non-secret
   t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
 });
 
-test('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
+powerShellTest('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
   const tokenFnStart = SETUP_POWERSHELL_CODEX.indexOf('function Write-SetupCodexToken');
   const tokenFnEnd = SETUP_POWERSHELL_CODEX.indexOf('function Write-SetupCodexVersion', tokenFnStart);
   const tokenBody = SETUP_POWERSHELL_CODEX.slice(tokenFnStart, tokenFnEnd);
@@ -2997,7 +2999,7 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
 });
 
-test('codex', 'PowerShell: existing provider token uses File.Replace with a real null backup path', async t => {
+powerShellTest('codex', 'PowerShell: existing provider token uses File.Replace with a real null backup path', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3014,7 +3016,7 @@ test('codex', 'PowerShell: existing provider token uses File.Replace with a real
   assertStagedToken(t, ws);
 });
 
-test('codex', 'PowerShell: a batchWrite error fails codex and rolls back the provider token', async t => {
+powerShellTest('codex', 'PowerShell: a batchWrite error fails codex and rolls back the provider token', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3026,7 +3028,7 @@ test('codex', 'PowerShell: a batchWrite error fails codex and rolls back the pro
   t.equal(readCodexToken(ws), 'old-provider-token', 'prior provider token is restored on rollback');
 });
 
-test('codex', 'PowerShell: a provider-token backup protection failure removes the unsafe backup and leaves the original intact', async t => {
+powerShellTest('codex', 'PowerShell: a provider-token backup protection failure removes the unsafe backup and leaves the original intact', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   if (process.platform === 'win32') skip('the chmod-based protection-failure injection is Unix-only');
   const ws = makeWorkspace();
@@ -3050,7 +3052,7 @@ test('codex', 'PowerShell: a provider-token backup protection failure removes th
   t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
 });
 
-test('codex', 'PowerShell: a malformed response fails codex', async t => {
+powerShellTest('codex', 'PowerShell: a malformed response fails codex', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3059,7 +3061,7 @@ test('codex', 'PowerShell: a malformed response fails codex', async t => {
   t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back on a malformed response');
 });
 
-test('codex', 'PowerShell: a premature app-server exit fails codex', async t => {
+powerShellTest('codex', 'PowerShell: a premature app-server exit fails codex', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3068,7 +3070,7 @@ test('codex', 'PowerShell: a premature app-server exit fails codex', async t => 
   t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back on premature EOF');
 });
 
-test('codex', 'PowerShell: a batch response past the deadline times out and rolls back', async t => {
+powerShellTest('codex', 'PowerShell: a batch response past the deadline times out and rolls back', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3082,7 +3084,7 @@ test('codex', 'PowerShell: a batch response past the deadline times out and roll
   t.ok(!existsSync(codexTokenPath(ws)), 'a timed-out app-server rolls back the provider token');
 });
 
-test('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
+powerShellTest('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3093,7 +3095,7 @@ test('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
   t.ok(!existsSync(codexTokenPath(ws)), 'the default ~/.codex is not used when overridden');
 });
 
-test('codex', 'PowerShell: the API key never appears in output and never reaches the app-server', async t => {
+powerShellTest('codex', 'PowerShell: the API key never appears in output and never reaches the app-server', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3104,7 +3106,7 @@ test('codex', 'PowerShell: the API key never appears in output and never reaches
   t.equal(readCodexToken(ws), SENTINEL_KEY, 'the key was actually staged into floway-token');
 });
 
-test('codex', 'PowerShell: the documented remote installer uses a process-scoped execution-policy override', async t => {
+powerShellTest('codex', 'PowerShell: the documented remote installer uses a process-scoped execution-policy override', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   modelServer.mode = 'installer-codex-ps1';
@@ -3125,7 +3127,7 @@ test('codex', 'PowerShell: the documented remote installer uses a process-scoped
   t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the subprocess matches the documented process-scoped execution-policy override');
 });
 
-test('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocation and removed afterward', async t => {
+powerShellTest('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocation and removed afterward', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
@@ -3134,7 +3136,7 @@ test('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocati
   t.excludes(run.combined, 'unexpected CODEX_NON_INTERACTIVE', 'app-server and version subprocesses see no new ambient value');
 });
 
-test('codex', 'PowerShell: a pre-existing CODEX_NON_INTERACTIVE value is restored after installation', async t => {
+powerShellTest('codex', 'PowerShell: a pre-existing CODEX_NON_INTERACTIVE value is restored after installation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const run = await runPowerShellInstaller({
@@ -3146,7 +3148,7 @@ test('codex', 'PowerShell: a pre-existing CODEX_NON_INTERACTIVE value is restore
   t.excludes(run.combined, 'unexpected CODEX_NON_INTERACTIVE', 'app-server and version subprocesses see the restored caller value');
 });
 
-test('codex', 'PowerShell: a Codex script never configures Claude when Codex fails', async t => {
+powerShellTest('codex', 'PowerShell: a Codex script never configures Claude when Codex fails', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -3217,7 +3219,7 @@ test('claude', 'output normalization strips VT controls and preserves control-li
 const GLOBAL_CLAUDE_LOCATIONS = ['/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
 const globalClaudePresent = (): boolean => GLOBAL_CLAUDE_LOCATIONS.some(p => existsSync(p));
 
-test('claude', 'Bash and PowerShell emit an identical happy-path stdout line sequence', async t => {
+powerShellTest('claude', 'Bash and PowerShell emit an identical happy-path stdout line sequence', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
@@ -3245,7 +3247,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.excludes(normalizeLines(bash.stdout), 'Summary', 'a single-agent script has no redundant summary');
 });
 
-test('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {
+powerShellTest('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {
   if (globalClaudePresent()) skip('a system Claude Code is installed at a known location; discovery is not hermetic');
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
@@ -3302,7 +3304,7 @@ test('claude', 'Bash routes configuration errors to stderr', async t => {
   t.excludes(run.stdout, 'is not valid Claude settings', 'the error does not leak onto stdout');
 });
 
-test('claude', 'PowerShell uses console color only for interactive diagnostics and honors NO_COLOR', async t => {
+powerShellTest('claude', 'PowerShell uses console color only for interactive diagnostics and honors NO_COLOR', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   t.includes(SETUP_POWERSHELL_COMMON, '[Console]::ForegroundColor = $Color', 'interactive diagnostics select the requested console color');
   t.includes(SETUP_POWERSHELL_COMMON, '$script:SetupErrColor = (-not [Console]::IsErrorRedirected)', 'color is gated by the real stderr terminal state');
@@ -3321,7 +3323,7 @@ test('claude', 'PowerShell uses console color only for interactive diagnostics a
   t.includes(noColor.stderr, 'Error: ', 'the plain error is still on stderr');
 });
 
-test('claude', 'a multiple-installation warning is a stderr line on both installers', async t => {
+powerShellTest('claude', 'a multiple-installation warning is a stderr line on both installers', async t => {
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
   placeFakeClaude(join(bashWs.home, '.local/bin'));
@@ -3341,7 +3343,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   t.excludes(ps.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 });
 
-test('claude', 'PowerShell surfaces one primary error without a double wrapper', async t => {
+powerShellTest('claude', 'PowerShell surfaces one primary error without a double wrapper', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -3355,7 +3357,7 @@ test('claude', 'PowerShell surfaces one primary error without a double wrapper',
   t.excludes(run.stdout, 'is not valid JSON', 'the error stays off stdout');
 });
 
-test('codex', 'PowerShell rollback restore failure preserves the Codex provider-token backup', async t => {
+powerShellTest('codex', 'PowerShell rollback restore failure preserves the Codex provider-token backup', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3374,7 +3376,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
   t.equal(backups.length, 1, 'the provider-token backup is preserved for manual recovery');
 });
 
-test('codex', 'PowerShell reports every expected rollback backup that disappears after mutation', async t => {
+powerShellTest('codex', 'PowerShell reports every expected rollback backup that disappears after mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -3485,23 +3487,49 @@ const runConcurrentBatch = async (
   await Promise.all(Array.from({ length: Math.min(workerCount, batch.length) }, worker));
 };
 
+const runParallelPhase = async (
+  host: ModelServerHost,
+  phase: readonly SelectedCase[],
+  workerCount: number,
+  results: Map<number, CaseResult>,
+): Promise<void> => {
+  if (workerCount === 1) {
+    await runConcurrentBatch(host, phase, 1, results);
+    return;
+  }
+  const powerShellCases = phase.filter(({ testCase }) => testCase.lane === 'powershell');
+  const generalCases = phase.filter(({ testCase }) => testCase.lane === 'general');
+  if (powerShellCases.length === 0) {
+    await runConcurrentBatch(host, generalCases, workerCount, results);
+    return;
+  }
+  if (generalCases.length === 0) {
+    await runConcurrentBatch(host, powerShellCases, 1, results);
+    return;
+  }
+  await Promise.all([
+    runConcurrentBatch(host, generalCases, workerCount - 1, results),
+    runConcurrentBatch(host, powerShellCases, 1, results),
+  ]);
+};
+
 const runSelectedCases = async (
   host: ModelServerHost,
   selectedCases: readonly SelectedCase[],
   workerCount: number,
 ): Promise<CaseResult[]> => {
   const results = new Map<number, CaseResult>();
-  let parallelBatch: SelectedCase[] = [];
+  let parallelPhase: SelectedCase[] = [];
   for (const selected of selectedCases) {
-    if (!selected.testCase.exclusive) {
-      parallelBatch.push(selected);
+    if (selected.testCase.lane !== 'exclusive') {
+      parallelPhase.push(selected);
       continue;
     }
-    await runConcurrentBatch(host, parallelBatch, workerCount, results);
-    parallelBatch = [];
+    await runParallelPhase(host, parallelPhase, workerCount, results);
+    parallelPhase = [];
     results.set(selected.index, await runInstallerCase(host, selected));
   }
-  await runConcurrentBatch(host, parallelBatch, workerCount, results);
+  await runParallelPhase(host, parallelPhase, workerCount, results);
   return selectedCases.map(({ index }) => {
     const result = results.get(index);
     if (result === undefined) throw new Error(`installer case ${index} did not produce a result`);
@@ -3537,7 +3565,7 @@ const main = async (): Promise<void> => {
   const skipped = results.filter(({ status }) => status === 'SKIP').length;
   console.log(`\nagent-setup installers: ${passed} passed, ${failed} failed, ${skipped} skipped`);
   if (profile) {
-    console.log(`installer scheduling: ${workerCount} workers, ${selectedCases.filter(({ testCase }) => testCase.exclusive).length} exclusive cases`);
+    console.log(`installer scheduling: ${workerCount} workers, one PowerShell slot, ${selectedCases.filter(({ testCase }) => testCase.lane === 'exclusive').length} exclusive cases`);
     console.log('\nslowest installer cases:');
     for (const result of results.toSorted((left, right) => right.milliseconds - left.milliseconds).slice(0, 20)) {
       console.log(`  ${profileSuffix(result.milliseconds).trim()} ${result.label}`);
