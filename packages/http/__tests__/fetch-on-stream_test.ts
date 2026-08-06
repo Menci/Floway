@@ -382,6 +382,31 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 });
 
 describe('fetchOnStream — request body serialization', () => {
+  it('writes replayable segments in order with one computed Content-Length', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: { Host: 'h', 'Content-Length': '999' },
+        body: [Uint8Array.of(1, 2), new Uint8Array(), Uint8Array.of(3, 4, 5)],
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+
+    const written = fake.written();
+    const separator = new TextEncoder().encode('\r\n\r\n');
+    const headEnd = written.findIndex((_, index) =>
+      index + separator.byteLength <= written.length
+      && separator.every((byte, offset) => written[index + offset] === byte));
+    expect(headEnd).toBeGreaterThan(-1);
+    expect(decodeAscii(written.subarray(0, headEnd + separator.byteLength))).toContain('Content-Length: 5\r\n');
+    expect(Array.from(written.subarray(headEnd + separator.byteLength))).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it('splits a body that exceeds the chunk size across multiple writes', async () => {
     // 128 KiB body chunked at 16 KiB → 8 body writes.
     const body = new Uint8Array(128 * 1024).fill(0x41);

@@ -10,6 +10,8 @@ export interface DuplexStream {
   writable: WritableStream<Uint8Array>;
 }
 
+export type HttpRequestBody = Uint8Array | readonly Uint8Array[];
+
 /**
  * HTTP/1.1 request shape, transport-agnostic. The caller has already
  * dialed and (if needed) TLS-wrapped the stream — this package only
@@ -29,8 +31,8 @@ export interface HttpRequest {
   /** Path + query string, e.g. `/v1/messages?stream=true`. */
   path: string;
   headers: Record<string, string>;
-  /** Optional buffered body. Streaming bodies are not supported. */
-  body?: Uint8Array;
+  /** Optional replayable byte segments. Streaming bodies are not supported. */
+  body?: HttpRequestBody;
 }
 
 /**

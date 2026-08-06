@@ -12,6 +12,21 @@ import type { DuplexStream, HttpRequest } from './types.ts';
 // microtask cost.
 const BODY_WRITE_CHUNK_SIZE = 16384;
 
+const requestBodySegments = (request: HttpRequest): readonly Uint8Array[] => {
+  const body = request.body;
+  if (body === undefined) return [];
+  return body instanceof Uint8Array ? [body] : body;
+};
+
+const requestBodyLength = (segments: readonly Uint8Array[]): number => {
+  let length = 0;
+  for (const segment of segments) {
+    length += segment.byteLength;
+    if (!Number.isSafeInteger(length)) throw new RangeError('HTTP request body exceeds Number.MAX_SAFE_INTEGER bytes');
+  }
+  return length;
+};
+
 export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
@@ -108,7 +123,8 @@ export const fetchOnStream = async (
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — a serialized POST emitted
   // with no framing at all silently loses its body on strict upstreams.
-  const bodyLen = request.body?.byteLength ?? 0;
+  const bodySegments = requestBodySegments(request);
+  const bodyLen = requestBodyLength(bodySegments);
   if (bodyLen > 0) headers.push(['Content-Length', String(bodyLen)]);
 
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
@@ -124,12 +140,12 @@ export const fetchOnStream = async (
     } else {
       await writer.write(headBytes);
     }
-    if (request.body?.byteLength) {
-      let off = 0;
-      while (off < request.body.byteLength) {
-        const slice = request.body.subarray(off, Math.min(off + BODY_WRITE_CHUNK_SIZE, request.body.byteLength));
+    for (const segment of bodySegments) {
+      let offset = 0;
+      while (offset < segment.byteLength) {
+        const slice = segment.subarray(offset, Math.min(offset + BODY_WRITE_CHUNK_SIZE, segment.byteLength));
         await writer.write(slice);
-        off += slice.byteLength;
+        offset += slice.byteLength;
       }
     }
   } finally {
