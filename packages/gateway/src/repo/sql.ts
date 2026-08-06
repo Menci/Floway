@@ -1449,7 +1449,7 @@ class SqlProxyRepo implements ProxyRepo {
         )
         .bind(input.id, input.name, input.url, now, now, input.dialTimeoutSeconds),
     ]);
-    const row = inserted?.results[0] as ProxyRow | undefined;
+    const row = inserted?.results[0] as unknown as ProxyRow | undefined;
     if (row === undefined) throw new Error(`Proxy ${input.id} was not inserted`);
     return toProxyRecord(row);
   }
@@ -1500,7 +1500,7 @@ class SqlProxyRepo implements ProxyRepo {
         id,
       ),
     ]);
-    const row = updated?.results[0] as ProxyRow | undefined;
+    const row = updated?.results[0] as unknown as ProxyRow | undefined;
     return row === undefined ? null : toProxyRecord(row);
   }
 
