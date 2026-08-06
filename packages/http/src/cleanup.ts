@@ -26,7 +26,7 @@ export const collectCleanupFailures = async (
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 0x7fffffff) {
     throw new TypeError(`Cleanup timeout must be an integer from 0 to 2147483647, got ${timeoutMs}`);
   }
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   const failures: unknown[] = [];
   for (let operationIndex = 0; operationIndex < operations.length; operationIndex++) {
     const operation = operations[operationIndex]!;
@@ -38,7 +38,7 @@ export const collectCleanupFailures = async (
     const timeout = new Promise<{ readonly type: 'timeout' }>(resolve => {
       timeoutId = setTimeout(
         () => resolve({ type: 'timeout' }),
-        Math.max(0, deadline - Date.now()),
+        Math.max(0, deadline - performance.now()),
       );
     });
     const result = await Promise.race([pending, timeout]);
