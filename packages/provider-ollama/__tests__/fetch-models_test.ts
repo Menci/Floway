@@ -257,6 +257,29 @@ test('fetchOllamaCatalog aborts sibling detail bodies when their shared byte bud
   expect(cancellations.get('first')).toBe(error.cause);
 });
 
+test('fetchOllamaCatalog makes aggregate exhaustion fatal before a per-detail overflow can yield a partial catalog', async () => {
+  const showCalls: string[] = [];
+  const fetcher: Fetcher = (url, init) => {
+    if (new URL(url).pathname === '/api/tags') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'oversized' }, { name: 'valid' }] }));
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    showCalls.push(name);
+    return Promise.resolve(new Response(name === 'oversized' ? '12345' : '{}'));
+  };
+
+  const error = await assertRejects(
+    () => fetchOllamaCatalog(config, fetcher, {
+      maxShowResponseBytes: 4,
+      maxTotalShowResponseBytes: 3,
+    }),
+    ProviderModelsUnavailableError,
+  );
+
+  expect(error.cause).toMatchObject({ name: 'ResponseByteBudgetExceededError' });
+  expect(showCalls).toEqual(['oversized', 'valid']);
+});
+
 test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {
   const fetcher: Fetcher = url => new URL(url).pathname === '/api/tags'
     ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
