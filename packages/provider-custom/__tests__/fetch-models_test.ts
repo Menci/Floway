@@ -348,7 +348,7 @@ test('fetchCustomModels shares one response-byte budget across pages', async () 
   );
   assertEquals(calls, 2);
   assertEquals(cancelled, true);
-  assertEquals((error.cause as Error).message, `Provider model listing exceeded ${secondBytes.byteLength - 1} response bytes`);
+  assertEquals((error.cause as Error).message, 'Provider model listing exhausted its response byte budget');
 });
 
 test('fetchCustomModels does not request another page after exact byte-budget exhaustion', async () => {

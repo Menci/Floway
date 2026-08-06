@@ -5,6 +5,7 @@ import {
   httpResponseToResponse,
   ProviderModelsUnavailableError,
   readBoundedJsonResponse,
+  ResponseByteBudget,
   runProviderModelsTask,
 } from '../src/models-fetch.ts';
 import { assertRejects } from '@floway-dev/test-utils';
@@ -458,8 +459,8 @@ test('fetchUpstreamModels validates idle timeouts and byte budgets before dispat
   await expect(fetchUpstreamModels(
     invalidBudgetFetch,
     value => value,
-    { responseByteBudget: { remainingBytes: -1 } },
-  )).rejects.toThrow('response byte budget must be a non-negative safe integer');
+    { responseByteBudget: { remainingBytes: -1 } as unknown as ResponseByteBudget },
+  )).rejects.toThrow('response byte budget must be created by ResponseByteBudget.create');
   expect(invalidBudgetFetch).not.toHaveBeenCalled();
 
   const exhaustedBudgetFetch = vi.fn<() => Promise<Response>>(() => Promise.resolve(new Response('{}')));
@@ -467,12 +468,36 @@ test('fetchUpstreamModels validates idle timeouts and byte budgets before dispat
     () => fetchUpstreamModels(
       exhaustedBudgetFetch,
       value => value,
-      { responseByteBudget: { remainingBytes: 0 } },
+      { responseByteBudget: ResponseByteBudget.create(0) },
     ),
     ProviderModelsUnavailableError,
   ) as ProviderModelsUnavailableError;
   expect(exhausted.cause).toMatchObject({ message: 'Provider model listing exhausted its response byte budget' });
   expect(exhaustedBudgetFetch).not.toHaveBeenCalled();
+});
+
+test('ResponseByteBudget reserves concurrent capacity atomically and refunds only unused bytes', () => {
+  const budget = ResponseByteBudget.create(10);
+  const first = budget.reserve(6);
+  const second = budget.reserve(6);
+
+  expect(first.remainingBytes).toBe(6);
+  expect(second.remainingBytes).toBe(4);
+  expect(budget.remainingBytes).toBe(0);
+  expect(() => budget.reserve(1)).toThrow('Provider model listing exhausted its response byte budget');
+
+  first.consume(4);
+  first.release();
+  expect(budget.remainingBytes).toBe(2);
+  second.consume(4);
+  second.release();
+  expect(budget.remainingBytes).toBe(2);
+
+  const final = budget.reserve(2);
+  final.consume(2);
+  final.release();
+  expect(budget.remainingBytes).toBe(0);
+  expect(() => first.remainingBytes).toThrow('Response byte budget reservation was already released');
 });
 
 test('readBoundedJsonResponse cancels bodies it owns when pre-read validation rejects', async () => {
@@ -497,7 +522,7 @@ test('readBoundedJsonResponse cancels bodies it owns when pre-read validation re
   await expect(readBoundedJsonResponse(
     new Response(exhaustedBody),
     16,
-    { remainingBytes: 0 },
+    ResponseByteBudget.create(0),
   )).rejects.toThrow('Provider model listing exhausted its response byte budget');
 
   expect(cancellationReasons).toHaveLength(2);

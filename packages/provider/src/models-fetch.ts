@@ -190,8 +190,92 @@ const REWRITTEN_BODY_HEADERS = [
   'accept-ranges',
 ] as const;
 
-export interface ResponseByteBudget {
-  remainingBytes: number;
+export class ResponseByteBudgetExceededError extends Error {
+  constructor(
+    readonly remainingBytes: number,
+    readonly requestedBytes: number,
+  ) {
+    super('Provider model listing exhausted its response byte budget');
+    this.name = 'ResponseByteBudgetExceededError';
+  }
+}
+
+// A budget may be consumed directly by a sequential catalog or split into
+// reservations before concurrent work is dispatched. Reserving synchronously
+// removes capacity from the parent, so concurrent readers can never all observe
+// the same remaining value and oversubscribe it. Releasing a reservation
+// returns only bytes that its reader never consumed.
+export class ResponseByteBudget {
+  static create(maxBytes: number): ResponseByteBudget {
+    return new ResponseByteBudget(maxBytes, null);
+  }
+
+  #remainingBytes: number;
+  #released = false;
+
+  private constructor(
+    maxBytes: number,
+    private readonly parent: ResponseByteBudget | null,
+  ) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+      throw new TypeError('response byte budget must be a non-negative safe integer');
+    }
+    this.#remainingBytes = maxBytes;
+  }
+
+  get remainingBytes(): number {
+    this.assertActive();
+    return this.#remainingBytes;
+  }
+
+  consume(byteLength: number): void {
+    this.assertActive();
+    if (!Number.isSafeInteger(byteLength) || byteLength < 0) {
+      throw new TypeError('response byte budget consumption must be a non-negative safe integer');
+    }
+    if (byteLength > this.#remainingBytes) {
+      const remainingBytes = this.#remainingBytes;
+      this.#remainingBytes = 0;
+      throw new ResponseByteBudgetExceededError(remainingBytes, byteLength);
+    }
+    this.#remainingBytes -= byteLength;
+  }
+
+  reserve(maxBytes: number): ResponseByteBudget {
+    this.assertActive();
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      throw new TypeError('response byte budget reservation must be a positive safe integer');
+    }
+    if (this.#remainingBytes === 0) {
+      throw new ResponseByteBudgetExceededError(0, maxBytes);
+    }
+    const reservedBytes = Math.min(maxBytes, this.#remainingBytes);
+    this.#remainingBytes -= reservedBytes;
+    return new ResponseByteBudget(reservedBytes, this);
+  }
+
+  release(): void {
+    this.assertActive();
+    if (this.parent === null) {
+      throw new Error('Only a response byte budget reservation can be released');
+    }
+    const unusedBytes = this.#remainingBytes;
+    this.#remainingBytes = 0;
+    this.#released = true;
+    this.parent.refund(unusedBytes);
+  }
+
+  private refund(byteLength: number): void {
+    this.assertActive();
+    this.#remainingBytes += byteLength;
+    if (!Number.isSafeInteger(this.#remainingBytes)) {
+      throw new RangeError('response byte budget refund exceeded the safe integer range');
+    }
+  }
+
+  private assertActive(): void {
+    if (this.#released) throw new Error('Response byte budget reservation was already released');
+  }
 }
 
 const bytesToText = (chunks: readonly Uint8Array[], totalBytes: number): string => {
@@ -440,8 +524,8 @@ const rewriteCapturedBodyHeaders = (headers: Headers, truncated: boolean): void 
 };
 
 const validateResponseByteBudget = (budget: ResponseByteBudget | undefined): void => {
-  if (budget && (!Number.isSafeInteger(budget.remainingBytes) || budget.remainingBytes < 0)) {
-    throw new TypeError('response byte budget must be a non-negative safe integer');
+  if (budget !== undefined && !(budget instanceof ResponseByteBudget)) {
+    throw new TypeError('response byte budget must be created by ResponseByteBudget.create');
   }
 };
 
@@ -452,13 +536,11 @@ export const readBoundedJsonResponse = async (
   options: ProviderModelsReadOptions = {},
 ): Promise<unknown> => {
   let normalizedOptions: NormalizedProviderModelsReadOptions;
-  let allowedBytes: number;
   try {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new TypeError('maxBytes must be a positive safe integer');
     validateResponseByteBudget(budget);
     normalizedOptions = normalizeReadOptions(options);
-    allowedBytes = Math.min(maxBytes, budget?.remainingBytes ?? maxBytes);
-    if (allowedBytes === 0) throw new Error('Provider model listing exhausted its response byte budget');
+    if (budget?.remainingBytes === 0) throw new ResponseByteBudgetExceededError(0, 0);
   } catch (error) {
     const cleanup = await cancelBody(response.body, error);
     throw withCleanupError(error, cleanup);
@@ -479,21 +561,25 @@ export const readBoundedJsonResponse = async (
         if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
         continue;
       }
-      totalBytes += value.byteLength;
-      if (totalBytes > allowedBytes) {
-        if (budget) budget.remainingBytes = 0;
-        const primary = new Error(`Provider model listing exceeded ${allowedBytes} response bytes`);
+      const nextTotalBytes = totalBytes + value.byteLength;
+      try {
+        budget?.consume(value.byteLength);
+      } catch (primary) {
         const cleanup = await cancelReader(reader, primary);
         throw withCleanupError(primary, cleanup);
       }
+      if (nextTotalBytes > maxBytes) {
+        const primary = new Error(`Provider model listing exceeded ${maxBytes} response bytes`);
+        const cleanup = await cancelReader(reader, primary);
+        throw withCleanupError(primary, cleanup);
+      }
+      totalBytes = nextTotalBytes;
       chunks.push(value);
       if (shouldYield) await yieldReadLoop(reader, normalizedOptions.signal);
     }
   } finally {
     releaseReader(reader);
   }
-
-  if (budget) budget.remainingBytes -= totalBytes;
   return JSON.parse(bytesToText(chunks, totalBytes)) as unknown;
 };
 
@@ -525,7 +611,7 @@ export const fetchUpstreamModels = <T>(
   normalizeReadOptions({ idleTimeoutMs: options.idleTimeoutMs, signal });
   validateResponseByteBudget(options.responseByteBudget);
   if (options.responseByteBudget?.remainingBytes === 0) {
-    throw new ProviderModelsUnavailableError(null, new Error('Provider model listing exhausted its response byte budget'));
+    throw new ProviderModelsUnavailableError(null, new ResponseByteBudgetExceededError(0, 0));
   }
   let response: Response;
   try {

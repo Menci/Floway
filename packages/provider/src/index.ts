@@ -72,12 +72,14 @@ export {
   PROVIDER_MODELS_IDLE_TIMEOUT_MS,
   PROVIDER_MODELS_TOTAL_TIMEOUT_MS,
   ProviderModelsUnavailableError,
+  ResponseByteBudget,
+  ResponseByteBudgetExceededError,
   fetchUpstreamModels,
   httpResponseToResponse,
   readBoundedJsonResponse,
   runProviderModelsTask,
 } from './models-fetch.ts';
-export type { ProviderModelsTaskOptions, ResponseByteBudget } from './models-fetch.ts';
+export type { ProviderModelsTaskOptions } from './models-fetch.ts';
 
 export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {

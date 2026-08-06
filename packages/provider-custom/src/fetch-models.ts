@@ -14,7 +14,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError, runProviderModelsTask } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, ProviderModelsUnavailableError, ResponseByteBudget, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_CUSTOM_MODEL_PAGES = 32;
 const MAX_CUSTOM_MODELS = 4096;
@@ -230,7 +230,7 @@ export const fetchCustomModels = (
     throw new TypeError('maxCatalogResponseBytes must be a positive safe integer');
   }
   const data: CustomRawModel[] = [];
-  const responseByteBudget = { remainingBytes: maxCatalogResponseBytes };
+  const responseByteBudget = ResponseByteBudget.create(maxCatalogResponseBytes);
   const seenModelIds = new Set<string>();
   const seenCursors = new Set<string>();
   let afterId: string | undefined;
