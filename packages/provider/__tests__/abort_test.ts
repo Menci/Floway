@@ -16,6 +16,12 @@ test('isAbortError traverses finite deep chains and terminates cyclic chains', (
   const second: { cause?: unknown } = { cause: first };
   first.cause = second;
   expect(isAbortError(first)).toBe(false);
+
+  let beyondDynamicBudget: unknown = new DOMException('cancelled', 'AbortError');
+  for (let depth = 0; depth < 4097; depth++) {
+    beyondDynamicBudget = new Error('wrapper', { cause: beyondDynamicBudget });
+  }
+  expect(isAbortError(beyondDynamicBudget)).toBe(true);
 });
 
 test('isAbortError does not let hostile accessors replace the inspected error', () => {

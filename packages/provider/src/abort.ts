@@ -16,20 +16,33 @@ const readErrorProperty = (value: object, property: 'cause' | 'name'): unknown =
   }
 };
 
-const MAX_ABORT_CAUSE_STEPS = 4096;
+const readErrorCause = (value: object): { dynamic: boolean; value: unknown } => {
+  try {
+    const descriptor = Reflect.getOwnPropertyDescriptor(value, 'cause');
+    if (descriptor && 'value' in descriptor) return { dynamic: false, value: descriptor.value };
+  } catch {
+    return { dynamic: true, value: undefined };
+  }
+  return { dynamic: true, value: readErrorProperty(value, 'cause') };
+};
+
+// Ordinary Error causes are own data properties, so finite stored chains have
+// no artificial depth boundary. Only accessors or inherited/dynamic causes
+// spend this budget; they can manufacture a fresh object on every read.
+const MAX_DYNAMIC_ABORT_CAUSE_READS = 4096;
 
 export const isAbortError = (err: unknown): boolean => {
-  const seen = new Set<object>();
+  const seen = new WeakSet<object>();
   let cur = err;
-  for (let step = 0; cur !== null && cur !== undefined && step < MAX_ABORT_CAUSE_STEPS; step++) {
+  let dynamicCauseReads = 0;
+  while (cur !== null && cur !== undefined) {
     if (typeof cur !== 'object' && typeof cur !== 'function') return false;
     if (seen.has(cur)) return false;
     seen.add(cur);
     if (readErrorProperty(cur, 'name') === 'AbortError') return true;
-    cur = readErrorProperty(cur, 'cause');
+    const cause = readErrorCause(cur);
+    if (cause.dynamic && ++dynamicCauseReads >= MAX_DYNAMIC_ABORT_CAUSE_READS) return false;
+    cur = cause.value;
   }
-  // Cancellation is a positive classification. A dynamic chain that exhausts
-  // the traversal budget cannot establish it and must not hold the caller in
-  // an unbounded error-handling loop.
   return false;
 };
