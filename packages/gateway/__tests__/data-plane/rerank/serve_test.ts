@@ -55,7 +55,7 @@ const assertFailedRequestOnlySettlement = async (repo: Repo): Promise<void> => {
 
 test('cross-protocol rerank translation enforces its response byte budget', async () => {
   await expect(readRerankTranslationResponse(new Response('{"results":[]}'), 4))
-    .rejects.toThrow(/exceeds the 4-byte limit/);
+    .rejects.toThrow(/within 4 bytes/);
 });
 
 test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {

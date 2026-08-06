@@ -1438,7 +1438,6 @@ export const createImageGenerationServerTool = (
 
   const materializer = createRemoteImageMaterializer({
     clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
-    executionSignal: gatewayCtx.executionSignal,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
   }, maxRemoteImageTotalBytes);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);

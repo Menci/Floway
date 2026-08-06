@@ -53,7 +53,13 @@ export const MAX_RERANK_TRANSLATION_RESPONSE_BYTES = 4 * 1024 * 1024;
 export const readRerankTranslationResponse = async (
   response: Response,
   maxBytes = MAX_RERANK_TRANSLATION_RESPONSE_BYTES,
-): Promise<unknown> => await readBoundedJsonResponse(response, maxBytes);
+): Promise<unknown> => {
+  try {
+    return await readBoundedJsonResponse(response, maxBytes);
+  } catch (cause) {
+    throw new Error(`Failed to read rerank response within ${maxBytes} bytes`, { cause });
+  }
+};
 
 export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
