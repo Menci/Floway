@@ -1,5 +1,6 @@
 // Run an HTTP/1.1 request over an already-established duplex byte stream.
 
+import { signalAbortReason } from './abort.ts';
 import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
@@ -27,11 +28,42 @@ const requestBodyLength = (segments: readonly Uint8Array[]): number => {
   return length;
 };
 
+interface FetchOnStreamOptions {
+  readonly signal?: AbortSignal;
+}
+
+const writeWithSignal = async (
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  chunk: Uint8Array,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  if (signal === undefined) {
+    await writer.write(chunk);
+    return;
+  }
+  if (signal.aborted) throw signalAbortReason(signal);
+  let rejectAbort!: (reason: unknown) => void;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+  const onAbort = (): void => {
+    const reason = signalAbortReason(signal);
+    rejectAbort(reason);
+    void writer.abort(reason).catch(() => {});
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    await Promise.race([writer.write(chunk), aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+};
+
 export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
   prefix?: Uint8Array,
+  options: FetchOnStreamOptions = {},
 ): Promise<Response> => {
+  if (options.signal?.aborted) throw signalAbortReason(options.signal);
   // RFC 9110 §6.4.1: a HEAD response carries no body even when
   // Content-Length is set. Detecting that here is a one-line carve-out,
   // but the chunked/length body parsers below would otherwise hang
@@ -136,15 +168,15 @@ export const fetchOnStream = async (
   const writer = stream.writable.getWriter();
   try {
     if (prefix && prefix.byteLength > 0) {
-      await writer.write(concat(prefix, headBytes));
+      await writeWithSignal(writer, concat(prefix, headBytes), options.signal);
     } else {
-      await writer.write(headBytes);
+      await writeWithSignal(writer, headBytes, options.signal);
     }
     for (const segment of bodySegments) {
       let offset = 0;
       while (offset < segment.byteLength) {
         const slice = segment.subarray(offset, Math.min(offset + BODY_WRITE_CHUNK_SIZE, segment.byteLength));
-        await writer.write(slice);
+        await writeWithSignal(writer, slice, options.signal);
         offset += slice.byteLength;
       }
     }
@@ -156,5 +188,5 @@ export const fetchOnStream = async (
     writer.releaseLock();
   }
 
-  return toWebResponse(await parseHttpResponse(stream.readable));
+  return toWebResponse(await parseHttpResponse(stream.readable, options.signal));
 };

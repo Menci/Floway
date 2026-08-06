@@ -382,6 +382,33 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 });
 
 describe('fetchOnStream — request body serialization', () => {
+  it('rejects promptly when cancellation interrupts a blocked body write', async () => {
+    const reason = new Error('stop upload');
+    const controller = new AbortController();
+    let writes = 0;
+    let bodyWriteStarted!: () => void;
+    const started = new Promise<void>(resolve => { bodyWriteStarted = resolve; });
+    const writable = new WritableStream<Uint8Array>({
+      write() {
+        writes += 1;
+        if (writes === 1) return;
+        bodyWriteStarted();
+        return new Promise<void>(() => {});
+      },
+    });
+    const response = new ReadableStream<Uint8Array>();
+    const pending = fetchOnStream(
+      { readable: response, writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body: Uint8Array.of(1, 2, 3) },
+      undefined,
+      { signal: controller.signal },
+    );
+    await started;
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+  });
+
   it('writes replayable segments in order with one computed Content-Length', async () => {
     const fake = makeFakeDuplex();
     const writes: Uint8Array[] = [];

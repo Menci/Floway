@@ -216,7 +216,7 @@ const runRequestOnStream = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = { ...headers, Host: hostValue };
     }
-    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix);
+    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, { signal: options.signal });
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when

@@ -1,6 +1,7 @@
 // HTTP/1.1 response-head parser + body-framing decoders + the
 // wire-faithful → Web Response bridge.
 
+import { signalAbortReason } from './abort.ts';
 import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
@@ -55,8 +56,14 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
  * spot. Status 101 is returned as a protocol-switch boundary whose body is
  * the opaque post-upgrade byte stream; other informational heads are skipped.
  */
-export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<RawHttpResponse> => {
+export const parseHttpResponse = async (
+  readable: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): Promise<RawHttpResponse> => {
+  if (signal?.aborted) throw signalAbortReason(signal);
   const reader = readable.getReader();
+  const onAbort = (): void => { void reader.cancel(signalAbortReason(signal!)).catch(() => {}); };
+  signal?.addEventListener('abort', onAbort, { once: true });
   let buffer: Uint8Array = new Uint8Array(0);
   let informationalCount = 0;
   // Hand-off contract: on the success path the reader is moved into the body
@@ -70,7 +77,8 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
       const result = await readResponseHead(reader, buffer);
       buffer = result.remainder;
       if (result.status === 101) {
-        return finalizeResponse(reader, result);
+        signal?.removeEventListener('abort', onAbort);
+        return responseWithAbortSignal(finalizeResponse(reader, result), signal);
       }
       if (result.status >= 100 && result.status < 200) {
         informationalCount++;
@@ -85,12 +93,63 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
         // head-parsing with them already buffered.
         continue;
       }
-      return finalizeResponse(reader, result);
+      signal?.removeEventListener('abort', onAbort);
+      return responseWithAbortSignal(finalizeResponse(reader, result), signal);
     }
   } catch (err) {
+    signal?.removeEventListener('abort', onAbort);
     try { reader.releaseLock(); } catch { /* lock already released */ }
-    throw err;
+    throw signal?.aborted ? signalAbortReason(signal) : err;
   }
+};
+
+const responseWithAbortSignal = (response: RawHttpResponse, signal: AbortSignal | undefined): RawHttpResponse => {
+  if (signal === undefined) return response;
+  const reader = response.body.getReader();
+  let terminated = false;
+  let onAbort: () => void;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const terminate = (): void => {
+        if (terminated) return;
+        terminated = true;
+        signal.removeEventListener('abort', onAbort);
+      };
+      onAbort = () => {
+        const reason = signalAbortReason(signal);
+        terminate();
+        controller.error(reason);
+        void reader.cancel(reason).catch(() => {});
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    },
+    async pull(controller) {
+      if (terminated) return;
+      try {
+        const result = await reader.read();
+        if (terminated) return;
+        if (result.done) {
+          terminated = true;
+          signal.removeEventListener('abort', onAbort);
+          controller.close();
+        } else controller.enqueue(result.value);
+      } catch (error) {
+        if (terminated) return;
+        terminated = true;
+        signal.removeEventListener('abort', onAbort);
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      if (!terminated) {
+        terminated = true;
+        signal.removeEventListener('abort', onAbort);
+      }
+      await reader.cancel(reason);
+    },
+  });
+  return { ...response, body };
 };
 
 interface ResponseHead {

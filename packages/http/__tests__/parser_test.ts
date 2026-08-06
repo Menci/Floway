@@ -954,6 +954,57 @@ describe('parseHttpResponse — reader-lock release on error', () => {
   });
 });
 
+describe('parseHttpResponse — execution cancellation', () => {
+  it('rejects an already-aborted signal without taking the readable lock', async () => {
+    const reason = new Error('request already ended');
+    const controller = new AbortController();
+    controller.abort(reason);
+    const readable = new ReadableStream<Uint8Array>();
+
+    await expect(parseHttpResponse(readable, controller.signal)).rejects.toBe(reason);
+    expect(readable.locked).toBe(false);
+  });
+
+  it('cancels a blocked response-head read with the original abort reason', async () => {
+    const reason = new Error('request ended during response head');
+    const controller = new AbortController();
+    let cancelReason: unknown;
+    const readable = new ReadableStream<Uint8Array>({
+      pull: () => new Promise<void>(() => {}),
+      cancel: value => { cancelReason = value; },
+    });
+    const pending = parseHttpResponse(readable, controller.signal);
+
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(cancelReason).toBe(reason);
+    expect(readable.locked).toBe(false);
+  });
+
+  it('cancels a blocked response-body read with the original abort reason', async () => {
+    const reason = new Error('request ended during response body');
+    const controller = new AbortController();
+    let cancelReason: unknown;
+    const readable = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(new TextEncoder().encode(
+          'HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n',
+        ));
+      },
+      pull: () => new Promise<void>(() => {}),
+      cancel: value => { cancelReason = value; },
+    });
+    const raw = await parseHttpResponse(readable, controller.signal);
+    const pending = raw.body.getReader().read();
+
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(cancelReason).toBe(reason);
+  });
+});
+
 describe('parseHttpResponse — body reader cleanup failures', () => {
   it('keeps a Content-Length protocol error primary when transport cancellation also fails', async () => {
     const cancelError = new Error('transport cancel failed');
