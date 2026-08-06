@@ -1415,7 +1415,7 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   constructor(private getProxy: (proxyId: string) => Promise<ProxyRecord | null>) {}
 
   private key(proxyId: string, upstreamId: string): string {
-    return `${proxyId}\0${upstreamId}`;
+    return JSON.stringify([proxyId, upstreamId]);
   }
 
   async recordDialFailure(proxyId: string, upstreamId: string, proxyUrl: string, errorMessage: string): Promise<boolean> {

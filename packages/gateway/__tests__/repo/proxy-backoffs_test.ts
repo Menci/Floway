@@ -134,6 +134,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       expect(await repo.proxyBackoffs.listForUpstream('uA')).toHaveLength(1);
     });
 
+    it('keeps NUL-bearing proxy and upstream tuple identities distinct', async () => {
+      const repo = await makeRepo();
+      const firstUrl = 'socks5://first.example.test:1080';
+      const secondUrl = 'socks5://second.example.test:1080';
+      await repo.proxies.insert({ id: 'a', name: 'first', url: firstUrl, dialTimeoutSeconds: null });
+      await repo.proxies.insert({ id: 'a\0b', name: 'second', url: secondUrl, dialTimeoutSeconds: null });
+
+      await repo.proxyBackoffs.recordDialFailure('a', 'b\0c', firstUrl, 'first');
+      await repo.proxyBackoffs.recordDialFailure('a\0b', 'c', secondUrl, 'second');
+
+      expect((await repo.proxyBackoffs.listAll()).map(row => [row.proxyId, row.upstreamId])).toEqual([
+        ['a', 'b\0c'],
+        ['a\0b', 'c'],
+      ]);
+    });
+
     it('reset removes all rows for the proxy', async () => {
       const repo = await makeRepo();
       await insertProxy(repo, 'p');
