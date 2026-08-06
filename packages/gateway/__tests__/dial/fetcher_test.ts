@@ -4,7 +4,7 @@ import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import { createReplayableBody, replayableBodySource } from '@floway-dev/provider';
+import { createReplayableBody, directFetcher, replayableBodySource } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
 
 const stubSocketDial: SocketDial = {
@@ -534,6 +534,46 @@ describe('createFetcher', () => {
     expect(directBody).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
     expect(init.body).toBe('request body');
+  });
+
+  it('removes stale framing when a proxy-materialized body falls through to native fetch', async () => {
+    const repo = new InMemoryRepo();
+    let nativeBody: BodyInit | null | undefined;
+    let nativeHeaders: Headers | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      nativeBody = init?.body;
+      nativeHeaders = new Headers(init?.headers);
+      return new Response('direct');
+    }));
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }, { id: 'direct_fetch' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw new ProxyDialError('proxy unavailable', 'tcp-connect'); },
+      runDirectFetch: directFetcher,
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+    const init: RequestInit = {
+      method: 'POST',
+      headers: { 'content-length': '999', 'transfer-encoding': 'chunked' },
+      body: 'request body',
+    };
+    try {
+      const response = await fetcher('https://api.openai.com/v1/responses', init);
+
+      expect(await response.text()).toBe('direct');
+      expect(nativeBody).toBeInstanceOf(Uint8Array);
+      expect(new TextDecoder().decode(nativeBody as Uint8Array)).toBe('request body');
+      expect(nativeHeaders?.has('content-length')).toBe(false);
+      expect(nativeHeaders?.has('transfer-encoding')).toBe(false);
+      expect(new Headers(init.headers).get('content-length')).toBe('999');
+      expect(new Headers(init.headers).get('transfer-encoding')).toBe('chunked');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it.each(['GET', 'HEAD', 'OPTIONS'])('falls through after an ambiguous bodyless %s direct-fetch failure', async (method) => {

@@ -34,6 +34,24 @@ test('native fetch init creates a fresh stream and authoritative framing headers
   expect(await read(init.body!)).toEqual([1, 2, 3]);
 });
 
+test('native fetch init removes transport-owned framing from ordinary bodies', () => {
+  const body = Uint8Array.of(1, 2, 3);
+  const init = nativeFetchInit({
+    method: 'POST',
+    headers: {
+      'content-length': '999',
+      'transfer-encoding': 'chunked',
+      'x-request-header': 'kept',
+    },
+    body,
+  });
+
+  expect(init.body).toBe(body);
+  expect(new Headers(init.headers).has('content-length')).toBe(false);
+  expect(new Headers(init.headers).has('transfer-encoding')).toBe(false);
+  expect(new Headers(init.headers).get('x-request-header')).toBe('kept');
+});
+
 test('native fetch init uses FixedLengthStream when the runtime provides it', async () => {
   const original = Reflect.get(globalThis, 'FixedLengthStream');
   let expectedLength: number | undefined;

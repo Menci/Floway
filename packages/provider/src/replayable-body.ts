@@ -80,10 +80,20 @@ const fixedLengthStreamConstructor = (): FixedLengthStreamConstructor | null => 
 };
 
 export const nativeFetchInit = (init: RequestInit): RequestInit => {
-  if (!(init.body instanceof ReadableStream)) return init;
-  const source = replayableBodySource(init.body);
   const headers = new Headers(init.headers);
   headers.delete('transfer-encoding');
+  if (!(init.body instanceof ReadableStream)) {
+    // Fetch owns framing for ordinary BodyInit shapes. Retaining a caller's
+    // Content-Length makes Node's bundled fetch append its derived length, and
+    // an installed newer Undici dispatcher then rejects the combined value as
+    // invalid. Removing both transport-owned fields also prevents stale
+    // lengths after proxy materialization rebuilds the body.
+    // https://github.com/nodejs/undici/blob/01a912e49a50c48009ed2639d2a457a6ec26752a/lib/web/fetch/index.js#L1408-L1435
+    // https://github.com/nodejs/undici/blob/aa33b19549ef5c37b73599a6deba768e85f46f92/lib/core/request.js#L498-L505
+    headers.delete('content-length');
+    return { ...init, headers };
+  }
+  const source = replayableBodySource(init.body);
   const validated = source === null ? null : validateReplayableBodySource(source);
   if (validated !== null) headers.set('content-length', String(validated.byteLength));
   return {
