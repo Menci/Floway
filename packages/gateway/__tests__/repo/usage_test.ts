@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { type CapturedStatement, type CompletedStatement, recordBoundStatements, recordCompletedStatements } from './recording-sql.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
+import { assertD1CompoundSelectLimit, createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
@@ -439,6 +439,7 @@ test('SQL usage overview uses key-hour indexes for an actor-scoped aggregate', a
 
   const statement = captured.find(candidate => candidate.query.startsWith('/* usage-overview */'));
   if (!statement) throw new Error('Usage overview SQL was not captured');
+  assertD1CompoundSelectLimit(statement.query);
   const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${statement.query}`)
     .bind(...statement.binds)
     .all<{ detail: string }>();
