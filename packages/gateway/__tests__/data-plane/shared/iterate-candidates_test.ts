@@ -87,9 +87,10 @@ describe('iterateCandidates', () => {
   it('returns the last failure once every candidate errors', async () => {
     const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
     let index = 0;
+    const discarded: string[] = [];
     const failures = [
-      { type: 'api-error' as const, marker: 'first' },
-      { type: 'internal-error' as const, marker: 'last' },
+      { type: 'api-error' as const, marker: 'first', discard: async () => { discarded.push('first'); } },
+      { type: 'internal-error' as const, marker: 'last', discard: async () => { discarded.push('last'); } },
     ];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
@@ -100,6 +101,7 @@ describe('iterateCandidates', () => {
     );
 
     expect(result).toEqual(failures[1]);
+    expect(discarded).toEqual(['first']);
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {

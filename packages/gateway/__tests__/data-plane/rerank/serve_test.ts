@@ -573,14 +573,16 @@ test('same-protocol read failure discards already-observed rerank usage', async 
   await assertFailedRequestOnlySettlement(repo);
 });
 
-test('same-protocol cancellation discards already-observed rerank usage', async () => {
+test('same-protocol cancellation drains already-observed rerank usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });
   let upstreamCanceled = false;
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
 
   await withMockedFetch(
     () => new Response(new ReadableStream<Uint8Array>({
       start(controller) {
+        upstreamController = controller;
         controller.enqueue(new TextEncoder().encode('{"model":"raw-reranker","object":"list","results":[],"usage":{"total_tokens":9}}'));
       },
       cancel() {
@@ -596,12 +598,17 @@ test('same-protocol cancellation discards already-observed rerank usage', async 
       const reader = response.body!.getReader();
       await reader.read();
       await reader.cancel('client left');
+      upstreamController.close();
     },
   );
 
-  assertEquals(upstreamCanceled, true);
+  assertEquals(upstreamCanceled, false);
   await flushAsyncWork();
-  await assertFailedRequestOnlySettlement(repo);
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
 });
 
 test('cross-protocol success still validates result items before rendering', async () => {

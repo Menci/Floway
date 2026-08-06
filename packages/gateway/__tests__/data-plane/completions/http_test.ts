@@ -230,13 +230,14 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
-test('/v1/completions preserves streaming status and cancels upstream after the first DONE', { timeout: 2_000 }, async () => {
+test('/v1/completions preserves streaming status and drains upstream after the first DONE', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerCompletionsUpstream(repo);
-  let canceledResolve!: () => void;
-  const canceled = new Promise<void>(resolve => { canceledResolve = resolve; });
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+  let upstreamCanceled = false;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
+      upstreamController = controller;
       controller.enqueue(new TextEncoder().encode([
         'data: {"id":"cmpl_X","choices":[{"index":0,"text":"before"}]}\n\n',
         'data: {"id":"cmpl_X","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\n',
@@ -245,7 +246,7 @@ test('/v1/completions preserves streaming status and cancels upstream after the 
       ].join('')));
     },
     cancel() {
-      canceledResolve();
+      upstreamCanceled = true;
     },
   });
 
@@ -263,11 +264,13 @@ test('/v1/completions preserves streaming status and cancels upstream after the 
       assertEquals(text.includes('before'), true);
       assertEquals(text.includes('late'), false);
       assertEquals(text.match(/\[DONE\]/g)?.length, 1);
-      await canceled;
+      assertEquals(upstreamCanceled, false);
+      upstreamController.close();
     },
   );
 
   await flushAsyncWork();
+  assertEquals(upstreamCanceled, false);
   const usage = await repo.usage.listAll();
   assertEquals(tokenCountsFromUsage(usage[0]!), { input: 2, output: 1 });
 });

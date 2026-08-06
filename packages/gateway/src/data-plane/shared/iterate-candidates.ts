@@ -23,6 +23,10 @@ type IterableAttemptResult =
   | { readonly type: 'api-error' }
   | { readonly type: 'internal-error' };
 
+type DisposableAttemptResult = IterableAttemptResult & {
+  readonly discard?: () => Promise<void>;
+};
+
 const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   switch (result.type) {
   case 'events':
@@ -40,10 +44,11 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // per-candidate *failure result* falls through so a transient 5xx/429 on
 // one upstream rolls over to the next; a thrown error leaves the loop and
 // surfaces to the caller, so a dial failure does not advance. When the
-// list is exhausted the most recent failure is returned so callers can
-// forward it verbatim and clients still see real upstream telemetry rather
-// than a synthetic gateway envelope. Callers are contractually required to
-// hand in a non-empty candidate list — the empty-candidate branch renders
+// A discarded intermediate failure releases any response resources before the
+// next attempt begins. The most recent failure remains owned by the caller so
+// it can be forwarded verbatim when the list is exhausted. Callers are
+// contractually required to hand in a non-empty candidate list — the
+// empty-candidate branch renders
 // each caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
@@ -55,7 +60,7 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // still attributes the perf error row to the throwing candidate: the
 // outer catch reads `ctx.attempt.telemetry` and feeds it into
 // `recordFailedRequest`. Callsites don't need to duplicate this stamp.
-export const iterateCandidates = async <T extends IterableAttemptResult>(
+export const iterateCandidates = async <T extends DisposableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
   ctx: GatewayCtx,
@@ -63,12 +68,14 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
   run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
-  for (const candidate of candidates) {
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index]!;
     ctx.attempt.upstreamCallStartedAt = null;
     ctx.attempt.firstOutputTokenAt = null;
     ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
     const result = await run(candidate);
     if (isAttemptSuccess(result)) return result;
+    if (index < candidates.length - 1) await result.discard?.();
     lastFailure = result;
   }
   if (lastFailure === undefined) {

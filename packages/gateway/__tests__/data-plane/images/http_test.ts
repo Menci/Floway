@@ -776,26 +776,26 @@ test('/v1/images/generations returns 502 and records failure for a bodyless stre
   await assertFailedStreamSettlement(repo);
 });
 
-test('/v1/images/generations downstream cancellation aborts the provider signal and upstream body', async () => {
+test('/v1/images/generations downstream cancellation drains the provider response without aborting it', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerImagesUpstream(repo);
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-  const providerAborted = deferred();
-  const upstreamCanceled = deferred();
   const encoder = new TextEncoder();
-  let upstreamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let providerSignal!: AbortSignal;
+  let upstreamCanceled = false;
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
 
   await withMockedFetch(
     request => {
-      request.signal.addEventListener('abort', providerAborted.resolve, { once: true });
+      providerSignal = request.signal;
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           upstreamController = controller;
           controller.enqueue(encoder.encode(imageSseFrame({ type: 'image_generation.partial_image', b64_json: 'cGFydGlhbA==' })));
         },
         cancel() {
-          upstreamCanceled.resolve();
+          upstreamCanceled = true;
         },
       });
       return imageSseResponse(body);
@@ -804,27 +804,38 @@ test('/v1/images/generations downstream cancellation aborts the provider signal 
       const response = await requestGenerationStream(apiKey.key);
       assertEquals(response.headers.get('x-provider-trace'), 'image-trace');
       const reader = response.body!.getReader();
-      try {
-        const first = await reader.read();
-        assertEquals(new TextDecoder().decode(first.value).includes('image_generation.partial_image'), true);
-        await Promise.all([reader.cancel(), providerAborted.promise, upstreamCanceled.promise]);
-      } finally {
-        try {
-          upstreamController?.close();
-        } catch {
-          // The cancellation path already owns the stream.
-        }
-        await reader.cancel().catch(() => {});
-      }
+      const first = await reader.read();
+      assertEquals(new TextDecoder().decode(first.value).includes('image_generation.partial_image'), true);
+      await reader.cancel('client left');
+      assertEquals(providerSignal.aborted, false);
+      assertEquals(upstreamCanceled, false);
+      upstreamController.enqueue(encoder.encode(imageSseFrame({
+        type: 'image_generation.completed',
+        b64_json: 'ZmluYWw=',
+        usage: IMAGE_USAGE,
+      })));
+      upstreamController.close();
     },
   );
 
-  await assertFailedStreamSettlement(repo);
+  await flushBackground();
+  assertEquals(providerSignal.aborted, false);
+  assertEquals(upstreamCanceled, false);
+  const [usage] = await repo.usage.listAll();
+  assertEquals(tokenCountsFromUsage(usage), { input: 6, input_image: 4, output_image: 50 });
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
   assertEquals(dumps.stored.length, 1);
   const dump = dumps.stored[0]!.record;
-  assertEquals(dump.meta.error?.kind, 'failed');
+  assertEquals(dump.meta.error, null);
+  assertEquals(dump.meta.inputTokens, 10);
+  assertEquals(dump.meta.outputTokens, 50);
   assertEquals(dump.response.body.type, 'stream');
   if (dump.response.body.type === 'stream') {
-    assertEquals(dump.response.body.events.length, 1);
+    assertEquals(dump.response.body.events.map(entry =>
+      entry.frame.type === 'event' && typeof entry.frame.event === 'object' && entry.frame.event !== null
+        ? (entry.frame.event as { type?: unknown }).type
+        : null), ['image_generation.partial_image', 'image_generation.completed']);
   }
 });

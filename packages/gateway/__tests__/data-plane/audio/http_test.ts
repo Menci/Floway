@@ -259,13 +259,15 @@ test('/v1/audio/transcriptions streams JSON before EOF and settles usage after c
   ]);
 });
 
-test('/v1/audio/transcriptions discards observed JSON usage when the downstream cancels', async () => {
+test('/v1/audio/transcriptions drains JSON usage after the downstream cancels', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   let upstreamCanceled = false;
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   await withMockedFetch(
     () => new Response(new ReadableStream<Uint8Array>({
       start(controller) {
+        upstreamController = controller;
         controller.enqueue(new TextEncoder().encode('{"text":"hello","usage":{"type":"tokens","input_tokens":4,"output_tokens":2,"total_tokens":6}}'));
       },
       cancel() {
@@ -279,10 +281,19 @@ test('/v1/audio/transcriptions discards observed JSON usage when the downstream 
       const reader = response.body!.getReader();
       await reader.read();
       await reader.cancel('client left');
+      upstreamController.close();
     },
   );
-  assertEquals(upstreamCanceled, true);
-  await assertFailedRequestOnlySettlement(repo);
+  assertEquals(upstreamCanceled, false);
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, [
+    { metric: 'input_tokens', quantity: '4', unitPrice: null },
+    { metric: 'output_tokens', quantity: '2', unitPrice: null },
+  ]);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
 });
 
 test('/v1/audio/transcriptions rebuilds the complete multipart body for a failover candidate', async () => {
@@ -347,6 +358,7 @@ test('/v1/audio/transcriptions rebuilds the complete multipart body for a failov
   assertEquals((replayedFile as File).name, 'meeting.wav');
   assertEquals((replayedFile as File).type, 'audio/wav');
   assertEquals(new Uint8Array(await (replayedFile as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+  await flushAsyncWork();
 });
 
 test('/v1/audio/transcriptions forwards VTT verbatim and records request-only usage', async () => {

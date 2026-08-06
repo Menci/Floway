@@ -266,7 +266,7 @@ test('/v1/embeddings preserves a success with malformed usage as a request-only 
   assertEquals(tokenCountsFromUsage(usage[0]!), {});
 });
 
-test('/v1/embeddings aborts a pending upstream request when the inbound request is canceled', async () => {
+test('/v1/embeddings retains a pending upstream request when the inbound request is canceled', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -287,7 +287,8 @@ test('/v1/embeddings aborts a pending upstream request when the inbound request 
   }));
 
   const upstreamStarted = deferred();
-  const upstreamAborted = deferred();
+  let resolveUpstream!: (response: Response) => void;
+  const upstreamResponse = new Promise<Response>(resolve => { resolveUpstream = resolve; });
   let upstreamSignal: AbortSignal | undefined;
 
   await withMockedFetch(
@@ -299,12 +300,7 @@ test('/v1/embeddings aborts a pending upstream request when the inbound request 
       if (url.pathname === '/v1/embeddings') {
         upstreamSignal = request.signal;
         upstreamStarted.resolve();
-        return new Promise<Response>((_resolve, reject) => {
-          request.signal.addEventListener('abort', () => {
-            upstreamAborted.resolve();
-            reject(request.signal.reason);
-          }, { once: true });
-        });
+        return upstreamResponse;
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -324,11 +320,20 @@ test('/v1/embeddings aborts a pending upstream request when the inbound request 
       assertExists(upstreamSignal);
       assertEquals(upstreamSignal.aborted, false);
       controller.abort(new Error('client disconnected'));
-      await upstreamAborted.promise;
-      assertEquals(upstreamSignal.aborted, true);
-      assertEquals((await response).status, 502);
+      resolveUpstream(jsonResponse({
+        data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
+        usage: { prompt_tokens: 2, total_tokens: 2 },
+      }));
+      const retained = await response;
+      assertEquals(retained.status, 200);
+      await retained.json();
+      assertEquals(upstreamSignal.aborted, false);
     },
   );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(tokenCountsFromUsage(usage), { input: 2 });
 });
 
 test('/v1/embeddings records request and upstream performance', async () => {

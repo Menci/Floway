@@ -8,7 +8,9 @@
 // upstream's matching endpoint and the raw upstream Response is returned
 // verbatim. The `plain` discriminant is enlarged here to carry that
 // Response plus the per-call telemetry the serve site needs when it
-// forwards the winning attempt (2xx) or the last failure (exhausted).
+// forwards the winning attempt (2xx) or the last failure (exhausted). Its
+// discard hook cancels only the retained wrapper, which drains the original
+// upstream body through the background scheduler.
 
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { inboundHeaders } from './inbound-headers.ts';
@@ -30,6 +32,7 @@ export interface PassthroughAttemptResult {
   readonly response: Response;
   readonly performance: PerformanceTelemetryContext;
   readonly identity: TelemetryModelIdentity;
+  readonly discard: () => Promise<void>;
 }
 
 export interface PassthroughAttemptArgs {
@@ -57,5 +60,6 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     response,
     performance: upstreamPerformanceContext(ctx, candidate, operation),
     identity: telemetryModelIdentity(candidate, modelKey),
+    discard: async () => { await response.body?.cancel(); },
   };
 };

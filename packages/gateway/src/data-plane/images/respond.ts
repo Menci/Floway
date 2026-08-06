@@ -78,7 +78,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     } catch (error) {
       streamError = error;
     } finally {
-      const failed = streamError !== undefined || protocolError !== undefined || completion !== 'eof' || !terminalEventSeen;
+      const failed = streamError !== undefined || protocolError !== undefined || completion === 'error' || !terminalEventSeen;
       if (failed) ctx.dump?.failed(streamError ?? protocolError ?? `${sourceApi} stream ended with completion=${completion}`);
       else ctx.dump?.success(identity, usage);
       settle(ctx, performance, identity, usage, failed);
