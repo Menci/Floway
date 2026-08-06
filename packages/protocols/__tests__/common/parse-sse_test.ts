@@ -166,10 +166,8 @@ test('parseSSEStream returns promptly when cancellation never settles', async ()
   });
 
   const result = parseSSEStream(body, { signal: controller.signal }).next();
-  await expect(Promise.race([
-    result,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('parser remained pending')), 50)),
-  ])).resolves.toEqual({ done: true, value: undefined });
+  expect(await cancelStateWithin(result.then(() => {}), 20)).toBe('canceled');
+  expect(await result).toEqual({ done: true, value: undefined });
   expect(cancellations).toBe(1);
   expect(body.locked).toBe(false);
 });
