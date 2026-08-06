@@ -74,8 +74,7 @@ export interface UpstreamRecord {
   state: unknown;
   // The upstream's cached catalog, read on the same round trip as the row
   // rather than through a second query. Null until the first successful fetch.
-  // Written only by the catalog refresh path — an operator save leaves it
-  // alone.
+  // Catalog refresh writes it; changing provider configuration clears it.
   modelsCache: UpstreamModelsCache | null;
   flagOverrides: FlagOverrides;
   // Model ids the operator switched off for this upstream, matched against the

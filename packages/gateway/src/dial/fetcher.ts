@@ -13,8 +13,9 @@ interface CreateFetcherInput {
   fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
   // Location tag the request landed in, used to apply each entry's optional
-  // `colos` whitelist via `entryMatchesColo`. See `getRuntimeLocation`.
-  runtimeLocation: string;
+  // `colos` whitelist via `entryMatchesColo`. Null is reserved for platform
+  // events that expose no colo. See `getRuntimeLocation`.
+  runtimeLocation: string | null;
   // Injected so the fetcher stays runtime-agnostic — the composition root
   // chooses the concrete dial/fetch implementations.
   runProxied: (

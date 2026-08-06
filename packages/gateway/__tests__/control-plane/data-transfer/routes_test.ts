@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-// The import handler warms the SWR models cache for every saved upstream by
-// calling each provider's getProvidedModels, which for Copilot / Custom would
+// The import handler warms new upstreams and changed catalog inputs by calling
+// each provider's getProvidedModels, which for Copilot / Custom would
 // make real upstream HTTP requests the test sandbox cannot serve and hang
 // until the vitest timeout. Stub the cache layer to a no-op so the import
 // path's own behavior (upserts, identity validation, etc.) is what the tests
 // exercise — the warm itself has dedicated coverage in models-cache_test.ts.
-vi.mock('../../../src/data-plane/providers/models-cache.ts', () => ({
-  fetchUpstreamModelsCached: () => Promise.resolve([]),
+vi.mock('../../../src/execution/models-refresh.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/execution/models-refresh.ts')>(),
+  refreshModels: () => Promise.resolve({ kind: 'refreshed' }),
 }));
 
 import { exportData, importData } from '../../../src/control-plane/data-transfer/routes.ts';
@@ -18,11 +19,11 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-sea
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredResponsesItem, StoredUpstreamRecord, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import { ALL_PROVIDER_KINDS, type UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -74,7 +75,7 @@ const USER_BOB: User = {
   deletedAt: null,
 };
 
-const CUSTOM_UPSTREAM: UpstreamRecord = {
+const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_custom_a',
   kind: 'custom',
   name: 'Custom A',
@@ -86,6 +87,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -102,7 +104,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const COPILOT_UPSTREAM: UpstreamRecord = {
+const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_copilot_a',
   kind: 'copilot',
   name: 'GitHub Copilot (alice)',
@@ -114,6 +116,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -129,7 +132,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const AZURE_UPSTREAM: UpstreamRecord = {
+const AZURE_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_azure_a',
   kind: 'azure',
   name: 'Azure A',
@@ -141,6 +144,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -163,7 +167,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const OLLAMA_UPSTREAM: UpstreamRecord = {
+const OLLAMA_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_ollama_a',
   kind: 'ollama',
   name: 'Ollama A',
@@ -175,6 +179,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -191,7 +196,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   state: null,
 };
 
-const CODEX_UPSTREAM: UpstreamRecord = {
+const CODEX_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_codex_a',
   kind: 'codex',
   name: 'ChatGPT Codex (alice)',
@@ -203,6 +208,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  configVersion: 1,
   modelsCache: null,
   hue: 210,
   config: {
@@ -539,7 +545,7 @@ test('import merge upserts by repository key without clearing unrelated rows', a
   await repo.usage.set({ ...USAGE_1, requests: 10 });
   await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
-  const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies UpstreamRecord;
+  const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies StoredUpstreamRecord;
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, name: 'Alice Updated' }, KEY_B],
     upstreams: [upstreamRecordToFullJson(updatedCustom), upstreamRecordToFullJson(COPILOT_UPSTREAM)],
@@ -1035,6 +1041,17 @@ test('import reports the earliest duplicate before later malformed records', asy
   assertEquals(duplicateBucket.body.error, 'invalid performance record at index 0: duplicate bucket entry for {metric: ttft_ms, lower: 0}');
 });
 
+test('import rejects duplicate upstream ids before applying any records', async () => {
+  const { app, repo } = setup();
+  const upstream = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const result = await doImport(app, 'replace', latestImportData({
+    upstreams: [upstream, { ...upstream, name: 'Duplicate' }],
+  }));
+
+  assertEquals(result.body.error, `invalid upstreams: duplicate upstream id ${upstream.id} at indexes 0 and 1`);
+  assertEquals(await repo.upstreams.list(), []);
+});
+
 test('import preserves staged intra-record error precedence', async () => {
   const { app } = setup();
   const badUpstream = await doImport(app, 'replace', latestImportData({
@@ -1297,7 +1314,7 @@ test('export includes proxies with full credential URIs and round-trips through 
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 });
   await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
-  const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }] };
+  const upstreamWithFallback: StoredUpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }] };
   await repo.upstreams.save(upstreamWithFallback);
 
   const exported = await doExport(app);

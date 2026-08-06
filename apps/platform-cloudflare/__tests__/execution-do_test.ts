@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { test } from 'vitest';
 
-import { BroadcastDO } from '../src/broadcast-do.ts';
+import { ExecutionDO } from '../src/execution-do.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Minimal stub of the CF DurableObject runtime surface the actor touches.
@@ -27,10 +27,7 @@ class FakeWebSocket implements WebSocket {
   closed: { code: number; reason: string } | null = null;
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-    // BroadcastDO's `broadcast(payload: string)` contract forbids non-string
-    // payloads; throw loud on any binary input so a regression that sneaks
-    // ArrayBuffer/Blob through surfaces here instead of becoming a silent
-    // empty frame on the wire.
+    // Broadcast protocol payloads are text; reject binary test input loudly.
     if (typeof data !== 'string') throw new Error('FakeWebSocket.send: expected string payload');
     this.sent.push(data);
   }
@@ -43,6 +40,11 @@ class FakeWebSocket implements WebSocket {
 
 class FakeState {
   readonly sockets: FakeWebSocket[] = [];
+  readonly exports = {
+    ExecutionOperationEntrypoint: {
+      fetch: async (_request: Request) => new Response('executed'),
+    },
+  };
   acceptWebSocket(ws: WebSocket): void {
     this.sockets.push(ws as FakeWebSocket);
   }
@@ -54,69 +56,65 @@ class FakeState {
   }
 }
 
-test('BroadcastDO extends DurableObject so the runtime gates RPC dispatch on it', () => {
-  // BroadcastDO must extend DurableObject so the CF runtime gates RPC
-  // dispatch on the subclass; without the extends declaration, direct method
-  // invocation (`stub.broadcast(...)`, `stub.closeAll(...)`) fails with
-  // "the receiving Durable Object does not support RPC". The unit-test
-  // surface doesn't reach the runtime RPC machinery, so the prototype-chain
-  // check pins that the extends declaration is present.
-  assertEquals(Object.getPrototypeOf(BroadcastDO.prototype) === DurableObject.prototype, true);
+test('ExecutionDO extends the platform DurableObject base', () => {
+  assertEquals(Object.getPrototypeOf(ExecutionDO.prototype) === DurableObject.prototype, true);
 });
 
-test('BroadcastDO.broadcast sends the payload verbatim to every registered socket', async () => {
+test('ExecutionDO broadcast request sends the payload verbatim to every registered socket', async () => {
   const state = new FakeState();
   const ws1 = new FakeWebSocket();
   const ws2 = new FakeWebSocket();
   state.push(ws1);
   state.push(ws2);
-  const actor = new BroadcastDO(state, {});
+  const actor = new ExecutionDO(state, {});
 
-  await actor.broadcast('hello world');
+  const response = await actor.fetch(new Request('https://execution.do/broadcast', { method: 'POST', body: 'hello world' }));
 
+  assertEquals(response.status, 204);
   assertEquals(ws1.sent.length, 1);
   assertEquals(ws1.sent[0], 'hello world');
   assertEquals(ws2.sent[0], 'hello world');
 });
 
-test('BroadcastDO.closeAll closes every socket with the given reason and code 1000', async () => {
+test('ExecutionDO close request closes every socket with the given reason and code 1000', async () => {
   const state = new FakeState();
   const ws1 = new FakeWebSocket();
   const ws2 = new FakeWebSocket();
   state.push(ws1);
   state.push(ws2);
-  const actor = new BroadcastDO(state, {});
+  const actor = new ExecutionDO(state, {});
 
-  await actor.closeAll('reason of the day');
+  const response = await actor.fetch(new Request('https://execution.do/broadcast/close', { method: 'POST', body: 'reason of the day' }));
 
+  assertEquals(response.status, 204);
   assertEquals(ws1.closed?.code, 1000);
   assertEquals(ws1.closed?.reason, 'reason of the day');
   assertEquals(ws2.closed?.code, 1000);
   assertEquals(ws2.closed?.reason, 'reason of the day');
 });
 
-test('BroadcastDO.webSocketClose calls ws.close to complete the close handshake', async () => {
-  const actor = new BroadcastDO(new FakeState(), {});
+test('ExecutionDO.webSocketClose calls ws.close to complete the close handshake', async () => {
+  const actor = new ExecutionDO(new FakeState(), {});
   const ws = new FakeWebSocket();
   await actor.webSocketClose(ws, 1001, 'going away', true);
   assertEquals(ws.closed?.code, 1001);
   assertEquals(ws.closed?.reason, 'going away');
 });
 
-test('BroadcastDO.webSocketError exists so the runtime delivers close events', async () => {
+test('ExecutionDO.webSocketError exists so the runtime delivers close events', async () => {
   // The hook's mere presence is what gates close-event delivery; assert the
   // method is declared on the class itself so the gating contract survives a
   // refactor that mistakes the no-op body for dead code.
-  assertEquals(typeof BroadcastDO.prototype.webSocketError, 'function');
-  assertEquals(Object.prototype.hasOwnProperty.call(BroadcastDO.prototype, 'webSocketError'), true);
-  const actor = new BroadcastDO(new FakeState(), {});
+  assertEquals(typeof ExecutionDO.prototype.webSocketError, 'function');
+  assertEquals(Object.prototype.hasOwnProperty.call(ExecutionDO.prototype, 'webSocketError'), true);
+  const actor = new ExecutionDO(new FakeState(), {});
   const ws = new FakeWebSocket();
   await actor.webSocketError(ws, new Error('whatever'));
   // No side effect — the runtime drops the socket from getWebSockets() on its own.
   assertEquals(ws.closed, null);
 });
 
-test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', async () => {
+test('ExecutionDO.fetch upgrades to a WebSocket and registers the server side', async () => {
   // The actor's fetch path is the subscriber entry point: it must mint a
   // WebSocketPair, hand the server side to the runtime via acceptWebSocket,
   // and return a 101 response carrying the client side. Stub the CF-only
@@ -142,9 +140,9 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
 
   try {
     const state = new FakeState();
-    const actor = new BroadcastDO(state, {});
+    const actor = new ExecutionDO(state, {});
 
-    const response = await actor.fetch(new Request('https://broadcast.do/subscribe'));
+    const response = await actor.fetch(new Request('https://execution.do/broadcast', { headers: { Upgrade: 'websocket' } }));
 
     assertEquals(response.status, 101);
     assertEquals(response.webSocket !== undefined, true);
@@ -157,4 +155,26 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
       (globalThis as Record<string, unknown>).WebSocketPair = realWebSocketPair;
     }
   }
+});
+
+test('ExecutionDO coalesces concurrent operations and returns independent responses', async () => {
+  let calls = 0;
+  const state = new FakeState();
+  state.exports.ExecutionOperationEntrypoint.fetch = async () => {
+    calls += 1;
+    return new Response('models refreshed', { status: 202, headers: { 'x-execution': 'done' } });
+  };
+  const actor = new ExecutionDO(state, {});
+
+  const first = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
+  const second = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
+
+  assertEquals((await first).status, 202);
+  const secondResponse = await second;
+  assertEquals(await secondResponse.text(), 'models refreshed');
+  assertEquals(secondResponse.headers.get('x-execution'), 'done');
+  assertEquals(calls, 1);
+
+  await actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
+  assertEquals(calls, 2);
 });

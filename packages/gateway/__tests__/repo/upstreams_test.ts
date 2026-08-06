@@ -61,7 +61,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     ['up_azure_a', 'up_copilot_a', 'up_custom_a'],
   );
 
-  assertEquals(await repo.getById('up_custom_a'), custom);
+  assertEquals(await repo.getById('up_custom_a'), { ...custom, configVersion: 1 });
   assertEquals(await repo.getById('missing'), null);
 
   const updatedCustom = upstream({
@@ -245,6 +245,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{bad json',
     state_json: null,
     models_cache_json: null,
@@ -268,6 +269,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -291,6 +293,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -318,6 +321,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -345,6 +349,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -368,6 +373,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     sort_order: 0,
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -439,6 +445,7 @@ test('SQL upstream repo rejects a stored hue outside the circle', async () => {
     sort_order: 0,
     created_at: '2026-07-01T00:00:00.000Z',
     updated_at: '2026-07-01T00:00:00.000Z',
+    config_version: 1,
     config_json: '{}',
     state_json: null,
     models_cache_json: null,
@@ -954,6 +961,7 @@ type FakeUpstreamRow = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  config_version: number;
   config_json: string;
   state_json: string | null;
   models_cache_json: string | null;
@@ -1043,11 +1051,14 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       sort_order: sortOrder,
       created_at: preservedCreatedAt,
       updated_at: updatedAt,
+      config_version: existing === undefined || (existing.provider === provider && existing.config_json === configJson && existing.flag_overrides === flagOverrides && existing.proxy_fallback_list_json === proxyFallbackListJson)
+        ? existing?.config_version ?? 1
+        : existing.config_version + 1,
       config_json: configJson,
       state_json: stateJson,
-      // The upsert statement names no cache column, so an existing row keeps
-      // whatever the refresh path wrote and a new row starts uncached.
-      models_cache_json: existing?.models_cache_json ?? null,
+      models_cache_json: existing === undefined || (existing.provider === provider && existing.config_json === configJson && existing.flag_overrides === flagOverrides)
+        ? existing?.models_cache_json ?? null
+        : null,
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,

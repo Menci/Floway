@@ -1,6 +1,6 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -14,6 +14,32 @@ const SECOND_ACCOUNT = {
     avatar_url: 'https://example.com/second.png',
   },
 };
+
+test('/v1/models returns a cold snapshot before its triggered upstream fetch settles', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord());
+  let resolveFetch: ((response: Response) => void) | null = null;
+
+  await withMockedFetch(
+    () => new Promise<Response>(resolve => { resolveFetch = resolve; }),
+    async () => {
+      let responseSettled = false;
+      const responsePromise = requestAppCold('/v1/models', { headers: { 'x-api-key': apiKey.key } })
+        .then(response => { responseSettled = true; return response; });
+
+      await vi.waitFor(() => expect(resolveFetch).not.toBeNull());
+      await vi.waitFor(() => expect(responseSettled).toBe(true));
+      const response = await responsePromise;
+      expect(response.status).toBe(200);
+      expect((await response.json() as { data: unknown[] }).data).toEqual([]);
+
+      resolveFetch!(jsonResponse({ data: [{ id: 'eventual-model' }] }));
+      await flushAsyncWork();
+      expect((await repo.upstreams.getById('up_custom'))?.modelsCache?.models.map(model => model.id)).toEqual(['eventual-model']);
+    },
+  );
+});
 
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();
@@ -67,7 +93,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -130,14 +156,14 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.description, undefined);
       }
 
-      const anthropicResponse = await requestApp('/models', {
+      const anthropicResponse = await requestAppWithWarmModels('/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(anthropicResponse.status, 200);
       assertEquals(await anthropicResponse.json(), body);
 
       // Dashboard adds two UI-only fields on top of the public DTO.
-      const controlResponse = await requestApp('/api/models', {
+      const controlResponse = await requestAppWithWarmModels('/api/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(controlResponse.status, 200);
@@ -208,7 +234,7 @@ test('Codex User-Agents receive the Codex catalog from root model-list paths', a
         ['/models', 'codex-tui/0.0.1-unified.catalog'],
         ['/v1/models', 'codex_cli_rs/0.0.1-unified.catalog'],
       ] as const) {
-        const codexResponse = await requestApp(path, {
+        const codexResponse = await requestAppWithWarmModels(path, {
           headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
         });
         assertEquals(codexResponse.status, 200);
@@ -280,7 +306,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/models', {
+      const response = await requestAppWithWarmModels('/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -356,13 +382,12 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
-      assertEquals(response.status, 502);
-      const body = (await response.json()) as { error: { message: string } };
-      assertEquals(body.error.message, 'Upstream model listing failed');
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { object: 'list', data: [], has_more: false, first_id: null, last_id: null });
     },
   );
 });
@@ -414,7 +439,7 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -459,17 +484,14 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
     },
     async () => {
       for (const path of ['/v1/models', '/models', '/api/models']) {
-        const response = await requestApp(path, {
+        const response = await requestAppWithWarmModels(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
+        assertEquals(response.status, 200);
         assertEquals(response.headers.get('x-upstream-id'), null);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('secret upstream body'), false);
+        assertEquals(body.includes('up_http_secret_provider'), false);
       }
     },
   );
@@ -502,16 +524,12 @@ test('public model list endpoints hide thrown upstream request errors', async ()
     },
     async () => {
       for (const path of ['/v1/models', '/models', '/api/models']) {
-        const response = await requestApp(path, {
+        const response = await requestAppWithWarmModels(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        assertEquals(response.status, 200);
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('throw-secret.example.com'), false);
       }
     },
   );
@@ -547,16 +565,13 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
     },
     async () => {
       for (const path of ['/v1/models', '/models', '/api/models']) {
-        const response = await requestApp(path, {
+        const response = await requestAppWithWarmModels(path, {
           headers: { 'x-api-key': apiKey.key },
         });
-        assertEquals(response.status, 502);
-        assertEquals(await response.json(), {
-          error: {
-            message: 'Upstream model listing failed',
-            type: 'api_error',
-          },
-        });
+        assertEquals(response.status, 200);
+        const body = JSON.stringify(await response.json());
+        assertEquals(body.includes('secret malformed body'), false);
+        assertEquals(body.includes('up_malformed_secret_provider'), false);
       }
     },
   );
@@ -567,7 +582,7 @@ test('/v1/models surfaces the actionable "no upstream configured" hint when no p
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
 
-  const response = await requestApp('/v1/models', {
+  const response = await requestAppWithWarmModels('/v1/models', {
     headers: { 'x-api-key': apiKey.key },
   });
 
@@ -631,7 +646,7 @@ test('/v1/models returns the id-sorted union of every connected GitHub account',
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -680,7 +695,7 @@ test('/v1/models returns the last real error when every account model load fails
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key },
       });
 
@@ -767,7 +782,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
       const ids = body.data.map(model => model.id);
@@ -844,7 +859,7 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
       const shadowRows = body.data.filter(model => model.id === 'orphan-shadow');
@@ -902,7 +917,7 @@ test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable id
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const claudeCodeResp = await requestApp('/v1/models', {
+      const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
       });
       assertEquals(claudeCodeResp.status, 200);
@@ -965,7 +980,7 @@ test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable id
       assertEquals(haiku.max_tokens, 64_000);
 
       // Non-Claude-Code caller: Floway's PublicModel superset is unchanged.
-      const openAiResp = await requestApp('/v1/models', {
+      const openAiResp = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'openai-python/1.42.0' },
       });
       assertEquals(openAiResp.status, 200);
@@ -1020,7 +1035,7 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/models', {
+      const response = await requestAppWithWarmModels('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
       });
       assertEquals(response.status, 200);

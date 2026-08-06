@@ -77,9 +77,9 @@ test('expiration sweep completion lands on both discriminants', () => withRepo(a
 
 test('repository JSON codecs round-trip upstream, alias, and Responses state through node:sqlite', () => withRepo(async repo => {
   await seedKey(repo);
-  await repo.upstreams.save({
+  const upstreamRecord = {
     id: 'up_node',
-    kind: 'custom',
+    kind: 'custom' as const,
     name: 'Node upstream',
     enabled: true,
     sortOrder: 0,
@@ -93,14 +93,19 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     proxyFallbackList: [],
     modelPrefix: null,
     hue: 210,
-  });
-  await repo.upstreams.saveModelsCache('up_node', {
-    updatedAt: '2026-08-05T00:00:00.000Z',
-    config: { opaque: { value: true } },
-  }, {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_786_000_000_000,
-    models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
+  };
+  await repo.upstreams.save(upstreamRecord);
+  const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
+  if (storedUpstream === null) throw new Error('expected stored upstream fixture');
+  await repo.upstreams.publishModelsRefresh({
+    id: 'up_node',
+    configVersion: storedUpstream.configVersion,
+    cacheEpoch: 0,
+    cache: {
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: 1_786_000_000_000,
+      models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
+    },
   });
   await repo.modelAliases.insert({
     id: 'alias_node',

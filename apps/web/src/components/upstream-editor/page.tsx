@@ -9,8 +9,11 @@ import { UpstreamConfigSidebar } from './config-sidebar';
 import { refineCustomIngressHeaderRules } from './custom-ingress-header-rules-validation';
 import {
   createBody,
-  fetchModelCatalog,
+  fetchSavedModelCatalog,
+  hasDraftModelInputs,
+  isPersisted,
   modelPrefixIsValid,
+  previewDraftModelCatalog,
   updateBody,
   valuesFromRecord,
   type ModelListingFailure,
@@ -133,16 +136,19 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
+  const draftModelInputs = hasDraftModelInputs(formState.dirtyFields);
   // The workspace's refresh button and the custom provider's fetch switch both
   // reach this, so runs can overlap; `useRefresh` aborts the superseded one.
   const { refresh: refreshModels, refreshing: modelsLoading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setModelsError(null);
-    const catalog = await fetchModelCatalog(record, getValues(), { signal });
+    const catalog = isPersisted(record) && !draftModelInputs
+      ? await fetchSavedModelCatalog(record, { signal })
+      : await previewDraftModelCatalog(record, getValues(), { signal });
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered) setDiscovered(catalog.discovered);
-    if (catalog.refreshed) updateRecord({ ...recordRef.current, modelsCache: catalog.refreshed.modelsCache } as UpstreamRecord);
-  }, [getValues, record, updateRecord]));
+    if (catalog.modelsCache) updateRecord({ ...recordRef.current, modelsCache: catalog.modelsCache } as UpstreamRecord);
+  }, [draftModelInputs, getValues, record, updateRecord]));
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });

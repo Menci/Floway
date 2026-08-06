@@ -6,7 +6,7 @@ import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tool
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -192,6 +192,7 @@ describe('/alpha/search data plane', () => {
           throw new Error(`Unhandled fetch ${request.url}`);
         },
         async () => {
+          await warmModelsForTest();
           const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
             id: 'session-search',
             model: 'caller-model',

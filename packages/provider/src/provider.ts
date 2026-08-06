@@ -38,9 +38,8 @@ export interface Provider {
   // record so registry helpers — routing and listing — read it from the
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
-  // The row's cached catalog, mirrored for the same reason: the SWR layer
-  // reads it from the instance instead of paying a second round trip that the
-  // row read already covered.
+  // The row's persisted catalog snapshot, mirrored so resolution does not pay
+  // a second round trip after the row has already been loaded.
   modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }

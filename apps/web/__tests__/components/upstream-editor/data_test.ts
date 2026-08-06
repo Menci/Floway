@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { createBody, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
+import { createBody, hasDraftModelInputs, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
@@ -43,4 +43,12 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((updateBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
+});
+
+test('draft model inputs exclude metadata-only edits', () => {
+  expect(hasDraftModelInputs({})).toBe(false);
+  expect(hasDraftModelInputs({ config: true })).toBe(true);
+  expect(hasDraftModelInputs({ state: true })).toBe(true);
+  expect(hasDraftModelInputs({ proxyFallbackList: true })).toBe(true);
+  expect(hasDraftModelInputs({ name: true })).toBe(false);
 });

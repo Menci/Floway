@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -56,7 +56,7 @@ const transcriptionForm = (fields: readonly [string, string][] = []): FormData =
 
 test('/v1/audio/transcriptions requires multipart model and file fields', async () => {
   const { apiKey } = await setupAppTest();
-  const json = await requestApp('/v1/audio/transcriptions', {
+  const json = await requestAppWithWarmModels('/v1/audio/transcriptions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: '{}',
@@ -65,7 +65,7 @@ test('/v1/audio/transcriptions requires multipart model and file fields', async 
 
   const missingFile = new FormData();
   missingFile.append('model', 'gpt-4o-transcribe');
-  const noFile = await requestApp('/v1/audio/transcriptions', {
+  const noFile = await requestAppWithWarmModels('/v1/audio/transcriptions', {
     method: 'POST', headers: { 'x-api-key': apiKey.key }, body: missingFile,
   });
   assertEquals(noFile.status, 400);
@@ -90,7 +90,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
       });
     },
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST',
         headers: { 'x-api-key': apiKey.key },
         body: transcriptionForm([
@@ -136,7 +136,7 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
       headers: { 'content-type': 'text/vtt', 'x-subtitle-source': 'upstream' },
     }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'vtt']]),
       });
       assertEquals(response.headers.get('content-type'), 'text/vtt');
@@ -158,7 +158,7 @@ test('/v1/audio/transcriptions skips JSON parsing for text responses without war
     await withMockedFetch(
       () => new Response('plain transcript', { headers: { 'content-type': 'text/plain' } }),
       async () => {
-        const response = await requestApp('/v1/audio/transcriptions', {
+        const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
           method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
         });
         assertEquals(await response.text(), 'plain transcript');
@@ -178,7 +178,7 @@ test('/v1/audio/transcriptions warns on malformed declared JSON while forwarding
     await withMockedFetch(
       () => new Response('{not-json', { headers: { 'content-type': 'application/json' } }),
       async () => {
-        const response = await requestApp('/v1/audio/transcriptions', {
+        const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
           method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
         });
         assertEquals(response.status, 200);
@@ -202,7 +202,7 @@ test('/v1/audio/transcriptions preserves unknown future usage metrics as request
   await withMockedFetch(
     () => Response.json(upstreamBody),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
       });
       assertEquals(response.status, 200);
@@ -227,7 +227,7 @@ test('/v1/audio/transcriptions preserves malformed declared usage and records re
         { headers: { 'x-provider-trace': 'malformed-usage', 'set-cookie': 'upstream-session=secret' } },
       ),
       async () => {
-        const response = await requestApp('/v1/audio/transcriptions', {
+        const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
           method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
         });
         assertEquals(response.status, 200);
@@ -255,7 +255,7 @@ test('/v1/audio/transcriptions does not invent a content type for an untyped raw
   await withMockedFetch(
     () => new Response(new TextEncoder().encode('plain transcript')),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
       });
       assertEquals(response.headers.get('content-type'), null);
@@ -272,7 +272,7 @@ test('/v1/audio/transcriptions records duration under the per-second metric', as
   await withMockedFetch(
     () => Response.json({ text: 'hello', duration: 91.8, usage: { type: 'duration', seconds: 91 } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'verbose_json']]),
       });
       assertEquals(response.status, 200);
@@ -292,7 +292,7 @@ test('/v1/audio/transcriptions preserves duration usage unpriced when the model 
   await withMockedFetch(
     () => Response.json({ text: 'hello', usage: { type: 'duration', seconds: 75 } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
       });
       assertEquals(response.status, 200);
@@ -313,7 +313,7 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
   await withMockedFetch(
     () => Response.json({ text: 'hello', usage: { type: 'tokens', input_tokens: 12, output_tokens: 8, total_tokens: 20 } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
       });
       assertEquals(response.status, 200);
@@ -342,7 +342,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
       '',
     ].join('\n'), { headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
       assertEquals(response.status, 200);
@@ -375,7 +375,7 @@ test('/v1/audio/transcriptions preserves a terminal stream event with malformed 
         { headers: { 'content-type': 'text/event-stream' } },
       ),
       async () => {
-        const response = await requestApp('/v1/audio/transcriptions', {
+        const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
           method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
         });
         assertEquals(response.status, 200);
@@ -412,7 +412,7 @@ test('/v1/audio/transcriptions completes and drains an upstream kept open after 
       },
     }), { headers: { 'content-type': 'text/event-stream' } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
       const text = await response.text();
@@ -432,7 +432,7 @@ test('/v1/audio/transcriptions treats EOF without transcript.text.done as a fail
       headers: { 'content-type': 'text/event-stream' },
     }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
       assertEquals(response.status, 200);
@@ -452,7 +452,7 @@ test('/v1/audio/transcriptions counts a bodyless SSE response as a failed reques
   await withMockedFetch(
     () => new Response(null, { headers: { 'content-type': 'text/event-stream', 'x-empty-trace': 'empty-sse' } }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
       assertEquals(response.status, 502);
@@ -475,7 +475,7 @@ test('/v1/audio/transcriptions forwards exhausted upstream errors and records th
       headers: { 'content-type': 'application/json', 'retry-after': '4', 'x-error-trace': 'trace-error' },
     }),
     async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
+      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
       });
       assertEquals(response.status, 422);

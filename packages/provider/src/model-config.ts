@@ -13,8 +13,8 @@ export type UpstreamChatModelConfig = ChatModelInfo;
 //     operator authored it, PATCH persists it, and `modelsField` below is its
 //     validator.
 //   • Auto — the live projection of a provider's own emission, rendered by
-//     `POST /api/upstreams/list-models` from the `ProviderModel` the provider
-//     returned. Read-only; it never persists.
+//     the saved-refresh or draft-preview catalog operation. Read-only; it
+//     never persists as operator configuration.
 export interface UpstreamModelConfig {
   // Mirrors of fields that flow through to PublicModel (snake_case for parity).
   kind: ModelKind;

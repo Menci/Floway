@@ -1,11 +1,8 @@
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type {
   FlagDefaults,
   FlagOverrides,
   ModelPrefixConfig,
   ProxyFallbackEntry,
-  UpstreamModelConfig,
-  UpstreamProviderKind,
 } from '@floway-dev/provider';
 import type { AzureUpstreamConfig as StoredAzureUpstreamConfig } from '@floway-dev/provider-azure';
 import type {
@@ -32,14 +29,10 @@ import type {
   CopilotUpstreamConfig as StoredCopilotUpstreamConfig,
   CopilotUpstreamState as StoredCopilotUpstreamState,
 } from '@floway-dev/provider-copilot';
-import type {
-  CustomModelsFetch,
-  CustomRawModel,
-  CustomUpstreamConfig as StoredCustomUpstreamConfig,
-} from '@floway-dev/provider-custom';
+import type { CustomModelsFetch, CustomUpstreamConfig as StoredCustomUpstreamConfig } from '@floway-dev/provider-custom';
 import type { OllamaUpstreamConfig as StoredOllamaUpstreamConfig } from '@floway-dev/provider-ollama';
 
-export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CustomModelsFetch, CustomRawModel, ProxyFallbackEntry };
+export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CustomModelsFetch, ProxyFallbackEntry };
 
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
@@ -211,13 +204,3 @@ export type UpstreamRecord =
   | (DashboardUpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState; codex_quota?: CodexQuotaSnapshotMap | null })
   | (DashboardUpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState })
   | (DashboardUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
-
-export interface ListedUpstreamModel extends UpstreamModelConfig {
-  upstreamModelId: string;
-  publicModelId: string;
-  endpoints: ModelEndpoints;
-}
-
-export type ListUpstreamModelsResponse =
-  | { kind: 'custom'; data: CustomRawModel[] }
-  | { kind: Exclude<UpstreamProviderKind, 'custom'>; data: ListedUpstreamModel[] };

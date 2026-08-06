@@ -9,7 +9,7 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/sh
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -66,6 +66,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
 };
 
 const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
+  await warmModelsForTest();
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},

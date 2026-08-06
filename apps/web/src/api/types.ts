@@ -10,13 +10,11 @@ export type {
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
   CodexQuotaSnapshotMap,
-  CustomRawModel,
-  ListUpstreamModelsResponse,
   UpstreamRecord,
 } from '@floway-dev/gateway/control-plane/upstreams/types';
 
 export type UpstreamRecordEnvelope = InferRequestType<
-  typeof api.api.upstreams['list-models']['$post']
+  typeof api.api.upstreams['preview-models']['$post']
 >['json']['record'];
 
 export type ProxyRecord = SerializedProxyRecord;

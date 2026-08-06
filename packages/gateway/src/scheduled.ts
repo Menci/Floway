@@ -1,6 +1,7 @@
 import { sweepExpirations } from './scheduled/expiration-sweeps.ts';
+import { scheduleModelsCacheRefreshes } from './scheduled/models-refresh.ts';
 import { collectSpilledFiles } from './scheduled/spilled-files.ts';
-import { getImageCacheStore } from '@floway-dev/platform';
+import { getImageCacheStore, type BackgroundScheduler } from '@floway-dev/platform';
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
   try {
@@ -12,9 +13,18 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
   }
 };
 
-export const runScheduledMaintenance = async (): Promise<void> => {
+export const runScheduledMaintenance = async (
+  runtimeLocation: string | null,
+  backgroundScheduler: BackgroundScheduler,
+): Promise<void> => {
   const nowMs = Date.now();
-  await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
-  await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
-  await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
+  const storageMaintenance = async (): Promise<void> => {
+    await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
+    await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
+  };
+  await Promise.all([
+    runSweep('models.refresh', () => scheduleModelsCacheRefreshes(runtimeLocation, backgroundScheduler)),
+    storageMaintenance(),
+    runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs)),
+  ]);
 };

@@ -2,7 +2,7 @@ import type { ExecutionContext } from 'hono';
 import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../../src/app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, setupAppTest, sseResponsesResponse, warmModelsForTest } from '../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../test-utils/worker-websocket.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -42,6 +42,7 @@ const connectCodexResponsesWebSocket = async (
   runtime: ReturnType<typeof installWorkerWebSocketRuntime>,
   apiKey: string,
 ): Promise<TestWorkerWebSocket> => {
+  await warmModelsForTest();
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},

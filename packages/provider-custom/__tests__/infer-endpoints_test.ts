@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { inferEndpointsFromModelId } from '../src/infer-endpoints.ts';
-import { createCustomProvider } from '../src/provider.ts';
+import { createCustomProvider, projectCustomDiscoveredModels } from '../src/provider.ts';
 import { directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -135,4 +135,42 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       assertEquals(models[0].endpoints, IMAGES);
     },
   );
+});
+
+test('Custom dashboard projection shares endpoint inference and preserves unroutable rerank rows', () => {
+  const record: UpstreamRecord = {
+    id: 'up_custom_preview',
+    kind: 'custom',
+    name: 'Custom Preview',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
+    },
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+  };
+  const models = projectCustomDiscoveredModels(record, {
+    data: [
+      { id: 'gpt-image-2' },
+      { id: 'speech', kind: 'transcription' },
+      { id: 'ranker', kind: 'rerank' },
+    ],
+  });
+  assertEquals(models.map(model => ({ id: model.upstreamModelId, kind: model.kind, endpoints: model.endpoints })), [
+    { id: 'gpt-image-2', kind: 'image', endpoints: IMAGES },
+    { id: 'speech', kind: 'transcription', endpoints: AUDIO },
+    { id: 'ranker', kind: 'rerank', endpoints: { rerank: {} } },
+  ]);
 });

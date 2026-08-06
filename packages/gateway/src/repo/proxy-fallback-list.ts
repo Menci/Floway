@@ -42,9 +42,13 @@ const normalizeColos = (colos: readonly string[] | undefined): string[] | undefi
   return out.length === 0 ? undefined : out;
 };
 
-// True when the entry is active under the request's current colo. `colos`
+// True when the entry is active under the request's current colo. Null means
+// the runtime cannot identify its colo, so only unscoped entries match. `colos`
 // is either absent (all colos) or non-empty — the wire schema rejects an
 // empty array and `normalizeProxyFallbackList` strips one before storage, so
 // we don't defend the "empty means all colos" interpretation here.
-export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string): boolean =>
-  entry.colos === undefined || entry.colos.includes(currentColo);
+export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string | null): boolean =>
+  entry.colos === undefined || (currentColo !== null && entry.colos.includes(currentColo));
+
+export const hasLocationIndependentEgress = (entries: readonly ProxyFallbackEntry[]): boolean =>
+  entries.length === 0 || entries.some(entry => entry.colos === undefined);

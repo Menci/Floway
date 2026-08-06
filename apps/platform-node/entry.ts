@@ -27,13 +27,15 @@ import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
 import {
   app,
+  handleExecutionRequest,
   initBackgroundSchedulerResolver,
+  initExecutionCellNamespace,
   initRepo,
   initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
-import { getEnvOptional } from '@floway-dev/platform';
+import { getEnvOptional, InProcessExecutionCellNamespace } from '@floway-dev/platform';
 
 // In Node we don't have Workers' executionCtx.waitUntil — there's no request
 // lifecycle to attach background work to — so the resolver fire-and-forgets
@@ -48,6 +50,7 @@ initResponsesWebSocketUpgradeResolver((c, events) =>
 
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
+const scheduledRuntimeLocation = getEnvOptional('RUNTIME_LOCATION', 'LOCAL').toUpperCase();
 
 // Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
 // local instance grants seed-admin access). Refuse to boot the Node
@@ -63,6 +66,7 @@ const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
+initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
 
 // Run the scheduled maintenance job once after a short startup delay and
 // then every hour. Without the startup run, a process that restarts more
@@ -71,8 +75,11 @@ initRepo(new SqlRepo(db));
 // 30s delay keeps the very first request after boot from racing the sweep.
 // unref() on both timers lets the process exit cleanly on SIGINT.
 const STARTUP_DELAY_MS = 30 * 1000;
+const scheduleBackground = (promise: Promise<unknown>): void => {
+  promise.catch(err => console.error('[scheduled-maintenance background]', err));
+};
 const sweep = (): void => {
-  runScheduledMaintenance().catch(err => {
+  runScheduledMaintenance(scheduledRuntimeLocation, scheduleBackground).catch(err => {
     console.error('[scheduled-maintenance] sweep failed:', err);
   });
 };

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mountCodexRoutes } from '../../../src/data-plane/codex/routes.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
-import { copilotModels, setupAppTest } from '../../test-utils/app.ts';
+import { copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCodexApp = () => {
@@ -39,6 +39,13 @@ interface CodexModelsResponse {
     auto_compact_token_limit?: number | null;
   }>;
 }
+
+const requestCodexModels = async (apiKey: string): Promise<Response> => {
+  await warmModelsForTest();
+  return await buildCodexApp().request('/azure-api.codex/models', {
+    headers: { authorization: `Bearer ${apiKey}`, 'user-agent': CODEX_USER_AGENT },
+  });
+};
 
 describe('Codex model-provider routes', () => {
   it('owns the namespaced alpha-search path', async () => {
@@ -97,9 +104,7 @@ describe('Codex model-provider routes', () => {
     const body = await withMockedFetch(
       copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
       async () => {
-        const response = await buildCodexApp().request('/azure-api.codex/models', {
-          headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
-        });
+        const response = await requestCodexModels(apiKey.key);
         expect(response.status).toBe(200);
         return await response.json() as CodexModelsResponse;
       },
@@ -117,9 +122,7 @@ describe('Codex model-provider routes', () => {
     const body = await withMockedFetch(
       copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
       async () => {
-        const response = await buildCodexApp().request('/azure-api.codex/models', {
-          headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
-        });
+        const response = await requestCodexModels(apiKey.key);
         expect(response.status).toBe(200);
         return await response.json() as CodexModelsResponse;
       },
@@ -134,9 +137,7 @@ describe('Codex model-provider routes', () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
       copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
-      async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
-      })).json() as CodexModelsResponse,
+      async () => await (await requestCodexModels(apiKey.key)).json() as CodexModelsResponse,
     );
 
     expect(body.models.map(model => model.slug)).toEqual(['gpt-5.5']);
@@ -146,9 +147,7 @@ describe('Codex model-provider routes', () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
       copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
-      async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
-      })).json() as CodexModelsResponse,
+      async () => await (await requestCodexModels(apiKey.key)).json() as CodexModelsResponse,
     );
 
     expect(body.models).toHaveLength(1);

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { DurableObjectChannelBroker, type BroadcastNamespace } from '../src/durable-object-channel-broker.ts';
-import type { ChannelCodec } from '@floway-dev/platform';
+import { ExecutionCellChannelBroker } from '../src/execution-cell-channel-broker.ts';
+import type { ChannelCodec, ExecutionCellNamespace } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode rejects payloads prefixed with
@@ -49,33 +49,37 @@ const buildNamespace = (
   socket: FakeServerSocket,
   broadcasts: string[] = [],
   closeAlls: string[] = [],
-  fetches?: { count: number },
+  fetches?: { count: number; cellIds?: string[] },
 ) => {
-  const ns: BroadcastNamespace = {
-    idFromName(_name) { return {}; },
-    get(_id) {
-      return {
-        broadcast: async payload => { broadcasts.push(payload); },
-        closeAll: async reason => { closeAlls.push(reason); },
-        fetch: async () => {
-          if (fetches) fetches.count += 1;
-          // Real CF returns 101; Node's `Response` rejects status 101 in its
-          // constructor, so synthesise it by overriding `status` after the
-          // fact. The broker only reads `status` and `webSocket`.
-          const response = new Response(null, { status: 200 });
-          Object.defineProperty(response, 'status', { value: 101, configurable: true });
-          Object.defineProperty(response, 'webSocket', { value: socket, configurable: true });
-          return response;
-        },
-      };
+  const ns: ExecutionCellNamespace = {
+    async fetch(cellId, request) {
+      if (fetches) {
+        fetches.count += 1;
+        fetches.cellIds?.push(cellId);
+      }
+      const url = new URL(request.url);
+      if (url.pathname === '/broadcast' && request.method === 'POST') {
+        broadcasts.push(await request.text());
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === '/broadcast/close' && request.method === 'POST') {
+        closeAlls.push(await request.text());
+        return new Response(null, { status: 204 });
+      }
+      // Real CF returns 101; Node's `Response` rejects status 101 in its
+      // constructor, so synthesise it by overriding `status` after the fact.
+      const response = new Response(null, { status: 200 });
+      Object.defineProperty(response, 'status', { value: 101, configurable: true });
+      Object.defineProperty(response, 'webSocket', { value: socket, configurable: true });
+      return response;
     },
   };
   return ns;
 };
 
-test('DurableObjectChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
+test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -98,10 +102,10 @@ test('DurableObjectChannelBroker.subscribe drives payloads through the broadcast
   assertEquals(socket.closed?.code, 1000);
 });
 
-test('DurableObjectChannelBroker.subscribe does not open a socket for an already-aborted signal', async () => {
+test('ExecutionCellChannelBroker.subscribe does not open a socket for an already-aborted signal', async () => {
   const socket = new FakeServerSocket();
   const fetches = { count: 0 };
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket, [], [], fetches), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket, [], [], fetches), stringCodec);
   const controller = new AbortController();
   controller.abort();
 
@@ -112,9 +116,9 @@ test('DurableObjectChannelBroker.subscribe does not open a socket for an already
   assertEquals(socket.closed, null);
 });
 
-test('DurableObjectChannelBroker.subscribe resolves concurrent reads in socket order', async () => {
+test('ExecutionCellChannelBroker.subscribe resolves concurrent reads in socket order', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
   const first = iter.next();
@@ -130,27 +134,29 @@ test('DurableObjectChannelBroker.subscribe resolves concurrent reads in socket o
   controller.abort();
 });
 
-test('DurableObjectChannelBroker.publish encodes the payload through the codec', async () => {
+test('ExecutionCellChannelBroker.publish encodes the payload through the codec', async () => {
   const broadcasts: string[] = [];
-  const ns = buildNamespace(new FakeServerSocket(), broadcasts);
-  const broker = new DurableObjectChannelBroker<string>(ns, stringCodec);
+  const fetches = { count: 0, cellIds: [] as string[] };
+  const ns = buildNamespace(new FakeServerSocket(), broadcasts, [], fetches);
+  const broker = new ExecutionCellChannelBroker<string>(ns, stringCodec);
   await broker.publish('k', 'frame-a');
   assertEquals(broadcasts.length, 1);
   assertEquals(broadcasts[0], 'frame-a');
+  assertEquals(fetches.cellIds, [JSON.stringify(['broadcast', 'k'])]);
 });
 
-test('DurableObjectChannelBroker.closeChannel forwards the reason to the actor', async () => {
+test('ExecutionCellChannelBroker.closeChannel forwards the reason to the actor', async () => {
   const closeAlls: string[] = [];
   const ns = buildNamespace(new FakeServerSocket(), [], closeAlls);
-  const broker = new DurableObjectChannelBroker<string>(ns, stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(ns, stringCodec);
   await broker.closeChannel('k', 'custom-reason');
   assertEquals(closeAlls.length, 1);
   assertEquals(closeAlls[0], 'custom-reason');
 });
 
-test('DurableObjectChannelBroker.subscribe rejects every pending read when decoding fails', async () => {
+test('ExecutionCellChannelBroker.subscribe rejects every pending read when decoding fails', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -167,9 +173,9 @@ test('DurableObjectChannelBroker.subscribe rejects every pending read when decod
   assertEquals((results[1] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
 });
 
-test('DurableObjectChannelBroker.subscribe drains buffered payloads before surfacing a decode failure', async () => {
+test('ExecutionCellChannelBroker.subscribe drains buffered payloads before surfacing a decode failure', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -184,9 +190,9 @@ test('DurableObjectChannelBroker.subscribe drains buffered payloads before surfa
   assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
 });
 
-test('DurableObjectChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
+test('ExecutionCellChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -198,9 +204,9 @@ test('DurableObjectChannelBroker.subscribe ends the iterator on a server-initiat
   assertEquals(result.done, true);
 });
 
-test('DurableObjectChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
+test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -215,12 +221,12 @@ test('DurableObjectChannelBroker.subscribe surfaces a server-side socket error b
     caught = err;
   }
   assertEquals(caught instanceof Error, true);
-  assertEquals((caught as Error).message, 'BroadcastDO socket error');
+  assertEquals((caught as Error).message, 'ExecutionDO socket error');
 });
 
-test('DurableObjectChannelBroker.subscribe delivers a frame buffered before the first .next() call', async () => {
+test('ExecutionCellChannelBroker.subscribe delivers a frame buffered before the first .next() call', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -234,9 +240,9 @@ test('DurableObjectChannelBroker.subscribe delivers a frame buffered before the 
   assertEquals(first.value, 'pre-buffered');
 });
 
-test('DurableObjectChannelBroker.subscribe closes the socket when the iterator returns', async () => {
+test('ExecutionCellChannelBroker.subscribe closes the socket when the iterator returns', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 

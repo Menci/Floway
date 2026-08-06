@@ -2,6 +2,8 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
+import { MODEL_CATALOG_REVISION } from './models-cache-contract.ts';
+import { modelsRefreshRetryAt } from './models-refresh-backoff.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
@@ -18,7 +20,10 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsCacheGeneration,
+  ModelsRefreshBeginInput,
+  ModelsRefreshBeginResult,
+  ModelsRefreshFailureInput,
+  ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -36,6 +41,7 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   SpilledFilesRepo,
+  StoredUpstreamRecord,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
   WebSearchUsageRepo,
@@ -870,51 +876,164 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 // declaring the row unwritable, not a derived figure.
 export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
 
+const MODELS_CACHE_EPOCH_SQL = `CASE
+  WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
+  THEN coalesce(json_extract(models_cache_json, '$.fetchedAt'), 0)
+  ELSE 0
+END`;
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
-  async list(): Promise<UpstreamRecord[]> {
+  async list(): Promise<StoredUpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
-  async getById(id: string): Promise<UpstreamRecord | null> {
+  async getById(id: string): Promise<StoredUpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
   }
 
   save(upstream: UpstreamRecord): Promise<void> {
-    return this.saveRecord(upstream, false);
+    return this.saveRecord(upstream);
   }
 
-  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void> {
-    return this.saveRecord(upstream, true);
+  async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
+    const row = await this.db
+      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
+        RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`)
+      .bind(
+        upstream.id,
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.sortOrder,
+        upstream.createdAt,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+      )
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
   }
 
-  private async saveRecord(upstream: UpstreamRecord, clearModelsCache: boolean): Promise<void> {
+  async replaceForModels(input: {
+    previous: StoredUpstreamRecord;
+    upstream: UpstreamRecord;
+  }): Promise<StoredUpstreamRecord | null> {
+    const { previous, upstream } = input;
+    const modelConfigChanged = previous.kind !== upstream.kind
+      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
+      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
+    const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
+    const refreshInputsChanged = modelConfigChanged || transportChanged;
+    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
+    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
+    const modelsRefreshUpdate = refreshInputsChanged ? ', models_refresh_json = NULL' : '';
+    const modelsCacheUpdate = modelConfigChanged ? ', models_cache_json = NULL' : '';
+    const row = await this.db
+      .prepare(
+        `UPDATE upstreams SET
+           provider = ?,
+           name = ?,
+           enabled = ?,
+           sort_order = ?,
+           updated_at = ?,
+           config_version = ?,
+           config_json = ?,
+           state_json = CASE WHEN ? THEN ? ELSE state_json END,
+           flag_overrides = ?,
+           disabled_public_model_ids = ?,
+           proxy_fallback_list_json = ?,
+           model_prefix_json = ?,
+           hue = ?${modelsRefreshUpdate}${modelsCacheUpdate}
+         WHERE id = ?
+           AND provider = ?
+           AND name = ?
+           AND enabled = ?
+           AND sort_order = ?
+           AND updated_at = ?
+           AND config_version = ?
+           AND config_json = ?
+           AND (? = 0 OR state_json IS ?)
+           AND flag_overrides = ?
+           AND disabled_public_model_ids = ?
+           AND proxy_fallback_list_json = ?
+           AND model_prefix_json IS ?
+           AND hue = ?
+         RETURNING id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue`,
+      )
+      .bind(
+        upstream.kind,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.sortOrder,
+        upstream.updatedAt,
+        configVersion,
+        serializeStoredConfig(upstream.config),
+        sqliteBoolean(replaceState),
+        serializeStoredState(upstream.state),
+        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.hue,
+        upstream.id,
+        previous.kind,
+        previous.name,
+        previous.enabled ? 1 : 0,
+        previous.sortOrder,
+        previous.updatedAt,
+        previous.configVersion,
+        serializeStoredConfig(previous.config),
+        sqliteBoolean(replaceState),
+        serializeStoredState(previous.state),
+        JSON.stringify(normalizeFlagOverrides(previous.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(previous.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(previous.proxyFallbackList)),
+        previous.modelPrefix === null ? null : JSON.stringify(previous.modelPrefix),
+        previous.hue,
+      )
+      .first<UpstreamRow>();
+    return row === null ? null : toUpstreamRecord(row);
+  }
+
+  private async saveRecord(upstream: UpstreamRecord): Promise<void> {
     // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
            enabled = excluded.enabled,
            sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
+           config_version = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides AND proxy_fallback_list_json = excluded.proxy_fallback_list_json THEN config_version ELSE config_version + 1 END,
            config_json = excluded.config_json,
            state_json = excluded.state_json,
            flag_overrides = excluded.flag_overrides,
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
            model_prefix_json = excluded.model_prefix_json,
-           hue = excluded.hue${clearModelsCache ? ', models_cache_json = NULL' : ''}`,
+           hue = excluded.hue,
+           models_cache_json = CASE WHEN provider = excluded.provider AND config_json = excluded.config_json AND flag_overrides = excluded.flag_overrides THEN models_cache_json ELSE NULL END,
+           models_refresh_json = CASE
+             WHEN provider != excluded.provider OR config_json != excluded.config_json OR flag_overrides != excluded.flag_overrides OR proxy_fallback_list_json != excluded.proxy_fallback_list_json THEN NULL
+             ELSE models_refresh_json
+           END`,
       )
       .bind(
         upstream.id,
@@ -944,43 +1063,49 @@ class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  // Written only here and never by save(): an operator edit carries whatever
-  // catalog the request happened to read, and folding that back in would let a
-  // rename race a refresh.
-  async saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
+  async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
+    const { id, configVersion, cacheEpoch, cache } = input;
     const result = await this.db
-      .prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND updated_at = ? AND config_json = ?')
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, generation.updatedAt, rawConfig)
+      .prepare(`UPDATE upstreams SET models_cache_json = ?, models_refresh_json = NULL WHERE id = ? AND config_version = ? AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
+      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion, cacheEpoch)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  // Annotates a previously-successful entry, so an upstream that has never
-  // cached a catalog has nothing to annotate. Patched in SQL rather than
-  // read-modify-written: it touches one key of a document whose other keys a
-  // concurrent refresh may be rewriting, and nothing compares this column's
-  // text, so the encoding SQLite produces here is immaterial.
-  async saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean> {
-    const rawConfig = await this.modelsCacheWriteConfig(id, generation);
-    if (rawConfig === null) return false;
+  async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
+    const { id, configVersion, cacheEpoch, error, previousFailureCount, failedAt } = input;
+    const failureCount = previousFailureCount + 1;
+    const retryAt = modelsRefreshRetryAt(failedAt, previousFailureCount);
+    // A cold failure remains immediately stale while preserving the error for
+    // the next request and dashboard read.
+    const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: error });
     const result = await this.db
-      .prepare("UPDATE upstreams SET models_cache_json = json_set(models_cache_json, '$.lastError', json(?)) WHERE id = ? AND updated_at = ? AND config_json = ? AND models_cache_json IS NOT NULL")
-      .bind(JSON.stringify(error), id, generation.updatedAt, rawConfig)
+      .prepare(
+        `UPDATE upstreams SET
+           models_cache_json = CASE WHEN models_cache_json IS NULL THEN ? ELSE json_set(models_cache_json, '$.lastError', json(?)) END,
+           models_refresh_json = json_object('failureCount', CAST(? AS INTEGER), 'retryAt', CAST(? AS INTEGER))
+         WHERE id = ? AND config_version = ?
+           AND ${MODELS_CACHE_EPOCH_SQL} = ?
+           AND coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) = ?`,
+      )
+      .bind(coldFailure, JSON.stringify(error), failureCount, retryAt, id, configVersion, cacheEpoch, previousFailureCount)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
-  private async modelsCacheWriteConfig(id: string, generation: ModelsCacheGeneration): Promise<string | null> {
-    const row = await this.db
-      .prepare('SELECT updated_at, config_json FROM upstreams WHERE id = ?')
-      .bind(id)
-      .first<{ updated_at: string; config_json: string }>();
-    if (row === null || row.updated_at !== generation.updatedAt) return null;
-    return serializeStoredConfig(JSON.parse(row.config_json)) === serializeStoredConfig(generation.config)
-      ? row.config_json
-      : null;
+  async beginModelsRefresh(input: ModelsRefreshBeginInput): Promise<ModelsRefreshBeginResult> {
+    const { id, configVersion, cacheEpoch, now, bypassBackoff } = input;
+    const row = await this.db.prepare(
+      `SELECT
+         coalesce(json_extract(models_refresh_json, '$.failureCount'), 0) AS failure_count,
+         coalesce(json_extract(models_refresh_json, '$.retryAt'), 0) AS retry_at
+       FROM upstreams
+       WHERE id = ? AND config_version = ?
+         AND ${MODELS_CACHE_EPOCH_SQL} = ?`,
+    ).bind(id, configVersion, cacheEpoch).first<{ failure_count: number; retry_at: number }>();
+    if (row === null) return { kind: 'superseded' };
+    if (!bypassBackoff && row.retry_at > now) return { kind: 'backoff' };
+    return { kind: 'ready', failureCount: row.failure_count };
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner
@@ -1026,6 +1151,7 @@ interface UpstreamRow {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  config_version: number;
   config_json: string;
   state_json: string | null;
   models_cache_json: string | null;
@@ -1036,9 +1162,12 @@ interface UpstreamRow {
   hue: number;
 }
 
-const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
+const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
   const config = decodeUpstreamConfig(row.config_json, row.id);
   const state = row.state_json === null ? null : decodeUpstreamState(row.state_json, row.id);
+  if (!Number.isSafeInteger(row.config_version) || row.config_version < 1) {
+    throw new Error(`Invalid upstream config version for ${row.id}`);
+  }
 
   return {
     id: row.id,
@@ -1049,6 +1178,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    configVersion: row.config_version,
     config,
     state,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),

@@ -1,16 +1,14 @@
 import type { InferRequestType } from 'hono/client';
 
-import { configuredEndpoints, PATH_OVERRIDE_PATHS, shapeForKind } from './endpoints';
+import { PATH_OVERRIDE_PATHS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
-  ListUpstreamModelsResponse,
   ProxyRecord,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
@@ -47,6 +45,10 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
 // create the editor stays mounted, on loader mode 'create', over a persisted
 // record.
 export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
+
+export const hasDraftModelInputs = (
+  dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
+): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList].some(Boolean);
 
 // `hasAuto` says the upstream also lists the model, which is what makes
 // switching the row back to `auto` possible.
@@ -126,7 +128,7 @@ export interface ModelCatalogFetch {
   /** Null when nothing was listed, which leaves whatever the caller already shows. */
   discovered: UpstreamModelConfig[] | null;
   modelsError: ModelListingFailure | null;
-  refreshed: UpstreamRecord | null;
+  modelsCache: UpstreamRecord['modelsCache'] | null;
 }
 
 // The gateway squashes a genuine upstream failure to a message that names
@@ -148,44 +150,47 @@ export interface ModelListingFailure {
   upstreamListingFailed: boolean;
 }
 
-// Listing re-reads the upstream afterwards: the server writes its models cache
-// as a side effect of the call, and the record the editor holds carries it.
-export const fetchModelCatalog = async (
+const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => ({
+  discovered: null,
+  modelsError: {
+    message: error.message,
+    upstreamListingFailed: failureCode(error.raw) === MODEL_LISTING_FAILURE_CODE,
+  },
+  modelsCache: null,
+});
+
+export const previewDraftModelCatalog = async (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   init?: RequestInit,
 ): Promise<ModelCatalogFetch> => {
-  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, refreshed: null };
-
-  const result = await callApi(() => api.api.upstreams['list-models'].$post({
+  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, modelsCache: null };
+  const result = await callApi(() => api.api.upstreams['preview-models'].$post({
     json: { record: previewRecord(record, values) },
   }, { init }));
-  if (result.error) {
-    return {
-      discovered: null,
-      modelsError: {
-        message: result.error.message,
-        upstreamListingFailed: failureCode(result.error.raw) === MODEL_LISTING_FAILURE_CODE,
-      },
-      refreshed: null,
-    };
-  }
+  if (result.error) return listingFailure(result.error);
+  return { discovered: result.data.data, modelsError: null, modelsCache: null };
+};
 
-  const endpoints = record.kind === 'custom'
-    ? (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).endpoints
-    : {};
-  const discovered = discoveredModelsFromResponse(result.data, endpoints);
-  if (!isPersisted(record)) return { discovered, modelsError: null, refreshed: null };
-
-  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }, { init }));
-  return refreshed.error
-    ? { discovered, modelsError: { message: refreshed.error.message, upstreamListingFailed: false }, refreshed: null }
-    : { discovered, modelsError: null, refreshed: refreshed.data };
+export const fetchSavedModelCatalog = async (
+  record: UpstreamRecord,
+  init?: RequestInit,
+): Promise<ModelCatalogFetch> => {
+  if (!canFetchModelCatalog(record, record.config)) return { discovered: null, modelsError: null, modelsCache: null };
+  const result = await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init }));
+  if (result.error) return listingFailure(result.error);
+  return { discovered: result.data.data, modelsError: null, modelsCache: result.data.modelsCache };
 };
 
 export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
-  const { discovered, modelsError, refreshed } = await fetchModelCatalog(record, valuesFromRecord(record));
-  return { discovered: discovered ?? [], modelsError, record: refreshed ?? record };
+  const result = isPersisted(record)
+    ? await fetchSavedModelCatalog(record)
+    : await previewDraftModelCatalog(record, valuesFromRecord(record));
+  return {
+    discovered: result.discovered ?? [],
+    modelsError: result.modelsError,
+    record: result.modelsCache === null ? record : { ...record, modelsCache: result.modelsCache } as UpstreamRecord,
+  };
 };
 
 // A field react-hook-form has registered owns its key from then on: mounting it
@@ -314,25 +319,6 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     model_prefix: values.modelPrefix,
     ...(manualModelsSupported(record) ? { config: configFromValues(record, values) } : {}),
   } as UpdateUpstreamBody;
-};
-
-export const discoveredModelsFromResponse = (
-  response: ListUpstreamModelsResponse,
-  endpoints: ModelEndpoints,
-): UpstreamModelConfig[] => {
-  if (response.kind !== 'custom') return response.data;
-  return response.data.map(model => {
-    const kind = model.kind ?? 'chat';
-    return {
-      upstreamModelId: model.id,
-      publicModelId: model.id,
-      kind,
-      ...(kind === 'chat' ? { endpoints: configuredEndpoints(endpoints) } : shapeForKind(kind, { endpoints })),
-      ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
-      ...(model.limits ? { limits: model.limits } : {}),
-      ...(model.pricing ? { pricing: model.pricing } : {}),
-    };
-  });
 };
 
 export const modelPrefixIsValid = (prefix: string) =>

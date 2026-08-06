@@ -1,11 +1,19 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { enumerateModelCandidates, enumerateRealModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
-import { buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-utils/app.ts';
+import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
+import { buildCustomUpstreamRecord, copilotModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
+
+const withMockedFetch = <T>(
+  handler: Parameters<typeof withMockedFetchRaw>[0],
+  fn: () => Promise<T>,
+): Promise<T> => withMockedFetchRaw(handler, async () => {
+  await warmModelsForTest();
+  return await fn();
+});
 
 const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
   if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);
@@ -15,6 +23,7 @@ const realProviderModels = (model: InternalModel | undefined): Record<string, Pr
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
 test('enumerateModelCandidates blocks a cold catalog fetch after client disconnect', async () => {
   const { repo } = await setupAppTest();
@@ -33,7 +42,7 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
   controller.abort(reason);
   let fetches = 0;
 
-  await withMockedFetch(
+  await withMockedFetchRaw(
     () => {
       fetches += 1;
       return jsonResponse({ object: 'list', data: [] });
@@ -56,6 +65,48 @@ test('enumerateModelCandidates blocks a cold catalog fetch after client disconne
       assertEquals(fetches, 0);
     },
   );
+});
+
+test('a scheduled cold refresh survives disconnect after execution starts', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord());
+  const originalBegin = repo.upstreams.beginModelsRefresh.bind(repo.upstreams);
+  let releaseBegin: (() => void) | null = null;
+  vi.spyOn(repo.upstreams, 'beginModelsRefresh').mockImplementation(async input => {
+    await new Promise<void>(resolve => { releaseBegin = resolve; });
+    return await originalBegin(input);
+  });
+  const controller = new AbortController();
+  const background: Promise<unknown>[] = [];
+  let fetches = 0;
+
+  await withMockedFetchRaw(
+    () => {
+      fetches++;
+      return jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] });
+    },
+    async () => {
+      await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'eventual-model',
+        kind: 'chat',
+        scheduler: promise => { background.push(promise); },
+        runtimeLocation: 'TEST',
+        clientDisconnectSignal: controller.signal,
+      });
+      await vi.waitFor(() => expect(releaseBegin).not.toBeNull());
+      controller.abort(new Error('client disconnected'));
+      releaseBegin!();
+      await Promise.all(background);
+    },
+  );
+
+  expect(fetches).toBe(1);
+  expect((await repo.upstreams.getById('up_custom'))?.modelsCache).toMatchObject({
+    lastError: null,
+    models: [{ id: 'eventual-model' }],
+  });
 });
 
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
@@ -204,7 +255,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
   const providers = await listModelProviders(null);
   let secondModelsFetches = 0;
 
-  await withMockedFetch(
+  await withMockedFetchRaw(
     request => {
       const url = new URL(request.url);
       if (url.hostname === 'first.example.com' && url.pathname === '/v1/models') {
@@ -217,10 +268,16 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [providers[0]], () => directFetcher, testScheduler);
+      const first = await repo.upstreams.getById(providers[0].upstreamId);
+      if (first === null) throw new Error('first upstream missing');
+      await refreshModelsExplicit(modelsRefreshTarget(first), 'TEST', false);
+      const warmed = (await listModelProviders(null)).find(provider => provider.upstreamId === 'up_first');
+      if (!warmed) throw new Error('warmed provider missing');
+      const { candidates } = await enumerateRealModelCandidates('target-model', 'chat', [warmed], { fetcherForUpstream: () => directFetcher, scheduleRefresh });
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstreamId, 'up_first');
+      expect(candidates[0]?.fetcher).toBe(directFetcher);
       // Every enumerated candidate seeds `providerModels[provider.upstreamId]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
       assertEquals(Object.keys(realProviderModels(candidates[0]?.model)), ['up_first']);
@@ -258,19 +315,46 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
     state: null,
   });
 
+  await warmModelsForTest();
   const providers = await listModelProviders(null);
-  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, () => directFetcher, testScheduler);
-  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, () => directFetcher, testScheduler);
+  const enabled = await enumerateRealModelCandidates('enabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
+  const disabled = await enumerateRealModelCandidates('disabled-model', 'chat', providers, { fetcherForUpstream: () => directFetcher, scheduleRefresh });
   assertEquals(enabled.candidates[0]?.model.id, 'enabled-model');
   assertEquals(disabled.candidates.length, 0);
 });
 
-// Regression: when an upstream's force re-fetch rejects past HARD, the call
-// site asking for a model belonging to one of the *healthy* upstreams must
-// still resolve. The broken upstream's display name flows back via
-// `failedUpstreams` so the eventual error renderer can mention it.
+test('a recorded refresh failure is irrelevant when the prefix policy cannot address the model id', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_prefixed_failure',
+    name: 'Prefixed failure',
+    modelPrefix: { prefix: 'tenant/', addressable: ['prefixed'], listed: ['prefixed'] },
+    config: { baseUrl: 'https://prefixed-failure.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).hostname === 'prefixed-failure.example.com') return jsonResponse({ error: 'down' }, 502);
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'unprefixed-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+      expect(resolved.failedUpstreams).toEqual([]);
+    },
+  );
+});
+
+// A persisted refresh error must not hide healthy siblings. The broken
+// upstream's display name flows back via `failedUpstreams` while its empty
+// or last-known-good snapshot stays independent of the current request.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -322,7 +406,6 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // attempt, so the resolver returns immediately rather than walking the
 // stripped form.
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -363,7 +446,6 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 // failedUpstreams across the two retry attempts must dedupe: a single broken
 // upstream that rejects both walks reports its name once, not twice.
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -398,14 +480,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
   );
 });
 
-// AbortError must propagate end-to-end so the caller's per-request abort
-// signal cannot be masked by a slow upstream. Burying it in failedUpstreams
-// would let the rest of the data-plane request build a Response against a
-// stale catalog. The provider's `fetchUpstreamModels` wraps the upstream
-// fetch error in a ProviderModelsUnavailableError with the AbortError as
-// its cause, so the resolver's detection walks the cause chain.
-test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog fetch', async () => {
-  clearInFlightForTesting();
+test('an AbortError from background catalog refresh does not abort model resolution', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -425,28 +500,15 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      let thrown: unknown = null;
-      try {
-        await enumerateModelCandidates({
-          upstreamIds: null,
-          model: 'any-model',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-        });
-      } catch (e) {
-        thrown = e;
-      }
-      // The thrown error chains back to our injected AbortError via .cause.
-      const isAbortInChain = (err: unknown): boolean => {
-        for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {
-          if (cur instanceof Error && cur.name === 'AbortError') return true;
-        }
-        return false;
-      };
-      if (!isAbortInChain(thrown)) {
-        throw new Error(`expected rejection to carry an AbortError in its cause chain; got: ${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`);
-      }
+      const resolved = await enumerateModelCandidates({
+        upstreamIds: null,
+        model: 'any-model',
+        kind: 'chat',
+        scheduler: testScheduler,
+        runtimeLocation: 'TEST',
+      });
+      expect(resolved.candidates).toEqual([]);
+      expect(resolved.failedUpstreams).toEqual(['Aborting']);
     },
   );
 });
@@ -456,7 +518,6 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
 // upstream fetch. The failure renderer surfaces this as a model-missing 404
 // without re-deriving the empty-cap branch.
 test('enumerateModelCandidates returns the empty triple when the visible upstream list is empty', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // A populated catalog is the case under test: the empty cap, not an empty
@@ -514,7 +575,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   };
 
   test('flattens across targets in declaration order for first-available', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -542,7 +602,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -575,7 +634,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -602,7 +660,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -634,7 +691,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -660,7 +716,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({

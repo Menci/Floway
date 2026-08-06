@@ -1,10 +1,8 @@
 // Append a parenthetical clause to a "model not found / unsupported"
-// error body when one or more upstreams' catalog fetches rejected
-// during the request. Surfaced inline alongside the per-request 4xx
-// so a client can tell a genuine miss from a transient outage where
-// the upstream that owns the model is currently unreachable. The same
-// data is independently visible to operators on the dashboard via
-// `modelsCache.lastError`.
+// error body when one or more consulted upstreams record a catalog-refresh
+// failure. The same durable state is visible to operators through
+// `modelsCache.lastError`; it does not imply that this request performed a
+// refresh or that the upstream remains unreachable.
 //
 // The suffix is inserted *before* a trailing `.` so the final message
 // reads "Model X is not available on any configured upstream (models

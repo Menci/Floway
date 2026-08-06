@@ -1,46 +1,37 @@
-import { iterateReadableStream, type ChannelBroker, type ChannelCodec } from '@floway-dev/platform';
+import { iterateReadableStream, type ChannelBroker, type ChannelCodec, type ExecutionCellNamespace } from '@floway-dev/platform';
 
-// Minimal namespace surface for BROADCAST_DO — declared locally so this
-// file stays off `@cloudflare/workers-types`.
-export interface BroadcastNamespace {
-  idFromName(name: string): unknown;
-  get(id: unknown): BroadcastStub;
-}
+const broadcastCellId = (channelId: string): string => JSON.stringify(['broadcast', channelId]);
 
-interface BroadcastStub {
-  broadcast(payload: string): Promise<void>;
-  closeAll(reason: string): Promise<void>;
-  fetch(request: Request): Promise<Response>;
-}
-
-export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
+export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   constructor(
-    private readonly namespace: BroadcastNamespace,
+    private readonly cells: ExecutionCellNamespace,
     private readonly codec: ChannelCodec<T>,
   ) {}
 
-  private stub(channelId: string): BroadcastStub {
-    return this.namespace.get(this.namespace.idFromName(channelId));
-  }
-
   async publish(channelId: string, payload: T): Promise<void> {
-    await this.stub(channelId).broadcast(this.codec.encode(payload));
+    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
+      method: 'POST',
+      body: this.codec.encode(payload),
+    }));
+    if (!response.ok) throw new Error(`ExecutionDO broadcast returned HTTP ${response.status}`);
   }
 
   async closeChannel(channelId: string, reason: string): Promise<void> {
-    await this.stub(channelId).closeAll(reason);
+    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast/close', {
+      method: 'POST',
+      body: reason,
+    }));
+    if (!response.ok) throw new Error(`ExecutionDO close returned HTTP ${response.status}`);
   }
 
   subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
-    return iterateReadableStream(iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec));
+    return iterateReadableStream(iterateFromExecutionSocket(this.cells, channelId, signal, this.codec));
   }
 }
 
-// Listener registration and socket open run eagerly so a broadcast that races
-// against the iterator drain still buffers into the queue and lands on the
-// next read.
-const iterateFromBroadcastSocket = <T>(
-  stub: BroadcastStub,
+const iterateFromExecutionSocket = <T>(
+  cells: ExecutionCellNamespace,
+  channelId: string,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
 ): ReadableStream<T> => {
@@ -64,9 +55,6 @@ const iterateFromBroadcastSocket = <T>(
         socket?.removeEventListener('close', onClose);
         socket?.removeEventListener('error', onError);
       };
-      // Subscriber termination must remove its WebSocket from the Durable
-      // Object hibernation registry. Waiting for the eager open also covers a
-      // cancellation or error that arrives while the handshake is in flight.
       const closeSocket = async (): Promise<void> => {
         await openPromise.catch(() => {});
         socket?.close(1000, 'subscriber done');
@@ -103,7 +91,7 @@ const iterateFromBroadcastSocket = <T>(
         }
       };
       const onClose = (): void => close(false);
-      const onError = (): void => fail(new Error('BroadcastDO socket error'));
+      const onError = (): void => fail(new Error('ExecutionDO socket error'));
       const onAbort = (): void => close();
 
       cancel = async (): Promise<void> => {
@@ -115,14 +103,14 @@ const iterateFromBroadcastSocket = <T>(
       pull = flushError;
 
       const openPromise = (async (): Promise<void> => {
-        const response = await stub.fetch(new Request('https://broadcast.do/subscribe', {
+        const response = await cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
           headers: { Upgrade: 'websocket' },
         }));
         if (response.status !== 101) {
-          throw new Error(`BroadcastDO subscribe returned HTTP ${response.status} instead of 101`);
+          throw new Error(`ExecutionDO subscribe returned HTTP ${response.status} instead of 101`);
         }
         const openedSocket = response.webSocket;
-        if (!openedSocket) throw new Error('BroadcastDO returned 101 without a webSocket');
+        if (!openedSocket) throw new Error('ExecutionDO returned 101 without a webSocket');
 
         socket = openedSocket;
         if (!terminated) {

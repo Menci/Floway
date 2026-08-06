@@ -6,6 +6,7 @@ import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   initFileStore(new MemoryFileStore());
   let imageSwept = false;
   initImageCacheStore({
@@ -17,7 +18,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
-    await runScheduledMaintenance();
+    await runScheduledMaintenance('TEST', () => {});
   } finally {
     error.mockRestore();
   }
@@ -27,6 +28,7 @@ test('scheduled maintenance isolates the shared expiration driver from later col
 
 test('scheduled maintenance collects exact spilled files after expiration work', async () => {
   const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
   const files = new MemoryFileStore();
   initFileStore(files);
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
@@ -36,7 +38,27 @@ test('scheduled maintenance collects exact spilled files after expiration work',
   vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
   vi.spyOn(repo.spilledFiles, 'acknowledge').mockResolvedValue(1);
 
-  await runScheduledMaintenance();
+  await runScheduledMaintenance('TEST', () => {});
 
   expect(await files.get(key)).toBeNull();
+});
+
+test('scheduled maintenance does not collect spilled files before expiration work finishes', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  initFileStore(new MemoryFileStore());
+  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
+  let releaseExpiration: (() => void) | null = null;
+  vi.spyOn(repo.expirationSweeps, 'claim').mockImplementation(async () => {
+    await new Promise<void>(resolve => { releaseExpiration = resolve; });
+    return null;
+  });
+  const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+
+  const maintenance = runScheduledMaintenance('TEST', () => {});
+  await vi.waitFor(() => expect(releaseExpiration).not.toBeNull());
+  expect(collect).not.toHaveBeenCalled();
+  releaseExpiration!();
+  await maintenance;
+  expect(collect).toHaveBeenCalledOnce();
 });

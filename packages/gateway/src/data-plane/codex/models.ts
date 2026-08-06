@@ -16,9 +16,8 @@
 
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
+import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher } from '@floway-dev/provider';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -62,12 +61,11 @@ export const assembleCodexCatalog = (
 export const loadCodexCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
+  scheduleRefresh: ModelsRefreshScheduler,
 ): Promise<CodexCatalog> => {
   const [resolution, addressable] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamIds, scheduleRefresh),
   ]);
   return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };

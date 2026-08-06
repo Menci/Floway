@@ -133,7 +133,7 @@ const fetchShowForTag = async (
 export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaCatalog> => {
   // /api/tags through the shared scaffold so network / non-2xx / shape errors
   // surface as ProviderModelsUnavailableError — same envelope every other
-  // provider's catalog fetch produces, which the control-plane and SWR cache
+  // provider's catalog fetch produces, which the control-plane and persisted cache
   // both branch on.
   const tags = await fetchUpstreamModels(
     () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),

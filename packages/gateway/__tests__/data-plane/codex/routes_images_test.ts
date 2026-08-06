@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { copilotModels, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
@@ -64,7 +64,7 @@ test('Codex provider-relative image generation reuses the public image-generatio
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/azure-api.codex/images/generations', {
+      const response = await requestAppWithWarmModels('/azure-api.codex/images/generations', {
         method: 'POST',
         headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a fox in space', quality: 'high' }),
@@ -99,7 +99,7 @@ test('Codex provider-relative image edits reuse the public JSON handler', async 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/azure-api.codex/images/edits', {
+      const response = await requestAppWithWarmModels('/azure-api.codex/images/edits', {
         method: 'POST',
         headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -142,7 +142,7 @@ test('Codex inline data URL edits egress as multipart uploads', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/azure-api.codex/images/edits', {
+      const response = await requestAppWithWarmModels('/azure-api.codex/images/edits', {
         method: 'POST',
         headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
         body: JSON.stringify({

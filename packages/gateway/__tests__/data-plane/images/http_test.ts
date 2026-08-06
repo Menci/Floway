@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -9,7 +9,7 @@ const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8
 
 test('/v1/images/generations rejects malformed JSON body with 400', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/v1/images/generations', {
+  const response = await requestAppWithWarmModels('/v1/images/generations', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: 'not json',
@@ -19,7 +19,7 @@ test('/v1/images/generations rejects malformed JSON body with 400', async () => 
 
 test('/v1/images/generations rejects body without model with 400', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/v1/images/generations', {
+  const response = await requestAppWithWarmModels('/v1/images/generations', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ prompt: 'hi' }),
@@ -43,7 +43,7 @@ test('/v1/images/generations 404s when no upstream provides the model', async ()
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/images/generations', {
+      const response = await requestAppWithWarmModels('/v1/images/generations', {
         method: 'POST',
         headers: { 'content-type': 'application/json; charset=utf-8', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'no-such-model', prompt: 'hi' }),
@@ -55,7 +55,7 @@ test('/v1/images/generations 404s when no upstream provides the model', async ()
 
 test('/v1/images/edits rejects malformed JSON with 400', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/v1/images/edits', {
+  const response = await requestAppWithWarmModels('/v1/images/edits', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: 'not json',
@@ -65,7 +65,7 @@ test('/v1/images/edits rejects malformed JSON with 400', async () => {
 
 test('/v1/images/edits rejects JSON without a model with 400', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/v1/images/edits', {
+  const response = await requestAppWithWarmModels('/v1/images/edits', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ prompt: 'hi', images: [{ file_id: 'file-image' }] }),
@@ -77,7 +77,7 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
   const { apiKey } = await setupAppTest();
   const form = new FormData();
   form.append('prompt', 'hi');
-  const response = await requestApp('/v1/images/edits', {
+  const response = await requestAppWithWarmModels('/v1/images/edits', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key },
     body: form,
@@ -116,7 +116,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/images/generations', {
+      const response = await requestAppWithWarmModels('/v1/images/generations', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'gpt-4o', prompt: 'hi' }),
@@ -165,7 +165,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/images/generations', {
+      const response = await requestAppWithWarmModels('/v1/images/generations', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
         body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a shiba in space' }),
@@ -235,7 +235,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       form.append('model', 'gpt-image-2');
       form.append('prompt', 'replace sky with aurora');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
-      const response = await requestApp('/v1/images/edits', {
+      const response = await requestAppWithWarmModels('/v1/images/edits', {
         method: 'POST',
         headers: { 'x-api-key': apiKey.key },
         body: form,
@@ -289,7 +289,7 @@ test('/v1/images/edits forwards JSON image references through a custom provider'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/v1/images/edits', {
+      const response = await requestAppWithWarmModels('/v1/images/edits', {
         method: 'POST',
         headers: { 'content-type': 'Application/Vnd.OpenAI+JSON; charset=utf-8', 'x-api-key': apiKey.key },
         body: JSON.stringify({

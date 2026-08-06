@@ -1,12 +1,12 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
-import { fetchUpstreamModelsCached } from './models-cache.ts';
+import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
-import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
@@ -16,8 +16,8 @@ import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/pro
 // apply: an `unprefixed`-addressable upstream is probed with the inbound id
 // verbatim; a `prefixed`-addressable upstream is probed with the inbound id
 // minus its configured prefix when (and only when) the inbound carries that
-// prefix. Both branches are evaluated against the same SWR-cached catalog
-// fetch — a single upstream typically contributes at most one candidate,
+// prefix. Both branches are evaluated against the same persisted catalog
+// snapshot — a single upstream typically contributes at most one candidate,
 // but a catalog that publishes both the bare and prefixed forms can match
 // twice and both go through.
 //
@@ -29,9 +29,12 @@ const enumerateOneUpstreamCandidates = async (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
-  fetcher: Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean }> => {
+  context: {
+    fetcher: Fetcher;
+    scheduleRefresh: ModelsRefreshScheduler;
+  },
+): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean; modelsError: boolean }> => {
+  const { fetcher, scheduleRefresh } = context;
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -42,29 +45,28 @@ const enumerateOneUpstreamCandidates = async (
       else if (form === 'prefixed' && modelId.startsWith(cfg.prefix)) lookupIds.push(modelId.slice(cfg.prefix.length));
     }
   }
-  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false };
+  if (lookupIds.length === 0) return { candidates: [], sawAnyId: false, modelsError: false };
 
-  const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
+  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, scheduleRefresh);
   const disabled = new Set(provider.disabledPublicModelIds);
   const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const lookupId of lookupIds) {
-    const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
+    const match = snapshot.models.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
     if (match.kind === kind) {
       candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
     }
   }
-  return { candidates, sawAnyId };
+  return { candidates, sawAnyId, modelsError: snapshot.lastError !== null };
 };
 
-// Walk every visible upstream, in configured order, and collect every
-// (provider, model, fetcher) candidate the inbound id resolves against
-// at the requested kind. Per-upstream catalog fetches fan out concurrently
-// so a slow upstream cannot stall the rest. Provider `AbortError` values still
-// propagate. Client disconnect prevents a catalog request that has not yet
-// dispatched, while a retained request already in flight runs to completion.
+// Walk every visible upstream in configured order. Snapshot reads never wait
+// for upstream model-list I/O; cold and stale rows submit background refresh.
+// Client disconnect prevents snapshot work that has not dispatched. Once a
+// refresh reaches its execution cell, it is detached from the request. Inference lifecycle
+// policy is applied later, where a selected candidate is actually dispatched.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
@@ -75,17 +77,28 @@ export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  clientDisconnectSignal?: AbortSignal,
+  context: {
+    fetcherForUpstream: (upstreamId: string) => Fetcher;
+    scheduleRefresh: ModelsRefreshScheduler;
+    clientDisconnectSignal?: AbortSignal;
+  },
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
+  const { fetcherForUpstream, scheduleRefresh, clientDisconnectSignal } = context;
   const settled = await Promise.allSettled(providers.map(provider => {
     clientDisconnectSignal?.throwIfAborted();
-    return enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler);
+    return enumerateOneUpstreamCandidates(
+      provider,
+      modelId,
+      kind,
+      {
+        fetcher: fetcherForUpstream(provider.upstreamId),
+        scheduleRefresh,
+      },
+    );
   }));
 
   const failedUpstreams: string[] = [];
@@ -101,6 +114,7 @@ export const enumerateRealModelCandidates = async (
     }
     candidates.push(...result.value.candidates);
     sawAnyId = sawAnyId || result.value.sawAnyId;
+    if (result.value.modelsError) failedUpstreams.push(providers[index].name);
   }
   return { candidates, sawAnyId, failedUpstreams };
 };
@@ -109,8 +123,8 @@ export const enumerateRealModelCandidates = async (
 // (`claude-sonnet-4-5-20250929`) even though the gateway's merged catalog
 // only carries the undated alias. When the inbound id matches no catalog
 // entry, strip an 8-digit `-YYYYMMDD` suffix and try once more — failed
-// catalog fetches across the two attempts dedupe into a single
-// `failedUpstreams` list for the caller's renderer.
+// providers carrying a recorded catalog-refresh error across the two snapshot
+// lookups dedupe into one `failedUpstreams` list.
 const DATED_SUFFIX = /-\d{8}$/;
 
 // Real-catalog resolution with the dated-suffix retry baked in. Used both
@@ -121,20 +135,18 @@ const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  clientDisconnectSignal?: AbortSignal,
+  context: Parameters<typeof enumerateRealModelCandidates>[3],
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, context);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, context);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -198,9 +210,6 @@ export const enumerateModelCandidates = async ({
   upstreamIds: readonly string[] | null;
   model: string;
   kind: ModelKind;
-  // Threaded into `enumerateRealModelCandidates` so the per-upstream
-  // catalog lookup hits the SWR-cached `fetchUpstreamModelsCached` instead
-  // of round-tripping to the upstream on every request.
   scheduler: BackgroundScheduler;
   // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
   // Threaded into the per-request fetcher so colo-scoped fallback entries
@@ -213,17 +222,16 @@ export const enumerateModelCandidates = async ({
   readonly failedUpstreams: readonly string[];
 }> => {
   const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
-  const fetcherForUpstream = (upstreamId: string): Fetcher => {
-    const fetcher = createFetcherForUpstream(upstreamId);
-    return clientDisconnectSignal === undefined
-      ? fetcher
-      : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
-  };
   const providers = await listModelProviders(upstreamIds);
+  const resolutionContext = {
+    fetcherForUpstream: createFetcherForUpstream,
+    scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
+    clientDisconnectSignal,
+  };
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+    return await resolveRealCandidates(model, kind, providers, resolutionContext);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -235,7 +243,7 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
