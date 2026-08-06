@@ -11,7 +11,8 @@ import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { collectPromptCleanupFailures, fetchOnStream, signalAbortReason, startPromptCleanup, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from '@floway-dev/http/cleanup';
 
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
@@ -166,8 +167,15 @@ export const runDirectConnectRequest = async (
     const response = await runRequestOnStream(socket, target, request, options);
     return closeSocketWithResponse(response, socket);
   } catch (error) {
-    await socket.close().catch(() => {});
-    throw error;
+    const cleanup = startPromptCleanup(
+      'direct-connect socket close',
+      () => socket.close(),
+    );
+    throw failureWithCleanup(
+      error,
+      await collectPromptCleanupFailures([cleanup], error),
+      'Direct-connect request and socket cleanup both failed',
+    );
   }
 };
 
@@ -237,15 +245,22 @@ const runRequestOnStream = async (
     // cancel hook ends the TLS layer and closes the transport writer; each
     // protocol's IIFE / framing pump observes the underlying read failure
     // and closes the socket.
-    void stream.readable.cancel(err).catch(() => {});
-    throw err;
+    const cleanup = startPromptCleanup(
+      'proxied request readable cancel',
+      () => stream.readable.cancel(err),
+    );
+    throw failureWithCleanup(
+      err,
+      await collectPromptCleanupFailures([cleanup], err),
+      'Proxied request and readable cleanup both failed',
+    );
   }
 };
 
 const closeSocketWithResponse = (response: Response, socket: DialedSocket): Response => {
   let closePromise: Promise<void> | null = null;
   const close = (): Promise<void> => {
-    closePromise ??= socket.close().catch(() => {});
+    closePromise ??= socket.close();
     return closePromise;
   };
 
@@ -260,22 +275,35 @@ const closeSocketWithResponse = (response: Response, socket: DialedSocket): Resp
       try {
         const result = await reader.read();
         if (result.done) {
-          controller.close();
-          void close();
+          const failures = await collectCleanupFailures([close]);
+          if (failures.length > 0) {
+            controller.error(cleanupFailure(failures, 'Direct-connect response socket close failed'));
+          } else {
+            controller.close();
+          }
         } else {
           controller.enqueue(result.value);
         }
       } catch (error) {
-        controller.error(error);
-        void close();
+        const failures = await collectCleanupFailures([close]);
+        controller.error(failureWithCleanup(
+          error,
+          failures,
+          'Direct-connect response read and socket cleanup both failed',
+        ));
       }
     },
     async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        await close();
-      }
+      const readerCleanup = startPromptCleanup(
+        'direct-connect response reader cancel',
+        () => reader.cancel(reason),
+      );
+      const socketCleanup = startPromptCleanup(
+        'direct-connect response socket close',
+        close,
+      );
+      const failures = await collectPromptCleanupFailures([readerCleanup, socketCleanup], reason);
+      if (failures.length > 0) throw cleanupFailure(failures, 'Direct-connect response cancellation cleanup failed');
     },
   });
 

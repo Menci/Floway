@@ -1,7 +1,7 @@
 // HTTP/1.1 response-head parser + body-framing decoders + the
 // wire-faithful → Web Response bridge.
 
-import { signalAbortReason } from './abort.ts';
+import { collectPromptCleanupFailures, signalAbortReason, startPromptCleanup, type PromptCleanupObservation } from './abort.ts';
 import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { cleanupFailure, collectCleanupFailures, failureWithCleanup } from './cleanup.ts';
@@ -62,14 +62,18 @@ export const parseHttpResponse = async (
 ): Promise<RawHttpResponse> => {
   if (signal?.aborted) throw signalAbortReason(signal);
   const reader = readable.getReader();
-  let abortCleanup: Promise<readonly unknown[]> | undefined;
+  let abortCleanup: PromptCleanupObservation | undefined;
   const onAbort = (): void => {
     const reason = signalAbortReason(signal!);
-    abortCleanup ??= collectCleanupFailures([async () => await reader.cancel(reason)]);
+    abortCleanup ??= startPromptCleanup(
+      'HTTP response-head reader cancel',
+      () => reader.cancel(reason),
+    );
   };
   signal?.addEventListener('abort', onAbort, { once: true });
   let buffer: Uint8Array = new Uint8Array(0);
   let informationalCount = 0;
+  let composedAbort: unknown;
   // Hand-off contract: on the success path the reader is moved into the body
   // framing stream, which then owns the lock. On every throw before that
   // hand-off the reader must release the lock — otherwise a downstream
@@ -79,6 +83,19 @@ export const parseHttpResponse = async (
   try {
     while (true) {
       const result = await readResponseHead(reader, buffer);
+      if (signal?.aborted) {
+        const reason = signalAbortReason(signal);
+        const cleanup = abortCleanup ?? startPromptCleanup(
+          'HTTP response-head reader cancel',
+          () => reader.cancel(reason),
+        );
+        composedAbort = failureWithCleanup(
+          reason,
+          await collectPromptCleanupFailures([cleanup], reason),
+          'HTTP response-head abort and reader cleanup both failed',
+        );
+        throw composedAbort;
+      }
       buffer = result.remainder;
       if (result.status === 101) {
         signal?.removeEventListener('abort', onAbort);
@@ -103,10 +120,14 @@ export const parseHttpResponse = async (
   } catch (err) {
     signal?.removeEventListener('abort', onAbort);
     try { reader.releaseLock(); } catch { /* lock already released */ }
+    if (composedAbort !== undefined) throw composedAbort;
     if (signal?.aborted) {
       const reason = signalAbortReason(signal);
-      const cleanupFailures = await (abortCleanup
-        ?? collectCleanupFailures([async () => await reader.cancel(reason)]));
+      const cleanup = abortCleanup ?? startPromptCleanup(
+        'HTTP response-head reader cancel',
+        () => reader.cancel(reason),
+      );
+      const cleanupFailures = await collectPromptCleanupFailures([cleanup], reason);
       throw failureWithCleanup(
         reason,
         cleanupFailures,
@@ -132,7 +153,11 @@ const responseWithAbortSignal = (response: RawHttpResponse, signal: AbortSignal 
       onAbort = () => {
         const reason = signalAbortReason(signal);
         terminate();
-        void collectCleanupFailures([async () => await reader.cancel(reason)]).then((cleanupFailures) => {
+        const cleanup = startPromptCleanup(
+          'HTTP response-body reader cancel',
+          () => reader.cancel(reason),
+        );
+        void collectPromptCleanupFailures([cleanup], reason).then((cleanupFailures) => {
           controller.error(failureWithCleanup(
             reason,
             cleanupFailures,

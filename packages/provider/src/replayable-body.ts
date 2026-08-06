@@ -1,54 +1,60 @@
 const STREAM_CHUNK_BYTES = 64 * 1024;
-// Cleanup is bounded so a broken runtime stream cannot pin the request after
-// native fetch has already failed. Five seconds preserves most of Workers'
-// post-disconnect grace period for the gateway's remaining finalizers.
-// https://github.com/cloudflare/cloudflare-docs/blob/f8ac0aa6d9ef268d442865225c786753aa1332af/src/content/docs/workers/platform/limits.mdx#L152-L168
-const NATIVE_FETCH_CLEANUP_DEADLINE_MS = 5_000;
 
 type CleanupOutcome =
   | { readonly type: 'settled' }
   | { readonly type: 'failed'; readonly error: unknown };
 
-class NativeFetchCleanupTimeoutError extends Error {
-  readonly operationIndex: number;
-  readonly timeoutMs: number;
-
-  constructor(operationIndex: number) {
-    super(`Native fetch cleanup operation ${operationIndex} did not settle within ${NATIVE_FETCH_CLEANUP_DEADLINE_MS}ms`);
-    this.name = 'NativeFetchCleanupTimeoutError';
-    this.operationIndex = operationIndex;
-    this.timeoutMs = NATIVE_FETCH_CLEANUP_DEADLINE_MS;
-  }
+interface CleanupObservation {
+  readonly context: string;
+  readonly settlement: Promise<CleanupOutcome>;
+  outcome: CleanupOutcome | undefined;
 }
 
-const observeCleanup = (operation: () => void | PromiseLike<void>): Promise<CleanupOutcome> =>
-  Promise.resolve().then(operation).then(
+const observeCleanup = (
+  context: string,
+  operation: () => void | PromiseLike<void>,
+): CleanupObservation => {
+  let result: void | PromiseLike<void>;
+  try {
+    result = operation();
+  } catch (error) {
+    const outcome = { type: 'failed' as const, error };
+    return { context, outcome, settlement: Promise.resolve(outcome) };
+  }
+  let observation!: CleanupObservation;
+  const settlement = Promise.resolve(result).then<CleanupOutcome, CleanupOutcome>(
     () => ({ type: 'settled' }),
     error => ({ type: 'failed', error }),
-  );
+  ).then(outcome => {
+    observation.outcome = outcome;
+    return outcome;
+  });
+  observation = { context, settlement, outcome: undefined };
+  return observation;
+};
 
 const collectDistinctCleanupFailures = async (
-  outcomes: readonly Promise<CleanupOutcome>[],
+  observations: readonly CleanupObservation[],
   primary: unknown,
 ): Promise<readonly unknown[]> => {
-  const deadline = Date.now() + NATIVE_FETCH_CLEANUP_DEADLINE_MS;
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  await Promise.resolve();
   const failures: unknown[] = [];
   const append = (failure: unknown): void => {
     if (Object.is(failure, primary) || failures.some(existing => Object.is(existing, failure))) return;
     failures.push(failure);
   };
-  for (let operationIndex = 0; operationIndex < outcomes.length; operationIndex++) {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<{ readonly type: 'timeout' }>(resolve => {
-      timeoutId = setTimeout(
-        () => resolve({ type: 'timeout' }),
-        Math.max(0, deadline - Date.now()),
-      );
+  for (const observation of observations) {
+    if (observation.outcome?.type === 'failed') {
+      append(observation.outcome.error);
+      continue;
+    }
+    if (observation.outcome !== undefined) continue;
+    void observation.settlement.then(outcome => {
+      if (outcome.type === 'failed' && !Object.is(outcome.error, primary)) {
+        console.error(`[abort-cleanup] ${observation.context} failed after prompt native-fetch settlement:`, outcome.error);
+      }
     });
-    const result = await Promise.race([outcomes[operationIndex]!, timeout]);
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-    if (result.type === 'failed') append(result.error);
-    else if (result.type === 'timeout') append(new NativeFetchCleanupTimeoutError(operationIndex));
   }
   return failures;
 };
@@ -188,15 +194,15 @@ export const prepareNativeFetch = (init: RequestInit): PreparedNativeFetch => {
   // Observe settlement at creation time: fetch may reject before cancellation
   // reaches this pump, and a synchronous destination failure must never spend
   // that gap as an unhandled rejection.
-  const pumpingOutcome = pumping.then<CleanupOutcome, CleanupOutcome>(
-    () => ({ type: 'settled' }),
-    error => ({ type: 'failed', error }),
-  );
+  const pumpingOutcome = observeCleanup('FixedLengthStream request pump', () => pumping);
   let cancellation: Promise<readonly unknown[]> | undefined;
   return {
     init: { ...init, body: fixed.readable, headers, duplex: 'half' } as DuplexRequestInit,
     cancel: reason => cancellation ??= (async () => {
-      const readableCancellation = observeCleanup(async () => await fixed.readable.cancel(reason));
+      const readableCancellation = observeCleanup(
+        'FixedLengthStream readable cancel',
+        () => fixed.readable.cancel(reason),
+      );
       pumpController.abort(reason);
       return await collectDistinctCleanupFailures([readableCancellation, pumpingOutcome], reason);
     })(),

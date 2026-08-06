@@ -32,7 +32,8 @@ export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
 export type { WsUpgradeOptions } from './ws-upgrade.ts';
 
-export { signalAbortReason } from './abort.ts';
+export { collectPromptCleanupFailures, signalAbortReason, startPromptCleanup } from './abort.ts';
+export type { PromptCleanupObservation } from './abort.ts';
 
 export { HttpProtocolError } from './errors.ts';
 export type { HttpProtocolErrorCode } from './errors.ts';
