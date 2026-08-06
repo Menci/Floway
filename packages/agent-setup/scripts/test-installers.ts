@@ -1436,7 +1436,7 @@ exclusiveTest('claude', 'an interrupt during the Claude install stops the select
     // the signal lands while it is mid-install.
     const run = await runShellInstaller({
       workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude',
-      installerSleep: 2, signalDuringInstall: signal,
+      installerSleep: 1, signalDuringInstall: signal,
     });
     t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
     t.includes(run.combined, 'Claude Code', `${signal}: the run had entered the Claude phase`);
