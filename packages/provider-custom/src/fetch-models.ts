@@ -88,6 +88,17 @@ const parseModelLimits = (value: Record<string, unknown>): CustomRawModel['limit
 
 const supportedCapability = (value: unknown): boolean => isRecord(value) && value.supported === true;
 
+// Anthropic treats an omitted effort as `high`.
+// https://docs.anthropic.com/en/docs/build-with-claude/effort#how-effort-works
+const ANTHROPIC_DEFAULT_EFFORT = 'high';
+
+// https://docs.anthropic.com/en/docs/build-with-claude/effort#effort-levels
+const ANTHROPIC_EFFORT_LEVEL_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+// Anthropic rejects enabled-thinking budgets below 1,024 tokens.
+// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#technical-considerations-for-thinking-budgets
+const ANTHROPIC_THINKING_BUDGET_MIN = 1024;
+
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/models.ts#L127-L245
 const chatFromAnthropicCapabilities = (value: unknown): UpstreamChatModelConfig | undefined => {
   if (!isRecord(value)) return undefined;
@@ -101,20 +112,22 @@ const chatFromAnthropicCapabilities = (value: unknown): UpstreamChatModelConfig 
     const publishedLevels = Object.entries(value.effort)
       .filter(([level, capability]) => level !== 'supported' && supportedCapability(capability))
       .map(([level]) => level);
-    const canonicalLevels = ['low', 'medium', 'high', 'max', 'xhigh'];
     const supported = [
-      ...canonicalLevels.filter(level => publishedLevels.includes(level)),
-      ...publishedLevels.filter(level => !canonicalLevels.includes(level)),
+      ...ANTHROPIC_EFFORT_LEVEL_ORDER.filter(level => publishedLevels.includes(level)),
+      ...publishedLevels.filter(level => !ANTHROPIC_EFFORT_LEVEL_ORDER.some(knownLevel => knownLevel === level)),
     ];
     if (supported.length > 0) {
       reasoning.effort = {
         supported,
-        default: supported.includes('medium') ? 'medium' : supported[0],
+        // A future capability set without Anthropic's documented default still
+        // needs a valid default in Floway's catalog shape. The first normalized
+        // supported level is a deterministic fallback that remains valid.
+        default: supported.includes(ANTHROPIC_DEFAULT_EFFORT) ? ANTHROPIC_DEFAULT_EFFORT : supported[0],
       };
     }
   }
   if (isRecord(value.thinking) && isRecord(value.thinking.types)) {
-    if (supportedCapability(value.thinking.types.enabled)) reasoning.budget_tokens = {};
+    if (supportedCapability(value.thinking.types.enabled)) reasoning.budget_tokens = { min: ANTHROPIC_THINKING_BUDGET_MIN };
     if (supportedCapability(value.thinking.types.adaptive)) reasoning.adaptive = true;
   }
   if (Object.keys(reasoning).length > 0) chat.reasoning = reasoning;

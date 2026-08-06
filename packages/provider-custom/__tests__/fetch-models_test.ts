@@ -66,7 +66,9 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
                   supported: true,
                   low: { supported: true },
                   medium: { supported: true },
+                  high: { supported: true },
                   xhigh: { supported: true },
+                  max: { supported: true },
                   future: { supported: true },
                 },
                 thinking: {
@@ -103,10 +105,35 @@ test('fetchCustomModels follows Anthropic cursor pages and deduplicates their mo
       assertEquals(result.data[0].chat, {
         modalities: { input: ['text', 'image'], output: ['text'] },
         reasoning: {
-          effort: { supported: ['low', 'medium', 'xhigh', 'future'], default: 'medium' },
-          budget_tokens: {},
+          effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max', 'future'], default: 'high' },
+          budget_tokens: { min: 1024 },
           adaptive: true,
         },
+      });
+    },
+  );
+});
+
+test('fetchCustomModels uses the first normalized effort when a future Anthropic capability set omits high', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      data: [{
+        id: 'future-model',
+        capabilities: {
+          effort: {
+            supported: true,
+            medium: { supported: true },
+            future: { supported: true },
+          },
+        },
+      }],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data[0].chat?.reasoning?.effort, {
+        supported: ['medium', 'future'],
+        default: 'medium',
       });
     },
   );
