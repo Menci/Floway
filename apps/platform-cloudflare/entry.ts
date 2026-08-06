@@ -1,18 +1,27 @@
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { ExecutionContext } from 'hono';
 
 import { bootstrapCloudflarePlatform, type CloudflareEnv } from './src/bootstrap.ts';
 import {
   app,
+  handleExecutionRequest,
   initBackgroundSchedulerResolver,
   initRepo,
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
 
-// Re-exported here because the CF runtime resolves the DO class by its
-// exported name on the Worker module. The wrangler `migrations.new_sqlite_classes`
-// entry must match this export.
-export { BroadcastDO } from './src/broadcast-do.ts';
+// Re-exported here because the current binding and the rename migration's
+// target resolve the class by its Worker-module export name.
+export { ExecutionDO } from './src/execution-do.ts';
+
+export class ExecutionOperationEntrypoint extends WorkerEntrypoint<CloudflareEnv> {
+  async fetch(request: Request): Promise<Response> {
+    const { db } = bootstrapCloudflarePlatform(this.env);
+    initRepo(new SqlRepo(db));
+    return await handleExecutionRequest(request);
+  }
+}
 
 initBackgroundSchedulerResolver(c => promise => c.executionCtx.waitUntil(promise));
 

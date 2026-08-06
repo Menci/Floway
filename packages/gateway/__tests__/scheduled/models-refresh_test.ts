@@ -76,8 +76,9 @@ test('one malformed upstream does not prevent later refreshes from being schedul
       () => Response.json({ data: [{ id: 'healthy-model' }] }),
       async () => {
         await scheduleModelsCacheRefreshes('TEST', promise => { background.push(promise); });
-        expect(background).toHaveLength(1);
-        await background[0];
+        expect(background).toHaveLength(2);
+        const settled = await Promise.allSettled(background);
+        expect(settled.map(result => result.status)).toEqual(['rejected', 'fulfilled']);
       },
     );
   } finally {

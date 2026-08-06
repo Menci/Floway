@@ -27,13 +27,15 @@ import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
 import {
   app,
+  handleExecutionRequest,
   initBackgroundSchedulerResolver,
+  initExecutionCellNamespace,
   initRepo,
   initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
-import { getEnvOptional } from '@floway-dev/platform';
+import { getEnvOptional, InProcessExecutionCellNamespace } from '@floway-dev/platform';
 
 // In Node we don't have Workers' executionCtx.waitUntil — there's no request
 // lifecycle to attach background work to — so the resolver fire-and-forgets
@@ -64,6 +66,7 @@ const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
+initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
 
 // Run the scheduled maintenance job once after a short startup delay and
 // then every hour. Without the startup run, a process that restarts more

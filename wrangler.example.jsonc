@@ -32,7 +32,7 @@
   // `@reclaimprotocol/tls/webcrypto` (used by packages/http and the proxy
   // REALITY dialer) still imports `webcrypto` from `crypto`, so the Worker
   // cannot resolve those modules at cold start without the Node compat flag.
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "enable_ctx_exports"],
   "triggers": {
     "crons": ["17 * * * *"]
   },
@@ -108,13 +108,14 @@
       "id": "<YOUR_KV_NAMESPACE_ID>"
     }
   ],
-  // Per-key WebSocket fan-out actor. Content-agnostic — the actor never
-  // inspects the payload; callers layer their own framing via a codec.
+  // Per-use execution cells. The initial broadcast protocol provides
+  // hibernatable WebSocket fan-out; model refresh operations share this
+  // actor host without placing provider data in Durable Object storage.
   "durable_objects": {
     "bindings": [
       {
-        "name": "BROADCAST_DO",
-        "class_name": "BroadcastDO"
+        "name": "EXECUTION_DO",
+        "class_name": "ExecutionDO"
       }
     ]
   },
@@ -125,13 +126,22 @@
   // alternative `new_classes` picks the legacy KV-backed storage path which
   // CF is phasing out and which Workers Free cannot create.
   //
-  // BroadcastDO has no `ctx.storage.*` calls — the SQLite db is provisioned
+  // ExecutionDO has no `ctx.storage.*` calls — the SQLite db is provisioned
   // but unused. The name reflects the BACKEND choice, not whether the actor
   // touches it.
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["BroadcastDO"]
+    },
+    {
+      "tag": "v2",
+      "renamed_classes": [
+        {
+          "from": "BroadcastDO",
+          "to": "ExecutionDO"
+        }
+      ]
     }
   ]
 }
