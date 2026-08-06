@@ -312,6 +312,8 @@ const useStyles = makeStyles({
     flexBasis: 'auto',
     height: '32px',
     justifyContent: 'center',
+    // The stretched disclosure beneath this decorative box owns the click.
+    pointerEvents: 'none',
     width: '32px',
   },
   // The chevron's turn is the AnimatedIcon's own, not the region's: ten frames
