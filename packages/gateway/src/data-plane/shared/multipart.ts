@@ -156,6 +156,8 @@ const parsePartHeaders = (headerBytes: Uint8Array): ParsedPartHeaders | null => 
     // Node retains the last duplicate while workerd comma-combines indexed
     // headers. Neither behavior is portable for Content-Disposition, so reject
     // ambiguous part metadata at the common gateway boundary.
+    // https://github.com/nodejs/undici/blob/01a912e49a50c48009ed2639d2a457a6ec26752a/lib/web/fetch/formdata-parser.js#L220-L331
+    // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.c%2B%2B#L742-L767
     if (headers.has(name)) return null;
     headers.set(name, line.slice(separator + 1).trim());
   }
@@ -175,9 +177,11 @@ const parsePartHeaders = (headerBytes: Uint8Array): ParsedPartHeaders | null => 
   }
   const name = parameters.get('name');
   if (name === undefined) return null;
-  // The parsers this replaces only recognize the quoted `filename` parameter.
-  // Treating RFC 5987 `filename*` as a file would turn a previously-invalid
-  // request into an upstream upload.
+  // Undici treats quoted `filename*` as a file name while workerd ignores the
+  // unknown parameter and produces a scalar field. Reject the runtime-dependent
+  // shape at the common boundary rather than changing its type by deployment.
+  // https://github.com/nodejs/undici/blob/01a912e49a50c48009ed2639d2a457a6ec26752a/lib/web/fetch/formdata-parser.js#L297-L322
+  // https://github.com/cloudflare/workerd/blob/80c80a712532b012cbeaef4d08ff6ab15407e960/src/workerd/api/form-data.c%2B%2B#L213-L230
   if (parameters.has('filename*')) return null;
   return {
     name,
@@ -242,6 +246,10 @@ const preflightMultipart = (
   delimiter[1] = DASH;
   delimiter.set(boundary, 2);
   const innerDelimiter = new Uint8Array(delimiter.byteLength + 1);
+  // workerd accepts an omitted CR while Undici requires CRLF. Recognize both
+  // wire forms so moving a deployment between the two targets does not narrow
+  // a request the Cloudflare target previously accepted.
+  // https://github.com/cloudflare/workerd/blob/80c80a712532b012cbeaef4d08ff6ab15407e960/src/workerd/api/form-data.c%2B%2B#L150-L184
   innerDelimiter[0] = LF;
   innerDelimiter.set(delimiter, 1);
 
