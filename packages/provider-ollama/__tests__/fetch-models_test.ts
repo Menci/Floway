@@ -117,6 +117,25 @@ test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/t
   );
 });
 
+test('fetchOllamaCatalog rejects an over-cardinality tag list before scheduling any detail request', async () => {
+  let showCalls = 0;
+  const fetcher: Fetcher = url => {
+    if (new URL(url).pathname === '/api/tags') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }, { name: 'third' }] }));
+    }
+    showCalls++;
+    return Promise.resolve(jsonResponse({}));
+  };
+
+  const error = await assertRejects(
+    () => fetchOllamaCatalog(config, fetcher, { maxCatalogModels: 2 }),
+    ProviderModelsUnavailableError,
+  );
+
+  expect((error.cause as Error).message).toBe('Ollama /api/tags catalog exceeded 2 entries');
+  expect(showCalls).toBe(0);
+});
+
 test('fetchOllamaCatalog bounds /api/show concurrency and deduplicates repeated tags', async () => {
   const names = Array.from({ length: 20 }, (_, index) => `model-${index}`);
   let active = 0;
@@ -184,6 +203,58 @@ test('fetchOllamaCatalog cancels discarded and oversized /api/show bodies withou
   expect(catalog.data.map(model => model.id)).toEqual(['valid']);
   expect(failedCancelled).toBe(true);
   expect(oversizedCancelled).toBe(true);
+});
+
+test('fetchOllamaCatalog accepts detail bodies at the exact aggregate byte boundary', async () => {
+  const fetcher: Fetcher = url => new URL(url).pathname === '/api/tags'
+    ? Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }))
+    : Promise.resolve(new Response('{}'));
+
+  const catalog = await fetchOllamaCatalog(config, fetcher, {
+    maxShowResponseBytes: 2,
+    maxTotalShowResponseBytes: 4,
+  });
+
+  expect(catalog.data.map(model => model.id)).toEqual(['first', 'second']);
+});
+
+test('fetchOllamaCatalog aborts sibling detail bodies when their shared reservation is exhausted', async () => {
+  const encoder = new TextEncoder();
+  const cancellations = new Map<string, unknown>();
+  const showCalls: string[] = [];
+  const responseBody = (name: string, firstChunk: string) => new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(firstChunk));
+    },
+    cancel(reason) {
+      cancellations.set(name, reason);
+    },
+  }, { highWaterMark: 0 });
+  const fetcher: Fetcher = (url, init) => {
+    if (new URL(url).pathname === '/api/tags') {
+      return Promise.resolve(jsonResponse({ models: [{ name: 'first' }, { name: 'second' }] }));
+    }
+    const name = (JSON.parse(String(init.body)) as { name: string }).name;
+    showCalls.push(name);
+    return Promise.resolve(new Response(responseBody(name, name === 'first' ? '{' : '{}')));
+  };
+
+  const error = await assertRejects(
+    () => fetchOllamaCatalog(config, fetcher, {
+      maxShowResponseBytes: 4,
+      maxTotalShowResponseBytes: 5,
+    }),
+    ProviderModelsUnavailableError,
+  );
+
+  expect(error.cause).toMatchObject({
+    name: 'ResponseByteBudgetExceededError',
+    remainingBytes: 1,
+    requestedBytes: 2,
+  });
+  expect(showCalls).toEqual(['first', 'second']);
+  expect(cancellations.get('second')).toBe(error.cause);
+  expect(cancellations.get('first')).toBe(error.cause);
 });
 
 test('fetchOllamaCatalog rejects when every model detail lookup fails', async () => {

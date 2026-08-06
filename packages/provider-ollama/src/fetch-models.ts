@@ -20,10 +20,23 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError, ProviderModelsUnavailableError, readBoundedJsonResponse, runProviderModelsTask } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, isAbortError, ProviderModelsUnavailableError, readBoundedJsonResponse, ResponseByteBudget, ResponseByteBudgetExceededError, runProviderModelsTask } from '@floway-dev/provider';
 
 const MAX_CONCURRENT_SHOW_REQUESTS = 8;
 const MAX_SHOW_RESPONSE_BYTES = 4 * 1024 * 1024;
+// Catalog discovery is control-plane metadata. These ceilings admit a large
+// self-hosted fleet while bounding both the number of detail requests and the
+// cumulative response work. The aggregate budget holds one worst-case
+// reservation per worker, so it does not silently reduce the configured pool.
+const MAX_CATALOG_MODELS = 1024;
+const MAX_TOTAL_SHOW_RESPONSE_BYTES = MAX_CONCURRENT_SHOW_REQUESTS * MAX_SHOW_RESPONSE_BYTES;
+
+class OllamaCatalogResourceLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OllamaCatalogResourceLimitError';
+  }
+}
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -63,8 +76,11 @@ const parseTagEntry = (value: unknown): TagEntry | null => {
   return entry;
 };
 
-const parseTagsResponse = (value: unknown): TagEntry[] | null => {
+const parseTagsResponse = (value: unknown, maxCatalogModels: number): TagEntry[] | null => {
   if (!isRecord(value) || !Array.isArray(value.models)) return null;
+  if (value.models.length > maxCatalogModels) {
+    throw new OllamaCatalogResourceLimitError(`Ollama /api/tags catalog exceeded ${maxCatalogModels} entries`);
+  }
   const entries: TagEntry[] = [];
   const seen = new Set<string>();
   for (const item of value.models) {
@@ -124,6 +140,7 @@ const fetchShowForTag = (
   tag: TagEntry,
   signal: AbortSignal,
   maxResponseBytes: number,
+  responseByteBudget: ResponseByteBudget,
   idleTimeoutMs: number | undefined,
   totalTimeoutMs: number | undefined,
 ): Promise<OllamaRawModel | null> => runProviderModelsTask(async taskSignal => {
@@ -138,9 +155,9 @@ const fetchShowForTag = (
   }
   let parsed: unknown;
   try {
-    parsed = await readBoundedJsonResponse(response, maxResponseBytes, undefined, { idleTimeoutMs, signal: taskSignal });
+    parsed = await readBoundedJsonResponse(response, maxResponseBytes, responseByteBudget, { idleTimeoutMs, signal: taskSignal });
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    if (isAbortError(error) || error instanceof ResponseByteBudgetExceededError) throw error;
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
@@ -149,19 +166,35 @@ const fetchShowForTag = (
 export const fetchOllamaCatalog = (
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
-  options: { idleTimeoutMs?: number; maxShowResponseBytes?: number; signal?: AbortSignal; totalTimeoutMs?: number } = {},
+  options: {
+    idleTimeoutMs?: number;
+    maxCatalogModels?: number;
+    maxShowResponseBytes?: number;
+    maxTotalShowResponseBytes?: number;
+    signal?: AbortSignal;
+    totalTimeoutMs?: number;
+  } = {},
 ): Promise<OllamaCatalog> => runProviderModelsTask(async catalogSignal => {
+  const maxCatalogModels = options.maxCatalogModels ?? MAX_CATALOG_MODELS;
   const maxShowResponseBytes = options.maxShowResponseBytes ?? MAX_SHOW_RESPONSE_BYTES;
+  const maxTotalShowResponseBytes = options.maxTotalShowResponseBytes ?? MAX_TOTAL_SHOW_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxCatalogModels) || maxCatalogModels <= 0) {
+    throw new TypeError('maxCatalogModels must be a positive safe integer');
+  }
   if (!Number.isSafeInteger(maxShowResponseBytes) || maxShowResponseBytes <= 0) {
     throw new TypeError('maxShowResponseBytes must be a positive safe integer');
   }
+  if (!Number.isSafeInteger(maxTotalShowResponseBytes) || maxTotalShowResponseBytes <= 0) {
+    throw new TypeError('maxTotalShowResponseBytes must be a positive safe integer');
+  }
+  const responseByteBudget = ResponseByteBudget.create(maxTotalShowResponseBytes);
   // /api/tags through the shared scaffold so network / non-2xx / shape errors
   // surface as ProviderModelsUnavailableError — same envelope every other
   // provider's catalog fetch produces, which the control-plane and SWR cache
   // both branch on.
   const tags = await fetchUpstreamModels(
     signal => ollamaFetchTags(config, { method: 'GET', signal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
-    parseTagsResponse,
+    value => parseTagsResponse(value, maxCatalogModels),
     { idleTimeoutMs: options.idleTimeoutMs, signal: catalogSignal, totalTimeoutMs: options.totalTimeoutMs },
   );
   const results: Array<OllamaRawModel | null | undefined> = new Array(tags.length);
@@ -177,19 +210,22 @@ export const fetchOllamaCatalog = (
     while (fatalAbort === undefined && !controller.signal.aborted) {
       const index = nextIndex++;
       if (index >= tags.length) return;
+      let reservation: ResponseByteBudget | undefined;
       try {
+        reservation = responseByteBudget.reserve(maxShowResponseBytes);
         results[index] = await fetchShowForTag(
           config,
           fetcher,
           tags[index],
           controller.signal,
           maxShowResponseBytes,
+          reservation,
           options.idleTimeoutMs,
           options.totalTimeoutMs,
         );
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (isAbortError(error)) {
+        if (isAbortError(error) || error instanceof ResponseByteBudgetExceededError) {
           if (fatalAbort === undefined) {
             fatalAbort = error;
             rejectFatalAbort(error);
@@ -199,6 +235,8 @@ export const fetchOllamaCatalog = (
         }
         if (firstShowError === undefined) firstShowError = error;
         results[index] = null;
+      } finally {
+        reservation?.release();
       }
     }
   };
@@ -230,6 +268,9 @@ export const fetchOllamaCatalog = (
   return { data };
 }, options).catch((cause: unknown) => {
   if (options.signal?.aborted) throw options.signal.reason;
+  if (cause instanceof OllamaCatalogResourceLimitError || cause instanceof ResponseByteBudgetExceededError) {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
   if (cause instanceof DOMException && cause.name === 'TimeoutError') {
     throw new ProviderModelsUnavailableError(null, cause);
   }
