@@ -120,6 +120,34 @@ const utf8Prefix = (value: string, maxBytes: number): { bytes: number; complete:
   return { bytes, complete: end === value.length, end };
 };
 
+const jsonEscapedPrefix = (value: string, maxBytes: number): { bytes: number; complete: boolean; end: number } => {
+  let bytes = 0;
+  let end = 0;
+  while (end < value.length) {
+    const codeUnit = value.charCodeAt(end);
+    let units = 1;
+    let width: number;
+    if (codeUnit === 0x22 || codeUnit === 0x5c || codeUnit === 0x08 || codeUnit === 0x09
+      || codeUnit === 0x0a || codeUnit === 0x0c || codeUnit === 0x0d) {
+      width = 2;
+    } else if (codeUnit <= 0x1f || (codeUnit >= 0xd800 && codeUnit <= 0xdfff)) {
+      const next = value.charCodeAt(end + 1);
+      if (codeUnit >= 0xd800 && codeUnit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+        units = 2;
+        width = 4;
+      } else {
+        width = 6;
+      }
+    } else {
+      width = utf8Width(codeUnit);
+    }
+    if (bytes + width > maxBytes) break;
+    bytes += width;
+    end += units;
+  }
+  return { bytes, complete: end === value.length, end };
+};
+
 const consumeString = (state: SerializationState, value: string, stack = false): string => {
   const remaining = stack ? state.remainingStackBytes : state.remainingStringBytes;
   const available = Math.min(
@@ -129,7 +157,7 @@ const consumeString = (state: SerializationState, value: string, stack = false):
   );
   if (available <= 0) return STRING_BUDGET_MARKER;
 
-  const complete = utf8Prefix(value, available);
+  const complete = jsonEscapedPrefix(value, available);
   if (complete.complete) {
     if (stack) state.remainingStackBytes -= complete.bytes;
     else state.remainingStringBytes -= complete.bytes;
@@ -137,8 +165,9 @@ const consumeString = (state: SerializationState, value: string, stack = false):
     return value;
   }
 
-  const suffixBytes = utf8Prefix(STRING_TRUNCATION_SUFFIX, Number.POSITIVE_INFINITY).bytes;
-  const prefix = utf8Prefix(value, Math.max(0, available - suffixBytes));
+  const suffixBytes = jsonEscapedPrefix(STRING_TRUNCATION_SUFFIX, Number.POSITIVE_INFINITY).bytes;
+  if (available < suffixBytes) return STRING_BUDGET_MARKER;
+  const prefix = jsonEscapedPrefix(value, available - suffixBytes);
   const truncated = `${value.slice(0, prefix.end)}${STRING_TRUNCATION_SUFFIX}`;
   const used = prefix.bytes + suffixBytes;
   if (stack) state.remainingStackBytes = Math.max(0, state.remainingStackBytes - used);
@@ -222,30 +251,85 @@ const snapshotAggregateErrors = (error: object): AggregateErrorsSnapshot => {
   return { type: 'values', entries, total };
 };
 
-const serializeNonErrorValue = (value: unknown, state: SerializationState): unknown => {
-  const nodeMarker = nodeBudgetMarker();
-  const referenceMarker = { type: 'non_error_reference' };
-  const markerObjects = new Set<object>([nodeMarker, referenceMarker]);
-  const seen = new WeakSet<object>();
-  let rootObjectSeen = false;
+const OMIT_NON_ERROR_VALUE = Symbol('omit-non-error-value');
 
+const snapshotNonErrorValue = (
+  value: unknown,
+  state: SerializationState,
+  seen: WeakSet<object>,
+  key: string,
+  counted: boolean,
+  applyToJSON: boolean,
+  inArray: boolean,
+): unknown | typeof OMIT_NON_ERROR_VALUE => {
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') return consumeString(state, value);
+  if (typeof value === 'bigint') throw new TypeError('BigInt is not JSON serializable');
+  if (value === undefined || typeof value === 'symbol') return inArray ? null : OMIT_NON_ERROR_VALUE;
+  if (typeof value !== 'object' && typeof value !== 'function') return value;
+
+  const object = value as object;
+  if (applyToJSON) {
+    const toJSON = readProperty(object, 'toJSON');
+    if (!toJSON.ok) throw new Error('toJSON is unreadable');
+    if (typeof toJSON.value === 'function') {
+      const replacement = Reflect.apply(toJSON.value, object, [key]) as unknown;
+      return snapshotNonErrorValue(replacement, state, seen, key, counted, false, inArray);
+    }
+  }
+  if (typeof value === 'function') return inArray ? null : OMIT_NON_ERROR_VALUE;
+
+  if (seen.has(object)) return { type: 'non_error_reference' };
+  if (!counted && !takeNode(state)) return nodeBudgetMarker();
+  seen.add(object);
+
+  let array: boolean;
   try {
-    const serialized = JSON.stringify(value, (_key, current: unknown): unknown => {
-      if (typeof current === 'string') {
-        if (current === nodeMarker.type || current === referenceMarker.type) return current;
-        return consumeString(state, current);
+    array = Array.isArray(object);
+  } catch {
+    throw new Error('array identity is unreadable');
+  }
+  if (array) {
+    const length = readProperty(object, 'length');
+    if (!length.ok || typeof length.value !== 'number' || !Number.isSafeInteger(length.value) || length.value < 0) {
+      throw new Error('array length is unreadable');
+    }
+    const result: unknown[] = [];
+    for (let index = 0; index < length.value; index++) {
+      if (!takeNode(state)) {
+        result.push(nodeBudgetMarker());
+        break;
       }
-      if ((typeof current !== 'object' || current === null) && typeof current !== 'function') return current;
-      if (markerObjects.has(current)) return current;
-      if (seen.has(current)) return referenceMarker;
-      seen.add(current);
-      if (!rootObjectSeen) {
-        rootObjectSeen = true;
-        return current;
-      }
-      return takeNode(state) ? current : nodeMarker;
-    });
-    if (serialized === undefined) return { type: 'unserializable_cause', valueType: typeof value };
+      const entry = readProperty(object, String(index));
+      if (!entry.ok) throw new Error('array entry is unreadable');
+      const snapshot = snapshotNonErrorValue(entry.value, state, seen, String(index), true, true, true);
+      result.push(snapshot === OMIT_NON_ERROR_VALUE ? null : snapshot);
+    }
+    return result;
+  }
+
+  const result: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  try {
+    for (const property in object) {
+      if (!Object.prototype.hasOwnProperty.call(object, property)) continue;
+      if (!takeNode(state)) return nodeBudgetMarker();
+      const entry = readProperty(object, property);
+      if (!entry.ok) throw new Error('object property is unreadable');
+      const snapshot = snapshotNonErrorValue(entry.value, state, seen, property, true, true, false);
+      if (snapshot !== OMIT_NON_ERROR_VALUE) result[property] = snapshot;
+    }
+  } catch {
+    throw new Error('object enumeration is unreadable');
+  }
+  return result;
+};
+
+const serializeNonErrorValue = (value: unknown, state: SerializationState): unknown => {
+  try {
+    const snapshot = snapshotNonErrorValue(value, state, new WeakSet(), '', true, true, false);
+    if (snapshot === OMIT_NON_ERROR_VALUE) return { type: 'unserializable_cause', valueType: typeof value };
+    const serialized = JSON.stringify(snapshot);
     const size = utf8Prefix(serialized, state.remainingBytes);
     if (!size.complete) {
       state.remainingBytes = 0;
@@ -292,12 +376,12 @@ const serializeValue = (
   }
 
   const identity = snapshotErrorIdentity(state, error);
+  const memo: ErrorMemoEntry = { reference, identity };
+  state.errorMemo.set(error, memo);
   if (depth >= MAX_SERIALIZED_CAUSE_DEPTH) {
     return { type: 'depth_limit', limit: MAX_SERIALIZED_CAUSE_DEPTH, ...identity };
   }
 
-  const memo: ErrorMemoEntry = { reference, identity };
-  state.errorMemo.set(error, memo);
   state.activeErrors.add(error);
   try {
     const causeSnapshot = readProperty(error, 'cause');
@@ -383,6 +467,16 @@ const outputBudgetFallback = (error: InternalDebugError): InternalDebugError => 
   ...(error.target_api === undefined ? {} : { target_api: error.target_api }),
 });
 
+const minimalOutputBudgetFallback = (): InternalDebugError => ({
+  type: 'internal_error',
+  name: 'Error',
+  message: 'Internal debug error exceeded its output budget',
+  cause: {
+    type: 'internal_debug_error_output_truncated',
+    limit: MAX_INTERNAL_DEBUG_ERROR_BYTES,
+  },
+});
+
 const serializedRootError = (value: unknown): SerializedError => {
   if (typeof value === 'object'
     && value !== null
@@ -414,5 +508,7 @@ export const toInternalDebugError = (error: unknown, targetApi?: string): Intern
     type: 'internal_error',
     ...(targetApi ? { target_api: consumeString(state, targetApi) } : {}),
   };
-  return withinOutputBudget(debug) ? debug : outputBudgetFallback(debug);
+  if (withinOutputBudget(debug)) return debug;
+  const fallback = outputBudgetFallback(debug);
+  return withinOutputBudget(fallback) ? fallback : minimalOutputBudgetFallback();
 };

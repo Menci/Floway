@@ -164,6 +164,41 @@ test('toInternalDebugError enforces traversal-wide node, string, and output byte
   expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(64 * 1024);
 });
 
+test('toInternalDebugError bounds sparse primitive collections before JSON traversal', () => {
+  const sparse = new Array<unknown>(5_000_000);
+  const debug = toInternalDebugError(new Error('failure', { cause: sparse }));
+  const serialized = JSON.stringify(debug);
+
+  expect(serialized).toContain('serialization_node_budget_exhausted');
+  expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(64 * 1024);
+});
+
+test('toInternalDebugError budgets JSON-escaped identity strings by their encoded size', () => {
+  const escaped = '\0'.repeat(100_000);
+  const error = new Error(escaped);
+  error.name = escaped;
+  error.stack = escaped;
+
+  const serialized = JSON.stringify(toInternalDebugError(error));
+  expect(serialized).toMatch(/truncated|string budget exhausted/);
+  expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(64 * 1024);
+});
+
+test('toInternalDebugError memoizes a shared Error first reached at the depth limit', () => {
+  let messageReads = 0;
+  const shared = new Error('initial');
+  Object.defineProperty(shared, 'message', {
+    get: () => `snapshot-${++messageReads}`,
+  });
+  let deep = shared;
+  for (let depth = 0; depth < 40; depth++) deep = new Error(`wrapper-${depth}`, { cause: deep });
+
+  const debug = toInternalDebugError(new AggregateError([deep, shared], 'root'));
+  expect(messageReads).toBe(1);
+  expect(JSON.stringify(debug)).not.toContain('snapshot-2');
+  expect(debug.errors?.[1]).toMatchObject({ type: 'error_reference' });
+});
+
 test('toInternalDebugError contains hostile nested Error properties and revoked proxies', () => {
   const hostile = new Error('hidden');
   for (const property of ['name', 'message', 'stack', 'cause'] as const) {
