@@ -384,33 +384,36 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 describe('fetchOnStream — request body serialization', () => {
   it('rejects promptly when cancellation interrupts a blocked body write', async () => {
     vi.useFakeTimers();
-    const reason = new Error('stop upload');
-    const controller = new AbortController();
-    let writes = 0;
-    let bodyWriteStarted!: () => void;
-    const started = new Promise<void>(resolve => { bodyWriteStarted = resolve; });
-    const writable = new WritableStream<Uint8Array>({
-      write() {
-        writes += 1;
-        if (writes === 1) return;
-        bodyWriteStarted();
-        return new Promise<void>(() => {});
-      },
-    });
-    const response = new ReadableStream<Uint8Array>();
-    const pending = fetchOnStream(
-      { readable: response, writable },
-      { method: 'POST', path: '/', headers: { Host: 'h' }, body: Uint8Array.of(1, 2, 3) },
-      undefined,
-      { signal: controller.signal },
-    );
-    await started;
-    controller.abort(reason);
+    try {
+      const reason = new Error('stop upload');
+      const controller = new AbortController();
+      let writes = 0;
+      let bodyWriteStarted!: () => void;
+      const started = new Promise<void>(resolve => { bodyWriteStarted = resolve; });
+      const writable = new WritableStream<Uint8Array>({
+        write() {
+          writes += 1;
+          if (writes === 1) return;
+          bodyWriteStarted();
+          return new Promise<void>(() => {});
+        },
+      });
+      const response = new ReadableStream<Uint8Array>();
+      const rejection = fetchOnStream(
+        { readable: response, writable },
+        { method: 'POST', path: '/', headers: { Host: 'h' }, body: Uint8Array.of(1, 2, 3) },
+        undefined,
+        { signal: controller.signal },
+      ).catch((error: unknown) => error);
+      await started;
+      controller.abort(reason);
 
-    await vi.advanceTimersByTimeAsync(0);
-    await expect(pending).rejects.toBe(reason);
-    vi.clearAllTimers();
-    vi.useRealTimers();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await rejection).toBe(reason);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it.each([
