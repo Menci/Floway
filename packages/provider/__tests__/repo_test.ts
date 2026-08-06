@@ -23,7 +23,7 @@ test('state-repository doubles enforce provider and structural config generation
     kind: 'copilot',
     config: { nested: { second: 2, first: 1 }, githubHost: 'github.com' },
   })).not.toThrow();
-  expect(() => assertUpstreamStateWriteGuard(record, { kind: 'custom' })).toThrow(/changed from copilot to custom/);
+  expect(() => assertUpstreamStateWriteGuard(record, { kind: 'custom' })).toThrow(/changed from custom to copilot/);
   expect(() => assertUpstreamStateWriteGuard(record, {
     kind: 'copilot',
     config: { githubHost: 'octocorp.ghe.com', nested: { first: 1, second: 2 } },

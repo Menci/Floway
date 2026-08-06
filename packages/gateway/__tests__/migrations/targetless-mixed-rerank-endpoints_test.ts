@@ -6,7 +6,7 @@ import { upstreamRecordToJson } from '../../src/control-plane/upstreams/serializ
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { createCustomProvider } from '@floway-dev/provider-custom';
+import { customProviderModule } from '@floway-dev/provider-custom';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const MIGRATION = '0080_drop_targetless_mixed_rerank_endpoints.sql';
@@ -147,11 +147,11 @@ test('the targetless mixed-rerank migration repairs persisted models and invalid
     // provider parser; reaching it proves the migrated row is current-schema data.
     upstreamRecordToJson(record);
     if (id === 'custom_embedding') {
-      const models = await createCustomProvider(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
+      const models = await customProviderModule.create(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
       assertEquals(models.map(model => model.endpoints), [{ embeddings: {} }]);
     }
     if (id === 'custom_cache_only') {
-      const models = await createCustomProvider(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
+      const models = await customProviderModule.create(record).instance.getProvidedModels(() => Promise.reject(new Error('catalog fetch must stay disabled')));
       assertEquals(models, []);
     }
   }
