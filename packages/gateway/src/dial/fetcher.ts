@@ -86,7 +86,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // FormData, Blob, etc. don't need to be buffered.
   const hasDialTransport = list.some(id => id !== DIRECT_FETCH_ID);
   const hasDirectFetch = list.includes(DIRECT_FETCH_ID);
-  const fetchBeforeDialTransport = hasDialTransport
+  const directFetchBeforeDialTransport = hasDialTransport
     && hasDirectFetch
     && list.indexOf(DIRECT_FETCH_ID) < list.length - 1;
   return (url, init: FetchInit) => {
@@ -99,7 +99,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
       return Promise.reject(new Error('streaming request bodies are not replayable through direct-connect or proxy transports'));
     }
 
-    return runFallbacks(input, list, url, createReplayableRequest(url, init), fetchBeforeDialTransport);
+    return runFallbacks(input, list, url, createReplayableRequest(url, init), directFetchBeforeDialTransport);
   };
 };
 
@@ -108,12 +108,12 @@ const runFallbacks = async (
   list: readonly string[],
   url: string,
   request: ReplayableRequest,
-  fetchBeforeDialTransport: boolean,
+  directFetchBeforeDialTransport: boolean,
 ): Promise<Response> => {
-  // A direct-fetch attempt before a dial transport can consume
-  // Blob/FormData bodies. Build the replayable byte form first so every later
-  // attempt observes one body.
-  if (fetchBeforeDialTransport) await request.prepared();
+  // A direct-fetch attempt before a dial transport can consume native
+  // Blob/FormData bodies. Prepare the dial request first so those bodies are
+  // buffered while replayable factories remain reusable by every attempt.
+  if (directFetchBeforeDialTransport) await request.prepared();
   const errors: unknown[] = [];
 
   // Backoff rows only ever exist for operator-managed proxies, so a list made

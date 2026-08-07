@@ -79,13 +79,13 @@ const rebuildInitFromPrepared = (original: FetchInit, prepared: PreparedRequest)
 
 const buildPreparedRequest = async (url: string, init: FetchInit): Promise<PreparedRequest> => {
   const u = new URL(url);
-  const collected = await collectBody(init.body);
+  const preparedBody = await prepareBody(init.body);
   const headers = extractHeaders(init.headers);
   // FormData/URLSearchParams synthesize a Content-Type with the multipart
   // boundary or the urlencoded marker. Adopt it only when the caller did not
   // pre-set Content-Type itself, so explicit overrides keep winning.
-  if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
-    headers['content-type'] = collected.contentType;
+  if (preparedBody?.contentType !== undefined && headers['content-type'] === undefined) {
+    headers['content-type'] = preparedBody.contentType;
   }
   // `URL#hostname` keeps the `[…]` envelope on IPv6 literals; the
   // `DialTarget.host` contract requires the bare address. Strip the
@@ -100,7 +100,7 @@ const buildPreparedRequest = async (url: string, init: FetchInit): Promise<Prepa
     method: init.method ?? 'GET',
     path: `${u.pathname}${u.search}`,
     headers,
-    body: collected?.body,
+    body: preparedBody?.body,
   };
   return { target, request };
 };
@@ -125,7 +125,7 @@ const extractHeaders = (input: HeadersInit | undefined): Record<string, string> 
   return out;
 };
 
-interface CollectedBody {
+interface PreparedBody {
   body: NonNullable<HttpRequest['body']>;
   /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
    *  multipart boundary or urlencoded marker). undefined for shapes that
@@ -133,9 +133,9 @@ interface CollectedBody {
   contentType?: string;
 }
 
-const collectBody = async (
+const prepareBody = async (
   body: FetchInit['body'],
-): Promise<CollectedBody | undefined> => {
+): Promise<PreparedBody | undefined> => {
   if (body == null) return undefined;
   if (isReplayableBody(body)) return { body };
   if (typeof body === 'string') return { body: new TextEncoder().encode(body) };
