@@ -20,8 +20,9 @@ export const cloudflareFetch: Fetcher = (url, init) => {
   // https://developers.cloudflare.com/workers/runtime-apis/request/#set-the-content-length-header
   const fixed = new FixedLengthStream(body.contentLength);
   const transfer = body.open().pipeTo(fixed.writable);
-  return Promise.all([
-    fetch(url, { ...init, body: fixed.readable }),
-    transfer,
-  ]).then(([response]) => response);
+  // Fetch owns the readable side and propagates upload failures into its own
+  // promise. Once it has produced a Response, a rejected pump only means the
+  // upstream stopped consuming the request early and must not discard it.
+  void transfer.catch(() => undefined);
+  return fetch(url, { ...init, body: fixed.readable });
 };
