@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelListingFailure, UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
+import { UpstreamWorkspace, type ModelsYamlDraft } from '../../../src/components/upstream-editor/workspace';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -47,6 +47,7 @@ const record = upstreamRecord('up_test', {
 
 function Harness({ modelsError = null }: { modelsError?: ModelListingFailure | null }) {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
+  const [modelsYamlDraft, setModelsYamlDraft] = useState<ModelsYamlDraft | null>(null);
   return (
     // The workspace reads which tab and which model it is on out of the search,
     // so it needs a router to read one from.
@@ -54,8 +55,10 @@ function Harness({ modelsError = null }: { modelsError?: ModelListingFailure | n
       <FormProvider {...form}>
         <UpstreamWorkspace
           discovered={[]}
+          modelsYamlDraft={modelsYamlDraft}
           modelsLoading={false}
           modelsError={modelsError}
+          onModelsYamlDraftChange={setModelsYamlDraft}
           onRefreshModels={vi.fn()}
           record={record}
         />

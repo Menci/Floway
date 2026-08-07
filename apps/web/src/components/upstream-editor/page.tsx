@@ -18,7 +18,8 @@ import {
   type UpstreamEditorValues,
 } from './data';
 import { modelsAreValid } from './model-detail';
-import { UpstreamWorkspace } from './workspace';
+import { parseModels } from './models-yaml';
+import { UpstreamWorkspace, type ModelsYamlDraft } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -55,6 +56,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [modelsError, setModelsError] = useState<ModelListingFailure | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [modelsYamlDraft, setModelsYamlDraft] = useState<ModelsYamlDraft | null>(null);
   // A create hands off to the created record's own route. The blocker reads the
   // form's saved state, so the hand-off is state rather than a call: naming the
   // id lets the navigation wait for the render that the save made clean instead
@@ -92,7 +94,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     resolver: zodResolver(schema),
   });
   const { formState, getValues, handleSubmit, reset, setValue } = form;
-  const hasUnsavedChanges = formState.isDirty;
+  const hasPendingModelsYaml = modelsYamlDraft !== null && modelsYamlDraft.text !== modelsYamlDraft.baseline;
+  const hasUnsavedChanges = formState.isDirty || hasPendingModelsYaml;
 
   // The editor carries its own position — workspace tab, selected model, model
   // section, YAML view — in the search params of one route, so a move between
@@ -165,33 +168,44 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     });
   };
 
-  const submitForm = () => handleSubmit(async values => {
-    setSaving(true); setSaveError(null);
-    // A save is one round-trip on create and two on edit, so it announces
-    // itself while it runs. The dashboard's toaster sits above the outlet, so
-    // the create branch's toast outlives the navigation that follows it.
-    const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
-    const result = data.mode === 'create'
-      ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
-      : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
-    if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
-    let saved: UpstreamRecord = result.data;
-    if (data.mode === 'edit') {
-      const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-      if (!full.error) saved = full.data;
+  const submitForm = () => {
+    if (modelsYamlDraft !== null) {
+      const parsed = parseModels(modelsYamlDraft.text, { allowRerank: record.kind === 'custom' });
+      if (!parsed.ok) {
+        setModelsYamlDraft({ ...modelsYamlDraft, error: parsed.message });
+        return;
+      }
+      setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
+      setModelsYamlDraft(null);
     }
-    updateRecord(saved);
-    reset(valuesFromRecord(saved));
-    handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
-    // `saving` is left set on create: the created record's loader probes the
-    // provider for its catalog, so the page stays mounted and interactive
-    // across the hand-off, and a Save left live there posts a second create.
-    if (data.mode === 'create') setCreatedUpstreamId(saved.id); else setSaving(false);
-  }, () => {
-    // Field rejections render on the control that produced them; the
-    // page-level bar is only where a server says no.
-    setSaveError(null);
-  })();
+    return handleSubmit(async values => {
+      setSaving(true); setSaveError(null);
+      // A save is one round-trip on create and two on edit, so it announces
+      // itself while it runs. The dashboard's toaster sits above the outlet, so
+      // the create branch's toast outlives the navigation that follows it.
+      const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
+      const result = data.mode === 'create'
+        ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
+        : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
+      if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
+      let saved: UpstreamRecord = result.data;
+      if (data.mode === 'edit') {
+        const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+        if (!full.error) saved = full.data;
+      }
+      updateRecord(saved);
+      reset(valuesFromRecord(saved));
+      handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
+      // `saving` is left set on create: the created record's loader probes the
+      // provider for its catalog, so the page stays mounted and interactive
+      // across the hand-off, and a Save left live there posts a second create.
+      if (data.mode === 'create') setCreatedUpstreamId(saved.id); else setSaving(false);
+    }, () => {
+      // Field rejections render on the control that produced them; the
+      // page-level bar is only where a server says no.
+      setSaveError(null);
+    })();
+  };
 
   return <FormProvider {...form}>
     {/* A column rather than a row template: the error bar is only sometimes
@@ -225,7 +239,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           />
         </Panel>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamWorkspace record={record} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={() => void refreshModels()} />
+          <UpstreamWorkspace record={record} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={() => void refreshModels()} />
         </Panel>
       </div>
     </div>
