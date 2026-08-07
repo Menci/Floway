@@ -30,8 +30,8 @@ export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
  * transport; this package has no knowledge of the dial target).
  *
  * Caller-supplied `Content-Length`, `Transfer-Encoding`, and
- * `Connection` are stripped: the body's declared length is the source
- * of truth, and this layer is one-shot per duplex (it always
+ * `Connection` are stripped: the body's measured or declared length is
+ * the source of truth, and this layer is one-shot per duplex (it always
  * emits `Connection: close`) so a `keep-alive` would mislead the server
  * into reusing a transport we plan to tear down.
  */

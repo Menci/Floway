@@ -543,9 +543,86 @@ describe('fetchOnStream — request body serialization', () => {
     fake.endResponse();
     await promise;
     expect(writeCount.n).toBe(1);
-    // No Content-Length is added for a zero-byte body — matches the
-    // current policy (only set CL when bodyLen > 0).
-    expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
+    expect(decodeAscii(fake.written())).toContain('Content-Length: 0\r\n');
+  });
+
+  it('preserves fixed framing for a zero-length replayable body', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: { Host: 'h' },
+        body: { contentLength: 0, open: () => new Blob([]).stream() },
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('Content-Length: 0\r\n');
+  });
+
+  it('cancels the source with the original writer failure', async () => {
+    const fake = makeFakeDuplex();
+    const failure = new Error('socket write failed');
+    const cancel = vi.fn(() => {
+      throw new Error('source cancellation failed');
+    });
+    let writes = 0;
+    const writable = new WritableStream<Uint8Array>({
+      write() {
+        writes += 1;
+        if (writes === 2) throw failure;
+      },
+    });
+
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: { Host: 'h' },
+        body: {
+          contentLength: 1,
+          open: () => new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+            cancel,
+          }),
+        },
+      },
+    );
+
+    await expect(promise).rejects.toBe(failure);
+    expect(cancel).toHaveBeenCalledWith(failure);
+  });
+
+  it('cancels the source when a chunk exceeds its declared length', async () => {
+    const fake = makeFakeDuplex();
+    const cancel = vi.fn();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: { Host: 'h' },
+        body: {
+          contentLength: 0,
+          open: () => new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+            cancel,
+          }),
+        },
+      },
+    );
+
+    await expect(promise).rejects.toThrow('exceeded its declared content length');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(cancel.mock.calls[0]![0]).toBeInstanceOf(RangeError);
   });
 
   it('preserves a caller-supplied Accept-Encoding header', async () => {
