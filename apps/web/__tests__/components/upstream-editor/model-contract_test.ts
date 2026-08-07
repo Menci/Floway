@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/data';
-import { modelsAreValid } from '../../../src/components/upstream-editor/model-detail';
+import { modelsAreValid } from '../../../src/components/upstream-editor/model-validation';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 
 describe('custom discovered model projection', () => {

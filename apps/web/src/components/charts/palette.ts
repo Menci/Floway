@@ -1,14 +1,13 @@
-const palette = [
-  '#479ef5',
-  '#54b054',
-  '#e37d8f',
-  '#ef8e5e',
-  '#a98dd5',
-  '#45aeb1',
-  '#b58b70',
-  '#62abf5',
-  '#8eb456',
-  '#b36abe',
-];
+import { oklchToHex } from '../../lib/hue';
 
-export const colorForSlot = (slot: number): string => palette[slot % palette.length]!;
+// These are the OKLCH hues of the former Fluent-inspired hex palette. Keeping
+// its order and hue preserves each ordinary series' identity while one shared
+// lightness and chroma make configured upstream hues comparable to it.
+const SERIES_HUES = [251, 144, 10, 46, 302, 198, 54, 250, 128, 322] as const;
+
+const SERIES_LIGHTNESS = 0.7;
+const SERIES_CHROMA = 0.13;
+
+export const hueForSeriesSlot = (slot: number): number => SERIES_HUES[slot % SERIES_HUES.length]!;
+
+export const colorForHue = (hue: number): string => oklchToHex(SERIES_LIGHTNESS, SERIES_CHROMA, hue);

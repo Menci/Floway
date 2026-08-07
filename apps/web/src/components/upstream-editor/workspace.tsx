@@ -16,6 +16,7 @@ import { canFetchModelCatalog, manualModelsSupported, publicModelId } from './da
 import { shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
+import { modelValidationIssues } from './model-validation';
 import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -72,6 +73,11 @@ interface WorkspaceLocation {
   section: ModelDetailTab;
   view: 'list' | 'yaml';
 }
+interface ModelSelection {
+  locator: string;
+  manualIndex: number | null;
+  rowKey: string | null;
+}
 
 const TAB_PARAM = 'tab';
 const MODEL_PARAM = 'model';
@@ -100,7 +106,7 @@ export function UpstreamWorkspace({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
-  const { formState: { errors } } = useFormContext<UpstreamEditorValues>();
+  const { formState: { errors, submitCount }, getValues } = useFormContext<UpstreamEditorValues>();
   const [params, setParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   // The YAML text is a projection of the manual models — serialized on the way
@@ -108,10 +114,13 @@ export function UpstreamWorkspace({
   // an edit that has not been applied yet. Holding just that draft is what lets
   // every entrance into the view show the same text: there is nothing for a
   // link, a reload or the button to remember to seed.
+  const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null);
+  const [modelValidationAttempted, setModelValidationAttempted] = useState(false);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
 
-  // A model is named in the URL by its upstream id: row keys are rebuilt per
-  // render for manual entries and do not survive a reload.
+  // `model` is only a reloadable locator. The mounted editor uses the
+  // field-array row id, so renames and temporary duplicate ids cannot retarget
+  // or remount it.
   const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
   const selectedUpstreamModelId = params.get(MODEL_PARAM);
   // A provider-owned catalog has no manual models to write, so its editor is
@@ -154,16 +163,40 @@ export function UpstreamWorkspace({
     section: 'details',
     view: next === 'yaml' ? 'yaml' : 'list',
   });
-  const selectModel = (id: string | null) => navigate({ tab, model: id, section: 'details', view: 'list' });
+  const openModel = (selection: ModelSelection | null) => {
+    setModelSelection(selection);
+    setModelValidationAttempted(false);
+    navigate({ tab, model: selection?.locator ?? null, section: 'details', view: 'list' });
+  };
+  const selectedManualIndex = modelSelection
+    ? modelSelection.manualIndex
+    : selectedUpstreamModelId === null
+      ? null
+      : getValues('manualModels').findIndex(model => model.upstreamModelId === selectedUpstreamModelId);
+  const leaveModel = () => {
+    if (selectedManualIndex !== null && selectedManualIndex >= 0) {
+      const model = getValues('manualModels')[selectedManualIndex];
+      if (model && modelValidationIssues(model).length > 0) {
+        setModelValidationAttempted(true);
+        return;
+      }
+    }
+    openModel(null);
+  };
+  const commitModelLocator = (upstreamModelId: string) => {
+    if (!modelSelection || upstreamModelId === modelSelection.locator) return;
+    setModelSelection({ ...modelSelection, locator: upstreamModelId });
+    navigate({ tab, model: upstreamModelId, section: modelDetailTab, view: 'list' });
+  };
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} readOnly={!editableCatalog} record={record} view={modelView} yamlDraft={modelsYamlDraft} onYamlDraftChange={onModelsYamlDraftChange} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} modelSelection={modelSelection} onModelLocatorCommit={commitModelLocator} onModelSelectionChange={setModelSelection} onOpenModel={openModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} readOnly={!editableCatalog} record={record} revealValidation={modelValidationAttempted || submitCount > 0} view={modelView} yamlDraft={modelsYamlDraft} onYamlDraftChange={onModelsYamlDraftChange} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2">
       {showModelDetail
         ? <>
-            <BackNavigationButton onClick={() => selectModel(null)}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
+            <BackNavigationButton onClick={leaveModel}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
             <TabList aria-label={t('dashboard.upstreamEditor.models.sections')} selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
@@ -196,17 +229,21 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlDraftChange, readOnly, record, selectedUpstreamModelId, view, yamlDraft }: {
+function ModelsWorkspace({ detailSection, discovered, modelSelection, modelsError, modelsLoading, onModelLocatorCommit, onModelSelectionChange, onOpenModel, onRefreshModels, onViewChange, onYamlDraftChange, readOnly, record, revealValidation, selectedUpstreamModelId, view, yamlDraft }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
+  modelSelection: ModelSelection | null;
   modelsError: ModelListingFailure | null;
   modelsLoading: boolean;
+  onModelLocatorCommit: (upstreamModelId: string) => void;
   onRefreshModels: () => void;
-  onSelectUpstreamModel: (id: string | null) => void;
+  onModelSelectionChange: (selection: ModelSelection) => void;
+  onOpenModel: (selection: ModelSelection | null) => void;
   onViewChange: (view: ModelView) => void;
   onYamlDraftChange: (draft: ModelsYamlDraft | null) => void;
   readOnly: boolean;
   record: UpstreamRecord;
+  revealValidation: boolean;
   selectedUpstreamModelId: string | null;
   view: ModelView;
   yamlDraft: ModelsYamlDraft | null;
@@ -235,7 +272,11 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
   }, [autoFetchEnabled, discovered, fields, manual]);
-  const selectedRow = rows.find(row => row.config.upstreamModelId === selectedUpstreamModelId) ?? null;
+  const sessionRow = modelSelection
+    ? rows.find(row => row.key === modelSelection.rowKey)
+      ?? (modelSelection.manualIndex === null ? undefined : rows.find(row => row.manualIndex === modelSelection.manualIndex))
+    : undefined;
+  const selectedRow = sessionRow ?? rows.find(row => row.config.upstreamModelId === selectedUpstreamModelId) ?? null;
   const pendingManualRow: ModelRow | null = pendingManualConfig === null ? null : {
     key: 'pending-manual',
     source: 'manual',
@@ -247,6 +288,16 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const filtered = rows.filter(row => `${row.config.display_name ?? ''} ${publicModelId(row.config)} ${row.config.upstreamModelId}`.toLowerCase().includes(search.toLowerCase()));
 
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
+  const addModel = () => {
+    const manualIndex = manual.length;
+    append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) });
+    onOpenModel({ locator: '', manualIndex, rowKey: null });
+  };
+  useEffect(() => {
+    if (view !== 'detail' || selectedUpstreamModelId === null || !activeDetailRow) return;
+    if (modelSelection?.rowKey === activeDetailRow.key && modelSelection.manualIndex === activeDetailRow.manualIndex) return;
+    onModelSelectionChange({ locator: selectedUpstreamModelId, manualIndex: activeDetailRow.manualIndex, rowKey: activeDetailRow.key });
+  }, [activeDetailRow, modelSelection, onModelSelectionChange, selectedUpstreamModelId, view]);
   // A one-shot handoff, not synchronised state: the placeholder is dropped
   // once the row the pending manual model produced exists.
   const settledManualRow = pendingManualUpstreamModelId === null
@@ -263,17 +314,19 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       setPendingManualUpstreamModelId(row.config.upstreamModelId);
       const manualConfig = structuredClone(row.config);
       setPendingManualConfig(manualConfig);
+      onModelSelectionChange({ locator: row.config.upstreamModelId, manualIndex: manual.length, rowKey: null });
       append(manualConfig);
       return;
     }
     if (source === 'auto' && row.manualIndex !== null && row.hasAuto) {
+      onModelSelectionChange({ locator: row.config.upstreamModelId, manualIndex: null, rowKey: `auto:${row.config.upstreamModelId}` });
       remove(row.manualIndex);
     }
   };
 
   const deleteModel = (target: ModelRow & { manualIndex: number }) => {
     remove(target.manualIndex);
-    if (selectedRow?.key === target.key) onSelectUpstreamModel(null);
+    if (selectedRow?.key === target.key) onOpenModel(null);
     deleteDialog.close();
   };
 
@@ -327,7 +380,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
     </div>{deleteConfirmation}</>;
   }
 
-  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onChange={value => {
+  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} revealValidation={revealValidation} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpstreamModelIdCommit={onModelLocatorCommit} onChange={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
       shouldDirty: true,
@@ -341,7 +394,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       level={2}
       title={t('dashboard.upstreamEditor.models.title')}
       actions={<>
-        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addModel}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
@@ -364,7 +417,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
             <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <TruncationTooltip content={row.config.display_name ?? id} relationship="label">
-                {measureRef => <RowTitleButton onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} ref={measureRef}>
+                {measureRef => <RowTitleButton onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} ref={measureRef}>
                   {row.config.display_name ?? id}
                 </RowTitleButton>}
               </TruncationTooltip>
@@ -372,7 +425,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>
             <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><TruncationTooltip content={id} relationship="label">{measureRef => <code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" ref={measureRef} tabIndex={0}>{id}</code>}</TruncationTooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell>{t(`dashboard.upstreamEditor.models.${row.source}`)}</TableCentredCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.editNamed', { name: row.config.display_name ?? id })} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.editNamed', { name: row.config.display_name ?? id })} onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
