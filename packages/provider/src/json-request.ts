@@ -8,6 +8,11 @@ const encodeChunks = function* (chunks: Iterable<string>): Generator<Uint8Array>
   for (const chunk of chunks) yield encoder.encode(chunk);
 };
 
+// json-ext's allocation-free stringifyInfo() counts integer digits without
+// applying JSON's exponent formatting: it reports 24 bytes for {x: 1e21},
+// while stringifyChunked() and JSON.stringify() emit the 11-byte {"x":1e+21}.
+// Framing must therefore measure the exact chunks used for dispatch.
+// https://github.com/discoveryjs/json-ext/blob/457d4d9d4e55bb1e14fde192715114b80e20c4c9/src/stringify-info.js#L70-L118
 const serializedLength = (value: object): number => {
   let length = 0;
   for (const chunk of encodeChunks(stringifyChunked(value))) {
