@@ -150,6 +150,6 @@ describe('performance chart series', () => {
     );
 
     expect(chart.entries[0]).toMatchObject({ id: 'up-1', label: 'Copilot seat', hue: 217 });
-    expect(chart.data.lineChartData?.[0]?.color).toBe('oklch(0.7 0.13 217)');
+    expect(chart.data.lineChartData?.[0]?.color).toBe('#00b1d3');
   });
 });

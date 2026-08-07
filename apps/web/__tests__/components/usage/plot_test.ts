@@ -120,8 +120,8 @@ describe('series identity', () => {
 
     expect(model.entries.map(entry => entry.hue)).toEqual([217, 144]);
     expect(areaPlot(model.plot).lineChartData?.map(series => series.color)).toEqual([
-      'oklch(0.7 0.13 217)',
-      'oklch(0.7 0.13 144)',
+      '#00b1d3',
+      '#69b369',
     ]);
   });
 });
