@@ -133,11 +133,16 @@ const materializeResponsesPayload = (
   payload: CanonicalResponsesPayload,
   projectionsByItem: ReadonlyMap<number, readonly ResponsesBlobCandidateProjection[] | null>,
 ): CanonicalResponsesPayload => {
-  const candidatePayload = structuredClone(payload);
-  candidatePayload.input = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
+  let changed = false;
+  const input = payload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
     if (projections === undefined) return [item];
-    if (projections === null) return [];
+    if (projections === null) {
+      changed = true;
+      return [];
+    }
+    if (projections.length === 0) return [item];
+    changed = true;
 
     const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
     for (const { location, projection } of projections) {
@@ -149,19 +154,21 @@ const materializeResponsesPayload = (
     if (item.type === 'agent_message') {
       const nested = new Map(projections.flatMap(projection =>
         projection.location.contentIndex === undefined ? [] : [[projection.location.contentIndex, projection] as const]));
-      const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
-      agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
-        const projected = nested.get(contentIndex);
-        if (projected === undefined) return [content];
-        return projected.projection.kind === 'preserve'
-          ? [{ ...content, encrypted_content: projected.projection.value }]
-          : [];
-      });
+      if (nested.size > 0) {
+        const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
+        agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
+          const projected = nested.get(contentIndex);
+          if (projected === undefined) return [content];
+          return projected.projection.kind === 'preserve'
+            ? [{ ...content, encrypted_content: projected.projection.value }]
+            : [];
+        });
+      }
     }
 
     return [replacement];
   });
-  return candidatePayload;
+  return changed ? { ...payload, input } : payload;
 };
 
 const evaluateResponsesCandidate = (

@@ -37,6 +37,45 @@ const select = (
   return selection;
 };
 
+test('reuses a payload with no affinity carriers', async () => {
+  const image = {
+    type: 'message' as const,
+    role: 'user' as const,
+    content: [{ type: 'input_image' as const, image_url: `data:image/png;base64,${'A'.repeat(1024 * 1024)}` }],
+  };
+  const payload: CanonicalResponsesPayload = { model: 'model', input: [image] };
+  const prepared = await analyzeResponsesAffinity(payload, codec);
+
+  const materialized = acceptedAffinityEvaluation(prepared, candidateA).materialize();
+
+  expect(materialized).toBe(payload);
+  expect(materialized.input[0]).toBe(image);
+});
+
+test('copies only paths carrying an affinity projection', async () => {
+  const carrier = await codec.wrap(
+    'encrypted',
+    targetFor(candidateA),
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+  const unchanged = { type: 'message' as const, role: 'user' as const, content: 'hello' };
+  const payload: CanonicalResponsesPayload = {
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_client', summary: [], encrypted_content: carrier },
+      unchanged,
+    ],
+  };
+  const prepared = await analyzeResponsesAffinity(payload, codec);
+
+  const materialized = acceptedAffinityEvaluation(prepared, candidateA).materialize();
+
+  expect(materialized).not.toBe(payload);
+  expect(materialized.input).not.toBe(payload.input);
+  expect(materialized.input[0]).not.toBe(payload.input[0]);
+  expect(materialized.input[1]).toBe(unchanged);
+});
+
 test('restores an owned blob only for its exact target without changing item ids', async () => {
   const mismatchedRules = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
   const carrier = await codec.wrap(
