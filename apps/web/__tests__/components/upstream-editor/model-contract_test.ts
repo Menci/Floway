@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { discoveredModelsFromResponse } from '../../../src/components/upstream-editor/data';
 import { modelsAreValid } from '../../../src/components/upstream-editor/model-detail';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 
 describe('custom discovered model projection', () => {
   it('maps fixed kinds to their own endpoint families', () => {
@@ -25,6 +26,19 @@ describe('custom discovered model projection', () => {
 
     expect(models[0]?.endpoints).toEqual({ embeddings: {} });
     expect(models[1]?.endpoints).toEqual({ embeddings: {} });
+  });
+
+  it('preserves chat metadata exactly when the configured endpoints resolve to chat', () => {
+    const chat = {
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { effort: { supported: ['none', 'high'], default: 'high' } },
+    } satisfies NonNullable<UpstreamModelConfig['chat']>;
+
+    const chatModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { responses: {} });
+    const embeddingModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { embeddings: {} });
+
+    expect(chatModel[0]?.chat).toEqual(chat);
+    expect(embeddingModel[0]?.chat).toBeUndefined();
   });
 
   it('projects every discovered row into a shape the gateway accepts', () => {

@@ -117,14 +117,14 @@ ${reducedMotion([
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L888-L916
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L3290-L3312 */
 .fui-ListItem.fui-ListItem[aria-disabled='true'] {
-  /* 30% of --winui-text-fill-primary (#000000e4). */
-  color: #00000044;
+  /* 30% of --winui-text-fill-primary (rgba(0, 0, 0, 0.894118)). */
+  color: rgba(0, 0, 0, 0.266667);
 }
 
 @media (prefers-color-scheme: dark) {
   /* 30% of --winui-text-fill-primary (#ffffff). */
   .fui-ListItem.fui-ListItem[aria-disabled='true'] {
-    color: #ffffff4d;
+    color: rgba(255, 255, 255, 0.301961);
   }
 }
 

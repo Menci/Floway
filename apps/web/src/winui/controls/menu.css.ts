@@ -16,7 +16,7 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L285
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml#L41
 
-   The presenter's own fill is DesktopAcrylicTransparentBrush -- #00000000, a
+   The presenter's own fill is DesktopAcrylicTransparentBrush -- rgba(0, 0, 0, 0), a
    sentinel that hands the material to the window's DesktopAcrylicBackdrop. A
    web flyout floats over no such backdrop, so we paint the acrylic material's
    FallbackColor, which is what WinUI shows when transparency effects are off.
