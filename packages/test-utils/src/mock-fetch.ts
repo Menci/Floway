@@ -12,6 +12,9 @@ export const testFetcher: Fetcher = (url, init) => {
   return fetch(url, request);
 };
 
+export const readJsonRequest = async (init: RequestInit): Promise<unknown> =>
+  await new Response(init.body).json();
+
 // Tests share a single globalThis.fetch slot; the lock serializes overlapping
 // withMockedFetch calls in the same process so each handler sees only its own
 // requests.
