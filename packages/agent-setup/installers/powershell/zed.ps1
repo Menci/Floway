@@ -19,16 +19,23 @@ function Get-SetupZedApiUrl { $SetupEndpoint }
 
 # Every release channel shares one configuration directory: `config_dir()` has
 # no channel branching, so a single file serves Stable, Preview and Nightly.
+# XDG is consulted on Linux and FreeBSD only — macOS falls through to an
+# unconditional `~/.config`, never `~/Library/Application Support`, and never
+# `XDG_CONFIG_HOME` even when one is exported.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
 function Get-SetupZedConfigDir {
-  if ($env:ZED_CONFIG_DIR_OVERRIDE) { return $env:ZED_CONFIG_DIR_OVERRIDE }
+  if ($env:AGENT_SETUP_TEST_ZED_CONFIG_DIR) { return $env:AGENT_SETUP_TEST_ZED_CONFIG_DIR }
   if (Test-SetupIsWindows) { return (Join-Path $env:APPDATA 'Zed') }
-  if ($env:XDG_CONFIG_HOME) { return (Join-Path $env:XDG_CONFIG_HOME 'zed') }
+  if ((Get-SetupPlatform) -eq 'linux') {
+    if ($env:FLATPAK_XDG_CONFIG_HOME) { return (Join-Path $env:FLATPAK_XDG_CONFIG_HOME 'zed') }
+    if ($env:XDG_CONFIG_HOME) { return (Join-Path $env:XDG_CONFIG_HOME 'zed') }
+  }
   Join-Path $HOME '.config/zed'
 }
 
 function Assert-SetupZedConfigDir {
   $script:ZedConfigDir = Get-SetupZedConfigDir
-  if (-not (Test-Path -LiteralPath $script:ZedConfigDir)) {
+  if (-not (Test-Path -LiteralPath $script:ZedConfigDir -PathType Container)) {
     Stop-Setup "no Zed configuration directory at $($script:ZedConfigDir); install and launch Zed once, then re-run this command."
   }
   Write-SetupInfo "Zed configuration directory: $($script:ZedConfigDir)"
@@ -42,7 +49,9 @@ function Get-SetupZedModels {
   try {
     $response = Invoke-RestMethod -Uri $uri -Method Get -Headers @{ Authorization = "Bearer $SetupApiKey" } -TimeoutSec 60
   } catch {
-    Stop-Setup "could not fetch the model catalog from $uri"
+    # The underlying message distinguishes a revoked key from a DNS failure;
+    # Main redacts the credential before anything is printed.
+    Stop-Setup "could not fetch the model catalog from ${uri}: $(Protect-SetupSecret ([string]$_.Exception.Message))"
   }
 
   # Chat models only, keyed on `kind` rather than on `endpoints`: the endpoint
@@ -52,9 +61,11 @@ function Get-SetupZedModels {
   foreach ($model in $response.data) {
     if ($model.kind -cne 'chat') { continue }
 
+    # Compared against $null rather than tested for truthiness so a catalog
+    # value of 0 stays 0, matching jq, where only null and false are falsy.
     $contextWindow = $model.limits.max_context_window_tokens
-    if (-not $contextWindow) { $contextWindow = $model.limits.max_prompt_tokens }
-    if (-not $contextWindow) { $contextWindow = 200000 }
+    if ($null -eq $contextWindow) { $contextWindow = $model.limits.max_prompt_tokens }
+    if ($null -eq $contextWindow) { $contextWindow = 200000 }
 
     $inputModalities = @($model.chat.modalities.input)
     # `tools` is always true — a model that cannot call tools is not one anyone
@@ -71,16 +82,27 @@ function Get-SetupZedModels {
         prompt_caching = $true
       }
     }
-    if ($model.limits.max_output_tokens) { $entry.max_output_tokens = $model.limits.max_output_tokens }
+    if ($null -ne $model.limits.max_output_tokens) { $entry.max_output_tokens = $model.limits.max_output_tokens }
 
     $reasoning = $model.chat.reasoning
     if ($reasoning) {
       if ($reasoning.adaptive) {
         $entry.mode = [ordered]@{ type = 'adaptive' }
-      } elseif ($reasoning.budget_tokens.max) {
-        $entry.mode = [ordered]@{ type = 'thinking'; budget_tokens = $reasoning.budget_tokens.max }
       } else {
-        $entry.mode = [ordered]@{ type = 'thinking' }
+        # Thinking mode carries a budget or it is not written at all: Zed
+        # serializes `Thinking::Enabled.budget_tokens` with no
+        # skip_serializing_if, so a mode without one puts `"budget_tokens":
+        # null` on the Messages request and every call 400s. The floor is
+        # preferred over the ceiling because Zed sends this value verbatim on
+        # every request and Anthropic requires it below max_tokens. A model
+        # whose catalog states no budget is left in Default mode, which the
+        # picker still offers.
+        # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
+        $budget = $reasoning.budget_tokens.min
+        if ($null -eq $budget) { $budget = $reasoning.budget_tokens.max }
+        if ($null -ne $budget) {
+          $entry.mode = [ordered]@{ type = 'thinking'; budget_tokens = $budget }
+        }
       }
     }
     $models += [PSCustomObject]$entry
@@ -107,13 +129,27 @@ function Write-SetupZedSettings {
     $script:ZedSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
+    # Every shape check completes before the backup exists, so a refusal cannot
+    # leave an orphan beside the operator's settings.
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
-    if (($document.PSObject.Properties.Name -contains 'language_models') -and ($document.language_models -isnot [System.Management.Automation.PSCustomObject])) {
-      Stop-Setup 'existing Zed language_models is not a JSON object.'
+    if ($document.PSObject.Properties.Name -contains 'language_models') {
+      if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
+        Stop-Setup 'existing Zed language_models is not a JSON object.'
+      }
+      if (($document.language_models.PSObject.Properties.Name -contains 'anthropic_compatible') -and
+          ($document.language_models.anthropic_compatible -isnot [System.Management.Automation.PSCustomObject])) {
+        Stop-Setup 'existing Zed anthropic_compatible is not a JSON object.'
+      }
     }
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:ZedSettingsBackup = "$($script:ZedSettingsPath).floway-backup.$stamp.$PID"
-    Copy-Item -LiteralPath $script:ZedSettingsPath -Destination $script:ZedSettingsBackup
+    try {
+      Copy-Item -LiteralPath $script:ZedSettingsPath -Destination $script:ZedSettingsBackup
+    } catch {
+      if (Test-Path -LiteralPath $script:ZedSettingsBackup) { Remove-Item -LiteralPath $script:ZedSettingsBackup -Force }
+      $script:ZedSettingsBackup = $null
+      throw
+    }
   } else {
     $document = [PSCustomObject]@{}
   }
@@ -123,8 +159,6 @@ function Write-SetupZedSettings {
   }
   if ($document.language_models.PSObject.Properties.Name -notcontains 'anthropic_compatible') {
     $document.language_models | Add-Member -NotePropertyName anthropic_compatible -NotePropertyValue ([PSCustomObject]@{})
-  } elseif ($document.language_models.anthropic_compatible -isnot [System.Management.Automation.PSCustomObject]) {
-    Stop-Setup 'existing Zed anthropic_compatible is not a JSON object.'
   }
   Set-SetupProp $document.language_models.anthropic_compatible $SetupZedProviderName ([PSCustomObject]@{
     api_url = Get-SetupZedApiUrl
@@ -136,16 +170,26 @@ function Write-SetupZedSettings {
     $json = $document | ConvertTo-Json -Depth 100
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
-    if ($check.language_models.anthropic_compatible.$SetupZedProviderName.api_url -cne (Get-SetupZedApiUrl)) {
+    # Indexed through the property bag rather than with `.$name`, so a provider
+    # named after a PSObject intrinsic (Count, Length) resolves to the entry
+    # rather than to the member.
+    $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value
+    if (($staged.api_url -cne (Get-SetupZedApiUrl)) -or (@($staged.available_models).Count -eq 0)) {
       Stop-Setup 'staged Zed global settings failed validation.'
     }
-    Move-Item -LiteralPath $stage -Destination $script:ZedSettingsPath -Force
+    # Move-Item -Force is delete-then-create on Windows, which would briefly
+    # unlink a settings file Zed is watching; File.Replace is atomic.
+    if ($script:ZedSettingsExisted -and (Test-SetupIsWindows)) {
+      [System.IO.File]::Replace($stage, $script:ZedSettingsPath, [System.Management.Automation.Language.NullString]::Value)
+    } else {
+      Move-Item -LiteralPath $stage -Destination $script:ZedSettingsPath -Force
+    }
+    Remove-SetupOlderBackups -Path $script:ZedSettingsPath -Keep $script:ZedSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
     Restore-SetupZedSettings
     throw
   }
-  Remove-SetupOlderBackups $script:ZedSettingsPath $script:ZedSettingsBackup
   Write-SetupInfo "Configured $($script:ZedModels.Count) model(s) as provider `"$SetupZedProviderName`"."
 }
 
@@ -195,6 +239,7 @@ public static class FlowayZedCredential {
         throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
       }
     } finally {
+      for (int i = 0; i < secret.Length; i++) { Marshal.WriteByte(blob, i, 0); }
       Marshal.FreeHGlobal(blob);
     }
   }
@@ -202,38 +247,52 @@ public static class FlowayZedCredential {
 '@
 
 function Set-SetupZedCredentialWindows {
-  Add-Type -TypeDefinition $SetupZedCredWriteSource -ErrorAction Stop
+  # Guarded because Add-Type throws when the type is already in the AppDomain,
+  # and the documented invocation is a pasted one-liner an operator re-runs in
+  # the same console after fixing whatever failed the first time.
+  if (-not ('FlowayZedCredential' -as [type])) {
+    Add-Type -TypeDefinition $SetupZedCredWriteSource
+  }
   $bytes = [System.Text.Encoding]::UTF8.GetBytes($SetupApiKey)
-  [FlowayZedCredential]::Write("zed:url=$(Get-SetupZedApiUrl)", 'Bearer', $bytes)
+  try {
+    [FlowayZedCredential]::Write("zed:url=$(Get-SetupZedApiUrl)", 'Bearer', $bytes)
+  } finally {
+    [Array]::Clear($bytes, 0, $bytes.Length)
+  }
 }
 
-# The Secret Service label is matched exactly on read, so it is a fixed literal
-# rather than anything derived from the provider name.
-# Ref: https://github.com/zed-industries/zed/issues/43671
+# Zed's lookup searches on `url` alone and then returns the first item whose
+# label matches this literal, so the label is fixed rather than derived from the
+# provider name.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_linux/src/linux/platform.rs#L677-L681
+#      https://github.com/zed-industries/zed/issues/43671
 function Set-SetupZedCredentialSecretService {
   if (-not (Get-Command secret-tool -ErrorAction SilentlyContinue)) {
     Stop-Setup 'secret-tool is unavailable; install libsecret-tools (Debian/Ubuntu) or libsecret (Fedora/Arch) and re-run.'
   }
-  $apiUrl = Get-SetupZedApiUrl
-  # A prior entry is cleared first: secret-tool appends rather than replaces,
-  # and Zed filters on `url` before comparing labels, so duplicates accumulate.
-  & secret-tool clear url $apiUrl username Bearer 2>$null
-  $SetupApiKey | & secret-tool store --label='zed-github-account' url $apiUrl username Bearer
+  $SetupApiKey | & secret-tool store --label='zed-github-account' url (Get-SetupZedApiUrl) username Bearer
   if ($LASTEXITCODE -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
 }
 
+# `-T` grants a bundle access without the authorization prompt a later read
+# would raise, and a path that does not exist fails the whole call — so only
+# bundles found on this host are named, across every channel and both install
+# locations. The key is unavoidably an argv element for the duration of the
+# call: security takes the password only via -w/-X, and bare -w prompts on the
+# tty rather than reading stdin, which a piped installer cannot answer.
 function Set-SetupZedCredentialMacOS {
-  & security add-internet-password -s (Get-SetupZedApiUrl) -a Bearer -w $SetupApiKey -U -T /Applications/Zed.app 2>$null
+  $arguments = @('add-internet-password', '-s', (Get-SetupZedApiUrl), '-a', 'Bearer', '-U', '-w', $SetupApiKey)
+  foreach ($bundle in @(
+      '/Applications/Zed.app', (Join-Path $HOME 'Applications/Zed.app'),
+      '/Applications/Zed Preview.app', (Join-Path $HOME 'Applications/Zed Preview.app'),
+      '/Applications/Zed Nightly.app', (Join-Path $HOME 'Applications/Zed Nightly.app'))) {
+    if (Test-Path -LiteralPath $bundle -PathType Container) { $arguments += @('-T', $bundle) }
+  }
+  & security @arguments
   if ($LASTEXITCODE -ne 0) { Stop-Setup 'the security command could not store the API key.' }
 }
 
 function Set-SetupZedCredential {
-  # The harness records the call instead of writing a real credential store,
-  # which no test host can be asked to mutate.
-  if ($env:AGENT_SETUP_TEST_CREDENTIAL_RECORD) {
-    [System.IO.File]::WriteAllText($env:AGENT_SETUP_TEST_CREDENTIAL_RECORD, "$(Get-SetupZedApiUrl)`t$SetupApiKey`n")
-    return
-  }
   switch (Get-SetupPlatform) {
     'windows' { Set-SetupZedCredentialWindows }
     'macos' { Set-SetupZedCredentialMacOS }

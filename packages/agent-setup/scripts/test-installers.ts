@@ -340,6 +340,21 @@ const ZED_CATALOG = {
       kind: 'chat', endpoints: { chatCompletions: {} }, limits: {},
     },
     {
+      // Reasoning with no budget at all — the shape every Codex model has. Zed
+      // must be left in Default mode rather than sent a null thinking budget.
+      id: 'effort-only', object: 'model', type: 'model', display_name: 'Effort Only',
+      kind: 'chat', endpoints: { responses: {} },
+      limits: { max_prompt_tokens: 120_000 },
+      chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'high' } } },
+    },
+    {
+      // A floor with no ceiling — the shape every Claude Code model has.
+      id: 'floor-only', object: 'model', type: 'model', display_name: 'Floor Only',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 200_000 },
+      chat: { reasoning: { budget_tokens: { min: 1024 } } },
+    },
+    {
       id: 'embed-3', object: 'model', type: 'model', display_name: 'Embed',
       kind: 'embedding', endpoints: { embeddings: {} }, limits: {},
     },
@@ -446,7 +461,11 @@ const startModelServer = async (): Promise<ModelServer> => {
         return;
       }
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(state.mode === 'catalog-empty' ? { data: [] } : ZED_CATALOG));
+      // Serves the embedding row alone, so the refusal comes out of the
+      // chat-kind filter rather than out of an empty array.
+      res.end(JSON.stringify(state.mode === 'catalog-empty'
+        ? { object: 'list', data: ZED_CATALOG.data.filter(model => model.kind !== 'chat') }
+        : ZED_CATALOG));
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
@@ -485,6 +504,31 @@ const placeFakeClaude = (dir: string): void => {
 const placeFakeCodex = (dir: string): void => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'codex'), FAKE_CODEX, { mode: 0o755 });
+};
+
+// Stand-ins for the OS credential stores, which no test host can be asked to
+// mutate. Each records its own argument vector and the secret it received on
+// stdin, so the assertions see exactly what the installer asked the real tool
+// to do. `binDir` precedes SHIM_BIN on PATH, and SHIM_BIN carries neither name,
+// so these are what `command -v` and a bare invocation resolve to.
+const placeFakeCredentialTools = (workspace: Workspace): void => {
+  const record = zedCredentialRecord(workspace);
+  writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
+printf 'security\\t%s\\n' "$*" >> ${JSON.stringify(record)}
+`, { mode: 0o755 });
+  writeFileSync(join(workspace.binDir, 'secret-tool'), `#!/bin/bash
+secret=""
+case "$1" in store) secret=$(cat) ;; esac
+printf 'secret-tool\\t%s\\t%s\\n' "$*" "$secret" >> ${JSON.stringify(record)}
+`, { mode: 0o755 });
+};
+
+const zedCredentialRecord = (workspace: Workspace): string => join(workspace.root, 'credential-calls.txt');
+
+const readCredentialCalls = (workspace: Workspace): string[] => {
+  const path = zedCredentialRecord(workspace);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8').split('\n').filter(line => line.trim() !== '');
 };
 
 const placeFakeNpm = (workspace: Workspace): void => {
@@ -608,7 +652,6 @@ interface RunOptions {
   // instead of the real `~/.config/zed`, and the credential record replaces the
   // OS credential store no test host can be asked to mutate.
   zedConfigDir?: string;
-  zedCredentialRecord?: string;
 }
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
@@ -690,8 +733,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.disableJqDownload) env.AGENT_SETUP_TEST_NO_JQ_DOWNLOAD = '1';
   if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
-  if (options.zedConfigDir) env.ZED_CONFIG_DIR_OVERRIDE = options.zedConfigDir;
-  if (options.zedCredentialRecord) env.AGENT_SETUP_TEST_CREDENTIAL_RECORD = options.zedCredentialRecord;
+  if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
 
   if (options.fakeRestoreFailure) {
     // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
@@ -858,8 +900,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
-  if (options.zedConfigDir) env.ZED_CONFIG_DIR_OVERRIDE = options.zedConfigDir;
-  if (options.zedCredentialRecord) env.AGENT_SETUP_TEST_CREDENTIAL_RECORD = options.zedCredentialRecord;
+  if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
 
   return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
@@ -2409,12 +2450,12 @@ const makeZedConfigDir = (ws: Workspace): string => {
 
 const runZed = (ws: Workspace, overrides: Partial<RunOptions> = {}) => {
   const configDir = overrides.zedConfigDir ?? makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
   return runShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: zedConfig(),
     zedConfigDir: configDir,
-    zedCredentialRecord: join(ws.root, 'zed-credential.txt'),
     ...overrides,
   });
 };
@@ -2440,7 +2481,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2459,7 +2500,9 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   t.equal(JSON.stringify(opus.mode), JSON.stringify({ type: 'adaptive' }), 'adaptive reasoning becomes adaptive mode');
 
   const gpt = models.get('gpt-5.6')!;
-  t.equal(JSON.stringify(gpt.mode), JSON.stringify({ type: 'thinking', budget_tokens: 32_000 }), 'a budget ceiling becomes thinking mode');
+  // The floor, not the ceiling: Zed sends this verbatim on every request and
+  // Anthropic requires it below max_tokens.
+  t.equal(JSON.stringify(gpt.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'a budget floor becomes the thinking budget');
   t.equal(gpt.capabilities.images, false, 'a text-only model does not claim images');
 
   const plain = models.get('plain-chat')!;
@@ -2467,18 +2510,47 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   t.ok(plain.max_output_tokens === undefined, 'no output limit is announced when the catalog has none');
   t.ok(plain.mode === undefined, 'a model without reasoning gets no mode');
   t.equal(JSON.stringify(plain.capabilities), JSON.stringify({ tools: true, images: false, prompt_caching: true }), 'all three capability flags are always written');
+
+  // Reasoning with no budget must not produce a thinking mode: Zed would put a
+  // null budget on every Messages request and the model would 400.
+  const effortOnly = models.get('effort-only')!;
+  t.ok(effortOnly.mode === undefined, 'reasoning without a budget stays in default mode');
+  t.equal(effortOnly.max_tokens, 120_000, 'prompt tokens stand in for an absent context window');
+
+  const floorOnly = models.get('floor-only')!;
+  t.equal(JSON.stringify(floorOnly.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'a floor with no ceiling still yields a budget');
 });
 
+// The invariant is that the credential store is keyed by the same string the
+// settings document names, so both artifacts are read and compared to each
+// other rather than each to a harness constant.
 test('zed', 'stores the credential against the same api_url the settings name', async t => {
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
-  const record = join(ws.root, 'zed-credential.txt');
-  const run = await runZed(ws, { zedConfigDir: configDir, zedCredentialRecord: record });
+  const run = await runZed(ws, { zedConfigDir: configDir });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
 
-  const [url, key] = readFileSync(record, 'utf8').trim().split('\t');
-  t.equal(url, modelServer.url, 'the credential is indexed by the provider api_url');
-  t.equal(key, SENTINEL_KEY, 'the credential carries the served key');
+  const calls = readCredentialCalls(ws);
+  t.equal(calls.length, 1, `exactly one credential tool call:\n${calls.join('\n')}`);
+  const [tool, argv, stdin] = calls[0]!.split('\t');
+
+  const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
+  const announced = settings.language_models.anthropic_compatible.Floway!.api_url;
+  // The value of the lookup key, not merely its presence somewhere in argv:
+  // both tools carry the origin in more than one position, so a substring
+  // check would survive a wrong key.
+  const words = argv!.split(' ');
+  const lookupKey = tool === 'secret-tool' ? words[words.indexOf('url') + 1] : words[words.indexOf('-s') + 1];
+  t.equal(lookupKey, announced, `the credential is keyed by the announced api_url:\n${calls[0]}`);
+
+  if (tool === 'secret-tool') {
+    t.equal(stdin, SENTINEL_KEY, 'the key reaches secret-tool on stdin, never argv');
+    t.ok(argv!.includes('--label=zed-github-account'), 'the label Zed matches on read is written');
+    t.ok(!argv!.includes(SENTINEL_KEY), 'the key is absent from argv');
+  } else {
+    t.ok(argv!.includes(SENTINEL_KEY), 'security takes the key via -w, its only non-interactive route');
+  }
+  t.ok(words.includes('Bearer'), 'the fixed username Zed looks the item up under is written');
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
 
@@ -2514,53 +2586,60 @@ test('zed', 'a catalog with no chat models is refused rather than written empty'
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
   modelServer.mode = 'catalog-empty';
-  try {
-    const run = await runZed(ws, { zedConfigDir: configDir });
-    t.equal(run.code, 1, 'should fail');
-    t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
-  } finally {
-    modelServer.mode = 'ok';
-  }
+  const run = await runZed(ws, { zedConfigDir: configDir });
+  t.equal(run.code, 1, 'should fail');
+  t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
+  // The refusal precedes credential storage, so an unusable catalog leaves no
+  // orphan entry behind.
+  t.equal(readCredentialCalls(ws).length, 0, 'no credential is stored');
 });
 
 test('zed', 'a failed catalog fetch stops before the credential is stored', async t => {
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
-  const record = join(ws.root, 'zed-credential.txt');
   modelServer.mode = 'catalog-error';
-  try {
-    const run = await runZed(ws, { zedConfigDir: configDir, zedCredentialRecord: record });
-    t.equal(run.code, 1, 'should fail');
-    t.ok(!existsSync(record), 'no credential is stored');
-    t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
-  } finally {
-    modelServer.mode = 'ok';
-  }
+  const run = await runZed(ws, { zedConfigDir: configDir });
+  t.equal(run.code, 1, 'should fail');
+  t.equal(readCredentialCalls(ws).length, 0, 'no credential is stored');
+  t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
 });
 
+// PowerShell reimplements in PSObject manipulation what Bash delegates to nine
+// lines of jq, so it runs against a document that already holds a sibling
+// provider — the branch where that hand-written merge can actually go wrong.
 test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
-  const record = join(ws.root, 'zed-credential.txt');
+  placeFakeCredentialTools(ws);
+  writeFileSync(zedSettingsPath(configDir), JSON.stringify({
+    telemetry: { metrics: false },
+    language_models: {
+      anthropic_compatible: { Existing: { api_url: 'https://existing', available_models: [] } },
+    },
+  }));
   const run = await runPowerShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: zedConfig(),
     zedConfigDir: configDir,
-    zedCredentialRecord: record,
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
 
   const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
+  t.equal(JSON.stringify(settings.telemetry), JSON.stringify({ metrics: false }), 'unrelated top-level key preserved');
+  t.equal(settings.language_models.anthropic_compatible.Existing?.api_url, 'https://existing', 'a sibling provider survives the merge');
+
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only', 'chat models only, in catalog order');
 
   const models = new Map(provider.available_models.map(entry => [entry.name, entry]));
   t.equal(JSON.stringify(models.get('claude-opus-4-6')!.mode), JSON.stringify({ type: 'adaptive' }), 'adaptive reasoning survives the PowerShell projection');
-  t.equal(JSON.stringify(models.get('gpt-5.6')!.mode), JSON.stringify({ type: 'thinking', budget_tokens: 32_000 }), 'a budget ceiling survives the PowerShell projection');
+  t.equal(JSON.stringify(models.get('gpt-5.6')!.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'the budget floor survives the PowerShell projection');
+  t.ok(models.get('effort-only')!.mode === undefined, 'reasoning without a budget stays in default mode');
   t.equal(models.get('plain-chat')!.max_tokens, 200_000, 'the unlimited model gets the same fallback window');
+  t.equal(readCredentialCalls(ws).length, 1, 'the credential is stored once');
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
 
@@ -2568,13 +2647,13 @@ test('zed', 'PowerShell leaves an unreadable settings document untouched', async
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
   writeFileSync(zedSettingsPath(configDir), '{ this is not json');
   const run = await runPowerShellInstaller({
     workspace: ws,
     baseUrl: modelServer.url,
     configuration: zedConfig(),
     zedConfigDir: configDir,
-    zedCredentialRecord: join(ws.root, 'zed-credential.txt'),
   });
   t.equal(run.code, 1, 'should fail');
   t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), '{ this is not json', 'the original bytes survive');
