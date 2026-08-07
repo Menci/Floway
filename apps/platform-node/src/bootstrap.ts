@@ -1,4 +1,4 @@
-import { nodeDirectFetch } from './direct-fetch.ts';
+import { nodeFetch } from './fetch.ts';
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { FsFileStore } from './fs-file-store.ts';
@@ -21,7 +21,7 @@ import {
   initImageCacheStore,
   initImageProcessor,
   initRuntimeKind,
-  initRuntimeDirectFetch,
+  initFetch,
   initSocketDial,
   initTimingSafeEqual,
   type SqlDatabase,
@@ -32,7 +32,7 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initRuntimeKind('node');
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createNodeExternalResourceFetcher());
-  initRuntimeDirectFetch(nodeDirectFetch);
+  initFetch(nodeFetch);
 
   const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');
   const dbPath = getEnvOptional('FLOWAY_DB_PATH', './data/floway.db');

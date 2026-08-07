@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { nodeDirectFetch } from '../src/direct-fetch.ts';
+import { nodeFetch } from '../src/fetch.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -11,7 +11,7 @@ test('opens a replayable body with fixed framing and Node duplex', async () => {
     return new Response('ok');
   }));
 
-  await nodeDirectFetch('https://example.com', {
+  await nodeFetch('https://example.com', {
     method: 'POST',
     body: { contentLength: 7, open: () => new Blob(['payload']).stream() },
   });
