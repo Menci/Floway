@@ -21,8 +21,9 @@ export const cloudflareFetch: Fetcher = (url, init) => {
   const fixed = new FixedLengthStream(body.contentLength);
   const transfer = body.open().pipeTo(fixed.writable);
   // Fetch owns the readable side and propagates upload failures into its own
-  // promise. Once it has produced a Response, a rejected pump only means the
-  // upstream stopped consuming the request early and must not discard it.
+  // promise. Once that promise has resolved, its Response is authoritative;
+  // observing a later pump rejection prevents an unhandled cleanup error
+  // without replacing the settled result.
   void transfer.catch(() => undefined);
   return fetch(url, { ...init, body: fixed.readable });
 };

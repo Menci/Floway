@@ -77,29 +77,29 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_CONNECT_ID];
-  // If direct-fetch precedes any materialized transport, runtime fetch may take
+  // If direct-fetch precedes any dial transport, runtime fetch may take
   // ownership of a native `init.body` and consume its underlying stream/Blob.
   // Materialize native bodies up-front so a later proxy attempt cannot receive
   // empty bytes. Replayable bodies remain factories and open afresh per attempt.
   // The fast path
   // (direct-fetch-only list) keeps the runtime's native body handling intact —
   // FormData, Blob, etc. don't need to be buffered.
-  const hasMaterializedTransport = list.some(id => id !== DIRECT_FETCH_ID);
+  const hasDialTransport = list.some(id => id !== DIRECT_FETCH_ID);
   const hasDirectFetch = list.includes(DIRECT_FETCH_ID);
-  const directFetchBeforeMaterialized = hasMaterializedTransport
+  const fetchBeforeDialTransport = hasDialTransport
     && hasDirectFetch
     && list.indexOf(DIRECT_FETCH_ID) < list.length - 1;
   return (url, init: FetchInit) => {
-    // Reject streaming bodies upfront whenever any materialized entry is in
+    // Reject streaming bodies upfront whenever any dial transport is in
     // play. The two-pass dial can replay a request and a stream is
     // single-shot; for a list like ['a','direct_fetch'] where 'a' is in active
     // backoff, pass 1 would consume the stream via the runtime fetch and
     // strand pass 2 with empty bytes.
-    if (hasMaterializedTransport && init.body instanceof ReadableStream) {
+    if (hasDialTransport && init.body instanceof ReadableStream) {
       return Promise.reject(new Error('streaming request bodies are not replayable through direct-connect or proxy transports'));
     }
 
-    return runFallbacks(input, list, url, createReplayableRequest(url, init), directFetchBeforeMaterialized);
+    return runFallbacks(input, list, url, createReplayableRequest(url, init), fetchBeforeDialTransport);
   };
 };
 
@@ -108,12 +108,12 @@ const runFallbacks = async (
   list: readonly string[],
   url: string,
   request: ReplayableRequest,
-  directFetchBeforeMaterialized: boolean,
+  fetchBeforeDialTransport: boolean,
 ): Promise<Response> => {
-  // A direct-fetch attempt before a materialized transport can consume
+  // A direct-fetch attempt before a dial transport can consume
   // Blob/FormData bodies. Build the replayable byte form first so every later
   // attempt observes one body.
-  if (directFetchBeforeMaterialized) await request.materialized();
+  if (fetchBeforeDialTransport) await request.prepared();
   const errors: unknown[] = [];
 
   // Backoff rows only ever exist for operator-managed proxies, so a list made
@@ -167,10 +167,10 @@ const tryOne = async (
       return await input.runDirectFetch(url, request.fetchInit());
     }
     if (id === DIRECT_CONNECT_ID) {
-      const materialized = await request.materialized();
+      const prepared = await request.prepared();
       return await input.runDirectConnect(
-        materialized.target,
-        materialized.request,
+        prepared.target,
+        prepared.request,
         { socketDial: input.socketDial(), signal: request.signal },
       );
     }
@@ -185,7 +185,7 @@ const tryOne = async (
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));
       return null;
     }
-    const materialized = await request.materialized();
+    const prepared = await request.prepared();
     // An explicit request signal joins the dialer's timeout controller so its
     // caller can stop an in-flight handshake before the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
@@ -195,8 +195,8 @@ const tryOne = async (
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
     const response = await input.runProxied(
       config.config,
-      materialized.target,
-      materialized.request,
+      prepared.target,
+      prepared.request,
       options,
     );
     // A successful dial after a previous failure must clear the backoff so

@@ -5,11 +5,13 @@ import { cloudflareFetch } from '../src/fetch.ts';
 afterEach(() => vi.unstubAllGlobals());
 
 test('pipes a replayable body through Workers fixed-length framing', async () => {
+  let observedContentLength: number | undefined;
   let observedPayload: string | undefined;
   let observed: RequestInit | undefined;
   vi.stubGlobal('FixedLengthStream', class extends TransformStream<ArrayBufferView, Uint8Array> {
-    constructor(_contentLength: number) {
+    constructor(contentLength: number) {
       super();
+      observedContentLength = contentLength;
     }
   });
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
@@ -23,6 +25,7 @@ test('pipes a replayable body through Workers fixed-length framing', async () =>
     body: { contentLength: 7, open: () => new Blob(['payload']).stream() },
   });
 
+  expect(observedContentLength).toBe(7);
   expect(observedPayload).toBe('payload');
   expect((observed as RequestInit & { duplex?: string }).duplex).toBeUndefined();
 });
