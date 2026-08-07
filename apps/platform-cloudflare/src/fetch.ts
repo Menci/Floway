@@ -9,7 +9,7 @@ interface FixedLengthStreamConstructor {
 
 declare const FixedLengthStream: FixedLengthStreamConstructor;
 
-export const cloudflareDirectFetch: Fetcher = (url, init) => {
+export const cloudflareFetch: Fetcher = (url, init) => {
   const body = init.body;
   if (!isReplayableBody(body)) return fetch(url, { ...init, body });
   if (!Number.isSafeInteger(body.contentLength) || body.contentLength < 0) {
