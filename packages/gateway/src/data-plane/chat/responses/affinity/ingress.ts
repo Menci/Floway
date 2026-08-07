@@ -133,16 +133,11 @@ const materializeResponsesPayload = (
   payload: CanonicalResponsesPayload,
   projectionsByItem: ReadonlyMap<number, readonly ResponsesBlobCandidateProjection[] | null>,
 ): CanonicalResponsesPayload => {
-  let changed = false;
+  if (projectionsByItem.size === 0) return payload;
   const input = payload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
     if (projections === undefined) return [item];
-    if (projections === null) {
-      changed = true;
-      return [];
-    }
-    if (projections.length === 0) return [item];
-    changed = true;
+    if (projections === null) return [];
 
     const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
     for (const { location, projection } of projections) {
@@ -168,7 +163,7 @@ const materializeResponsesPayload = (
 
     return [replacement];
   });
-  return changed ? { ...payload, input } : payload;
+  return { ...payload, input };
 };
 
 const evaluateResponsesCandidate = (
@@ -202,7 +197,7 @@ const evaluateResponsesCandidate = (
       projectionsByItem.set(item.itemIndex, null);
       continue;
     }
-    projectionsByItem.set(item.itemIndex, projections);
+    if (projections.length > 0) projectionsByItem.set(item.itemIndex, projections);
   }
 
   if (unsatisfiedTargets.length > 0) return { kind: 'rejected' as const };
