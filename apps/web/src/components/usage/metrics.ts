@@ -19,10 +19,6 @@ export const metricConfig: Record<
     labelKey: 'dashboard.usage.metrics.cacheCreation',
     kind: 'tokens',
   },
-  cacheHitRate: {
-    labelKey: 'dashboard.usage.metrics.cacheHitRate',
-    kind: 'percent',
-  },
 };
 
 // A metric id is the reader's vocabulary and a summary field is the algebra's;
@@ -38,7 +34,6 @@ export const summaryFieldForMetric = {
   cached: 'cacheRead',
   cacheCreation: 'cacheCreation',
   cachedRate: 'cachedRate',
-  cacheHitRate: 'cacheHitRate',
 } as const satisfies Record<UsageMetric, keyof TokenSummary>;
 
 export const summaryMetrics: UsageMetric[][] = [
@@ -46,5 +41,5 @@ export const summaryMetrics: UsageMetric[][] = [
   ['total', 'output'],
   ['input', 'prefill'],
   ['cached', 'cachedRate'],
-  ['cacheCreation', 'cacheHitRate'],
+  ['cacheCreation'],
 ];

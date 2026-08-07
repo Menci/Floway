@@ -97,15 +97,17 @@ export const performanceValue = (
 // chart series, once per table row and twice per sort comparison.
 export interface PerformanceLabels {
   upstreams: ReadonlyMap<string, string>;
+  upstreamHues: ReadonlyMap<string, number>;
   users: ReadonlyMap<string, string>;
   keys: ReadonlyMap<string, string>;
 }
 
 export const performanceLabels = (
   overview: PerformanceOverviewResponse,
-  upstreamNames: ReadonlyMap<string, string>,
+  upstreams: readonly { id: string; name: string; hue: number }[],
 ): PerformanceLabels => ({
-  upstreams: upstreamNames,
+  upstreams: new Map(upstreams.map(upstream => [upstream.id, upstream.name])),
+  upstreamHues: new Map(upstreams.map(upstream => [upstream.id, upstream.hue])),
   users: new Map(overview.users.map(user => [String(user.id), user.username])),
   keys: new Map(overview.keys.map(key => [key.id, key.name])),
 });

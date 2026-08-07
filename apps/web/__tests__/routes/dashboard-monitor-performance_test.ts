@@ -16,7 +16,7 @@ afterEach(() => {
 const gatewayForOperator = (input: RequestInfo | URL) => {
   const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
   if (path === '/api/upstreams') return Promise.resolve(Response.json({ error: 'Admin privileges required' }, { status: 403 }));
-  if (path === '/api/upstream-options') return Promise.resolve(Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, color: null, cachedModelCount: 3 }]));
+  if (path === '/api/upstream-options') return Promise.resolve(Response.json([{ id: 'up-1', name: 'Copilot seat', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 3 }]));
   if (path === '/api/runtime-info') return Promise.resolve(Response.json({ kind: 'node', runtimeLocation: 'LOCAL' }));
   return Promise.resolve(Response.json({
     series: [], axes: { none: [], model: [], upstream: [], operation: [], runtimeLocation: [], keyId: [], userId: [] },
@@ -32,7 +32,7 @@ describe('where the performance page reads upstream names from', () => {
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
 
-    expect(data.upstreamNames).toEqual([{ id: 'up-1', name: 'Copilot seat' }]);
+    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
     expect(data.error).toBeNull();
   });
 

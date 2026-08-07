@@ -744,7 +744,12 @@ const zhHansCN = {
           invalidEffort:
               '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大思考 Token 预算不能小于最小值。',
-          invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
+          upstreamIdRequired: '请输入上游模型 ID。',
+          endpointsRequired: '请至少选择一个支持的 API。',
+          rerankTargetRequired: '请为此 API 选择 Rerank 目标。',
+          rerankTargetUnexpected: '未使用 Rerank API 的模型不能配置 Rerank 目标。',
+          rerankPathInvalid: 'Rerank 路径覆盖必须以 / 开头，且不能包含 //、/./ 或 /../。',
+          invalidConfiguration: '此模型包含无法保存的配置。',
           delete: '删除手动模型',
           deleteNamed: '删除手动模型 {{name}}',
           deleteTitle: '删除模型',
@@ -900,7 +905,7 @@ const zhHansCN = {
       telemetry: { currentUserOnly: '仅自己' },
       usage: {
         empty: '此时间范围内没有使用记录',
-        callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
+        callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出' },
         apiKeyScopeInfo: 'API 密钥分组和筛选仅包含当前账号拥有的密钥。选择“按 API 密钥”会将用户设为“仅自己”；选择其他用户会清空 API 密钥筛选并回到“按模型”。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',
         groupBy: { label: '分组依据', model: '按模型', upstream: '按上游', userId: '按用户', keyId: '按 API 密钥' },
@@ -935,7 +940,6 @@ const zhHansCN = {
           cached: '缓存输入',
           cachedRate: '缓存比例',
           cacheCreation: '缓存写入',
-          cacheHitRate: '缓存命中率',
         },
       },
       performance: {

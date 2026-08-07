@@ -13,7 +13,7 @@ export interface UsageUrlState {
 }
 
 const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
-const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
+const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation'];
 const usageGroupByValues: UsageGroupBy[] = ['model', 'upstream', 'keyId', 'userId'];
 
 export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {

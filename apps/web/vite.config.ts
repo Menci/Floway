@@ -142,7 +142,18 @@ const sourceMapOutput = {
   sourcemapExcludeSources: true,
 } as const;
 
+// React Router's Environment API resolves the shared CSS pipeline from the
+// root build and the client minifier from the client environment. Both must
+// carry the same pre-Color-Level-4 policy: Chrome 61 predates alpha hex, and
+// esbuild uses that target to serialize alpha with legacy rgba().
+// https://vite.dev/config/build-options.html#build-csstarget
+const legacyCssBuild = {
+  cssMinify: 'esbuild',
+  cssTarget: 'chrome61',
+} as const;
+
 export default defineConfig({
+  build: legacyCssBuild,
   // React Router discovers route modules lazily. Pre-bundle their browser
   // dependencies at startup so the first visit to a route never makes Vite
   // re-optimize and reload the already-mounted dashboard.
@@ -243,6 +254,7 @@ export default defineConfig({
   environments: {
     client: {
       build: {
+        ...legacyCssBuild,
         // The maps ship, and the chunks keep the trailing `sourceMappingURL`
         // comment that names them: the ErrorBoundary in src/root.tsx restores
         // its trace through src/lib/source-mapped-stack.ts, and the same
