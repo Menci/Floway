@@ -1,7 +1,7 @@
-import { sha256Hex } from '@floway-dev/platform';
+import { sha256JsonHex } from '@floway-dev/provider';
 
 export const hashResponsesJson = async (value: unknown): Promise<string> =>
-  await sha256Hex(new TextEncoder().encode(JSON.stringify(sortJson(value))));
+  sha256JsonHex(sortJson(value));
 
 const sortJson = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(sortJson);

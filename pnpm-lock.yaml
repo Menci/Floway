@@ -462,6 +462,9 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*

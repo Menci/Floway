@@ -8,7 +8,7 @@ import {
   CODEX_RESPONSES_PATH,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { sha256Uuid, uuidV7 } from './ids.ts';
+import { sha256JsonUuid, uuidV7 } from './ids.ts';
 import {
   parseCodexQuotaHeaders,
   putCodexQuota,
@@ -226,9 +226,9 @@ const deriveSessionIdFromInput = async (body: CodexResponsesBody): Promise<strin
   const seed = seedUpToFirstUserMessage(body.input);
   if (seed === null) return null;
   const instructions = typeof body.instructions === 'string' ? body.instructions : '';
-  // U+0001 separates the two seed components so an empty instructions can't
-  // collide with the input prefix via string concatenation.
-  return await sha256Uuid(`${instructions}${JSON.stringify(seed)}`);
+  // U+0001 keeps the instructions and JSON seed components unambiguous in the
+  // hash input.
+  return await sha256JsonUuid(seed, `${instructions}`);
 };
 
 const seedUpToFirstUserMessage = (input: readonly ResponsesInputItem[]): readonly ResponsesInputItem[] | null => {

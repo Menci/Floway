@@ -1,7 +1,7 @@
 import { parse, validate, version } from 'uuid';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { sha256Uuid, uuidV7 } from '../src/ids.ts';
+import { sha256JsonUuid, sha256Uuid, uuidV7 } from '../src/ids.ts';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,6 +19,13 @@ describe('sha256Uuid', () => {
     expect(version(id)).toBe(4);
     expect(parse(id)[8] & 0xc0).toBe(0x80);
   });
+});
+
+test('sha256JsonUuid preserves the legacy concatenated JSON digest', async () => {
+  const value = [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }] }];
+  const prefix = 'instructions\u0001';
+
+  expect(await sha256JsonUuid(value, prefix)).toBe(await sha256Uuid(`${prefix}${JSON.stringify(value)}`));
 });
 
 describe('uuidV7', () => {

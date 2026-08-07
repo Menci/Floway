@@ -51,6 +51,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
+  private readonly inputItemHashes = new WeakMap<ResponsesInputItem, string>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -101,7 +102,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      itemHashes.add(await hashResponsesItem(item));
+      itemHashes.add(await this.hashInputItem(item));
     }
     await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
   }
@@ -200,7 +201,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         id,
         apiKeyId: this.apiKeyId,
         payload: { item },
-        itemHash: await hashResponsesItem(item),
+        itemHash: await this.hashInputItem(item),
         refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
       };
       this.stagedInputItemIds.push(id);
@@ -208,7 +209,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const itemHash = await hashResponsesItem(item);
+    const itemHash = await this.hashInputItem(item);
     const existing = this.loadedByItemHash.get(itemHash);
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
@@ -224,6 +225,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     };
     this.stagedInputItemIds.push(row.id);
     this.rememberItem(row);
+  }
+
+  private async hashInputItem(item: ResponsesInputItem): Promise<string> {
+    const cached = this.inputItemHashes.get(item);
+    if (cached !== undefined) return cached;
+    const hash = await hashResponsesItem(item);
+    this.inputItemHashes.set(item, hash);
+    return hash;
   }
 
   private rememberItem(row: StoredResponsesItem): void {
