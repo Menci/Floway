@@ -1,4 +1,4 @@
-// Public types for HTTP/1.1 over a duplex byte stream.
+// Portable runtime-fetch and HTTP/1.1-over-stream request contracts.
 
 /**
  * A duplex byte transport. Both halves are owned by the caller; the
@@ -10,6 +10,17 @@ export interface DuplexStream {
   writable: WritableStream<Uint8Array>;
 }
 
+export interface ReplayableBody {
+  readonly contentLength: number;
+  open(): ReadableStream<Uint8Array>;
+}
+
+export type FetchInit = Omit<RequestInit, 'body'> & {
+  body?: BodyInit | ReplayableBody | null;
+};
+
+export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
+
 /**
  * HTTP/1.1 request shape, transport-agnostic. The caller has already
  * dialed and (if needed) TLS-wrapped the stream — this package only
@@ -19,8 +30,8 @@ export interface DuplexStream {
  * transport; this package has no knowledge of the dial target).
  *
  * Caller-supplied `Content-Length`, `Transfer-Encoding`, and
- * `Connection` are stripped: the buffered body's exact length is the
- * source of truth, and this layer is one-shot per duplex (it always
+ * `Connection` are stripped: the body's declared length is the source
+ * of truth, and this layer is one-shot per duplex (it always
  * emits `Connection: close`) so a `keep-alive` would mislead the server
  * into reusing a transport we plan to tear down.
  */
@@ -29,8 +40,8 @@ export interface HttpRequest {
   /** Path + query string, e.g. `/v1/messages?stream=true`. */
   path: string;
   headers: Record<string, string>;
-  /** Optional buffered body. Streaming bodies are not supported. */
-  body?: Uint8Array;
+  /** Optional bytes or a fresh-stream factory with an exact content length. */
+  body?: Uint8Array | ReplayableBody;
 }
 
 /**

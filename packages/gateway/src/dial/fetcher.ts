@@ -3,7 +3,7 @@ import { createReplayableRequest, type ReplayableRequest } from './replayable-re
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
+import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
@@ -24,7 +24,7 @@ interface CreateFetcherInput {
     options: RunProxiedRequestOptions,
   ) => Promise<Response>;
   // Per-request indirection for the runtime-native fetch sentinel.
-  runDirectFetch: (url: string, init: RequestInit) => Promise<Response>;
+  runDirectFetch: Fetcher;
   // Runtime-agnostic raw TCP + userspace-TLS request runner.
   runDirectConnect: (
     target: ProxyRequestTarget,
@@ -78,9 +78,10 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_CONNECT_ID];
   // If direct-fetch precedes any materialized transport, runtime fetch may take
-  // ownership of `init.body` and consume its underlying stream/Blob.
-  // Buffer the body up-front so a runtime that re-streams a Blob can't
-  // strand a later proxy attempt with empty bytes. The fast path
+  // ownership of a native `init.body` and consume its underlying stream/Blob.
+  // Materialize native bodies up-front so a later proxy attempt cannot receive
+  // empty bytes. Replayable bodies remain factories and open afresh per attempt.
+  // The fast path
   // (direct-fetch-only list) keeps the runtime's native body handling intact —
   // FormData, Blob, etc. don't need to be buffered.
   const hasMaterializedTransport = list.some(id => id !== DIRECT_FETCH_ID);
@@ -88,7 +89,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const directFetchBeforeMaterialized = hasMaterializedTransport
     && hasDirectFetch
     && list.indexOf(DIRECT_FETCH_ID) < list.length - 1;
-  return (url, init) => {
+  return (url, init: FetchInit) => {
     // Reject streaming bodies upfront whenever any materialized entry is in
     // play. The two-pass dial can replay a request and a stream is
     // single-shot; for a list like ['a','direct_fetch'] where 'a' is in active

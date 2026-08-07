@@ -4,7 +4,13 @@ import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
+import { isReplayableBody, type FetchInit, type ReplayableBody } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
+
+const bufferedBody = (body: HttpRequest['body']): Uint8Array => {
+  if (!(body instanceof Uint8Array)) throw new Error('expected a buffered request body');
+  return body;
+};
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
@@ -280,7 +286,7 @@ describe('createFetcher', () => {
     if (observedRequest === undefined) throw new Error('direct-connect request was not observed');
     expect(observedRequest?.method).toBe('POST');
     expect(observedRequest?.path).toBe('/v1/responses?stream=1');
-    expect(new TextDecoder().decode(observedRequest.body)).toBe('request body');
+    expect(new TextDecoder().decode(bufferedBody(observedRequest.body))).toBe('request body');
     expect(observedSocketDial).toBe(stubSocketDial);
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
@@ -425,7 +431,7 @@ describe('createFetcher', () => {
 
   it('replays materialized bytes to a direct fallback without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
-    let directBody: BodyInit | null | undefined;
+    let directBody: FetchInit['body'];
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -433,7 +439,7 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => {
-        expect(new TextDecoder().decode(request.body)).toBe('request body');
+        expect(new TextDecoder().decode(bufferedBody(request.body))).toBe('request body');
         throw new ProxyDialError('proxy unavailable', 'tcp-connect');
       },
       runDirectFetch: async (_url, init) => {
@@ -455,8 +461,8 @@ describe('createFetcher', () => {
 
   it('materializes before a leading direct attempt without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
-    let directBody: BodyInit | null | undefined;
-    let materializedBody: Uint8Array | undefined;
+    let directBody: FetchInit['body'];
+    let materializedBody: HttpRequest['body'];
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -481,7 +487,7 @@ describe('createFetcher', () => {
     expect(await response.text()).toBe('proxy');
     expect(directBody).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
-    expect(new TextDecoder().decode(materializedBody)).toBe('request body');
+    expect(new TextDecoder().decode(bufferedBody(materializedBody))).toBe('request body');
     expect(init.body).toBe('request body');
   });
 
@@ -574,6 +580,44 @@ describe('createFetcher', () => {
     });
     await expect(fetcher('https://api.openai.com/v1/x', { method: 'POST', body: stream }))
       .rejects.toThrow(/streaming request bodies/);
+  });
+
+  it('opens a fresh replayable body stream for each fallback attempt', async () => {
+    const repo = new InMemoryRepo();
+    let opens = 0;
+    const observed: string[] = [];
+    const body: ReplayableBody = {
+      contentLength: 12,
+      open: () => {
+        opens += 1;
+        return new Blob(['request body']).stream();
+      },
+    };
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }, { id: 'direct_fetch' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_config, _target, request) => {
+        if (request.body instanceof Uint8Array || request.body === undefined) throw new Error('expected replayable body');
+        observed.push(await new Response(request.body.open()).text());
+        throw new ProxyDialError('proxy unavailable', 'tcp-connect');
+      },
+      runDirectFetch: async (_url, init) => {
+        if (!isReplayableBody(init.body)) throw new Error('expected replayable body');
+        observed.push(await new Response(init.body.open()).text());
+        return new Response('direct');
+      },
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    const response = await fetcher('https://api.openai.com/v1/responses', { method: 'POST', body });
+
+    expect(await response.text()).toBe('direct');
+    expect(observed).toEqual(['request body', 'request body']);
+    expect(opens).toBe(2);
   });
 
   it('persists the failed dial stage in the backoff lastError tag', async () => {

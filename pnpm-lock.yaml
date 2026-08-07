@@ -415,6 +415,9 @@ importers:
 
   packages/platform:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@scure/base':
         specifier: ^2.2.0
         version: 2.2.0
@@ -450,6 +453,9 @@ importers:
 
   packages/provider:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

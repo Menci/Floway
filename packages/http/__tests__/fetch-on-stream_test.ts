@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { collectBody, makeFakeDuplex } from './test-utils.ts';
 import { fetchOnStream } from '../src/fetch-on-stream.ts';
@@ -415,6 +415,94 @@ describe('fetchOnStream — request body serialization', () => {
     // First write is the head; the next eight are 16 KiB each.
     expect(writeSizes.length).toBe(9);
     expect(writeSizes.slice(1)).toEqual([16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384]);
+  });
+
+  it('writes a declared-length stream without changing its HTTP framing', async () => {
+    const fake = makeFakeDuplex();
+    const chunks = ['streamed ', 'body'];
+    let pulls = 0;
+    const body = {
+      contentLength: 13,
+      open: () => new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const chunk = chunks[pulls++];
+          if (chunk === undefined) controller.close();
+          else controller.enqueue(new TextEncoder().encode(chunk));
+        },
+      }),
+    };
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+
+    await promise;
+
+    const text = decodeAscii(fake.written());
+    expect(text).toContain('Content-Length: 13\r\n');
+    expect(text.endsWith('\r\n\r\nstreamed body')).toBe(true);
+    expect(pulls).toBe(3);
+  });
+
+  it('does not pull the next body chunk while the writer is backpressured', async () => {
+    const fake = makeFakeDuplex();
+    const blocked = Promise.withResolvers<void>();
+    let pulls = 0;
+    let writes = 0;
+    const writable = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        writes += 1;
+        if (writes === 2) await blocked.promise;
+        const writer = fake.writable.getWriter();
+        try {
+          await writer.write(chunk);
+        } finally {
+          writer.releaseLock();
+        }
+      },
+    });
+    const body = {
+      contentLength: 2,
+      open: () => new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          if (pulls <= 2) controller.enqueue(new Uint8Array([0x60 + pulls]));
+          else controller.close();
+        },
+      }, { highWaterMark: 0 }),
+    };
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+    );
+
+    await vi.waitFor(() => expect(writes).toBe(2));
+    expect(pulls).toBe(1);
+    blocked.resolve();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+
+    await promise;
+    expect(pulls).toBe(3);
+  });
+
+  it.each([
+    { contentLength: 0, payload: 'x', title: 'exceeds zero', message: 'exceeded' },
+    { contentLength: 2, payload: 'one', title: 'exceeds', message: 'exceeded' },
+    { contentLength: 4, payload: 'one', title: 'ends before', message: 'ended before' },
+  ])('rejects a stream that $title its declared length', async ({ contentLength, payload, message }) => {
+    const fake = makeFakeDuplex();
+    const body = {
+      contentLength,
+      open: () => new Blob([payload]).stream(),
+    };
+
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+    )).rejects.toThrow(message);
   });
 
   it('does not write any body bytes when body is undefined', async () => {

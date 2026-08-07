@@ -1,3 +1,4 @@
+import { cloudflareDirectFetch } from './direct-fetch.ts';
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './durable-object-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
@@ -18,6 +19,7 @@ import {
   initImageCacheStore,
   initImageProcessor,
   initRuntimeKind,
+  initRuntimeDirectFetch,
   initSocketDial,
   initTimingSafeEqual,
   type SqlDatabase,
@@ -56,6 +58,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initRuntimeKind('cloudflare');
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
+  initRuntimeDirectFetch(cloudflareDirectFetch);
   const files = new R2FileStore(env.FILES);
   initFileStore(files);
   initImageCacheStore(new KvImageCacheStore(env.KV, IMAGE_CACHE_POLICY));

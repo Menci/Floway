@@ -1,5 +1,6 @@
 import type { HttpRequest } from '@floway-dev/http';
 import { normalizeDialHost } from '@floway-dev/platform';
+import { isReplayableBody, type FetchInit } from '@floway-dev/provider';
 import type { ProxyRequestTarget } from '@floway-dev/proxy';
 
 interface MaterializedRequest {
@@ -9,25 +10,25 @@ interface MaterializedRequest {
 
 export interface ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  fetchInit(): RequestInit;
+  fetchInit(): FetchInit;
   materialized(): Promise<MaterializedRequest>;
 }
 
 class ReplayableRequestOwner implements ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  private fetch: RequestInit;
+  private fetch: FetchInit;
   private materializedRequest: MaterializedRequest | undefined;
   private rebuildFetchBody = false;
 
   constructor(
     private readonly url: string,
-    init: RequestInit,
+    init: FetchInit,
   ) {
     this.signal = init.signal ?? undefined;
     this.fetch = init;
   }
 
-  fetchInit(): RequestInit {
+  fetchInit(): FetchInit {
     if (this.rebuildFetchBody) {
       this.fetch = rebuildInitFromMaterialized(this.fetch, this.materializedRequest!);
       this.rebuildFetchBody = false;
@@ -38,6 +39,7 @@ class ReplayableRequestOwner implements ReplayableRequest {
   async materialized(): Promise<MaterializedRequest> {
     if (this.materializedRequest !== undefined) return this.materializedRequest;
     this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch);
+    if (isReplayableBody(this.fetch.body)) return this.materializedRequest;
     // Once bytes exist, the original BodyInit must not remain captured for the
     // duration of the upstream request. A later direct-fetch fallback rebuilds its
     // owned byte body lazily, so a successful proxy does not retain a second
@@ -48,10 +50,10 @@ class ReplayableRequestOwner implements ReplayableRequest {
   }
 }
 
-export const createReplayableRequest = (url: string, init: RequestInit): ReplayableRequest =>
+export const createReplayableRequest = (url: string, init: FetchInit): ReplayableRequest =>
   new ReplayableRequestOwner(url, init);
 
-const rebuildInitFromMaterialized = (original: RequestInit, materialized: MaterializedRequest): RequestInit => {
+const rebuildInitFromMaterialized = (original: FetchInit, materialized: MaterializedRequest): FetchInit => {
   const headers = new Headers(original.headers);
   const targetCt = materialized.request.headers['content-type'];
   if (targetCt !== undefined && !headers.has('content-type')) {
@@ -62,9 +64,11 @@ const rebuildInitFromMaterialized = (original: RequestInit, materialized: Materi
   // the buffer we hand to runtime fetch never aliases a backing buffer
   // that's also referenced elsewhere.
   let body: Uint8Array<ArrayBuffer> | null = null;
-  if (materialized.request.body) {
-    const owned = new Uint8Array(materialized.request.body.byteLength);
-    owned.set(materialized.request.body);
+  const materializedBody = materialized.request.body;
+  if (materializedBody !== undefined) {
+    if (!(materializedBody instanceof Uint8Array)) throw new Error('materialized native request body is not buffered bytes');
+    const owned = new Uint8Array(materializedBody.byteLength);
+    owned.set(materializedBody);
     body = owned;
   }
   return {
@@ -74,7 +78,7 @@ const rebuildInitFromMaterialized = (original: RequestInit, materialized: Materi
   };
 };
 
-const buildMaterializedRequest = async (url: string, init: RequestInit): Promise<MaterializedRequest> => {
+const buildMaterializedRequest = async (url: string, init: FetchInit): Promise<MaterializedRequest> => {
   const u = new URL(url);
   const collected = await collectBody(init.body);
   const headers = extractHeaders(init.headers);
@@ -123,7 +127,7 @@ const extractHeaders = (input: HeadersInit | undefined): Record<string, string> 
 };
 
 interface CollectedBody {
-  body: Uint8Array;
+  body: NonNullable<HttpRequest['body']>;
   /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
    *  multipart boundary or urlencoded marker). undefined for shapes that
    *  carry no implicit Content-Type. */
@@ -131,9 +135,10 @@ interface CollectedBody {
 }
 
 const collectBody = async (
-  body: BodyInit | null | undefined,
+  body: FetchInit['body'],
 ): Promise<CollectedBody | undefined> => {
   if (body == null) return undefined;
+  if (isReplayableBody(body)) return { body };
   if (typeof body === 'string') return { body: new TextEncoder().encode(body) };
   if (body instanceof Uint8Array) return { body };
   if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };

@@ -98,8 +98,8 @@ export {
 export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
-export type { Fetcher, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
+export type { Fetcher, FetchInit, ReplayableBody, UpstreamFetchOptions } from './options.ts';
+export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody } from './options.ts';
 
 export { isAbortError } from './abort.ts';
 
