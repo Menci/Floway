@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ModelListingFailure, UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
+import { UpstreamWorkspace, type ModelsYamlDraft } from '../../../src/components/upstream-editor/workspace';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -47,6 +47,7 @@ const record = upstreamRecord('up_test', {
 
 function Harness({ modelsError = null }: { modelsError?: ModelListingFailure | null }) {
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
+  const [modelsYamlDraft, setModelsYamlDraft] = useState<ModelsYamlDraft | null>(null);
   return (
     // The workspace reads which tab and which model it is on out of the search,
     // so it needs a router to read one from.
@@ -54,8 +55,10 @@ function Harness({ modelsError = null }: { modelsError?: ModelListingFailure | n
       <FormProvider {...form}>
         <UpstreamWorkspace
           discovered={[]}
+          modelsYamlDraft={modelsYamlDraft}
           modelsLoading={false}
           modelsError={modelsError}
+          onModelsYamlDraftChange={setModelsYamlDraft}
           onRefreshModels={vi.fn()}
           record={record}
         />
@@ -76,6 +79,16 @@ const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', 
 const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
+  it('opens a newly added model in the detail editor', async () => {
+    renderInApp(<Harness />);
+    const table = screen.getByRole('table', { name: models('title') });
+
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+
+    await waitFor(() => expect(table.isConnected).toBe(false));
+    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
+  });
+
   it('returns from a model detail to the model list', async () => {
     renderInApp(<Harness />);
     const table = screen.getByRole('table', { name: models('title') });
@@ -92,6 +105,7 @@ describe('upstream model workspace field-array transitions', () => {
     expect(deleteCommands()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
     expect(deleteCommands()).toHaveLength(3);
     fireEvent.click(deleteCommands()[2]!);
     fireEvent.click(await screen.findByRole('button', { name: models('deleteConfirm') }));

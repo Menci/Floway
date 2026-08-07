@@ -178,14 +178,18 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [hiddenSeries, usage, visibleSeries]);
   const tokenChart = useMemo(() => {
     if (!usage || !selectedDimension) return null;
+    const seriesHues = loadedQuery.groupBy === 'upstream'
+      ? new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.hue]))
+      : undefined;
     return buildTokenChart({
       records: usage.series,
       dimensionOptions: selectedDimension.options,
       metric,
       range: loadedQuery.range,
       buckets,
+      seriesHues,
     });
-  }, [buckets, loadedQuery.range, metric, selectedDimension, usage]);
+  }, [buckets, loadedQuery.groupBy, loadedQuery.range, metric, selectedDimension, upstreams, usage]);
   const searchChart = useMemo(
     () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
     [buckets, loadedQuery.range, search],

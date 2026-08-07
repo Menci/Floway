@@ -1,5 +1,5 @@
 // Fluent keys its own series by `legend`, so only a compared set carries one.
-export interface SeriesLegendEntry { id: string; label: string; colorSlot: number }
+export interface SeriesLegendEntry { id: string; label: string; hue: number }
 export type ChartSeries = SeriesLegendEntry & { legend: string };
 
 export const withUniqueSeriesLegends = <T extends { id: string; label: string }>(entries: readonly T[]): Array<T & { legend: string }> => {
