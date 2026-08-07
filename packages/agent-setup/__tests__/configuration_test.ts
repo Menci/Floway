@@ -23,6 +23,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
 };
 
 describe('agentSetupConfigurationSchema', () => {
@@ -38,6 +41,7 @@ describe('agentSetupConfigurationSchema', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
+      zed: { providerName: 'Floway' },
     }).success).toBe(true);
   });
 
@@ -101,10 +105,28 @@ describe('agentSetupConfigurationSchema', () => {
       codex: { ...fullConfiguration.codex, unexpected: true },
     }).success).toBe(false);
   });
+
+  test('accepts a Zed provider name with spaces and non-ASCII characters', () => {
+    for (const providerName of ['Floway', 'Ops box', '自建网关', 'floway.dev']) {
+      expect(agentSetupConfigurationSchema.safeParse({
+        ...fullConfiguration,
+        zed: { providerName },
+      }).success).toBe(true);
+    }
+  });
+
+  test('rejects a Zed provider name that is empty, padded, or carries a control character', () => {
+    for (const providerName of ['', ' Floway', 'Floway ', 'Flo\tway', 'Flo\0way', 'Flo\x7fway']) {
+      expect(agentSetupConfigurationSchema.safeParse({
+        ...fullConfiguration,
+        zed: { providerName },
+      }).success).toBe(false);
+    }
+  });
 });
 
 describe('defaultAgentSetupConfiguration', () => {
-  test('sets the given key, enables both agents, nulls overrides, enables discovery', () => {
+  test('sets the given key, nulls every override, enables discovery, and names the Zed provider', () => {
     expect(defaultAgentSetupConfiguration('key-a')).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
@@ -112,6 +134,7 @@ describe('defaultAgentSetupConfiguration', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
+      zed: { providerName: 'Floway' },
     });
   });
 

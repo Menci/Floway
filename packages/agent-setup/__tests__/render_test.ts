@@ -20,6 +20,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
 };
 
 describe('renderShellPrefix', () => {
@@ -68,6 +71,18 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
+  test('carries only the Zed provider name, through the same literal encoder', () => {
+    const prefix = renderShellPrefix({
+      agent: 'zed',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+    });
+    expect(prefix).toContain("SETUP_ZED_PROVIDER_NAME='Ops'\\'' box'");
+    expect(prefix).not.toContain('SETUP_CLAUDE_');
+    expect(prefix).not.toContain('SETUP_CODEX_');
+  });
+
   test('renders empty values for disabled target-agent overrides', () => {
     const prefix = renderShellPrefix({
       agent: 'claude',
@@ -80,6 +95,7 @@ describe('renderShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        zed: { providerName: 'Floway' },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -137,6 +153,18 @@ describe('renderPowerShellPrefix', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
+  test('carries only the Zed provider name, through the same literal encoder', () => {
+    const prefix = renderPowerShellPrefix({
+      agent: 'zed',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+    });
+    expect(prefix).toContain("$SetupZedProviderName = 'Ops'' box'");
+    expect(prefix).not.toContain('$SetupClaude');
+    expect(prefix).not.toContain('$SetupCodex');
+  });
+
   test('renders $false and $null for disabled target-agent overrides', () => {
     const prefix = renderPowerShellPrefix({
       agent: 'claude',
@@ -149,6 +177,7 @@ describe('renderPowerShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        zed: { providerName: 'Floway' },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');

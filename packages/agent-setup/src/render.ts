@@ -63,6 +63,8 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION', shellFlag(claudeCode.optOutAiAttribution)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
+  } else if (agent === 'zed') {
+    assignments.push(['SETUP_ZED_PROVIDER_NAME', configuration.zed.providerName]);
   } else {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
@@ -107,6 +109,8 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeOptOutAiAttribution', powerShellBool(claudeCode.optOutAiAttribution)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
+  } else if (agent === 'zed') {
+    assignments.push(['$SetupZedProviderName', powerShellLiteral(configuration.zed.providerName)]);
   } else {
     assignments.push(
       ['$SetupCodexModel', powerShellOptional(configuration.codex.model)],

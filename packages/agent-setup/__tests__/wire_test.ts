@@ -20,6 +20,9 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
 };
 
 describe('agent setup request bodies', () => {

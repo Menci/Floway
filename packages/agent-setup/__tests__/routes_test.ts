@@ -143,12 +143,14 @@ interface LeaseResponse {
     apiKeyId: string;
     claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
+    zed: { providerName: string };
   };
   configurationRevision: number;
   expiresAt: number;
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    zed: { sh: string; ps1: string };
   };
 }
 
@@ -158,6 +160,7 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
+  zed: { providerName: 'Floway' },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -200,6 +203,9 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+  assertEquals(body.scripts.zed.sh, `/api/setup/${body.token}/zed.sh`);
+  assertEquals(body.scripts.zed.ps1, `/api/setup/${body.token}/zed.ps1`);
+  assertEquals(body.configuration.zed.providerName, 'Floway');
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -481,14 +487,25 @@ test('GET re-reads the current configuration each request', async () => {
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
 });
 
+test('a renamed Zed provider reaches the served script', async () => {
+  const h = harness();
+  const lease = await create(h);
+  expect(await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text())
+    .toContain("SETUP_ZED_PROVIDER_NAME='Floway'");
+  const edited = { ...lease.configuration, zed: { providerName: 'Floway staging' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+  const after = await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text();
+  expect(after).toContain("SETUP_ZED_PROVIDER_NAME='Floway staging'");
+});
+
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
+  const config = FULL_CONFIG_JSON('key_primary');
 
   await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
   await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultFableModel":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_gone'), now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

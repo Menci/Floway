@@ -17,6 +17,19 @@ const opaqueOptionalString = z.string()
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
 
+// Zed and VS Code address a Floway instance by a display name the operator
+// chooses; Zed keys its `language_models.anthropic_compatible` map by it.
+// Neither editor derives behavior from the value — Zed indexes stored
+// credentials by `api_url` — so it stays an opaque label. Control characters
+// are rejected here rather than flattened at render time because, unlike the
+// API key label, this value is the operator's own input and a silent rewrite
+// would misname their provider.
+const editorProviderName = z.string()
+  .min(1)
+  .max(120)
+  .refine(value => !/[\u0000-\u001f\u007f]/.test(value), { message: 'must not contain control characters' })
+  .refine(value => value.trim() === value, { message: 'must not have leading or trailing whitespace' });
+
 export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
   claudeCode: z.object({
@@ -44,9 +57,19 @@ export const agentSetupConfigurationSchema = z.object({
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
+  // Zed snapshots the model catalog at install time rather than discovering it
+  // at runtime — its `anthropic_compatible` provider has no fetch path — so the
+  // only persisted state is which instance the entry is named after.
+  zed: z.object({
+    providerName: editorProviderName,
+  }).strict(),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
+
+// The product name reads naturally as an editor provider label and is what a
+// first-time operator expects to see in the model picker.
+const DEFAULT_EDITOR_PROVIDER_NAME = 'Floway';
 
 // First-use configuration enables Claude model discovery and leaves every
 // model and effort override unset, so creating a lease needs no model catalog.
@@ -66,5 +89,8 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   codex: {
     model: null,
     reasoningEffort: null,
+  },
+  zed: {
+    providerName: DEFAULT_EDITOR_PROVIDER_NAME,
   },
 });

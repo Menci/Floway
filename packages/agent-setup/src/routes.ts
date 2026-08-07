@@ -76,6 +76,10 @@ const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string)
       sh: `${publicScriptBasePath}/${record.token}/codex.sh`,
       ps1: `${publicScriptBasePath}/${record.token}/codex.ps1`,
     },
+    zed: {
+      sh: `${publicScriptBasePath}/${record.token}/zed.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/zed.ps1`,
+    },
   },
 });
 
@@ -153,6 +157,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/zed.sh', serveSetupScript('zed', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/zed.ps1', serveSetupScript('zed', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.
