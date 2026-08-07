@@ -329,6 +329,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       shouldDirty: true,
       shouldTouch: true,
     });
+    if (value.upstreamModelId !== activeDetailRow.config.upstreamModelId) onSelectUpstreamModel(value.upstreamModelId);
   }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">

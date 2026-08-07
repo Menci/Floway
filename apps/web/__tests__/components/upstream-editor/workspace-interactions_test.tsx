@@ -86,6 +86,20 @@ describe('upstream model workspace field-array transitions', () => {
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
   });
 
+  it('keeps a newly added model open while its upstream ID changes', async () => {
+    renderInApp(<Harness />);
+    const table = screen.getByRole('table', { name: models('title') });
+
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    const input = screen.getByRole('textbox', { name: models('upstreamId') });
+    fireEvent.change(input, { target: { value: 'm' } });
+
+    await waitFor(() => expect(screen.queryByRole('table', { name: models('title') })).toBe(null));
+    expect(table.isConnected).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'model-new' } });
+    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-new');
+  });
+
   it('returns from a model detail to the model list', async () => {
     renderInApp(<Harness />);
     const table = screen.getByRole('table', { name: models('title') });
