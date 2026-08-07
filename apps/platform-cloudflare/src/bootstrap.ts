@@ -1,6 +1,6 @@
-import { cloudflareFetch } from './fetch.ts';
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './durable-object-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
+import { cloudflareFetch } from './fetch.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
 import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
