@@ -14,7 +14,8 @@ then routes each model through the API shape the client already speaks.
   for providers that require or permit it.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
-- Generate one-command Claude Code and Codex configurations from an API key.
+- Generate one-command Claude Code, Codex, and Zed configurations from an API
+  key.
 - Run on Cloudflare Workers or Node.js, with Docker Compose provided for a
   self-hosted server and dashboard.
 
@@ -34,7 +35,7 @@ the password. Then:
 1. Add at least one provider under **Providers → Upstreams**.
 2. Create a key under **Services → API Keys**.
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
-   Setup** to configure Claude Code or Codex.
+   Setup** to configure Claude Code, Codex, or Zed.
 
 The data-plane and control-plane APIs are also exposed directly at
 <http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
