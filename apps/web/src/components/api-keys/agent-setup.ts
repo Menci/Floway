@@ -167,9 +167,8 @@ export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedUrl = `'${origin.replaceAll("'", `'"'"'`)}'`;
   return [
     'if [ "$(uname -s)" = Darwin ]; then',
-    `  security add-internet-password -s ${quotedUrl} -a Bearer -w ${quotedKey} -U -T /Applications/Zed.app`,
+    `  security add-internet-password -s ${quotedUrl} -a Bearer -U -w ${quotedKey} -T /Applications/Zed.app`,
     'else',
-    `  secret-tool clear url ${quotedUrl} username Bearer 2>/dev/null`,
     `  printf '%s' ${quotedKey} | secret-tool store --label=zed-github-account url ${quotedUrl} username Bearer`,
     'fi',
   ].join('\n');

@@ -92,13 +92,22 @@ describe('Agent Setup model picker', () => {
 });
 
 describe('Zed available_models projection', () => {
-  it('keeps chat models, drops other kinds, and dedupes by id', () => {
+  it('keeps chat models and drops other kinds', () => {
     expect(buildAgentZedModels([
-      catalogModel('chat-a', { contextWindow: 200_000 }),
       catalogModel('chat-a', { contextWindow: 200_000 }),
       catalogModel('embedding', { kind: 'embedding', endpoints: { embeddings: {} } }),
       catalogModel('reranker', { kind: 'rerank', endpoints: { rerank: {} } }),
     ]).map(entry => entry.name)).toEqual(['chat-a']);
+  });
+
+  // The dashboard asks the control plane for unlisted rows to populate its
+  // alias combobox; `/v1/models`, which the installer snapshots, never serves
+  // them. Keeping one here would put a model in Zed that the installer omits.
+  it('drops addressable-but-unlisted rows the installer never sees', () => {
+    expect(buildAgentZedModels([
+      catalogModel('listed', { contextWindow: 200_000 }),
+      catalogModel('vendor/listed', { contextWindow: 200_000, unlisted: true }),
+    ]).map(entry => entry.name)).toEqual(['listed']);
   });
 
   it('prefers the context window, falls back to prompt tokens, then to a default', () => {
@@ -129,16 +138,23 @@ describe('Zed available_models projection', () => {
     expect(withVision!.capabilities).toEqual({ tools: true, images: true, prompt_caching: true });
   });
 
-  it('maps reasoning onto adaptive, budgeted thinking, or no mode at all', () => {
-    const [adaptive, budgeted, unbounded, plain] = buildAgentZedModels([
+  // A thinking mode without a budget makes Zed put `"budget_tokens": null` on
+  // every Messages request, which Anthropic rejects — so a reasoner with no
+  // budget must stay in default mode rather than gain an unusable one.
+  it('maps reasoning onto adaptive, a budgeted thinking mode, or no mode at all', () => {
+    const [adaptive, floored, ceilingOnly, effortOnly, plain] = buildAgentZedModels([
       catalogModel('adaptive', { contextWindow: 200_000, chat: { reasoning: { adaptive: true } } }),
-      catalogModel('budgeted', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 1024, max: 32_000 } } } }),
-      catalogModel('unbounded-thinking', { contextWindow: 200_000, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
+      catalogModel('floored', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 1024, max: 32_000 } } } }),
+      catalogModel('ceiling-only', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { max: 32_000 } } } }),
+      catalogModel('effort-only', { contextWindow: 200_000, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
       catalogModel('plain', { contextWindow: 200_000 }),
     ]);
     expect(adaptive!.mode).toEqual({ type: 'adaptive' });
-    expect(budgeted!.mode).toEqual({ type: 'thinking', budget_tokens: 32_000 });
-    expect(unbounded!.mode).toEqual({ type: 'thinking' });
+    // The floor, not the ceiling: Zed sends this verbatim on every request and
+    // Anthropic requires it below max_tokens.
+    expect(floored!.mode).toEqual({ type: 'thinking', budget_tokens: 1024 });
+    expect(ceilingOnly!.mode).toEqual({ type: 'thinking', budget_tokens: 32_000 });
+    expect(effortOnly).not.toHaveProperty('mode');
     expect(plain).not.toHaveProperty('mode');
   });
 });

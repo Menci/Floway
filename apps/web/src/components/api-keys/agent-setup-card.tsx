@@ -172,7 +172,16 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
   if (agent === 'zed') {
-    const config = buildAgentZedSnippet(origin, configuration.zed, buildAgentZedModels(models));
+    const zedModels = buildAgentZedModels(models);
+    // The installer refuses this catalog rather than write a provider with no
+    // models, so the panel must not hand the operator a document to paste that
+    // would leave Zed with an unusable entry and no error.
+    if (zedModels.length === 0) {
+      return <div className="border-t border-t-solid border-fui-divider pt-4">
+        <OutcomeMessageBar intent="warning">{t('dashboard.apiKeys.agentSetup.noChatModels')}</OutcomeMessageBar>
+      </div>;
+    }
+    const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);
     const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
     const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';
     const credentialTag = `${configTag}-credential`;

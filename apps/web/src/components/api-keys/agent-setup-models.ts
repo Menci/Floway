@@ -108,32 +108,47 @@ export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'co
     .map(option => ({ value: option.value, label: option.publicModelId }));
 
 // One entry of Zed's `available_models`. `name` and `max_tokens` are required
-// by Zed and `capabilities` carries no per-field default, so all three of its
-// booleans are always written or the whole provider fails to deserialize.
+// by Zed; `capabilities` is `#[serde(default)]` but its three booleans carry no
+// per-field default, so a partial object fails the whole provider.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L49-L87
 export interface AgentSetupZedModel {
   name: string;
   display_name: string;
   max_tokens: number;
   max_output_tokens?: number;
   capabilities: { tools: boolean; images: boolean; prompt_caching: boolean };
-  mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens?: number };
+  mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens: number };
 }
 
-// Zed reports no context window of its own and does no token counting, so a
-// model that declares neither limit still needs a number; this is the value
-// Zed's own bundled providers use for an unknown Anthropic-shaped model.
+// Zed requires `max_tokens` and does no token counting of its own, so a model
+// whose catalog states no window still needs a number. This is the window Zed's
+// own Anthropic-compatible provider assumes for an unknown model.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
 const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
+
+// Thinking mode carries a budget or is not written at all: Zed serializes
+// `Thinking::Enabled.budget_tokens` with no skip_serializing_if, so a mode
+// without one puts `"budget_tokens": null` on the Messages request and every
+// call 400s. The floor is preferred over the ceiling because Zed sends the
+// value verbatim on every request and Anthropic requires it below max_tokens.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
+const zedThinkingMode = (reasoning: NonNullable<ControlPlaneModel['chat']>['reasoning']): AgentSetupZedModel['mode'] => {
+  if (reasoning === undefined) return undefined;
+  if (reasoning.adaptive === true) return { type: 'adaptive' };
+  const budget = reasoning.budget_tokens?.min ?? reasoning.budget_tokens?.max;
+  return budget === undefined ? undefined : { type: 'thinking', budget_tokens: budget };
+};
 
 // Selected by `kind`, not by `endpoints`: the endpoint map is the upstream wire
 // surface, and translation lets any chat model serve a Messages request. Mirror
-// of the installer's jq projection — both write the same document.
+// of the installer's jq projection — both write the same document, so this
+// reads the catalog the installer sees: the dashboard asks for unlisted rows to
+// populate its alias combobox, and `/v1/models` never serves them.
 export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): AgentSetupZedModel[] => {
   const entries: AgentSetupZedModel[] = [];
-  const seen = new Set<string>();
   for (const model of models) {
-    if (model.kind !== 'chat' || seen.has(model.id)) continue;
-    seen.add(model.id);
-    const reasoning = model.chat?.reasoning;
+    if (model.kind !== 'chat' || model.unlisted === true) continue;
+    const mode = zedThinkingMode(model.chat?.reasoning);
     entries.push({
       name: model.id,
       display_name: model.display_name,
@@ -149,16 +164,7 @@ export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): Agent
         // entirely; on, it marks where the stable prefix ends.
         prompt_caching: true,
       },
-      ...(reasoning === undefined
-        ? {}
-        : {
-            mode: reasoning.adaptive
-              ? { type: 'adaptive' }
-              : {
-                  type: 'thinking',
-                  ...(reasoning.budget_tokens?.max === undefined ? {} : { budget_tokens: reasoning.budget_tokens.max }),
-                },
-          }),
+      ...(mode === undefined ? {} : { mode }),
     });
   }
   return entries;
