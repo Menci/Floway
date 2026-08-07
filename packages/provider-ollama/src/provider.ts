@@ -34,7 +34,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -98,7 +98,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return internal;
   });
   const call = (
-    transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
@@ -107,13 +107,13 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     const rawModelId = rawModelIdOf(model);
     return transport(
       config,
-      { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
+      { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal },
       { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
@@ -124,7 +124,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return streamingProviderCall(
       transport(
         config,
-        { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
+        { method: 'POST', body: jsonRequestBody({ ...body, stream: true, model: rawModelId }), signal },
         { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
@@ -160,7 +160,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const rawModelId = rawModelIdOf(model);
         const response = await ollamaFetchResponsesCompact(
           config,
-          { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
+          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
           { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok

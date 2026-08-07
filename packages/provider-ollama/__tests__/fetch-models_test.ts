@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from '../src/config.ts';
 import { fetchOllamaCatalog } from '../src/fetch-models.ts';
-import { ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { assertEquals, assertRejects, jsonResponse, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   id: 'up_ollama',
@@ -70,7 +70,7 @@ const respond = async (request: Request): Promise<Response> => {
 
 test('fetchOllamaCatalog projects /api/show capabilities + model_info into the raw model shape', async () => {
   await withMockedFetch(respond, async () => {
-    const catalog = await fetchOllamaCatalog(config, directFetcher);
+    const catalog = await fetchOllamaCatalog(config, testFetcher);
     const ids = catalog.data.map(m => m.id);
     // The `empty` tag's /api/show 404 drops it from the catalog without
     // affecting the others; the embedding model is included so kind/endpoints
@@ -93,7 +93,7 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
 
 test('fetchOllamaCatalog converts modified_at ISO string to unix seconds', async () => {
   await withMockedFetch(respond, async () => {
-    const catalog = await fetchOllamaCatalog(config, directFetcher);
+    const catalog = await fetchOllamaCatalog(config, testFetcher);
     const gptoss = catalog.data.find(m => m.id === 'gpt-oss:120b')!;
     // 2025-08-05T00:00:00Z → 1754352000
     assertEquals(gptoss.modifiedAt, Math.floor(Date.parse('2025-08-05T00:00:00Z') / 1000));
@@ -108,7 +108,7 @@ test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/t
     async () => jsonResponse({ unexpected: 'shape' }),
     async () => {
       await assertRejects(
-        () => fetchOllamaCatalog(config, directFetcher),
+        () => fetchOllamaCatalog(config, testFetcher),
         ProviderModelsUnavailableError,
       );
     },

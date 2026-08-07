@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@discoveryjs/json-ext": "1.1.0",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/protocols": "workspace:*"
   },

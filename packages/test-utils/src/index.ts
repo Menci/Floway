@@ -7,5 +7,5 @@ export {
   assertStringIncludes,
   assertThrows,
 } from './assert.ts';
-export { jsonResponse, sseResponse, withMockedFetch } from './mock-fetch.ts';
+export { jsonResponse, sseResponse, testFetcher, withMockedFetch } from './mock-fetch.ts';
 export { mockPerfTelemetryContext, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, stubInternalModel, stubProvider, stubProviderModel, stubModelCandidate, testTelemetryModelIdentity } from './stubs.ts';
