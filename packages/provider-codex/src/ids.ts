@@ -6,7 +6,7 @@ import { sha256Json } from '@floway-dev/provider';
 // stable ids where we intentionally do not mimic Codex's random persisted device id.
 const digestUuid = (digest: Uint8Array): string => v4({ random: digest });
 
-export const sha256JsonUuid = async (value: unknown, prefix: string): Promise<string> =>
+export const sha256JsonUuid = (value: unknown, prefix: string): string =>
   digestUuid(sha256Json(value, prefix));
 
 export const uuidV7 = (): string => v7();

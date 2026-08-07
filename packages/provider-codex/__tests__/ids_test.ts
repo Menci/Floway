@@ -10,7 +10,7 @@ afterEach(() => {
 test('sha256JsonUuid preserves the legacy concatenated JSON digest', async () => {
   const value = [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA' }] }];
   const prefix = 'instructions\u0001';
-  const id = await sha256JsonUuid(value, prefix);
+  const id = sha256JsonUuid(value, prefix);
   const digest = new Uint8Array(await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(`${prefix}${JSON.stringify(value)}`),
