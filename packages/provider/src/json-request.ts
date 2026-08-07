@@ -1,4 +1,5 @@
 import { stringifyChunked } from '@discoveryjs/json-ext';
+import { klona } from 'klona/json';
 
 import type { ReplayableBody } from './options.ts';
 
@@ -7,9 +8,9 @@ const encodeChunks = function* (chunks: Iterable<string>): Generator<Uint8Array>
   for (const chunk of chunks) yield encoder.encode(chunk);
 };
 
-const serializedLength = (chunks: readonly string[]): number => {
+const serializedLength = (value: object): number => {
   let length = 0;
-  for (const chunk of encodeChunks(chunks)) {
+  for (const chunk of encodeChunks(stringifyChunked(value))) {
     length += chunk.byteLength;
     if (!Number.isSafeInteger(length)) throw new RangeError('Serialized JSON body exceeds the supported content length');
   }
@@ -17,11 +18,11 @@ const serializedLength = (chunks: readonly string[]): number => {
 };
 
 export const jsonRequestBody = (value: object): ReplayableBody => {
-  const chunks = [...stringifyChunked(value)];
+  const snapshot = klona(value);
   return {
-    contentLength: serializedLength(chunks),
+    contentLength: serializedLength(snapshot),
     open: () => {
-      const bytes = encodeChunks(chunks);
+      const bytes = encodeChunks(stringifyChunked(snapshot));
       return new ReadableStream<Uint8Array>({
         pull(controller) {
           const next = bytes.next();
