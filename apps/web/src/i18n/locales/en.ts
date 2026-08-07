@@ -942,7 +942,7 @@ const en = {
       telemetry: { currentUserOnly: 'Only me' },
       usage: {
         empty: 'No usage records in this range',
-        callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
+        callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output' },
         apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', userId: 'By User', keyId: 'By API Key' },
@@ -978,7 +978,6 @@ const en = {
           cached: 'Cached Input',
           cachedRate: 'Cached Rate',
           cacheCreation: 'Cache Write',
-          cacheHitRate: 'Cache Hit Rate',
         },
       },
       performance: {

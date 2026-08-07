@@ -10,7 +10,7 @@ export type UsageGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
 export type UsageFilters = Record<UsageGroupBy, string[]>;
 export type UsageMetric =
   | 'requests' | 'cost' | 'total' | 'input' | 'output' | 'prefill'
-  | 'cached' | 'cachedRate' | 'cacheCreation' | 'cacheHitRate';
+  | 'cached' | 'cachedRate' | 'cacheCreation';
 
 export interface DisplayUsageRecord {
   bucket: string;
@@ -66,7 +66,7 @@ export interface TokenCounters {
   outputImage: DecimalString;
 }
 // Folded: `prompt` is the whole billed prompt side, `output` includes images.
-// The rates are percentages, null where their denominator has no reading at all.
+// `cachedRate` is a percentage, null where its denominator has no reading at all.
 export interface TokenSummary {
   requests: number;
   cost: DecimalString | null;
@@ -77,7 +77,6 @@ export interface TokenSummary {
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
   cachedRate: number | null;
-  cacheHitRate: number | null;
 }
 
 export type ChartPlot =

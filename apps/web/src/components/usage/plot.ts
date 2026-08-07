@@ -271,7 +271,6 @@ export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
     total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
     prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
     cachedRate: percentOf(counters.cacheRead, prompt),
-    cacheHitRate: percentOf(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation)),
   };
 };
 
