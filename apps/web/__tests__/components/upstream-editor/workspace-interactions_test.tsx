@@ -106,6 +106,33 @@ describe('upstream model workspace field-array transitions', () => {
     expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(input);
   });
 
+  it('keeps temporarily duplicate IDs attached to separate rows while swapping them', async () => {
+    renderInApp(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    const firstInput = screen.getByRole('textbox', { name: models('upstreamId') });
+    fireEvent.change(firstInput, { target: { value: 'model-b' } });
+    fireEvent.blur(firstInput);
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(firstInput);
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+
+    await screen.findByRole('table', { name: models('title') });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-b' }) }));
+    const secondInput = screen.getByRole('textbox', { name: models('upstreamId') });
+    expect(secondInput).not.toBe(firstInput);
+    fireEvent.change(secondInput, { target: { value: 'model-a' } });
+    fireEvent.blur(secondInput);
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(secondInput);
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+
+    await screen.findByRole('table', { name: models('title') });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-b');
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-b' }) }));
+    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-a');
+  });
+
   it('prevents returning to the list from an incomplete new model', () => {
     renderInApp(<Harness />);
 
