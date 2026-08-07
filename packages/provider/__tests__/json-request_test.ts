@@ -41,3 +41,20 @@ test('rejects circular request values before dispatch', () => {
 
   expect(() => jsonRequestBody(value)).toThrow('Converting circular structure to JSON');
 });
+
+test('replays the bytes captured when the body is created', async () => {
+  let calls = 0;
+  const value = {
+    toJSON() {
+      calls += 1;
+      return { call: calls, text: 'before' };
+    },
+  };
+  const body = jsonRequestBody(value);
+  value.toJSON = () => ({ call: 999, text: 'after' });
+
+  expect(await new Response(body.open()).text()).toBe('{"call":1,"text":"before"}');
+  expect(await new Response(body.open()).text()).toBe('{"call":1,"text":"before"}');
+  expect(body.contentLength).toBe(26);
+  expect(calls).toBe(1);
+});
