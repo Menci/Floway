@@ -80,6 +80,7 @@ const projectList = [
   './packages/proxy/tsconfig.json',
   './packages/test-utils/tsconfig.json',
   './packages/translate/tsconfig.json',
+  './tools/tsconfig.json',
 ];
 
 const commonConfig: Linter.Config = {
