@@ -36,6 +36,7 @@ export interface UsageOverviewResponse {
 export interface UsageUpstream {
   id: string;
   name: string;
+  hue: number;
 }
 
 export interface SearchUsageRecord {

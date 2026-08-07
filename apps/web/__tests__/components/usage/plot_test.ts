@@ -104,6 +104,26 @@ describe('series identity', () => {
       ['upstream:up-deleted', 'up-deleted'],
     ]);
   });
+
+  it('uses configured hues for known upstream series and palette hues for historical series', () => {
+    const model = buildTokenChart({
+      records: [record({ input_tokens: '1' }, 'upstream:up-1'), record({ input_tokens: '2' }, 'upstream:up-deleted')],
+      dimensionOptions: [
+        { value: 'upstream:up-1', label: 'Copilot seat' },
+        { value: 'upstream:up-deleted', label: 'up-deleted' },
+      ],
+      metric: 'total',
+      range: 'today',
+      buckets: [bucket],
+      seriesHues: new Map([['upstream:up-1', 217]]),
+    });
+
+    expect(model.entries.map(entry => entry.hue)).toEqual([217, 144]);
+    expect(areaPlot(model.plot).lineChartData?.map(series => series.color)).toEqual([
+      'oklch(0.7 0.13 217)',
+      'oklch(0.7 0.13 144)',
+    ]);
+  });
 });
 
 describe('bucket callout figures', () => {

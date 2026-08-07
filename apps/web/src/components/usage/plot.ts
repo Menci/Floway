@@ -8,6 +8,7 @@ import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
+import { hueForSeriesSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
@@ -48,12 +49,14 @@ export const buildTokenChart = ({
   metric,
   range,
   buckets,
+  seriesHues,
 }: {
   records: DisplayUsageRecord[];
   dimensionOptions: readonly MultiselectOption[];
   metric: UsageMetric;
   range: UsageRange;
   buckets: ChartBucket[];
+  seriesHues?: ReadonlyMap<string, number>;
 }): TokenChartModel => {
   const { values, details } = aggregateTokenRecords(records, metric, range, buckets);
   const presentGroups = new Set(records.map(record => record.group));
@@ -64,7 +67,11 @@ export const buildTokenChart = ({
   }
   const entries = withUniqueSeriesLegends(dimensionOptions
     .filter(option => presentGroups.has(option.value))
-    .map((option, colorSlot) => ({ id: option.value, label: option.label, colorSlot })));
+    .map((option, slot) => ({
+      id: option.value,
+      label: option.label,
+      hue: seriesHues?.get(option.value) ?? hueForSeriesSlot(slot),
+    })));
 
   const isPercent = metricConfig[metric].kind === 'percent';
   const series = entries
@@ -243,14 +250,16 @@ const keyChartEntries = (
 
   return withUniqueSeriesLegends([...new Set(presentKeyIds)]
     .map(id => {
-      const colorSlot = slotById.get(id)!;
+      const slot = slotById.get(id)!;
       return {
         id,
         label: meta.get(id)?.name ?? id.slice(0, 8),
-        colorSlot,
+        hue: hueForSeriesSlot(slot),
+        slot,
       };
     })
-    .sort((a, b) => a.colorSlot - b.colorSlot));
+    .sort((a, b) => a.slot - b.slot)
+    .map(({ slot: _, ...entry }) => entry));
 };
 
 export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {

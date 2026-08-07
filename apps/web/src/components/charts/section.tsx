@@ -1,7 +1,7 @@
 import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '@fluentui/react-icons';
 
 import { chartHeight } from './layout';
-import { colorForSlot } from './palette';
+import { colorForHue } from './palette';
 import type { SeriesLegendEntry } from './series-legends';
 import { SeriesMarker } from './series-marker';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
@@ -56,7 +56,7 @@ export function ChartSection({
                 <Tooltip content={t('dashboard.charts.series.toggleHint')} relationship="description">
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
-                    icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} />}
+                    icon={<SeriesMarker className="mx-[4px]" color={colorForHue(entry.hue)} />}
                     // A double-click's two clicks land on this same series and cancel out, so the isolate that follows starts from the state the reader saw.
                     onClick={event => { if (event.shiftKey) isolate(entry.id); else onHiddenChange(toggledSeries(hidden, entry.id)); }}
                     onDoubleClick={() => isolate(entry.id)}
