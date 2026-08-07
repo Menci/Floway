@@ -86,18 +86,34 @@ describe('upstream model workspace field-array transitions', () => {
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
   });
 
-  it('keeps a newly added model open while its upstream ID changes', async () => {
+  it('keeps the same focused input while a new model ID changes', async () => {
     renderInApp(<Harness />);
     const table = screen.getByRole('table', { name: models('title') });
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
     const input = screen.getByRole('textbox', { name: models('upstreamId') });
+    input.focus();
     fireEvent.change(input, { target: { value: 'm' } });
 
     await waitFor(() => expect(screen.queryByRole('table', { name: models('title') })).toBe(null));
     expect(table.isConnected).toBe(false);
-    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'model-new' } });
-    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-new');
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(input);
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: 'model-new' } });
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(input);
+    expect((input as HTMLInputElement).value).toBe('model-new');
+    fireEvent.blur(input);
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(input);
+  });
+
+  it('prevents returning to the list from an incomplete new model', () => {
+    renderInApp(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+
+    expect(screen.queryByRole('table', { name: models('title') })).toBe(null);
+    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBeTruthy();
   });
 
   it('returns from a model detail to the model list', async () => {
@@ -116,6 +132,7 @@ describe('upstream model workspace field-array transitions', () => {
     expect(deleteCommands()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'temporary' } });
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
     expect(deleteCommands()).toHaveLength(3);
     fireEvent.click(deleteCommands()[2]!);
