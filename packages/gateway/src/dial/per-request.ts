@@ -2,7 +2,7 @@ import { createFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
-import { getRuntimeDirectFetch, getSocketDial } from '@floway-dev/platform';
+import { getFetch, getSocketDial } from '@floway-dev/platform';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
@@ -55,7 +55,7 @@ export const createPerRequestFetcher = async (
       runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,
-      runDirectFetch: getRuntimeDirectFetch(),
+      runDirectFetch: getFetch(),
       runDirectConnect: runDirectConnectRequest,
       socketDial: getSocketDial,
     });

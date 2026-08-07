@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { cloudflareDirectFetch } from '../src/direct-fetch.ts';
+import { cloudflareFetch } from '../src/fetch.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -18,7 +18,7 @@ test('pipes a replayable body through Workers fixed-length framing', async () =>
     return new Response('ok');
   }));
 
-  await cloudflareDirectFetch('https://example.com', {
+  await cloudflareFetch('https://example.com', {
     method: 'POST',
     body: { contentLength: 7, open: () => new Blob(['payload']).stream() },
   });

@@ -1,6 +1,6 @@
 import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAuth } from './auth.ts';
 import { parseCopilotQuotaHeaders, putCopilotQuota } from './quota.ts';
-import type { UpstreamFetchOptions } from '@floway-dev/provider';
+import type { FetchInit, UpstreamFetchOptions } from '@floway-dev/provider';
 
 export type CopilotFetchConfig = CopilotAuth;
 
@@ -39,7 +39,7 @@ const captureQuotaFireAndForget = (
 const copilotFetchInternal = async (
   config: CopilotFetchConfig,
   path: string,
-  init: RequestInit,
+  init: FetchInit,
   options: CopilotDataPlaneFetchOptions,
 ): Promise<Response> => {
   const response = await copilotAuthedFetch(path, init, config, {
@@ -57,15 +57,15 @@ const copilotFetchInternal = async (
   return response;
 };
 
-export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
-export const copilotFetchResponses = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchResponses = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/responses', init, options);
-export const copilotFetchMessages = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchMessages = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages', init, options);
-export const copilotFetchMessagesCountTokens = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchMessagesCountTokens = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages/count_tokens', init, options);
-export const copilotFetchEmbeddings = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchEmbeddings = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/embeddings', init, options);
-export const copilotFetchModels = (config: CopilotFetchConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchModels = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/models', init, options);

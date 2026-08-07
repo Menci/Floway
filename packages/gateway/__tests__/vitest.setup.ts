@@ -5,7 +5,7 @@ import type { DumpStore } from '../src/dump/store-contract.ts';
 import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from '../src/dump/types.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { isReplayableBody } from '@floway-dev/http';
-import { initEnv, initRuntimeDirectFetch, initRuntimeKind, initTimingSafeEqual } from '@floway-dev/platform';
+import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual } from '@floway-dev/platform';
 
 // Production always initializes the environment getter at boot. Mirror that
 // here with a neutral default; tests needing real values (RUNTIME_LOCATION,
@@ -15,7 +15,7 @@ initEnv(() => '');
 // runtime behaviour re-init this with 'cloudflare'.
 initRuntimeKind('node');
 initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
-initRuntimeDirectFetch((url, init) => {
+initFetch((url, init) => {
   const body = init.body;
   if (!isReplayableBody(body)) return fetch(url, { ...init, body });
   const headers = new Headers(init.headers);

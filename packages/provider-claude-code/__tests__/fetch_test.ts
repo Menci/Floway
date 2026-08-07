@@ -8,8 +8,9 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from '../src/state.ts';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { initProviderRepo, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopMessagesUpstreamCallOptions as noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 
@@ -281,7 +282,7 @@ describe('callClaudeCodeMessages — wire body', () => {
       body: { ...minimalBody, stream: false },
       shaped: false, call: noopUpstreamCallOptions(),
     });
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    const body = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as MessagesPayload;
     expect(body.stream).toBe(true);
     expect(body.model).toBe('claude-sonnet-4-5-20250929');
   });

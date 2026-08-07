@@ -1,6 +1,6 @@
 import { isReplayableBody, type Fetcher } from '@floway-dev/http';
 
-export const nodeDirectFetch: Fetcher = (url, init) => {
+export const nodeFetch: Fetcher = (url, init) => {
   const body = init.body;
   if (!isReplayableBody(body)) return fetch(url, { ...init, body });
   if (!Number.isSafeInteger(body.contentLength) || body.contentLength < 0) {

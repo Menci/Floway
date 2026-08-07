@@ -22,7 +22,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { eventResult, getProviderRepo, headersForMessagesCall, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -206,7 +206,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken };
 
   const call = async (
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -217,7 +217,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       upstreamConfig,
       {
         method: 'POST',
-        body: JSON.stringify({ ...body, model: rawModel.id }),
+        body: jsonRequestBody({ ...body, model: rawModel.id }),
         signal,
       },
       { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
@@ -226,7 +226,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -239,7 +239,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         upstreamConfig,
         {
           method: 'POST',
-          body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
+          body: jsonRequestBody({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
         { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
@@ -380,7 +380,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
             const response = await copilotFetchResponses(
               upstreamConfig,
-              { method: 'POST', body: JSON.stringify(triggered), signal },
+              { method: 'POST', body: jsonRequestBody(triggered), signal },
               { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
