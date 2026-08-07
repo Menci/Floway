@@ -1,6 +1,6 @@
-import { nodeFetch } from './fetch.ts';
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
+import { nodeFetch } from './fetch.ts';
 import { FsFileStore } from './fs-file-store.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { nodeRuntimeRootCAs } from './runtime-root-cas.ts';
