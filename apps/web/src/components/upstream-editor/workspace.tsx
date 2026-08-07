@@ -241,6 +241,10 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const filtered = rows.filter(row => `${row.config.display_name ?? ''} ${publicModelId(row.config)} ${row.config.upstreamModelId}`.toLowerCase().includes(search.toLowerCase()));
 
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
+  const addModel = () => {
+    append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) });
+    onSelectUpstreamModel('');
+  };
   // A one-shot handoff, not synchronised state: the placeholder is dropped
   // once the row the pending manual model produced exists.
   const settledManualRow = pendingManualUpstreamModelId === null
@@ -333,7 +337,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
       level={2}
       title={t('dashboard.upstreamEditor.models.title')}
       actions={<>
-        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', ...shapeForKind('chat', { endpoints: {} }) })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addModel}>{t('dashboard.upstreamEditor.models.add')}</Button>}
         {!readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />

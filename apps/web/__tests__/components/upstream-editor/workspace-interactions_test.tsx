@@ -76,6 +76,16 @@ const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', 
 const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
+  it('opens a newly added model in the detail editor', async () => {
+    renderInApp(<Harness />);
+    const table = screen.getByRole('table', { name: models('title') });
+
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+
+    await waitFor(() => expect(table.isConnected).toBe(false));
+    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
+  });
+
   it('returns from a model detail to the model list', async () => {
     renderInApp(<Harness />);
     const table = screen.getByRole('table', { name: models('title') });
@@ -92,6 +102,7 @@ describe('upstream model workspace field-array transitions', () => {
     expect(deleteCommands()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
     expect(deleteCommands()).toHaveLength(3);
     fireEvent.click(deleteCommands()[2]!);
     fireEvent.click(await screen.findByRole('button', { name: models('deleteConfirm') }));
