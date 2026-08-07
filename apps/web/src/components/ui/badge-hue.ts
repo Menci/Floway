@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 
 import { fluentComponents } from '../../fluent';
-import { alphaHex, blendHex, readableTone } from '../../lib/color';
+import { alphaColor, blendHex, readableTone } from '../../lib/color';
 
 const { makeStyles } = fluentComponents;
 
@@ -10,7 +10,7 @@ export type BadgeHue = string | { light: string; dark: string };
 
 // The hardest end of each scheme's badge-surface range: in light the selected
 // request row (Fluent brand 160); in dark a card washed by
-// SubtleFillColorSecondary (#ffffff0f over #373737).
+// SubtleFillColorSecondary (rgba(255, 255, 255, 0.058824) over #373737).
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L26
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L56
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L71
@@ -52,18 +52,18 @@ const useStyles = makeStyles({
 export const useBadgeHue = (hue: BadgeHue): { className: string; style: CSSProperties } => {
   const styles = useStyles();
   const pair = typeof hue === 'string' ? { light: hue, dark: hue } : hue;
-  const fill = { light: alphaHex(pair.light, BADGE_FILL_ALPHA), dark: alphaHex(pair.dark, BADGE_FILL_ALPHA) };
-  const label = (own: string, ownFill: string, surface: string) => readableTone(own, blendHex(ownFill, 1, surface));
+  const fill = { light: alphaColor(pair.light, BADGE_FILL_ALPHA), dark: alphaColor(pair.dark, BADGE_FILL_ALPHA) };
+  const label = (own: string, surface: string) => readableTone(own, blendHex(own, BADGE_FILL_ALPHA, surface));
 
   return {
     className: styles.scheme,
     style: {
       '--floway-badge-fill-light': fill.light,
       '--floway-badge-fill-dark': fill.dark,
-      '--floway-badge-stroke-light': alphaHex(pair.light, BADGE_STROKE_ALPHA),
-      '--floway-badge-stroke-dark': alphaHex(pair.dark, BADGE_STROKE_ALPHA),
-      '--floway-badge-label-light': label(pair.light, fill.light, HARDEST_BADGE_SURFACE.light),
-      '--floway-badge-label-dark': label(pair.dark, fill.dark, HARDEST_BADGE_SURFACE.dark),
+      '--floway-badge-stroke-light': alphaColor(pair.light, BADGE_STROKE_ALPHA),
+      '--floway-badge-stroke-dark': alphaColor(pair.dark, BADGE_STROKE_ALPHA),
+      '--floway-badge-label-light': label(pair.light, HARDEST_BADGE_SURFACE.light),
+      '--floway-badge-label-dark': label(pair.dark, HARDEST_BADGE_SURFACE.dark),
       backgroundColor: 'var(--floway-badge-fill)',
       borderColor: 'var(--floway-chip-stroke)',
       color: 'var(--floway-badge-label)',
