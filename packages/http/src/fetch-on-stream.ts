@@ -39,10 +39,18 @@ const writeStreamBody = async (
       if (written > body.contentLength) throw new RangeError('HTTP request body stream exceeded its declared content length');
       await writeBytes(writer, value);
     }
+    if (written !== body.contentLength) throw new RangeError('HTTP request body stream ended before its declared content length');
+  } catch (error) {
+    try {
+      await reader.cancel(error);
+    } catch {
+      // Body transmission is the causal failure; cancellation is cleanup and
+      // must not replace the error the caller can act on.
+    }
+    throw error;
   } finally {
     reader.releaseLock();
   }
-  if (written !== body.contentLength) throw new RangeError('HTTP request body stream ended before its declared content length');
 };
 
 export const fetchOnStream = async (
@@ -126,7 +134,7 @@ export const fetchOnStream = async (
   // with no framing at all silently loses its body on strict upstreams.
   const bodyLen = bodyLength(request.body);
   if (!Number.isSafeInteger(bodyLen) || bodyLen < 0) throw new RangeError('HTTP request body content length must be a non-negative safe integer');
-  if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
+  if (request.body !== undefined) headers['Content-Length'] = String(bodyLen);
 
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
