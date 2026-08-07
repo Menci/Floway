@@ -10,6 +10,7 @@ import { test } from 'vitest';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const CLI = fileURLToPath(new URL('../../src/backfill-usage-pricing/cli.ts', import.meta.url));
+const TSX_LOADER = fileURLToPath(import.meta.resolve('tsx'));
 
 test('non-interactive CLI writes a private plan and applies only that artifact', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'floway-tools-cli-'));
@@ -45,7 +46,7 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
   db.close();
 
   const planned = spawnSync(process.execPath, [
-    '--import', 'tsx', CLI, 'plan',
+    '--import', TSX_LOADER, CLI, 'plan',
     '--database', 'node', '--database-path', 'floway.db',
     '--upstream', 'azure-1', '--model', 'public', '--model-key', 'wire',
     '--start-hour', '2026-01-01T00', '--end-hour', '2026-01-02T00',
@@ -57,7 +58,7 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
   assertEquals(JSON.parse(await readFile(planPath, 'utf8')).kind, 'usage-pricing-backfill-plan');
   if (process.platform !== 'win32') assertEquals((await stat(planPath)).mode & 0o777, 0o600);
 
-  const applied = spawnSync(process.execPath, ['--import', 'tsx', CLI, 'apply', '--plan', 'plan.json'], {
+  const applied = spawnSync(process.execPath, ['--import', TSX_LOADER, CLI, 'apply', '--plan', 'plan.json'], {
     encoding: 'utf8',
     env: { ...process.env, INIT_CWD: directory },
   });
