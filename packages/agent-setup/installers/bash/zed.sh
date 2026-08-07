@@ -211,6 +211,12 @@ zed_store_key_secret_service() {
 }
 
 zed_store_key() {
+  # The harness records the call instead of writing a real credential store,
+  # which no test host can be asked to mutate.
+  if [ -n "${AGENT_SETUP_TEST_CREDENTIAL_RECORD:-}" ]; then
+    printf '%s\t%s\n' "$(zed_api_url)" "$SETUP_API_KEY" > "$AGENT_SETUP_TEST_CREDENTIAL_RECORD"
+    return 0
+  fi
   case "$(uname -s)" in
     Darwin) zed_store_key_macos ;;
     *) zed_store_key_secret_service ;;

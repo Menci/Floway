@@ -228,6 +228,12 @@ function Set-SetupZedCredentialMacOS {
 }
 
 function Set-SetupZedCredential {
+  # The harness records the call instead of writing a real credential store,
+  # which no test host can be asked to mutate.
+  if ($env:AGENT_SETUP_TEST_CREDENTIAL_RECORD) {
+    [System.IO.File]::WriteAllText($env:AGENT_SETUP_TEST_CREDENTIAL_RECORD, "$(Get-SetupZedApiUrl)`t$SetupApiKey`n")
+    return
+  }
   switch (Get-SetupPlatform) {
     'windows' { Set-SetupZedCredentialWindows }
     'macos' { Set-SetupZedCredentialMacOS }
