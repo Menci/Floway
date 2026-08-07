@@ -785,7 +785,12 @@ const en = {
               'Reasoning effort must include at least one supported level, and its default must be one of those levels.',
           invalidBudget:
               'Maximum reasoning budget must be greater than or equal to the minimum.',
-          invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
+          upstreamIdRequired: 'Enter an upstream model ID.',
+          endpointsRequired: 'Select at least one supported endpoint.',
+          rerankTargetRequired: 'Select a Rerank target for this endpoint.',
+          rerankTargetUnexpected: 'Remove the Rerank target from a model that does not use the Rerank endpoint.',
+          rerankPathInvalid: 'The Rerank path override must start with / and cannot contain //, /./, or /../.',
+          invalidConfiguration: 'This model contains a configuration that cannot be saved.',
           delete: 'Delete manual model',
           deleteNamed: 'Delete manual model {{name}}',
           deleteTitle: 'Delete model',

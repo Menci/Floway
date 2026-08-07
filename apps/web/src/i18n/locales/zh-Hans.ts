@@ -744,7 +744,12 @@ const zhHansCN = {
           invalidEffort:
               '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大思考 Token 预算不能小于最小值。',
-          invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
+          upstreamIdRequired: '请输入上游模型 ID。',
+          endpointsRequired: '请至少选择一个支持的 API。',
+          rerankTargetRequired: '请为此 API 选择 Rerank 目标。',
+          rerankTargetUnexpected: '未使用 Rerank API 的模型不能配置 Rerank 目标。',
+          rerankPathInvalid: 'Rerank 路径覆盖必须以 / 开头，且不能包含 //、/./ 或 /../。',
+          invalidConfiguration: '此模型包含无法保存的配置。',
           delete: '删除手动模型',
           deleteNamed: '删除手动模型 {{name}}',
           deleteTitle: '删除模型',

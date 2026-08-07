@@ -84,6 +84,8 @@ describe('upstream model workspace field-array transitions', () => {
 
     await waitFor(() => expect(table.isConnected).toBe(false));
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
+    expect(screen.queryByRole('alert')).toBe(null);
+    expect(screen.queryByText('Model ID, kind, endpoints, and rerank target must form a valid model configuration.')).toBe(null);
   });
 
   it('keeps the same focused input while a new model ID changes', async () => {
@@ -106,14 +108,33 @@ describe('upstream model workspace field-array transitions', () => {
     expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBe(input);
   });
 
-  it('prevents returning to the list from an incomplete new model', () => {
+  it('reports a missing model ID only after it prevents returning to the list', () => {
     renderInApp(<Harness />);
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    expect(screen.queryByRole('alert')).toBe(null);
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
 
     expect(screen.queryByRole('table', { name: models('title') })).toBe(null);
-    expect(screen.getByRole('textbox', { name: models('upstreamId') })).toBeTruthy();
+    expect(screen.getByText(models('upstreamIdRequired'))).toBeTruthy();
+    const input = screen.getByRole('textbox', { name: models('upstreamId') });
+    fireEvent.change(input, { target: { value: 'model-new' } });
+    expect(screen.queryByText(models('upstreamIdRequired'))).toBe(null);
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+    expect(screen.getByRole('table', { name: models('title') })).toBeTruthy();
+  });
+
+  it('reports a missing endpoint at its section after a blocked return', () => {
+    renderInApp(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: models('add') }));
+    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'model-new' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '/chat/completions' }));
+    expect(screen.queryByRole('alert')).toBe(null);
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+
+    expect(screen.queryByRole('table', { name: models('title') })).toBe(null);
+    expect(screen.getByText(models('endpointsRequired'))).toBeTruthy();
   });
 
   it('returns from a model detail to the model list', async () => {

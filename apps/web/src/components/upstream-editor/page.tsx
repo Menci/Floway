@@ -17,7 +17,7 @@ import {
   type UpstreamEditorLoaderData,
   type UpstreamEditorValues,
 } from './data';
-import { modelsAreValid } from './model-detail';
+import { modelsAreValid } from './model-validation';
 import { UpstreamWorkspace } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
