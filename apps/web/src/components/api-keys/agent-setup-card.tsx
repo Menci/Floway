@@ -3,23 +3,27 @@ import { useMemo, useState } from 'react';
 import {
   buildAgentClaudeSnippet,
   buildAgentCodexSnippet,
+  buildAgentZedSnippet,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
   detectAgentSetupPlatform,
+  zedUnixCredentialSnippet,
+  zedWindowsCredentialSnippet,
   type AgentSetupConfiguration,
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { buildAgentZedModels, modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import zedIconUrl from '../../assets/zed.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -27,7 +31,8 @@ import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, InfoButton, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex';
+type Agent = 'claude' | 'codex' | 'zed';
+const AGENTS = ['claude', 'codex', 'zed'] as const satisfies readonly Agent[];
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
@@ -74,9 +79,10 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
     <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
-        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(AGENTS.find(candidate => candidate === data.value) ?? 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+          <AgentTab icon={zedIconUrl} label={t('dashboard.apiKeys.configuration.zed')} value="zed" />
         </TabList>
       </nav>
 
@@ -96,7 +102,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-divider pt-4">
@@ -141,10 +147,11 @@ function PlatformTabs({ onChange, platform }: { onChange: (platform: Platform) =
   </TabList>;
 }
 
-function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatformChange, platform }: {
+function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, onPlatformChange, platform }: {
   agent: Agent;
   apiKey: string;
   configuration: AgentSetupConfiguration;
+  models: ControlPlaneModel[];
   clipboard: ClipboardCopy;
   onPlatformChange: (platform: Platform) => void;
   platform: Platform;
@@ -163,11 +170,25 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   // Both snippets are one platform's pair -- the config's auth command reads the
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
+  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
+  if (agent === 'zed') {
+    const config = buildAgentZedSnippet(origin, configuration.zed, buildAgentZedModels(models));
+    const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
+    const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';
+    const credentialTag = `${configTag}-credential`;
+    return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.zedConfigHintWindows' : 'dashboard.apiKeys.configuration.zedConfigHint'} />
+      </Text>
+      <CodeBlock code={config} copyOutcome={clipboard.outcomeFor(configTag)} header={tabs} language="json" onCopy={() => clipboard.copy(config, configTag)} />
+      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.zedAuthHint')}</Text>
+      <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={tabs} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
+    </div>;
+  }
   const config = buildAgentCodexSnippet(origin, configuration.codex, platform);
   const credential = platform === 'windows' ? codexWindowsCredentialSnippet(apiKey) : codexUnixCredentialSnippet(apiKey);
   const configTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
   const credentialTag = `${configTag}-token`;
-  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
   return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
     <Text size={200} className="text-fui-fg2">
       <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.codexConfigHintWindows' : 'dashboard.apiKeys.configuration.codexConfigHint'} />
@@ -191,6 +212,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const { t } = useTranslation();
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
+  const patchZed = (patch: Partial<AgentSetupConfiguration['zed']>) => onChange(current => ({ ...current, zed: { ...current.zed, ...patch } }));
   const codexModel = configuration.codex.model
     ? models.find(model => model.id === configuration.codex.model)
     : rankAgentSetupModels(models, { family: 'codex' })[0];
@@ -257,6 +279,15 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
         </Field>
       </div>
     </section>
+  </div>;
+
+  if (agent === 'zed') return <div className="grid gap-3">
+    <div className={FIELD_GRID_CLASS}>
+      <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}>
+        <Input value={configuration.zed.providerName} onChange={event => patchZed({ providerName: event.target.value })} />
+      </Field>
+    </div>
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
   </div>;
 
   return <div className={FIELD_GRID_CLASS}>

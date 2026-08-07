@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentModelOptions, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
+import { buildAgentModelOptions, buildAgentZedModels, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
 import { filterModelOptions } from '../../../src/lib/model-query';
 import { catalogModel } from '../../api/model-fixture';
 
@@ -88,5 +88,57 @@ describe('Agent Setup model picker', () => {
     expect(filterModelOptions(options, '[1m]').map(option => option.value))
       .toEqual(['claude-opus-4.6[1m]']);
     expect(filterModelOptions(options, 'sonnet')).toEqual([]);
+  });
+});
+
+describe('Zed available_models projection', () => {
+  it('keeps chat models, drops other kinds, and dedupes by id', () => {
+    expect(buildAgentZedModels([
+      catalogModel('chat-a', { contextWindow: 200_000 }),
+      catalogModel('chat-a', { contextWindow: 200_000 }),
+      catalogModel('embedding', { kind: 'embedding', endpoints: { embeddings: {} } }),
+      catalogModel('reranker', { kind: 'rerank', endpoints: { rerank: {} } }),
+    ]).map(entry => entry.name)).toEqual(['chat-a']);
+  });
+
+  it('prefers the context window, falls back to prompt tokens, then to a default', () => {
+    expect(buildAgentZedModels([
+      catalogModel('windowed', { contextWindow: 400_000 }),
+      catalogModel('prompt-only', { limits: { max_prompt_tokens: 120_000 } }),
+      catalogModel('unbounded'),
+    ]).map(entry => entry.max_tokens)).toEqual([400_000, 120_000, 200_000]);
+  });
+
+  it('omits max_output_tokens when the catalog announces none', () => {
+    const [withOutput, withoutOutput] = buildAgentZedModels([
+      catalogModel('bounded', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
+      catalogModel('unbounded', { contextWindow: 200_000 }),
+    ]);
+    expect(withOutput!.max_output_tokens).toBe(64_000);
+    expect(withoutOutput).not.toHaveProperty('max_output_tokens');
+  });
+
+  // Zed reads no per-field default for these, so a partial object fails to
+  // deserialize and takes the whole provider down with it.
+  it('always writes all three capability flags', () => {
+    const [textOnly, withVision] = buildAgentZedModels([
+      catalogModel('text', { contextWindow: 200_000, chat: { modalities: { input: ['text'], output: ['text'] } } }),
+      catalogModel('vision', { contextWindow: 200_000, chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+    ]);
+    expect(textOnly!.capabilities).toEqual({ tools: true, images: false, prompt_caching: true });
+    expect(withVision!.capabilities).toEqual({ tools: true, images: true, prompt_caching: true });
+  });
+
+  it('maps reasoning onto adaptive, budgeted thinking, or no mode at all', () => {
+    const [adaptive, budgeted, unbounded, plain] = buildAgentZedModels([
+      catalogModel('adaptive', { contextWindow: 200_000, chat: { reasoning: { adaptive: true } } }),
+      catalogModel('budgeted', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 1024, max: 32_000 } } } }),
+      catalogModel('unbounded-thinking', { contextWindow: 200_000, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
+      catalogModel('plain', { contextWindow: 200_000 }),
+    ]);
+    expect(adaptive!.mode).toEqual({ type: 'adaptive' });
+    expect(budgeted!.mode).toEqual({ type: 'thinking', budget_tokens: 32_000 });
+    expect(unbounded!.mode).toEqual({ type: 'thinking' });
+    expect(plain).not.toHaveProperty('mode');
   });
 });

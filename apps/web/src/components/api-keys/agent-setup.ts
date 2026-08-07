@@ -1,5 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
+import type { AgentSetupZedModel } from './agent-setup-models';
 import type { api } from '../../api/client';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
@@ -27,6 +28,7 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
+  zed: { providerName: 'Floway' },
 });
 
 export const cloneAgentSetupConfiguration = (
@@ -56,6 +58,7 @@ export const applyLocalAgentSetupChanges = (
   const merged = cloneAgentSetupConfiguration(server);
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
+  copyChangedFields(merged.zed, local.zed, baseline.zed);
   return merged;
 };
 
@@ -137,3 +140,73 @@ export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfigu
   'apps = false',
   'standalone_web_search = true',
 ].join('\n');
+
+// Zed's provider list lives in `global_settings.json`, a layer it reads below
+// the user's own settings and never writes to, so pasting this replaces the
+// whole file rather than merging into a document the editor also owns.
+// The api_url is the bare origin: Zed appends `/v1/messages` itself.
+// Ref: https://github.com/zed-industries/zed/pull/30444
+export const buildAgentZedSnippet = (
+  origin: string,
+  config: AgentSetupConfiguration['zed'],
+  models: readonly AgentSetupZedModel[],
+) => JSON.stringify({
+  language_models: {
+    anthropic_compatible: {
+      [config.providerName]: { api_url: origin, available_models: models },
+    },
+  },
+}, null, 2);
+
+// Zed reads the key from the OS credential store, indexed by api_url under the
+// fixed username "Bearer"; there is no settings field for it. The Secret
+// Service label is compared exactly on read, so it is a literal.
+// Ref: https://github.com/zed-industries/zed/issues/43671
+export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
+  const quotedKey = `'${apiKey.replaceAll("'", `'"'"'`)}'`;
+  const quotedUrl = `'${origin.replaceAll("'", `'"'"'`)}'`;
+  return [
+    'if [ "$(uname -s)" = Darwin ]; then',
+    `  security add-internet-password -s ${quotedUrl} -a Bearer -w ${quotedKey} -U -T /Applications/Zed.app`,
+    'else',
+    `  secret-tool clear url ${quotedUrl} username Bearer 2>/dev/null`,
+    `  printf '%s' ${quotedKey} | secret-tool store --label=zed-github-account url ${quotedUrl} username Bearer`,
+    'fi',
+  ].join('\n');
+};
+
+// Windows keeps it as a generic credential whose target name Zed builds as
+// "zed:url=" + api_url. The blob must be UTF-8 because Zed runs str::from_utf8
+// over it, which rules out cmdkey — that writes UTF-16LE.
+export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
+  const quotedKey = `'${apiKey.replaceAll("'", "''")}'`;
+  const quotedTarget = `'${`zed:url=${origin}`.replaceAll("'", "''")}'`;
+  return [
+    'Add-Type -TypeDefinition @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class ZedCred {',
+    '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
+    '  private struct CREDENTIAL {',
+    '    public uint Flags; public uint Type; public string TargetName; public string Comment;',
+    '    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;',
+    '    public uint CredentialBlobSize; public IntPtr CredentialBlob; public uint Persist;',
+    '    public uint AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName;',
+    '  }',
+    '  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]',
+    '  private static extern bool CredWriteW(ref CREDENTIAL c, uint f);',
+    '  public static void Write(string target, string user, byte[] secret) {',
+    '    IntPtr blob = Marshal.AllocHGlobal(secret.Length);',
+    '    try {',
+    '      Marshal.Copy(secret, 0, blob, secret.Length);',
+    '      CREDENTIAL c = new CREDENTIAL();',
+    '      c.Type = 1; c.TargetName = target; c.CredentialBlobSize = (uint)secret.Length;',
+    '      c.CredentialBlob = blob; c.Persist = 2; c.UserName = user;',
+    '      if (!CredWriteW(ref c, 0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());',
+    '    } finally { Marshal.FreeHGlobal(blob); }',
+    '  }',
+    '}',
+    '"@',
+    `[ZedCred]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,
+  ].join('\n');
+};

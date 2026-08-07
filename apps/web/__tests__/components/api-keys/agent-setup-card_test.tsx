@@ -21,6 +21,7 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
+  zed: { providerName: 'Floway' },
 });
 
 const lease = (apiKeyId: string): AgentSetupLease => ({
@@ -32,6 +33,7 @@ const lease = (apiKeyId: string): AgentSetupLease => ({
   scripts: {
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
+    zed: { sh: '/zed.sh', ps1: '/zed.ps1' },
   },
 });
 

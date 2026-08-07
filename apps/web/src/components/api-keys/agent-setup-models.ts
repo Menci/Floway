@@ -106,3 +106,60 @@ export const buildAgentModelOptions = (
 export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
     .map(option => ({ value: option.value, label: option.publicModelId }));
+
+// One entry of Zed's `available_models`. `name` and `max_tokens` are required
+// by Zed and `capabilities` carries no per-field default, so all three of its
+// booleans are always written or the whole provider fails to deserialize.
+export interface AgentSetupZedModel {
+  name: string;
+  display_name: string;
+  max_tokens: number;
+  max_output_tokens?: number;
+  capabilities: { tools: boolean; images: boolean; prompt_caching: boolean };
+  mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens?: number };
+}
+
+// Zed reports no context window of its own and does no token counting, so a
+// model that declares neither limit still needs a number; this is the value
+// Zed's own bundled providers use for an unknown Anthropic-shaped model.
+const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
+
+// Selected by `kind`, not by `endpoints`: the endpoint map is the upstream wire
+// surface, and translation lets any chat model serve a Messages request. Mirror
+// of the installer's jq projection — both write the same document.
+export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): AgentSetupZedModel[] => {
+  const entries: AgentSetupZedModel[] = [];
+  const seen = new Set<string>();
+  for (const model of models) {
+    if (model.kind !== 'chat' || seen.has(model.id)) continue;
+    seen.add(model.id);
+    const reasoning = model.chat?.reasoning;
+    entries.push({
+      name: model.id,
+      display_name: model.display_name,
+      max_tokens: model.limits.max_context_window_tokens
+        ?? model.limits.max_prompt_tokens
+        ?? ZED_FALLBACK_CONTEXT_TOKENS,
+      ...(model.limits.max_output_tokens === undefined ? {} : { max_output_tokens: model.limits.max_output_tokens }),
+      capabilities: {
+        // A chat model that cannot call tools is not one anyone routes here.
+        tools: true,
+        images: model.chat?.modalities?.input.includes('image') ?? false,
+        // Zed defaults this off, which suppresses cache_control breakpoints
+        // entirely; on, it marks where the stable prefix ends.
+        prompt_caching: true,
+      },
+      ...(reasoning === undefined
+        ? {}
+        : {
+            mode: reasoning.adaptive
+              ? { type: 'adaptive' }
+              : {
+                  type: 'thinking',
+                  ...(reasoning.budget_tokens?.max === undefined ? {} : { budget_tokens: reasoning.budget_tokens.max }),
+                },
+          }),
+    });
+  }
+  return entries;
+};
