@@ -1,7 +1,7 @@
 import { convertRgbToHsv, parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { alphaHex, blendHex, readableTone } from '../../src/lib/color';
+import { alphaColor, blendHex, readableTone } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
@@ -98,8 +98,6 @@ describe('readableTone', () => {
 describe('blendHex', () => {
   it('accepts Culori hex forms', () => {
     expect(blendHex('#f00', 1, '#fff')).toBe('#FF0000');
-    expect(blendHex('#f00', 0, '#0000')).toBe('#00000000');
-    expect(blendHex('#ff000080', 0.5, '#0000')).toBe('#FF000040');
   });
 
   it('returns the backdrop at zero alpha and the top colour at one', () => {
@@ -115,12 +113,13 @@ describe('blendHex', () => {
   it('rejects an unparseable value on either side', () => {
     expect(() => blendHex('nope', 0.5, '#FFFFFF')).toThrow(TypeError);
     expect(() => blendHex('#FF0000', 0.5, 'nope')).toThrow(TypeError);
+    expect(() => blendHex('#FF0000', 0.5, '#0000')).toThrow('Hex blending requires an opaque backdrop');
   });
 });
 
-describe('alphaHex', () => {
-  it('serializes the combined opacity through Culori', () => {
-    expect(alphaHex('#0000006B', 0.1)).toBe('#0000000B');
+describe('alphaColor', () => {
+  it('serializes the combined opacity with legacy rgba syntax', () => {
+    expect(alphaColor('#0000006B', 0.1)).toBe('rgba(0, 0, 0, 0.04)');
   });
 });
 

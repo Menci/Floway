@@ -88,7 +88,7 @@ export const loadUsagePageData = async (
   return {
     usage: usageResult.data ? usageOverviewForDisplay(usageResult.data) : null,
     search: searchData ? searchUsageForDisplay(searchData) : null,
-    upstreams: upstreamsResult.data?.map(({ id, name }) => ({ id, name } satisfies UsageUpstream)) ?? [],
+    upstreams: upstreamsResult.data?.map(({ id, name, hue }) => ({ id, name, hue } satisfies UsageUpstream)) ?? [],
     error: usageResult.error ?? searchResult.error ?? upstreamsResult.error ?? null,
   };
 };

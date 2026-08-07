@@ -4,6 +4,9 @@ registerMode(modeRgb);
 registerMode(modeOklch);
 const toRgb = converter('rgb');
 
+export const oklchToHex = (lightness: number, chroma: number, hue: number): string =>
+  formatHex(toRgb({ mode: 'oklch', l: lightness, c: chroma, h: hue }));
+
 // How much chroma a hue can carry before it reads heavier than its neighbours.
 // Red takes the most and cyan the least, which is why a flat chroma leaves half
 // the circle looking washed out. Taken from @proj-airi/chromatic, whose ladder
@@ -27,7 +30,7 @@ const BADGE_SHADE = {
 // give it.
 const shadeHex = (scheme: keyof typeof BADGE_SHADE, hue: number): string => {
   const { lightness, chromaMultiplier } = BADGE_SHADE[scheme];
-  return formatHex(toRgb({ mode: 'oklch', l: lightness, c: baseChromaByHue(hue) * chromaMultiplier, h: hue }));
+  return oklchToHex(lightness, baseChromaByHue(hue) * chromaMultiplier, hue);
 };
 
 /** The light/dark pair `useBadgeHue` paints an upstream's hue with. */
@@ -50,7 +53,7 @@ const RAIL_CHROMA = 0.2;
 // contain.
 export const HUE_RAIL_GRADIENT = `linear-gradient(to right, ${
   Array.from({ length: 361 }, (_, hue) =>
-    formatHex(toRgb({ mode: 'oklch', l: RAIL_LIGHTNESS, c: RAIL_CHROMA, h: hue % 360 }))).join(', ')
+    oklchToHex(RAIL_LIGHTNESS, RAIL_CHROMA, hue % 360)).join(', ')
 })`;
 
 /**

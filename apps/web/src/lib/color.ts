@@ -4,9 +4,9 @@ import {
   convertRgbToHsv,
   convertRgbToLrgb,
   formatHex,
-  formatHex8,
   modeRgb,
   parseHex,
+  serializeRgb,
   useMode as registerMode,
   wcagContrast,
 } from 'culori/fn';
@@ -21,9 +21,11 @@ const parseHexColor = (hex: string) => {
 
 const linearRgb = (rgb: ReturnType<typeof parseHexColor>) => convertRgbToLrgb(rgb);
 
-export const alphaHex = (hex: string, opacity: number): string => {
+export const alphaColor = (hex: string, opacity: number): string => {
   const rgb = parseHexColor(hex);
-  return formatHex8({ ...rgb, alpha: (rgb.alpha ?? 1) * opacity }).toUpperCase();
+  const serialized = serializeRgb({ ...rgb, alpha: (rgb.alpha ?? 1) * opacity });
+  if (serialized === undefined) throw new TypeError(`Could not serialize hex colour: ${hex}`);
+  return serialized;
 };
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
@@ -31,7 +33,8 @@ export const blendHex = (hex: string, alpha: number, backdrop: string): string =
   const foreground = { ...parsed, alpha: (parsed.alpha ?? 1) * alpha };
   const mixed = blend([parseHexColor(backdrop), foreground], 'normal', 'rgb');
   if (mixed.alpha === undefined) throw new TypeError('Culori blend returned no alpha');
-  return (mixed.alpha < 1 ? formatHex8(mixed) : formatHex(mixed)).toUpperCase();
+  if (mixed.alpha < 1) throw new TypeError('Hex blending requires an opaque backdrop');
+  return formatHex(mixed).toUpperCase();
 };
 
 // WCAG 2.2 requires at least 4.5:1 contrast for normal text.
