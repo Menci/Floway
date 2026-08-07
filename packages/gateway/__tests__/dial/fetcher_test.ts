@@ -254,7 +254,7 @@ describe('createFetcher', () => {
     expect(await res.text()).toBe('direct connect');
   });
 
-  it('runs direct-connect as a built-in materialized transport', async () => {
+  it('runs direct-connect as a built-in dial transport', async () => {
     const repo = new InMemoryRepo();
     let observedTarget: ProxyRequestTarget | undefined;
     let observedRequest: HttpRequest | undefined;
