@@ -114,9 +114,9 @@ export function UpstreamWorkspace({
   const [modelValidationAttempted, setModelValidationAttempted] = useState(false);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
 
-  // The URL uses the upstream id as a durable locator. Once resolved, the
-  // mounted editor keeps the field-array row identity separately so editing
-  // that id cannot replace the form subtree holding focus and selection.
+  // `model` is only a reloadable locator. The mounted editor uses the
+  // field-array row id, so renames and temporary duplicate ids cannot retarget
+  // or remount it.
   const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
   const selectedUpstreamModelId = params.get(MODEL_PARAM);
   // A provider-owned catalog has no manual models to write, so its editor is
