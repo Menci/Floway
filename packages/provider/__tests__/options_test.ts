@@ -1,11 +1,18 @@
 import { expect, test } from 'vitest';
 
-import { dispatchUpstreamFetch } from '../src/options.ts';
+import { directFetcher, dispatchUpstreamFetch, type FetchInit } from '../src/options.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
+test('directFetcher rejects a replayable body without runtime composition', async () => {
+  await expect(directFetcher('https://example.com', {
+    method: 'POST',
+    body: { contentLength: 0, open: () => new ReadableStream() },
+  })).rejects.toThrow('runtime-composed direct fetcher');
+});
+
 test('dispatchUpstreamFetch transfers the request through the timing wrapper once', async () => {
-  const init: RequestInit = { method: 'POST', body: 'payload' };
-  let received: RequestInit | undefined;
+  const init: FetchInit = { method: 'POST', body: 'payload' };
+  let received: FetchInit | undefined;
   let wrapped = false;
   const response = await dispatchUpstreamFetch({
     fetcher: (_url, request) => {
