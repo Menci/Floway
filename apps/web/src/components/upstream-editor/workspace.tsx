@@ -41,7 +41,7 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const {
   Button,

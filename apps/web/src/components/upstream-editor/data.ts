@@ -11,8 +11,8 @@ import type {
 } from '../../api/types';
 import type { MODEL_LISTING_FAILURE_CODE as GatewayModelListingFailureCode } from '@floway-dev/gateway/data-plane/models/shared';
 import { kindForEndpoints, type ModelEndpoints } from '@floway-dev/protocols/common';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];

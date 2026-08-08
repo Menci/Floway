@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isBuiltin } from 'node:module';
 import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
@@ -152,6 +153,30 @@ const legacyCssBuild = {
   cssTarget: 'chrome61',
 } as const;
 
+// A Node builtin reaching the browser graph resolves, by default, to a stub
+// that throws on first property access, behind a warning a passing build
+// scrolls away. What it costs is not one broken import: a route module that
+// throws while it evaluates is a route module React Router could not load, and
+// the answer to that is `window.location.reload()` — so the page reloads, fails
+// the same way, and reloads again, with nothing on screen to read.
+// https://github.com/remix-run/react-router/blob/2edaca7a4f12a50cad002d55d84f73b0cdd462b6/packages/react-router/lib/dom/ssr/routeModules.ts#L280-L308
+// The edge is almost never written in this app: it arrives through a workspace
+// barrel that re-exports server-side transport, and the module graph is the
+// only place it is visible. So the client environment refuses to resolve a
+// builtin at all, and names the importer that pulled it in.
+const browserSafeGraph = (): Plugin => ({
+  name: 'floway-browser-safe-graph',
+  enforce: 'pre',
+  applyToEnvironment: environment => environment.name === 'client',
+  resolveId(source, importer) {
+    if (!isBuiltin(source)) return;
+    throw new Error(
+      `${importer ?? '<entry>'} imports the Node builtin "${source}", which cannot run in a browser. `
+      + 'Reach the module you need through a browser-safe export instead.',
+    );
+  },
+});
+
 export default defineConfig({
   build: legacyCssBuild,
   // React Router discovers route modules lazily. Pre-bundle their browser
@@ -200,6 +225,7 @@ export default defineConfig({
     ],
   },
   plugins: [
+    browserSafeGraph(),
     prismComponentsEsm(),
     typescriptStylesheets(),
     reactRouter(),
