@@ -11,7 +11,7 @@ const { makeStyles, mergeClasses } = fluentComponents;
 // stroked at 4, with 16 stated as the minimum, so the stroke is written as the
 // eighth of the diameter it is and holds at whatever size a caller asks for.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing.xaml#L9-L14
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L15
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ProgressRing/ProgressRing_themeresources.xaml#L17
 const DIAMETER = 32;
 const STROKE = 4;
 const RADIUS = (DIAMETER - STROKE) / 2;
@@ -31,8 +31,7 @@ const TRACK_STROKE = STROKE / 3;
 // WinUI paints a critical reading SystemFillColorCritical and a cautionary one
 // SystemFillColorCaution, the pair the restyled ProgressBar reads for Fluent's
 // error and warning states.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281-L282
 export type ProgressRingTone = 'accent' | 'caution' | 'critical';
 
 const TONE_STROKE: Record<ProgressRingTone, string> = {
