@@ -1,18 +1,27 @@
 // A verification that exists in only one of the two places is invisible. Named
 // in `.github/workflows/verify.yaml` alone, it cannot be reproduced locally and
 // nobody knows it is there; chained from `verify` alone, no pull request ever
-// runs it. `generate-assets --check` sat in the workflow with no root script
-// for exactly this reason, so the two lists are derived and compared here
-// rather than kept in step by hand.
+// runs it. Both lists are therefore derived and compared here rather than kept
+// in step by hand.
 //
-// The comparison is over root script names, not over workflow entries. One
-// matrix entry legitimately runs several scripts when they share expensive
-// setup, and the workflow also runs scripts outside the matrix -- `typegen`
-// prepares the generated route types every type-aware check depends on. What
-// must hold is only that neither side names a script the other does not.
+// Recognising a verification is the harder half. A command that reaches one
+// without going through a root script -- `pnpm --filter <pkg> run <script>`, a
+// bare `jiti scripts/....ts`, a `vitest` invocation -- would contribute nothing
+// to a scan that only knows `pnpm run`, so the two derived sets would agree
+// while the workflow ran something `verify` does not. An unrecognised command
+// is therefore an error rather than an empty contribution, on both sides, which
+// is also what makes the `Reach every verification through a root script`
+// clause of the AGENTS.md rule enforceable rather than merely stated.
+//
+// The comparison is over script names, not over workflow entries: one matrix
+// entry legitimately chains several scripts when they share expensive setup,
+// and the workflow runs scripts outside the matrix -- `typegen` prepares the
+// generated route types every type-aware check depends on.
 //
 // The workflow is read with a regex instead of a YAML parser, as
-// pnpm-workspace.yaml is in check-agents-md.ts.
+// pnpm-workspace.yaml is in check-agents-md.ts. Every `run:` value is recovered
+// whole, so a form the parser was not built for (a block scalar, say) fails
+// loudly instead of being silently skipped.
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,19 +29,26 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MANIFEST_PATH = resolve(ROOT, 'package.json');
 const WORKFLOW_PATH = resolve(ROOT, '.github/workflows/verify.yaml');
-// A commented-out step is not a step, so `#` ends a line before it is scanned.
-// The scan is deliberately unanchored: `verify` chains its scripts on a single
-// line, so an anchored pattern would see only the first of them.
-const SCRIPT_RUN = /\bpnpm run ([\w:-]+)/g;
+// A `run:` on a commented line is not a step: `\s` cannot cross the `#`.
+const RUN_VALUE = /^\s*run:\s*(\S.*?)\s*$/gm;
+const SCRIPT_CALL = /^pnpm run ([\w:-]+)$/;
+// Provisioning the runner is not a verification, and the matrix dispatch only
+// forwards an entry recovered above.
+const SETUP_COMMANDS = new Set([
+  'corepack enable',
+  'pnpm install --frozen-lockfile',
+  '${{ matrix.check.run }}',
+]);
 
 const fail = (message: string): never => {
   throw new Error(`verify parity: ${message}`);
 };
 
-const scriptsRunBy = (source: string): Set<string> => {
-  const executable = source.split('\n').map(line => line.split('#')[0]!).join('\n');
-  return new Set([...executable.matchAll(SCRIPT_RUN)].map(([, name]) => name!));
-};
+const scriptsCalledBy = (command: string, origin: string): string[] =>
+  command.split('&&').map(segment => {
+    const name = SCRIPT_CALL.exec(segment.trim())?.[1];
+    return name ?? fail(`${origin} runs ${JSON.stringify(segment.trim())}, which is not \`pnpm run <script>\``);
+  });
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as {
   scripts: Record<string, string | undefined>;
@@ -40,10 +56,13 @@ const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as {
 const verifyCommand = manifest.scripts.verify ?? fail('package.json must define a `verify` script');
 const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
-const verifyScripts = scriptsRunBy(verifyCommand);
-const workflowScripts = scriptsRunBy(workflow);
-
-if (verifyScripts.size === 0) fail('`verify` must chain the repository checks through `pnpm run`');
+const verifyScripts = new Set(scriptsCalledBy(verifyCommand, '`verify`'));
+const workflowScripts = new Set(
+  [...workflow.matchAll(RUN_VALUE)]
+    .map(([, command]) => command!)
+    .filter(command => !SETUP_COMMANDS.has(command))
+    .flatMap(command => scriptsCalledBy(command, 'verify.yaml')),
+);
 
 for (const name of verifyScripts) {
   if (!manifest.scripts[name]) {
