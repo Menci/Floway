@@ -4,13 +4,54 @@ import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
-import type { DuplexStream, HttpRequest } from './types.ts';
+import type { DuplexStream, HttpRequest, ReplayableBody } from './types.ts';
 
 // Plaintext chunk size used when streaming the request body to the writer.
 // Each writer.write() maps 1:1 to one record on a record-framed writer, so
 // this tunes the trade-off between per-record overhead and per-write
 // microtask cost.
 const BODY_WRITE_CHUNK_SIZE = 16384;
+
+const bodyLength = (body: HttpRequest['body']): number =>
+  body instanceof Uint8Array ? body.byteLength : body?.contentLength ?? 0;
+
+const writeBytes = async (writer: WritableStreamDefaultWriter<Uint8Array>, bytes: Uint8Array): Promise<void> => {
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const chunk = bytes.subarray(offset, Math.min(offset + BODY_WRITE_CHUNK_SIZE, bytes.byteLength));
+    await writer.write(chunk);
+    offset += chunk.byteLength;
+  }
+};
+
+const writeStreamBody = async (
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  body: ReplayableBody,
+): Promise<void> => {
+  const reader = body.open().getReader();
+  let written = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) throw new TypeError('HTTP request body stream yielded a non-Uint8Array chunk');
+      written += value.byteLength;
+      if (written > body.contentLength) throw new RangeError('HTTP request body stream exceeded its declared content length');
+      await writeBytes(writer, value);
+    }
+    if (written !== body.contentLength) throw new RangeError('HTTP request body stream ended before its declared content length');
+  } catch (error) {
+    try {
+      await reader.cancel(error);
+    } catch {
+      // Body transmission is the causal failure; cancellation is cleanup and
+      // must not replace the error the caller can act on.
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+};
 
 export const fetchOnStream = async (
   stream: DuplexStream,
@@ -56,10 +97,9 @@ export const fetchOnStream = async (
   );
 
   // Normalize the request header block in a single pass:
-  //   - drop Content-Length / Transfer-Encoding — the buffered body's
-  //     exact length is the source of truth at this layer, and a chunked
-  //     encoding from the runtime fetch path would leave the body wrapped
-  //     in chunk markers we cannot decode here.
+  //   - drop Content-Length / Transfer-Encoding — byte bodies supply their
+  //     measured length and stream factories declare it, so caller framing
+  //     cannot be the source of truth at this layer.
   //   - drop any Connection case-variant — this layer is one-shot per
   //     duplex (we always emit Connection: close below) and a caller-
   //     supplied `keep-alive` would mislead the upstream into reusing a
@@ -92,8 +132,9 @@ export const fetchOnStream = async (
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — a serialized POST emitted
   // with no framing at all silently loses its body on strict upstreams.
-  const bodyLen = request.body?.byteLength ?? 0;
-  if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
+  const bodyLen = bodyLength(request.body);
+  if (!Number.isSafeInteger(bodyLen) || bodyLen < 0) throw new RangeError('HTTP request body content length must be a non-negative safe integer');
+  if (request.body !== undefined) headers['Content-Length'] = String(bodyLen);
 
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
@@ -108,13 +149,10 @@ export const fetchOnStream = async (
     } else {
       await writer.write(headBytes);
     }
-    if (request.body?.byteLength) {
-      let off = 0;
-      while (off < request.body.byteLength) {
-        const slice = request.body.subarray(off, Math.min(off + BODY_WRITE_CHUNK_SIZE, request.body.byteLength));
-        await writer.write(slice);
-        off += slice.byteLength;
-      }
+    if (request.body instanceof Uint8Array) {
+      await writeBytes(writer, request.body);
+    } else if (request.body !== undefined) {
+      await writeStreamBody(writer, request.body);
     }
   } finally {
     // Release on every exit so a write rejection doesn't pin the lock —

@@ -92,16 +92,20 @@ export {
   modelsField,
   nonEmptyStringField,
   optionalStringField,
+  pricingField,
   publicModelId,
 } from './model-config.ts';
 
 export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
-export type { Fetcher, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
+export type { Fetcher, FetchInit, ReplayableBody, UpstreamFetchOptions } from './options.ts';
+export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody } from './options.ts';
 
 export { isAbortError } from './abort.ts';
+
+export { jsonRequestBody } from './json-request.ts';
+export { sha256Json, sha256JsonHex } from './json-hash.ts';
 
 export {
   base64ToBytes,

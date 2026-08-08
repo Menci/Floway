@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, ty
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeEffects = (): CodexCallEffects => ({
   persistRefreshTokenRotation: vi.fn(async () => {}),
@@ -192,7 +192,7 @@ describe('callCodexResponses — upstream classification', () => {
       model, body: { input: [], stream: false as unknown as true, store: true } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
       headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     expect(body.model).toBe('gpt-5.4');
     expect(body.store).toBe(false);
     expect(body.stream).toBe(true);
@@ -260,7 +260,7 @@ describe('callCodexResponses — upstream classification', () => {
     expect(headers.get('openai-beta')).toBeNull();
     expect(headers.get('x-real-ip')).toBeNull();
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     expect(body.prompt_cache_key).toBe('downstream-session');
     expect(body.client_metadata).toEqual({
       'x-codex-installation-id': 'downstream-installation',
@@ -370,9 +370,9 @@ describe('callCodexResponses — upstream classification', () => {
       call: noopUpstreamCallOptions(),
     });
 
-    const injectedBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
-    const preservedStringBody = JSON.parse((fetchSpy.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
-    const preservedNullBody = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string) as Record<string, unknown>;
+    const injectedBody = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
+    const preservedStringBody = await readJsonRequest(fetchSpy.mock.calls[1][1] as RequestInit) as Record<string, unknown>;
+    const preservedNullBody = await readJsonRequest(fetchSpy.mock.calls[2][1] as RequestInit) as Record<string, unknown>;
     expect(injectedBody.prompt_cache_key).toBe('cache-session');
     expect(preservedStringBody.prompt_cache_key).toBe('caller-cache-key');
     expect(preservedNullBody).toHaveProperty('prompt_cache_key', null);
@@ -523,7 +523,7 @@ describe('callCodexResponses — upstream classification', () => {
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
     const turnMetadata = JSON.parse(headers.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
     expect(turnMetadata.installation_id).toBe(deviceId);
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     expect((body.client_metadata as Record<string, unknown>)['x-codex-installation-id']).toBe(deviceId);
   });
 
@@ -545,7 +545,7 @@ describe('callCodexResponses — upstream classification', () => {
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
     const turnMetadata = JSON.parse(headers.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
     expect(turnMetadata.installation_id).toBe('caller-installation-id');
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     expect((body.client_metadata as Record<string, unknown>)['x-codex-installation-id']).toBe('caller-installation-id');
   });
 
@@ -603,7 +603,7 @@ describe('callCodexResponses — upstream classification', () => {
     // turn_id propagates to body's client_metadata as well so the three
     // surfaces (header turn_metadata, body client_metadata, body
     // client_metadata.x-codex-turn-metadata) stay consistent.
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     expect((body.client_metadata as Record<string, unknown>).turn_id).toBe('caller-turn');
   });
 
@@ -621,7 +621,7 @@ describe('callCodexResponses — upstream classification', () => {
       call: noopUpstreamCallOptions(),
     });
 
-    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
     const clientMetadata = body.client_metadata as Record<string, unknown>;
     // Non-identity extras pass through verbatim.
     expect(clientMetadata['x-extra-key']).toBe('caller-supplied');
@@ -773,7 +773,7 @@ describe('callCodexResponsesCompact', () => {
     expect(new Headers(init.headers).get('accept')).toBe('application/json');
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer at_kv');
 
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as Record<string, unknown>;
     expect(body.model).toBe('gpt-5.4');
     expect(body.input).toEqual([{ type: 'message', role: 'user', content: 'hello' }]);
     expect(body.stream).toBeUndefined();
@@ -887,7 +887,7 @@ describe('callCodexAlphaSearch', () => {
     expect(headers.get('authorization')).toBe('Bearer at_kv');
     expect(headers.get('chatgpt-account-id')).toBe('acc');
     expect(headers.get('x-codex-turn-metadata')).toBe('{"turn_id":"turn-search"}');
-    expect(JSON.parse(init.body as string)).toMatchObject({
+    expect(await readJsonRequest(init)).toMatchObject({
       id: 'search-session',
       model: 'gpt-5.4',
       commands: { search_query: [{ q: 'Floway' }] },
@@ -910,7 +910,7 @@ describe('callCodexAlphaSearch', () => {
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(init.headers);
-    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    const body = await readJsonRequest(init) as Record<string, unknown>;
     expect(headers.has('x-codex-turn-metadata')).toBe(false);
     expect(typeof body.id).toBe('string');
     expect(headers.get('session-id')).toBe(body.id);

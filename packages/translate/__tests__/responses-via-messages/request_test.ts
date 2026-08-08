@@ -596,6 +596,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   const namespaceTool: ResponsesTool = {
     type: 'namespace',
     name: 'web',
+    description: 'Web tools.',
     tools: [{
       type: 'function',
       name: 'run',

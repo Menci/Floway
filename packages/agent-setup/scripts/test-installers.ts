@@ -14,8 +14,8 @@
 // or an actually absent Codex at every known global location. The harness never
 // touches the user's real config or credentials.
 //
-// Run the whole suite with `pnpm run test:agent-setup-installers`, or scope it
-// with `--agent claude` / `--agent codex`.
+// Run the whole suite with `pnpm run test:installers`, or scope it with
+// `--agent claude` / `--agent codex`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';

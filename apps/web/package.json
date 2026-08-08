@@ -6,8 +6,8 @@
   "exports": {},
   "scripts": {
     "dev": "react-router dev",
-    "build": "react-router build && jiti scripts/check-web-monaco-lazy.ts && jiti scripts/check-web-gallery-dev-only.ts && jiti scripts/check-web-locales-split.ts && jiti scripts/check-web-css-color-compatibility.ts",
-    "test": "vitest run",
+    "build": "react-router build && pnpm run check:build-output",
+    "check:build-output": "jiti scripts/check-monaco-lazy.ts && jiti scripts/check-gallery-dev-only.ts && jiti scripts/check-locales-split.ts && jiti scripts/check-css-color-compatibility.ts",
     "typecheck": "react-router typegen && tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {

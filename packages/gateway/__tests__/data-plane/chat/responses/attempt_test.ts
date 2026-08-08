@@ -145,6 +145,35 @@ test('generate native success leaves source-edge state ownership to the caller',
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
+test('generate isolates provider mutations with JSON-safe container cloning', async () => {
+  installRepo();
+  const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;
+  const payload = makePayload({ metadata });
+  const sourceItem = payload.input[0];
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    const clonedMetadata = body.metadata as { nested: { value: string } } & Record<string, unknown>;
+    assert(Object.hasOwn(clonedMetadata, '__proto__'), 'clone lost the own __proto__ JSON field');
+    clonedMetadata.nested.value = 'provider';
+    (body.input[0] as { role: string }).role = 'assistant';
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([]),
+      modelKey: 'test-model-key',
+    };
+  });
+
+  await responsesAttempt.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate(callResponses),
+    headers: new Headers(),
+  });
+
+  assertEquals((payload.metadata as { nested: { value: string } }).nested.value, 'source');
+  assertEquals((sourceItem as { role: string }).role, 'user');
+});
+
 test('generate treats a translated Responses payload as opaque to native affinity and state', async () => {
   installRepo();
   let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;

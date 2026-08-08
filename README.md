@@ -144,10 +144,17 @@ Podman users can instead follow the
 ```bash
 pnpm install
 pnpm run dev
-pnpm run test
-pnpm run lint
-pnpm run typecheck
+pnpm run verify
 ```
+
+`verify` chains every check `.github/workflows/verify.yaml` runs, so a green run
+locally is a green run on a pull request. Each link is also a script of its own,
+in the order the chain runs them: `typegen`, `lint`, `typecheck`, `test`,
+`test:installers`, `check:agents-md`, `check:generated-assets`,
+`check:verify-parity`, and `build:web`, which carries the assertions about the
+emitted bundle. `typegen` comes first because the generated route types are not
+checked in and the lint configuration is type-aware, so a fresh clone has to
+produce them before anything else can read the dashboard's sources.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
 indexes its CI workflows, skills, workspace packages, and their responsibilities.

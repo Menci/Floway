@@ -87,6 +87,28 @@ describe('StatefulResponsesStore', () => {
     expect(storedOutput).toMatchObject({ ...output, refreshedAt: snapshot?.refreshedAt });
   });
 
+  test('reuses an input item hash between lookup and staging', async () => {
+    installRepo();
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
+    let contentReads = 0;
+    const input = { type: 'message' as const, role: 'user' as const } as { type: 'message'; role: 'user'; content: string };
+    Object.defineProperty(input, 'content', {
+      enumerable: true,
+      get() {
+        contentReads += 1;
+        return 'hello';
+      },
+    });
+
+    await store.loadInputItems([input], [input]);
+    expect(contentReads).toBe(1);
+    await store.stageInputItems([input]);
+
+    // Staging reads the item once to clone it into request-owned state, but
+    // does not traverse it again to recompute the lookup hash.
+    expect(contentReads).toBe(2);
+  });
+
   test('replace snapshots persist only their output state', async () => {
     const repo = installRepo();
     const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@floway-dev/http": "workspace:*",
     "@scure/base": "^2.2.0",
     "image-size": "^2.0.2"
   },

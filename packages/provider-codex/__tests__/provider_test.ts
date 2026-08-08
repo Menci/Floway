@@ -4,7 +4,7 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -183,8 +183,8 @@ describe('createCodexProvider', () => {
     expect(result.ok).toBe(true);
     expect(result.action).toBe('generate');
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(init).toBeDefined();
-    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    if (init === undefined) throw new Error('expected a Codex upstream request');
+    const body = await readJsonRequest(init) as Record<string, unknown>;
     expect(body.instructions).toBe("You're a helpful assistant.");
     expect(body.input).toEqual([
       { type: 'message', role: 'developer', content: 'base instructions' },

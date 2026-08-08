@@ -13,7 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@floway-dev/protocols": "workspace:*"
+    "@discoveryjs/json-ext": "1.1.0",
+    "@floway-dev/http": "workspace:*",
+    "@floway-dev/protocols": "workspace:*",
+    "@noble/hashes": "^2.2.0",
+    "klona": "2.0.6"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"
