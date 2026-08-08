@@ -838,7 +838,6 @@ const zhHansCN = {
               session: '5 小时窗口',
               weekly: '每周窗口',
             },
-            activityCost: '活动费用 ${{cost}}',
             observed: '观测于 {{time}}',
             empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
             unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',

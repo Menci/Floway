@@ -68,8 +68,9 @@ const readWindows = (data: unknown): UsageWindow[] => {
     .filter((usageWindow): usageWindow is UsageWindow => usageWindow !== null);
 };
 
-// The upstream reports this as `activity.cost` over a trailing period and
-// states nowhere what it covers, so it is shown under the field's own name. An
+// `activity.cost` over a trailing period, reported as a plain decimal string
+// in USD. It carries no label of its own: the upstream states nowhere what the
+// figure covers, and a currency amount on a usage card says what it is. An
 // account that has spent nothing still reports "0.00000", which is worth
 // showing: it is the difference between zero and not reported.
 const readActivityCost = (data: unknown): string | null => {
@@ -129,9 +130,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>)}
 
     {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.ollama.usage.activityCost', { cost: activityCost })}
-      </Text>}
+      {activityCost !== null && <Text size={200} className="text-fui-fg3">{`$${activityCost}`}</Text>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}
       </Text>
