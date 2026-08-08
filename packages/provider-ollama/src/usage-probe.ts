@@ -62,7 +62,9 @@ export const fetchOllamaUsageProbe = async (
   );
   const rawText = await response.text();
   if (!response.ok) {
-    throw new Error(`Ollama /api/usage returned ${response.status}: ${rawText.slice(0, 256)}`);
+    // The body is the operator-facing half of this message, so it is trimmed:
+    // ollama.com terminates its error JSON with a newline.
+    throw new Error(`Ollama /api/usage returned ${response.status}: ${rawText.trim().slice(0, 256)}`);
   }
   let parsed: unknown;
   try {

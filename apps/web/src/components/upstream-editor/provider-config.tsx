@@ -202,9 +202,11 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const config = values.config as typeof record.config;
   // Usage belongs to an ollama.com account, so the card appears only for an
-  // upstream that has one: the cloud endpoint plus a key to read it with. It
-  // reads the live form values, which lets a key be tried before it is saved.
-  const cloudAccount = isOllamaCloudBaseUrl(config.baseUrl) && (record.config.apiKeySet === true || Boolean(config.apiKey));
+  // upstream that has one: the cloud endpoint plus a key to read it with. The
+  // stored key answers for a saved upstream — the form blanks the secret field
+  // and keeps it — and the typed one lets a new key be tried before saving.
+  const keySet = record.config.apiKeySet === true || Boolean(record.config.apiKey) || Boolean(config.apiKey);
+  const cloudAccount = isOllamaCloudBaseUrl(config.baseUrl) && keySet;
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
