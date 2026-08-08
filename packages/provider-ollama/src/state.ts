@@ -99,8 +99,19 @@ export function assertOllamaUpstreamState(value: unknown): asserts value is Olla
 
 export const emptyOllamaUpstreamState = (): OllamaUpstreamState => ({ usageProbe: null });
 
+// The asserter treats an absent optional key as null, so the entry is rebuilt
+// here rather than passed through: readers get the three fields the type
+// promises instead of `undefined` behind a `| null`.
 export const readOllamaUpstreamState = (raw: unknown): OllamaUpstreamState => {
   if (raw === null || raw === undefined) return emptyOllamaUpstreamState();
   assertOllamaUpstreamState(raw);
-  return { usageProbe: raw.usageProbe ?? null };
+  const probe = raw.usageProbe;
+  if (!probe) return emptyOllamaUpstreamState();
+  return {
+    usageProbe: {
+      attemptedAt: probe.attemptedAt,
+      observation: probe.observation ?? null,
+      error: probe.error ?? null,
+    },
+  };
 };
