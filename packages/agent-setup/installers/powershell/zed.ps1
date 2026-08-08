@@ -68,6 +68,14 @@ function Write-SetupZedSettings {
   if (Test-Path -LiteralPath $script:ZedSettingsPath) {
     $script:ZedSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
+    # PowerShell 7 accepts JSONC comments and drops them on the way out, while
+    # 5.1 errors and jq refuses — three behaviors for one document. Zed reads
+    # this file with serde_json_lenient, so a comment is the operator's content
+    # and silently deleting it is data loss. Refuse, as the Bash half does.
+    # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings/src/settings_store.rs#L955
+    if (Test-SetupJsonHasComment $raw) {
+      Stop-Setup "$($script:ZedSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
+    }
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
     # Every shape check completes before the backup exists, so a refusal on
     # the operator's existing document cannot leave an orphan beside it. The
@@ -109,12 +117,25 @@ function Write-SetupZedSettings {
     if ($document.language_models.PSObject.Properties.Name -notcontains 'anthropic_compatible') {
       $document.language_models | Add-Member -NotePropertyName anthropic_compatible -NotePropertyValue ([PSCustomObject]@{})
     }
-    Set-SetupProp $document.language_models.anthropic_compatible $SetupZedProviderName ([PSCustomObject]@{
+    # Remove any key differing from the chosen name only by case before adding
+    # it, rather than assigning through Set-SetupProp: that helper finds the
+    # existing key case-insensitively and would write the new value under the
+    # OLD name, leaving the picker showing a name the operator did not choose.
+    # Removing and re-adding also puts the entry last, as the jq merge does.
+    $bag = $document.language_models.anthropic_compatible
+    foreach ($existing in @($bag.PSObject.Properties.Name)) {
+      if ($existing -ieq $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+    }
+    $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
       api_url = Get-SetupZedApiUrl
       available_models = $script:ZedModels
     })
 
-    $json = $document | ConvertTo-Json -Depth 100
+    # A subtree deeper than the serializer goes is emitted as the literal string
+    # "@{k=}" with only a warning, which the staged check cannot see because it
+    # inspects the provider entry alone. Promote it: losing an unrelated setting
+    # is not something to do quietly.
+    $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
     # Read through the property bag rather than with `.$name`, which is dotted

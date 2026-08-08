@@ -2721,6 +2721,98 @@ test('zed', 'PowerShell leaves no backup behind when the provider name is a rese
   t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
 });
 
+// This document holds no credential — Zed reads the key from the keychain — so
+// the run must not narrow permissions the operator chose, on success or on a
+// refusal. `umask 077` would otherwise hand back a 0600 file either way.
+test('zed', 'preserves the settings file mode through a write and through a refusal', async t => {
+  if (process.platform === 'win32') skip('POSIX modes only');
+  const written = makeWorkspace();
+  const writtenDir = makeZedConfigDir(written);
+  placeFakeCredentialTools(written);
+  writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o644 });
+  chmodSync(zedSettingsPath(writtenDir), 0o644);
+  const ok = await runZed(written, { zedConfigDir: writtenDir });
+  t.equal(ok.code, 0, `should succeed:\n${ok.combined}`);
+  t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o644, 'a successful write keeps the operator mode');
+
+  const refused = makeWorkspace();
+  const refusedDir = makeZedConfigDir(refused);
+  placeFakeCredentialTools(refused);
+  writeFileSync(zedSettingsPath(refusedDir), '', { mode: 0o644 });
+  chmodSync(zedSettingsPath(refusedDir), 0o644);
+  const bad = await runZed(refused, { zedConfigDir: refusedDir });
+  t.ok(bad.code !== 0, 'an empty document is refused');
+  t.equal(readFileSync(zedSettingsPath(refusedDir), 'utf8'), '', 'and left byte-identical');
+  t.equal(statSync(zedSettingsPath(refusedDir)).mode & 0o777, 0o644, 'and at the mode it had');
+  // The refusal has to name the operator's document. Passing this gate and
+  // failing later reports a staging fault instead, pointing at our own list
+  // rather than at the file they need to fix — and only after a backup existed.
+  t.ok(bad.combined.includes('is not a valid JSON object'), `the refusal names the document:\n${bad.combined}`);
+  t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
+});
+
+// A case-only rename must leave exactly one provider, under the new name, in
+// both halves. The PowerShell property bag cannot hold `Floway` beside
+// `floway`, so keeping the old key is not something the two can agree on —
+// and dropping it is the better outcome anyway: a stale entry in Zed`s picker
+// points at a provider whose credential no longer matches its name.
+test('zed', 'a case-only rename leaves one provider in both halves', async t => {
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), JSON.stringify({
+      language_models: { anthropic_compatible: { floway: { api_url: 'https://stale', available_models: [] } } },
+    }));
+    const options = {
+      workspace: ws,
+      baseUrl: modelServer.url,
+      configuration: zedConfig({ providerName: 'Floway' }),
+      zedConfigDir: configDir,
+    };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return (readSettings(zedSettingsPath(configDir)) as ZedSettings).language_models.anthropic_compatible;
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(Object.keys(bash).join(','), 'Floway', 'Bash keeps only the chosen name');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.equal(Object.keys(powershell).join(','), 'Floway', 'PowerShell keeps only the chosen name');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
+});
+
+// Zed reads this file with serde_json_lenient, so a comment is the operator`s
+// own content. jq refuses such a document; PowerShell 7 accepts it and drops
+// the comment on the way out, which is data loss reported as success. Both
+// halves refuse it, and neither mistakes a `//` inside a value for one.
+test('zed', 'both halves refuse a settings document carrying JSONC comments', async t => {
+  const commented = '{\n  // the operator put this here\n  "telemetry": { "metrics": false }\n}';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), commented);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} refuses it`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), commented, `${which} leaves it byte-identical`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+
+  // A `//` inside a value is not a comment: refusing that would reject a
+  // perfectly ordinary document.
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  writeFileSync(zedSettingsPath(configDir), JSON.stringify({ note: 'see https://example.com/docs' }));
+  const ok = await runZed(ws, { zedConfigDir: configDir });
+  t.equal(ok.code, 0, `a URL in a value is not a comment:\n${ok.combined}`);
+});
+
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();

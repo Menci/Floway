@@ -16,10 +16,18 @@ ZED_SETTINGS_MERGE_PROGRAM='
   elif (has("language_models") and (.language_models | has("anthropic_compatible")) and ((.language_models.anthropic_compatible | type) != "object"))
     then error("anthropic_compatible is not a JSON object")
   else . end
-  | .language_models.anthropic_compatible[$providerName] = {
-      "api_url": $apiUrl,
-      "available_models": $models[0],
-    }
+  | .language_models.anthropic_compatible |= (
+      # Drop any entry whose key differs from the chosen name only by case
+      # before writing it. The PowerShell property bag cannot hold two such
+      # keys at once — adding `Floway` beside `floway` replaces it — so a half
+      # that kept both would be a half that disagrees. Aligning here also means
+      # a case-only rename stops leaving a stale provider in the Zed picker.
+      # ASCII case is what both sides fold; a non-ASCII case variant is left
+      # alone by jq and replaced by PowerShell, which no operator has reason to
+      # construct.
+      ((. // {}) | with_entries(select((.key | ascii_downcase) != ($providerName | ascii_downcase))))
+      + { ($providerName): { "api_url": $apiUrl, "available_models": $models[0] } }
+    )
 '
 
 # Zed appends `/v1/messages` itself, so the provider takes the bare origin —
@@ -88,10 +96,12 @@ zed_rollback_settings() {
     "file" "Zed global settings"
 }
 
-# Same-directory staging keeps the replacement rename atomic. No explicit chmod
-# follows: the document holds no credential — Zed reads the key from the
-# keychain — and `umask 077` in main already makes the staged file owner-only,
-# unlike the Claude settings document, which carries the key and says so.
+# Same-directory staging keeps the replacement rename atomic. The staged file
+# inherits the mode of the document it replaces: this one holds no credential —
+# Zed reads the key from the keychain — so narrowing it to `umask 077` would
+# silently change permissions the operator chose, unlike the Claude settings
+# document, which carries the key and is deliberately owner-only. A new file
+# keeps the umask default.
 zed_write_settings() {
   ZED_SETTINGS_PATH="$ZED_CONFIG_DIR/global_settings.json"
   ZED_SETTINGS_BACKUP=""
@@ -99,14 +109,21 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
-    if ! "$JQ" 'if type != "object" then error("root is not a JSON object") else . end' \
-        "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
+    # `-e` rather than a filter that raises: jq runs a filter zero times on
+    # empty input and still exits 0, so a truncated or whitespace-only file
+    # would pass this gate and fail later as a staging error naming the wrong
+    # cause — after a backup already existed.
+    if ! "$JQ" -e 'type == "object"' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
       out_error "$ZED_SETTINGS_PATH is not a valid JSON object; leaving it untouched."
       return 1
     fi
     _zw_base=$(cat "$ZED_SETTINGS_PATH")
     ZED_SETTINGS_BACKUP="$ZED_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
-    if ! cp "$ZED_SETTINGS_PATH" "$ZED_SETTINGS_BACKUP"; then
+    # `-p` because the backup is the file this run may have to restore: created
+    # under `umask 077` it would come back narrower than the operator's own
+    # file, so a run that reports leaving the settings untouched would still
+    # have changed their mode.
+    if ! cp -p "$ZED_SETTINGS_PATH" "$ZED_SETTINGS_BACKUP"; then
       out_error "could not back up $ZED_SETTINGS_PATH"
       return 1
     fi
@@ -137,6 +154,13 @@ zed_write_settings() {
     rm -f "$_zw_stage"
     zed_rollback_settings
     return 1
+  fi
+
+  # Carry the existing document's mode onto the replacement before it takes its
+  # place, so a run cannot narrow a file it was only asked to edit.
+  if [ "$ZED_SETTINGS_EXISTED" -eq 1 ] && ! chmod --reference="$ZED_SETTINGS_PATH" "$_zw_stage" 2>/dev/null; then
+    # BSD chmod has no --reference; read the mode and apply it.
+    _zw_mode=$(_stat_mode "$ZED_SETTINGS_PATH") && [ -n "$_zw_mode" ] && chmod "$_zw_mode" "$_zw_stage"
   fi
 
   if ! mv "$_zw_stage" "$ZED_SETTINGS_PATH"; then
