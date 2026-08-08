@@ -81,6 +81,11 @@ function Write-SetupZedSettings {
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
+    # Decided from the text, not from the decoded value: ConvertFrom-Json
+    # unwraps a top-level one-element array into a bare object, so `[{...}]`
+    # would pass this check and be rewritten as an object with the array
+    # silently discarded — while jq refuses it.
+    if (-not $raw.TrimStart().StartsWith('{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid JSON object; leaving it untouched." }
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
@@ -143,6 +148,13 @@ function Write-SetupZedSettings {
     $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value
     if (($staged.api_url -cne (Get-SetupZedApiUrl)) -or (@($staged.available_models).Count -eq 0)) {
       Stop-Setup 'staged Zed global settings failed validation.'
+    }
+    # This document holds no credential — Zed reads the key from the keychain —
+    # so the replacement carries the mode of the file it replaces rather than
+    # the process umask, matching the Bash half. Windows needs nothing here:
+    # File.Replace preserves the destination ACL.
+    if ($script:ZedSettingsExisted -and -not (Test-SetupIsWindows)) {
+      [System.IO.File]::SetUnixFileMode($stage, [System.IO.File]::GetUnixFileMode($script:ZedSettingsPath))
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
     # unlink a settings file Zed is watching; File.Replace is atomic.

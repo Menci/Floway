@@ -295,7 +295,10 @@ const config: Linter.Config[] = [
       // inline `import { type X }` form; the selector holds the whole
       // declaration to `import type`.
       'no-restricted-syntax': ['error', {
-        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
+        // Exports are matched as well as imports: `export … from` reaches the
+        // bundle exactly the same way, and a re-export would otherwise satisfy
+        // this rule by syntax rather than by intent.
+        selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[exportKind!="type"][importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
         message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
       }, {
         // `/models` is the one runtime-importable surface: it holds the editor

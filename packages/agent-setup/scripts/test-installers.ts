@@ -104,7 +104,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -357,9 +357,11 @@ const ZED_CATALOG = {
     },
     {
       // A ceiling with no floor — the fallback arm of the budget selection.
+      // Carries an output limit, because the budget has to stay under the
+      // max_tokens Zed sends — which is that limit, or 4096 without one.
       id: 'ceiling-only', object: 'model', type: 'model', display_name: 'Ceiling Only',
       kind: 'chat', endpoints: { messages: {} },
-      limits: { max_context_window_tokens: 200_000 },
+      limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 },
       chat: { reasoning: { budget_tokens: { max: 32_000 } } },
     },
     {
@@ -2711,14 +2713,21 @@ test('zed', 'PowerShell leaves no backup behind when the provider name is a rese
 // refusal. `umask 077` would otherwise hand back a 0600 file either way.
 test('zed', 'preserves the settings file mode through a write and through a refusal', async t => {
   if (process.platform === 'win32') skip('POSIX modes only');
-  const written = makeWorkspace();
-  const writtenDir = makeZedConfigDir(written);
-  placeFakeCredentialTools(written);
-  writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o644 });
-  chmodSync(zedSettingsPath(writtenDir), 0o644);
-  const ok = await runZed(written, { zedConfigDir: writtenDir });
-  t.equal(ok.code, 0, `should succeed:\n${ok.combined}`);
-  t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o644, 'a successful write keeps the operator mode');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const written = makeWorkspace();
+    const writtenDir = makeZedConfigDir(written);
+    placeFakeCredentialTools(written);
+    // 0600 rather than 0644: the umask a run inherits is usually 022, so a
+    // stage that does not carry the operator mode comes back WIDER than the
+    // file they deliberately tightened.
+    writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
+    chmodSync(zedSettingsPath(writtenDir), 0o600);
+    const options = { workspace: written, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: writtenDir };
+    const ok = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(ok.code, 0, `${which} should succeed:\n${ok.combined}`);
+    t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o600, `${which}: a successful write keeps the operator mode`);
+  }
 
   const refused = makeWorkspace();
   const refusedDir = makeZedConfigDir(refused);
@@ -2796,6 +2805,27 @@ test('zed', 'both halves refuse a settings document carrying JSONC comments', as
   writeFileSync(zedSettingsPath(configDir), JSON.stringify({ note: 'see https://example.com/docs' }));
   const ok = await runZed(ws, { zedConfigDir: configDir });
   t.equal(ok.code, 0, `a URL in a value is not a comment:\n${ok.combined}`);
+});
+
+// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
+// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
+// rewritten as an object with the array silently discarded, while jq refuses
+// it. Both halves decide the root from the text.
+test('zed', 'both halves refuse an array root', async t => {
+  const arrayRoot = '[{"telemetry":{"metrics":false}}]';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), arrayRoot);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} refuses it`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), arrayRoot, `${which} leaves it byte-identical`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
 });
 
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
