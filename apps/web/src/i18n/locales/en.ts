@@ -395,7 +395,7 @@ const en = {
               'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
-          title: 'Setup Your Agents',
+          title: 'Set Up Your Agents',
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
