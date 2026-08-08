@@ -4,6 +4,7 @@
 
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
+import { withEmptyNamespaceDescriptionsFilled } from './fill-empty-namespace-descriptions.ts';
 import { withStoreForcedFalse } from './force-store-false.ts';
 import { withCopilotResponsesItemIdMembrane } from './item-id-membrane.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
@@ -22,6 +23,7 @@ import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 // also normalizes the generated item in compact value envelopes.
 export const COPILOT_RESPONSES_BOUNDARY = [
   withInlineImagesCompressed,
+  withEmptyNamespaceDescriptionsFilled,
   withServiceTierStripped,
   withImageGenerationStripped,
   withStoreForcedFalse,

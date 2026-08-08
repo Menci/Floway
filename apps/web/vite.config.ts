@@ -259,9 +259,9 @@ export default defineConfig({
         // comment that names them: the ErrorBoundary in src/root.tsx restores
         // its trace through src/lib/source-mapped-stack.ts, and the same
         // comment is what lets devtools resolve a frame on a live instance.
-        // Three build checks -- scripts/check-web-monaco-lazy.ts,
-        // scripts/check-web-gallery-dev-only.ts and
-        // scripts/check-web-locales-split.ts -- read the same files to derive
+        // Three build checks -- scripts/check-monaco-lazy.ts,
+        // scripts/check-gallery-dev-only.ts and
+        // scripts/check-locales-split.ts -- read the same files to derive
         // chunk membership from each map's module list.
         sourcemap: true,
         rolldownOptions: {

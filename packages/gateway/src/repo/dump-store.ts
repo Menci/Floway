@@ -23,6 +23,7 @@ import type {
   StoredDumpResponse,
   StoredDumpResponseBody,
 } from '../dump/types.ts';
+import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
@@ -74,23 +75,13 @@ const hourBucket = (ms: number): string => {
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
-const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
-const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
 const putRawBody = async (
   files: FileStore,
   key: string,
   rawBytes: Uint8Array,
   type: 'bytes' | 'events',
 ): Promise<DumpBodyDescriptor> => {
-  const gz = await gzip(rawBytes);
+  const gz = await gzipBytes(rawBytes);
   await files.put(key, gz);
   return { key, type };
 };
@@ -100,7 +91,7 @@ const putPreparedBody = async (
   key: string,
   prepared: PreparedDumpRequestBody,
 ): Promise<DumpBodyDescriptor> => {
-  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzip(prepared.bytes);
+  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzipBytes(prepared.bytes);
   await files.put(key, gz);
   return { key, type: 'bytes' };
 };
@@ -108,7 +99,7 @@ const putPreparedBody = async (
 const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
-  return await gunzip(gz);
+  return await gunzipBytes(gz);
 };
 
 export class FileDumpStore implements DumpStore {
@@ -117,7 +108,7 @@ export class FileDumpStore implements DumpStore {
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {
       encoding: 'gzip',
-      bytes: await gzip(body),
+      bytes: await gzipBytes(body),
       decodedByteLength: body.byteLength,
     };
   }

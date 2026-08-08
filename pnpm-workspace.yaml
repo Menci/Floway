@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - tools
 
 # pnpm blocks lifecycle scripts by default. These four ship prebuilt binaries
 # or native bindings and need theirs to run: esbuild and sharp for the Node

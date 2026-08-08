@@ -1,11 +1,14 @@
-// Indirection for outbound HTTP so per-upstream proxy chains can be
-// threaded by reference.
-export type Fetcher = (
-  url: string,
-  init: RequestInit,
-) => Promise<Response>;
+import { isReplayableBody } from '@floway-dev/http';
+import type { Fetcher, FetchInit } from '@floway-dev/http';
 
-export const directFetcher: Fetcher = (url, init) => fetch(url, init);
+export type { Fetcher, FetchInit, ReplayableBody } from '@floway-dev/http';
+export { isReplayableBody } from '@floway-dev/http';
+
+export const directFetcher: Fetcher = (url, init) => {
+  const body = init.body;
+  if (!isReplayableBody(body)) return fetch(url, { ...init, body });
+  return Promise.reject(new Error('Replayable request bodies require a runtime-composed direct fetcher'));
+};
 
 // extraHeaders are merged on top of the helper's own default headers.
 export interface UpstreamFetchOptions {
@@ -22,14 +25,13 @@ export const identityWrapUpstreamCall = <T>(dispatch: () => Promise<T>): Promise
 
 // Transfer a request into the fetcher exactly once. The wrapper used for
 // upstream-call timing can outlive dispatch for the whole network wait; clearing
-// its slot immediately keeps a large serialized body owned only by the fetcher,
-// whose proxy path replaces it with replayable bytes.
+// its slot immediately leaves the fetcher as the request's only owner.
 export const dispatchUpstreamFetch = (
   options: Pick<UpstreamFetchOptions, 'fetcher' | 'wrapUpstreamCall'>,
   url: string,
-  init: RequestInit,
+  init: FetchInit,
 ): Promise<Response> => {
-  let owned: RequestInit | undefined = init;
+  let owned: FetchInit | undefined = init;
   return options.wrapUpstreamCall(() => {
     if (owned === undefined) throw new Error('upstream fetch dispatch invoked more than once');
     const request = owned;

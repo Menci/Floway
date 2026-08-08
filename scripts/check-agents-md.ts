@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const AGENTS_PATH = resolve(ROOT, 'AGENTS.md');
-const EXPECTED_TITLE = '# Repository Agent Protocol';
+const EXPECTED_TITLE = '# Repository Agent Guide';
 const EXPECTED_SECTIONS = ['## Requirements', '## Index'] as const;
 const PACKAGE_ROOTS = ['packages', 'apps'] as const;
+const DIRECT_PACKAGES = ['tools'] as const;
 const EXPECTED_TABLE_HEADERS = [
   '| Scope | Requirement | Enforcement |',
   '| Category | Entry | Overview |',
@@ -32,7 +33,7 @@ const INDEX_CATEGORY_ORDER: Record<IndexCategory, number> = {
 };
 
 const fail = (message: string): never => {
-  throw new Error(`AGENTS.md protocol violation: ${message}`);
+  throw new Error(`AGENTS.md: ${message}`);
 };
 
 const isIndexCategory = (value: string | undefined): value is IndexCategory =>
@@ -64,7 +65,7 @@ const discoverIndex = async (): Promise<IndexEntry[]> => {
     ?.trimEnd()
     .split('\n')
     .map(line => line.slice('  - '.length));
-  const expectedPackagePatterns = PACKAGE_ROOTS.map(root => `${root}/*`);
+  const expectedPackagePatterns = [...PACKAGE_ROOTS.map(root => `${root}/*`), ...DIRECT_PACKAGES];
   if (JSON.stringify(workspacePackagePatterns) !== JSON.stringify(expectedPackagePatterns)) {
     fail(
       `package discovery must match pnpm-workspace.yaml; expected ${JSON.stringify(expectedPackagePatterns)}`,
@@ -85,12 +86,15 @@ const discoverIndex = async (): Promise<IndexEntry[]> => {
     .filter(({ files }) => files.includes('SKILL.md'))
     .map(({ name }) => ({ category: 'Skill', entry: `$${name}` }) satisfies IndexEntry);
 
-  const packageDirectories = (
-    await Promise.all(
-      PACKAGE_ROOTS.map(async parent =>
-        (await listDirectoryNames(parent)).map(name => `${parent}/${name}`)),
-    )
-  ).flat();
+  const packageDirectories = [
+    ...(
+      await Promise.all(
+        PACKAGE_ROOTS.map(async parent =>
+          (await listDirectoryNames(parent)).map(name => `${parent}/${name}`)),
+      )
+    ).flat(),
+    ...DIRECT_PACKAGES,
+  ];
   const packages = await Promise.all(
     packageDirectories.map(async directory => ({
       directory,

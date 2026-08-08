@@ -1,59 +1,60 @@
-import type { HttpRequest } from '@floway-dev/http';
+import { isReplayableBody, type FetchInit, type HttpRequest } from '@floway-dev/http';
 import { normalizeDialHost } from '@floway-dev/platform';
 import type { ProxyRequestTarget } from '@floway-dev/proxy';
 
-interface MaterializedRequest {
+interface PreparedRequest {
   target: ProxyRequestTarget;
   request: HttpRequest;
 }
 
 export interface ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  fetchInit(): RequestInit;
-  materialized(): Promise<MaterializedRequest>;
+  fetchInit(): FetchInit;
+  prepared(): Promise<PreparedRequest>;
 }
 
 class ReplayableRequestOwner implements ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  private fetch: RequestInit;
-  private materializedRequest: MaterializedRequest | undefined;
+  private fetch: FetchInit;
+  private preparedRequest: PreparedRequest | undefined;
   private rebuildFetchBody = false;
 
   constructor(
     private readonly url: string,
-    init: RequestInit,
+    init: FetchInit,
   ) {
     this.signal = init.signal ?? undefined;
     this.fetch = init;
   }
 
-  fetchInit(): RequestInit {
+  fetchInit(): FetchInit {
     if (this.rebuildFetchBody) {
-      this.fetch = rebuildInitFromMaterialized(this.fetch, this.materializedRequest!);
+      this.fetch = rebuildInitFromPrepared(this.fetch, this.preparedRequest!);
       this.rebuildFetchBody = false;
     }
     return this.fetch;
   }
 
-  async materialized(): Promise<MaterializedRequest> {
-    if (this.materializedRequest !== undefined) return this.materializedRequest;
-    this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch);
+  async prepared(): Promise<PreparedRequest> {
+    if (this.preparedRequest !== undefined) return this.preparedRequest;
+    this.preparedRequest = await buildPreparedRequest(this.url, this.fetch);
+    if (isReplayableBody(this.fetch.body)) return this.preparedRequest;
     // Once bytes exist, the original BodyInit must not remain captured for the
     // duration of the upstream request. A later direct-fetch fallback rebuilds its
     // owned byte body lazily, so a successful proxy does not retain a second
     // full buffer merely because `direct_fetch` appears later in the list.
     this.fetch = { ...this.fetch, body: null };
     this.rebuildFetchBody = true;
-    return this.materializedRequest;
+    return this.preparedRequest;
   }
 }
 
-export const createReplayableRequest = (url: string, init: RequestInit): ReplayableRequest =>
+export const createReplayableRequest = (url: string, init: FetchInit): ReplayableRequest =>
   new ReplayableRequestOwner(url, init);
 
-const rebuildInitFromMaterialized = (original: RequestInit, materialized: MaterializedRequest): RequestInit => {
+const rebuildInitFromPrepared = (original: FetchInit, prepared: PreparedRequest): FetchInit => {
   const headers = new Headers(original.headers);
-  const targetCt = materialized.request.headers['content-type'];
+  const targetCt = prepared.request.headers['content-type'];
   if (targetCt !== undefined && !headers.has('content-type')) {
     headers.set('content-type', targetCt);
   }
@@ -62,9 +63,11 @@ const rebuildInitFromMaterialized = (original: RequestInit, materialized: Materi
   // the buffer we hand to runtime fetch never aliases a backing buffer
   // that's also referenced elsewhere.
   let body: Uint8Array<ArrayBuffer> | null = null;
-  if (materialized.request.body) {
-    const owned = new Uint8Array(materialized.request.body.byteLength);
-    owned.set(materialized.request.body);
+  const preparedBody = prepared.request.body;
+  if (preparedBody !== undefined) {
+    if (!(preparedBody instanceof Uint8Array)) throw new Error('prepared native request body is not buffered bytes');
+    const owned = new Uint8Array(preparedBody.byteLength);
+    owned.set(preparedBody);
     body = owned;
   }
   return {
@@ -74,15 +77,15 @@ const rebuildInitFromMaterialized = (original: RequestInit, materialized: Materi
   };
 };
 
-const buildMaterializedRequest = async (url: string, init: RequestInit): Promise<MaterializedRequest> => {
+const buildPreparedRequest = async (url: string, init: FetchInit): Promise<PreparedRequest> => {
   const u = new URL(url);
-  const collected = await collectBody(init.body);
+  const preparedBody = await prepareBody(init.body);
   const headers = extractHeaders(init.headers);
   // FormData/URLSearchParams synthesize a Content-Type with the multipart
   // boundary or the urlencoded marker. Adopt it only when the caller did not
   // pre-set Content-Type itself, so explicit overrides keep winning.
-  if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
-    headers['content-type'] = collected.contentType;
+  if (preparedBody?.contentType !== undefined && headers['content-type'] === undefined) {
+    headers['content-type'] = preparedBody.contentType;
   }
   // `URL#hostname` keeps the `[…]` envelope on IPv6 literals; the
   // `DialTarget.host` contract requires the bare address. Strip the
@@ -97,7 +100,7 @@ const buildMaterializedRequest = async (url: string, init: RequestInit): Promise
     method: init.method ?? 'GET',
     path: `${u.pathname}${u.search}`,
     headers,
-    body: collected?.body,
+    body: preparedBody?.body,
   };
   return { target, request };
 };
@@ -122,18 +125,19 @@ const extractHeaders = (input: HeadersInit | undefined): Record<string, string> 
   return out;
 };
 
-interface CollectedBody {
-  body: Uint8Array;
+interface PreparedBody {
+  body: NonNullable<HttpRequest['body']>;
   /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
    *  multipart boundary or urlencoded marker). undefined for shapes that
    *  carry no implicit Content-Type. */
   contentType?: string;
 }
 
-const collectBody = async (
-  body: BodyInit | null | undefined,
-): Promise<CollectedBody | undefined> => {
+const prepareBody = async (
+  body: FetchInit['body'],
+): Promise<PreparedBody | undefined> => {
   if (body == null) return undefined;
+  if (isReplayableBody(body)) return { body };
   if (typeof body === 'string') return { body: new TextEncoder().encode(body) };
   if (body instanceof Uint8Array) return { body };
   if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };
@@ -147,5 +151,5 @@ const collectBody = async (
     const contentType = req.headers.get('content-type') ?? undefined;
     return { body: buffer, contentType };
   }
-  throw new Error('unsupported BodyInit shape for materialized request');
+  throw new Error('unsupported BodyInit shape for dial request');
 };
