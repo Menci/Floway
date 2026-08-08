@@ -253,9 +253,10 @@ public static class FlowayZedCredential {
 '@
 
 function Set-SetupZedCredentialWindows {
-  # Guarded because Add-Type throws when the type is already in the AppDomain,
-  # and the documented invocation is a pasted one-liner an operator re-runs in
-  # the same console after fixing whatever failed the first time.
+  # Add-Type accepts a byte-identical re-add by returning its cached type and
+  # rejects any source that differs under a name already in the AppDomain. The
+  # guard makes a re-run in the same console a no-op outright rather than
+  # resting on that cache.
   if (-not ('FlowayZedCredential' -as [type])) {
     Add-Type -TypeDefinition $SetupZedCredWriteSource
   }

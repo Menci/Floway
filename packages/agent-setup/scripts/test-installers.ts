@@ -462,6 +462,14 @@ const startModelServer = async (): Promise<ModelServer> => {
       }
     }
     if (pathname === '/v1/models') {
+      // A real gateway serves no catalog without the key, so an installer that
+      // dropped the header would fail every install while the fixture stayed
+      // green. Rejecting here makes each success case assert the header too.
+      if (req.headers.authorization !== `Bearer ${SENTINEL_KEY}`) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end('{"error":{"message":"missing or invalid authorization"}}');
+        return;
+      }
       if (state.mode === 'catalog-error') {
         res.writeHead(500, { 'content-type': 'application/json' });
         res.end('{"error":{"message":"upstream model listing failed"}}');

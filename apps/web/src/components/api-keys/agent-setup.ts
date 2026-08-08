@@ -192,10 +192,16 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedKey = `'${apiKey.replaceAll("'", "''")}'`;
   const quotedTarget = `'${`zed:url=${origin}`.replaceAll("'", "''")}'`;
   return [
+    // An operator pastes this again after rotating the key or renaming the
+    // provider. Add-Type accepts a byte-identical re-add by returning its
+    // cached type and rejects any source that differs under a name already in
+    // the AppDomain, so the guard makes the second paste a no-op outright
+    // rather than resting on that cache.
+    `if (-not ('FlowayZedCredential' -as [type])) {`,
     'Add-Type -TypeDefinition @"',
     'using System;',
     'using System.Runtime.InteropServices;',
-    'public static class ZedCred {',
+    'public static class FlowayZedCredential {',
     '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
     '  private struct CREDENTIAL {',
     '    public uint Flags; public uint Type; public string TargetName; public string Comment;',
@@ -217,6 +223,7 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
     '  }',
     '}',
     '"@',
-    `[ZedCred]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,
+    '}',
+    `[FlowayZedCredential]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,
   ].join('\n');
 };
