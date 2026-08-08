@@ -443,7 +443,9 @@ const en = {
         // Whatever an upstream publishes about itself beyond its identity. Only
         // the providers whose upstream reports usage contribute any.
         signals: {
-          meter: '{{label}} {{percent, number}}%',
+          plan: '{{plan}}:',
+          percent: '{{percent, number}}%',
+          until: 'until {{date}}',
           used: '{{label}}: {{percent, number}}% used',
           resets: 'Resets {{time}}',
           observed: 'Observed {{time}}',

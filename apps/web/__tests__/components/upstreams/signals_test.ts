@@ -1,36 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { upstreamSignals } from '../../../src/components/upstreams/signals';
+import { upstreamReadout } from '../../../src/components/upstreams/signals';
+import en from '../../../src/i18n/locales/en';
 import type { TFunction } from '../../../src/i18n/translation';
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 const OBSERVED = '2026-07-28T11:00:00.000Z';
 
-// The projection is asserted on what a row shows, so the stub answers with the
-// key and lets the interpolated values through unchanged.
-const t = ((key: string, values?: Record<string, unknown>) =>
-  values === undefined ? key : `${key}(${JSON.stringify(values)})`) as unknown as TFunction;
+// The real resources rather than a key echo, so the assertions read as the copy
+// an operator sees and a key that does not exist fails here rather than
+// rendering as itself.
+const resolve = (key: string): unknown =>
+  key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en.translation);
 
-const signalsOf = (record: unknown) => upstreamSignals(record as UpstreamRecord, t, 'en', NOW);
-const meters = (record: unknown) => signalsOf(record)
-  .filter(signal => signal.kind === 'meter')
-  .map(signal => ({ label: signal.label, percent: signal.percent }));
+const t = ((key: string, values?: Record<string, unknown>) => {
+  const template = resolve(key);
+  if (typeof template !== 'string') throw new Error(`Missing i18n key: ${key}`);
+  return template.replace(/\{\{(\w+)[^}]*\}\}/g, (_, name: string) => String(values?.[name]));
+}) as unknown as TFunction;
 
-describe('upstream signals by provider', () => {
-  it('reports no signals for an endpoint that publishes no account of its own', () => {
-    expect(signalsOf({ kind: 'custom', config: { baseUrl: 'https://api.openai.com' } })).toEqual([]);
-    expect(signalsOf({ kind: 'azure', config: { endpoint: 'https://x.openai.azure.com' } })).toEqual([]);
+const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en', NOW);
+const rowOf = (record: unknown) => {
+  const { plan, signals } = readoutOf(record);
+  return [plan, ...signals.map(signal => [signal.value, signal.label].filter(Boolean).join(' '))].join(' | ');
+};
+
+describe('upstream readout by provider', () => {
+  it('names the provider itself when the upstream publishes nothing about its account', () => {
+    expect(readoutOf({ kind: 'custom', config: { baseUrl: 'https://api.openai.com' } }))
+      .toEqual({ plan: 'Custom', signals: [] });
+    expect(readoutOf({ kind: 'azure', config: { endpoint: 'https://x.openai.azure.com' } }))
+      .toEqual({ plan: 'Azure', signals: [] });
   });
 
-  it('meters only the Copilot buckets that are capped, under the id GitHub sent', () => {
+  it('meters only the Copilot buckets that are capped, and dates them by the seat reset', () => {
     const record = {
       kind: 'copilot',
       state: {
         quotaSnapshot: {
           data: {
             observed_at: OBSERVED,
-            reset_at: '2026-08-01T00:00:00.000Z',
+            reset_at: '2026-09-01T00:00:00.000Z',
             quotas: {
               chat: { entitlement: -1, quota_remaining: -1, percent_remaining: 100, overage_count: 0, overage_permitted: false, unlimited: true },
               premium_interactions: { entitlement: 300, quota_remaining: 213, percent_remaining: 71, overage_count: 0, overage_permitted: true, unlimited: false },
@@ -39,71 +50,79 @@ describe('upstream signals by provider', () => {
         },
       },
     };
-    expect(meters(record)).toEqual([{ label: 'premium interactions', percent: 29 }]);
+    expect(rowOf(record)).toBe('Copilot | 29% until Sep 1, 2026');
+    // The bucket's own name is what the row had no width for, so it is the tooltip.
+    expect(readoutOf(record).signals[0].detail).toContain('premium interactions: 29% used');
   });
 
   it('reports nothing for a Copilot seat no response has been observed on', () => {
-    expect(signalsOf({ kind: 'copilot', state: null })).toEqual([]);
+    expect(readoutOf({ kind: 'copilot', state: null })).toEqual({ plan: 'Copilot', signals: [] });
   });
 
-  it('names a Codex window by the length its header states', () => {
+  it('names a Codex window by the length its header states, under the ChatGPT plan', () => {
     const record = {
       kind: 'codex',
-      config: { accounts: [{ chatgptAccountId: 'acct_1' }] },
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
       codex_quota: {
-        plus: {
+        pro: {
           observed_at: OBSERVED,
           primary_used_percent: 25, primary_window_minutes: 300,
           secondary_used_percent: 40, secondary_window_minutes: 10_080,
         },
       },
     };
-    expect(meters(record)).toEqual([{ label: '5h', percent: 25 }, { label: '7d', percent: 40 }]);
+    expect(rowOf(record)).toBe('ChatGPT Pro | 25% 5h | 40% 7d');
+  });
+
+  it('forwards a ChatGPT plan this dashboard has not seen', () => {
+    expect(readoutOf({
+      kind: 'codex',
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'ultra' }] },
+      state: { accounts: [] },
+    }).plan).toBe('ChatGPT ultra');
   });
 
   it('falls back to a Codex window position when no length came with it', () => {
     const record = {
       kind: 'codex',
-      config: { accounts: [{ chatgptAccountId: 'acct_1' }] },
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
       codex_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25 } },
     };
-    expect(meters(record)[0].label).toBe('dashboard.upstreams.signals.window.primary');
+    expect(rowOf(record)).toBe('ChatGPT Plus | 25% Primary');
   });
 
   it('states the Codex limit observed last rather than every key the map holds', () => {
     const record = {
       kind: 'codex',
-      config: { accounts: [{ chatgptAccountId: 'acct_1' }] },
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
       codex_quota: {
         stale: { observed_at: '2026-07-20T00:00:00.000Z', primary_used_percent: 90, primary_window_minutes: 300 },
         current: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300 },
       },
     };
-    expect(meters(record)).toEqual([{ label: '5h', percent: 12 }]);
+    expect(rowOf(record)).toBe('ChatGPT Plus | 12% 5h');
   });
 
   it('carries the Codex credit balance beside the windows', () => {
-    const withCredits = (credits: Record<string, unknown>) => signalsOf({
+    const withCredits = (credits: Record<string, unknown>) => readoutOf({
       kind: 'codex',
-      config: { accounts: [{ chatgptAccountId: 'acct_1' }] },
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
       state: { accounts: [] },
       codex_quota: { plus: { observed_at: OBSERVED, ...credits } },
-    }).filter(signal => signal.kind === 'amount');
+    }).signals.map(signal => signal.value);
 
-    expect(withCredits({ credits_has_credits: true, credits_balance: 42 })[0].text)
-      .toBe('dashboard.upstreams.signals.credits({"balance":42})');
-    expect(withCredits({ credits_has_credits: false })[0].text)
-      .toBe('dashboard.upstreams.signals.noCredits');
+    expect(withCredits({ credits_has_credits: true, credits_balance: 42 })).toEqual(['42 credits']);
+    expect(withCredits({ credits_has_credits: false })).toEqual(['No credits']);
     expect(withCredits({})).toEqual([]);
   });
 
-  it('names the Claude Code windows by length and tells the two seven-day ones apart', () => {
+  it('lifts the Max multiple onto the Claude plan and tells the two seven-day windows apart', () => {
     const record = {
       kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1' }] },
+      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
       state: {
         accounts: [{
           accountUuid: 'uuid-1',
@@ -118,11 +137,15 @@ describe('upstream signals by provider', () => {
         }],
       },
     };
-    expect(meters(record)).toEqual([
-      { label: '5h', percent: 25 },
-      { label: '7d', percent: 40 },
-      { label: '7d Sonnet', percent: 8 },
-    ]);
+    expect(rowOf(record)).toBe('Claude Max 20x | 25% 5h | 40% 7d | 8% 7d Sonnet');
+  });
+
+  it('names a Claude subscription that carries no multiple by the subscription alone', () => {
+    expect(readoutOf({
+      kind: 'claude-code',
+      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'pro', rateLimitTier: 'default_pro' }] },
+      state: { accounts: [] },
+    }).plan).toBe('Claude Pro');
   });
 
   it('reads the Ollama Cloud windows and the activity cost the probe stored', () => {
@@ -137,12 +160,11 @@ describe('upstream signals by provider', () => {
         },
       },
     };
-    expect(meters(record)).toEqual([{ label: '5h', percent: 25 }, { label: '7d', percent: 40 }]);
-    expect(signalsOf(record).filter(signal => signal.kind === 'amount')[0].text).toBe('$24.34');
+    expect(rowOf(record)).toBe('Ollama | 25% 5h | 40% 7d | $24.34');
   });
 
   it('shows an Ollama Cloud account that has spent nothing as zero rather than as unreported', () => {
-    const signals = signalsOf({
+    expect(rowOf({
       kind: 'ollama',
       state: {
         usageProbe: {
@@ -152,12 +174,10 @@ describe('upstream signals by provider', () => {
           },
         },
       },
-    });
-    expect(signals).toHaveLength(1);
-    expect(signals[0].kind === 'amount' && signals[0].text).toBe('$0');
+    })).toBe('Ollama | $0');
   });
 
   it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {
-    expect(signalsOf({ kind: 'ollama', state: null })).toEqual([]);
+    expect(readoutOf({ kind: 'ollama', state: null })).toEqual({ plan: 'Ollama', signals: [] });
   });
 });

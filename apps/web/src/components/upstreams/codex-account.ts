@@ -13,6 +13,21 @@ import type {
 
 export type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
+// `chatgpt_plan_type` is an open string on the id_token, so a value this
+// dashboard has not seen is title-cased onto the subscription's own name rather
+// than dropped.
+const PLAN_NAMES: Record<string, string> = {
+  free: 'Free',
+  plus: 'Plus',
+  pro: 'Pro',
+  team: 'Team',
+  business: 'Business',
+  enterprise: 'Enterprise',
+};
+
+export const planLabel = (account: CodexRecord['config']['accounts'][number]): string | null =>
+  account.planType ? `ChatGPT ${PLAN_NAMES[account.planType] ?? account.planType}` : null;
+
 export interface QuotaWindow {
   key: 'primary' | 'secondary';
   percent: number;

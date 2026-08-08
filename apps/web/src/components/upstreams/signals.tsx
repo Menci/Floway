@@ -4,38 +4,41 @@
 // so an upstream with nothing to report contributes nothing and its row stays
 // one line high.
 
-import { findCredential, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
-import { latestCredits, latestQuotaEntry, quotaEntries } from './codex-account';
+import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
+import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, readBuckets, shownBuckets } from './copilot-quota';
 import { activityCostText, readActivityCost, readWindows } from './ollama-usage';
+import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
-import { dateTime } from '../../lib/format-time';
+import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { ProgressRing } from '../ui/progress-ring';
 
 const { Text, Tooltip } = fluentComponents;
 
-interface Meter {
-  kind: 'meter';
+// One signal is a reading and what the reading is of: a percentage of a window,
+// or an amount that stands alone. The reading leads, because a row of them is
+// scanned down the numbers.
+export interface UpstreamSignal {
   key: string;
-  label: string;
-  /** As the upstream reported it: an overage-permitted bucket runs past 100. */
-  percent: number;
+  /** A percentage this reading fills a ring with, or null for an amount. */
+  percent: number | null;
+  value: string;
+  label: string | null;
   detail: string;
 }
 
-interface Amount {
-  kind: 'amount';
-  key: string;
-  text: string;
-  detail: string;
+// What the upstream connects as: the subscription when it names one, and the
+// provider itself when it does not, so every row's second line opens with the
+// same kind of fact and no row is blank.
+export interface UpstreamReadout {
+  plan: string;
+  signals: UpstreamSignal[];
 }
-
-export type UpstreamSignal = Meter | Amount;
 
 // The tooltip carries what the row has no width for -- the window's own name,
 // when it resets, when the reading was taken -- as one line, because a Fluent
@@ -49,18 +52,24 @@ const meterDetail = (t: TFunction, label: string, percent: number, resetAt: stri
     observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
   ]);
 
+// As the upstream reported it: an overage-permitted bucket runs past 100, and
+// only the ring beside the number is clamped.
+const percentValue = (t: TFunction, percent: number): string =>
+  t('dashboard.upstreams.signals.percent', { percent: Math.round(percent) });
+
 const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const quota = copilotQuota(record);
   if (quota === null) return [];
-  // The bucket id is an open string GitHub owns, so it reaches the row as the
-  // name it arrived under rather than through a table this dashboard maintains.
+  // A seat's buckets all reset together, so the date says more in the row than
+  // the bucket's own name would; the name stays in the tooltip. The id is an
+  // open string GitHub owns and is never rewritten into a table of ours.
   return shownBuckets(readBuckets(quota))
     .filter(bucket => bucket.kind === 'metered')
     .map(bucket => ({
-      kind: 'meter' as const,
       key: bucket.id,
-      label: bucket.label,
       percent: bucket.usedPercent,
+      value: percentValue(t, bucket.usedPercent),
+      label: quota.reset_at == null ? null : t('dashboard.upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
       detail: meterDetail(t, bucket.label, bucket.usedPercent, quota.reset_at ?? null, quota.observed_at, locale),
     }));
 };
@@ -75,26 +84,28 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
       ? t(`dashboard.upstreams.signals.window.${item.key}`)
       : windowLengthLabel(item.windowMinutes);
     return {
-      kind: 'meter' as const,
       key: item.key,
-      label,
       percent: item.percent,
+      value: percentValue(t, item.percent),
+      label,
       detail: meterDetail(t, label, item.percent, item.resetAt, entry.observedAt, locale),
     };
   });
 
   if (credits?.credits_has_credits === false) {
     signals.push({
-      kind: 'amount',
       key: 'credits',
-      text: t('dashboard.upstreams.signals.noCredits'),
+      percent: null,
+      value: t('dashboard.upstreams.signals.noCredits'),
+      label: null,
       detail: t('dashboard.upstreams.signals.creditsDetail'),
     });
   } else if (credits?.credits_balance !== undefined) {
     signals.push({
-      kind: 'amount',
       key: 'credits',
-      text: t('dashboard.upstreams.signals.credits', { balance: credits.credits_balance }),
+      percent: null,
+      value: t('dashboard.upstreams.signals.credits', { balance: credits.credits_balance }),
+      label: null,
       detail: t('dashboard.upstreams.signals.creditsDetail'),
     });
   }
@@ -109,10 +120,10 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
     // length, so the model it covers is what tells the two apart.
     const label = row.key === 'sevenDaySonnet' ? `${length} Sonnet` : length;
     return {
-      kind: 'meter' as const,
       key: row.key,
-      label,
       percent: row.percent,
+      value: percentValue(t, row.percent),
+      label,
       detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
     };
   });
@@ -126,28 +137,29 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   const signals: UpstreamSignal[] = readWindows(observation.data).map(item => {
     const label = windowLengthLabel(item.minutes);
     return {
-      kind: 'meter' as const,
       key: item.key,
+      percent: item.percent,
+      value: percentValue(t, item.percent),
       label,
       // Ollama reports no reset instant for either window.
       detail: meterDetail(t, label, item.percent, null, observation.fetchedAt, locale),
-      percent: item.percent,
     };
   });
 
   const cost = readActivityCost(observation.data);
   if (cost !== null) {
     signals.push({
-      kind: 'amount',
       key: 'cost',
-      text: activityCostText(cost),
+      percent: null,
+      value: activityCostText(cost),
+      label: null,
       detail: t('dashboard.upstreams.signals.costDetail'),
     });
   }
   return signals;
 };
 
-export const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
   case 'custom':
@@ -160,24 +172,44 @@ export const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: st
   }
 };
 
+// The subscription an upstream serves on, where the upstream names one. Every
+// name is the vendor's own marketing name for the plan, assembled from the
+// fields the credential carries; an unrecognised value is forwarded rather than
+// dropped, so a plan introduced upstream reads as itself.
+const upstreamPlan = (record: UpstreamRecord): string | null => {
+  switch (record.kind) {
+  case 'custom':
+  case 'azure':
+  case 'copilot':
+  case 'ollama':
+    return null;
+  case 'codex': return codexPlanLabel(record.config.accounts[0]);
+  case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
+  }
+};
+
+export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamReadout => ({
+  plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
+  signals: upstreamSignals(record, t, locale, now),
+});
+
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
   // Codex drops a rate-limit window once it has expired, which is a change on
   // the wall clock rather than in the record.
   const now = useNow(WALL_CLOCK_REFRESH_MS);
-  const signals = upstreamSignals(record, t, locale, now);
-  if (signals.length === 0) return null;
+  const { plan, signals } = upstreamReadout(record, t, locale, now);
 
   return <div className="flex items-center gap-x-3 min-w-0">
+    <Text size={200} className="text-fui-fg2 flex-none" weight="semibold" wrap={false}>
+      {signals.length === 0 ? plan : t('dashboard.upstreams.signals.plan', { plan })}
+    </Text>
     {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
       <span className="winui-focus-rect inline-flex items-center gap-1 min-w-0" tabIndex={0}>
-        {signal.kind === 'meter' && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
-        <Text size={200} className="text-fui-fg2" truncate wrap={false}>
-          {signal.kind === 'meter'
-            ? t('dashboard.upstreams.signals.meter', { label: signal.label, percent: Math.round(signal.percent) })
-            : signal.text}
-        </Text>
+        {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
+        <Text size={200} className="text-fui-fg2" weight="medium" wrap={false}>{signal.value}</Text>
+        {signal.label !== null && <Text size={200} className="text-fui-fg3" truncate wrap={false}>{signal.label}</Text>}
       </span>
     </Tooltip>)}
   </div>;

@@ -419,7 +419,9 @@ const zhHansCN = {
           actions: '操作',
         },
         signals: {
-          meter: '{{label}} {{percent, number}}%',
+          plan: '{{plan}}：',
+          percent: '{{percent, number}}%',
+          until: '至 {{date}}',
           used: '{{label}}：已用 {{percent, number}}%',
           resets: '{{time}} 重置',
           observed: '观测于 {{time}}',

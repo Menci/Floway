@@ -16,6 +16,18 @@ export const subscriptionLabel = (
 ): string | null =>
   subscriptionType ? { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType] : null;
 
+// The subscription's own name. `rateLimitTier` is Anthropic's raw string and the
+// only place the Max multiplier appears, so the trailing multiple is lifted off
+// it and anything else in the string is left alone.
+export const planLabel = (
+  account: { rateLimitTier?: string | null; subscriptionType?: 'pro' | 'max' | 'team' | 'enterprise' | null },
+): string | null => {
+  const subscription = subscriptionLabel(account.subscriptionType);
+  if (subscription === null) return null;
+  const multiple = account.rateLimitTier?.match(/_(\d+x)$/)?.[1] ?? null;
+  return multiple === null ? `Claude ${subscription}` : `Claude ${subscription} ${multiple}`;
+};
+
 export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
