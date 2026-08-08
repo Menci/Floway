@@ -46,8 +46,15 @@ function Assert-SetupZedConfigDir {
 # and the operator re-runs this command after changing it upstream.
 function Get-SetupZedModels {
   $uri = "$SetupEndpoint/v1/models"
+  # PowerShell 6+ routes -Headers through HttpClient, which parses Authorization
+  # as a typed header and rejects a parameter holding `,` or `"` before the
+  # request leaves the host; 5.1's WebHeaderCollection does not, and has no such
+  # switch. An API key is an arbitrary string, so the validation has to be off
+  # wherever it exists — the Bash installer passes the same key to curl verbatim.
+  $request = @{ Uri = $uri; Method = 'Get'; Headers = @{ Authorization = "Bearer $SetupApiKey" }; TimeoutSec = 60 }
+  if ($PSVersionTable.PSVersion.Major -ge 6) { $request.SkipHeaderValidation = $true }
   try {
-    $response = Invoke-RestMethod -Uri $uri -Method Get -Headers @{ Authorization = "Bearer $SetupApiKey" } -TimeoutSec 60
+    $response = Invoke-RestMethod @request
   } catch {
     # The underlying message distinguishes a revoked key from a DNS failure;
     # Main redacts the credential before anything is printed.

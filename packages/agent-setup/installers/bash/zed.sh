@@ -18,7 +18,7 @@ ZED_SETTINGS_MERGE_PROGRAM='
   else . end
   | .language_models.anthropic_compatible[$providerName] = {
       "api_url": $apiUrl,
-      "available_models": $models,
+      "available_models": $models[0],
     }
 '
 
@@ -129,16 +129,17 @@ zed_rollback_settings() {
 # after a backup exists — the write is then the only step that can need rollback
 # — and so the credential is never stored for a provider that is not registered.
 zed_project_models() {
-  if ! ZED_MODELS=$("$JQ" -c "$ZED_MODELS_PROGRAM" "$ZED_MODELS_FILE"); then
+  ZED_MODELS_PROJECTED="$SETUP_TMPDIR/zed-available-models.json"
+  if ! "$JQ" -c "$ZED_MODELS_PROGRAM" "$ZED_MODELS_FILE" > "$ZED_MODELS_PROJECTED"; then
     out_error 'failed to project the model catalog into Zed model entries.'
     return 1
   fi
-  if [ "$ZED_MODELS" = '[]' ]; then
-    out_error 'the gateway advertises no chat models; nothing to configure.'
+  if ! ZED_MODEL_COUNT=$("$JQ" 'length' "$ZED_MODELS_PROJECTED"); then
+    out_error 'failed to count the projected Zed model entries.'
     return 1
   fi
-  if ! ZED_MODEL_COUNT=$(printf '%s' "$ZED_MODELS" | "$JQ" 'length'); then
-    out_error 'failed to count the projected Zed model entries.'
+  if [ "$ZED_MODEL_COUNT" -eq 0 ]; then
+    out_error 'the gateway advertises no chat models; nothing to configure.'
     return 1
   fi
 }
@@ -170,10 +171,12 @@ zed_write_settings() {
   fi
 
   _zw_stage="$ZED_SETTINGS_PATH.floway-stage.$$"
+  # The projection is read from disk rather than passed as an argument: a large
+  # catalog would exceed the per-argument size limit, and it is already a file.
   if ! printf '%s' "$_zw_base" | "$JQ" \
       --arg providerName "$SETUP_ZED_PROVIDER_NAME" \
       --arg apiUrl "$(zed_api_url)" \
-      --argjson models "$ZED_MODELS" \
+      --slurpfile models "$ZED_MODELS_PROJECTED" \
       "$ZED_SETTINGS_MERGE_PROGRAM" > "$_zw_stage"; then
     out_error 'failed to construct updated Zed global settings.'
     rm -f "$_zw_stage"

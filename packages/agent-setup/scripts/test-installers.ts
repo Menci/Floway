@@ -514,24 +514,27 @@ const placeFakeCodex = (dir: string): void => {
 };
 
 const zedCredentialRecord = (workspace: Workspace): string => join(workspace.root, 'credential-calls.txt');
+const zedCredentialSecret = (workspace: Workspace): string => join(workspace.root, 'credential-secret.bin');
 
 // Stand-ins for the OS credential stores, which no test host can be asked to
-// mutate. Each records its own argument vector and the secret it received on
-// stdin, so the assertions see exactly what the installer asked the real tool
-// to do. `binDir` precedes SHIM_BIN on PATH, and SHIM_BIN carries neither name,
-// so these are what `command -v` and a bare invocation resolve to.
+// mutate. Each records its own argument vector, and the secret-tool shim writes
+// what it received on stdin to a sibling file, so the assertions see exactly
+// what the installer asked the real tool to do. `binDir` precedes SHIM_BIN on
+// PATH, and SHIM_BIN carries neither name, so these are what `command -v` and a
+// bare invocation resolve to.
+//
+// The secret goes to its own file rather than into the record: the record is
+// newline-delimited, and `cat` is the only byte-preserving tool on the
+// harness's hermetic PATH — a pipeline through `od` or `xxd` would silently
+// produce nothing there.
 const placeFakeCredentialTools = (workspace: Workspace): void => {
   const record = zedCredentialRecord(workspace);
   writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
 printf 'security\\t%s\\n' "$*" >> ${JSON.stringify(record)}
 `, { mode: 0o755 });
   writeFileSync(join(workspace.binDir, 'secret-tool'), `#!/bin/bash
-secret=""
-# Hex, so the record stays newline-delimited while remaining byte-exact:
-# command substitution would eat a trailing newline, which is precisely the
-# defect a shell that pipes instead of writing introduces.
-case "$1" in store) secret=$(cat | od -An -v -tx1 | tr -d ' \\n') ;; esac
-printf 'secret-tool\\t%s\\t%s\\n' "$*" "$secret" >> ${JSON.stringify(record)}
+case "$1" in store) cat > ${JSON.stringify(zedCredentialSecret(workspace))} ;; esac
+printf 'secret-tool\\t%s\\n' "$*" >> ${JSON.stringify(record)}
 `, { mode: 0o755 });
 };
 
@@ -2545,7 +2548,7 @@ test('zed', 'stores the credential against the same api_url the settings name', 
 
   const calls = readCredentialCalls(ws);
   t.equal(calls.length, 1, `exactly one credential tool call:\n${calls.join('\n')}`);
-  const [tool, argv, stdin] = calls[0]!.split('\t');
+  const [tool, argv] = calls[0]!.split('\t');
 
   const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
   const announced = settings.language_models.anthropic_compatible.Floway!.api_url;
@@ -2560,7 +2563,7 @@ test('zed', 'stores the credential against the same api_url the settings name', 
     // Byte-exact: a shell that pipes rather than writes appends a newline, and
     // secret-tool stores every byte it reads, so the key would come back
     // malformed and Zed would send a broken Authorization header.
-    t.equal(stdin, Buffer.from(SENTINEL_KEY, 'utf8').toString('hex'), 'exactly the key reaches secret-tool on stdin, with no trailing newline');
+    t.equal(readFileSync(zedCredentialSecret(ws), 'utf8'), SENTINEL_KEY, 'exactly the key reaches secret-tool on stdin, with no trailing newline');
     t.ok(argv!.includes('--label=zed-github-account'), 'the label Zed matches on read is written');
     t.ok(!argv!.includes(SENTINEL_KEY), 'the key is absent from argv');
   } else {
@@ -2658,12 +2661,12 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
 
   const calls = readCredentialCalls(ws);
   t.equal(calls.length, 1, 'the credential is stored once');
-  const [tool, , stdin] = calls[0]!.split('\t');
+  const [tool] = calls[0]!.split('\t');
   if (tool === 'secret-tool') {
     // PowerShell terminates a piped object with a newline and secret-tool
     // stores every byte it reads, so a pipeline here would hand Zed a key that
     // makes every Authorization header malformed.
-    t.equal(stdin, Buffer.from(SENTINEL_KEY, 'utf8').toString('hex'), 'exactly the key reaches secret-tool, with no trailing newline');
+    t.equal(readFileSync(zedCredentialSecret(ws), 'utf8'), SENTINEL_KEY, 'exactly the key reaches secret-tool, with no trailing newline');
   }
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
