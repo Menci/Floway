@@ -834,10 +834,8 @@ const zhHansCN = {
             load: '加载',
             refresh: '刷新',
             usedPercent: '已用 {{percent, number}}%',
-            requests_one: '{{count, number}} 次请求',
-            requests_other: '{{count, number}} 次请求',
             window: {
-              session: '会话窗口',
+              session: '5 小时窗口',
               weekly: '每周窗口',
             },
             activityCost: '活动费用 ${{cost}}',

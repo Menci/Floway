@@ -875,10 +875,11 @@ const en = {
             load: 'Load',
             refresh: 'Refresh',
             usedPercent: '{{percent, number}}% used',
-            requests_one: '{{count, number}} request',
-            requests_other: '{{count, number}} requests',
+            // Ollama states the session allowance resets every five hours and
+            // the other weekly; the endpoint reports neither the length nor a
+            // reset time. https://ollama.com/pricing
             window: {
-              session: 'Session window',
+              session: '5-hour window',
               weekly: 'Weekly window',
             },
             activityCost: 'Activity cost ${{cost}}',

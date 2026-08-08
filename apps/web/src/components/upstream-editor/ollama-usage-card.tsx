@@ -39,15 +39,9 @@ export const isOllamaCloudBaseUrl = (baseUrl: string): boolean => {
   }
 };
 
-interface ModelRequests {
-  model: string;
-  requests: number;
-}
-
 interface UsageWindow {
   key: 'session' | 'weekly';
   percent: number;
-  models: ModelRequests[];
 }
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> =>
@@ -56,19 +50,15 @@ const isRecordValue = (value: unknown): value is Record<string, unknown> =>
 // `usage` is a 0..1 fraction of the plan's allowance for that window. It is
 // kept to a decimal place on the way out: an early-in-the-window reading like
 // 0.046 rounds to a whole "5%" that reads as coarser than the upstream is.
+//
+// The endpoint also reports a per-model request count per window. It is not
+// shown: Ollama meters the allowance by model and by input, cached-input, and
+// output tokens, so a request count is a different quantity from the
+// percentage beside it and reads as an explanation of it.
+// https://ollama.com/pricing
 const readWindow = (key: UsageWindow['key'], value: unknown): UsageWindow | null => {
   if (!isRecordValue(value) || typeof value.usage !== 'number' || !Number.isFinite(value.usage)) return null;
-  return { key, percent: Math.round(value.usage * 1000) / 10, models: readModels(value.models) };
-};
-
-const readModels = (value: unknown): ModelRequests[] => {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((row): ModelRequests[] => {
-    if (!isRecordValue(row) || typeof row.name !== 'string') return [];
-    const requests = row.request_count;
-    if (typeof requests !== 'number' || !Number.isFinite(requests)) return [];
-    return [{ model: row.name, requests }];
-  }).sort((left, right) => right.requests - left.requests);
+  return { key, percent: Math.round(value.usage * 1000) / 10 };
 };
 
 const readWindows = (data: unknown): UsageWindow[] => {
@@ -136,14 +126,6 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
         </Text>
       </div>
       <ProgressBar color={quotaBarColor(usageWindow.percent)} max={100} thickness="large" value={clampPercent(usageWindow.percent) ?? undefined} />
-      {usageWindow.models.length > 0 && <div className="grid gap-0.5 pt-1">
-        {usageWindow.models.map(row => <div className="flex items-baseline justify-between gap-3" key={row.model}>
-          <Text size={200} className="text-fui-fg3 font-mono mono-size-xs">{row.model}</Text>
-          <Text size={200} className="text-fui-fg3">
-            {t('dashboard.upstreamEditor.ollama.usage.requests', { count: row.requests })}
-          </Text>
-        </div>)}
-      </div>}
     </div>)}
 
     {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
