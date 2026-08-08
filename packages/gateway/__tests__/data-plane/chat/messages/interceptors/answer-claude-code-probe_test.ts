@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import { answerClaudeCodeProbe, isClaudeCodeProbe } from '../../../../../src/data-plane/chat/messages/interceptors/answer-claude-code-probe.ts';
+import { answerClaudeCodeProbe } from '../../../../../src/data-plane/chat/messages/interceptors/answer-claude-code-probe.ts';
 import type { MessagesInvocation } from '../../../../../src/data-plane/chat/messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -10,10 +10,13 @@ import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } 
 
 const stubCtx = mockChatGatewayCtx();
 
-// The 2.1.226 `/model` probe, byte for byte: one user turn, one ephemeral text
-// block, `max_tokens: 1`, no tools, and the SDK's `claude-cli` User-Agent.
+// The SDK's User-Agent on every Claude Code request.
 const PROBE_USER_AGENT = 'claude-cli/2.1.226 (external, cli)';
 
+// The shape of the 2.1.226 `/model` validation probe: one user turn holding
+// one ephemeral text block, `max_tokens: 1`, no tools. The real body also
+// carries the CLI's system-prompt array and a `betas` list, neither of which
+// the predicate looks at.
 const probePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
   model: 'test-model',
   max_tokens: 1,
@@ -37,6 +40,16 @@ const runProbe = async (input: MessagesInvocation) => {
   const run = vi.fn(passthrough);
   const result = await answerClaudeCodeProbe(input, stubCtx, run);
   return { result, run };
+};
+
+const assertForwarded = async (input: MessagesInvocation, message: string) => {
+  const { run } = await runProbe(input);
+  assertEquals(run.mock.calls.length, 1, message);
+};
+
+const assertAnswered = async (input: MessagesInvocation, message: string) => {
+  const { run } = await runProbe(input);
+  assertEquals(run.mock.calls.length, 0, message);
 };
 
 test('answers the /model validation probe without dialing the upstream', async () => {
@@ -63,54 +76,69 @@ test('reports no performance context so the turn contributes no latency sample',
   assertEquals(result.finalMetadata, undefined);
 });
 
-test('answers every fixed side-query prompt, in block and bare-string form', async () => {
-  for (const prompt of ['Hi', 'hello', 'quota', 'test', '.']) {
-    assert(isClaudeCodeProbe(probePayload({ messages: [{ role: 'user', content: prompt }] }), new Headers({ 'user-agent': PROBE_USER_AGENT })), `bare string: ${prompt}`);
-    assert(isClaudeCodeProbe(probePayload({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] }), new Headers({ 'user-agent': PROBE_USER_AGENT })), `text block: ${prompt}`);
+test('answers every fixed probe prompt, in block and bare-string form', async () => {
+  for (const prompt of ['Hi', 'hello', 'test']) {
+    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
+    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
   }
 });
 
-test('forwards a one-token request from a client that is not Claude Code', async () => {
-  const { run } = await runProbe(invocation(probePayload(), 'python-httpx/0.28.1'));
-  assertEquals(run.mock.calls.length, 1);
+test('forwards the probe prompts the gateway cannot answer truthfully', async () => {
+  // `quota` reads rate-limit response headers a synthesized turn cannot carry;
+  // `.` only ever reaches a Bedrock / Vertex / Mantle base URL.
+  for (const prompt of ['quota', '.']) {
+    await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `prompt: ${prompt}`);
+  }
+});
 
-  const { run: unidentified } = await runProbe(invocation(probePayload(), null));
-  assertEquals(unidentified.mock.calls.length, 1);
+test('forwards a probe prompt whose casing the CLI has never been observed to send', async () => {
+  await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: 'HI' }] })), 'uppercased');
+});
+
+test('forwards a one-token request from a client that is not Claude Code', async () => {
+  await assertForwarded(invocation(probePayload(), 'python-httpx/0.28.1'), 'other client');
+  await assertForwarded(invocation(probePayload(), null), 'no user-agent');
 });
 
 test('forwards a Claude Code turn whose output cap is not one token', async () => {
-  const { run } = await runProbe(invocation(probePayload({ max_tokens: 32_000 })));
-  assertEquals(run.mock.calls.length, 1);
+  await assertForwarded(invocation(probePayload({ max_tokens: 32_000 })), 'max_tokens 32000');
 });
 
 test('forwards a Claude Code turn that carries the session tools', async () => {
-  const { run } = await runProbe(invocation(probePayload({
+  await assertForwarded(invocation(probePayload({
     tools: [{ name: 'Bash', input_schema: { type: 'object' } }],
-  })));
-  assertEquals(run.mock.calls.length, 1);
+  })), 'tools present');
 });
 
 test('forwards a conversation whose sole turn is not one of the fixed prompts', async () => {
-  const { run } = await runProbe(invocation(probePayload({
+  await assertForwarded(invocation(probePayload({
     messages: [{ role: 'user', content: 'Hi, can you explain this file?' }],
-  })));
-  assertEquals(run.mock.calls.length, 1);
+  })), 'real question');
 });
 
 test('forwards a multi-turn conversation that happens to end on a probe prompt', async () => {
-  const { run } = await runProbe(invocation(probePayload({
+  await assertForwarded(invocation(probePayload({
     messages: [
       { role: 'user', content: 'Hi' },
       { role: 'assistant', content: 'Hello!' },
       { role: 'user', content: 'Hi' },
     ],
-  })));
-  assertEquals(run.mock.calls.length, 1);
+  })), 'three turns');
+});
+
+test('forwards a sole turn that carries more than one block', async () => {
+  await assertForwarded(invocation(probePayload({
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi' }, { type: 'text', text: 'and explain this file' }] }],
+  })), 'two text blocks');
+});
+
+test('forwards a sole turn that is not a user turn', async () => {
+  await assertForwarded(invocation(probePayload({ messages: [{ role: 'assistant', content: 'Hi' }] })), 'assistant role');
+  await assertForwarded(invocation(probePayload({ messages: [{ role: 'system', content: 'Hi' }] })), 'system role');
 });
 
 test('forwards a turn whose sole block is not text', async () => {
-  const { run } = await runProbe(invocation(probePayload({
+  await assertForwarded(invocation(probePayload({
     messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }] }],
-  })));
-  assertEquals(run.mock.calls.length, 1);
+  })), 'image block');
 });

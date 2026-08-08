@@ -14,10 +14,10 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 // compatibility entry therefore acts only when Messages is the final target.
 //
 //   - answerClaudeCodeProbe: registered ahead of everything else because it
-//     replaces the turn rather than shaping it — an intercepted probe must not
-//     reach the web-search shim's intercept loop, and no payload transform
-//     downstream of it can matter to a turn that never dials. Unconditional:
-//     the probe is a property of the inbound request, not of the candidate.
+//     replaces the turn rather than shaping it — no payload transform below it
+//     can matter to a turn that never dials. Unconditional: whether a request
+//     is one of Claude Code's one-token probes is a property of the request,
+//     not of the candidate.
 //   - withMessagesWebSearchShim: registered next so its request preparation,
 //     replay rewrite, and intercept loop wrap the rest of the generation chain.
 //     Unconditional for translated targets (Responses / Chat Completions cannot
