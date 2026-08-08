@@ -1,11 +1,14 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
 import { azureFetchAudioTranscriptions, azureFetchChatCompletions, azureFetchCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchMessages, azureFetchMessagesCountTokens, azureFetchResponses, azureFetchResponsesCompact } from './fetch.ts';
+import { AZURE_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
+import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -64,28 +67,39 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
-      switch (action) {
-      case 'generate': {
-        const stream = await callStreaming(azureFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
-      }
-      case 'compact': {
-        const upstreamModelId = upstreamModelIdOf(model);
-        const response = await azureFetchResponsesCompact(
-          azure.config,
-          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-        );
-        return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: upstreamModelId }
-          : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
-      }
-      default:
-        action satisfies never;
-        throw new Error(`Unhandled ResponsesAction: ${action as string}`);
-      }
+      const ctx: ResponsesBoundaryCtx = {
+        payload: { ...body, model: model.id },
+        headers: new Headers(opts.headers),
+        model,
+        action,
+      };
+      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
+        ctx, {}, AZURE_RESPONSES_BOUNDARY, async () => {
+          const { model: _ignored, ...wireBody } = ctx.payload;
+          switch (ctx.action) {
+          case 'generate': {
+            const stream = await callStreaming(azureFetchResponses, model, wireBody, signal, ctx.headers, parseResponsesStream, opts);
+            return stream.ok
+              ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+              : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+          }
+          case 'compact': {
+            const upstreamModelId = upstreamModelIdOf(model);
+            const response = await azureFetchResponsesCompact(
+              azure.config,
+              { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(wireBody), model: upstreamModelId }), signal },
+              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+            );
+            return response.ok
+              ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: upstreamModelId }
+              : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
+          }
+          default:
+            ctx.action satisfies never;
+            throw new Error(`Unhandled ResponsesAction: ${ctx.action as string}`);
+          }
+        },
+      );
     },
     callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), opts),

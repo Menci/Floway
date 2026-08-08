@@ -683,8 +683,7 @@ export const WEB_SEARCH_HOSTED_TYPE_NAMES = [
 export type ResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
-  | 'tool_search'
-  | 'namespace';
+  | 'tool_search';
 
 export interface ResponsesHostedTool {
   type: ResponsesHostedToolType;
@@ -726,6 +725,18 @@ export interface ResponsesCustomTool {
   format?: Record<string, unknown>;
   allowed_callers?: ResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
+}
+
+// Namespace descriptions remain required, but OpenAI deliberately permits an
+// empty string. Provider adapters whose upstreams still enforce the former
+// minLength constraint must own that compatibility rewrite rather than
+// narrowing this canonical contract.
+// https://github.com/openai/openai-openapi/commit/466c74a42f51c02f1927bc666815251dc53845dc
+export interface ResponsesNamespaceTool {
+  type: 'namespace';
+  name: string;
+  description: string;
+  tools: Array<ResponsesFunctionTool | ResponsesCustomTool>;
 }
 
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8110-L8115
@@ -795,6 +806,7 @@ export type ResponsesTool =
   | ResponsesFunctionTool
   | ResponsesHostedTool
   | ResponsesCustomTool
+  | ResponsesNamespaceTool
   | ResponsesProgrammaticTool
   | ResponsesMcpTool
   | ResponsesCodeInterpreterTool
@@ -805,6 +817,27 @@ export type ResponsesTool =
   | ResponsesShellTool
   | ResponsesApplyPatchTool;
 
+export const mapResponsesTools = (
+  payload: CanonicalResponsesPayload,
+  transform: (tool: ResponsesTool) => ResponsesTool,
+): CanonicalResponsesPayload => {
+  const mapTools = (tools: ResponsesTool[]): ResponsesTool[] => tools.map(transform);
+  const input = payload.input.map(item => {
+    switch (item.type) {
+    case 'additional_tools':
+    case 'tool_search_output':
+      return { ...item, tools: mapTools(item.tools) };
+    default:
+      return item;
+    }
+  });
+  return {
+    ...payload,
+    input,
+    ...(Array.isArray(payload.tools) ? { tools: mapTools(payload.tools) } : {}),
+  };
+};
+
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8250-L8400
 export type ResponsesToolChoice =
   | 'auto'
@@ -812,6 +845,7 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
+  | { type: 'namespace'; name: string }
   | { type: 'mcp'; server_label: string; name?: string | null }
   | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
   | { type: 'shell' }
