@@ -7,6 +7,7 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
+import type { ZedModel } from './models.ts';
 import type { ScriptAgent } from './script-assets.ts';
 
 export interface RenderPrefixInput {
@@ -14,6 +15,9 @@ export interface RenderPrefixInput {
   apiKey: string;
   apiKeyName: string;
   configuration: AgentSetupConfiguration;
+  // The catalog projected for the editor agents, which snapshot it at setup
+  // time. Absent for the CLI agents, which discover models themselves.
+  editorModels?: readonly ZedModel[];
 }
 
 const assertNoNul = (value: string): void => {
@@ -24,6 +28,25 @@ const assertNoNul = (value: string): void => {
 // terminal escape into the metadata assignment. The value still flows through a
 // literal encoder afterward, which is where a NUL is rejected.
 const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u007f]/g, ' ');
+
+// The projected catalog, serialized once for whichever shell is rendering it.
+// Compact rather than indented: this is machine input the installer hands
+// straight to its merge, and every byte rides in a credential-bearing response.
+// An editor agent with no projection is a wiring mistake in the host, not an
+// empty catalog — the route refuses to serve a script it cannot fill.
+const editorModelsJson = ({ agent, editorModels }: RenderPrefixInput): string => {
+  if (editorModels === undefined) throw new Error(`no projected models supplied for ${agent}`);
+  return JSON.stringify(editorModels);
+};
+
+// A script that reports why it cannot run and exits non-zero. The editor agents
+// need the catalog rendered into them, so a listing failure has to be answered
+// with something the operator can read: an opaque 404 would look like a broken
+// setup link, and a 500 like a gateway fault. The detail stays in the server
+// log — this response is unauthenticated apart from the token in its URL.
+export const renderScriptFailure = (language: 'sh' | 'ps1', message: string): string => (language === 'sh'
+  ? `printf '%s\\n' ${shellLiteral(message)} >&2\nexit 1\n`
+  : `Write-Error ${powerShellLiteral(message)}\nexit 1\n`);
 
 // --- POSIX shell ---
 
@@ -64,7 +87,10 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
   } else if (agent === 'zed') {
-    assignments.push(['SETUP_ZED_PROVIDER_NAME', configuration.zed.providerName]);
+    assignments.push(
+      ['SETUP_ZED_PROVIDER_NAME', configuration.zed.providerName],
+      ['SETUP_ZED_MODELS', editorModelsJson(input)],
+    );
   } else {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
@@ -110,7 +136,10 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
   } else if (agent === 'zed') {
-    assignments.push(['$SetupZedProviderName', powerShellLiteral(configuration.zed.providerName)]);
+    assignments.push(
+      ['$SetupZedProviderName', powerShellLiteral(configuration.zed.providerName)],
+      ['$SetupZedModels', powerShellLiteral(editorModelsJson(input))],
+    );
   } else {
     assignments.push(
       ['$SetupCodexModel', powerShellOptional(configuration.codex.model)],

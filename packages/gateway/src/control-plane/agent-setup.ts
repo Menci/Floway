@@ -7,8 +7,12 @@
 // The repository is threaded through a lazy adapter so the singleton repo is
 // resolved per request (via getRepo()), not at module-load time.
 
-import { type AuthVars, userFromContext } from '../middleware/auth.ts';
+import { loadModels } from '../data-plane/models/load.ts';
+import { createPerRequestFetcher } from '../dial/per-request.ts';
+import { type AuthVars, intersectUpstreamIds, userFromContext } from '../middleware/auth.ts';
 import { getRepo } from '../repo/index.ts';
+import { backgroundSchedulerFromContext } from '../runtime/background.ts';
+import { getRuntimeLocation } from '../runtime/runtime-info.ts';
 import {
   type AgentSetupRepository,
   createAgentSetupControlRoutes,
@@ -33,6 +37,16 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   resolveApiKey: async (userId, apiKeyId) => {
     const key = await getRepo().apiKeys.getById(apiKeyId);
     return key?.userId === userId ? { name: key.name, secret: key.key } : null;
+  },
+  // The same catalog /v1/models serves this key, under the same upstream
+  // scope, so a setup script never advertises a model the key cannot reach.
+  listModels: async (c, userId, apiKeyId) => {
+    const [key, user] = await Promise.all([getRepo().apiKeys.getById(apiKeyId), getRepo().users.getById(userId)]);
+    if (key?.userId !== userId || user === null) return [];
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
+    const upstreamIds = intersectUpstreamIds(user.upstreamIds ?? null, key.upstreamIds ?? null);
+    const catalog = await loadModels(upstreamIds, fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
+    return catalog.data;
   },
 });
 

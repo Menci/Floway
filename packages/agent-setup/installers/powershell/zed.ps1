@@ -42,79 +42,12 @@ function Assert-SetupZedConfigDir {
 }
 
 # Zed's `anthropic_compatible` provider has no model-discovery path — its
-# `available_models` is a required array — so the catalog is snapshotted here
-# and the operator re-runs this command after changing it upstream.
+# `available_models` is a required array — so the gateway projects the catalog
+# and embeds it in this script. Decoding it is the only shaping left here: one
+# projection on the gateway cannot disagree with the Bash half the way two
+# hand-written ones did.
 function Get-SetupZedModels {
-  $uri = "$SetupEndpoint/v1/models"
-  # PowerShell 6+ routes -Headers through HttpClient, which parses Authorization
-  # as a typed header and rejects a parameter holding `,` or `"` before the
-  # request leaves the host; 5.1's WebHeaderCollection does not, and has no such
-  # switch. An API key is an arbitrary string, so the validation has to be off
-  # wherever it exists — the Bash installer passes the same key to curl verbatim.
-  $request = @{ Uri = $uri; Method = 'Get'; Headers = @{ Authorization = "Bearer $SetupApiKey" }; TimeoutSec = 60 }
-  if ($PSVersionTable.PSVersion.Major -ge 6) { $request.SkipHeaderValidation = $true }
-  try {
-    $response = Invoke-RestMethod @request
-  } catch {
-    # The underlying message distinguishes a revoked key from a DNS failure;
-    # Main redacts the credential before anything is printed.
-    Stop-Setup "could not fetch the model catalog from ${uri}: $(Protect-SetupSecret ([string]$_.Exception.Message))"
-  }
-
-  # Chat models only, keyed on `kind` rather than on `endpoints`: the endpoint
-  # map describes the upstream wire surface, and translation lets any chat model
-  # serve a Messages request regardless of which key it advertises.
-  $models = @()
-  foreach ($model in $response.data) {
-    if ($model.kind -cne 'chat') { continue }
-
-    # Compared against $null rather than tested for truthiness so a catalog
-    # value of 0 stays 0, matching jq, where only null and false are falsy.
-    $contextWindow = $model.limits.max_context_window_tokens
-    if ($null -eq $contextWindow) { $contextWindow = $model.limits.max_prompt_tokens }
-    if ($null -eq $contextWindow) { $contextWindow = 200000 }
-
-    $inputModalities = @($model.chat.modalities.input)
-    # `tools` is always true — a model that cannot call tools is not one anyone
-    # would route here. `prompt_caching` is on because Zed defaults it off,
-    # which suppresses cache_control breakpoints entirely; enabled, it sends
-    # explicit per-message breakpoints marking where the stable prefix ends.
-    $entry = [ordered]@{
-      name = $model.id
-      display_name = $model.display_name
-      max_tokens = $contextWindow
-      capabilities = [ordered]@{
-        tools = $true
-        images = ($inputModalities -ccontains 'image')
-        prompt_caching = $true
-      }
-    }
-    if ($null -ne $model.limits.max_output_tokens) { $entry.max_output_tokens = $model.limits.max_output_tokens }
-
-    $reasoning = $model.chat.reasoning
-    if ($reasoning) {
-      if ($reasoning.adaptive) {
-        $entry.mode = [ordered]@{ type = 'adaptive' }
-      } else {
-        # Thinking mode carries a budget or it is not written at all: Zed
-        # serializes `Thinking::Enabled.budget_tokens` with no
-        # skip_serializing_if, so a mode without one puts `"budget_tokens":
-        # null` on the Messages request and every call 400s. The floor is
-        # preferred over the ceiling because Zed sends this value verbatim on
-        # every request and Anthropic requires it below max_tokens. A model
-        # whose catalog states no budget is left in Default mode, which the
-        # picker still offers.
-        # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
-        $budget = $reasoning.budget_tokens.min
-        if ($null -eq $budget) { $budget = $reasoning.budget_tokens.max }
-        if ($null -ne $budget) {
-          $entry.mode = [ordered]@{ type = 'thinking'; budget_tokens = $budget }
-        }
-      }
-    }
-    $models += [PSCustomObject]$entry
-  }
-
+  try { $models = @($SetupZedModels | ConvertFrom-Json) } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
   if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
   $script:ZedModels = $models
 }

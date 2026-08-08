@@ -107,67 +107,8 @@ export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'co
   buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
     .map(option => ({ value: option.value, label: option.publicModelId }));
 
-// One entry of Zed's `available_models`. `name` and `max_tokens` are required
-// by Zed; `capabilities` is `#[serde(default)]` but its three booleans carry no
-// per-field default, so a partial object fails the whole provider.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L49-L87
-export interface AgentSetupZedModel {
-  name: string;
-  display_name: string;
-  max_tokens: number;
-  max_output_tokens?: number;
-  capabilities: { tools: boolean; images: boolean; prompt_caching: boolean };
-  mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens: number };
-}
-
-// Zed requires `max_tokens` and does no token counting of its own, so a model
-// whose catalog states no window still needs a number. This is the window Zed's
-// own Anthropic-compatible provider assumes for an unknown model.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
-const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
-
-// Thinking mode carries a budget or is not written at all: Zed serializes
-// `Thinking::Enabled.budget_tokens` with no skip_serializing_if, so a mode
-// without one puts `"budget_tokens": null` on the Messages request and every
-// call 400s. The floor is preferred over the ceiling because Zed sends the
-// value verbatim on every request and Anthropic requires it below max_tokens.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
-const zedThinkingMode = (reasoning: NonNullable<ControlPlaneModel['chat']>['reasoning']): AgentSetupZedModel['mode'] => {
-  if (reasoning === undefined) return undefined;
-  if (reasoning.adaptive === true) return { type: 'adaptive' };
-  const budget = reasoning.budget_tokens?.min ?? reasoning.budget_tokens?.max;
-  return budget === undefined ? undefined : { type: 'thinking', budget_tokens: budget };
-};
-
-// Selected by `kind`, not by `endpoints`: the endpoint map is the upstream wire
-// surface, and translation lets any chat model serve a Messages request. Mirror
-// of the installer's jq projection — both write the same document, so this
-// reads the catalog the installer sees: the dashboard asks for unlisted rows to
-// populate its alias combobox, and `/v1/models` never serves them.
-export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): AgentSetupZedModel[] => {
-  const entries: AgentSetupZedModel[] = [];
-  for (const model of models) {
-    if (model.kind !== 'chat' || model.unlisted === true) continue;
-    const mode = zedThinkingMode(model.chat?.reasoning);
-    entries.push({
-      name: model.id,
-      display_name: model.display_name,
-      max_tokens: model.limits.max_context_window_tokens
-        ?? model.limits.max_prompt_tokens
-        ?? ZED_FALLBACK_CONTEXT_TOKENS,
-      capabilities: {
-        // A chat model that cannot call tools is not one anyone routes here.
-        tools: true,
-        images: model.chat?.modalities?.input.includes('image') ?? false,
-        // Zed defaults this off, which suppresses cache_control breakpoints
-        // entirely; on, it marks where the stable prefix ends.
-        prompt_caching: true,
-      },
-      // Ordered after capabilities to match the installers byte for byte, so a
-      // pasted snippet diffs clean against what a setup run wrote.
-      ...(model.limits.max_output_tokens == null ? {} : { max_output_tokens: model.limits.max_output_tokens }),
-      ...(mode === undefined ? {} : { mode }),
-    });
-  }
-  return entries;
-};
+// The projection itself belongs to the gateway: it embeds the result in the
+// setup script, so a preview built from a second implementation could show a
+// document a setup run would never write. The dashboard renders exactly what
+// the script carries.
+export { projectZedModels, type ZedModel } from '@floway-dev/agent-setup/models';

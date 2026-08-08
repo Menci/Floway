@@ -1,6 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
-import type { AgentSetupZedModel } from './agent-setup-models';
+import type { ZedModel } from './agent-setup-models';
 import type { api } from '../../api/client';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
@@ -149,7 +149,7 @@ export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfigu
 export const buildAgentZedSnippet = (
   origin: string,
   config: AgentSetupConfiguration['zed'],
-  models: readonly AgentSetupZedModel[],
+  models: readonly ZedModel[],
 ) => JSON.stringify({
   language_models: {
     anthropic_compatible: {

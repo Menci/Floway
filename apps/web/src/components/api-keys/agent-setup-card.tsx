@@ -13,7 +13,7 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { buildAgentZedModels, modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, projectZedModels, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -177,7 +177,7 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
   if (agent === 'zed') {
-    const zedModels = buildAgentZedModels(models);
+    const zedModels = projectZedModels(models);
     // The installer refuses this catalog rather than write a provider with no
     // models, so the panel must not hand the operator a document to paste that
     // would leave Zed with an unusable entry and no error.

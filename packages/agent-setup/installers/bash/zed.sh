@@ -61,87 +61,31 @@ zed_require_config_dir() {
 }
 
 # Zed's `anthropic_compatible` provider has no model-discovery path — its
-# `available_models` is a required array — so the catalog is snapshotted here
-# and the operator re-runs this command after changing it upstream.
+# `available_models` is a required array — so the gateway projects the catalog
+# and embeds it in this script. Written to a file rather than passed as a jq
+# argument: a large catalog would exceed the per-argument size limit, and
+# --slurpfile reads it back as $models[0].
 #
-# The key rides on argv. curl's config-file forms both corrupt it: the quoted
-# form parses `\` escapes and terminates at `"`, and the unquoted form is
-# dropped outright for containing whitespace. An API key is an arbitrary string,
-# so a header built either way is silently wrong for keys that contain those
-# characters, which is worse than the argv exposure it would avoid.
-zed_fetch_models() {
-  _zfm_body="$SETUP_TMPDIR/zed-models.json"
-  if ! curl -fsSL --connect-timeout 10 --max-time 60 \
-      -H "Authorization: Bearer $SETUP_API_KEY" \
-      -o "$_zfm_body" "$SETUP_ENDPOINT/v1/models"; then
-    out_error "could not fetch the model catalog from $SETUP_ENDPOINT/v1/models"
-    return 1
-  fi
-  ZED_MODELS_FILE="$_zfm_body"
-}
-
-# Chat models only, keyed on `kind` rather than on `endpoints`: the endpoint map
-# describes the upstream wire surface, and translation lets any chat model serve
-# a Messages request regardless of which key it advertises.
-#
-# `tools` is always true — a model that cannot call tools is not a model anyone
-# would route here. `prompt_caching` is on because Zed defaults it off, which
-# suppresses cache_control breakpoints entirely; enabled it sends explicit
-# per-message breakpoints that tell the gateway where the stable prefix ends.
-ZED_MODELS_PROGRAM='
-  [ .data[]
-    | select(.kind == "chat")
-    | {
-        name: .id,
-        display_name: .display_name,
-        max_tokens: (.limits.max_context_window_tokens // .limits.max_prompt_tokens // 200000),
-        capabilities: {
-          tools: true,
-          images: ((.chat.modalities.input // []) | index("image") != null),
-          prompt_caching: true,
-        },
-      }
-      + (if .limits.max_output_tokens then { max_output_tokens: .limits.max_output_tokens } else {} end)
-      + (if (.chat.reasoning | not) then {}
-         elif .chat.reasoning.adaptive then { mode: { type: "adaptive" } }
-         else
-           # Thinking mode carries a budget or it is not written at all: Zed
-           # serializes `Thinking::Enabled.budget_tokens` with no
-           # skip_serializing_if, so a mode without one puts
-           # `"budget_tokens": null` on the Messages request and every call
-           # 400s. A model whose catalog states no budget is left in Default
-           # mode, which the picker still offers.
-           # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
-           ((.chat.reasoning.budget_tokens.min // .chat.reasoning.budget_tokens.max) as $budget
-            | if $budget then { mode: { type: "thinking", budget_tokens: $budget } } else {} end)
-         end)
-  ]
-'
-
-zed_rollback_settings() {
-  _restore_managed_file \
-    "${ZED_SETTINGS_EXISTED:-0}" "${ZED_SETTINGS_BACKUP:-}" "$ZED_SETTINGS_PATH" \
-    "file" "Zed global settings"
-}
-
-# Project the fetched catalog into Zed model entries and refuse a catalog with
-# no chat models. Kept ahead of the settings write so neither failure can occur
+# Kept ahead of the settings write so neither this nor the empty check can fail
 # after a backup exists — the write is then the only step that can need rollback
 # — and so the credential is never stored for a provider that is not registered.
-zed_project_models() {
+zed_stage_models() {
   ZED_MODELS_PROJECTED="$SETUP_TMPDIR/zed-available-models.json"
-  if ! "$JQ" -c "$ZED_MODELS_PROGRAM" "$ZED_MODELS_FILE" > "$ZED_MODELS_PROJECTED"; then
-    out_error 'failed to project the model catalog into Zed model entries.'
-    return 1
-  fi
+  printf '%s' "$SETUP_ZED_MODELS" > "$ZED_MODELS_PROJECTED"
   if ! ZED_MODEL_COUNT=$("$JQ" 'length' "$ZED_MODELS_PROJECTED"); then
-    out_error 'failed to count the projected Zed model entries.'
+    out_error 'the embedded Zed model list is not readable.'
     return 1
   fi
   if [ "$ZED_MODEL_COUNT" -eq 0 ]; then
     out_error 'the gateway advertises no chat models; nothing to configure.'
     return 1
   fi
+}
+
+zed_rollback_settings() {
+  _restore_managed_file \
+    "${ZED_SETTINGS_EXISTED:-0}" "${ZED_SETTINGS_BACKUP:-}" "$ZED_SETTINGS_PATH" \
+    "file" "Zed global settings"
 }
 
 # Same-directory staging keeps the replacement rename atomic. No explicit chmod
@@ -284,10 +228,7 @@ configure_agent() {
     out_error 'jq is required to update Zed settings.'
     return 1
   fi
-  if ! zed_fetch_models; then
-    return 1
-  fi
-  if ! zed_project_models; then
+  if ! zed_stage_models; then
     return 1
   fi
   if ! zed_store_key; then

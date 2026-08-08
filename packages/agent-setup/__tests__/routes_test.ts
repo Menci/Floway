@@ -23,6 +23,7 @@ import {
   SETUP_POWERSHELL_COMMON,
 } from '../src/script-assets.generated.ts';
 import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
+import type { PublicModel } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
@@ -104,6 +105,7 @@ const harness = (options: {
   keys?: readonly string[];
   secrets?: Record<string, string>;
   users?: readonly number[];
+  models?: readonly PublicModel[];
   publicOverrides?: Partial<AgentSetupPublicDeps>;
   controlOverrides?: Partial<AgentSetupControlDeps<Record<never, never>>>;
 } = {}): Harness => {
@@ -113,12 +115,21 @@ const harness = (options: {
   const secrets = options.secrets ?? { key_primary: RAW_KEY };
   const users = new Set(options.users ?? [USER_ID]);
 
+  const CATALOG: readonly PublicModel[] = [
+    {
+      id: 'claude-opus-4-6', object: 'model', type: 'model', display_name: 'Claude Opus 4.6',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 1_000_000, max_output_tokens: 64_000 },
+    },
+  ];
+
   const publicDeps: AgentSetupPublicDeps = {
     repository: repo,
     userExists: userId => Promise.resolve(users.has(userId)),
     resolveApiKey: (_userId, apiKeyId) => Promise.resolve(
       secrets[apiKeyId] === undefined ? null : { name: apiKeyId === 'key_primary' ? 'Primary key' : apiKeyId, secret: secrets[apiKeyId] },
     ),
+    listModels: () => Promise.resolve(options.models ?? CATALOG),
     ...options.publicOverrides,
   };
   const controlDeps = {
@@ -452,6 +463,7 @@ test('near-miss public URLs are consumed before host middleware can log their to
       repository: { findByToken: () => Promise.resolve(null) },
       userExists: () => Promise.resolve(false),
       resolveApiKey: () => Promise.resolve(null),
+      listModels: () => Promise.resolve([]),
     }))
     .use('*', async (c, next) => {
       downstream(c.req.path);
@@ -485,6 +497,32 @@ test('GET re-reads the current configuration each request', async () => {
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
+});
+
+// Zed cannot discover models, so the script carries the projection and listing
+// happens here. A listing failure is the operator's to see: an opaque 404 would
+// read as a dead setup link and a 500 as a gateway fault, so the script says
+// what happened and exits non-zero before touching anything.
+test('a model listing failure serves a script that reports it', async () => {
+  const h = harness({ publicOverrides: { listModels: () => Promise.reject(new Error('upstream listing exploded')) } });
+  const lease = await create(h);
+  const response = await h.request(lease.scripts.zed.sh, { method: 'GET' });
+  expect(response.status).toBe(200);
+  const body = await response.text();
+  expect(body).toContain('could not list models');
+  expect(body).toContain('exit 1');
+  // The upstream detail stays in the operator's log; anyone holding the setup
+  // URL can read this body.
+  expect(body).not.toContain('exploded');
+});
+
+test('the served Zed script carries the projected catalog', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const body = await (await h.request(lease.scripts.zed.sh, { method: 'GET' })).text();
+  expect(body).toContain('SETUP_ZED_MODELS=');
+  expect(body).toContain('"name":"claude-opus-4-6"');
+  expect(body).toContain('"max_tokens":1000000');
 });
 
 test('a renamed Zed provider reaches the served script', async () => {

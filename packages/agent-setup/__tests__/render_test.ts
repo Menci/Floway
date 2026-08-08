@@ -25,6 +25,14 @@ const fullConfiguration: AgentSetupConfiguration = {
   },
 };
 
+const ZED_MODELS = [{
+  name: 'claude-opus-4-6',
+  display_name: 'Claude Opus 4.6',
+  max_tokens: 1_000_000,
+  capabilities: { tools: true, images: true, prompt_caching: true },
+  max_output_tokens: 64_000,
+}] as const;
+
 describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
@@ -71,16 +79,30 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
-  test('carries only the Zed provider name, through the same literal encoder', () => {
+  test('carries the Zed provider name and catalog, through the same literal encoder', () => {
     const prefix = renderShellPrefix({
       agent: 'zed',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+      editorModels: ZED_MODELS,
     });
     expect(prefix).toContain("SETUP_ZED_PROVIDER_NAME='Ops'\\'' box'");
+    expect(prefix).toContain(`SETUP_ZED_MODELS='${JSON.stringify(ZED_MODELS)}'`);
     expect(prefix).not.toContain('SETUP_CLAUDE_');
     expect(prefix).not.toContain('SETUP_CODEX_');
+  });
+
+  // Zed cannot discover models, so a script without the catalog would register
+  // a provider with none. A caller that forgot it is a wiring mistake, not an
+  // empty catalog, and must not render.
+  test('refuses to render an editor script with no projection', () => {
+    expect(() => renderShellPrefix({
+      agent: 'zed',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: fullConfiguration,
+    })).toThrow(/no projected models/);
   });
 
   test('renders empty values for disabled target-agent overrides', () => {
@@ -153,14 +175,17 @@ describe('renderPowerShellPrefix', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
-  test('carries only the Zed provider name, through the same literal encoder', () => {
+  test('carries the Zed provider name and catalog, through the same literal encoder', () => {
     const prefix = renderPowerShellPrefix({
       agent: 'zed',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+      editorModels: ZED_MODELS,
     });
     expect(prefix).toContain("$SetupZedProviderName = 'Ops'' box'");
+    // Byte-identical to the shell rendering: one projection, serialized once.
+    expect(prefix).toContain(`$SetupZedModels = '${JSON.stringify(ZED_MODELS)}'`);
     expect(prefix).not.toContain('$SetupClaude');
     expect(prefix).not.toContain('$SetupCodex');
   });

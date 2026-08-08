@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
+import { projectZedModels } from '../src/models.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 import {
   SETUP_BASH_CLAUDE,
@@ -661,6 +662,8 @@ interface RunOptions {
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
   forcePowerShellWindowsReplacement?: boolean;
+  // Overrides the catalog the gateway would have projected into the script.
+  catalog?: readonly unknown[];
   // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
   // the palette is emitted even though the harness captures (never a TTY);
   // `noColor` sets NO_COLOR; `failRestore` sets AGENT_SETUP_TEST_FAIL_RESTORE
@@ -722,10 +725,15 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 
 // Runs asynchronously via `spawn` (not `spawnSync`) so local installer downloads
 // can be served by this process's event loop without deadlocking.
+// What the gateway would embed for this run. A test that wants an empty
+// provider list passes its own catalog rather than driving an HTTP fixture.
+const editorModelsFor = (agent: ScriptAgent, catalog: readonly unknown[] = ZED_CATALOG.data) =>
+  (agent === 'zed' ? projectZedModels(catalog as never) : undefined);
+
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
-  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -796,7 +804,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
-  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -886,7 +894,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
         .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
         .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
     : canonicalBody;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + body;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
   writeFileSync(scriptPath, script);
@@ -2612,8 +2620,7 @@ test('zed', 'an unreadable settings document is left untouched', async t => {
 test('zed', 'a catalog with no chat models is refused rather than written empty', async t => {
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
-  modelServer.mode = 'catalog-empty';
-  const run = await runZed(ws, { zedConfigDir: configDir });
+  const run = await runZed(ws, { zedConfigDir: configDir, catalog: ZED_CATALOG.data.filter(model => model.kind !== 'chat') });
   t.equal(run.code, 1, 'should fail');
   t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
   // The refusal precedes credential storage, so an unusable catalog leaves no
@@ -2621,19 +2628,6 @@ test('zed', 'a catalog with no chat models is refused rather than written empty'
   t.equal(readCredentialCalls(ws).length, 0, 'no credential is stored');
 });
 
-test('zed', 'a failed catalog fetch stops before the credential is stored', async t => {
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  modelServer.mode = 'catalog-error';
-  const run = await runZed(ws, { zedConfigDir: configDir });
-  t.equal(run.code, 1, 'should fail');
-  t.equal(readCredentialCalls(ws).length, 0, 'no credential is stored');
-  t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
-});
-
-// PowerShell reimplements in PSObject manipulation what Bash delegates to nine
-// lines of jq, so it runs against a document that already holds a sibling
-// provider — the branch where that hand-written merge can actually go wrong.
 test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();

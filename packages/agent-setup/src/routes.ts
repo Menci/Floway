@@ -21,13 +21,20 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
-import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
+import { projectZedModels } from './models.ts';
+import { renderPowerShellPrefix, renderScriptFailure, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
+import type { PublicModel } from '@floway-dev/protocols/common';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
+
+// Says what failed and what to do, without the upstream detail — that stays in
+// the operator's server log, since this response is reachable by anyone holding
+// the setup URL.
+const MODEL_LISTING_FAILURE = 'Floway could not list models for this API key, so there is nothing to configure yet. Check the gateway logs and its upstreams, then run this command again.';
 
 // Bounds the fresh-token retry so an unforeseen degenerate case cannot loop
 // forever; a real collision is astronomically unlikely.
@@ -102,6 +109,11 @@ export interface AgentSetupPublicDeps {
   // Resolve the servable API key label and secret for the lease owner, or null
   // when the key is gone or no longer owned by that user.
   resolveApiKey: (userId: number, apiKeyId: string) => Promise<{ name: string; secret: string } | null>;
+  // The catalog the same key would receive from /v1/models. The editor agents
+  // cannot discover models, so the gateway projects this into the script it
+  // serves. It takes the request because listing needs per-request transport,
+  // and it reaches upstreams, so it may throw.
+  listModels: (c: Context, userId: number, apiKeyId: string) => Promise<readonly PublicModel[]>;
 }
 
 // Every failure — unknown token, expired lease, deleted user or key, or a
@@ -110,14 +122,14 @@ export interface AgentSetupPublicDeps {
 const resolveServeableLease = async (
   deps: AgentSetupPublicDeps,
   token: string,
-): Promise<{ apiKey: string; apiKeyName: string; configuration: AgentSetupConfiguration } | null> => {
+): Promise<{ userId: number; apiKey: string; apiKeyName: string; configuration: AgentSetupConfiguration } | null> => {
   const record = await deps.repository.findByToken(token);
   if (!record || record.expiresAt <= Date.now()) return null;
   if (!(await deps.userExists(record.userId))) return null;
   const configuration = parseConfiguration(record);
   const apiKey = await deps.resolveApiKey(record.userId, configuration.apiKeyId);
   if (apiKey === null) return null;
-  return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
+  return { userId: record.userId, apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
 };
 
 const publicErrorDiagnostics = (error: unknown, token: string): string => {
@@ -137,7 +149,21 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
+      // Zed snapshots the catalog rather than discovering it, so the script
+      // carries the projection. Listing reaches upstreams and can fail on its
+      // own; that is the operator's problem to see, not a broken-link 404.
+      let editorModels;
+      if (agent === 'zed') {
+        try {
+          const models = await deps.listModels(c, resolved.userId, resolved.configuration.apiKeyId);
+          editorModels = projectZedModels(models);
+        } catch (error) {
+          console.error('Agent Setup: failed to list models for a setup script', publicErrorDiagnostics(error, token));
+          return c.body(renderScriptFailure(language, MODEL_LISTING_FAILURE), 200, SCRIPT_RESPONSE_HEADERS);
+        }
+      }
+
+      const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration, editorModels };
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
