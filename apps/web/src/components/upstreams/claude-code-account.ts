@@ -2,7 +2,7 @@
 // across header and probe sources, because the SDK keeps the windows separate:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
-import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
+import { FIVE_HOUR_WINDOW_MINUTES, HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type {
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaWindow,
@@ -15,6 +15,24 @@ export const subscriptionLabel = (
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
 ): string | null =>
   subscriptionType ? { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType] : null;
+
+// The subscription's own name. `rate_limit_tier` is Anthropic's raw string and
+// the only place the Max multiple appears, but it carries that meaning only
+// under a Max organization: the same `default_claude_max_5x` under a Team
+// organization marks a premium seat, which the CLI reads as exactly that pair
+// rather than off the tier alone. A tier stating no multiple -- and every tier a
+// non-Max subscription carries, from `default_claude_ai` to internal codenames
+// like `default_raven` -- leaves the subscription to name itself.
+// https://claude.com/pricing
+export const planLabel = (
+  account: { rateLimitTier?: string | null; subscriptionType?: 'pro' | 'max' | 'team' | 'enterprise' | null },
+): string | null => {
+  const subscription = subscriptionLabel(account.subscriptionType);
+  if (subscription === null) return null;
+  if (account.subscriptionType !== 'max') return `Claude ${subscription}`;
+  const multiple = account.rateLimitTier?.match(/_(\d+x)$/)?.[1] ?? null;
+  return multiple === null ? 'Claude Max' : `Claude Max ${multiple}`;
+};
 
 export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
@@ -64,6 +82,15 @@ export const readProbeSnapshot = (credential: ClaudeCodeAccountCredentialSummary
 };
 
 export type WindowKey = 'fiveHour' | 'sevenDay' | 'sevenDaySonnet';
+
+// The header field names state the lengths; nothing on the wire carries them as
+// a number, so they are written here for the surfaces that name a window by how
+// long it runs.
+export const WINDOW_MINUTES: Record<WindowKey, number> = {
+  fiveHour: FIVE_HOUR_WINDOW_MINUTES,
+  sevenDay: SEVEN_DAY_WINDOW_MINUTES,
+  sevenDaySonnet: SEVEN_DAY_WINDOW_MINUTES,
+};
 
 export interface WindowRow {
   key: WindowKey;

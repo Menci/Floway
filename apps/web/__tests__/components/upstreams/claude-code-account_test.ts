@@ -13,7 +13,7 @@ import {
   rawEntries,
   readProbeSnapshot,
   subscriptionLabel,
-} from '../../../src/components/upstream-editor/claude-code-account';
+} from '../../../src/components/upstreams/claude-code-account';
 
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
