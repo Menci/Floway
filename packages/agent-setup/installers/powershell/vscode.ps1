@@ -153,7 +153,11 @@ function Write-SetupVSCodeSettings {
     # A one-element array must still serialize as an array, and `-AsArray` does
     # not exist on the Windows PowerShell 5.1 baseline, so the brackets are
     # restored by hand when ConvertTo-Json unwraps a lone object.
-    $json = ConvertTo-Json -InputObject @($groups) -Depth 100
+    # A sibling gateway's group nested deeper than the serializer goes would be
+    # emitted as the literal string "@{k=}" with only a warning, and the staged
+    # check inspects our own group alone. Losing someone else's provider is not
+    # something to do quietly.
+    $json = ConvertTo-Json -InputObject @($groups) -Depth 100 -WarningAction Stop
     if (-not $json.TrimStart().StartsWith('[')) { $json = "[$json]" }
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
 
