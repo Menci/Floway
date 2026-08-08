@@ -124,7 +124,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // Seeded from the loader, then owned by the page: every refresh and every
   // optimistic mutation writes here, so the loader payload is only first paint.
   const [data, setData] = useState(loaderData);
-  const [pageError, setPageError] = useState(loaderData.loadError);
+  // What an operator's own action reported, kept apart from what the fetch
+  // reports: they are retired by different events, and a refresh that shares
+  // the slot silently takes the other one with it.
+  const [pageError, setPageError] = useState<string | null>(null);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   // The switch answers the pointer at once; the models column does not follow
   // it. That column reads the catalog listing, which still describes the
@@ -134,6 +137,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const [pendingEnabled, setPendingEnabled] = useState<{ id: string; enabled: boolean } | null>(null);
   const deleteDialog = useDialogInvocation<UpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // `move` words its own failure differently when the resync behind it also
+  // failed, and it has to read that outcome after awaiting rather than out of a
+  // state it just wrote.
+  const lastLoadError = useRef<string | null>(null);
 
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
@@ -161,7 +168,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
-  const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
+  const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
     const next = await loadPageData(signal);
     if (signal.aborted) return;
     // A failed fetch is not an empty list. Each half keeps what it last had and
@@ -174,9 +181,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       loadError: next.loadError,
       modelsError: next.modelsError,
     }));
-    // A poll nobody asked for reports a new failure but never retires one the
-    // operator has not read.
-    if (!background || next.loadError !== null) setPageError(next.loadError);
+    lastLoadError.current = next.loadError;
   }, []));
 
   // The rows carry live readings -- quota windows, model-cache freshness -- that
@@ -238,11 +243,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       await reload();
       // The resync has already written its own outcome into the page error, so
       // the updater reads it to decide whether the list on screen is trustworthy.
-      setPageError(syncError =>
-        t('dashboard.upstreams.errors.reorder', {
-          message: error.message,
-          sync: syncError ? t('dashboard.upstreams.errors.syncFailed') : '',
-        }));
+      setPageError(t('dashboard.upstreams.errors.reorder', {
+        message: error.message,
+        sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
+      }));
       setMutation(null);
       return;
     }
@@ -308,6 +312,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       {pageError && (
         <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
+      )}
+
+      {data.loadError && (
+        <OutcomeMessageBar onDismiss={() => setData(current => ({ ...current, loadError: null }))}>
+          {data.loadError}
+        </OutcomeMessageBar>
       )}
 
       {data.modelsError && (
