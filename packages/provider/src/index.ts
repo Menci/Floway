@@ -22,6 +22,7 @@ export type {
 export {
   apiErrorToResponse,
   decodeApiErrorBody,
+  discardUpstreamResponse,
   eventResult,
   internalErrorResult,
   plainResult,

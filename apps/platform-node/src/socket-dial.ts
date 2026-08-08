@@ -4,6 +4,11 @@ import tls from 'node:tls';
 
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
+// Idle time before the first keepalive probe. Node then follows the OS
+// settings for probe interval and count, so a dead peer is reaped within a
+// few minutes of going silent without us restating the platform's tuning.
+const KEEPALIVE_INITIAL_DELAY_MS = 60_000;
+
 // Readable.toWeb(socket) waits for `finished(socket)`, which treats the
 // net.Socket as both readable and writable. Projecting the read side through a
 // PassThrough keeps Node's own backpressure, Buffer copying, error propagation,
@@ -101,6 +106,16 @@ export const nodeSocketDial: SocketDial = {
       socket.once(readyEvent, onReady);
       socket.once('error', onError);
     });
+
+    // A dialed socket is otherwise torn down only by the response body's own
+    // read-to-end or cancel path, so a peer that disappears without sending
+    // FIN — a dropped NAT/conntrack entry, a killed daemon — leaves the socket
+    // and everything the read pipeline holds behind it alive indefinitely.
+    // TCP keepalive is the teardown that does not depend on anyone reading:
+    // probes only fire once the connection is idle at the TCP layer, so a live
+    // upstream that is merely slow (a long prompt-processing pause before the
+    // first token) answers them and is never disturbed.
+    socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS);
 
     const readable = socketToReadable(socket);
     const writable = socketToWritable(socket);
