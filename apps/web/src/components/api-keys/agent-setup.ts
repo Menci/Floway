@@ -166,7 +166,10 @@ export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedKey = `'${apiKey.replaceAll("'", `'"'"'`)}'`;
   const quotedUrl = `'${origin.replaceAll("'", `'"'"'`)}'`;
   return [
-    'if [ "$(uname -s)" = Darwin ]; then',
+    // The Darwin arm runs in a subshell: unlike the installer's function, a
+    // pasted script sets positional parameters in the operator's own shell,
+    // where they would outlive the paste still holding the key.
+    'if [ "$(uname -s)" = Darwin ]; then (',
     // -T fails the whole call on a path that does not exist, so only bundles
     // present on this host are named; naming none still stores the item.
     `  set -- -s ${quotedUrl} -a Bearer -U -w ${quotedKey}`,
@@ -176,7 +179,7 @@ export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
     '    [ -d "$app" ] && set -- "$@" -T "$app"',
     '  done',
     '  security add-internet-password "$@"',
-    'else',
+    '); else',
     `  printf '%s' ${quotedKey} | secret-tool store --label=zed-github-account url ${quotedUrl} username Bearer`,
     'fi',
   ].join('\n');
