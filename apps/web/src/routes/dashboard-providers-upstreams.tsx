@@ -241,8 +241,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     if (error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
-      // The resync has already written its own outcome into the page error, so
-      // the updater reads it to decide whether the list on screen is trustworthy.
       setPageError(t('dashboard.upstreams.errors.reorder', {
         message: error.message,
         sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
