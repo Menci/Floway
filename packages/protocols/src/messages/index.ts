@@ -408,6 +408,7 @@ export const parseAnthropicBetaHeader = (raw: string | null | undefined): readon
   raw ? raw.split(',').map(part => part.trim()).filter(part => part.length > 0) : [];
 
 export { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './to-result.ts';
+export { generateAnthropicId } from './id.ts';
 export { reassembleMessagesEvents } from './reassemble.ts';
 export { messagesProtocolFrameToSSEFrame } from './to-sse.ts';
 export { PROMPT_TOO_LONG_MESSAGE, buildPromptTooLongBody } from './context-window-error.ts';
