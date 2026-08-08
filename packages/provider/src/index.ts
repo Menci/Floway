@@ -92,6 +92,7 @@ export {
   modelsField,
   nonEmptyStringField,
   optionalStringField,
+  pricingField,
   publicModelId,
 } from './model-config.ts';
 
