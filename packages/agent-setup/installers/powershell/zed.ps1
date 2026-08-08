@@ -72,20 +72,19 @@ function Write-SetupZedSettings {
     # 5.1 errors and jq refuses — three behaviors for one document. Zed reads
     # this file with serde_json_lenient, so a comment is the operator's content
     # and silently deleting it is data loss. Refuse, as the Bash half does.
-    # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings/src/settings_store.rs#L955
+    # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/fallible_options.rs#L11-L19
     if (Test-SetupJsonHasComment $raw) {
       Stop-Setup "$($script:ZedSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
     }
+    # The root is judged from the text before anything is decoded: an empty file
+    # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
+    # into a bare object, so neither is distinguishable afterwards.
+    if (-not (Test-SetupJsonRoot $raw '{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid JSON object; leaving it untouched." }
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
     # Every shape check completes before the backup exists, so a refusal on
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
-    # Decided from the text, not from the decoded value: ConvertFrom-Json
-    # unwraps a top-level one-element array into a bare object, so `[{...}]`
-    # would pass this check and be rewritten as an object with the array
-    # silently discarded — while jq refuses it.
-    if (-not $raw.TrimStart().StartsWith('{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid JSON object; leaving it untouched." }
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {

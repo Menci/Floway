@@ -1,3 +1,15 @@
+# Does this JSON text open with the expected root — `{` for an object, `[` for
+# an array? Asked of the text rather than of the decoded value because
+# ConvertFrom-Json unwraps a top-level one-element array into a bare object and
+# yields `$null` for both `[]` and an empty file, so the decoded value cannot
+# tell those shapes apart. `Get-Content -Raw` returns `$null` for a zero-byte
+# file, which is not a document of any shape.
+function Test-SetupJsonRoot {
+  param([string]$Text, [char]$Open)
+  if ($null -eq $Text) { return $false }
+  return $Text.TrimStart().StartsWith($Open)
+}
+
 # Does this JSON text carry a `//` or `/*` comment outside a string? Strings
 # are walked rather than stripped by regex, because a value like a model id or
 # a URL contains `//` legitimately and a naive match would refuse a document

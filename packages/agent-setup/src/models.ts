@@ -31,10 +31,12 @@ export interface ZedModel {
   mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens: number };
 }
 
-// Zed requires `max_tokens` and does no token counting of its own, so a model
-// whose catalog states no window still needs a number. This is the window Zed's
-// own Anthropic-compatible provider assumes for an unknown model.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
+// `max_tokens` is a required u64 on Zed's model entry and is consumed verbatim
+// as the input window, so Zed has nothing to fall back to — a model without it
+// fails deserialization and takes the whole provider down. This number is
+// therefore ours, not Zed's: a window to state when the catalog announces none.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L57
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L71
 const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
 
 // Anthropic rejects a thinking budget below this, so a smaller one is not a
@@ -46,7 +48,7 @@ const ANTHROPIC_MIN_THINKING_BUDGET = 1024;
 // The `max_tokens` Zed sends when a model announces no output limit. The budget
 // has to stay under whatever Zed puts there, and Zed neither clamps the budget
 // nor derives max_tokens from it.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L72
 const ZED_FALLBACK_MAX_OUTPUT_TOKENS = 4096;
 
 // Thinking mode carries a usable budget or is not written at all: Zed

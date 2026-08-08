@@ -2744,20 +2744,24 @@ test('zed', 'preserves the settings file mode through a write and through a refu
     t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o600, `${which}: a successful write keeps the operator mode`);
   }
 
-  const refused = makeWorkspace();
-  const refusedDir = makeZedConfigDir(refused);
-  placeFakeCredentialTools(refused);
-  writeFileSync(zedSettingsPath(refusedDir), '', { mode: 0o644 });
-  chmodSync(zedSettingsPath(refusedDir), 0o644);
-  const bad = await runZed(refused, { zedConfigDir: refusedDir });
-  t.ok(bad.code !== 0, 'an empty document is refused');
-  t.equal(readFileSync(zedSettingsPath(refusedDir), 'utf8'), '', 'and left byte-identical');
-  t.equal(statSync(zedSettingsPath(refusedDir)).mode & 0o777, 0o644, 'and at the mode it had');
-  // The refusal has to name the operator's document. Passing this gate and
-  // failing later reports a staging fault instead, pointing at our own list
-  // rather than at the file they need to fix — and only after a backup existed.
-  t.ok(bad.combined.includes('is not a valid JSON object'), `the refusal names the document:\n${bad.combined}`);
-  t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const refused = makeWorkspace();
+    const refusedDir = makeZedConfigDir(refused);
+    placeFakeCredentialTools(refused);
+    writeFileSync(zedSettingsPath(refusedDir), '', { mode: 0o644 });
+    chmodSync(zedSettingsPath(refusedDir), 0o644);
+    const refuseOptions = { workspace: refused, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: refusedDir };
+    const bad = which === 'bash' ? await runShellInstaller(refuseOptions) : await runPowerShellInstaller(refuseOptions);
+    t.ok(bad.code !== 0, 'an empty document is refused');
+    t.equal(readFileSync(zedSettingsPath(refusedDir), 'utf8'), '', 'and left byte-identical');
+    t.equal(statSync(zedSettingsPath(refusedDir)).mode & 0o777, 0o644, 'and at the mode it had');
+    // The refusal has to name the operator's document. Passing this gate and
+    // failing later reports a staging fault instead, pointing at our own list
+    // rather than at the file they need to fix — and only after a backup existed.
+    t.ok(bad.combined.includes('is not a valid JSON object'), `the refusal names the document:\n${bad.combined}`);
+    t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
+  }
 });
 
 // A case-only rename must leave exactly one provider, under the new name, in
