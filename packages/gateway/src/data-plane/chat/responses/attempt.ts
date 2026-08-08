@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -83,7 +85,7 @@ export const responsesAttempt = {
     const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
-    const payload = { ...structuredClone(args.payload), model: candidate.model.id };
+    const payload = { ...klona(args.payload), model: candidate.model.id };
     ctx.store.beginAttempt(args.sourceState?.privatePayloads ?? new Map());
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
