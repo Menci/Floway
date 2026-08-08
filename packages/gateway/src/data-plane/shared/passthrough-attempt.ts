@@ -30,6 +30,10 @@ export interface PassthroughAttemptResult {
   readonly response: Response;
   readonly performance: PerformanceTelemetryContext;
   readonly identity: TelemetryModelIdentity;
+  // The fallback loop calls this when a later candidate supersedes this
+  // attempt. The response body owns the upstream socket until it is read or
+  // cancelled, and a superseded attempt is never read.
+  readonly release: () => void;
 }
 
 export interface PassthroughAttemptArgs {
@@ -57,5 +61,6 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     response,
     performance: upstreamPerformanceContext(ctx, candidate, operation),
     identity: telemetryModelIdentity(candidate, modelKey),
+    release: () => void response.body?.cancel().catch(() => {}),
   };
 };

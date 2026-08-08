@@ -121,4 +121,63 @@ describe('iterateCandidates', () => {
     expect(attempts).toEqual([0, 1]);
     expect(result).toEqual({ type: 'plain', status: 200 });
   });
+
+  // A superseded attempt may still hold an upstream response, whose body owns
+  // the dialed socket until it is read or cancelled.
+  it('releases a failed attempt once a later candidate supersedes it', async () => {
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
+    const released: string[] = [];
+    const result = await iterateCandidates(
+      [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
+      'test',
+      ctx,
+      'chat',
+      async candidate => ({
+        type: 'plain' as const,
+        status: candidate.model.id === 'c' ? 500 : 502,
+        release: () => released.push(candidate.model.id),
+      }),
+    );
+
+    // 'a' and 'b' were superseded; 'c' is handed to the caller, who owns it.
+    expect(released).toEqual(['a', 'b']);
+    expect(result.status).toBe(500);
+  });
+
+  it('releases the pending failure when a later candidate succeeds', async () => {
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
+    const released: string[] = [];
+    await iterateCandidates(
+      [stubCandidate('a'), stubCandidate('b')],
+      'test',
+      ctx,
+      'chat',
+      async candidate => ({
+        type: 'plain' as const,
+        status: candidate.model.id === 'a' ? 502 : 200,
+        release: () => released.push(candidate.model.id),
+      }),
+    );
+
+    expect(released).toEqual(['a']);
+  });
+
+  it('releases the pending failure when a later candidate throws', async () => {
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
+    const released: string[] = [];
+    const boom = new Error('candidate exploded');
+
+    await expect(iterateCandidates(
+      [stubCandidate('a'), stubCandidate('b')],
+      'test',
+      ctx,
+      'chat',
+      async candidate => {
+        if (candidate.model.id === 'b') throw boom;
+        return { type: 'plain' as const, status: 502, release: () => released.push(candidate.model.id) };
+      },
+    )).rejects.toBe(boom);
+
+    expect(released).toEqual(['a']);
+  });
 });
