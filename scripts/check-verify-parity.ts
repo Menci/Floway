@@ -40,7 +40,7 @@ const RUN_VALUE = /^\s*run:\s*(\S.*?)\s*$/gm;
 const SCRIPT_CALL = /^pnpm run ([\w:-]+)$/;
 // A root script whose name states a kind of verification. `lint` and `typecheck`
 // are exact so that `lint:fix`, which repairs rather than verifies, stays out.
-const VERIFICATION_SCRIPT = /^(?:lint|typecheck|test|(?:check|test):[\w-]+)$/;
+const VERIFICATION_SCRIPT = /^(?:lint|typecheck|test|(?:check|test)(?::[\w-]+)+)$/;
 // Provisioning the runner is not a verification, and the matrix dispatch only
 // forwards an entry recovered above.
 const SETUP_COMMANDS = new Set([

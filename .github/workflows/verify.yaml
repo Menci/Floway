@@ -36,9 +36,10 @@ jobs:
             run: pnpm run check:verify-parity
           # `build.yaml` builds the SPA image, but only on `main` and on a
           # schedule. Building here is what puts the bundler and the build
-          # output assertions in front of a pull request; `build` chains
-          # `check:build-output` so that no build path — this one, the
-          # image, a deploy — can emit a bundle nobody asserted against.
+          # output assertions in front of a pull request; `apps/web`'s own
+          # `build` chains `check:build-output` so that no build path — this
+          # one, the image, a deploy — can emit a bundle nobody asserted
+          # against.
           - name: build
             run: pnpm run build:web
     name: ${{ matrix.check.name }}
