@@ -30,6 +30,7 @@ import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
+import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { isOllamaCloudBaseUrl } from '../upstreams/ollama-usage';
@@ -199,21 +200,47 @@ function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azur
 
 function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'ollama' }> }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<ValuesForKind<'ollama'>>();
+  const { control, setValue } = useFormContext<ValuesForKind<'ollama'>>();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const config = values.config as typeof record.config;
-  // Usage belongs to an ollama.com account, so the card appears only for an
-  // upstream that has one: the cloud endpoint plus a key to read it with. The
-  // stored key answers for a saved upstream — the form blanks the secret field
-  // and keeps it — and the typed one lets a new key be tried before saving.
+
+  // Typing the cloud endpoint answers the usage option for the operator. The
+  // answer follows edits to the base URL rather than the rendered value, so
+  // opening a saved upstream never overrides what it stored — and once the
+  // operator works the switch themselves, it is theirs and the URL stops
+  // moving it.
+  const chosenByOperator = useRef(false);
+  const lastBaseUrl = useRef(config.baseUrl);
+  useEffect(() => {
+    const previous = lastBaseUrl.current;
+    lastBaseUrl.current = config.baseUrl;
+    if (chosenByOperator.current || config.baseUrl === previous) return;
+    const suggested = isOllamaCloudBaseUrl(config.baseUrl);
+    if (config.cloudUsage !== suggested) setValue('config.cloudUsage', suggested, { shouldDirty: true });
+  }, [config.baseUrl, config.cloudUsage, setValue]);
+
+  // The card reads an account, so it needs both halves: the option, and a key
+  // to authenticate with. The stored key answers for a saved upstream — the
+  // form blanks the secret field and keeps it — and the typed one lets a new
+  // key be tried before saving.
   const keySet = record.config.apiKeySet === true || Boolean(record.config.apiKey) || Boolean(config.apiKey);
-  const cloudAccount = isOllamaCloudBaseUrl(config.baseUrl) && keySet;
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
     </Field>
     <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
-    {cloudAccount && <OllamaUsageCard record={record} probeRecord={previewRecord(record, values)} />}
+    <Controller control={control} name="config.cloudUsage" render={({ field }) => (
+      <SwitchSetting
+        checked={field.value === true}
+        description={t('dashboard.upstreamEditor.ollama.cloudUsageHint')}
+        label={t('dashboard.upstreamEditor.ollama.cloudUsage')}
+        onChange={checked => {
+          chosenByOperator.current = true;
+          field.onChange(checked);
+        }}
+      />
+    )} />
+    {config.cloudUsage === true && keySet && <OllamaUsageCard record={record} probeRecord={previewRecord(record, values)} />}
   </div>;
 }
 

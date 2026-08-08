@@ -29,6 +29,13 @@ export interface OllamaUpstreamConfig {
   // entirely when blank so an unauthenticated daemon does not reject the
   // request.
   apiKey?: string;
+  // Whether this upstream is an Ollama Cloud account whose usage windows the
+  // gateway should read. The endpoint that reports them belongs to ollama.com,
+  // not to the Ollama binary, and a base URL cannot answer the question on its
+  // own: an operator may reach the cloud through their own domain, and a
+  // private daemon may sit behind one that looks like anything. So the operator
+  // states it, and the dashboard offers the answer for the endpoint they typed.
+  cloudUsage: boolean;
   models: UpstreamModelConfig[];
 }
 
@@ -78,8 +85,20 @@ export const parseOllamaUpstreamConfig = (config: unknown): OllamaUpstreamConfig
   return {
     baseUrl: baseUrlField(config.baseUrl),
     ...(apiKey !== undefined ? { apiKey } : {}),
+    cloudUsage: cloudUsageField(config.cloudUsage),
     models,
   };
+};
+
+const cloudUsageField = (value: unknown): boolean => {
+  // Stored rows carry the flag from `0078_ollama_cloud_usage.sql`, so an absent
+  // one is a record built by hand or by an API client that did not ask for
+  // usage. It reads as off rather than being inferred from the base URL — the
+  // inference is the dashboard's opening answer, not a rule the gateway keeps
+  // applying behind the operator.
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'boolean') throw new Error('Malformed ollama upstream config: cloudUsage must be a boolean');
+  return value;
 };
 
 export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstreamRecord => {

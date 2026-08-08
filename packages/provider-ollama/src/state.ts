@@ -31,12 +31,35 @@ export interface OllamaUsageObservation {
   data: unknown;
 }
 
+// The account behind the API key. It sits in its own slot rather than inside
+// the usage observation because it moves on a different clock: a subscription
+// changes on a billing boundary at most, while the windows move with traffic.
+//
+// Identity is kept to what the dashboard names the account by. `plan` is null
+// when the account reported none — the emptiness is the upstream's answer, not
+// a stand-in for the free tier.
+export interface OllamaAccountEntry {
+  fetchedAt: number;
+  plan: string | null;
+  name: string | null;
+  email: string | null;
+}
+
 export interface OllamaUpstreamState {
   usageProbe: OllamaUsageProbeEntry | null;
+  account: OllamaAccountEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof OllamaUpstreamState, true> = {
   usageProbe: true,
+  account: true,
+};
+
+const ALLOWED_ACCOUNT_KEYS_MAP: Record<keyof OllamaAccountEntry, true> = {
+  fetchedAt: true,
+  plan: true,
+  name: true,
+  email: true,
 };
 
 const ALLOWED_PROBE_KEYS_MAP: Record<keyof OllamaUsageProbeEntry, true> = {
@@ -79,15 +102,27 @@ const assertOllamaUsageObservation = (value: unknown, where: string): void => {
   }
 };
 
+const assertOptionalString = (value: unknown, where: string): void => {
+  if (value !== null && value !== undefined && typeof value !== 'string') {
+    throw new TypeError(`${where} must be a string`);
+  }
+};
+
+const assertOllamaAccountEntry = (value: unknown, where: string): void => {
+  const obj = assertClosedObject(value, where, ALLOWED_ACCOUNT_KEYS_MAP);
+  assertUnixMs(obj.fetchedAt, `${where}.fetchedAt`);
+  assertOptionalString(obj.plan, `${where}.plan`);
+  assertOptionalString(obj.name, `${where}.name`);
+  assertOptionalString(obj.email, `${where}.email`);
+};
+
 const assertOllamaUsageProbeEntry = (value: unknown, where: string): void => {
   const obj = assertClosedObject(value, where, ALLOWED_PROBE_KEYS_MAP);
   assertUnixMs(obj.attemptedAt, `${where}.attemptedAt`);
   if (obj.observation !== null && obj.observation !== undefined) {
     assertOllamaUsageObservation(obj.observation, `${where}.observation`);
   }
-  if (obj.error !== null && obj.error !== undefined && typeof obj.error !== 'string') {
-    throw new TypeError(`${where}.error must be a string`);
-  }
+  assertOptionalString(obj.error, `${where}.error`);
 };
 
 export function assertOllamaUpstreamState(value: unknown): asserts value is OllamaUpstreamState {
@@ -95,9 +130,12 @@ export function assertOllamaUpstreamState(value: unknown): asserts value is Olla
   if (obj.usageProbe !== null && obj.usageProbe !== undefined) {
     assertOllamaUsageProbeEntry(obj.usageProbe, 'OllamaUpstreamState.usageProbe');
   }
+  if (obj.account !== null && obj.account !== undefined) {
+    assertOllamaAccountEntry(obj.account, 'OllamaUpstreamState.account');
+  }
 }
 
-export const emptyOllamaUpstreamState = (): OllamaUpstreamState => ({ usageProbe: null });
+export const emptyOllamaUpstreamState = (): OllamaUpstreamState => ({ usageProbe: null, account: null });
 
 // The asserter treats an absent optional key as null, so the entry is rebuilt
 // here rather than passed through: readers get the three fields the type
@@ -106,12 +144,13 @@ export const readOllamaUpstreamState = (raw: unknown): OllamaUpstreamState => {
   if (raw === null || raw === undefined) return emptyOllamaUpstreamState();
   assertOllamaUpstreamState(raw);
   const probe = raw.usageProbe;
-  if (!probe) return emptyOllamaUpstreamState();
+  const account = raw.account;
   return {
-    usageProbe: {
-      attemptedAt: probe.attemptedAt,
-      observation: probe.observation ?? null,
-      error: probe.error ?? null,
-    },
+    usageProbe: probe
+      ? { attemptedAt: probe.attemptedAt, observation: probe.observation ?? null, error: probe.error ?? null }
+      : null,
+    account: account
+      ? { fetchedAt: account.fetchedAt, plan: account.plan ?? null, name: account.name ?? null, email: account.email ?? null }
+      : null,
   };
 };

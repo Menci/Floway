@@ -111,6 +111,15 @@ export const readUpstreamApiError = async (response: Response, upstreamId?: stri
   ...(upstreamId !== undefined ? { upstreamId } : {}),
 });
 
+// A response whose body is neither read nor cancelled keeps its transport
+// alive: on the direct-connect egress the dialed socket is closed only from the
+// body's own read-to-end or cancel path, so an abandoned response strands one
+// socket for the life of the process. Every path that walks away from an
+// upstream response goes through here.
+export const discardUpstreamResponse = async (response: Response): Promise<void> => {
+  await response.body?.cancel();
+};
+
 export const apiErrorToResponse = (error: ApiErrorResult): Response =>
   new Response(error.body.slice().buffer, {
     status: error.status,

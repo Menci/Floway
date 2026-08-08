@@ -9,9 +9,9 @@ import { parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 
-// Usage is an ollama.com account fact; a self-hosted daemon serves no such
-// endpoint. The gateway rejects the call on the same grounds, so this only
-// decides whether the card is worth offering.
+// An account is an ollama.com fact; a self-hosted daemon has none. The operator
+// owns whether account reporting is on, so this only decides what the editor
+// suggests when the endpoint is typed.
 export const isOllamaCloudBaseUrl = (baseUrl: string): boolean => {
   try {
     return new URL(baseUrl).hostname === 'ollama.com';

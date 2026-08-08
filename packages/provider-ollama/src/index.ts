@@ -10,5 +10,6 @@ export const ollamaProviderModule: ProviderModule = {
 export { createOllamaProvider } from './provider.ts';
 export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
 export { pricingForOllamaModelKey } from './pricing.ts';
-export { readOllamaUpstreamState, type OllamaUpstreamState } from './state.ts';
-export { fetchOllamaUsageProbe, isOllamaCloudConfig, refreshOllamaUsageProbe } from './usage-probe.ts';
+export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
+export { fetchOllamaUsageProbe, isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';
+export { fetchOllamaAccount, refreshOllamaAccount } from './account-probe.ts';

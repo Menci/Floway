@@ -6,7 +6,7 @@ import { readOllamaUpstreamState } from '../src/state.ts';
 import {
   OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS,
   fetchOllamaUsageProbe,
-  isOllamaCloudConfig,
+  isOllamaUsageEnabled,
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -22,7 +22,7 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   sortOrder: 0,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
-  config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test', models: [] },
+  config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test', cloudUsage: true, models: [] },
   state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -99,16 +99,18 @@ test('a probe failure keeps the last reading and records the error', async () =>
   assertEquals(after?.error, 'Ollama /api/usage returned 401: {"error":"invalid credentials"}');
 });
 
-test('usage is probed for a cloud upstream with a key and for nothing else', () => {
-  assertEquals(isOllamaCloudConfig(assertOllamaUpstreamRecord(cloudRecord()).config), true);
-  assertEquals(
-    isOllamaCloudConfig(assertOllamaUpstreamRecord(cloudRecord({ config: { baseUrl: 'https://ollama.com', models: [] } })).config),
-    false,
-  );
-  assertEquals(
-    isOllamaCloudConfig(assertOllamaUpstreamRecord(cloudRecord({ config: { baseUrl: 'http://127.0.0.1:11434', apiKey: 'k', models: [] } })).config),
-    false,
-  );
+test('usage is probed when the operator enabled it and a key is configured, and not otherwise', () => {
+  const enabled = (config: Record<string, unknown>) =>
+    isOllamaUsageEnabled(assertOllamaUpstreamRecord(cloudRecord({ config })).config);
+
+  assertEquals(enabled({ baseUrl: 'https://ollama.com', apiKey: 'k', cloudUsage: true, models: [] }), true);
+  // The option is the operator's answer, so it carries an upstream reached
+  // through their own domain.
+  assertEquals(enabled({ baseUrl: 'https://ollama.example.com', apiKey: 'k', cloudUsage: true, models: [] }), true);
+  // No key to authenticate the read with.
+  assertEquals(enabled({ baseUrl: 'https://ollama.com', cloudUsage: true, models: [] }), false);
+  // The cloud endpoint alone does not turn it on; the stored option does.
+  assertEquals(enabled({ baseUrl: 'https://ollama.com', apiKey: 'k', models: [] }), false);
 });
 
 // Drives the provider rather than the probe helpers so the arming decision —

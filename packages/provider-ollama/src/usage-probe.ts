@@ -35,16 +35,12 @@ import { ollamaFetchUsage } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 
-// The usage endpoint is served by ollama.com, not by the Ollama binary: a
-// self-hosted daemon has no account and answers 404. Probing is therefore
-// gated on the upstream actually pointing at the cloud, which also keeps a
-// keyless private daemon off the path entirely.
-const OLLAMA_CLOUD_HOSTNAME = 'ollama.com';
-
-export const isOllamaCloudConfig = (config: OllamaUpstreamConfig): boolean => {
-  if (config.apiKey === undefined) return false;
-  return new URL(config.baseUrl).hostname === OLLAMA_CLOUD_HOSTNAME;
-};
+// Reading the windows takes two things the operator states: that this upstream
+// is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
+// ollama.com, and a base URL cannot settle it, since the cloud may be reached
+// through the operator's own domain), and a key to authenticate with.
+export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
+  config.cloudUsage && config.apiKey !== undefined;
 
 // Both windows are hours-to-days wide and the payload is a fixed cost per
 // probe, so this is the resolution worth paying for: a busy upstream refreshes
@@ -81,11 +77,13 @@ export const fetchOllamaUsageProbe = async (
 // The entry is written under saveState's read-modify-CAS, and the mutator is
 // re-run against whoever won a concurrent write. Two probes racing therefore
 // resolve by attempt time rather than by write order, so the loser of the race
-// cannot roll the slot back to its older reading.
+// cannot roll the slot back to its older reading. Equal stamps are not a
+// rollback — the clock is coarser than the two attempts, and the later arrival
+// is no staler — so only a strictly newer stored attempt wins.
 const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntry): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
-    if (state.usageProbe && state.usageProbe.attemptedAt >= entry.attemptedAt) return current;
+    if (state.usageProbe && state.usageProbe.attemptedAt > entry.attemptedAt) return current;
     return {
       ...state,
       usageProbe: {
@@ -145,7 +143,7 @@ export const scheduleOllamaUsageProbe = (
   fetcher: Fetcher,
   waitUntil: (promise: Promise<unknown>) => void,
 ): void => {
-  if (!isOllamaCloudConfig(config)) return;
+  if (!isOllamaUsageEnabled(config)) return;
   if (!isOllamaUsageProbeDue(state, Date.now())) return;
   waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
     console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);

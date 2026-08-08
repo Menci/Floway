@@ -7,6 +7,7 @@
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, readBuckets, shownBuckets } from './copilot-quota';
+import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostText, readActivityCost, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
@@ -181,8 +182,8 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   case 'custom':
   case 'azure':
   case 'copilot':
-  case 'ollama':
     return null;
+  case 'ollama': return ollamaPlanLabel(record);
   case 'codex': return codexPlanLabel(record.config.accounts[0]);
   case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
   }

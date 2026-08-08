@@ -131,7 +131,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'ollama',
-      config: { baseUrl: config.baseUrl, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
       // The usage probe holds upstream-owned windows and counters with no
       // secret in them, so the slot crosses whole.
       state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state),
@@ -205,6 +205,6 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
   case 'claude-code':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'ollama':
-    return { ...base, kind, config: { baseUrl: '', apiKey: '', models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false, models: [] }, state: null };
   }
 };

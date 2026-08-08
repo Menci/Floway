@@ -14,9 +14,11 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { ollamaUsageBody } from '../schemas.ts';
 import type { Fetcher } from '@floway-dev/provider';
 import {
+  fetchOllamaAccount,
   fetchOllamaUsageProbe,
-  isOllamaCloudConfig,
+  isOllamaUsageEnabled,
   parseOllamaUpstreamConfig,
+  refreshOllamaAccount,
   refreshOllamaUsageProbe,
   type OllamaUpstreamConfig,
 } from '@floway-dev/provider-ollama';
@@ -37,15 +39,24 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
-  if (!isOllamaCloudConfig(config)) {
-    return c.json({ error: 'Usage is reported by Ollama Cloud only, for an upstream configured with an API key' }, 400);
+  if (!isOllamaUsageEnabled(config)) {
+    return c.json({ error: 'This upstream does not have Ollama Cloud usage enabled with an API key' }, 400);
   }
+
+  // The windows are what the operator pressed for, so their failure is the
+  // request's. The account is read alongside them — its own background cadence
+  // is a day, which is too long to wait for after fixing a key — and a failure
+  // there costs the card a name rather than the reading.
+  const account = (record.id === ''
+    ? fetchOllamaAccount(config, fetcher)
+    : refreshOllamaAccount(record.id, config, fetcher)
+  ).catch((): null => null);
 
   try {
     const observation = record.id === ''
       ? await fetchOllamaUsageProbe(config, fetcher)
       : await refreshOllamaUsageProbe(record.id, config, fetcher);
-    return c.json(observation);
+    return c.json({ observation, account: await account });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 502);
   }

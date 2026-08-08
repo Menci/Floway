@@ -19,14 +19,15 @@ import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown, Switch } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
+import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
-const { Button, Field, InfoButton, Option, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
@@ -267,24 +268,6 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       </Combobox>
     </Field>
   </div>;
-}
-
-function SwitchSetting({ checked, description, label, onChange }: {
-  checked: boolean;
-  description: string;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  // A Switch injects `htmlFor` into its label, so a button placed there toggles
-  // the switch instead of running its own handler; the info button sits outside.
-  return <span className="inline-flex items-center gap-1">
-    <Switch
-      checked={checked}
-      label={label}
-      onChange={(_, data) => onChange(data.checked)}
-    />
-    <InfoButton info={description} />
-  </span>;
 }
 
 function ModelSelect({ family, label, models, onChange, picker, value }: {
