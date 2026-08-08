@@ -63,22 +63,26 @@ const apiKeyField = (value: unknown): string | undefined => {
   return value;
 };
 
-export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstreamRecord => {
-  if (record.kind !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.kind}`);
-  if (!isRecord(record.config)) throw new Error('Malformed ollama upstream config: config must be an object');
+// Parses an upstream's stored/draft config object. Exported because the
+// control plane's usage-probe action receives a config on its own — from an
+// edit form that has not been saved yet — and needs the same validation the
+// record asserter applies.
+export const parseOllamaUpstreamConfig = (config: unknown): OllamaUpstreamConfig => {
+  if (!isRecord(config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
-  const apiKey = apiKeyField(record.config.apiKey);
-  const models = modelsField(record.config.models ?? [], 'ollama');
+  const apiKey = apiKeyField(config.apiKey);
+  const models = modelsField(config.models ?? [], 'ollama');
   if (models.some(model => model.kind === 'rerank')) {
     throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
   }
   return {
-    ...record,
-    kind: 'ollama',
-    config: {
-      baseUrl: baseUrlField(record.config.baseUrl),
-      ...(apiKey !== undefined ? { apiKey } : {}),
-      models,
-    },
+    baseUrl: baseUrlField(config.baseUrl),
+    ...(apiKey !== undefined ? { apiKey } : {}),
+    models,
   };
+};
+
+export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstreamRecord => {
+  if (record.kind !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.kind}`);
+  return { ...record, kind: 'ollama', config: parseOllamaUpstreamConfig(record.config) };
 };

@@ -30,6 +30,8 @@ import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchAudioTranscriptions, ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
+import { readOllamaUpstreamState } from './state.ts';
+import { scheduleOllamaUsageProbe } from './usage-probe.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
@@ -77,6 +79,24 @@ const finalizeOllamaModels = (
 export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertOllamaUpstreamRecord(record);
   const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
+  const state = readOllamaUpstreamState(record.state);
+
+  // Ollama Cloud moves the account's session and weekly windows on inference
+  // calls, and exposes them nowhere but its usage endpoint, so each such call
+  // arms a debounced background refresh. Token counting never reaches a model
+  // and leaves the windows untouched, so it does not arm one.
+  const armUsageProbe = (opts: UpstreamCallOptions): void =>
+    scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
+
+  // Arms once the upstream round-trip has produced a response, so the probe
+  // reads windows that already account for this call. A rate-limited response
+  // arms it too — that is exactly when an operator wants the windows on screen.
+  // A transport that threw never reached the account and arms nothing.
+  const withUsageProbe = <T>(opts: UpstreamCallOptions, dispatched: Promise<T>): Promise<T> =>
+    dispatched.then(result => {
+      armUsageProbe(opts);
+      return result;
+    });
 
   // Manual models always emit.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
@@ -146,23 +166,23 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       );
       return [...manualModels, ...auto];
     },
-    callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
-    callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
+    callCompletions: (model, body, signal, opts) => withUsageProbe(opts, call(ollamaFetchCompletions, model, body, signal, opts)),
+    callChatCompletions: (model, body, signal, opts) => withUsageProbe(opts, callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts)),
     callResponses: async (model, body, action, signal, opts) => {
       switch (action) {
       case 'generate': {
-        const stream = await callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts);
+        const stream = await withUsageProbe(opts, callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts));
         return stream.ok
           ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
           : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
-        const response = await ollamaFetchResponsesCompact(
+        const response = await withUsageProbe(opts, ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
           { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-        );
+        ));
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: rawModelId }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
@@ -172,9 +192,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         throw new Error(`Unhandled ResponsesAction: ${action as string}`);
       }
     },
-    callMessages: (model, body, signal, opts) => callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, { ...opts, headers: headersForMessagesCall(opts.headers, opts.anthropicBeta) }),
+    callMessages: (model, body, signal, opts) => withUsageProbe(opts, callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, { ...opts, headers: headersForMessagesCall(opts.headers, opts.anthropicBeta) })),
     callMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchMessagesCountTokens, model, body, signal, { ...opts, headers: headersForMessagesCall(opts.headers, opts.anthropicBeta) }),
-    callEmbeddings: (model, body, signal, opts) => call(ollamaFetchEmbeddings, model, body, signal, opts),
+    callEmbeddings: (model, body, signal, opts) => withUsageProbe(opts, call(ollamaFetchEmbeddings, model, body, signal, opts)),
     // Ollama serves no image-generation endpoint; reject if the gateway ever
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
@@ -182,7 +202,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     callAudioTranscriptions: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeOpenAIAudioTranscriptionRequest(request, rawModelId);
-      const response = await ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      const response = await withUsageProbe(opts, ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),

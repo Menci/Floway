@@ -487,6 +487,10 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
+// --- ollama ---
+
+export const ollamaUsageBody = recordOnlyBody;
+
 // Unified live-model listing for both create-time preview and edit-time
 // refresh. Custom returns the raw upstream row (dashboard translates
 // through the draft's endpoints); every other kind returns the fully

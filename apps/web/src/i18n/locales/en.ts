@@ -869,6 +869,25 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        ollama: {
+          usage: {
+            title: 'Usage',
+            load: 'Load',
+            refresh: 'Refresh',
+            usedPercent: '{{percent, number}}% used',
+            requests_one: '{{count, number}} request',
+            requests_other: '{{count, number}} requests',
+            window: {
+              session: 'Session window',
+              weekly: 'Weekly window',
+            },
+            activityCost: 'Billed beyond the plan: ${{cost}}',
+            observed: 'Observed {{time}}',
+            empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
+            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
+            backgroundFailed: 'The last background refresh failed: {{message}}',
+          },
+        },
         oauth: {
           refresh: 'Refresh credential',
           reimport: 'Re-import credential',

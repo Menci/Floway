@@ -828,6 +828,25 @@ const zhHansCN = {
             'uuid-mismatch': '所配置的账号不在状态中，请重新导入以恢复',
           },
         },
+        ollama: {
+          usage: {
+            title: '用量',
+            load: '加载',
+            refresh: '刷新',
+            usedPercent: '已用 {{percent, number}}%',
+            requests_one: '{{count, number}} 次请求',
+            requests_other: '{{count, number}} 次请求',
+            window: {
+              session: '会话窗口',
+              weekly: '每周窗口',
+            },
+            activityCost: '套餐外计费：${{cost}}',
+            observed: '观测于 {{time}}',
+            empty: '尚无用量观测。此上游服务的第一个请求会带来一份，也可以点击刷新立即获取。',
+            unreadable: 'Ollama 返回的用量窗口不是此面板可识别的结构。',
+            backgroundFailed: '最近一次后台刷新失败：{{message}}',
+          },
+        },
         oauth: {
           'refresh': '刷新凭据',
           reimport: '重新导入凭据',

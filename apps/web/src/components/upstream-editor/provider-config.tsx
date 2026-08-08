@@ -16,6 +16,7 @@ import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
+import { isOllamaCloudBaseUrl, OllamaUsageCard } from './ollama-usage-card';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { EditorSection } from './section';
 import { api, callApi } from '../../api/client';
@@ -198,11 +199,18 @@ function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azur
 function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'ollama' }> }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'ollama'>>();
+  const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
+  const config = values.config as typeof record.config;
+  // Usage belongs to an ollama.com account, so the card appears only for an
+  // upstream that has one: the cloud endpoint plus a key to read it with. It
+  // reads the live form values, which lets a key be tried before it is saved.
+  const cloudAccount = isOllamaCloudBaseUrl(config.baseUrl) && (record.config.apiKeySet === true || Boolean(config.apiKey));
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={field.value} />} />
     </Field>
     <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+    {cloudAccount && <OllamaUsageCard record={record} probeRecord={previewRecord(record, values)} />}
   </div>;
 }
 

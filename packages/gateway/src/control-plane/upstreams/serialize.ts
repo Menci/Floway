@@ -10,7 +10,7 @@ import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
+import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
 
@@ -132,7 +132,9 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
       ...base,
       kind: 'ollama',
       config: { baseUrl: config.baseUrl, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
-      state: stateless(upstream),
+      // The usage probe holds upstream-owned windows and counters with no
+      // secret in them, so the slot crosses whole.
+      state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state),
     };
   }
   }
@@ -166,7 +168,7 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
   }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
-    return { ...base, kind: 'ollama', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
   }
   }
 };
