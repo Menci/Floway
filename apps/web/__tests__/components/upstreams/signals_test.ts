@@ -241,7 +241,9 @@ describe('upstream readout by provider', () => {
     expect(signals.at(-1)?.detail).toBe('Charged to this account');
   });
 
-  it('shows an Ollama Cloud account that has spent nothing as zero rather than as unreported', () => {
+  // The card keeps that zero; a row of live readings does not, because a figure
+  // saying nothing happened earns none of the width.
+  it('leaves an Ollama Cloud account that has spent nothing off the row', () => {
     expect(rowOf({
       kind: 'ollama',
       state: {
@@ -252,7 +254,23 @@ describe('upstream readout by provider', () => {
           },
         },
       },
-    })).toBe('Ollama | $0');
+    })).toBe('Ollama');
+  });
+
+  // Not zero -- unreadable. It stays, rather than being hidden as if the account
+  // had spent nothing.
+  it('keeps a charge the money ladder cannot read', () => {
+    expect(rowOf({
+      kind: 'ollama',
+      state: {
+        usageProbe: {
+          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
+            fetchedAt: Date.parse(OBSERVED),
+            data: { activity: { cost: 'unknown' }, limits: {} },
+          },
+        },
+      },
+    })).toBe('Ollama | $unknown');
   });
 
   it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {

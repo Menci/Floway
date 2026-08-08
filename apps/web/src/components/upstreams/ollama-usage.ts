@@ -5,7 +5,7 @@
 import { FIVE_HOUR_WINDOW_MINUTES, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { formatUsd } from '../../lib/decimal-display';
-import { parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { decimalStringIsZero, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 
@@ -61,11 +61,9 @@ export const readWindows = (data: unknown): UsageWindow[] => {
 };
 
 // What the account has been charged, as a plain decimal string in USD, over the
-// period the same block names. An account that has spent nothing still reports
-// "0.00000", which is worth showing: it is the difference between zero and not
-// reported. The period is Ollama's own identifier and is forwarded as it
-// arrived, so a period this dashboard cannot name leaves the figure unqualified
-// rather than claiming a window the upstream did not state.
+// period the same block names. The period is Ollama's own identifier and is
+// forwarded as it arrived, so a period this dashboard cannot name leaves the
+// figure unqualified rather than claiming a window the upstream did not state.
 export interface ActivityCost {
   amount: string;
   period: string | null;
@@ -87,5 +85,18 @@ export const activityCostText = (cost: string): string => {
     return formatUsd(parseNonNegativeDecimalString(cost));
   } catch {
     return `$${cost}`;
+  }
+};
+
+// An account that has spent nothing still reports "0.00000". On the card that
+// zero is worth its line -- it is the difference between spending nothing and
+// reporting nothing -- but a row of live readings is scanned, and a figure that
+// says nothing happened earns none of that width. A charge the money ladder
+// cannot read is not zero, so it stays.
+export const isZeroActivityCost = (cost: string): boolean => {
+  try {
+    return decimalStringIsZero(parseNonNegativeDecimalString(cost));
+  } catch {
+    return false;
   }
 };
