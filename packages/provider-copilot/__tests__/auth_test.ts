@@ -477,3 +477,45 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
   // the row as it stands now, not the snapshot taken before the round trip.
   assertEquals(persisted.quotaSnapshot?.fetchedAt, 1);
 });
+
+describe('Copilot seat SKU', () => {
+  // `runAuthedFetch` installs a repo of its own, so these drive the authed
+  // fetch directly against the one whose state they then read back.
+  const authedFetch = () => copilotAuthedFetch(
+    '/v1/messages',
+    { method: 'POST', body: '{}' },
+    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
+    { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+  );
+
+  test('the token exchange persists the SKU the seat is billed under', async () => {
+    const { readPersistedState } = await installRepoAndClearCache();
+    await withMockedFetch(
+      async () => jsonResponse({
+        token: 'tok-test',
+        expires_at: 4_102_444_800,
+        refresh_in: 1800,
+        endpoints: { api: TOKEN_BASE_URL },
+        sku: 'plus_monthly_subscriber_quota',
+      }),
+      async () => {
+        await authedFetch();
+        assertEquals(readPersistedState()?.copilotToken?.sku, 'plus_monthly_subscriber_quota');
+      },
+    );
+  });
+
+  // GitHub introduces a SKU whenever it introduces a plan, and an enterprise
+  // host may answer without one at all, so neither case may cost a token.
+  test('a response naming no SKU still mints a usable token', async () => {
+    const { readPersistedState } = await installRepoAndClearCache();
+    await withMockedFetch(
+      async () => tokenResponse(),
+      async () => {
+        const response = await authedFetch();
+        assertEquals(response.status, 200);
+        assertEquals(readPersistedState()?.copilotToken?.sku, null);
+      },
+    );
+  });
+});

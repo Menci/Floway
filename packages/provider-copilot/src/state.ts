@@ -18,6 +18,14 @@ export interface CopilotTokenEntry {
   token: string;
   expiresAt: number;
   baseUrl: string;
+  // The seat's plan, as GitHub's own SKU identifier. Typed open because
+  // Microsoft types its own as `WellKnownSku | string`: GitHub introduces a SKU
+  // whenever it introduces a plan.
+  // https://github.com/microsoft/vscode/blob/5fb9376dbdc8b0f1bdc9eb8186f429e023503f92/extensions/copilot/src/platform/authentication/common/copilotToken.ts#L330-L376
+  //
+  // Null on an entry minted before this slot existed; the next mint fills it,
+  // which is at most one token lifetime of traffic away.
+  sku: string | null;
 }
 
 // Most recent entitlement observation, from either quota source. `fetchedAt`
@@ -50,6 +58,7 @@ const ALLOWED_TOKEN_KEYS_MAP: Record<keyof CopilotTokenEntry, true> = {
   token: true,
   expiresAt: true,
   baseUrl: true,
+  sku: true,
 };
 
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CopilotQuotaSnapshotEntry, true> = {
@@ -75,6 +84,9 @@ const assertCopilotTokenEntry = (value: unknown, where: string): void => {
   }
   if (typeof obj.baseUrl !== 'string' || obj.baseUrl === '') {
     throw new TypeError(`${where}.baseUrl must be a non-empty string`);
+  }
+  if (obj.sku !== null && obj.sku !== undefined && (typeof obj.sku !== 'string' || obj.sku === '')) {
+    throw new TypeError(`${where}.sku must be a non-empty string or null`);
   }
 };
 
@@ -146,7 +158,9 @@ export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => 
   assertCopilotUpstreamState(raw);
   return {
     knownModels: raw.knownModels ?? null,
-    copilotToken: raw.copilotToken ?? null,
+    copilotToken: raw.copilotToken === null || raw.copilotToken === undefined
+      ? null
+      : { ...raw.copilotToken, sku: raw.copilotToken.sku ?? null },
     quotaSnapshot: raw.quotaSnapshot ?? null,
   };
 };

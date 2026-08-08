@@ -67,7 +67,9 @@ export type CopilotUpstreamConfig = Omit<StoredCopilotUpstreamConfig, 'githubTok
 };
 
 export interface CopilotUpstreamState {
-  copilotToken: { baseUrl: string } | null;
+  // The token itself is the secret; the host it routes to and the seat's plan
+  // are not, so those two cross and the rest stays behind.
+  copilotToken: { baseUrl: string; sku: string | null } | null;
   // The quota snapshot is upstream-owned numbers with no secret in it, so
   // unlike the token beside it there is nothing to redact and it crosses
   // whole. Whichever source saw the seat last wrote it: the data plane

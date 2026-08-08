@@ -6,7 +6,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 test('readCopilotUpstreamState passes through a complete new-shape entry verbatim', () => {
   const seeded = {
     knownModels: null,
-    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com', sku: 'monthly_subscriber_quota' },
     quotaSnapshot: null,
   } satisfies CopilotUpstreamState;
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
@@ -81,4 +81,17 @@ test('assertCopilotUpstreamState rejects prototype-named keys', () => {
       `CopilotUpstreamState.copilotToken has unexpected key '${key}'`,
     );
   }
+});
+
+// The slot was added after the shape shipped, so a row minted before it has no
+// key at all. That is the one absent-key case the reader normalizes rather than
+// rejects: the seat is still usable, and the next mint fills the plan in.
+test('readCopilotUpstreamState reads a token entry minted before the SKU slot as having none', () => {
+  const round = readCopilotUpstreamState({
+    knownModels: null,
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
+    quotaSnapshot: null,
+  });
+  assertEquals(round.copilotToken?.token, 'tok');
+  assertEquals(round.copilotToken?.sku, null);
 });

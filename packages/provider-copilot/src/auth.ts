@@ -194,6 +194,7 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
     expires_at: number;
     refresh_in: number;
     endpoints?: { api?: string };
+    sku?: string;
   };
 
   const baseUrl = data.endpoints?.api;
@@ -205,6 +206,13 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
     token: data.token,
     expiresAt: data.expires_at,
     baseUrl,
+    // The seat's plan travels with the token, which is why the dashboard can
+    // name a plan without an operator asking for one: this exchange runs on
+    // every request whose token has expired. `copilot_internal/user` carries
+    // the same fact under `copilot_plan`, but only the operator's refresh ever
+    // calls it. GitHub's own clients read it from here as well.
+    // https://github.com/microsoft/vscode/blob/5fb9376dbdc8b0f1bdc9eb8186f429e023503f92/extensions/copilot/src/platform/authentication/common/copilotToken.ts#L330-L376
+    sku: typeof data.sku === 'string' && data.sku !== '' ? data.sku : null,
   };
 }
 
