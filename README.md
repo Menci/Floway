@@ -143,10 +143,12 @@ Podman users can instead follow the
 ```bash
 pnpm install
 pnpm run dev
-pnpm run test
-pnpm run lint
-pnpm run typecheck
+pnpm run verify
 ```
+
+`verify` chains every check `.github/workflows/verify.yaml` runs, so a green
+run locally is a green run on a pull request. Each link is also a script of its
+own — `lint`, `typecheck`, `test`, `test:installers`, and the `check:*` family.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
 indexes its CI workflows, skills, workspace packages, and their responsibilities.

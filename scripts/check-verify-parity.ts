@@ -21,8 +21,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MANIFEST_PATH = resolve(ROOT, 'package.json');
 const WORKFLOW_PATH = resolve(ROOT, '.github/workflows/verify.yaml');
 // A commented-out step is not a step, so `#` ends a line before it is scanned.
-// `verify` chains its scripts on one line, so the scan must find every match
-// per line rather than the first.
+// The scan is deliberately unanchored: `verify` chains its scripts on a single
+// line, so an anchored pattern would see only the first of them.
 const SCRIPT_RUN = /\bpnpm run ([\w:-]+)/g;
 
 const fail = (message: string): never => {
@@ -40,23 +40,23 @@ const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as {
 const verifyCommand = manifest.scripts.verify ?? fail('package.json must define a `verify` script');
 const workflow = await readFile(WORKFLOW_PATH, 'utf8');
 
-const chained = scriptsRunBy(verifyCommand);
-const run = scriptsRunBy(workflow);
+const verifyScripts = scriptsRunBy(verifyCommand);
+const workflowScripts = scriptsRunBy(workflow);
 
-if (chained.size === 0) fail('`verify` must chain the repository checks through `pnpm run`');
+if (verifyScripts.size === 0) fail('`verify` must chain the repository checks through `pnpm run`');
 
-for (const name of chained) {
+for (const name of verifyScripts) {
   if (!manifest.scripts[name]) {
     fail(`\`verify\` chains \`${name}\`, which package.json does not define`);
   }
 }
 
-const missingFromWorkflow = [...chained].filter(name => !run.has(name));
+const missingFromWorkflow = [...verifyScripts].filter(name => !workflowScripts.has(name));
 if (missingFromWorkflow.length > 0) {
   fail(`verify.yaml never runs ${JSON.stringify(missingFromWorkflow)}, which \`verify\` chains`);
 }
 
-const missingFromVerify = [...run].filter(name => !chained.has(name));
+const missingFromVerify = [...workflowScripts].filter(name => !verifyScripts.has(name));
 if (missingFromVerify.length > 0) {
   fail(`\`verify\` omits ${JSON.stringify(missingFromVerify)}, which verify.yaml runs`);
 }
