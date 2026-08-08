@@ -346,7 +346,12 @@ function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
     // Fluent stacks the two lines with no gap at all, which leaves the second
     // reading as a wrapped continuation of the first rather than as its own
     // line. One step of the vertical ramp separates them.
-    description={{ children: <UpstreamSignals record={record} />, className: 'pt-[var(--spacingVerticalXXS)]' }}
+    //
+    // The same step below, because `truncate` has Fluent clip the layout's
+    // content box, and each ring on that line is set on the cap height of the
+    // text beside it -- which carries the ring under the baseline by more than
+    // the font's own descent, and into the clip.
+    description={{ children: <UpstreamSignals record={record} />, className: 'py-[var(--spacingVerticalXXS)]' }}
     truncate
   >
     <TruncationTooltip content={summary} relationship="label">
