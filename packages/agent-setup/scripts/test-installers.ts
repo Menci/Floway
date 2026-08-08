@@ -2768,6 +2768,36 @@ test('zed', 'a case-only rename leaves one provider in both halves', async t => 
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
 });
 
+// Zed reads this file with serde_json_lenient, so a comment is the operator`s
+// own content. jq refuses such a document; PowerShell 7 accepts it and drops
+// the comment on the way out, which is data loss reported as success. Both
+// halves refuse it, and neither mistakes a `//` inside a value for one.
+test('zed', 'both halves refuse a settings document carrying JSONC comments', async t => {
+  const commented = '{\n  // the operator put this here\n  "telemetry": { "metrics": false }\n}';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), commented);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} refuses it`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), commented, `${which} leaves it byte-identical`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+
+  // A `//` inside a value is not a comment: refusing that would reject a
+  // perfectly ordinary document.
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  writeFileSync(zedSettingsPath(configDir), JSON.stringify({ note: 'see https://example.com/docs' }));
+  const ok = await runZed(ws, { zedConfigDir: configDir });
+  t.equal(ok.code, 0, `a URL in a value is not a comment:\n${ok.combined}`);
+});
+
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
