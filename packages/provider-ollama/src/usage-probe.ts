@@ -35,16 +35,12 @@ import { ollamaFetchUsage } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 
-// The usage endpoint is served by ollama.com, not by the Ollama binary: a
-// self-hosted daemon has no account and answers 404. Probing is therefore
-// gated on the upstream actually pointing at the cloud, which also keeps a
-// keyless private daemon off the path entirely.
-const OLLAMA_CLOUD_HOSTNAME = 'ollama.com';
-
-export const isOllamaCloudConfig = (config: OllamaUpstreamConfig): boolean => {
-  if (config.apiKey === undefined) return false;
-  return new URL(config.baseUrl).hostname === OLLAMA_CLOUD_HOSTNAME;
-};
+// Reading the windows takes two things the operator states: that this upstream
+// is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
+// ollama.com, and a base URL cannot settle it, since the cloud may be reached
+// through the operator's own domain), and a key to authenticate with.
+export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
+  config.cloudUsage && config.apiKey !== undefined;
 
 // Both windows are hours-to-days wide and the payload is a fixed cost per
 // probe, so this is the resolution worth paying for: a busy upstream refreshes
@@ -145,7 +141,7 @@ export const scheduleOllamaUsageProbe = (
   fetcher: Fetcher,
   waitUntil: (promise: Promise<unknown>) => void,
 ): void => {
-  if (!isOllamaCloudConfig(config)) return;
+  if (!isOllamaUsageEnabled(config)) return;
   if (!isOllamaUsageProbeDue(state, Date.now())) return;
   waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
     console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);

@@ -870,6 +870,8 @@ const en = {
           },
         },
         ollama: {
+          cloudUsage: 'Report account usage',
+          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
           usage: {
             title: 'Usage',
             load: 'Load',

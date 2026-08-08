@@ -180,6 +180,7 @@ const OLLAMA_UPSTREAM: UpstreamRecord = {
   config: {
     baseUrl: 'https://ollama.com',
     apiKey: 'ollama-key',
+    cloudUsage: true,
     models: [
       {
         upstreamModelId: 'qwen3-coder:480b-cloud',

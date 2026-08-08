@@ -15,7 +15,7 @@ import type { ollamaUsageBody } from '../schemas.ts';
 import type { Fetcher } from '@floway-dev/provider';
 import {
   fetchOllamaUsageProbe,
-  isOllamaCloudConfig,
+  isOllamaUsageEnabled,
   parseOllamaUpstreamConfig,
   refreshOllamaUsageProbe,
   type OllamaUpstreamConfig,
@@ -37,8 +37,8 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
-  if (!isOllamaCloudConfig(config)) {
-    return c.json({ error: 'Usage is reported by Ollama Cloud only, for an upstream configured with an API key' }, 400);
+  if (!isOllamaUsageEnabled(config)) {
+    return c.json({ error: 'This upstream does not have Ollama Cloud usage enabled with an API key' }, 400);
   }
 
   try {
