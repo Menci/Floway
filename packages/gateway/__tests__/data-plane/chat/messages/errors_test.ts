@@ -26,7 +26,7 @@ test('translatorInputErrorResult renders an Anthropic 400 invalid_request_error 
     type: 'invalid_request_error',
     message: "Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.",
   });
-  assert(typeof body.request_id === 'string' && /^req_[A-Za-z0-9]{24}$/.test(body.request_id), `request_id ${String(body.request_id)} must match Anthropic-shape req_<24-base62>`);
+  assert(typeof body.request_id === 'string' && /^req_[A-Za-z0-9]{24}$/.test(body.request_id), `request_id ${String(body.request_id)} must match Anthropic-shape req_<24 opaque chars>`);
 });
 
 test('translatorInputErrorResult preserves Anthropic key order: type, error, request_id', () => {

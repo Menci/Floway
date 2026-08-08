@@ -35,8 +35,7 @@ import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Menu,

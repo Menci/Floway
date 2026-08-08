@@ -55,6 +55,10 @@ const WEB_RESTRICTED_IMPORT_PATTERNS = [
     regex: '^@floway-dev/proxy$',
     message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
   },
+  {
+    regex: '^@floway-dev/provider$',
+    message: 'apps/web must reach @floway-dev/provider only via its /flags, /join, /model, /model-config, or /model-prefix subpath exports — the root reaches the outbound fetch contract, and through it @floway-dev/http and userspace TLS.',
+  },
 ];
 
 const projectList = [
@@ -227,6 +231,20 @@ const config: Linter.Config[] = [
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions,
+    },
+  },
+  {
+    // Server-side production sources only. `apps/web` runs in a browser, where
+    // Blob is the ordinary way to hand bytes to a download, and tests construct
+    // Blobs deliberately as fixtures for code that must accept a caller-supplied
+    // one — the hazard is retention across a long-lived process.
+    files: ['packages/**/*.ts', 'apps/platform-*/**/*.ts', 'tools/**/*.ts', 'scripts/**/*.ts'],
+    ignores: ['**/__tests__/**'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'NewExpression[callee.name="Blob"]',
+        message: 'Blob is a Node BaseObject rooted in the realm, and Blob.prototype.stream() never releases the source buffer, so the bytes are retained for the process lifetime and stay invisible to heapUsed. Build a ReadableStream directly — packages/gateway/src/shared/gzip.ts shows the shape. https://github.com/nodejs/node/issues/63574',
+      }],
     },
   },
   {
