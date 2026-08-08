@@ -45,8 +45,12 @@ const editorModelsJson = ({ agent, editorModels }: RenderPrefixInput): string =>
 // setup link, and a 500 like a gateway fault. The detail stays in the server
 // log — this response is unauthenticated apart from the token in its URL.
 export const renderScriptFailure = (language: 'sh' | 'ps1', message: string): string => (language === 'sh'
+  // `curl | sh` runs in its own process, so exiting is contained. The
+  // PowerShell invocation is `irm … | iex` in the operator's own console, which
+  // `exit` would close — taking the message this script exists to show with it.
+  // The installers set $global:LASTEXITCODE and return for the same reason.
   ? `printf '%s\\n' ${shellLiteral(message)} >&2\nexit 1\n`
-  : `Write-Error ${powerShellLiteral(message)}\nexit 1\n`);
+  : `Write-Error ${powerShellLiteral(message)}\n$global:LASTEXITCODE = 1\n`);
 
 // --- POSIX shell ---
 

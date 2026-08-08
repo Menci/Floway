@@ -22,6 +22,22 @@ describe('Zed available_models projection', () => {
     ]).map(entry => entry.name)).toEqual(['listed']);
   });
 
+  // `budget_tokens.min` is a lower bound an operator may record as 0, meaning
+  // "no lower bound stated". Zed sends the budget verbatim on every request and
+  // Anthropic rejects anything under its minimum, so a budget too small to use
+  // is no budget: fall through to the ceiling, or leave the model in Default
+  // mode, rather than writing one that makes every call 400.
+  it('ignores a budget too small for Anthropic to accept', () => {
+    const modes = projectZedModels([
+      catalogModel('floor-zero', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0 } } } }),
+      catalogModel('floor-zero-with-ceiling', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0, max: 8000 } } } }),
+      catalogModel('both-too-small', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0, max: 500 } } } }),
+    ]).map(entry => entry.mode);
+    expect(modes[0]).toBeUndefined();
+    expect(modes[1]).toEqual({ type: 'thinking', budget_tokens: 8000 });
+    expect(modes[2]).toBeUndefined();
+  });
+
   it('prefers the context window, falls back to prompt tokens, then to a default', () => {
     expect(projectZedModels([
       catalogModel('windowed', { contextWindow: 400_000 }),

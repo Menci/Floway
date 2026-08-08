@@ -37,17 +37,26 @@ export interface ZedModel {
 // Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
 const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
 
-// Thinking mode carries a budget or is not written at all: Zed serializes
-// `Thinking::Enabled.budget_tokens` with no skip_serializing_if, so a mode
-// without one puts `"budget_tokens": null` on the Messages request and every
-// call 400s. The floor is preferred over the ceiling because Zed sends the
-// value verbatim on every request and Anthropic requires it below max_tokens.
+// Anthropic rejects a thinking budget below this, so a smaller one is not a
+// budget Zed can use — and `budget_tokens.min` is only a lower bound an
+// operator may legitimately record as 0, meaning "no lower bound stated".
+// Ref: https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+const ANTHROPIC_MIN_THINKING_BUDGET = 1024;
+
+// Thinking mode carries a usable budget or is not written at all: Zed
+// serializes `Thinking::Enabled.budget_tokens` with no skip_serializing_if, so
+// a mode without one puts `"budget_tokens": null` on the Messages request and
+// every call 400s — and a mode with an unusable one 400s just as reliably, with
+// nothing in Zed's UI to say why. The floor is preferred over the ceiling
+// because Zed sends the value verbatim on every request and Anthropic requires
+// it below max_tokens; a floor too small to use falls through to the ceiling.
 // Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
 const zedThinkingMode = (reasoning: ChatModelInfo['reasoning']): ZedModel['mode'] => {
   if (reasoning === undefined) return undefined;
   if (reasoning.adaptive === true) return { type: 'adaptive' };
-  const budget = reasoning.budget_tokens?.min ?? reasoning.budget_tokens?.max;
-  return budget === undefined ? undefined : { type: 'thinking', budget_tokens: budget };
+  const usable = [reasoning.budget_tokens?.min, reasoning.budget_tokens?.max]
+    .find(budget => budget !== undefined && budget >= ANTHROPIC_MIN_THINKING_BUDGET);
+  return usable === undefined ? undefined : { type: 'thinking', budget_tokens: usable };
 };
 
 // Chat models only, and selected by `kind` rather than by `endpoints`: the
