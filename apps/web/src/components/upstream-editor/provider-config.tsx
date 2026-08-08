@@ -30,6 +30,7 @@ import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
+import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
@@ -228,12 +229,13 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
     </Field>
     <SecretField secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
-      <Switch
+      <SwitchSetting
         checked={field.value === true}
-        label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.ollama.cloudUsage'), t('dashboard.upstreamEditor.ollama.cloudUsageHint')) }}
-        onChange={(_, data) => {
+        description={t('dashboard.upstreamEditor.ollama.cloudUsageHint')}
+        label={t('dashboard.upstreamEditor.ollama.cloudUsage')}
+        onChange={checked => {
           chosenByOperator.current = true;
-          field.onChange(data.checked);
+          field.onChange(checked);
         }}
       />
     )} />
