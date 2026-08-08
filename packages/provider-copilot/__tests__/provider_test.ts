@@ -327,13 +327,26 @@ test('Copilot provider selects raw variants that support the target endpoint', a
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
       await provider.callResponses(providerModel, {
-        input: [],
+        input: [{
+          type: 'additional_tools',
+          role: 'developer',
+          tools: [{
+            type: 'namespace',
+            name: 'functions',
+            description: '',
+            tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+          }],
+        }],
         reasoning: { effort: 'xhigh' },
       }, 'generate', undefined, noopUpstreamCallOptions());
     },
   );
 
   assertEquals(responsesBody?.model, 'claude-opus-4.7');
+  assertEquals(
+    (responsesBody?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description,
+    'Tools in the functions namespace.',
+  );
 });
 
 test('Copilot provider runs the Responses boundary chain on the compact path', async () => {
@@ -387,6 +400,16 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
       const result = await provider.callResponses(providerModel, {
         input: [
           {
+            type: 'additional_tools',
+            role: 'developer',
+            tools: [{
+              type: 'namespace',
+              name: 'functions',
+              description: '',
+              tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+            }],
+          },
+          {
             type: 'message',
             role: 'user',
             content: [
@@ -408,7 +431,11 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
   if (!responsesBody) throw new Error('expected /responses to be hit');
   assertEquals('service_tier' in responsesBody, false);
   const wireInput = responsesBody?.input as Array<{ type: string }>;
-  assertEquals(wireInput[0]?.type, 'message');
+  assertEquals(wireInput[0]?.type, 'additional_tools');
+  assertEquals(
+    (responsesBody.input as Array<{ tools?: Array<{ description: string }> }>)[0]?.tools?.[0]?.description,
+    'Tools in the functions namespace.',
+  );
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
   assertEquals(visionHeader, 'true');
   assertEquals(initiatorHeader, 'user');
