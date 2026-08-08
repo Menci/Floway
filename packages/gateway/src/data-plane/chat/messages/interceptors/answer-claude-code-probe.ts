@@ -15,13 +15,13 @@ import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate }
 //     messages:[{role:"user",content:[{type:"text",text:"Hi",
 //       cache_control:{type:"ephemeral"}}]}]}), lra.set(r,!0), {valid:!0}
 //
-// The verdict is "did not throw": the only response fields this path reads are
-// `usage.input_tokens` / `usage.output_tokens` and `stop_reason`, and only to
-// populate the CLI's own telemetry event. The CLI runs several other one-token
-// probes with their own fixed prompts, each from an independent call site
-// rather than through `eie` — `quota` for the rate-limit preflight, `test` for
-// credential verification, `.` for the Bedrock / Vertex / Mantle reachability
-// checks.
+// The verdict is "did not throw". The validation path dereferences
+// `usage.input_tokens` / `usage.output_tokens` unguarded to populate the CLI's
+// own telemetry event, reads `stop_reason` and the cache counters behind `??`,
+// and looks at nothing else. The CLI runs several other one-token probes with
+// their own fixed prompts, each from an independent call site rather than
+// through `eie` — `quota` for the rate-limit preflight, `test` for credential
+// verification, `.` for the Bedrock / Vertex / Mantle reachability checks.
 //
 // A one-token cap is not portable. OpenAI's Responses API floors
 // `max_output_tokens` at 16 and rejects anything lower with a hard 400, so
@@ -39,11 +39,9 @@ import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate }
 // behind it — no upstream call, and no tokens to bill.
 const CLAUDE_CODE_USER_AGENT = /^claude-cli\/\d+\.\d+\.\d+/i;
 
-// The probes we can answer truthfully, written exactly as the CLI sends them.
-// `Hi` is the `/model` validation probe in 2.1.226; `hello` is the same probe
-// as captured against v2.1.220 in
-// https://github.com/BerriAI/litellm/issues/35061; `test` is the credential
-// check, which reads nothing at all off the response.
+// The probes we can answer truthfully, written exactly as 2.1.226 sends them:
+// `Hi` is the `/model` validation probe, `test` the credential check, which
+// reads nothing at all off the response.
 //
 // Two recorded prompts are deliberately absent. `quota` is the rate-limit
 // preflight, and its caller consumes the `anthropic-ratelimit-unified-*`
@@ -53,12 +51,15 @@ const CLAUDE_CODE_USER_AGENT = /^claude-cli\/\d+\.\d+\.\d+/i;
 // the Bedrock / Vertex / Mantle SDK clients, which route through their own
 // base URLs and never reach an `ANTHROPIC_BASE_URL` gateway.
 //
-// Matching is exact: every literal here is read off a binary rather than
-// inferred, and a probe shape we have not observed should reach the upstream
+// Matching is exact, and every literal is read off a binary rather than
+// inferred: a probe shape we have not observed should reach the upstream
 // rather than be answered from a guess. The cost of keying on the prompt at
-// all is that these literals are a Claude Code build detail — a release that
-// renames one re-exposes the 400 until the new literal is added here.
-const PROBE_PROMPTS: ReadonlySet<string> = new Set(['Hi', 'hello', 'test']);
+// all is that these literals are a Claude Code build detail — a report against
+// v2.1.220 records the validation prompt as `hello`
+// (https://github.com/BerriAI/litellm/issues/35061), a spelling absent from
+// 2.1.226 — so a release that renames one re-exposes the 400 until the new
+// literal is read off that build and added here.
+const PROBE_PROMPTS: ReadonlySet<string> = new Set(['Hi', 'test']);
 
 // The whole conversation of a probe. `model_validation` sends its prompt as a
 // single ephemeral text block and the credential check sends the bare-string

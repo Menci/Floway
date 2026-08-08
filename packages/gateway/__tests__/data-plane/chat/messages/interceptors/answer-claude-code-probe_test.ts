@@ -10,7 +10,10 @@ import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } 
 
 const stubCtx = mockChatGatewayCtx();
 
-// The SDK's User-Agent on every Claude Code request.
+// The CLI emits `claude-cli/<version> (external, <entrypoint>…)`, where the
+// entrypoint substitutes for `cli` and up to three optional segments append —
+// which is why the predicate anchors on the `claude-cli/<semver>` prefix only.
+// This is the default entrypoint form.
 const PROBE_USER_AGENT = 'claude-cli/2.1.226 (external, cli)';
 
 // The shape of the 2.1.226 `/model` validation probe: one user turn holding
@@ -77,7 +80,7 @@ test('reports no performance context so the turn contributes no latency sample',
 });
 
 test('answers every fixed probe prompt, in block and bare-string form', async () => {
-  for (const prompt of ['Hi', 'hello', 'test']) {
+  for (const prompt of ['Hi', 'test']) {
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
   }
@@ -85,8 +88,9 @@ test('answers every fixed probe prompt, in block and bare-string form', async ()
 
 test('forwards the probe prompts the gateway cannot answer truthfully', async () => {
   // `quota` reads rate-limit response headers a synthesized turn cannot carry;
-  // `.` only ever reaches a Bedrock / Vertex / Mantle base URL.
-  for (const prompt of ['quota', '.']) {
+  // `.` only ever reaches a Bedrock / Vertex / Mantle base URL; `hello` is a
+  // third-party report's reconstruction that no observed build sends.
+  for (const prompt of ['quota', '.', 'hello']) {
     await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `prompt: ${prompt}`);
   }
 });
