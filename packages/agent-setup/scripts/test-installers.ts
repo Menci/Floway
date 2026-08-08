@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
-import { projectVSCodeModels, projectZedModels } from '../src/models.ts';
+import { addressVSCodeModels, projectVSCodeModels, projectZedModels } from '../src/models.ts';
 import type { VSCodeApiType } from '../src/models.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 import {
@@ -2792,6 +2792,40 @@ test('vscode', 'enumerates the catalog into one customendpoint group', async t =
   t.equal(group.apiType, 'messages', 'the group carries the selected API path');
   t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
   t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment customendpoint appends a path to');
+});
+
+// The projection omits the endpoint and the credential because the merge
+// attaches them, and a pasted snippet has no merge — so both go through
+// `addressVSCodeModels`. This asserts the installers implement that same rule:
+// what a run writes must equal what the shared rule produces, which is what the
+// dashboard pastes.
+test('vscode', 'both halves write what the shared addressing rule produces', async t => {
+  for (const apiType of ['messages', 'responses', 'chat-completions'] as const) {
+    const configuration = vscodeConfig({ apiType });
+    const expected = {
+      vendor: 'customendpoint',
+      name: 'Floway',
+      apiType,
+      models: addressVSCodeModels(
+        projectVSCodeModels(EDITOR_CATALOG.data as never, apiType),
+        modelServer.url,
+        SENTINEL_KEY,
+      ),
+    };
+
+    const bashWs = makeWorkspace();
+    const bashDir = makeVSCodeUserDir(bashWs, `vscode-rule-sh-${apiType}`);
+    const bashRun = await runVSCode(bashWs, { vscodeUserDir: bashDir, configuration });
+    t.equal(bashRun.code, 0, `${apiType} Bash should succeed:\n${bashRun.combined}`);
+    t.equal(JSON.stringify(ourGroup(readVSCodeGroups(bashDir))), JSON.stringify(expected), `${apiType}: Bash matches the shared rule`);
+
+    if (!hostPwsh) continue;
+    const psWs = makeWorkspace();
+    const psDir = makeVSCodeUserDir(psWs, `vscode-rule-ps1-${apiType}`);
+    const psRun = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration, vscodeUserDir: psDir });
+    t.equal(psRun.code, 0, `${apiType} PowerShell should succeed:\n${psRun.combined}`);
+    t.equal(JSON.stringify(ourGroup(readVSCodeGroups(psDir))), JSON.stringify(expected), `${apiType}: PowerShell matches the shared rule`);
+  }
 });
 
 test('vscode', 'maps limits, modalities, and reasoning onto the required fields', async t => {

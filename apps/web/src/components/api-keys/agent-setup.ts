@@ -1,6 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
-import type { VSCodeModel, ZedModel } from './agent-setup-models';
+import { addressVSCodeModels, type VSCodeModel, type ZedModel } from './agent-setup-models';
 import type { api } from '../../api/client';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
@@ -237,9 +237,9 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
 // `${vendor}:${name}`, so a second entry under this name silently collapses
 // onto the last rather than adding a provider.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
-// The projection deliberately omits the endpoint and the credential, because a
-// setup run's merge attaches them. A pasted snippet has no merge, so the
-// preview attaches them here — the document has to be complete on its own.
+// A pasted snippet has no merge to attach the endpoint and the credential, so
+// it carries them — through the same rule the installers implement, stated once
+// in the shared module rather than a second time here.
 export const buildAgentVSCodeSnippet = (
   origin: string,
   apiKey: string,
@@ -249,9 +249,5 @@ export const buildAgentVSCodeSnippet = (
   vendor: 'customendpoint',
   name: config.providerName,
   apiType: config.apiType,
-  models: models.map(model => ({
-    ...model,
-    url: `${origin}/v1`,
-    requestHeaders: { authorization: `Bearer ${apiKey}` },
-  })),
+  models: addressVSCodeModels(models, origin, apiKey),
 }], null, 2);

@@ -111,4 +111,4 @@ export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'co
 // setup script, so a preview built from a second implementation could show a
 // document a setup run would never write. The dashboard renders exactly what
 // the script carries.
-export { projectVSCodeModels, projectZedModels, type VSCodeApiType, type VSCodeModel, type ZedModel } from '@floway-dev/agent-setup/models';
+export { addressVSCodeModels, projectVSCodeModels, projectZedModels, type VSCodeApiType, type VSCodeModel, type ZedModel } from '@floway-dev/agent-setup/models';

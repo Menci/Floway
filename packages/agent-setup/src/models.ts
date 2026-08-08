@@ -144,3 +144,31 @@ export const projectVSCodeModels = (
         : { supportsReasoningEffort: [...supportedEfforts], reasoningEffortFormat: apiType }),
     };
   });
+
+// A group entry as it lands in `chatLanguageModels.json`: the projection plus
+// the two values it deliberately omits. The installer's merge does this in jq
+// and in PowerShell because only the executing shell knows the origin, and a
+// pasted snippet has no merge at all — so the rule itself lives here, once, and
+// both the dashboard and the installer tests measure against it.
+//
+// The key rides in `requestHeaders` rather than the group's `apiKey`: that
+// property is declared `secret`, so VS Code runs its `${input:...}` decoder
+// over a literal and lands on a secret-storage miss. `requestHeaders` survives
+// the header sanitizer because `customendpoint` un-reserves `authorization`
+// for endpoints behind gateways.
+// Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/package.json#L2010-L2016
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L185-L212
+export interface VSCodeAddressedModel extends VSCodeModel {
+  url: string;
+  requestHeaders: Record<string, string>;
+}
+
+export const addressVSCodeModels = (
+  models: readonly VSCodeModel[],
+  origin: string,
+  apiKey: string,
+): VSCodeAddressedModel[] => models.map(model => ({
+  ...model,
+  url: `${origin}/v1`,
+  requestHeaders: { authorization: `Bearer ${apiKey}` },
+}));
