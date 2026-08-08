@@ -16,10 +16,18 @@ ZED_SETTINGS_MERGE_PROGRAM='
   elif (has("language_models") and (.language_models | has("anthropic_compatible")) and ((.language_models.anthropic_compatible | type) != "object"))
     then error("anthropic_compatible is not a JSON object")
   else . end
-  | .language_models.anthropic_compatible[$providerName] = {
-      "api_url": $apiUrl,
-      "available_models": $models[0],
-    }
+  | .language_models.anthropic_compatible |= (
+      # Drop any entry whose key differs from the chosen name only by case
+      # before writing it. The PowerShell property bag cannot hold two such
+      # keys at once — adding `Floway` beside `floway` replaces it — so a half
+      # that kept both would be a half that disagrees. Aligning here also means
+      # a case-only rename stops leaving a stale provider in the Zed picker.
+      # ASCII case is what both sides fold; a non-ASCII case variant is left
+      # alone by jq and replaced by PowerShell, which no operator has reason to
+      # construct.
+      ((. // {}) | with_entries(select((.key | ascii_downcase) != ($providerName | ascii_downcase))))
+      + { ($providerName): { "api_url": $apiUrl, "available_models": $models[0] } }
+    )
 '
 
 # Zed appends `/v1/messages` itself, so the provider takes the bare origin —

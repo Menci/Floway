@@ -109,7 +109,16 @@ function Write-SetupZedSettings {
     if ($document.language_models.PSObject.Properties.Name -notcontains 'anthropic_compatible') {
       $document.language_models | Add-Member -NotePropertyName anthropic_compatible -NotePropertyValue ([PSCustomObject]@{})
     }
-    Set-SetupProp $document.language_models.anthropic_compatible $SetupZedProviderName ([PSCustomObject]@{
+    # Remove any key differing from the chosen name only by case before adding
+    # it, rather than assigning through Set-SetupProp: that helper finds the
+    # existing key case-insensitively and would write the new value under the
+    # OLD name, leaving the picker showing a name the operator did not choose.
+    # Removing and re-adding also puts the entry last, as the jq merge does.
+    $bag = $document.language_models.anthropic_compatible
+    foreach ($existing in @($bag.PSObject.Properties.Name)) {
+      if ($existing -ieq $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+    }
+    $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
       api_url = Get-SetupZedApiUrl
       available_models = $script:ZedModels
     })

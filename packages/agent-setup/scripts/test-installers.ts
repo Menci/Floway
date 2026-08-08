@@ -2736,6 +2736,38 @@ test('zed', 'preserves the settings file mode through a write and through a refu
   t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
 });
 
+// A case-only rename must leave exactly one provider, under the new name, in
+// both halves. The PowerShell property bag cannot hold `Floway` beside
+// `floway`, so keeping the old key is not something the two can agree on —
+// and dropping it is the better outcome anyway: a stale entry in Zed`s picker
+// points at a provider whose credential no longer matches its name.
+test('zed', 'a case-only rename leaves one provider in both halves', async t => {
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), JSON.stringify({
+      language_models: { anthropic_compatible: { floway: { api_url: 'https://stale', available_models: [] } } },
+    }));
+    const options = {
+      workspace: ws,
+      baseUrl: modelServer.url,
+      configuration: zedConfig({ providerName: 'Floway' }),
+      zedConfigDir: configDir,
+    };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return (readSettings(zedSettingsPath(configDir)) as ZedSettings).language_models.anthropic_compatible;
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(Object.keys(bash).join(','), 'Floway', 'Bash keeps only the chosen name');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.equal(Object.keys(powershell).join(','), 'Floway', 'PowerShell keeps only the chosen name');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
+});
+
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
