@@ -434,10 +434,26 @@ const en = {
           title: 'Routing priority',
           priority: 'Priority',
           upstream: 'Upstream',
-          provider: 'Provider',
+          badgeTitle: '{{name}} - {{provider}}',
+          details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
           actions: 'Actions',
+        },
+        // Whatever an upstream publishes about itself beyond its identity. Only
+        // the providers whose upstream reports usage contribute any.
+        signals: {
+          plan: '{{plan}}:',
+          percent: '{{percent, number}}%',
+          until: 'until {{date}}',
+          used: '{{label}}: {{percent, number}}% used',
+          resets: 'Resets {{time}}',
+          observed: 'Observed {{time}}',
+          window: { primary: 'Primary', secondary: 'Secondary' },
+          credits: '{{balance, number}} credits',
+          noCredits: 'No credits',
+          creditsDetail: 'Credit balance on the ChatGPT account',
+          costDetail: 'Ollama Cloud activity cost',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',

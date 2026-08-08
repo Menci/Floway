@@ -16,7 +16,7 @@ import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
-import { isOllamaCloudBaseUrl, OllamaUsageCard } from './ollama-usage-card';
+import { OllamaUsageCard } from './ollama-usage-card';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { EditorSection } from './section';
 import { api, callApi } from '../../api/client';
@@ -33,6 +33,7 @@ import { SecretInput } from '../ui/secret-input';
 import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
+import { isOllamaCloudBaseUrl } from '../upstreams/ollama-usage';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
 
