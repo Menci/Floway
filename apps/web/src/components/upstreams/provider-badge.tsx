@@ -1,5 +1,6 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import type { RefCallback } from 'react';
+import { Link } from 'react-router';
 
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
@@ -9,6 +10,7 @@ import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { hueBadgeTone } from '../../lib/hue';
+import { pageNavigation } from '../../lib/page-navigation';
 import { useBadgeHue } from '../ui/badge-hue';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
@@ -43,16 +45,21 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 // operator's hue is picked: the wash, the outline and the label all come out of
 // the one badge algorithm in ../ui/badge-hue.ts, which solves the label against
 // the wash for 4.5:1 rather than it being chosen and then checked.
-export function ProviderBadge({ label, title, upstream }: {
+//
+// Given `to`, the badge is the row's own name and opens the record. It carries
+// no underline, at rest or under the pointer: the chip is the affordance, and
+// ../ui/row-title.tsx already keeps a row's name off the hyperlink treatment.
+export function ProviderBadge({ label, title, to, upstream }: {
   label?: string;
   title?: string;
+  to?: string;
   upstream: { hue: number; kind: UpstreamProviderKind };
 }) {
   const { t } = useTranslation();
   const hue = useBadgeHue(hueBadgeTone(upstream.hue));
   const visibleLabel = label ?? t(`provider.${upstream.kind}`, providerLabel(upstream.kind));
 
-  const badge = (measureRef?: RefCallback<HTMLElement>) => (
+  const chip = (measureRef?: RefCallback<HTMLElement>) => (
     <Chip
       className={hue.className}
       style={hue.style}
@@ -62,6 +69,16 @@ export function ProviderBadge({ label, title, upstream }: {
       {visibleLabel}
     </Chip>
   );
+
+  const badge = (measureRef?: RefCallback<HTMLElement>) => to === undefined
+    ? chip(measureRef)
+    : <Link
+        {...pageNavigation}
+        className="winui-focus-rect no-underline inline-flex max-w-full min-w-0"
+        to={to}
+      >
+        {chip(measureRef)}
+      </Link>;
 
   // A caller-supplied title describes the badge and says more than the chip
   // shows, so it always stands; the default names the badge with the label it

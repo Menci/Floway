@@ -2,7 +2,7 @@
 // across header and probe sources, because the SDK keeps the windows separate:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
-import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
+import { FIVE_HOUR_WINDOW_MINUTES, HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type {
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaWindow,
@@ -64,6 +64,15 @@ export const readProbeSnapshot = (credential: ClaudeCodeAccountCredentialSummary
 };
 
 export type WindowKey = 'fiveHour' | 'sevenDay' | 'sevenDaySonnet';
+
+// The header field names state the lengths; nothing on the wire carries them as
+// a number, so they are written here for the surfaces that name a window by how
+// long it runs.
+export const WINDOW_MINUTES: Record<WindowKey, number> = {
+  fiveHour: FIVE_HOUR_WINDOW_MINUTES,
+  sevenDay: SEVEN_DAY_WINDOW_MINUTES,
+  sevenDaySonnet: SEVEN_DAY_WINDOW_MINUTES,
+};
 
 export interface WindowRow {
   key: WindowKey;

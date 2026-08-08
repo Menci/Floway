@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CodexQuotaSnapshotMap, UpstreamRecord } from '../../../src/api/types';
-import { accountStatus, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstream-editor/codex-account';
+import { accountStatus, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstreams/codex-account';
 
 type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 

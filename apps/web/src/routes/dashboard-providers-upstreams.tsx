@@ -7,7 +7,7 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 import { type TFunction, useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-upstreams';
@@ -22,18 +22,19 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
-import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
-import { TruncationTooltip, useTruncation } from '../components/ui/truncation-tooltip';
+import { TruncationTooltip } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
+import { UpstreamSignals } from '../components/upstreams/signals';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
-import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
+import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
@@ -160,12 +161,18 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
-  const { refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
+  const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const next = await loadPageData(signal);
     if (signal.aborted) return;
     setData(next);
-    setPageError(next.loadError);
+    // A poll nobody asked for reports a new failure but never retires one the
+    // operator has not read.
+    if (!background || next.loadError !== null) setPageError(next.loadError);
   }, []));
+
+  // The rows carry live readings -- quota windows, model-cache freshness -- that
+  // the data plane refreshes without anyone here asking.
+  usePollWhileVisible(poll);
 
   // Row controls stay locked through the resync a mutation ends with, and
   // through a refresh the operator asked for on its own.
@@ -328,29 +335,21 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   );
 }
 
-// The name is clipped by the layout's `main` slot rather than by the link
-// inside it, so that slot is what the tooltip has to measure.
-function UpstreamNameCell({ record }: { record: UpstreamRecord }) {
+// The row's two lines are what the upstream says about itself: who it connects
+// as, and whatever live readings its provider publishes. The name is not among
+// them -- it names the badge, which is also what opens the record.
+function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
-  const name = useTruncation(record.name, 'label');
+  const summary = upstreamSummary(record, t);
 
   return <TableCellLayout
     className="max-w-[520px]"
-    description={<TruncationTooltip content={upstreamSummary(record, t)} relationship="label">
-      {measureRef => <Text block className="winui-focus-rect" ref={measureRef} tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>}
-    </TruncationTooltip>}
-    main={{ ref: name.measureRef }}
+    description={<UpstreamSignals record={record} />}
     truncate
   >
-    <Tooltip {...name.tooltipProps}>
-      <Link
-        {...pageNavigation}
-        className={rowTitleClass}
-        to={upstreamEditorPath(record)}
-      >
-        {record.name}
-      </Link>
-    </Tooltip>
+    <TruncationTooltip content={summary} relationship="label">
+      {measureRef => <Text block className="winui-focus-rect" ref={measureRef} tabIndex={0} truncate wrap={false}>{summary}</Text>}
+    </TruncationTooltip>
   </TableCellLayout>;
 }
 
@@ -384,12 +383,12 @@ function UpstreamsTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
-        <TableColumns widths={['120px', '140px', '300px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['120px', '220px', '360px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
             <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
@@ -412,8 +411,15 @@ function UpstreamsTable({
                   />
                 </div>
               </TableCell>
-              <TableCell><ProviderBadge upstream={record} /></TableCell>
-              <TableCell className="overflow-hidden"><UpstreamNameCell record={record} /></TableCell>
+              <TableCell className="overflow-hidden">
+                <ProviderBadge
+                  label={record.name}
+                  title={t('dashboard.upstreams.table.badgeTitle', { name: record.name, provider: t(`provider.${record.kind}`) })}
+                  to={upstreamEditorPath(record)}
+                  upstream={record}
+                />
+              </TableCell>
+              <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
               <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} record={record} />
               </TableCell>

@@ -1,6 +1,14 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 
 import { shortAccountId } from './account-id';
+import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
+import { dateTime, relativeTime } from '../../lib/format-time';
+import { clampPercent, percentText } from '../../lib/percent';
+import { useLocale } from '../../lib/use-locale';
+import { useNow } from '../../lib/use-now';
+import { StatusBadge } from '../ui/status-badge';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
 import {
   accountStatus,
   actionableDisabledReason,
@@ -10,17 +18,9 @@ import {
   rawEntries,
   readProbeSnapshot,
   subscriptionLabel,
-} from './claude-code-account';
-import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
-import { fluentComponents } from '../../fluent';
-import { useTranslation } from '../../i18n/translation';
-import { dateTime, relativeTime } from '../../lib/format-time';
-import { clampPercent, percentText } from '../../lib/percent';
-import { useLocale } from '../../lib/use-locale';
-import { useNow } from '../../lib/use-now';
-import { StatusBadge } from '../ui/status-badge';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
+} from '../upstreams/claude-code-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
+import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,

@@ -1,7 +1,6 @@
 // Ollama Cloud account usage. The windows are percentages with no reset
 // timestamp — that is everything the upstream reports — so each row is a bar
-// and a number, and the per-model request counts sit under them as the only
-// breakdown available.
+// and a number.
 //
 // The data plane refreshes the same reading in the background after the calls
 // it serves, so this card is normally current on open; the refresh action is
@@ -9,9 +8,8 @@
 
 import { useCallback, useState } from 'react';
 
-import { quotaBarColor } from './subscription-account-quota';
 import { api, callApi } from '../../api/client';
-import type { OllamaUsageObservation, UpstreamRecordEnvelope, UpstreamRecord } from '../../api/types';
+import type { OllamaUsageObservation, UpstreamRecordEnvelope } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
@@ -22,62 +20,10 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
 import { useRefresh } from '../ui/use-refresh';
+import { activityCostText, type OllamaRecord, readActivityCost, readWindows } from '../upstreams/ollama-usage';
+import { quotaBarColor } from '../upstreams/subscription-quota';
 
 const { ProgressBar, Text } = fluentComponents;
-
-type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
-
-// Usage is an ollama.com account fact; a self-hosted daemon serves no such
-// endpoint. The gateway rejects the call on the same grounds, so this only
-// decides whether the card is worth offering.
-export const isOllamaCloudBaseUrl = (baseUrl: string): boolean => {
-  try {
-    return new URL(baseUrl).hostname === 'ollama.com';
-  } catch {
-    // A half-typed URL in the form field is not a cloud endpoint yet.
-    return false;
-  }
-};
-
-interface UsageWindow {
-  key: 'session' | 'weekly';
-  percent: number;
-}
-
-const isRecordValue = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-// `usage` is a 0..1 fraction of the plan's allowance for that window. It is
-// kept to a decimal place on the way out: an early-in-the-window reading like
-// 0.046 rounds to a whole "5%" that reads as coarser than the upstream is.
-//
-// The endpoint also reports a per-model request count per window. It is not
-// shown: Ollama meters the allowance by model and by input, cached-input, and
-// output tokens, so a request count is a different quantity from the
-// percentage beside it and reads as an explanation of it.
-// https://ollama.com/pricing
-const readWindow = (key: UsageWindow['key'], value: unknown): UsageWindow | null => {
-  if (!isRecordValue(value) || typeof value.usage !== 'number' || !Number.isFinite(value.usage)) return null;
-  return { key, percent: Math.round(value.usage * 1000) / 10 };
-};
-
-const readWindows = (data: unknown): UsageWindow[] => {
-  const limits = isRecordValue(data) ? data.limits : null;
-  if (!isRecordValue(limits)) return [];
-  return [readWindow('session', limits.session), readWindow('weekly', limits.weekly)]
-    .filter((usageWindow): usageWindow is UsageWindow => usageWindow !== null);
-};
-
-// `activity.cost` over a trailing period, reported as a plain decimal string
-// in USD. It carries no label of its own: the upstream states nowhere what the
-// figure covers, and a currency amount on a usage card says what it is. An
-// account that has spent nothing still reports "0.00000", which is worth
-// showing: it is the difference between zero and not reported.
-const readActivityCost = (data: unknown): string | null => {
-  const activity = isRecordValue(data) ? data.activity : null;
-  if (!isRecordValue(activity) || typeof activity.cost !== 'string') return null;
-  return activity.cost;
-};
 
 export function OllamaUsageCard({ probeRecord, record }: { probeRecord: UpstreamRecordEnvelope; record: OllamaRecord }) {
   const { t } = useTranslation();
@@ -130,7 +76,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>)}
 
     {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Text size={200} className="text-fui-fg3">{`$${activityCost}`}</Text>}
+      {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost)}</Text>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}
       </Text>

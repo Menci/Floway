@@ -3,7 +3,7 @@
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L27-L100
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L217-L228
 
-import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
+import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-quota';
 import type {
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
@@ -63,6 +63,11 @@ export const quotaEntries = (quota: CodexQuotaSnapshotMap | null | undefined, no
         window('secondary', snapshot.secondary_used_percent, snapshot.secondary_reset_after_at, snapshot.secondary_window_minutes),
       ].filter((entry): entry is QuotaWindow => entry !== null),
     }));
+
+// Only one limit is active at a time, so a compact readout states the entry
+// that was observed last rather than every key the map has accumulated.
+export const latestQuotaEntry = (entries: QuotaEntry[]): QuotaEntry | null =>
+  entries.toSorted((left, right) => new Date(right.observedAt).getTime() - new Date(left.observedAt).getTime())[0] ?? null;
 
 export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): CodexQuotaSnapshot | null => {
   let newest: CodexQuotaSnapshot | null = null;
