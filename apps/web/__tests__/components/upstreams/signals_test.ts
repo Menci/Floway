@@ -5,7 +5,6 @@ import { upstreamReadout } from '../../../src/components/upstreams/signals';
 import en from '../../../src/i18n/locales/en';
 import type { TFunction } from '../../../src/i18n/translation';
 
-const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 const OBSERVED = '2026-07-28T11:00:00.000Z';
 
 // The real resources rather than a key echo, so the assertions read as the copy
@@ -20,7 +19,7 @@ const t = ((key: string, values?: Record<string, unknown>) => {
   return template.replace(/\{\{(\w+)[^}]*\}\}/g, (_, name: string) => String(values?.[name]));
 }) as unknown as TFunction;
 
-const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en', NOW);
+const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en');
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);
   return [plan, ...signals.map(signal => [signal.value, signal.label].filter(Boolean).join(' '))].join(' | ');

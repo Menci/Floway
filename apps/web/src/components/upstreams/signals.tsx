@@ -6,18 +6,17 @@
 
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
-import { copilotQuota, readBuckets, shownBuckets } from './copilot-quota';
+import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
-import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
+import { quotaRingTone, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
-import { useNow } from '../../lib/use-now';
 import { ProgressRing } from '../ui/progress-ring';
 
 const { Text, Tooltip } = fluentComponents;
@@ -44,11 +43,14 @@ export interface UpstreamReadout {
 
 // The tooltip carries what the row has no width for -- the window's own name,
 // when it resets, when the reading was taken -- as one line, because a Fluent
-// tooltip renders its content as a single run of text.
-const detailText = (parts: (string | null)[]): string => parts.filter(part => part !== null).join(' - ');
+// tooltip renders its content as a single run of text. The glue between the
+// facts is the locale's, as it is for every other string this app composes:
+// zh-Hans separates them with a full-width comma, not a spaced hyphen.
+const detailText = (t: TFunction, parts: (string | null)[]): string =>
+  parts.filter(part => part !== null).join(t('dashboard.upstreams.signals.detailSeparator'));
 
 const meterDetail = (t: TFunction, label: string, percent: number, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
-  detailText([
+  detailText(t, [
     t('dashboard.upstreams.signals.used', { label, percent: Math.round(percent) }),
     resetAt === null ? null : t('dashboard.upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
     observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
@@ -62,10 +64,12 @@ const percentValue = (t: TFunction, percent: number): string =>
 const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const quota = copilotQuota(record);
   if (quota === null) return [];
-  // A seat's buckets all reset together, so the date says more in the row than
-  // the bucket's own name would; the name stays in the tooltip. The id is an
-  // open string GitHub owns and is never rewritten into a table of ours.
-  return shownBuckets(readBuckets(quota))
+  // Only what is capped: the editor card stands a row in for a seat with nothing
+  // metered, but a row of readings has nothing to read there. A seat's buckets
+  // all reset together, so the date says more here than the bucket's own name
+  // would; the name stays in the tooltip. The id is an open string GitHub owns
+  // and is never rewritten into a table of ours.
+  return readBuckets(quota)
     .filter(bucket => bucket.kind === 'metered')
     .map(bucket => ({
       key: bucket.id,
@@ -76,8 +80,11 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     }));
 };
 
-const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
-  const entry = latestQuotaEntry(quotaEntries(record.codex_quota, now));
+const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+  // `quotaEntries` dates the rate limit it also computes; this readout states
+  // the windows and not that, so the instant it is dated against is read here
+  // rather than threaded through every provider.
+  const entry = latestQuotaEntry(quotaEntries(record.codex_quota, Date.now()));
   const credits = latestCredits(record.codex_quota);
   const signals: UpstreamSignal[] = entry === null ? [] : entry.windows.map(item => {
     // Codex states each window's length in minutes and nothing else names it,
@@ -163,14 +170,14 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   return signals;
 };
 
-const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
   case 'custom':
   case 'azure':
     return [];
   case 'copilot': return copilotSignals(record, t, locale);
-  case 'codex': return codexSignals(record, t, locale, now);
+  case 'codex': return codexSignals(record, t, locale);
   case 'claude-code': return claudeCodeSignals(record, t, locale);
   case 'ollama': return ollamaSignals(record, t, locale);
   }
@@ -192,18 +199,15 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   }
 };
 
-export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamReadout => ({
+export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string): UpstreamReadout => ({
   plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
-  signals: upstreamSignals(record, t, locale, now),
+  signals: upstreamSignals(record, t, locale),
 });
 
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // Codex drops a rate-limit window once it has expired, which is a change on
-  // the wall clock rather than in the record.
-  const now = useNow(WALL_CLOCK_REFRESH_MS);
-  const { plan, signals } = upstreamReadout(record, t, locale, now);
+  const { plan, signals } = upstreamReadout(record, t, locale);
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
     <Text size={200} className="text-fui-fg3 flex-none" weight="medium" wrap={false}>
