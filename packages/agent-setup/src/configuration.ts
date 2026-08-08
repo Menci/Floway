@@ -17,13 +17,12 @@ const opaqueOptionalString = z.string()
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
 
-// Zed and VS Code address a Floway instance by a display name the operator
-// chooses; Zed keys its `language_models.anthropic_compatible` map by it.
-// Neither editor derives behavior from the value — Zed indexes stored
-// credentials by `api_url` — so it stays an opaque label. Control characters
-// are rejected here rather than flattened at render time because, unlike the
-// API key label, this value is the operator's own input and a silent rewrite
-// would misname their provider.
+// Zed addresses a Floway instance by a display name the operator chooses,
+// keying its `language_models.anthropic_compatible` map by it. Zed derives no
+// behavior from the value — it indexes stored credentials by `api_url` — so it
+// stays an opaque label. Control characters are rejected here rather than
+// flattened at render time because, unlike the API key label, this value is the
+// operator's own input and a silent rewrite would misname their provider.
 const editorProviderName = z.string()
   .min(1)
   .max(120)
