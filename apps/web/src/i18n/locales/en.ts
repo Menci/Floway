@@ -444,6 +444,7 @@ const en = {
         signals: {
           plan: '{{plan}}:',
           percent: '{{percent, number}}%',
+          detailSeparator: ' - ',
           until: 'until {{date}}',
           used: '{{label}}: {{percent, number}}% used',
           resets: 'Resets {{time}}',
