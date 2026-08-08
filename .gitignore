@@ -7,6 +7,7 @@ docs/superpowers
 .superpowers
 apps/web/dist/
 apps/web/.react-router/
+*.tsbuildinfo
 .dev.vars
 .env
 .pnpm-store/
