@@ -109,11 +109,12 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
-    # `-e` rather than a filter that raises: jq runs a filter zero times on
-    # empty input and still exits 0, so a truncated or whitespace-only file
-    # would pass this gate and fail later as a staging error naming the wrong
-    # cause — after a backup already existed.
-    if ! "$JQ" -e 'type == "object"' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
+    # `-s -e` rather than a filter that raises: jq runs a filter zero times on
+    # empty input and still exits 0, and runs it once per document on a stream,
+    # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped
+    # gate and fail later as a staging error naming the wrong cause — after a
+    # backup already existed. Slurping asks for exactly one document.
+    if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "object")' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
       out_error "$ZED_SETTINGS_PATH is not a valid JSON object; leaving it untouched."
       return 1
     fi

@@ -110,9 +110,22 @@ describe('Zed provider name', () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway ');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    expect(screen.getByText('Enter a name with no leading or trailing spaces.')).toBeTruthy();
+    expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
     expect(input.value).toBe('Floway ');
     vi.unstubAllGlobals();
+  });
+
+  // A text input strips only CR and LF, so a tab pasted from a spreadsheet
+  // reaches the field. The gateway rejects it with a 400 that is not retryable.
+  it('withholds a name carrying a control character', () => {
+    renderInApp(<Host />);
+    showZedTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Ops\tbox');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
   });
 
   it('accepts a valid name', () => {
@@ -123,7 +136,7 @@ describe('Zed provider name', () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway prod');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    expect(screen.queryByText('Enter a name with no leading or trailing spaces.')).toBeNull();
+    expect(screen.queryByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeNull();
     expect(input.value).toBe('Floway prod');
   });
 

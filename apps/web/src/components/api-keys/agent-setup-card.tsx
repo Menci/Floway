@@ -328,7 +328,12 @@ function ProviderNameField({ configurationId, onChange, value }: {
   // another key replaces it rather than rendering behind it.
   const [draft, setDraft] = useState<{ against: string; value: string } | null>(null);
   const shown = draft?.against === configurationId ? draft.value : value;
-  const invalid = shown !== shown.trim() || shown.length === 0;
+  // Mirrors `editorProviderName` at the gateway. A text input strips only CR and
+  // LF, so a tab pasted from a spreadsheet survives to the draft, and its 400 is
+  // not retryable — the lease is left with the copy button disabled and an
+  // untranslated Zod issue on screen, which is the outcome this field exists to
+  // prevent.
+  const invalid = shown !== shown.trim() || shown.length === 0 || /[\u0000-\u001f\u007f]/.test(shown);
   return <Field
     label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
     validationMessage={invalid ? t('dashboard.apiKeys.agentSetup.providerNameInvalid') : undefined}
