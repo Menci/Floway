@@ -8,7 +8,7 @@ import {
   CODEX_RESPONSES_PATH,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { sha256Uuid, uuidV7 } from './ids.ts';
+import { sha256JsonUuid, uuidV7 } from './ids.ts';
 import {
   parseCodexQuotaHeaders,
   putCodexQuota,
@@ -178,12 +178,12 @@ const IDENTITY_MIRRORED_CLIENT_METADATA_KEYS = new Set<string>([
   'x-codex-installation-id', 'session_id', 'thread_id', 'x-codex-window-id', 'turn_id', 'x-codex-turn-metadata',
 ]);
 
-const buildCodexRequestIdentity = async (
+const buildCodexRequestIdentity = (
   opts: CodexBackendCallBase,
   body: CodexResponsesBody,
   clientMetadata: Record<string, unknown>,
   clientTurnMetadata: Record<string, unknown> | null,
-): Promise<CodexRequestIdentity> => {
+): CodexRequestIdentity => {
   // Identity priority for every mirrored id: caller-supplied header → caller
   // body `client_metadata` key → parsed `x-codex-turn-metadata` key → gateway
   // default. So a caller can split its identity across surfaces and we still
@@ -192,7 +192,7 @@ const buildCodexRequestIdentity = async (
     ?? trimHeader(opts.headers, 'session_id')
     ?? stringField(clientMetadata, 'session_id')
     ?? stringField(clientTurnMetadata, 'session_id')
-    ?? await deriveSessionIdFromInput(body)
+    ?? deriveSessionIdFromInput(body)
     ?? uuidV7();
   const threadId = trimHeader(opts.headers, 'thread-id')
     ?? stringField(clientMetadata, 'thread_id')
@@ -222,13 +222,13 @@ const buildCodexRequestIdentity = async (
 // code path with the input already expanded from the snapshot in
 // attempt.ts, so they hash the same prefix as the original turn and get
 // the same session id — no server-side session map required.
-const deriveSessionIdFromInput = async (body: CodexResponsesBody): Promise<string | null> => {
+const deriveSessionIdFromInput = (body: CodexResponsesBody): string | null => {
   const seed = seedUpToFirstUserMessage(body.input);
   if (seed === null) return null;
   const instructions = typeof body.instructions === 'string' ? body.instructions : '';
-  // U+0001 separates the two seed components so an empty instructions can't
-  // collide with the input prefix via string concatenation.
-  return await sha256Uuid(`${instructions}${JSON.stringify(seed)}`);
+  // U+0001 keeps the instructions and JSON seed components unambiguous in the
+  // hash input.
+  return sha256JsonUuid(seed, `${instructions}`);
 };
 
 const seedUpToFirstUserMessage = (input: readonly ResponsesInputItem[]): readonly ResponsesInputItem[] | null => {
@@ -401,7 +401,7 @@ const performStreamingResponsesCall = async (
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
-  const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
+  const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
@@ -432,7 +432,7 @@ const performUnaryCompactCall = async (
 ): Promise<ProviderCompactionResult> => {
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
-  const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
+  const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = { requestKind: 'compaction' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
