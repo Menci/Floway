@@ -16,19 +16,12 @@ import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider'
 // transient. Passthrough serves feed in an enlarged `plain` shape that
 // carries the raw upstream Response plus per-attempt telemetry alongside
 // the status; the success discriminant is unchanged.
-// A failed attempt may hold an upstream response open. The dialed socket is
-// released only when that body is read to the end or cancelled, so a result the
-// fallback loop discards has to be able to give back what it holds — otherwise
-// a failed-then-recovered request strands one socket per discarded attempt.
-type IterableAttemptResult = {
-  readonly release?: () => void;
-} & (
+type IterableAttemptResult =
   | { readonly type: 'events' }
   | { readonly type: 'result' }
   | { readonly type: 'plain'; readonly status: number }
   | { readonly type: 'api-error' }
-  | { readonly type: 'internal-error' }
-);
+  | { readonly type: 'internal-error' };
 
 const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   switch (result.type) {
@@ -70,29 +63,13 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
   run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
-  // Ownership of a failed attempt stays here until it is either returned to the
-  // caller or superseded. Every other exit — a later candidate succeeding, a
-  // candidate throwing — has to hand back what the superseded attempt holds.
-  const discardLastFailure = (): void => {
-    lastFailure?.release?.();
-    lastFailure = undefined;
-  };
-  try {
-    for (const candidate of candidates) {
-      ctx.attempt.upstreamCallStartedAt = null;
-      ctx.attempt.firstOutputTokenAt = null;
-      ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
-      const result = await run(candidate);
-      if (isAttemptSuccess(result)) {
-        discardLastFailure();
-        return result;
-      }
-      discardLastFailure();
-      lastFailure = result;
-    }
-  } catch (error) {
-    discardLastFailure();
-    throw error;
+  for (const candidate of candidates) {
+    ctx.attempt.upstreamCallStartedAt = null;
+    ctx.attempt.firstOutputTokenAt = null;
+    ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
+    const result = await run(candidate);
+    if (isAttemptSuccess(result)) return result;
+    lastFailure = result;
   }
   if (lastFailure === undefined) {
     throw new Error(`invariant broken: ${invocationLabel} exhausted candidates with neither success nor failure`);
