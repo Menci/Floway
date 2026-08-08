@@ -298,8 +298,14 @@ const config: Linter.Config[] = [
         selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
         message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
       }, {
-        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F)/]',
-        message: 'apps/web must not runtime-import @floway-dev/agent-setup. It carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
+        // `/models` is the one runtime-importable surface: it holds the editor
+        // projections the gateway embeds in a setup script, imports only types,
+        // and exists so the dashboard preview cannot drift from what a run
+        // writes. Everything else in the package carries the route factories
+        // and the persistence contract. Exports are matched as well as imports
+        // — `export … from` reaches the bundle exactly the same way.
+        selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[exportKind!="type"][importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F(?!models$))/]',
+        message: 'apps/web may runtime-reach @floway-dev/agent-setup only through its /models subpath. The root carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
       }, {
         // Griffel injects its sheet after the utility sheet, and `Text`'s root
         // states white-space, overflow and text-overflow while `Link`'s states

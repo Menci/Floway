@@ -2706,6 +2706,36 @@ test('zed', 'PowerShell leaves no backup behind when the provider name is a rese
   t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
 });
 
+// This document holds no credential — Zed reads the key from the keychain — so
+// the run must not narrow permissions the operator chose, on success or on a
+// refusal. `umask 077` would otherwise hand back a 0600 file either way.
+test('zed', 'preserves the settings file mode through a write and through a refusal', async t => {
+  if (process.platform === 'win32') skip('POSIX modes only');
+  const written = makeWorkspace();
+  const writtenDir = makeZedConfigDir(written);
+  placeFakeCredentialTools(written);
+  writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o644 });
+  chmodSync(zedSettingsPath(writtenDir), 0o644);
+  const ok = await runZed(written, { zedConfigDir: writtenDir });
+  t.equal(ok.code, 0, `should succeed:\n${ok.combined}`);
+  t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o644, 'a successful write keeps the operator mode');
+
+  const refused = makeWorkspace();
+  const refusedDir = makeZedConfigDir(refused);
+  placeFakeCredentialTools(refused);
+  writeFileSync(zedSettingsPath(refusedDir), '', { mode: 0o644 });
+  chmodSync(zedSettingsPath(refusedDir), 0o644);
+  const bad = await runZed(refused, { zedConfigDir: refusedDir });
+  t.ok(bad.code !== 0, 'an empty document is refused');
+  t.equal(readFileSync(zedSettingsPath(refusedDir), 'utf8'), '', 'and left byte-identical');
+  t.equal(statSync(zedSettingsPath(refusedDir)).mode & 0o777, 0o644, 'and at the mode it had');
+  // The refusal has to name the operator's document. Passing this gate and
+  // failing later reports a staging fault instead, pointing at our own list
+  // rather than at the file they need to fix — and only after a backup existed.
+  t.ok(bad.combined.includes('is not a valid JSON object'), `the refusal names the document:\n${bad.combined}`);
+  t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
+});
+
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();

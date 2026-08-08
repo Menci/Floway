@@ -1,3 +1,10 @@
+# A file's permission bits as an octal string, or empty when neither stat
+# dialect answers. GNU takes `-c`, BSD takes `-f`; a caller that gets nothing
+# leaves the mode alone rather than guessing one.
+_stat_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf ''
+}
+
 # Rollback retains a backup when restoration fails so manual recovery remains
 # possible. Callers keep separate transaction boundaries and aggregate failures.
 _restore_managed_file() {
