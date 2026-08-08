@@ -1,3 +1,4 @@
+import { answerClaudeCodeProbe } from './answer-claude-code-probe.ts';
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
@@ -5,13 +6,19 @@ import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesPaylo
 import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from './web-search-shim.ts';
 
 // Unified Messages generation chain. All entries are attached to every
-// candidate; each interceptor decides whether to act from the candidate's
-// model flags and selected target.
+// candidate; each interceptor decides whether to act — from the candidate's
+// model flags and selected target, or, for the client-compatibility entry,
+// from the inbound request itself.
 //
 // Translated requests re-enter the selected target protocol's chain. The role
 // compatibility entry therefore acts only when Messages is the final target.
 //
-//   - withMessagesWebSearchShim: registered first so its request preparation,
+//   - answerClaudeCodeProbe: registered ahead of everything else because it
+//     replaces the turn rather than shaping it — an intercepted probe must not
+//     reach the web-search shim's intercept loop, and no payload transform
+//     downstream of it can matter to a turn that never dials. Unconditional:
+//     the probe is a property of the inbound request, not of the candidate.
+//   - withMessagesWebSearchShim: registered next so its request preparation,
 //     replay rewrite, and intercept loop wrap the rest of the generation chain.
 //     Unconditional for translated targets (Responses / Chat Completions cannot
 //     carry Anthropic server tools); gated by `messages-web-search-shim` for
@@ -41,6 +48,7 @@ const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
 ];
 
 export const messagesInterceptors: readonly MessagesInterceptor[] = [
+  answerClaudeCodeProbe,
   withMessagesWebSearchShim,
   ...messagesPayloadInterceptors,
 ];
