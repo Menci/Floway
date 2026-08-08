@@ -92,3 +92,38 @@ describe('Agent Setup card fields', () => {
     vi.unstubAllGlobals();
   });
 });
+
+// The provider name is the only free-text field here, so the only one whose
+// value the gateway can reject. A rejected draft is not retryable, so an
+// invalid name must never leave the component.
+describe('Zed provider name', () => {
+  const showZedTab = () => { act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); }); };
+
+  it('reports a padded name at the field and withholds it from the draft', () => {
+    const saved = vi.fn(() => new Promise<Response>(() => {}));
+    renderInApp(<Host />);
+    showZedTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', saved);
+    act(() => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.getByText('Enter a name with no leading or trailing spaces.')).toBeTruthy();
+    expect(input.value).toBe('Floway ');
+    vi.unstubAllGlobals();
+  });
+
+  it('accepts a valid name', () => {
+    renderInApp(<Host />);
+    showZedTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway prod');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.queryByText('Enter a name with no leading or trailing spaces.')).toBeNull();
+    expect(input.value).toBe('Floway prod');
+  });
+});

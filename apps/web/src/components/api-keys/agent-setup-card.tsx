@@ -47,6 +47,11 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // accepts and nothing else.
 // https://docs.claude.com/en/docs/claude-code/settings
 const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>[];
+// Restated rather than imported: the dashboard may not runtime-import
+// @floway-dev/agent-setup, so this mirrors `editorProviderName`'s bound in
+// packages/agent-setup/src/configuration.ts. It only stops typing early — the
+// gateway still enforces the rule.
+const PROVIDER_NAME_MAX_LENGTH = 120;
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
@@ -292,9 +297,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 
   if (agent === 'zed') return <div className="grid gap-3">
     <div className={FIELD_GRID_CLASS}>
-      <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}>
-        <Input value={configuration.zed.providerName} onChange={event => patchZed({ providerName: event.target.value })} />
-      </Field>
+      <ProviderNameField value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
     </div>
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
   </div>;
@@ -307,6 +310,32 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       </Combobox>
     </Field>
   </div>;
+}
+
+// The one free-text field in Agent Setup, so the only one whose draft the
+// gateway can reject. `editorProviderName` refuses empty, padded, and
+// control-character names; an invalid value is held locally and never patched
+// into the draft, because a 400 is not retryable and would strand the lease
+// with the copy button disabled and an untranslated Zod issue on screen.
+function ProviderNameField({ onChange, value }: { onChange: (value: string) => void; value: string }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? value;
+  const invalid = shown !== shown.trim() || shown.length === 0;
+  return <Field
+    label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
+    validationMessage={invalid ? t('dashboard.apiKeys.agentSetup.providerNameInvalid') : undefined}
+    validationState={invalid ? 'error' : undefined}
+  >
+    <Input
+      maxLength={PROVIDER_NAME_MAX_LENGTH}
+      value={shown}
+      onChange={(_, data) => {
+        setDraft(data.value);
+        if (data.value.length > 0 && data.value === data.value.trim()) onChange(data.value);
+      }}
+    />
+  </Field>;
 }
 
 function SwitchSetting({ checked, description, label, onChange }: {
