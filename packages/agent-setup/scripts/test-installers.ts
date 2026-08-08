@@ -506,6 +506,8 @@ const placeFakeCodex = (dir: string): void => {
   writeFileSync(join(dir, 'codex'), FAKE_CODEX, { mode: 0o755 });
 };
 
+const zedCredentialRecord = (workspace: Workspace): string => join(workspace.root, 'credential-calls.txt');
+
 // Stand-ins for the OS credential stores, which no test host can be asked to
 // mutate. Each records its own argument vector and the secret it received on
 // stdin, so the assertions see exactly what the installer asked the real tool
@@ -522,8 +524,6 @@ case "$1" in store) secret=$(cat) ;; esac
 printf 'secret-tool\\t%s\\t%s\\n' "$*" "$secret" >> ${JSON.stringify(record)}
 `, { mode: 0o755 });
 };
-
-const zedCredentialRecord = (workspace: Workspace): string => join(workspace.root, 'credential-calls.txt');
 
 const readCredentialCalls = (workspace: Workspace): string[] => {
   const path = zedCredentialRecord(workspace);
