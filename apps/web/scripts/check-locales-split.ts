@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 // trusted to the source: no asset the shell references may carry a locale
 // module, and every locale must exist as an asset of its own.
 //
-// Membership is read off the sourcemaps, as in check-web-monaco-lazy.ts, since
+// Membership is read off the sourcemaps, as in check-monaco-lazy.ts, since
 // chunk names are rolldown's own derivation and no contract.
 const clientDir = resolve(import.meta.dirname, '../dist/client');
 const assetsDir = resolve(clientDir, 'assets');
