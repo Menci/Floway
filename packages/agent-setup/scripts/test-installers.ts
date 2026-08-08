@@ -2559,8 +2559,9 @@ test('zed', 'stores the credential against the same api_url the settings name', 
   if (tool === 'secret-tool') {
     // Byte-exact: a shell that pipes rather than writes appends a newline, and
     // secret-tool stores every byte it reads, so the key would come back
-    // malformed and Zed would send a broken Authorization header.
-    t.equal(stdin, String(SENTINEL_KEY.length), 'the key reaches secret-tool on stdin with no trailing newline');
+    // malformed and Zed would send a broken Authorization header. The sentinel
+    // is ASCII, so its JS length is its UTF-8 byte count.
+    t.equal(stdin, String(Buffer.byteLength(SENTINEL_KEY, 'utf8')), 'the key reaches secret-tool on stdin with no trailing newline');
     t.ok(argv!.includes('--label=zed-github-account'), 'the label Zed matches on read is written');
     t.ok(!argv!.includes(SENTINEL_KEY), 'the key is absent from argv');
   } else {
@@ -2663,7 +2664,7 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
     // PowerShell terminates a piped object with a newline and secret-tool
     // stores every byte it reads, so a pipeline here would hand Zed a key that
     // makes every Authorization header malformed.
-    t.equal(stdin, String(SENTINEL_KEY.length), 'the key reaches secret-tool with no trailing newline');
+    t.equal(stdin, String(Buffer.byteLength(SENTINEL_KEY, 'utf8')), 'the key reaches secret-tool with no trailing newline');
   }
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });

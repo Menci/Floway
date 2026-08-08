@@ -281,10 +281,15 @@ function Set-SetupZedCredentialSecretService {
   $startInfo.RedirectStandardInput = $true
   $startInfo.UseShellExecute = $false
   $process = [System.Diagnostics.Process]::Start($startInfo)
-  $process.StandardInput.Write($SetupApiKey)
-  $process.StandardInput.Close()
-  $process.WaitForExit()
-  if ($process.ExitCode -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
+  try {
+    $process.StandardInput.Write($SetupApiKey)
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    $exitCode = $process.ExitCode
+  } finally {
+    $process.Dispose()
+  }
+  if ($exitCode -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
 }
 
 # `-T` grants a bundle access without the authorization prompt a later read
