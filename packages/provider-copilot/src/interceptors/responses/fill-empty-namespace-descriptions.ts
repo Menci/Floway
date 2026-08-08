@@ -2,10 +2,9 @@ import type { ResponsesBoundaryCtx } from './types.ts';
 import { mapResponsesTools } from '@floway-dev/protocols/responses';
 
 /**
- * Copilot data planes currently disagree on the OpenAI schema update that
- * permits an empty namespace description: some accept Codex 0.147's payload,
- * while others reject it with `invalid_request_body`. Fill the permitted-empty
- * text at the Copilot boundary so either deployment accepts the same request.
+ * Some Copilot data planes reject empty namespace descriptions permitted by
+ * the current OpenAI schema. Fill the permitted-empty text at the Copilot
+ * boundary so the same request remains portable across those deployments.
  *
  * References:
  * - https://github.com/openai/openai-openapi/commit/466c74a42f51c02f1927bc666815251dc53845dc

@@ -13,17 +13,26 @@ const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx =>
 });
 
 test('fills Codex Responses Lite namespace descriptions before Azure dispatch', async () => {
+  const describedNamespace = {
+    type: 'namespace' as const,
+    name: 'collaboration',
+    description: 'Tools for spawning and managing sub-agents.',
+    tools: [{ type: 'function' as const, name: 'spawn_agent', description: 'Spawn an agent.' }],
+  };
   const ctx = invocation({
     model: 'gpt-5.6-sol',
     input: [{
       type: 'additional_tools',
       role: 'developer',
-      tools: [{
-        type: 'namespace',
-        name: 'functions',
-        description: '',
-        tools: [{ type: 'custom', name: 'exec', description: 'Execute code.' }],
-      }],
+      tools: [
+        {
+          type: 'namespace',
+          name: 'functions',
+          description: '',
+          tools: [{ type: 'custom', name: 'exec', description: 'Execute code.' }],
+        },
+        describedNamespace,
+      ],
     }],
   });
 
@@ -31,10 +40,13 @@ test('fills Codex Responses Lite namespace descriptions before Azure dispatch', 
 
   const [item] = ctx.payload.input;
   if (item?.type !== 'additional_tools') throw new Error('expected additional_tools input');
-  assertEquals(item.tools[0], {
-    type: 'namespace',
-    name: 'functions',
-    description: 'Tools in the functions namespace.',
-    tools: [{ type: 'custom', name: 'exec', description: 'Execute code.' }],
-  });
+  assertEquals(item.tools, [
+    {
+      type: 'namespace',
+      name: 'functions',
+      description: 'Tools in the functions namespace.',
+      tools: [{ type: 'custom', name: 'exec', description: 'Execute code.' }],
+    },
+    describedNamespace,
+  ]);
 });

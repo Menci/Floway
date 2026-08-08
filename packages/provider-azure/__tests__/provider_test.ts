@@ -168,6 +168,36 @@ test('createAzureProvider runs the Responses boundary on compact requests', asyn
   assertEquals(body?.model, 'gpt-prod');
 });
 
+test.each(['generate', 'compact'] as const)('createAzureProvider preserves %s upstream errors through the Responses boundary', async action => {
+  const instance = createAzureProvider(azureRecord());
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const upstreamResponse = new Response('{"error":"upstream rejected the request"}', {
+    status: 418,
+    headers: { 'content-type': 'application/json', 'x-upstream-error': action },
+  });
+
+  await withMockedFetch(
+    () => Promise.resolve(upstreamResponse),
+    async () => {
+      const result = await instance.instance.callResponses(
+        providerModel,
+        { input: [{ type: 'message', role: 'user', content: 'hello' }] },
+        action,
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+      assertEquals(result.action, action);
+      assertEquals(result.ok, false);
+      if (result.ok) throw new Error('expected upstream error');
+      assertEquals(result.modelKey, 'gpt-prod');
+      assertEquals(result.response, upstreamResponse);
+      assertEquals(result.response.status, 418);
+      assertEquals(result.response.headers.get('x-upstream-error'), action);
+      assertEquals(await result.response.text(), '{"error":"upstream rejected the request"}');
+    },
+  );
+});
+
 test('createAzureProvider supports Azure AI cross-provider models with explicit endpoint capabilities', async () => {
   const instance = createAzureProvider(
     azureRecord({

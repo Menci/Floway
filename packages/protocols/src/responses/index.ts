@@ -661,13 +661,13 @@ export interface ResponsesFunctionTool {
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
-// image_generation, tool_search, namespace) and Freeform `custom` tools
-// alongside ordinary function tools. Native Responses targets pass `custom`
-// through; translated targets wrap each `custom` as a single-string-parameter
-// function tool and unwrap matching function calls back into `custom_tool_call`
-// outputs. The wire-level tools array is still a heterogeneous union and
-// translators must narrow on `type === "function"` (or `"custom"`) before
-// reading `name` / `parameters`.
+// image_generation, tool_search), namespace containers for function/custom
+// tools, and Freeform `custom` tools alongside ordinary function tools. Native
+// Responses targets pass `custom` through; translated targets wrap each
+// `custom` as a single-string-parameter function tool and unwrap matching
+// function calls back into `custom_tool_call` outputs. The wire-level tools
+// array is still a heterogeneous union and translators must narrow on
+// `type === "function"` (or `"custom"`) before reading `name` / `parameters`.
 //
 // `web_search` ships under four equivalent type values (current + dated
 // + preview + dated-preview). All four name the same hosted tool. The
@@ -845,7 +845,6 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
-  | { type: 'namespace'; name: string }
   | { type: 'mcp'; server_label: string; name?: string | null }
   | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
   | { type: 'shell' }
