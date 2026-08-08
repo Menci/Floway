@@ -231,9 +231,11 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
           model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
         });
       }
-      // A cloud call arms the background usage probe. It is not a wire call
-      // of the protocol under test, so it stays out of the beta record.
+      // A cloud call arms the background account and usage probes. Neither is
+      // a wire call of the protocol under test, so they stay out of the beta
+      // record.
       if (path === '/api/usage') return jsonResponse({ limits: {} });
+      if (path === '/api/me') return jsonResponse({ plan: 'pro' });
       betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/messages') {
         return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });

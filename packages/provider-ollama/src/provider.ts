@@ -24,6 +24,7 @@
 // catalog, and an auto row carrying the same upstreamModelId is dropped so the
 // manual copy is the only one for that id.
 
+import { scheduleOllamaAccountProbe } from './account-probe.ts';
 import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
@@ -85,8 +86,15 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   // calls, and exposes them nowhere but its usage endpoint, so each such call
   // arms a debounced background refresh. Token counting never reaches a model
   // and leaves the windows untouched, so it does not arm one.
-  const armUsageProbe = (opts: UpstreamCallOptions): void =>
+  //
+  // The account's plan rides along on the same trigger behind its own, far
+  // longer interval: it changes on a billing boundary at most, and there is no
+  // other moment at which the gateway is already holding this upstream's key
+  // and a place to put background work.
+  const armUsageProbe = (opts: UpstreamCallOptions): void => {
     scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
+    scheduleOllamaAccountProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
+  };
 
   // Arms once the upstream round-trip has produced a response, so the probe
   // reads windows that already account for this call. A rate-limited response

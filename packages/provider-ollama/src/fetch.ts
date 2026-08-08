@@ -55,3 +55,9 @@ export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: FetchInit, o
 // endpoint's provenance and the shape it returns.
 export const ollamaFetchUsage = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/usage', init, options);
+// The account behind the API key, including its plan. Cloud-only — see
+// account-probe.ts for the endpoint's provenance. POST, not GET: the route is
+// registered for POST only and answers 405 otherwise.
+// https://github.com/ollama/ollama/blob/f0078ae4766d0d570e196158f20dde309bd96124/api/client.go#L506
+export const ollamaFetchMe = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/api/me', init, options);

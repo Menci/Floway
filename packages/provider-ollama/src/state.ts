@@ -1,5 +1,7 @@
 // Gateway-managed Ollama upstream state, persisted in upstreams.state_json.
-// One slot: the most recent Ollama Cloud usage probe. Writes go through
+// Two slots, both Ollama Cloud account facts on their own refresh cadence: the
+// most recent usage probe, and the account the API key belongs to. Writes go
+// through
 // UpstreamRepo.saveState as a mutator that spreads the state it is handed and
 // replaces its own slot, so a concurrent write on another slot survives.
 
@@ -31,12 +33,28 @@ export interface OllamaUsageObservation {
   data: unknown;
 }
 
+// The account behind the API key. `plan` is Ollama's own identifier, kept as
+// the open string it is; null when the account named none. There is no error
+// field beside it: a plan the probe could not read costs the dashboard a name
+// and nothing an operator would act on, so the slot simply stays as it was.
+export interface OllamaAccountEntry {
+  fetchedAt: number;
+  plan: string | null;
+}
+
 export interface OllamaUpstreamState {
   usageProbe: OllamaUsageProbeEntry | null;
+  account: OllamaAccountEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof OllamaUpstreamState, true> = {
   usageProbe: true,
+  account: true,
+};
+
+const ALLOWED_ACCOUNT_KEYS_MAP: Record<keyof OllamaAccountEntry, true> = {
+  fetchedAt: true,
+  plan: true,
 };
 
 const ALLOWED_PROBE_KEYS_MAP: Record<keyof OllamaUsageProbeEntry, true> = {
@@ -90,14 +108,25 @@ const assertOllamaUsageProbeEntry = (value: unknown, where: string): void => {
   }
 };
 
+const assertOllamaAccountEntry = (value: unknown, where: string): void => {
+  const obj = assertClosedObject(value, where, ALLOWED_ACCOUNT_KEYS_MAP);
+  assertUnixMs(obj.fetchedAt, `${where}.fetchedAt`);
+  if (obj.plan !== null && obj.plan !== undefined && typeof obj.plan !== 'string') {
+    throw new TypeError(`${where}.plan must be a string`);
+  }
+};
+
 export function assertOllamaUpstreamState(value: unknown): asserts value is OllamaUpstreamState {
   const obj = assertClosedObject(value, 'OllamaUpstreamState', ALLOWED_STATE_KEYS_MAP);
   if (obj.usageProbe !== null && obj.usageProbe !== undefined) {
     assertOllamaUsageProbeEntry(obj.usageProbe, 'OllamaUpstreamState.usageProbe');
   }
+  if (obj.account !== null && obj.account !== undefined) {
+    assertOllamaAccountEntry(obj.account, 'OllamaUpstreamState.account');
+  }
 }
 
-export const emptyOllamaUpstreamState = (): OllamaUpstreamState => ({ usageProbe: null });
+export const emptyOllamaUpstreamState = (): OllamaUpstreamState => ({ usageProbe: null, account: null });
 
 // The asserter treats an absent optional key as null, so the entry is rebuilt
 // here rather than passed through: readers get the three fields the type
@@ -106,12 +135,15 @@ export const readOllamaUpstreamState = (raw: unknown): OllamaUpstreamState => {
   if (raw === null || raw === undefined) return emptyOllamaUpstreamState();
   assertOllamaUpstreamState(raw);
   const probe = raw.usageProbe;
-  if (!probe) return emptyOllamaUpstreamState();
+  const account = raw.account;
   return {
-    usageProbe: {
-      attemptedAt: probe.attemptedAt,
-      observation: probe.observation ?? null,
-      error: probe.error ?? null,
-    },
+    usageProbe: probe
+      ? {
+          attemptedAt: probe.attemptedAt,
+          observation: probe.observation ?? null,
+          error: probe.error ?? null,
+        }
+      : null,
+    account: account ? { fetchedAt: account.fetchedAt, plan: account.plan ?? null } : null,
   };
 };

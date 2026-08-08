@@ -176,10 +176,24 @@ describe('upstream readout by provider', () => {
     expect(planFor('prolite')).toBe('ChatGPT Pro Lite');
   });
 
+  it('names the Ollama Cloud account by the plan the probe read', () => {
+    const planFor = (plan: string | null) => readoutOf({
+      kind: 'ollama',
+      state: { account: { fetchedAt: Date.parse(OBSERVED), plan } },
+    }).plan;
+
+    expect(planFor('max')).toBe('Ollama Max');
+    // The identifiers are plain words, so one this table has not seen reads as
+    // itself rather than as nothing.
+    expect(planFor('enterprise')).toBe('Ollama enterprise');
+    expect(planFor(null)).toBe('Ollama');
+  });
+
   it('reads the Ollama Cloud windows and the activity cost the probe stored', () => {
     const record = {
       kind: 'ollama',
       state: {
+        account: { fetchedAt: Date.parse(OBSERVED), plan: 'pro' },
         usageProbe: {
           attemptedAt: Date.parse(OBSERVED), error: null, observation: {
             fetchedAt: Date.parse(OBSERVED),
@@ -188,7 +202,7 @@ describe('upstream readout by provider', () => {
         },
       },
     };
-    expect(rowOf(record)).toBe('Ollama | 25% 5h | 40% 7d | $24.34');
+    expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
   });
 
   it('shows an Ollama Cloud account that has spent nothing as zero rather than as unreported', () => {
