@@ -434,7 +434,6 @@ const en = {
           title: 'Routing priority',
           priority: 'Priority',
           upstream: 'Upstream',
-          badgeTitle: '{{name}} - {{provider}}',
           details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
@@ -453,7 +452,8 @@ const en = {
           credits: '{{balance, number}} credits',
           noCredits: 'No credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
-          costDetail: 'Ollama Cloud activity cost',
+          cost: 'Charged to this account',
+          costLast4Weeks: 'Charged to this account in the last 4 weeks',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',

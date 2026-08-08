@@ -90,7 +90,7 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
     </div>)}
 
     {observation && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-      {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost)}</Text>}
+      {activityCost !== null && <Text size={200} className="text-fui-fg3">{activityCostText(activityCost.amount)}</Text>}
       <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}
       </Text>

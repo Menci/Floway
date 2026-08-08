@@ -422,7 +422,6 @@ function UpstreamsTable({
               <TableCell className="overflow-hidden">
                 <ProviderBadge
                   label={record.name}
-                  title={t('dashboard.upstreams.table.badgeTitle', { name: record.name, provider: t(`provider.${record.kind}`) })}
                   to={upstreamEditorPath(record)}
                   upstream={record}
                 />

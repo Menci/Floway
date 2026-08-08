@@ -60,15 +60,22 @@ export const readWindows = (data: unknown): UsageWindow[] => {
     .filter((usageWindow): usageWindow is UsageWindow => usageWindow !== null);
 };
 
-// `activity.cost` over a trailing period, reported as a plain decimal string
-// in USD. It carries no label of its own: the upstream states nowhere what the
-// figure covers, and a currency amount on a usage card says what it is. An
-// account that has spent nothing still reports "0.00000", which is worth
-// showing: it is the difference between zero and not reported.
-export const readActivityCost = (data: unknown): string | null => {
+// What the account has been charged, as a plain decimal string in USD, over the
+// period the same block names. An account that has spent nothing still reports
+// "0.00000", which is worth showing: it is the difference between zero and not
+// reported. The period is Ollama's own identifier and is forwarded as it
+// arrived, so a period this dashboard cannot name leaves the figure unqualified
+// rather than claiming a window the upstream did not state.
+export interface ActivityCost {
+  amount: string;
+  period: string | null;
+}
+
+export const readActivityCost = (data: unknown): ActivityCost | null => {
   const activity = isRecordValue(data) ? data.activity : null;
   if (!isRecordValue(activity) || typeof activity.cost !== 'string') return null;
-  return activity.cost;
+  const period = isRecordValue(activity.period) ? activity.period.type : null;
+  return { amount: activity.cost, period: typeof period === 'string' ? period : null };
 };
 
 // The figure reaches the dashboard on the same money ladder every other cost

@@ -55,6 +55,21 @@ describe('upstream readout by provider', () => {
     expect(readoutOf(record).signals[0].detail).toContain('premium interactions: 29% used');
   });
 
+  it('names the Copilot seat by the SKU the token exchange carried', () => {
+    const planFor = (sku: string | null) => readoutOf({
+      kind: 'copilot',
+      state: { copilotToken: { baseUrl: 'https://api.individual.githubcopilot.com', sku } },
+    }).plan;
+
+    expect(planFor('plus_monthly_subscriber_quota')).toBe('Copilot Pro+');
+    expect(planFor('copilot_enterprise_seat_quota')).toBe('Copilot Enterprise');
+    expect(planFor('free_limited_copilot')).toBe('Copilot Free');
+    // An identifier GitHub has not published reads as no plan rather than as
+    // itself: these are internal names and none of them is a product name.
+    expect(planFor('some_new_seat_quota')).toBe('Copilot');
+    expect(planFor(null)).toBe('Copilot');
+  });
+
   it('reports nothing for a Copilot seat no response has been observed on', () => {
     expect(readoutOf({ kind: 'copilot', state: null })).toEqual({ plan: 'Copilot', signals: [] });
   });
@@ -197,12 +212,33 @@ describe('upstream readout by provider', () => {
         usageProbe: {
           attemptedAt: Date.parse(OBSERVED), error: null, observation: {
             fetchedAt: Date.parse(OBSERVED),
-            data: { activity: { cost: '24.34000' }, limits: { session: { usage: 0.25 }, weekly: { usage: 0.4 } } },
+            data: {
+              activity: { cost: '24.34000', period: { type: 'last_4_weeks' } },
+              limits: { session: { usage: 0.25 }, weekly: { usage: 0.4 } },
+            },
           },
         },
       },
     };
     expect(rowOf(record)).toBe('Ollama Pro | 25% 5h | 40% 7d | $24.34');
+    const cost = readoutOf(record).signals.at(-1);
+    expect(cost?.detail).toBe('Charged to this account in the last 4 weeks');
+  });
+
+  it('leaves the charge unqualified when the upstream named no period for it', () => {
+    const signals = readoutOf({
+      kind: 'ollama',
+      state: {
+        account: { fetchedAt: Date.parse(OBSERVED), plan: 'pro', name: null, email: null },
+        usageProbe: {
+          attemptedAt: Date.parse(OBSERVED), error: null, observation: {
+            fetchedAt: Date.parse(OBSERVED),
+            data: { activity: { cost: '1.00' }, limits: {} },
+          },
+        },
+      },
+    }).signals;
+    expect(signals.at(-1)?.detail).toBe('Charged to this account');
   });
 
   it('shows an Ollama Cloud account that has spent nothing as zero rather than as unreported', () => {

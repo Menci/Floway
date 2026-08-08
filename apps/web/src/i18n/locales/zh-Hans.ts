@@ -412,7 +412,6 @@ const zhHansCN = {
           title: '路由优先级',
           priority: '优先级',
           upstream: '上游',
-          badgeTitle: '{{name}} - {{provider}}',
           details: '详情',
           models: '模型',
           enabled: '启用',
@@ -429,7 +428,8 @@ const zhHansCN = {
           credits: '{{balance, number}} 点额度',
           noCredits: '无额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
-          costDetail: 'Ollama Cloud 用量费用',
+          cost: '该账号已产生的费用',
+          costLast4Weeks: '该账号最近 4 周产生的费用',
         },
         providers: {
           custom: '兼容 OpenAI 或 Anthropic 的端点',

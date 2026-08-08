@@ -7,6 +7,7 @@
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, readBuckets, shownBuckets } from './copilot-quota';
+import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostText, readActivityCost, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
@@ -152,9 +153,11 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
     signals.push({
       key: 'cost',
       percent: null,
-      value: activityCostText(cost),
+      value: activityCostText(cost.amount),
       label: null,
-      detail: t('dashboard.upstreams.signals.costDetail'),
+      detail: cost.period === 'last_4_weeks'
+        ? t('dashboard.upstreams.signals.costLast4Weeks')
+        : t('dashboard.upstreams.signals.cost'),
     });
   }
   return signals;
@@ -181,8 +184,8 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   switch (record.kind) {
   case 'custom':
   case 'azure':
-  case 'copilot':
     return null;
+  case 'copilot': return copilotPlanLabel(record);
   case 'ollama': return ollamaPlanLabel(record);
   case 'codex': return codexPlanLabel(record.config.accounts[0]);
   case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
