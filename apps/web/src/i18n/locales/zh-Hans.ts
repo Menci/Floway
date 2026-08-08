@@ -829,7 +829,7 @@ const zhHansCN = {
           },
         },
         ollama: {
-          cloudUsage: '报告账号用量',
+          cloudUsage: '获取账号用量',
           cloudUsageHint: '在此上游服务的请求之后读取该 Ollama Cloud 账号的用量窗口。自托管的 Ollama 没有这个端点。',
           usage: {
             title: '用量',
