@@ -16,8 +16,6 @@ import { quotaBarColor } from '../upstreams/subscription-quota';
 
 const { ProgressBar, Text } = fluentComponents;
 
-// Premium-interaction usage as Copilot's own client derives it:
-// https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/chat/common/chatQuotaServiceImpl.ts#L83-L120
 export function CopilotQuotaCard({ record }: { record: CopilotRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
