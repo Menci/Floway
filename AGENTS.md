@@ -25,7 +25,7 @@
 | Stacked Pull Requests | Keep dependent Pull Requests draft and targeted at their predecessor; retarget and publish each one when all dependencies reach `main`. | Pull Request state |
 | `CHANGELOG.md` | Apply only the exact content the human requests and otherwise leave the file untouched. | Human request and final diff review |
 | Completion | Run and read every verification selected by the owning configuration before claiming completion. | Verification output |
-| Verification inventory | Reach every verification through a root script, chain them all from `verify`, and keep the `verify.yaml` matrix covering exactly that set. | `pnpm run check:verify-matrix` |
+| Verification inventory | Reach every verification through a root script, chain them all from `verify`, and keep `verify.yaml` running exactly that set. | `pnpm run check:verify-parity` |
 | Test placement | Place package tests and test-only support under `__tests__/` mirroring production directories; keep root verifier entrypoints and `@floway-dev/test-utils` in their owning production locations. | Vitest configs and repository review |
 | Script naming | Name a `scripts/` entrypoint for its kind — `check-` verifies an invariant, `require-` gates an action, `generate-` writes checked-in output, `test-` runs a harness — and leave importable modules unprefixed. | Repository review |
 | Generated files | Give every checked-in generator output a `.generated.` filename infix and keep generated and vendored attributes aligned. | `.gitattributes` and drift checks |

@@ -32,8 +32,8 @@ jobs:
             run: pnpm run check:generated-assets
           - name: agents-md
             run: pnpm run check:agents-md
-          - name: verify-matrix
-            run: pnpm run check:verify-matrix
+          - name: verify-parity
+            run: pnpm run check:verify-parity
           # `build.yaml` builds the SPA image, but only on `main` and on a
           # schedule. Building here is what puts the bundler and the build
           # output assertions in front of a pull request; `build` chains
@@ -61,6 +61,6 @@ jobs:
       # `build`; a fresh checkout has to generate them or every route module
       # fails to resolve `./+types/...`.
       - name: Generate route types
-        run: pnpm --filter @floway-dev/web exec react-router typegen
+        run: pnpm run typegen
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
