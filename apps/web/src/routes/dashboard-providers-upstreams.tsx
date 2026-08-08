@@ -164,7 +164,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal, { background }: { background: boolean }) => {
     const next = await loadPageData(signal);
     if (signal.aborted) return;
-    setData(next);
+    // A failed fetch is not an empty list. Each half keeps what it last had and
+    // the message bars carry the reason, so a blip on an unattended poll cannot
+    // empty a table nobody is watching -- the two other polling pages hold their
+    // data the same way.
+    setData(current => ({
+      upstreams: next.upstreams ?? current.upstreams,
+      models: next.models ?? current.models,
+      loadError: next.loadError,
+      modelsError: next.modelsError,
+    }));
     // A poll nobody asked for reports a new failure but never retires one the
     // operator has not read.
     if (!background || next.loadError !== null) setPageError(next.loadError);
