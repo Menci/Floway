@@ -1,6 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
-import type { ZedModel } from './agent-setup-models';
+import type { VSCodeModel, ZedModel } from './agent-setup-models';
 import type { api } from '../../api/client';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
@@ -29,6 +29,7 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
   },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 export const cloneAgentSetupConfiguration = (
@@ -59,6 +60,7 @@ export const applyLocalAgentSetupChanges = (
   copyChangedFields(merged.claudeCode, local.claudeCode, baseline.claudeCode);
   copyChangedFields(merged.codex, local.codex, baseline.codex);
   copyChangedFields(merged.zed, local.zed, baseline.zed);
+  copyChangedFields(merged.vscode, local.vscode, baseline.vscode);
   return merged;
 };
 
@@ -227,3 +229,29 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
     `[FlowayZedCredential]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,
   ].join('\n');
 };
+
+// VS Code's provider list is a top-level array of groups, so the array wrapper
+// here is the file's own shape: pasted into an empty file it is the whole
+// document, and into an existing one the single entry is what merges in beside
+// whatever other gateways the operator configured. Groups are keyed by
+// `${vendor}:${name}`, so a second entry under this name silently collapses
+// onto the last rather than adding a provider.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
+// The projection deliberately omits the endpoint and the credential, because a
+// setup run's merge attaches them. A pasted snippet has no merge, so the
+// preview attaches them here — the document has to be complete on its own.
+export const buildAgentVSCodeSnippet = (
+  origin: string,
+  apiKey: string,
+  config: AgentSetupConfiguration['vscode'],
+  models: readonly VSCodeModel[],
+) => JSON.stringify([{
+  vendor: 'customendpoint',
+  name: config.providerName,
+  apiType: config.apiType,
+  models: models.map(model => ({
+    ...model,
+    url: `${origin}/v1`,
+    requestHeaders: { authorization: `Bearer ${apiKey}` },
+  })),
+}], null, 2);

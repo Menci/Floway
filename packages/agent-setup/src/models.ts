@@ -78,3 +78,60 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
       ...(mode === undefined ? {} : { mode }),
     };
   });
+
+// The three API paths `customendpoint` resolves a bare base URL to. Floway
+// serves all of them for every model, so this is one group-wide preference
+// rather than something derived per model.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
+export type VSCodeApiType = 'chat-completions' | 'responses' | 'messages';
+
+// One entry of a VS Code `customendpoint` group's `models`. `id`, `name`,
+// `url`, `toolCalling`, `vision` and `maxOutputTokens` are required, and one of
+// `maxInputTokens` or `contextWindow` must be present. `url` is absent here and
+// supplied by the installer's merge, for the reason given at the top of this
+// file. Output tokens are clamped to the context window by VS Code itself.
+// Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/package.json#L2190-L2209
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
+export interface VSCodeModel {
+  id: string;
+  name: string;
+  toolCalling: boolean;
+  vision: boolean;
+  maxOutputTokens: number;
+  contextWindow: number;
+  thinking?: boolean;
+  supportsReasoningEffort?: string[];
+  reasoningEffortFormat?: VSCodeApiType;
+}
+
+// VS Code reconciles these against each other, clamping output to the window,
+// so a model announcing neither still needs both.
+const VSCODE_FALLBACK_CONTEXT_TOKENS = 128_000;
+const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
+
+export const projectVSCodeModels = (
+  models: readonly PublicModel[],
+  apiType: VSCodeApiType,
+): VSCodeModel[] =>
+  chatModels(models).map(model => {
+    const reasoning = model.chat?.reasoning;
+    const supportedEfforts = reasoning?.effort?.supported;
+    return {
+      id: model.id,
+      name: model.display_name,
+      // A chat model that cannot call tools is not one anyone routes here, and
+      // without this VS Code drops it from agent mode and inline chat.
+      // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L342-L346
+      //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts#L63-L72
+      toolCalling: true,
+      vision: model.chat?.modalities?.input.includes('image') ?? false,
+      maxOutputTokens: model.limits.max_output_tokens ?? VSCODE_FALLBACK_OUTPUT_TOKENS,
+      contextWindow: model.limits.max_context_window_tokens
+        ?? model.limits.max_prompt_tokens
+        ?? VSCODE_FALLBACK_CONTEXT_TOKENS,
+      ...(reasoning === undefined ? {} : { thinking: true }),
+      ...(supportedEfforts === undefined
+        ? {}
+        : { supportsReasoningEffort: [...supportedEfforts], reasoningEffortFormat: apiType }),
+    };
+  });

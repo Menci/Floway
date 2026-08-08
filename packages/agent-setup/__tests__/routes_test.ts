@@ -155,6 +155,7 @@ interface LeaseResponse {
     claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
     zed: { providerName: string };
+    vscode: { providerName: string; apiType: string };
   };
   configurationRevision: number;
   expiresAt: number;
@@ -162,6 +163,7 @@ interface LeaseResponse {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
     zed: { sh: string; ps1: string };
+    vscode: { sh: string; ps1: string };
   };
 }
 
@@ -172,6 +174,7 @@ const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -503,6 +506,20 @@ test('GET re-reads the current configuration each request', async () => {
 // happens here. A listing failure is the operator's to see: an opaque 404 would
 // read as a dead setup link and a 500 as a gateway fault, so the script says
 // what happened and exits non-zero before touching anything.
+test('the served VS Code script carries the projected catalog and its API path', async () => {
+  const h = harness();
+  const lease = await create(h);
+  const body = await (await h.request(lease.scripts.vscode.sh, { method: 'GET' })).text();
+  expect(body).toContain("SETUP_VSCODE_PROVIDER_NAME='Floway'");
+  expect(body).toContain("SETUP_VSCODE_API_TYPE='messages'");
+  const embedded = body.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!;
+  expect(embedded).toContain('"id":"claude-opus-4-6"');
+  // The endpoint and the credential are the merge's to attach, so the embedded
+  // catalog carries neither — the merge program in the body still names them.
+  expect(embedded).not.toContain('"url"');
+  expect(embedded).not.toContain('requestHeaders');
+});
+
 test('a model listing failure serves a script that reports it', async () => {
   const h = harness({ publicOverrides: { listModels: () => Promise.reject(new Error('upstream listing exploded')) } });
   const lease = await create(h);

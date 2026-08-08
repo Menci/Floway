@@ -111,16 +111,23 @@ SOFTWARE.
 Simple Icons
 ------------
 
-lobe-icons carries no Zed mark, so this one comes from simple-icons at commit
+lobe-icons carries neither of these marks, so they come from simple-icons at commit
 34c22501f9ac9f22b12f825677ccbab1fb22e14b:
 
 - zed.svg
   https://github.com/simple-icons/simple-icons/blob/34c22501f9ac9f22b12f825677ccbab1fb22e14b/icons/zedindustries.svg
+- vscode.svg
+  https://github.com/simple-icons/simple-icons/blob/34c22501f9ac9f22b12f825677ccbab1fb22e14b/icons/vscodium.svg
 
-The path data is verbatim. The root element gains the sizing and
-`fill="currentColor"` attributes the lobe-icons marks carry, so it renders at
+The path data is verbatim in both. The root element gains the sizing and
+`fill="currentColor"` attributes the lobe-icons marks carry, so each renders at
 the same optical size and inherits colour the same way, and the title is
-shortened to "Zed" to match the label beside it.
+replaced with the label beside it.
+
+vscode.svg is the VSCodium mark rather than a Visual Studio Code one. Neither
+icon set carries the Microsoft-branded mark, and the tab it labels configures
+the Code, Insiders, and VSCodium builds alike, so the unbranded shape is the
+more accurate label as well as the freely licensed one.
 
 CC0-1.0 Universal
 

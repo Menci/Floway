@@ -46,6 +46,7 @@ const scriptSources = {
       { name: 'SETUP_BASH_CLAUDE', file: 'installers/bash/claude.sh' },
       { name: 'SETUP_BASH_CODEX', file: 'installers/bash/codex.sh' },
       { name: 'SETUP_BASH_ZED', file: 'installers/bash/zed.sh' },
+      { name: 'SETUP_BASH_VSCODE', file: 'installers/bash/vscode.sh' },
     ],
   },
   powershell: {
@@ -72,6 +73,7 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
       { name: 'SETUP_POWERSHELL_ZED', file: 'installers/powershell/zed.ps1' },
+      { name: 'SETUP_POWERSHELL_VSCODE', file: 'installers/powershell/vscode.ps1' },
     ],
   },
 } as const satisfies Record<string, PlatformSources>;

@@ -25,7 +25,8 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
-import { projectZedModels } from '../src/models.ts';
+import { projectVSCodeModels, projectZedModels } from '../src/models.ts';
+import type { VSCodeApiType } from '../src/models.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 import {
   SETUP_BASH_CLAUDE,
@@ -41,7 +42,7 @@ import { type ScriptAgent, SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
 
 const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
-const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex', zed: 'Zed' };
+const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex', zed: 'Zed', vscode: 'VS Code' };
 const shellEntry = (agent: ScriptAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
 const powerShellEntry = (agent: ScriptAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
 const shellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].sh;
@@ -321,14 +322,14 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 // One row per branch of the Zed projection: an adaptive reasoner that also
 // takes images, a budgeted reasoner, a model with no limits at all, and a
 // non-chat kind the projection must drop.
-const ZED_CATALOG = {
+const EDITOR_CATALOG = {
   object: 'list',
   data: [
     {
       id: 'claude-opus-4-6', object: 'model', type: 'model', display_name: 'Claude Opus 4.6',
       kind: 'chat', endpoints: { messages: {} },
       limits: { max_context_window_tokens: 1_000_000, max_output_tokens: 64_000 },
-      chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { adaptive: true } },
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { adaptive: true, effort: { supported: ['low', 'high'], default: 'high' } } },
     },
     {
       id: 'gpt-5.6', object: 'model', type: 'model', display_name: 'GPT-5.6',
@@ -361,6 +362,15 @@ const ZED_CATALOG = {
       kind: 'chat', endpoints: { messages: {} },
       limits: { max_context_window_tokens: 200_000 },
       chat: { reasoning: { budget_tokens: { max: 32_000 } } },
+    },
+    {
+      // Zero limits and an empty effort list. A stated 0 is a value, not an
+      // absent limit, and it has to survive the projection, the embedding in
+      // the script, and both merges.
+      id: 'zero-limits', object: 'model', type: 'model', display_name: 'Zero Limits',
+      kind: 'chat', endpoints: { chatCompletions: {} },
+      limits: { max_context_window_tokens: 0, max_output_tokens: 0 },
+      chat: { reasoning: { effort: { supported: [], default: 'low' } } },
     },
     {
       id: 'embed-3', object: 'model', type: 'model', display_name: 'Embed',
@@ -480,8 +490,8 @@ const startModelServer = async (): Promise<ModelServer> => {
       // Serves the embedding row alone, so the refusal comes out of the
       // chat-kind filter rather than out of an empty array.
       res.end(JSON.stringify(state.mode === 'catalog-empty'
-        ? { object: 'list', data: ZED_CATALOG.data.filter(model => model.kind !== 'chat') }
-        : ZED_CATALOG));
+        ? { object: 'list', data: EDITOR_CATALOG.data.filter(model => model.kind !== 'chat') }
+        : EDITOR_CATALOG));
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
@@ -588,6 +598,7 @@ const baseConfig = (): AgentSetupConfiguration => ({
   },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): InstallerTestConfiguration => {
@@ -603,6 +614,11 @@ const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}):
 const zedConfig = (overrides: Partial<AgentSetupConfiguration['zed']> = {}): InstallerTestConfiguration => {
   const base = baseConfig();
   return { ...base, testAgent: 'zed', zed: { ...base.zed, ...overrides } };
+};
+
+const vscodeConfig = (overrides: Partial<AgentSetupConfiguration['vscode']> = {}): InstallerTestConfiguration => {
+  const base = baseConfig();
+  return { ...base, testAgent: 'vscode', vscode: { ...base.vscode, ...overrides } };
 };
 
 const bothConfig = (
@@ -676,6 +692,7 @@ interface RunOptions {
   // instead of the real `~/.config/zed`, and the credential record replaces the
   // OS credential store no test host can be asked to mutate.
   zedConfigDir?: string;
+  vscodeUserDir?: string;
 }
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
@@ -727,13 +744,16 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 // can be served by this process's event loop without deadlocking.
 // What the gateway would embed for this run. A test that wants an empty
 // provider list passes its own catalog rather than driving an HTTP fixture.
-const editorModelsFor = (agent: ScriptAgent, catalog: readonly unknown[] = ZED_CATALOG.data) =>
-  (agent === 'zed' ? projectZedModels(catalog as never) : undefined);
+const editorModelsFor = (agent: ScriptAgent, catalog: readonly unknown[] = EDITOR_CATALOG.data, apiType: VSCodeApiType = 'messages') => {
+  if (agent === 'zed') return projectZedModels(catalog as never);
+  if (agent === 'vscode') return projectVSCodeModels(catalog as never, apiType);
+  return undefined;
+};
 
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
-  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + shellBody(agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog, configuration.vscode.apiType) }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -763,6 +783,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
+  if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   if (options.fakeRestoreFailure) {
     // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
@@ -804,7 +825,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
-  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + shellBody(agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog, configuration.vscode.apiType) }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -894,7 +915,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
         .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
         .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
     : canonicalBody;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + culturePrelude + body;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog, configuration.vscode.apiType) }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
   writeFileSync(scriptPath, script);
@@ -930,6 +951,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.noColor) env.NO_COLOR = '1';
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
+  if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
@@ -2510,7 +2532,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2620,7 +2642,7 @@ test('zed', 'an unreadable settings document is left untouched', async t => {
 test('zed', 'a catalog with no chat models is refused rather than written empty', async t => {
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
-  const run = await runZed(ws, { zedConfigDir: configDir, catalog: ZED_CATALOG.data.filter(model => model.kind !== 'chat') });
+  const run = await runZed(ws, { zedConfigDir: configDir, catalog: EDITOR_CATALOG.data.filter(model => model.kind !== 'chat') });
   t.equal(run.code, 1, 'should fail');
   t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
   // The refusal precedes credential storage, so an unusable catalog leaves no
@@ -2653,7 +2675,7 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
 
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
 
   const models = new Map(provider.available_models.map(entry => [entry.name, entry]));
   t.equal(JSON.stringify(models.get('claude-opus-4-6')!.mode), JSON.stringify({ type: 'adaptive' }), 'adaptive reasoning survives the PowerShell projection');
@@ -2688,6 +2710,475 @@ test('zed', 'PowerShell leaves an unreadable settings document untouched', async
   t.equal(run.code, 1, 'should fail');
   t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), '{ this is not json', 'the original bytes survive');
 });
+
+const vscodeGroupsPath = (profileDir: string): string => join(profileDir, 'chatLanguageModels.json');
+
+interface VSCodeModelEntry {
+  id: string;
+  name: string;
+  url: string;
+  toolCalling: boolean;
+  vision: boolean;
+  maxOutputTokens: number;
+  contextWindow: number;
+  requestHeaders: Record<string, string>;
+  thinking?: boolean;
+  supportsReasoningEffort?: string[];
+  reasoningEffortFormat?: string;
+}
+interface VSCodeGroup {
+  vendor: string;
+  name: string;
+  apiType?: string;
+  models?: VSCodeModelEntry[];
+  [key: string]: unknown;
+}
+
+const readVSCodeGroups = (profileDir: string): VSCodeGroup[] =>
+  JSON.parse(readFileSync(vscodeGroupsPath(profileDir), 'utf8')) as VSCodeGroup[];
+
+const ourGroup = (groups: VSCodeGroup[], name = 'Floway'): VSCodeGroup =>
+  groups.find(group => group.vendor === 'customendpoint' && group.name === name)!;
+
+// Named so a test needing two independent user directories gets two, rather
+// than silently reusing one and leaving the earlier phase's file behind.
+const makeVSCodeUserDir = (ws: Workspace, name = 'vscode-user'): string => {
+  const dir = join(ws.home, name);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+const runVSCode = (ws: Workspace, overrides: Partial<RunOptions> = {}) => runShellInstaller({
+  workspace: ws,
+  baseUrl: modelServer.url,
+  configuration: vscodeConfig(),
+  vscodeUserDir: overrides.vscodeUserDir ?? makeVSCodeUserDir(ws),
+  ...overrides,
+});
+
+test('vscode', 'enumerates the catalog into one customendpoint group', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const group = ourGroup(readVSCodeGroups(userDir));
+  t.equal(group.apiType, 'messages', 'the group carries the selected API path');
+  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+  t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment customendpoint appends a path to');
+});
+
+test('vscode', 'maps limits, modalities, and reasoning onto the required fields', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const models = new Map(ourGroup(readVSCodeGroups(userDir)).models!.map(entry => [entry.id, entry]));
+
+  const opus = models.get('claude-opus-4-6')!;
+  t.equal(opus.contextWindow, 1_000_000, 'context window is carried through');
+  t.equal(opus.maxOutputTokens, 64_000, 'output limit is carried through');
+  t.equal(opus.vision, true, 'image modality becomes vision');
+  t.equal(opus.toolCalling, true, 'tool calling is always declared');
+  t.equal(opus.thinking, true, 'a reasoning model declares thinking');
+  t.equal(opus.supportsReasoningEffort?.join(','), 'low,high', 'discrete effort levels are offered');
+  t.equal(opus.reasoningEffortFormat, 'messages', 'the effort format follows the group API path');
+
+  const gpt = models.get('gpt-5.6')!;
+  t.equal(gpt.vision, false, 'a text-only model does not claim vision');
+  t.equal(gpt.thinking, true, 'a budget-only reasoner still declares thinking');
+  t.ok(gpt.supportsReasoningEffort === undefined, 'no effort picker without discrete levels');
+
+  const plain = models.get('plain-chat')!;
+  t.equal(plain.contextWindow, 128_000, 'a model with no limits still gets a context window');
+  t.equal(plain.maxOutputTokens, 8192, 'a model with no output limit still gets one');
+  t.ok(plain.thinking === undefined, 'a model without reasoning does not declare thinking');
+
+  // A stated 0 is a value, not an absent limit; the fallbacks belong to models
+  // that announce nothing. Truthiness tests cannot tell the two apart.
+  const zero = models.get('zero-limits')!;
+  t.equal(zero.contextWindow, 0, 'a stated zero context window survives');
+  t.equal(zero.maxOutputTokens, 0, 'a stated zero output limit survives');
+  t.equal(JSON.stringify(zero.supportsReasoningEffort), '[]', 'an empty effort list is still an effort list');
+});
+
+// The group's own `apiKey` is declared `secret`, so VS Code runs its
+// `${input:...}` decoder over a literal and lands on a secret-storage miss.
+test('vscode', 'carries the key in requestHeaders rather than the secret apiKey property', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const group = ourGroup(readVSCodeGroups(userDir));
+  t.ok(group.apiKey === undefined, 'the group declares no apiKey');
+  t.equal(group.models![0]!.requestHeaders.authorization, `Bearer ${SENTINEL_KEY}`, 'the key rides in the per-model authorization header');
+  t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
+});
+
+test('vscode', 'replaces only its own group and leaves every other one intact', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  writeFileSync(vscodeGroupsPath(userDir), JSON.stringify([
+    { vendor: 'customendpoint', name: 'Other gateway', apiType: 'responses', models: [] },
+    { vendor: 'anthropic', name: 'Direct', apiKey: '${input:chat.lm.secret.abc}' },
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'chat-completions', models: [{ id: 'stale' }] },
+  ]));
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const groups = readVSCodeGroups(userDir);
+  t.equal(groups.length, 3, 'the group count is unchanged — ours is replaced, not appended');
+  t.equal(ourGroup(groups, 'Other gateway').apiType, 'responses', 'a sibling customendpoint gateway survives');
+  t.equal(String(groups.find(group => group.vendor === 'anthropic')!.apiKey), '${input:chat.lm.secret.abc}', 'another vendor keeps its secret placeholder');
+  t.ok(!ourGroup(groups).models!.some(entry => entry.id === 'stale'), 'our previous models are gone');
+});
+
+test('vscode', 'writes every profile of the user directory', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const namedProfile = join(userDir, 'profiles', 'a1b2c3');
+  mkdirSync(namedProfile, { recursive: true });
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  t.ok(existsSync(vscodeGroupsPath(userDir)), 'the default profile is configured');
+  t.ok(existsSync(vscodeGroupsPath(namedProfile)), 'a named profile is configured too');
+  t.equal(
+    ourGroup(readVSCodeGroups(namedProfile)).models!.length,
+    ourGroup(readVSCodeGroups(userDir)).models!.length,
+    'both profiles receive the same catalog',
+  );
+});
+
+test('vscode', 'the written document is owner-only because it carries the key', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.equal(statSync(vscodeGroupsPath(userDir)).mode & 0o777, 0o600, 'mode is 0600');
+});
+
+test('vscode', 'a renamed provider writes under the chosen name', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir, configuration: vscodeConfig({ providerName: "Ops' box" }) });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(ourGroup(readVSCodeGroups(userDir), "Ops' box") !== undefined, 'a name carrying a quote survives the shell literal encoder');
+});
+
+test('vscode', 'the selected API path reaches both the group and the effort format', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir, configuration: vscodeConfig({ apiType: 'responses' }) });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const group = ourGroup(readVSCodeGroups(userDir));
+  t.equal(group.apiType, 'responses', 'the group carries the selection');
+  t.equal(group.models!.find(entry => entry.id === 'claude-opus-4-6')!.reasoningEffortFormat, 'responses', 'the effort format follows it');
+});
+
+test('vscode', 'an unreadable provider list is left untouched', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  writeFileSync(vscodeGroupsPath(userDir), '{"vendor":"customendpoint"}');
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.equal(run.code, 1, 'should fail');
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), '{"vendor":"customendpoint"}', 'a non-array root is refused and the bytes survive');
+});
+
+test('vscode', 'a catalog with no chat models is refused rather than written empty', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir, catalog: EDITOR_CATALOG.data.filter(model => model.kind !== 'chat') });
+  t.equal(run.code, 1, 'should fail');
+  t.ok(!existsSync(vscodeGroupsPath(userDir)), 'no provider list is written');
+});
+
+test('vscode', 'PowerShell writes the same provider group as Bash', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: vscodeConfig(),
+    vscodeUserDir: userDir,
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const group = ourGroup(readVSCodeGroups(userDir));
+  t.equal(group.apiType, 'messages', 'the group carries the selected API path');
+  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+
+  const models = new Map(group.models!.map(entry => [entry.id, entry]));
+  t.equal(models.get('claude-opus-4-6')!.supportsReasoningEffort?.join(','), 'low,high', 'discrete effort levels survive the PowerShell projection');
+  t.equal(models.get('gpt-5.6')!.thinking, true, 'a budget-only reasoner still declares thinking');
+  t.equal(models.get('plain-chat')!.contextWindow, 128_000, 'the unlimited model gets the same fallback window');
+  // The divergence this parity test exists to catch: PowerShell truthiness
+  // treats 0 and an empty array as false, jq treats both as true.
+  t.equal(models.get('zero-limits')!.contextWindow, 0, 'a stated zero survives the PowerShell projection');
+  t.equal(models.get('zero-limits')!.maxOutputTokens, 0, 'so does a stated zero output limit');
+  t.equal(JSON.stringify(models.get('zero-limits')!.supportsReasoningEffort), '[]', 'and an empty effort list is kept');
+  t.equal(models.get('plain-chat')!.requestHeaders.authorization, `Bearer ${SENTINEL_KEY}`, 'the key rides in the per-model header');
+  t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
+});
+
+test('vscode', 'PowerShell replaces only its own group', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  writeFileSync(vscodeGroupsPath(userDir), JSON.stringify([
+    { vendor: 'customendpoint', name: 'Other gateway', apiType: 'responses', models: [] },
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'chat-completions', models: [{ id: 'stale' }] },
+  ]));
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: vscodeConfig(),
+    vscodeUserDir: userDir,
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+
+  const groups = readVSCodeGroups(userDir);
+  t.equal(groups.length, 2, 'the group count is unchanged');
+  t.equal(ourGroup(groups, 'Other gateway').apiType, 'responses', 'a sibling gateway survives');
+  t.ok(!ourGroup(groups).models!.some(entry => entry.id === 'stale'), 'our previous models are gone');
+});
+
+// A lone group must still round-trip as an array; ConvertTo-Json unwraps a
+// one-element array and `-AsArray` does not exist on the 5.1 baseline.
+test('vscode', 'PowerShell writes an array even when ours is the only group', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: vscodeConfig(),
+    vscodeUserDir: userDir,
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(readFileSync(vscodeGroupsPath(userDir), 'utf8').trimStart().startsWith('['), 'the document root is an array');
+  t.equal(readVSCodeGroups(userDir).length, 1, 'and it holds exactly our group');
+});
+
+// The atomic replacement Windows takes when the file already exists. Every
+// operator who has opened Manage Models once, and everyone on a second run,
+// goes through it.
+test('vscode', 'PowerShell replaces an existing provider list atomically', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws);
+  writeFileSync(vscodeGroupsPath(userDir), JSON.stringify([
+    { vendor: 'customendpoint', name: 'Other gateway', apiType: 'responses', models: [] },
+  ]));
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: vscodeConfig(),
+    vscodeUserDir: userDir,
+    forcePowerShellWindowsReplacement: true,
+  });
+  t.equal(run.code, 0, `File.Replace should succeed:\n${run.combined}`);
+  const groups = readVSCodeGroups(userDir);
+  t.equal(groups.length, 2, 'the sibling gateway survives the replacement');
+  t.ok(ourGroup(groups).models!.length > 0, 'and our group carries the catalog');
+});
+
+// ConvertFrom-Json decodes `[]` to $null and unwraps a one-element array into a
+// bare object, so the PowerShell installer decides the root shape from the text
+// as jq does. Both directions are asserted: an empty list is a valid list VS
+// Code itself writes, and an object root is not a list at all.
+test('vscode', 'PowerShell accepts an empty provider list and refuses an object root', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const emptyDir = makeVSCodeUserDir(ws, 'vscode-empty-root');
+  writeFileSync(vscodeGroupsPath(emptyDir), '[]');
+  const accepted = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: emptyDir,
+  });
+  t.equal(accepted.code, 0, `an empty list is a valid list:\n${accepted.combined}`);
+  t.equal(readVSCodeGroups(emptyDir).length, 1, 'and our group is written into it');
+
+  const objectDir = makeVSCodeUserDir(ws, 'vscode-object-root');
+  writeFileSync(vscodeGroupsPath(objectDir), '{"vendor":"customendpoint","name":"Floway"}');
+  const refused = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: objectDir,
+  });
+  t.ok(refused.code !== 0, 'an object root is refused');
+  t.equal(readFileSync(vscodeGroupsPath(objectDir), 'utf8'), '{"vendor":"customendpoint","name":"Floway"}', 'and the file is left byte-identical');
+});
+
+test('vscode', 'Bash accepts an empty provider list and refuses an object root', async t => {
+  const ws = makeWorkspace();
+  const emptyDir = makeVSCodeUserDir(ws, 'vscode-empty-root');
+  writeFileSync(vscodeGroupsPath(emptyDir), '[]');
+  const accepted = await runVSCode(ws, { vscodeUserDir: emptyDir });
+  t.equal(accepted.code, 0, `an empty list is a valid list:\n${accepted.combined}`);
+  t.equal(readVSCodeGroups(emptyDir).length, 1, 'and our group is written into it');
+
+  const objectDir = makeVSCodeUserDir(ws, 'vscode-object-root');
+  writeFileSync(vscodeGroupsPath(objectDir), '{"vendor":"customendpoint","name":"Floway"}');
+  const refused = await runVSCode(ws, { vscodeUserDir: objectDir });
+  t.ok(refused.code !== 0, 'an object root is refused');
+  t.equal(readFileSync(vscodeGroupsPath(objectDir), 'utf8'), '{"vendor":"customendpoint","name":"Floway"}', 'and the file is left byte-identical');
+});
+
+// An empty file is not a provider list, and each half must say so by name
+// rather than passing the shape gate and failing later as a staging error (jq
+// runs a filter zero times on empty input and still exits 0) or dying on a null
+// dereference (Get-Content -Raw yields $null). One test per half, so a host
+// without PowerShell reports a skip rather than a pass that asserted nothing.
+test('vscode', 'Bash refuses an empty provider list file by name', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-empty-file-sh');
+  writeFileSync(vscodeGroupsPath(userDir), '');
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.ok(run.code !== 0, 'it is refused');
+  t.ok(run.combined.includes('is not a valid provider list'), `the file is named, not a later stage:\n${run.combined}`);
+});
+
+test('vscode', 'PowerShell refuses an empty provider list file by name', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-empty-file-ps1');
+  writeFileSync(vscodeGroupsPath(userDir), '');
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir,
+  });
+  t.ok(run.code !== 0, 'it is refused');
+  t.ok(run.combined.includes('is not a provider list'), `the file is named, not a null dereference:\n${run.combined}`);
+});
+
+// A list holding a non-object element is not a provider list. jq's merge
+// indexes `.vendor` on every element and aborts on a scalar, so without a gate
+// the same document would be rewritten by PowerShell and refused by Bash.
+test('vscode', 'Bash refuses a provider list holding a non-object element', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-scalar-sh');
+  const original = '["stray",{"vendor":"customendpoint","name":"Other gateway"}]';
+  writeFileSync(vscodeGroupsPath(userDir), original);
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.ok(run.code !== 0, 'it is refused');
+  t.ok(run.combined.includes('is not a valid provider list'), `the operator's file is named:\n${run.combined}`);
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), original, 'and left byte-identical');
+});
+
+test('vscode', 'PowerShell refuses a provider list holding a non-object element', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-scalar-ps1');
+  const original = '["stray",{"vendor":"customendpoint","name":"Other gateway"}]';
+  writeFileSync(vscodeGroupsPath(userDir), original);
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir,
+  });
+  t.ok(run.code !== 0, 'it is refused');
+  t.ok(run.combined.includes('is not a provider list'), `the operator's file is named:\n${run.combined}`);
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), original, 'and left byte-identical');
+});
+
+// `[null]` is an array whose element is not a provider group. It matters
+// because ConvertFrom-Json yields nothing for `[]` and a literal $null here, so
+// a decode-based emptiness test would confuse a list VS Code writes with one it
+// never would.
+test('vscode', 'Bash refuses a provider list of nulls', async t => {
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-null-sh');
+  writeFileSync(vscodeGroupsPath(userDir), '[null]');
+  const run = await runVSCode(ws, { vscodeUserDir: userDir });
+  t.ok(run.code !== 0, 'it is refused');
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), '[null]', 'and left byte-identical');
+});
+
+test('vscode', 'PowerShell refuses a provider list of nulls', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-null-ps1');
+  writeFileSync(vscodeGroupsPath(userDir), '[null]');
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir,
+  });
+  t.ok(run.code !== 0, 'it is refused');
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), '[null]', 'and left byte-identical');
+});
+
+// The prune runs inside the same transaction as the write, so a backup that
+// cannot be removed rolls the operator's file back rather than leaving it
+// rewritten under a failing exit code.
+test('vscode', 'a failed backup prune rolls the settings back', async t => {
+  if (process.platform === 'win32') skip('the chflags-based prune-failure injection is Unix-only');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-prune');
+  const original = '[{"vendor":"customendpoint","name":"Other gateway","apiType":"responses","models":[]}]';
+  writeFileSync(vscodeGroupsPath(userDir), original);
+  const stale = `${vscodeGroupsPath(userDir)}.floway-backup.19700101000000.1`;
+  writeFileSync(stale, '[]');
+  if (spawnSync('chflags', ['uchg', stale]).status !== 0) skip('chflags is unavailable on this host');
+  try {
+    const run = await runVSCode(ws, { vscodeUserDir: userDir });
+    t.ok(run.code !== 0, 'the run fails');
+    t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), original, "and the operator's file is rolled back");
+  } finally {
+    spawnSync('chflags', ['nouchg', stale]);
+  }
+});
+
+test('vscode', 'PowerShell rolls back when the backup prune fails', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  if (process.platform === 'win32') skip('the chflags-based prune-failure injection is Unix-only');
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-prune-ps1');
+  const original = '[{"vendor":"customendpoint","name":"Other gateway","apiType":"responses","models":[]}]';
+  writeFileSync(vscodeGroupsPath(userDir), original);
+  const stale = `${vscodeGroupsPath(userDir)}.floway-backup.19700101000000.1`;
+  writeFileSync(stale, '[]');
+  if (spawnSync('chflags', ['uchg', stale]).status !== 0) skip('chflags is unavailable on this host');
+  try {
+    const run = await runPowerShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir,
+    });
+    t.ok(run.code !== 0, 'the run fails');
+    t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), original, "and the operator's file is rolled back");
+  } finally {
+    spawnSync('chflags', ['nouchg', stale]);
+  }
+});
+
+// One hand-edited profile must not cost the operator every other profile and
+// build. Each profile is its own transaction, so the corrupt one is refused and
+// left byte-identical while the healthy ones are configured, and the run still
+// exits non-zero.
+const profileFailureCases = [
+  { half: 'Bash', run: (ws: Workspace, userDir: string) => runVSCode(ws, { vscodeUserDir: userDir }) },
+  {
+    half: 'PowerShell',
+    run: (ws: Workspace, userDir: string) => runPowerShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir,
+    }),
+  },
+] as const;
+
+for (const { half, run } of profileFailureCases) {
+  test('vscode', `${half} configures healthy profiles despite a corrupt one`, async t => {
+    if (half === 'PowerShell' && !hostPwsh) skip('no PowerShell interpreter on this host');
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-partial-${half}`);
+    const corrupt = join(userDir, 'profiles', 'aaa');
+    const healthy = join(userDir, 'profiles', 'bbb');
+    mkdirSync(corrupt, { recursive: true });
+    mkdirSync(healthy, { recursive: true });
+    writeFileSync(vscodeGroupsPath(corrupt), '{ this is not json');
+
+    const result = await run(ws, userDir);
+    t.ok(result.code !== 0, 'the run reports failure');
+    t.equal(readFileSync(vscodeGroupsPath(corrupt), 'utf8'), '{ this is not json', 'the corrupt profile is untouched');
+    t.equal(readVSCodeGroups(healthy).length, 1, 'a later profile is still configured');
+    t.equal(readVSCodeGroups(userDir).length, 1, 'and so is the default one');
+  });
+}
 
 // --- output contract --------------------------------------------------------
 

@@ -23,6 +23,10 @@ const fullConfiguration: AgentSetupConfiguration = {
   zed: {
     providerName: 'Floway',
   },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
 
 describe('agent setup request bodies', () => {

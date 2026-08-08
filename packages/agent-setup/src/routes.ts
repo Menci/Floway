@@ -21,7 +21,7 @@ import {
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
-import { projectZedModels } from './models.ts';
+import { projectVSCodeModels, projectZedModels } from './models.ts';
 import { renderPowerShellPrefix, renderScriptFailure, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
@@ -87,6 +87,10 @@ const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string)
       sh: `${publicScriptBasePath}/${record.token}/zed.sh`,
       ps1: `${publicScriptBasePath}/${record.token}/zed.ps1`,
     },
+    vscode: {
+      sh: `${publicScriptBasePath}/${record.token}/vscode.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/vscode.ps1`,
+    },
   },
 });
 
@@ -149,14 +153,16 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      // Zed snapshots the catalog rather than discovering it, so the script
-      // carries the projection. Listing reaches upstreams and can fail on its
+      // The editor agents snapshot the catalog rather than discovering it, so
+      // the script carries the projection. Listing reaches upstreams and can fail on its
       // own; that is the operator's problem to see, not a broken-link 404.
       let editorModels;
-      if (agent === 'zed') {
+      if (agent === 'zed' || agent === 'vscode') {
         try {
           const models = await deps.listModels(c, resolved.userId, resolved.configuration.apiKeyId);
-          editorModels = projectZedModels(models);
+          editorModels = agent === 'zed'
+            ? projectZedModels(models)
+            : projectVSCodeModels(models, resolved.configuration.vscode.apiType);
         } catch (error) {
           console.error('Agent Setup: failed to list models for a setup script', publicErrorDiagnostics(error, token));
           return c.body(renderScriptFailure(language, MODEL_LISTING_FAILURE), 200, SCRIPT_RESPONSE_HEADERS);
@@ -185,6 +191,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
     .on(['GET', 'HEAD'], '/:token/zed.sh', serveSetupScript('zed', 'sh'))
     .on(['GET', 'HEAD'], '/:token/zed.ps1', serveSetupScript('zed', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/vscode.sh', serveSetupScript('vscode', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/vscode.ps1', serveSetupScript('vscode', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

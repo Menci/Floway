@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import {
   buildAgentClaudeSnippet,
   buildAgentCodexSnippet,
+  buildAgentVSCodeSnippet,
   buildAgentZedSnippet,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
@@ -13,11 +14,12 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { modelOptions, projectZedModels, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, projectVSCodeModels, projectZedModels, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import vscodeIconUrl from '../../assets/vscode.svg';
 import zedIconUrl from '../../assets/zed.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
@@ -31,8 +33,8 @@ import { SectionHeader } from '../ui/section-header';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, InfoButton, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex' | 'zed';
-const AGENTS = ['claude', 'codex', 'zed'] as const satisfies readonly Agent[];
+type Agent = 'claude' | 'codex' | 'zed' | 'vscode';
+const AGENTS = ['claude', 'codex', 'zed', 'vscode'] as const satisfies readonly Agent[];
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
@@ -52,6 +54,10 @@ const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies
 // packages/agent-setup/src/configuration.ts. It only stops typing early — the
 // gateway still enforces the rule.
 const PROVIDER_NAME_MAX_LENGTH = 120;
+// The three paths `customendpoint` resolves a bare base URL to. Floway serves
+// all of them for every model, so the choice is a preference.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
+const vscodeApiTypes = ['chat-completions', 'responses', 'messages'] as const satisfies readonly AgentSetupConfiguration['vscode']['apiType'][];
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
@@ -88,6 +94,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
           <AgentTab icon={zedIconUrl} label={t('dashboard.apiKeys.configuration.zed')} value="zed" />
+          <AgentTab icon={vscodeIconUrl} label={t('dashboard.apiKeys.configuration.vscode')} value="vscode" />
         </TabList>
       </nav>
 
@@ -176,16 +183,33 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
+  // Both editor installers refuse a catalog with no chat models rather than
+  // write a provider that has none, so neither panel may hand the operator a
+  // document to paste that would leave the editor with an unusable entry and no
+  // error. VS Code is worse than Zed here: it records a group only `if
+  // (models.length)`, and the sibling catch branch that would surface a message
+  // only runs when the provider throws — resolving to no models is silent, so
+  // an empty group yields no provider and no error at all.
+  // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1236-L1252
+  //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1264-L1273
+  const noChatModels = <div className="border-t border-t-solid border-fui-divider pt-4">
+    <OutcomeMessageBar intent="warning">{t('dashboard.apiKeys.agentSetup.noChatModels')}</OutcomeMessageBar>
+  </div>;
+  if (agent === 'vscode') {
+    const vscodeModels = projectVSCodeModels(models, configuration.vscode.apiType);
+    if (vscodeModels.length === 0) return noChatModels;
+    const snippet = buildAgentVSCodeSnippet(origin, apiKey, configuration.vscode, vscodeModels);
+    return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey="dashboard.apiKeys.configuration.vscodeConfigHint" />
+      </Text>
+      <CodeBlock code={snippet} copyOutcome={clipboard.outcomeFor('agent-snippet-vscode')} language="json" onCopy={() => clipboard.copy(snippet, 'agent-snippet-vscode')} />
+      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.vscodeAuthHint')}</Text>
+    </div>;
+  }
   if (agent === 'zed') {
     const zedModels = projectZedModels(models);
-    // The installer refuses this catalog rather than write a provider with no
-    // models, so the panel must not hand the operator a document to paste that
-    // would leave Zed with an unusable entry and no error.
-    if (zedModels.length === 0) {
-      return <div className="border-t border-t-solid border-fui-divider pt-4">
-        <OutcomeMessageBar intent="warning">{t('dashboard.apiKeys.agentSetup.noChatModels')}</OutcomeMessageBar>
-      </div>;
-    }
+    if (zedModels.length === 0) return noChatModels;
     const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);
     const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
     const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';
@@ -227,6 +251,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
   const patchZed = (patch: Partial<AgentSetupConfiguration['zed']>) => onChange(current => ({ ...current, zed: { ...current.zed, ...patch } }));
+  const patchVSCode = (patch: Partial<AgentSetupConfiguration['vscode']>) => onChange(current => ({ ...current, vscode: { ...current.vscode, ...patch } }));
   const codexModel = configuration.codex.model
     ? models.find(model => model.id === configuration.codex.model)
     : rankAgentSetupModels(models, { family: 'codex' })[0];
@@ -295,9 +320,28 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     </section>
   </div>;
 
+  if (agent === 'vscode') return <div className="grid gap-3">
+    <div className={FIELD_GRID_CLASS}>
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/vscode`} value={configuration.vscode.providerName} onChange={providerName => patchVSCode({ providerName })} />
+      <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.apiType'), t('dashboard.apiKeys.agentSetup.apiTypeHint')) }}>
+        <Dropdown
+          selectedOptions={[configuration.vscode.apiType]}
+          value={configuration.vscode.apiType}
+          onOptionSelect={(_, data) => {
+            const apiType = vscodeApiTypes.find(candidate => candidate === data.optionValue);
+            if (apiType !== undefined) patchVSCode({ apiType });
+          }}
+        >
+          {vscodeApiTypes.map(apiType => <Option key={apiType} value={apiType}>{apiType}</Option>)}
+        </Dropdown>
+      </Field>
+    </div>
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.vscodeModelSnapshot')}</Text>
+  </div>;
+
   if (agent === 'zed') return <div className="grid gap-3">
     <div className={FIELD_GRID_CLASS}>
-      <ProviderNameField configurationId={configuration.apiKeyId} value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/zed`} value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
     </div>
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
   </div>;
@@ -317,17 +361,19 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 // control-character names; an invalid value is held locally and never patched
 // into the draft, because a 400 is not retryable and would strand the lease
 // with the copy button disabled and an untranslated Zod issue on screen.
-function ProviderNameField({ configurationId, onChange, value }: {
-  configurationId: string;
+function ProviderNameField({ fieldId, onChange, value }: {
+  fieldId: string;
   onChange: (value: string) => void;
   value: string;
 }) {
   const { t } = useTranslation();
   // The local hold keeps an invalid value out of the draft while it is being
-  // typed. It is keyed on the configuration it belongs to, so a lease for
-  // another key replaces it rather than rendering behind it.
+  // typed. Both editors render this field at the same position, so React keeps
+  // one instance across a tab switch; the hold is therefore keyed on the field
+  // it belongs to — the configuration and the editor together — rather than on
+  // the configuration alone, which would show one editor's name under the other.
   const [draft, setDraft] = useState<{ against: string; value: string } | null>(null);
-  const shown = draft?.against === configurationId ? draft.value : value;
+  const shown = draft?.against === fieldId ? draft.value : value;
   const invalid = shown !== shown.trim() || shown.length === 0;
   return <Field
     label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
@@ -338,7 +384,7 @@ function ProviderNameField({ configurationId, onChange, value }: {
       maxLength={PROVIDER_NAME_MAX_LENGTH}
       value={shown}
       onChange={(_, data) => {
-        setDraft({ against: configurationId, value: data.value });
+        setDraft({ against: fieldId, value: data.value });
         if (data.value.length > 0 && data.value === data.value.trim()) onChange(data.value);
       }}
     />

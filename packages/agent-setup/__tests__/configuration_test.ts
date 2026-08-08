@@ -26,6 +26,10 @@ const fullConfiguration: AgentSetupConfiguration = {
   zed: {
     providerName: 'Floway',
   },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
 
 describe('agentSetupConfigurationSchema', () => {
@@ -42,6 +46,7 @@ describe('agentSetupConfigurationSchema', () => {
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
       zed: { providerName: 'Floway' },
+      vscode: { providerName: 'Floway', apiType: 'messages' },
     }).success).toBe(true);
   });
 
@@ -135,6 +140,7 @@ describe('defaultAgentSetupConfiguration', () => {
       },
       codex: { model: null, reasoningEffort: null },
       zed: { providerName: 'Floway' },
+      vscode: { providerName: 'Floway', apiType: 'messages' },
     });
   });
 

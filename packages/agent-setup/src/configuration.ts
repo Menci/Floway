@@ -17,10 +17,12 @@ const opaqueOptionalString = z.string()
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
 
-// Zed addresses a Floway instance by a display name the operator chooses,
-// keying its `language_models.anthropic_compatible` map by it. Zed derives no
-// behavior from the value — it indexes stored credentials by `api_url` — so it
-// stays an opaque label. Control characters are rejected here rather than
+// Zed and VS Code address a Floway instance by a display name the operator
+// chooses. Zed keys its `language_models.anthropic_compatible` map by it and
+// VS Code names a `chatLanguageModels.json` group with it, so one value serves
+// both. Neither derives behavior from it — Zed indexes stored credentials by
+// `api_url` and VS Code keys groups by `${vendor}:${name}` — so it stays an
+// opaque label. Control characters are rejected here rather than
 // flattened at render time because, unlike the API key label, this value is the
 // operator's own input and a silent rewrite would misname their provider.
 const editorProviderName = z.string()
@@ -62,6 +64,18 @@ export const agentSetupConfigurationSchema = z.object({
   zed: z.object({
     providerName: editorProviderName,
   }).strict(),
+  // VS Code snapshots for the same reason: `customendpoint` reads only `id`
+  // from a `/models` response and drops every model it cannot type, so its
+  // group enumerates the catalog instead.
+  // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/abstractLanguageModelChatProvider.ts#L145-L163
+  vscode: z.object({
+    providerName: editorProviderName,
+    // `customendpoint` resolves a bare base URL to one of three API paths.
+    // Floway serves all three for every model, so this is one group-wide
+    // choice rather than a per-model derivation.
+    // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
+    apiType: z.enum(['chat-completions', 'responses', 'messages']),
+  }).strict(),
 }).strict();
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
@@ -91,5 +105,12 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   },
   zed: {
     providerName: DEFAULT_EDITOR_PROVIDER_NAME,
+  },
+  vscode: {
+    providerName: DEFAULT_EDITOR_PROVIDER_NAME,
+    // Anthropic Messages is the richest of the three on this path: it is the
+    // only one carrying thinking budgets, and `customendpoint` reaches it
+    // without the experiment flag the Copilot-hosted models need.
+    apiType: 'messages',
   },
 });

@@ -23,6 +23,10 @@ const fullConfiguration: AgentSetupConfiguration = {
   zed: {
     providerName: 'Floway',
   },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
 
 const ZED_MODELS = [{
@@ -118,6 +122,7 @@ describe('renderShellPrefix', () => {
         },
         codex: { model: null, reasoningEffort: null },
         zed: { providerName: 'Floway' },
+        vscode: { providerName: 'Floway', apiType: 'messages' },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -203,6 +208,7 @@ describe('renderPowerShellPrefix', () => {
         },
         codex: { model: null, reasoningEffort: null },
         zed: { providerName: 'Floway' },
+        vscode: { providerName: 'Floway', apiType: 'messages' },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');

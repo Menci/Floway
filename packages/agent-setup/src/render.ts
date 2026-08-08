@@ -7,7 +7,7 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
-import type { ZedModel } from './models.ts';
+import type { VSCodeModel, ZedModel } from './models.ts';
 import type { ScriptAgent } from './script-assets.ts';
 
 export interface RenderPrefixInput {
@@ -17,7 +17,7 @@ export interface RenderPrefixInput {
   configuration: AgentSetupConfiguration;
   // The catalog projected for the editor agents, which snapshot it at setup
   // time. Absent for the CLI agents, which discover models themselves.
-  editorModels?: readonly ZedModel[];
+  editorModels?: readonly ZedModel[] | readonly VSCodeModel[];
 }
 
 const assertNoNul = (value: string): void => {
@@ -91,6 +91,12 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_ZED_PROVIDER_NAME', configuration.zed.providerName],
       ['SETUP_ZED_MODELS', editorModelsJson(input)],
     );
+  } else if (agent === 'vscode') {
+    assignments.push(
+      ['SETUP_VSCODE_PROVIDER_NAME', configuration.vscode.providerName],
+      ['SETUP_VSCODE_API_TYPE', configuration.vscode.apiType],
+      ['SETUP_VSCODE_MODELS', editorModelsJson(input)],
+    );
   } else {
     assignments.push(
       ['SETUP_CODEX_MODEL', shellOptional(configuration.codex.model)],
@@ -139,6 +145,12 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
     assignments.push(
       ['$SetupZedProviderName', powerShellLiteral(configuration.zed.providerName)],
       ['$SetupZedModels', powerShellLiteral(editorModelsJson(input))],
+    );
+  } else if (agent === 'vscode') {
+    assignments.push(
+      ['$SetupVSCodeProviderName', powerShellLiteral(configuration.vscode.providerName)],
+      ['$SetupVSCodeApiType', powerShellLiteral(configuration.vscode.apiType)],
+      ['$SetupVSCodeModels', powerShellLiteral(editorModelsJson(input))],
     );
   } else {
     assignments.push(

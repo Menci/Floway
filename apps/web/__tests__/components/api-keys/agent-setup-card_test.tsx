@@ -22,6 +22,7 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
   },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 const lease = (apiKeyId: string): AgentSetupLease => ({
@@ -34,6 +35,7 @@ const lease = (apiKeyId: string): AgentSetupLease => ({
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
     zed: { sh: '/zed.sh', ps1: '/zed.ps1' },
+    vscode: { sh: '/vscode.sh', ps1: '/vscode.ps1' },
   },
 });
 
@@ -95,14 +97,19 @@ describe('Agent Setup card fields', () => {
 
 // The provider name is the only free-text field here, so the only one whose
 // value the gateway can reject. A rejected draft is not retryable, so an
-// invalid name must never leave the component.
-describe('Zed provider name', () => {
-  const showZedTab = () => { act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); }); };
+// invalid name must never leave the component. Both editors share one field,
+// and the suite is parameterized over them so a tab that hand-builds its own
+// Input instead fails here.
+describe.each([
+  { tab: 'Zed', key: 'zed' as const },
+  { tab: 'VS Code', key: 'vscode' as const },
+])('$tab provider name', ({ key, tab }) => {
+  const showTab = () => { act(() => { screen.getByRole('tab', { name: tab }).click(); }); };
 
   it('reports a padded name at the field and withholds it from the draft', () => {
     const saved = vi.fn(() => new Promise<Response>(() => {}));
     renderInApp(<Host />);
-    showZedTab();
+    showTab();
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
     vi.stubGlobal('fetch', saved);
     act(() => {
@@ -117,7 +124,7 @@ describe('Zed provider name', () => {
 
   it('accepts a valid name', () => {
     renderInApp(<Host />);
-    showZedTab();
+    showTab();
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway prod');
@@ -131,12 +138,13 @@ describe('Zed provider name', () => {
   // keyed on the configuration it belongs to, so once a lease for another key
   // lands the field shows that lease's name rather than the half-typed one.
   it('yields to a configuration that arrives for another key', async () => {
+    const arriving = configuration('key-2');
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
-      JSON.stringify({ ...lease('key-2'), configuration: { ...configuration('key-2'), zed: { providerName: 'Second' } } }),
+      JSON.stringify({ ...lease('key-2'), configuration: { ...arriving, [key]: { ...arriving[key], providerName: 'Second' } } }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))));
     renderInApp(<Host />);
-    showZedTab();
+    showTab();
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Half-typed ');
@@ -146,6 +154,58 @@ describe('Zed provider name', () => {
 
     await act(async () => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ }).value).toBe('Second');
+    vi.unstubAllGlobals();
+  });
+});
+
+// Both editor installers refuse a catalog with no chat models, and VS Code
+// registers a group only `if (models.length)` — so an empty snippet would leave
+// the operator with no provider and no error at all. The Host renders with an
+// empty catalog, which is exactly that case.
+describe.each(['Zed', 'VS Code'])('%s snippet with no chat models', tab => {
+  it('offers the warning instead of a document that configures nothing', () => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.getByText('This gateway advertises no chat models, so there is nothing to configure yet. Add an upstream that serves one.')).toBeTruthy();
+    expect(screen.queryByText(/customendpoint|anthropic_compatible/)).toBeNull();
+  });
+});
+
+// Both tabs render the same field at the same position, so React keeps one
+// component instance across a tab switch. The hold belongs to one editor's name,
+// not to the configuration as a whole, or the other editor's field shows a value
+// its own setting never had.
+describe('provider name across editors', () => {
+  const showTab = (tab: string) => { act(() => { screen.getByRole('tab', { name: tab }).click(); }); };
+  const providerNameInput = () => screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+  const type = (value: string) => {
+    const input = providerNameInput();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  it('does not carry one editor\'s typed name into the other', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderInApp(<Host />);
+    showTab('Zed');
+    type('Zed Prod');
+    showTab('VS Code');
+    expect(providerNameInput().value).toBe('Floway');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not carry one editor\'s withheld invalid name into the other', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderInApp(<Host />);
+    showTab('Zed');
+    type('');
+    expect(screen.getByText('Enter a name with no leading or trailing spaces.')).toBeTruthy();
+    showTab('VS Code');
+    expect(providerNameInput().value).toBe('Floway');
+    expect(screen.queryByText('Enter a name with no leading or trailing spaces.')).toBeNull();
     vi.unstubAllGlobals();
   });
 });
