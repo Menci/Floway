@@ -355,6 +355,13 @@ const ZED_CATALOG = {
       chat: { reasoning: { budget_tokens: { min: 1024 } } },
     },
     {
+      // A ceiling with no floor — the fallback arm of the budget selection.
+      id: 'ceiling-only', object: 'model', type: 'model', display_name: 'Ceiling Only',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 200_000 },
+      chat: { reasoning: { budget_tokens: { max: 32_000 } } },
+    },
+    {
       id: 'embed-3', object: 'model', type: 'model', display_name: 'Embed',
       kind: 'embedding', endpoints: { embeddings: {} }, limits: {},
     },
@@ -520,7 +527,10 @@ printf 'security\\t%s\\n' "$*" >> ${JSON.stringify(record)}
 `, { mode: 0o755 });
   writeFileSync(join(workspace.binDir, 'secret-tool'), `#!/bin/bash
 secret=""
-case "$1" in store) secret=$(cat) ;; esac
+# The byte count is recorded rather than the secret itself: the record is
+# newline-delimited, and plain command substitution would eat a trailing
+# newline — the exact defect a shell that pipes instead of writing introduces.
+case "$1" in store) secret=$(cat | wc -c | tr -d ' ') ;; esac
 printf 'secret-tool\\t%s\\t%s\\n' "$*" "$secret" >> ${JSON.stringify(record)}
 `, { mode: 0o755 });
 };
@@ -2481,7 +2491,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2519,6 +2529,9 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
 
   const floorOnly = models.get('floor-only')!;
   t.equal(JSON.stringify(floorOnly.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'a floor with no ceiling still yields a budget');
+
+  const ceilingOnly = models.get('ceiling-only')!;
+  t.equal(JSON.stringify(ceilingOnly.mode), JSON.stringify({ type: 'thinking', budget_tokens: 32_000 }), 'a ceiling stands in when no floor is announced');
 });
 
 // The invariant is that the credential store is keyed by the same string the
@@ -2544,7 +2557,10 @@ test('zed', 'stores the credential against the same api_url the settings name', 
   t.equal(lookupKey, announced, `the credential is keyed by the announced api_url:\n${calls[0]}`);
 
   if (tool === 'secret-tool') {
-    t.equal(stdin, SENTINEL_KEY, 'the key reaches secret-tool on stdin, never argv');
+    // Byte-exact: a shell that pipes rather than writes appends a newline, and
+    // secret-tool stores every byte it reads, so the key would come back
+    // malformed and Zed would send a broken Authorization header.
+    t.equal(stdin, String(SENTINEL_KEY.length), 'the key reaches secret-tool on stdin with no trailing newline');
     t.ok(argv!.includes('--label=zed-github-account'), 'the label Zed matches on read is written');
     t.ok(!argv!.includes(SENTINEL_KEY), 'the key is absent from argv');
   } else {
@@ -2632,14 +2648,23 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
 
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
 
   const models = new Map(provider.available_models.map(entry => [entry.name, entry]));
   t.equal(JSON.stringify(models.get('claude-opus-4-6')!.mode), JSON.stringify({ type: 'adaptive' }), 'adaptive reasoning survives the PowerShell projection');
   t.equal(JSON.stringify(models.get('gpt-5.6')!.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'the budget floor survives the PowerShell projection');
   t.ok(models.get('effort-only')!.mode === undefined, 'reasoning without a budget stays in default mode');
   t.equal(models.get('plain-chat')!.max_tokens, 200_000, 'the unlimited model gets the same fallback window');
-  t.equal(readCredentialCalls(ws).length, 1, 'the credential is stored once');
+
+  const calls = readCredentialCalls(ws);
+  t.equal(calls.length, 1, 'the credential is stored once');
+  const [tool, , stdin] = calls[0]!.split('\t');
+  if (tool === 'secret-tool') {
+    // PowerShell terminates a piped object with a newline and secret-tool
+    // stores every byte it reads, so a pipeline here would hand Zed a key that
+    // makes every Authorization header malformed.
+    t.equal(stdin, String(SENTINEL_KEY.length), 'the key reaches secret-tool with no trailing newline');
+  }
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
 
@@ -2866,8 +2891,10 @@ const parseAgentFilter = (): ScriptAgent | 'all' => {
   const index = process.argv.indexOf('--agent');
   if (index === -1) return 'all';
   const value = process.argv[index + 1];
-  if (value === 'claude' || value === 'codex') return value;
-  throw new Error(`--agent must be "claude" or "codex", got ${JSON.stringify(value)}`);
+  const agents = Object.keys(AGENT_NAMES) as ScriptAgent[];
+  const match = agents.find(agent => agent === value);
+  if (match !== undefined) return match;
+  throw new Error(`--agent must be one of ${agents.join(', ')}, got ${JSON.stringify(value)}`);
 };
 
 const main = async (): Promise<void> => {

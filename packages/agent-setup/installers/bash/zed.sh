@@ -64,22 +64,16 @@ zed_require_config_dir() {
 # `available_models` is a required array — so the catalog is snapshotted here
 # and the operator re-runs this command after changing it upstream.
 #
-# The credential goes to curl through a config file rather than `-H`, which
-# would put it in argv where any local process can read it. The working
-# directory is already mode 0700 and the file is removed as soon as it is spent.
+# The key rides on argv. curl's config-file forms both corrupt it: the quoted
+# form parses `\` escapes and terminates at `"`, and the unquoted form is
+# dropped outright for containing whitespace. An API key is an arbitrary string,
+# so a header built either way is silently wrong for keys that contain those
+# characters, which is worse than the argv exposure it would avoid.
 zed_fetch_models() {
   _zfm_body="$SETUP_TMPDIR/zed-models.json"
-  _zfm_config="$SETUP_TMPDIR/zed-auth.conf"
-  if ! printf 'header = "Authorization: Bearer %s"\n' "$SETUP_API_KEY" > "$_zfm_config"; then
-    out_error 'could not stage the model catalog request.'
-    return 1
-  fi
-  curl -fsSL --connect-timeout 10 --max-time 60 \
-    --config "$_zfm_config" \
-    -o "$_zfm_body" "$SETUP_ENDPOINT/v1/models"
-  _zfm_status=$?
-  rm -f "$_zfm_config"
-  if [ "$_zfm_status" -ne 0 ]; then
+  if ! curl -fsSL --connect-timeout 10 --max-time 60 \
+      -H "Authorization: Bearer $SETUP_API_KEY" \
+      -o "$_zfm_body" "$SETUP_ENDPOINT/v1/models"; then
     out_error "could not fetch the model catalog from $SETUP_ENDPOINT/v1/models"
     return 1
   fi

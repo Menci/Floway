@@ -148,7 +148,7 @@ function Write-SetupZedSettings {
     } catch {
       if (Test-Path -LiteralPath $script:ZedSettingsBackup) { Remove-Item -LiteralPath $script:ZedSettingsBackup -Force }
       $script:ZedSettingsBackup = $null
-      throw
+      Stop-Setup "could not back up $($script:ZedSettingsPath)"
     }
   } else {
     $document = [PSCustomObject]@{}
@@ -170,9 +170,8 @@ function Write-SetupZedSettings {
     $json = $document | ConvertTo-Json -Depth 100
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
-    # Indexed through the property bag rather than with `.$name`, so a provider
-    # named after a PSObject intrinsic (Count, Length) resolves to the entry
-    # rather than to the member.
+    # Read through the property bag rather than with `.$name`, which is dotted
+    # member access over an operator-chosen string.
     $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value
     if (($staged.api_url -cne (Get-SetupZedApiUrl)) -or (@($staged.available_models).Count -eq 0)) {
       Stop-Setup 'staged Zed global settings failed validation.'
@@ -270,8 +269,22 @@ function Set-SetupZedCredentialSecretService {
   if (-not (Get-Command secret-tool -ErrorAction SilentlyContinue)) {
     Stop-Setup 'secret-tool is unavailable; install libsecret-tools (Debian/Ubuntu) or libsecret (Fedora/Arch) and re-run.'
   }
-  $SetupApiKey | & secret-tool store --label='zed-github-account' url (Get-SetupZedApiUrl) username Bearer
-  if ($LASTEXITCODE -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
+  # Written through a redirected stdin rather than a pipeline: PowerShell
+  # terminates a piped object with a newline, and secret-tool stores every byte
+  # it reads, so the key would come back with a trailing \n and Zed would send a
+  # malformed Authorization header.
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = 'secret-tool'
+  foreach ($argument in @('store', '--label=zed-github-account', 'url', (Get-SetupZedApiUrl), 'username', 'Bearer')) {
+    $startInfo.ArgumentList.Add($argument)
+  }
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.UseShellExecute = $false
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  $process.StandardInput.Write($SetupApiKey)
+  $process.StandardInput.Close()
+  $process.WaitForExit()
+  if ($process.ExitCode -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
 }
 
 # `-T` grants a bundle access without the authorization prompt a later read

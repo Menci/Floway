@@ -155,7 +155,6 @@ export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): Agent
       max_tokens: model.limits.max_context_window_tokens
         ?? model.limits.max_prompt_tokens
         ?? ZED_FALLBACK_CONTEXT_TOKENS,
-      ...(model.limits.max_output_tokens === undefined ? {} : { max_output_tokens: model.limits.max_output_tokens }),
       capabilities: {
         // A chat model that cannot call tools is not one anyone routes here.
         tools: true,
@@ -164,6 +163,9 @@ export const buildAgentZedModels = (models: readonly ControlPlaneModel[]): Agent
         // entirely; on, it marks where the stable prefix ends.
         prompt_caching: true,
       },
+      // Ordered after capabilities to match the installers byte for byte, so a
+      // pasted snippet diffs clean against what a setup run wrote.
+      ...(model.limits.max_output_tokens == null ? {} : { max_output_tokens: model.limits.max_output_tokens }),
       ...(mode === undefined ? {} : { mode }),
     });
   }

@@ -167,7 +167,15 @@ export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedUrl = `'${origin.replaceAll("'", `'"'"'`)}'`;
   return [
     'if [ "$(uname -s)" = Darwin ]; then',
-    `  security add-internet-password -s ${quotedUrl} -a Bearer -U -w ${quotedKey} -T /Applications/Zed.app`,
+    // -T fails the whole call on a path that does not exist, so only bundles
+    // present on this host are named; naming none still stores the item.
+    `  set -- -s ${quotedUrl} -a Bearer -U -w ${quotedKey}`,
+    '  for app in /Applications/Zed.app "$HOME/Applications/Zed.app" \\',
+    '      "/Applications/Zed Preview.app" "$HOME/Applications/Zed Preview.app" \\',
+    '      "/Applications/Zed Nightly.app" "$HOME/Applications/Zed Nightly.app"; do',
+    '    [ -d "$app" ] && set -- "$@" -T "$app"',
+    '  done',
+    '  security add-internet-password "$@"',
     'else',
     `  printf '%s' ${quotedKey} | secret-tool store --label=zed-github-account url ${quotedUrl} username Bearer`,
     'fi',
