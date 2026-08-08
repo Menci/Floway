@@ -30,12 +30,26 @@ describe('Zed available_models projection', () => {
   it('ignores a budget too small for Anthropic to accept', () => {
     const modes = projectZedModels([
       catalogModel('floor-zero', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0 } } } }),
-      catalogModel('floor-zero-with-ceiling', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0, max: 8000 } } } }),
+      catalogModel('floor-zero-with-ceiling', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 }, chat: { reasoning: { budget_tokens: { min: 0, max: 8000 } } } }),
       catalogModel('both-too-small', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 0, max: 500 } } } }),
     ]).map(entry => entry.mode);
     expect(modes[0]).toBeUndefined();
     expect(modes[1]).toEqual({ type: 'thinking', budget_tokens: 8000 });
     expect(modes[2]).toBeUndefined();
+  });
+
+  // Zed sends `max_tokens` as the model's output limit, or 4096 when it states
+  // none, and passes the budget through unclamped — so a budget at or above
+  // that is one Anthropic rejects on every request.
+  it('keeps the budget under the max_tokens Zed will send', () => {
+    const modes = projectZedModels([
+      catalogModel('no-output-limit', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { max: 32_000 } } } }),
+      catalogModel('budget-at-the-limit', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 8000 } } } }),
+      catalogModel('budget-under-the-limit', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 4000 } } } }),
+    ]).map(entry => entry.mode);
+    expect(modes[0]).toBeUndefined();
+    expect(modes[1]).toBeUndefined();
+    expect(modes[2]).toEqual({ type: 'thinking', budget_tokens: 4000 });
   });
 
   it('prefers the context window, falls back to prompt tokens, then to a default', () => {
@@ -73,7 +87,7 @@ describe('Zed available_models projection', () => {
     const [adaptive, floored, ceilingOnly, effortOnly, plain] = projectZedModels([
       catalogModel('adaptive', { contextWindow: 200_000, chat: { reasoning: { adaptive: true } } }),
       catalogModel('floored', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { min: 1024, max: 32_000 } } } }),
-      catalogModel('ceiling-only', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { max: 32_000 } } } }),
+      catalogModel('ceiling-only', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 }, chat: { reasoning: { budget_tokens: { max: 32_000 } } } }),
       catalogModel('effort-only', { contextWindow: 200_000, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
       catalogModel('plain', { contextWindow: 200_000 }),
     ]);

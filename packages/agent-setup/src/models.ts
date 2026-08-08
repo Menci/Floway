@@ -43,19 +43,35 @@ const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
 // Ref: https://docs.claude.com/en/docs/build-with-claude/extended-thinking
 const ANTHROPIC_MIN_THINKING_BUDGET = 1024;
 
+// The `max_tokens` Zed sends when a model announces no output limit. The budget
+// has to stay under whatever Zed puts there, and Zed neither clamps the budget
+// nor derives max_tokens from it.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L60-L74
+const ZED_FALLBACK_MAX_OUTPUT_TOKENS = 4096;
+
 // Thinking mode carries a usable budget or is not written at all: Zed
 // serializes `Thinking::Enabled.budget_tokens` with no skip_serializing_if, so
 // a mode without one puts `"budget_tokens": null` on the Messages request and
 // every call 400s — and a mode with an unusable one 400s just as reliably, with
-// nothing in Zed's UI to say why. The floor is preferred over the ceiling
-// because Zed sends the value verbatim on every request and Anthropic requires
-// it below max_tokens; a floor too small to use falls through to the ceiling.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
-const zedThinkingMode = (reasoning: ChatModelInfo['reasoning']): ZedModel['mode'] => {
+// nothing in Zed's UI to say why.
+//
+// Usable means both bounds Anthropic states: at least its minimum, and strictly
+// below the `max_tokens` Zed will send, which is the model's own output limit
+// or 4096 when it declares none. The floor is preferred over the ceiling
+// because Zed sends the value verbatim on every request; a floor that does not
+// qualify falls through to the ceiling, and a model with neither stays in
+// Default mode, which the picker still offers.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/anthropic/src/anthropic.rs#L750-L755
+//       https://docs.claude.com/en/docs/build-with-claude/extended-thinking
+const zedThinkingMode = (
+  reasoning: ChatModelInfo['reasoning'],
+  maxOutputTokens: number | undefined,
+): ZedModel['mode'] => {
   if (reasoning === undefined) return undefined;
   if (reasoning.adaptive === true) return { type: 'adaptive' };
+  const ceiling = maxOutputTokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
   const usable = [reasoning.budget_tokens?.min, reasoning.budget_tokens?.max]
-    .find(budget => budget !== undefined && budget >= ANTHROPIC_MIN_THINKING_BUDGET);
+    .find(budget => budget !== undefined && budget >= ANTHROPIC_MIN_THINKING_BUDGET && budget < ceiling);
   return usable === undefined ? undefined : { type: 'thinking', budget_tokens: usable };
 };
 
@@ -68,7 +84,7 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 
 export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
   chatModels(models).map(model => {
-    const mode = zedThinkingMode(model.chat?.reasoning);
+    const mode = zedThinkingMode(model.chat?.reasoning, model.limits.max_output_tokens);
     return {
       name: model.id,
       display_name: model.display_name,
