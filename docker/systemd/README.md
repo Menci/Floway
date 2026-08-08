@@ -8,6 +8,8 @@ Podman Quadlets allow you to manage containers as native systemd services. These
 
    Podman should be preinstalled on Red Hat systems, and can be installed on-demand on other systems.
 
+   On Debian, the Podman package might be missing a `catatonit` dependency. Install it, or Pods might not start.
+
 2. ```bash
    mkdir -p ~/.config/containers/systemd/
    cp floway-data.volume floway-server.container.example floway-web.container floway.pod ~/.config/containers/systemd/
@@ -29,6 +31,8 @@ Podman Quadlets allow you to manage containers as native systemd services. These
 1. Install [Podman](https://podman.io).
 
    Podman should be preinstalled on Red Hat systems, and can be installed on-demand on other systems.
+
+   On Debian, the Podman package might be missing a `catatonit` dependency. Install it, or Pods might not start.
 
 2. ```bash
    sudo mkdir -p /etc/containers/systemd/
