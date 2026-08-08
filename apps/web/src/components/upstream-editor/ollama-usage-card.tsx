@@ -75,12 +75,13 @@ const readWindows = (data: unknown): UsageWindow[] => {
   const limits = isRecordValue(data) ? data.limits : null;
   if (!isRecordValue(limits)) return [];
   return [readWindow('session', limits.session), readWindow('weekly', limits.weekly)]
-    .filter((window): window is UsageWindow => window !== null);
+    .filter((usageWindow): usageWindow is UsageWindow => usageWindow !== null);
 };
 
-// Billing beyond the subscription, reported over a fixed trailing period. A
-// plan that has spent nothing still reports "0.00000", which is worth showing:
-// it is the difference between "no overage" and "not reported".
+// The upstream reports this as `activity.cost` over a trailing period and
+// states nowhere what it covers, so it is shown under the field's own name. An
+// account that has spent nothing still reports "0.00000", which is worth
+// showing: it is the difference between zero and not reported.
 const readActivityCost = (data: unknown): string | null => {
   const activity = isRecordValue(data) ? data.activity : null;
   if (!isRecordValue(activity) || typeof activity.cost !== 'string') return null;
@@ -127,16 +128,16 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
       />
     } />
 
-    {windows.map(window => <div className="grid gap-1" key={window.key}>
+    {windows.map(usageWindow => <div className="grid gap-1" key={usageWindow.key}>
       <div className="flex items-baseline justify-between gap-3">
-        <Text size={300}>{t(`dashboard.upstreamEditor.ollama.usage.window.${window.key}`)}</Text>
+        <Text size={300}>{t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}</Text>
         <Text size={200} className="text-fui-fg2">
-          {t('dashboard.upstreamEditor.ollama.usage.usedPercent', { percent: window.percent })}
+          {t('dashboard.upstreamEditor.ollama.usage.usedPercent', { percent: usageWindow.percent })}
         </Text>
       </div>
-      <ProgressBar color={quotaBarColor(window.percent)} max={100} thickness="large" value={clampPercent(window.percent) ?? undefined} />
-      {window.models.length > 0 && <div className="grid gap-0.5 pt-1">
-        {window.models.map(row => <div className="flex items-baseline justify-between gap-3" key={row.model}>
+      <ProgressBar color={quotaBarColor(usageWindow.percent)} max={100} thickness="large" value={clampPercent(usageWindow.percent) ?? undefined} />
+      {usageWindow.models.length > 0 && <div className="grid gap-0.5 pt-1">
+        {usageWindow.models.map(row => <div className="flex items-baseline justify-between gap-3" key={row.model}>
           <Text size={200} className="text-fui-fg3 font-mono mono-size-xs">{row.model}</Text>
           <Text size={200} className="text-fui-fg3">
             {t('dashboard.upstreamEditor.ollama.usage.requests', { count: row.requests })}

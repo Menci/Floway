@@ -881,7 +881,7 @@ const en = {
               session: 'Session window',
               weekly: 'Weekly window',
             },
-            activityCost: 'Billed beyond the plan: ${{cost}}',
+            activityCost: 'Activity cost ${{cost}}',
             observed: 'Observed {{time}}',
             empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
             unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',

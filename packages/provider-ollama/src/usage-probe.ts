@@ -2,8 +2,8 @@
 //
 // ollama.com serves `GET /api/usage` behind the same API key the data plane
 // already uses. It answers with the account's rolling session window, its
-// weekly window, per-model request counts, and the billing activity for the
-// last four weeks:
+// weekly window, per-model request counts, and an `activity` block over a
+// trailing four-week period:
 //
 //   {"activity": {"cost": "0.00000",
 //                 "period": {"type": "last_4_weeks", "starting_at": "...", "ending_at": "..."},
@@ -32,7 +32,7 @@
 
 import { type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchUsage } from './fetch.ts';
-import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
+import { type OllamaUsageObservation, type OllamaUsageProbeEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // The usage endpoint is served by ollama.com, not by the Ollama binary: a
@@ -80,10 +80,7 @@ export const fetchOllamaUsageProbe = async (
 // re-run against whoever won a concurrent write. Two probes racing therefore
 // resolve by attempt time rather than by write order, so the loser of the race
 // cannot roll the slot back to its older reading.
-const persistProbeEntry = async (
-  upstreamId: string,
-  entry: { attemptedAt: number; observation: OllamaUsageObservation | null; error: string | null },
-): Promise<void> => {
+const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntry): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
     if (state.usageProbe && state.usageProbe.attemptedAt >= entry.attemptedAt) return current;
@@ -124,7 +121,7 @@ export const refreshOllamaUsageProbe = async (
   return observation;
 };
 
-export const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
+const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
   return probe === null || now - probe.attemptedAt >= OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS;
 };

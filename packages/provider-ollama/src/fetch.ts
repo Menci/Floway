@@ -49,9 +49,9 @@ export const ollamaFetchAudioTranscriptions = (config: OllamaUpstreamConfig, ini
   ollamaFetchInternal(config, '/v1/audio/transcriptions', init, options);
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/tags', init, options);
+export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/api/show', init, options);
 // Account-level usage windows. Cloud-only — see usage-probe.ts for the
 // endpoint's provenance and the shape it returns.
 export const ollamaFetchUsage = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/usage', init, options);
-export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, '/api/show', init, options);
