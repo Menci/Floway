@@ -202,16 +202,18 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   const now = useNow(WALL_CLOCK_REFRESH_MS);
   const { plan, signals } = upstreamReadout(record, t, locale, now);
 
-  return <div className="flex items-center gap-x-3 min-w-0">
-    <Text size={200} className="text-fui-fg2 flex-none" weight="semibold" wrap={false}>
+  return <div className="flex items-baseline gap-x-1.5 min-w-0">
+    <Text size={200} className="text-fui-fg2 flex-none" weight="medium" wrap={false}>
       {signals.length === 0 ? plan : t('dashboard.upstreams.signals.plan', { plan })}
     </Text>
-    {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
-      <span className="winui-focus-rect inline-flex items-center gap-1 min-w-0" tabIndex={0}>
-        {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
-        <Text size={200} className="text-fui-fg2" weight="medium" wrap={false}>{signal.value}</Text>
-        {signal.label !== null && <Text size={200} className="text-fui-fg3" truncate wrap={false}>{signal.label}</Text>}
-      </span>
-    </Tooltip>)}
+    <div className="flex items-baseline gap-x-3 min-w-0">
+      {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
+        <span className="winui-focus-rect inline-flex items-baseline gap-1 min-w-0" tabIndex={0}>
+          {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
+          <Text size={200} className="text-fui-fg2" weight="medium" wrap={false}>{signal.value}</Text>
+          {signal.label !== null && <Text size={200} className="text-fui-fg3" truncate wrap={false}>{signal.label}</Text>}
+        </span>
+      </Tooltip>)}
+    </div>
   </div>;
 }
