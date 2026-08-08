@@ -124,7 +124,7 @@ vscode_write_settings() {
     # VS Code reads this file with its JSONC-tolerant scanner, so a comment is
     # content the editor accepts and jq is about to refuse. Name that cause
     # rather than reporting it as a malformed provider list.
-    if grep -q '^[[:space:]]*//' "$VSCODE_SETTINGS_PATH" 2>/dev/null; then
+    if _json_has_comment "$VSCODE_SETTINGS_PATH"; then
       out_error "$VSCODE_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
       return 1
     fi

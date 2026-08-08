@@ -3391,7 +3391,10 @@ for (const { half, run } of profileFailureCases) {
 // the comment on the way out — data loss reported as success. Both halves
 // refuse it and name the cause.
 test('vscode', 'both halves refuse a provider list carrying JSONC comments', async t => {
-  const commented = '[\n  // the operator put this here\n  {"vendor":"customendpoint","name":"Other gateway"}\n]';
+  // A block comment and a trailing one, not just a line-leading `//`: a
+  // pattern that matches only the latter refuses these for the wrong stated
+  // reason, which is the whole point of naming the cause.
+  const commented = '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const userDir = makeVSCodeUserDir(ws, `vscode-jsonc-${which}`);
