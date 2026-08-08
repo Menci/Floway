@@ -38,9 +38,11 @@ const WORKFLOW_PATH = resolve(ROOT, '.github/workflows/verify.yaml');
 // A `run:` on a commented line is not a step: `\s` cannot cross the `#`.
 const RUN_VALUE = /^\s*run:\s*(\S.*?)\s*$/gm;
 const SCRIPT_CALL = /^pnpm run ([\w:-]+)$/;
-// A root script whose name states a kind of verification. `lint` and `typecheck`
-// are exact so that `lint:fix`, which repairs rather than verifies, stays out.
-const VERIFICATION_SCRIPT = /^(?:lint|typecheck|test|(?:check|test)(?::[\w-]+)+)$/;
+// A root script whose name opens with a kind of verification, however many
+// segments follow. The `:fix` counterpart of a verification repairs rather than
+// verifies, so `lint:fix` is not one.
+const VERIFICATION_SCRIPT = /^(?:lint|typecheck|check|test)(?::[\w-]+)*$/;
+const REPAIR_SUFFIX = ':fix';
 // Provisioning the runner is not a verification, and the matrix dispatch only
 // forwards an entry recovered above.
 const SETUP_COMMANDS = new Set([
@@ -80,7 +82,7 @@ for (const name of verifyScripts) {
 }
 
 const unchained = Object.keys(manifest.scripts).filter(
-  name => VERIFICATION_SCRIPT.test(name) && !verifyScripts.has(name),
+  name => VERIFICATION_SCRIPT.test(name) && !name.endsWith(REPAIR_SUFFIX) && !verifyScripts.has(name),
 );
 if (unchained.length > 0) {
   fail(`\`verify\` never chains ${JSON.stringify(unchained)}, which package.json names as verifications`);
