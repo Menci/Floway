@@ -77,11 +77,13 @@ export const fetchOllamaUsageProbe = async (
 // The entry is written under saveState's read-modify-CAS, and the mutator is
 // re-run against whoever won a concurrent write. Two probes racing therefore
 // resolve by attempt time rather than by write order, so the loser of the race
-// cannot roll the slot back to its older reading.
+// cannot roll the slot back to its older reading. Equal stamps are not a
+// rollback — the clock is coarser than the two attempts, and the later arrival
+// is no staler — so only a strictly newer stored attempt wins.
 const persistProbeEntry = async (upstreamId: string, entry: OllamaUsageProbeEntry): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readOllamaUpstreamState(current);
-    if (state.usageProbe && state.usageProbe.attemptedAt >= entry.attemptedAt) return current;
+    if (state.usageProbe && state.usageProbe.attemptedAt > entry.attemptedAt) return current;
     return {
       ...state,
       usageProbe: {

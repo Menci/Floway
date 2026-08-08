@@ -1,7 +1,6 @@
-// Ollama Cloud account usage. The windows are percentages with no reset
-// timestamp — that is everything the upstream reports — so each row is a bar
-// and a number, and the per-model request counts sit under them as the only
-// breakdown available.
+// Ollama Cloud account and usage. The account names the plan the windows are a
+// fraction of; the windows are percentages with no reset timestamp — that is
+// everything the upstream reports — so each row is a bar and a number.
 //
 // The data plane refreshes the same reading in the background after the calls
 // it serves, so this card is normally current on open; the refresh action is
@@ -11,7 +10,7 @@ import { useCallback, useState } from 'react';
 
 import { quotaBarColor } from './subscription-account-quota';
 import { api, callApi } from '../../api/client';
-import type { OllamaUsageObservation, UpstreamRecordEnvelope, UpstreamRecord } from '../../api/types';
+import type { OllamaUsageRefresh, UpstreamRecordEnvelope, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
@@ -21,7 +20,9 @@ import { SECTION_STACK_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ResourceListActions } from '../ui/resource-list';
 import { SectionHeader } from '../ui/section-header';
+import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
+import { ProviderIcon } from '../upstreams/provider-badge';
 
 const { ProgressBar, Text } = fluentComponents;
 
@@ -84,17 +85,19 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
   const locale = useLocale();
   // A manual refresh persists server-side too; this local copy only avoids
   // re-fetching the whole record to display the reading it just produced.
-  const [refreshed, setRefreshed] = useState<OllamaUsageObservation | null>(null);
+  const [refreshed, setRefreshed] = useState<OllamaUsageRefresh | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const stored = record.state?.usageProbe ?? null;
-  const observation = refreshed ?? stored?.observation ?? null;
+  const observation = refreshed?.observation ?? stored?.observation ?? null;
+  const account = refreshed?.account ?? record.state?.account ?? null;
   const windows = readWindows(observation?.data);
   const activityCost = readActivityCost(observation?.data);
   // A background probe records its failure on the upstream rather than
   // interrupting the request that armed it, so this is where it surfaces. A
   // manual refresh that succeeded has already answered the question.
   const backgroundError = refreshed === null ? stored?.error ?? null : null;
+  const accountName = account?.name ?? account?.email ?? null;
 
   const { refresh: load, refreshing: loading } = useRefresh(useCallback(async (signal: AbortSignal) => {
     setError(null);
@@ -110,6 +113,16 @@ export function OllamaUsageCard({ probeRecord, record }: { probeRecord: Upstream
   }, [probeRecord]));
 
   return <section className={SECTION_STACK_CLASS}>
+    {accountName !== null && <div className="flex items-center gap-3 min-w-0">
+      <ProviderIcon kind="ollama" className="h-8 w-8 shrink-0" />
+      <div className="grid gap-0.5 min-w-0 flex-1">
+        <Text block weight="semibold" truncate wrap={false}>{accountName}</Text>
+        {account?.email && account.name && <Text block size={200} className="text-fui-fg2" truncate wrap={false}>{account.email}</Text>}
+      </div>
+      {/* Ollama's own word for the tier, shown as it arrives. */}
+      {account?.plan && <StatusBadge tone="accent" className="capitalize">{account.plan}</StatusBadge>}
+    </div>}
+
     <SectionHeader level={3} title={t('dashboard.upstreamEditor.ollama.usage.title')} actions={
       <ResourceListActions
         appearance="subtle"
