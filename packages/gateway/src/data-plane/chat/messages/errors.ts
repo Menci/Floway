@@ -1,8 +1,7 @@
-import { mintAnthropicId } from './anthropic-id.ts';
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { generateAnthropicId, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
@@ -25,7 +24,7 @@ const anthropicErrorResult = (
   body: new TextEncoder().encode(JSON.stringify({
     type: 'error',
     error: { type, message },
-    request_id: mintAnthropicId('req'),
+    request_id: generateAnthropicId('req'),
   })),
   ...(performance ? { performance } : {}),
 });

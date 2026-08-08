@@ -1,8 +1,7 @@
 import type { MessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
-import { mintAnthropicId } from '../anthropic-id.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { generateAnthropicId, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
 // Claude Code answers "is this model usable?" by generating one token against
@@ -95,7 +94,7 @@ const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFram
   yield eventFrame({
     type: 'message_start',
     message: {
-      id: mintAnthropicId('msg'),
+      id: generateAnthropicId('msg'),
       type: 'message',
       role: 'assistant',
       model,
