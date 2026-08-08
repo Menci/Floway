@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -127,7 +127,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     return resolved;
   };
   const call = (
-    transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
@@ -135,7 +135,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
-    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
+    return transport(config, { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
         response,
         modelKey: rawModelId,
@@ -143,7 +143,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
@@ -155,7 +155,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     return streamingProviderCall(
       transport(
         config,
-        { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
+        { method: 'POST', body: jsonRequestBody({ ...body, stream: true, model: rawModelId }), signal },
         { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
@@ -185,7 +185,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         const rawModelId = rawModelIdOf(model);
         const response = await customFetchResponsesCompact(
           config,
-          { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
+          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
           { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
@@ -221,7 +221,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const response = await customFetchRerank(
         config,
         target.path ?? DEFAULT_RERANK_PATHS[target.protocol],
-        { method: 'POST', body: JSON.stringify(body), signal },
+        { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
       return { response, modelKey: rawModelId, target };

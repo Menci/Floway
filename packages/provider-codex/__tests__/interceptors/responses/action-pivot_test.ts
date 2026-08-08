@@ -4,7 +4,7 @@ import type { ResponsesBoundaryCtx } from '../../../src/interceptors/responses/t
 import { createUpstreamStateRepoStub } from '../../upstream-state-repo.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import { initProviderRepo, type ProviderResponsesResult, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, readJsonRequest } from '@floway-dev/test-utils';
 
 // Codex's terminal handler in provider.ts switches on `ctx.action` (the
 // post-chain value), so an interceptor that flips it mid-chain reroutes
@@ -80,7 +80,8 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
     const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
     if (url.endsWith('/codex/responses/compact')) {
       compactUrl = url;
-      compactBody = JSON.parse(init?.body as string) as Record<string, unknown>;
+      if (init === undefined) throw new Error('expected compact request init');
+      compactBody = await readJsonRequest(init) as Record<string, unknown>;
       return compactJsonResponse();
     }
     throw new Error(`unexpected fetch ${url}`);

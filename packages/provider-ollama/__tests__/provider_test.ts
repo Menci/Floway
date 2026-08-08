@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -58,7 +57,7 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
 test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-compat endpoints', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
@@ -74,7 +73,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
 test('getProvidedModels routes embedding-capability models to kind=embedding with only the embeddings endpoint', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
     assertEquals(Object.keys(embed.endpoints), ['embeddings']);
@@ -96,7 +95,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     // Manual entry appears first; the auto duplicate is filtered out so the
     // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
@@ -121,7 +120,7 @@ test('manual known models inherit built-in pricing when no override is configure
     },
   }));
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
@@ -146,7 +145,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       throw new Error(`unexpected request ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
       await instance.instance.callAudioTranscriptions(models[0], {
         entries: [
@@ -190,12 +189,12 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       return new Response('unexpected', { status: 500 });
     },
     async () => {
-      const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+      const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
       const result = await instance.instance.callChatCompletions(
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+        noopUpstreamCallOptions(),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },
@@ -231,7 +230,7 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const [model] = await instance.instance.getProvidedModels(testFetcher);
       const opts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
@@ -247,7 +246,7 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
 test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.chat, {
       reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },

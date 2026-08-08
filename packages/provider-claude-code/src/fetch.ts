@@ -14,6 +14,7 @@ import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
   headersForMessagesCall,
+  jsonRequestBody,
   streamingProviderCall,
   type MessagesUpstreamCallOptions,
   type ProviderModel,
@@ -389,7 +390,7 @@ const performUpstreamCall = async (
   const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
-    body: JSON.stringify(wireBody),
+    body: jsonRequestBody(wireBody),
     signal: opts.signal,
   })).then(response => {
     // `opts.call.waitUntil` is set by the gateway on Workers so the

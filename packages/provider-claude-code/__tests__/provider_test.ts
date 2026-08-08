@@ -4,10 +4,16 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
+import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols/messages';
 import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
+
+type WireMessagesPayload = MessagesPayload & {
+  system: MessagesTextBlock[];
+  metadata: { user_id: string };
+};
 
 // Canned `/v1/models` payload the fetcher mock returns; mirrors the live
 // June-2026 catalog shape (mixed dated and alias-shape ids).
@@ -186,7 +192,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(wireHeaders.get('user-agent')).toMatch(/^claude-cli\//);
     expect(wireHeaders.get('anthropic-beta')).toBeTruthy();
 
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     expect(Array.isArray(body.system)).toBe(true);
     expect(body.system).toHaveLength(3);
     expect(body.system[0].text).toMatch(/^x-anthropic-billing-header:/);
@@ -214,7 +220,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     // System stays as the operator sent it — the chain did NOT mutate to
     // the 3-block re-mimicry shape.
     expect(body.system).toHaveLength(1);
@@ -244,7 +250,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     // Re-mimicry ran: system was rebuilt into the 3-block shape.
     expect(body.system).toHaveLength(3);
   });
