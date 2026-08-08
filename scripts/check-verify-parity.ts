@@ -18,6 +18,12 @@
 // and the workflow runs scripts outside the matrix -- `typegen` prepares the
 // generated route types every type-aware check depends on.
 //
+// Comparing the two lists cannot see a verification absent from both, so the
+// root manifest is swept as well. Which scripts are verifications is read off
+// their names, the same convention their kind prefixes already encode; the
+// sweep runs one way only, because `verify` also chains setup (`typegen`) and a
+// build (`build:web`) that no naming rule marks as verifications.
+//
 // The workflow is read with a regex instead of a YAML parser, as
 // pnpm-workspace.yaml is in check-agents-md.ts. Every `run:` value is recovered
 // whole, so a form the parser was not built for (a block scalar, say) fails
@@ -32,6 +38,9 @@ const WORKFLOW_PATH = resolve(ROOT, '.github/workflows/verify.yaml');
 // A `run:` on a commented line is not a step: `\s` cannot cross the `#`.
 const RUN_VALUE = /^\s*run:\s*(\S.*?)\s*$/gm;
 const SCRIPT_CALL = /^pnpm run ([\w:-]+)$/;
+// A root script whose name states a kind of verification. `lint` and `typecheck`
+// are exact so that `lint:fix`, which repairs rather than verifies, stays out.
+const VERIFICATION_SCRIPT = /^(?:lint|typecheck|test|(?:check|test):[\w-]+)$/;
 // Provisioning the runner is not a verification, and the matrix dispatch only
 // forwards an entry recovered above.
 const SETUP_COMMANDS = new Set([
@@ -68,6 +77,13 @@ for (const name of verifyScripts) {
   if (!manifest.scripts[name]) {
     fail(`\`verify\` chains \`${name}\`, which package.json does not define`);
   }
+}
+
+const unchained = Object.keys(manifest.scripts).filter(
+  name => VERIFICATION_SCRIPT.test(name) && !verifyScripts.has(name),
+);
+if (unchained.length > 0) {
+  fail(`\`verify\` never chains ${JSON.stringify(unchained)}, which package.json names as verifications`);
 }
 
 const missingFromWorkflow = [...verifyScripts].filter(name => !workflowScripts.has(name));
