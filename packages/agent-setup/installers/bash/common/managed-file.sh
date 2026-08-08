@@ -1,3 +1,35 @@
+# Does this JSON file carry a `//` or `/*` comment outside a string? Both
+# editors read their managed document with a JSONC-tolerant parser, so a comment
+# is the operator's content — but jq has no JSONC mode and would refuse the file
+# while naming the wrong cause. Strings are walked rather than matched by
+# pattern, because a value like a URL contains `//` legitimately. Mirrors
+# Test-SetupJsonHasComment on the PowerShell side.
+_json_has_comment() {
+  awk '
+    BEGIN { in_string = 0; escaped = 0; found = 0 }
+    {
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (in_string) {
+          if (escaped) { escaped = 0 }
+          else if (c == "\\") { escaped = 1 }
+          else if (c == "\"") { in_string = 0 }
+          continue
+        }
+        if (c == "\"") { in_string = 1; continue }
+        if (c == "/") {
+          n = substr($0, i + 1, 1)
+          if (n == "/" || n == "*") { found = 1; exit }
+        }
+      }
+      escaped = 0
+    }
+    # `exit` runs END, so the verdict travels in a flag rather than in the exit
+    # status of the rule body, which END would otherwise overwrite.
+    END { exit (found ? 0 : 1) }
+  ' "$1" 2>/dev/null
+}
+
 # A file's permission bits as an octal string, or empty when neither stat
 # dialect answers. GNU takes `-c`, BSD takes `-f`; a caller that gets nothing
 # leaves the mode alone rather than guessing one.

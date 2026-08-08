@@ -117,15 +117,26 @@ describe('Zed provider name', () => {
 
   // A text input strips only CR and LF, so a tab pasted from a spreadsheet
   // reaches the field. The gateway rejects it with a 400 that is not retryable.
-  it('withholds a name carrying a control character', () => {
+  // Named for what matters: showing the error is not the guarantee — never
+  // sending the value is. The gateway rejects it with a 400 that is not
+  // retryable, so a value that reaches the draft strands the lease.
+  it('withholds a name carrying a control character', async () => {
+    const sent = vi.fn(() => new Promise<Response>(() => {}));
     renderInApp(<Host />);
     showZedTab();
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', sent);
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Ops\tbox');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
+
+    // Past the save debounce: nothing carrying the tab may have left.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    const bodies = sent.mock.calls.map(call => String((call as unknown as [string, RequestInit])[1]?.body ?? ''));
+    expect(bodies.some(body => body.includes('Ops\\tbox') || body.includes('Ops\tbox'))).toBe(false);
+    vi.unstubAllGlobals();
   });
 
   it('accepts a valid name', () => {

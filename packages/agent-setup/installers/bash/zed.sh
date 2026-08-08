@@ -100,8 +100,9 @@ zed_rollback_settings() {
 # inherits the mode of the document it replaces: this one holds no credential —
 # Zed reads the key from the keychain — so narrowing it to `umask 077` would
 # silently change permissions the operator chose, unlike the Claude settings
-# document, which carries the key and is deliberately owner-only. A new file
-# keeps the umask default.
+# document, which carries the key and is deliberately owner-only. A file this
+# run creates is owner-only, because main sets `umask 077` before anything is
+# written — the PowerShell half states the same mode explicitly.
 zed_write_settings() {
   ZED_SETTINGS_PATH="$ZED_CONFIG_DIR/global_settings.json"
   ZED_SETTINGS_BACKUP=""
@@ -109,6 +110,13 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
+    # Zed reads this file with serde_json_lenient, so a comment is the
+    # operator's content and jq is about to refuse it. Name that cause rather
+    # than reporting a malformed object.
+    if _json_has_comment "$ZED_SETTINGS_PATH"; then
+      out_error "$ZED_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
+      return 1
+    fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped

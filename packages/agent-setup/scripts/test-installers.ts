@@ -2795,6 +2795,9 @@ test('zed', 'both halves refuse a settings document carrying JSONC comments', as
     const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
     const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
     t.ok(run.code !== 0, `${which} refuses it`);
+    // Both halves must name the comment. Refusing for the wrong stated reason
+    // sends the operator looking for a syntax error that is not there.
+    t.ok(run.combined.includes('JSONC comments'), `${which} names the cause:\n${run.combined}`);
     t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), commented, `${which} leaves it byte-identical`);
   };
 
@@ -2815,6 +2818,23 @@ test('zed', 'both halves refuse a settings document carrying JSONC comments', as
 // a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
 // rewritten as an object with the array silently discarded, while jq refuses
 // it. Both halves decide the root from the text.
+// A file this run creates is ours to set. Bash gets owner-only from the
+// installer`s own umask; PowerShell would otherwise take the ambient one and
+// write 0644, so the same fresh install would land two different modes.
+test('zed', 'both halves create a new settings file owner-only', async t => {
+  if (process.platform === 'win32') skip('POSIX modes only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which} creates it owner-only`);
+  }
+});
+
 test('zed', 'both halves refuse an array root', async t => {
   const arrayRoot = '[{"telemetry":{"metrics":false}}]';
   const runHalf = async (which: 'bash' | 'powershell') => {
