@@ -24,7 +24,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
 1. Run `pnpm install --frozen-lockfile` and `pnpm wrangler whoami`.
 2. Copy `wrangler.example.jsonc` to the gitignored root `wrangler.jsonc` when it is absent.
 3. Resolve every `<YOUR_*>` value using the target account and resource names supplied by the user. Create the D1 database, R2 bucket, and KV namespace with Wrangler when they do not exist, then write their returned identifiers into `wrangler.jsonc`.
-4. Run `pnpm jiti scripts/check-wrangler.ts`.
+4. Run `pnpm jiti scripts/require-wrangler-config.ts`.
 5. Run `pnpm wrangler deployments status --json`. Continue only when Wrangler explicitly reports that the configured Worker does not exist. Stop when it reports an existing deployment or any authentication, network, account, or ambiguous failure.
 6. Run `pnpm run build:web`, because the shared Wrangler configuration includes `apps/web/dist/client` as its Static Assets directory.
 7. Publish the bootstrap probe while retaining the final Worker name, bindings, Durable Object migration, assets, cron, and routes. This first version installs the configured `new_sqlite_classes` migration:

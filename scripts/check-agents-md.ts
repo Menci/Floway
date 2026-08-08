@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const AGENTS_PATH = resolve(ROOT, 'AGENTS.md');
-const EXPECTED_TITLE = '# Repository Agent Protocol';
+const EXPECTED_TITLE = '# Repository Agent Guide';
 const EXPECTED_SECTIONS = ['## Requirements', '## Index'] as const;
 const PACKAGE_ROOTS = ['packages', 'apps'] as const;
 const DIRECT_PACKAGES = ['tools'] as const;
@@ -33,7 +33,7 @@ const INDEX_CATEGORY_ORDER: Record<IndexCategory, number> = {
 };
 
 const fail = (message: string): never => {
-  throw new Error(`AGENTS.md protocol violation: ${message}`);
+  throw new Error(`AGENTS.md: ${message}`);
 };
 
 const isIndexCategory = (value: string | undefined): value is IndexCategory =>
