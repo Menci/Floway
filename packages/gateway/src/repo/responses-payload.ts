@@ -1,4 +1,5 @@
 import type { StoredResponsesItemPayload } from './types.ts';
+import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import { getFileStore, sha256Hex } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeBase64, encodeBase64url } from '@floway-dev/protocols/common';
 
@@ -146,19 +147,8 @@ const assertPayloadObject = (id: string, value: unknown): StoredResponsesItemPay
   return payload;
 };
 
-// Copying through `new Uint8Array(bytes)` gives Blob a concrete
-// ArrayBuffer-backed view regardless of the caller's ArrayBufferLike type
-// parameter; the cast-free form fails strict-mode BufferSource on slices and
-// SharedArrayBuffer-backed inputs (same pattern as sha256.ts).
-const gzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new CompressionStream('gzip'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-};
-
-const ungzipToString = async (bytes: Uint8Array): Promise<string> => {
-  const stream = new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return decoder.decode(await new Response(stream).arrayBuffer());
-};
+const ungzipToString = async (bytes: Uint8Array): Promise<string> =>
+  decoder.decode(await gunzipBytes(bytes));
 
 const randomFileSuffix = (): string => {
   const bytes = new Uint8Array(16);

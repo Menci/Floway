@@ -8,7 +8,6 @@
   },
   "scripts": {
     "backfill-usage-pricing": "tsx src/backfill-usage-pricing/cli.ts",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

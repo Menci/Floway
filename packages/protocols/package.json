@@ -16,8 +16,7 @@
     "./rerank": { "import": "./src/rerank/index.ts", "types": "./src/rerank/index.ts" }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@scure/base": "^2.2.0",
