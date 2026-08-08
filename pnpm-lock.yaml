@@ -481,6 +481,9 @@ importers:
 
   packages/provider-azure:
     dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

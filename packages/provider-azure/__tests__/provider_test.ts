@@ -88,7 +88,18 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
     },
     async () => {
       const chat = await instance.instance.callChatCompletions(providerModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
-      const responses = await instance.instance.callResponses(providerModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }, 'generate', undefined, noopUpstreamCallOptions());
+      const responses = await instance.instance.callResponses(providerModel, {
+        input: [{
+          type: 'additional_tools',
+          role: 'developer',
+          tools: [{
+            type: 'namespace',
+            name: 'functions',
+            description: '',
+            tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+          }],
+        }],
+      }, 'generate', undefined, noopUpstreamCallOptions());
       const embeddings = await instance.instance.callEmbeddings(providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
       assertEquals(chat.modelKey, 'gpt-prod');
@@ -108,6 +119,82 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
   assertEquals(
     seen.map(item => item.body.model),
     ['gpt-prod', 'gpt-prod', 'gpt-prod'],
+  );
+  assertEquals(
+    ((seen[1]?.body.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description),
+    'Tools in the functions namespace.',
+  );
+});
+
+test('createAzureProvider runs the Responses boundary on compact requests', async () => {
+  const instance = createAzureProvider(azureRecord());
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  let body: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      body = await request.json() as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        id: 'resp_compact',
+        object: 'response.compaction',
+        model: 'gpt-prod',
+        status: 'completed',
+        output: [{ id: 'cmp_x', type: 'compaction', encrypted_content: 'blob' }],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+    async () => {
+      const result = await instance.instance.callResponses(providerModel, {
+        input: [{
+          type: 'additional_tools',
+          role: 'developer',
+          tools: [{
+            type: 'namespace',
+            name: 'functions',
+            description: '',
+            tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+          }],
+        }],
+      }, 'compact', undefined, noopUpstreamCallOptions());
+      assertEquals(result.action, 'compact');
+      assertEquals(result.ok, true);
+    },
+  );
+
+  assertEquals(
+    ((body?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description),
+    'Tools in the functions namespace.',
+  );
+  assertEquals(body?.model, 'gpt-prod');
+});
+
+test.each(['generate', 'compact'] as const)('createAzureProvider preserves %s upstream errors through the Responses boundary', async action => {
+  const instance = createAzureProvider(azureRecord());
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const upstreamResponse = new Response('{"error":"upstream rejected the request"}', {
+    status: 418,
+    headers: { 'content-type': 'application/json', 'x-upstream-error': action },
+  });
+
+  await withMockedFetch(
+    () => Promise.resolve(upstreamResponse),
+    async () => {
+      const result = await instance.instance.callResponses(
+        providerModel,
+        { input: [{ type: 'message', role: 'user', content: 'hello' }] },
+        action,
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+      assertEquals(result.action, action);
+      assertEquals(result.ok, false);
+      if (result.ok) throw new Error('expected upstream error');
+      assertEquals(result.modelKey, 'gpt-prod');
+      assertEquals(result.response, upstreamResponse);
+      assertEquals(result.response.status, 418);
+      assertEquals(result.response.headers.get('x-upstream-error'), action);
+      assertEquals(await result.response.text(), '{"error":"upstream rejected the request"}');
+    },
   );
 });
 

@@ -71,7 +71,7 @@ test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and defe
       },
       { type: 'web_search' },
       { type: 'tool_search', execution: 'x', description: 'y', parameters: {} },
-      { type: 'namespace', name: 'ns', tools: [] },
+      { type: 'namespace', name: 'ns', description: '', tools: [] },
       { type: 'image_generation', output_format: 'png' },
     ],
     tool_choice: 'auto',
