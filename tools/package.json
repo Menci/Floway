@@ -1,0 +1,31 @@
+{
+  "name": "@floway-dev/tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "backfill-usage-pricing": "tsx src/backfill-usage-pricing/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@floway-dev/gateway": "workspace:*",
+    "@floway-dev/protocols": "workspace:*",
+    "@floway-dev/provider": "workspace:*",
+    "@floway-dev/provider-claude-code": "workspace:*",
+    "@floway-dev/provider-codex": "workspace:*",
+    "@floway-dev/provider-copilot": "workspace:*",
+    "@floway-dev/provider-ollama": "workspace:*",
+    "jsonc-parser": "^3.3.1",
+    "tsx": "^4"
+  },
+  "devDependencies": {
+    "@floway-dev/test-utils": "workspace:*",
+    "@types/node": "^22",
+    "vitest": "4.1.10",
+    "wrangler": "^4.81.0"
+  }
+}

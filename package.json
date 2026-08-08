@@ -12,6 +12,7 @@
     "deploy": "pnpm install --frozen-lockfile && jiti scripts/check-wrangler.ts && pnpm run build:web && wrangler deploy --message \"$(git rev-parse HEAD)\"",
     "db:migrate": "jiti scripts/check-wrangler.ts && wrangler d1 migrations apply DB",
     "db:migrate:remote": "jiti scripts/check-wrangler.ts && wrangler d1 migrations apply DB --remote",
+    "tools:backfill-usage-pricing": "pnpm --filter @floway-dev/tools run backfill-usage-pricing",
     "lint": "cross-env NODE_OPTIONS=\"--max-old-space-size=12288\" eslint --cache .",
     "lint:fix": "cross-env NODE_OPTIONS=\"--max-old-space-size=12288\" eslint --cache . --fix",
     "test": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" vitest run",
