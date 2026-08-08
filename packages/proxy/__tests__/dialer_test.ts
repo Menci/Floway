@@ -248,6 +248,56 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
+  // Reading the body to EOF and cancelling it both require someone to still be
+  // holding the body. An abandoned response has neither, so the caller's signal
+  // is the only teardown left once the dial has resolved.
+  it('closes its socket when the caller aborts after the response was returned', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const controller = new AbortController();
+    await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(direct.closeCalls()).toBe(0);
+    controller.abort('client gone');
+    await Promise.resolve();
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  // addEventListener on an already-aborted signal never fires, so the abort
+  // that lands while the request is in flight has to be picked up synchronously.
+  it('closes its socket when the caller aborted while the request was in flight', async () => {
+    const controller = new AbortController();
+    // Abort once the socket exists but before the response is handed back, so
+    // the dial itself still succeeds and the abort lands in the window the
+    // listener install would otherwise miss.
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok', () => controller.abort('client gone'));
+    await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('closes its socket once when an abort follows a completed body', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const controller = new AbortController();
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial, signal: controller.signal },
+    );
+
+    expect(await response.text()).toBe('ok');
+    controller.abort('client gone');
+    await Promise.resolve();
+    expect(direct.closeCalls()).toBe(1);
+  });
+
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
     const socketDial: SocketDial = {
       connect: async (_host, _port, options) => {

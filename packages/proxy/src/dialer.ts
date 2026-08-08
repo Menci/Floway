@@ -150,7 +150,7 @@ export const runDirectConnectRequest = async (
 
   try {
     const response = await runRequestOnStream(socket, target, request, options);
-    return closeSocketWithResponse(response, socket);
+    return closeSocketWithResponse(response, socket, options.signal);
   } catch (error) {
     await socket.close().catch(() => {});
     throw error;
@@ -219,12 +219,27 @@ const runRequestOnStream = async (
   }
 };
 
-const closeSocketWithResponse = (response: Response, socket: DialedSocket): Response => {
+const closeSocketWithResponse = (response: Response, socket: DialedSocket, signal?: AbortSignal): Response => {
   let closePromise: Promise<void> | null = null;
   const close = (): Promise<void> => {
     closePromise ??= socket.close().catch(() => {});
+    if (signal !== undefined) signal.removeEventListener('abort', onAbort);
     return closePromise;
   };
+  const onAbort = (): void => { void close(); };
+
+  // Reading the body to its end and cancelling it are the ordinary teardown
+  // paths, and both of them require someone to still be holding the body. An
+  // abort raised after the dial resolved has no other way to reach this
+  // socket: the dial-stage listener is detached once `withDialDeadline`
+  // returns, and the runtime's own `signal` support on connect() covers the
+  // handshake only.
+  if (signal !== undefined) {
+    signal.addEventListener('abort', onAbort, { once: true });
+    // addEventListener on an already-aborted signal never fires, so an abort
+    // that landed while the request was in flight would otherwise be lost.
+    if (signal.aborted) void close();
+  }
 
   if (response.body === null) {
     void close();
