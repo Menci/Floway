@@ -30,6 +30,7 @@ import { TruncationTooltip } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
+import { shortAccountId } from '../components/upstreams/account-id';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { fluentComponents } from '../fluent';
@@ -535,20 +536,27 @@ const buildModelCounts = (
   return new Map(upstreams.map(record => [record.id, countFor(record)]));
 };
 
+// Who the upstream connects as. A subscription names an account; an endpoint
+// the operator configured names itself. The plan is not part of it -- the line
+// below states that for every provider that has one.
 const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
   case 'custom': return record.config.baseUrl;
   case 'azure': return record.config.endpoint;
-  case 'ollama': return record.config.baseUrl || t('dashboard.upstreams.summary.ollama');
+  // A cloud key belongs to an account, and that account says more than the one
+  // endpoint every cloud upstream shares. A self-hosted daemon has no account,
+  // so its address is the whole identity.
+  case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('dashboard.upstreams.summary.ollama'));
   case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
   case 'codex': {
     const account = record.config.accounts[0];
-    return account ? [account.email, account.planType].filter(Boolean).join(' - ') : t('dashboard.upstreams.summary.noAccount');
+    if (!account) return t('dashboard.upstreams.summary.noAccount');
+    return account.email || shortAccountId(account.chatgptAccountId);
   }
   case 'claude-code': {
     const account = record.config.accounts[0];
     if (!account) return t('dashboard.upstreams.summary.noAccount');
-    return account.email ?? account.accountUuid.slice(0, 8);
+    return account.email ?? shortAccountId(account.accountUuid);
   }
   }
 };
