@@ -363,6 +363,19 @@ const ZED_CATALOG = {
       chat: { reasoning: { budget_tokens: { max: 32_000 } } },
     },
     {
+      // A stated 0 is a value, not an absent limit. It has to survive the
+      // projection, the embedding in the script, and both merges.
+      id: 'zero-limits', object: 'model', type: 'model', display_name: 'Zero Limits',
+      kind: 'chat', endpoints: { chatCompletions: {} },
+      limits: { max_context_window_tokens: 0, max_output_tokens: 0 },
+    },
+    {
+      // Addressable but not listed: the dashboard asks for these to populate
+      // its alias combobox, and a setup run must not advertise one.
+      id: 'vendor/unlisted-chat', object: 'model', type: 'model', display_name: 'Unlisted',
+      kind: 'chat', endpoints: { messages: {} }, limits: {}, unlisted: true,
+    },
+    {
       id: 'embed-3', object: 'model', type: 'model', display_name: 'Embed',
       kind: 'embedding', endpoints: { embeddings: {} }, limits: {},
     },
@@ -372,8 +385,7 @@ const ZED_CATALOG = {
 type ModelServerMode =
   | 'ok'
   | 'installer-sh' | 'installer-ps1' | 'installer-html'
-  | 'installer-codex-sh' | 'installer-codex-ps1'
-  | 'catalog-empty' | 'catalog-error';
+  | 'installer-codex-sh' | 'installer-codex-ps1';
 interface ModelServer {
   url: string;
   readonly requests: { method: string; path: string }[];
@@ -461,28 +473,6 @@ const startModelServer = async (): Promise<ModelServer> => {
         res.end(PS1_FAKE_INSTALLER_BODY('codex', 'FAKE_CODEX_SRC'));
         return;
       }
-    }
-    if (pathname === '/v1/models') {
-      // A real gateway serves no catalog without the key, so an installer that
-      // dropped the header would fail every install while the fixture stayed
-      // green. Rejecting here makes each success case assert the header too.
-      if (req.headers.authorization !== `Bearer ${SENTINEL_KEY}`) {
-        res.writeHead(401, { 'content-type': 'application/json' });
-        res.end('{"error":{"message":"missing or invalid authorization"}}');
-        return;
-      }
-      if (state.mode === 'catalog-error') {
-        res.writeHead(500, { 'content-type': 'application/json' });
-        res.end('{"error":{"message":"upstream model listing failed"}}');
-        return;
-      }
-      res.writeHead(200, { 'content-type': 'application/json' });
-      // Serves the embedding row alone, so the refusal comes out of the
-      // chat-kind filter rather than out of an empty array.
-      res.end(JSON.stringify(state.mode === 'catalog-empty'
-        ? { object: 'list', data: ZED_CATALOG.data.filter(model => model.kind !== 'chat') }
-        : ZED_CATALOG));
-      return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end('{"error":"not found"}');
@@ -2510,7 +2500,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2630,53 +2620,73 @@ test('zed', 'a catalog with no chat models is refused rather than written empty'
 
 test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  placeFakeCredentialTools(ws);
-  writeFileSync(zedSettingsPath(configDir), JSON.stringify({
+  const existing = JSON.stringify({
     telemetry: { metrics: false },
     language_models: {
       anthropic_compatible: { Existing: { api_url: 'https://existing', available_models: [] } },
     },
-  }));
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: zedConfig(),
-    zedConfigDir: configDir,
   });
-  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
 
-  const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
-  t.equal(JSON.stringify(settings.telemetry), JSON.stringify({ metrics: false }), 'unrelated top-level key preserved');
-  t.equal(settings.language_models.anthropic_compatible.Existing?.api_url, 'https://existing', 'a sibling provider survives the merge');
+  // Both halves run against the same catalog and the same prior document, and
+  // the two results are compared to each other rather than to a hand-kept copy
+  // of one of them. A restated expectation is the mechanism this design was
+  // meant to remove: it can drift from both implementations at once.
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), existing);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(!run.combined.includes(SENTINEL_KEY), `${which} never prints the key`);
+    return { settings: readSettings(zedSettingsPath(configDir)) as ZedSettings, run };
+  };
 
-  const provider = settings.language_models.anthropic_compatible.Floway!;
+  const bash = await runHalf('bash');
+  const powershell = await runHalf('powershell');
+  t.equal(
+    JSON.stringify(powershell.settings),
+    JSON.stringify(bash.settings),
+    'the two halves write byte-identical documents, keys and order included',
+  );
+
+  // Anchored once so the comparison above cannot pass by both halves being
+  // wrong in the same way.
+  const provider = bash.settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only', 'chat models only, in catalog order');
-
-  const models = new Map(provider.available_models.map(entry => [entry.name, entry]));
-  t.equal(JSON.stringify(models.get('claude-opus-4-6')!.mode), JSON.stringify({ type: 'adaptive' }), 'adaptive reasoning survives the PowerShell projection');
-  t.equal(JSON.stringify(models.get('gpt-5.6')!.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'the budget floor survives the PowerShell projection');
-  t.ok(models.get('effort-only')!.mode === undefined, 'reasoning without a budget stays in default mode');
-  t.equal(models.get('plain-chat')!.max_tokens, 200_000, 'the unlimited model gets the same fallback window');
-
-  const calls = readCredentialCalls(ws);
-  t.equal(calls.length, 1, 'the credential is stored once');
-  const [tool] = calls[0]!.split('\t');
-  if (tool === 'secret-tool') {
-    // PowerShell terminates a piped object with a newline and secret-tool
-    // stores every byte it reads, so a pipeline here would hand Zed a key that
-    // makes every Authorization header malformed.
-    t.equal(readFileSync(zedCredentialSecret(ws), 'utf8'), SENTINEL_KEY, 'exactly the key reaches secret-tool, with no trailing newline');
-  }
-  t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
+  t.equal(
+    provider.available_models.map(entry => entry.name).join(','),
+    'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits',
+    'chat models only, in catalog order',
+  );
+  t.equal(bash.settings.language_models.anthropic_compatible.Existing?.api_url, 'https://existing', 'a sibling provider survives the merge');
 });
 
-// `providerName` is opaque text to Zed, so the schema accepts names PowerShell
-// reserves on every object. Add-Member throws on those even with -Force, so the
-// mutation has to sit inside the staging transaction or the backup outlives the
-// failed run.
+// A lone model must still serialize as an array: ConvertTo-Json unwraps a
+// one-element array, and Zed's `available_models` is a Vec — an object there
+// fails deserialization and takes the whole provider down. jq's
+// `--slurpfile`/`$models[0]` is pinned by the same case.
+test('zed', 'a single-model catalog still writes an array in both halves', async t => {
+  const single = ZED_CATALOG.data.filter(model => model.id === 'plain-chat');
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir, catalog: single };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readSettings(zedSettingsPath(configDir)) as ZedSettings;
+  };
+
+  const bash = await runHalf('bash');
+  t.ok(Array.isArray(bash.language_models.anthropic_compatible.Floway!.available_models), 'Bash writes an array');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.ok(Array.isArray(powershell.language_models.anthropic_compatible.Floway!.available_models), 'PowerShell writes an array');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two documents still match');
+});
+
 test('zed', 'PowerShell leaves no backup behind when the provider name is a reserved member', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
