@@ -54,6 +54,16 @@ const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies
 // packages/agent-setup/src/configuration.ts. It only stops typing early — the
 // gateway still enforces the rule.
 const PROVIDER_NAME_MAX_LENGTH = 120;
+// Mirrors `editorProviderName` at the gateway, and is the single condition both
+// the error state and the draft gate ask. A text input strips only CR and LF, so
+// a tab pasted from a spreadsheet reaches the field; its 400 is not retryable,
+// which strands the lease with the copy button disabled and an untranslated Zod
+// issue on screen — the outcome this field exists to prevent. Two conditions
+// here would mean a value shown as invalid could still have been sent.
+const acceptableProviderName = (candidate: string): boolean =>
+  candidate.length > 0
+  && candidate === candidate.trim()
+  && !/[\u0000-\u001f\u007f]/.test(candidate);
 // The three paths `customendpoint` resolves a bare base URL to. Floway serves
 // all of them for every model, so the choice is a preference.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
@@ -374,12 +384,7 @@ function ProviderNameField({ fieldId, onChange, value }: {
   // the configuration alone, which would show one editor's name under the other.
   const [draft, setDraft] = useState<{ against: string; value: string } | null>(null);
   const shown = draft?.against === fieldId ? draft.value : value;
-  // Mirrors `editorProviderName` at the gateway. A text input strips only CR and
-  // LF, so a tab pasted from a spreadsheet survives to the draft, and its 400 is
-  // not retryable — the lease is left with the copy button disabled and an
-  // untranslated Zod issue on screen, which is the outcome this field exists to
-  // prevent.
-  const invalid = shown !== shown.trim() || shown.length === 0 || /[\u0000-\u001f\u007f]/.test(shown);
+  const invalid = !acceptableProviderName(shown);
   return <Field
     label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
     validationMessage={invalid ? t('dashboard.apiKeys.agentSetup.providerNameInvalid') : undefined}
@@ -390,7 +395,7 @@ function ProviderNameField({ fieldId, onChange, value }: {
       value={shown}
       onChange={(_, data) => {
         setDraft({ against: fieldId, value: data.value });
-        if (data.value.length > 0 && data.value === data.value.trim()) onChange(data.value);
+        if (acceptableProviderName(data.value)) onChange(data.value);
       }}
     />
   </Field>;

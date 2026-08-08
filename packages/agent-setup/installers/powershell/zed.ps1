@@ -152,8 +152,14 @@ function Write-SetupZedSettings {
     # so the replacement carries the mode of the file it replaces rather than
     # the process umask, matching the Bash half. Windows needs nothing here:
     # File.Replace preserves the destination ACL.
-    if ($script:ZedSettingsExisted -and -not (Test-SetupIsWindows)) {
-      [System.IO.File]::SetUnixFileMode($stage, [System.IO.File]::GetUnixFileMode($script:ZedSettingsPath))
+    if (-not (Test-SetupIsWindows)) {
+      if ($script:ZedSettingsExisted) {
+        [System.IO.File]::SetUnixFileMode($stage, [System.IO.File]::GetUnixFileMode($script:ZedSettingsPath))
+      } else {
+        # A file we create is ours to set: owner-only, matching the Bash half,
+        # which writes it under the installer's own `umask 077`.
+        [System.IO.File]::SetUnixFileMode($stage, 'UserRead, UserWrite')
+      }
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
     # unlink a settings file Zed is watching; File.Replace is atomic.
