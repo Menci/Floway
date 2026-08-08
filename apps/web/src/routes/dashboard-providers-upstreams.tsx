@@ -344,7 +344,10 @@ function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
 
   return <TableCellLayout
     className="max-w-[520px]"
-    description={<UpstreamSignals record={record} />}
+    // Fluent stacks the two lines with no gap at all, which leaves the second
+    // reading as a wrapped continuation of the first rather than as its own
+    // line. One step of the vertical ramp separates them.
+    description={{ children: <UpstreamSignals record={record} />, className: 'pt-[var(--spacingVerticalXXS)]' }}
     truncate
   >
     <TruncationTooltip content={summary} relationship="label">

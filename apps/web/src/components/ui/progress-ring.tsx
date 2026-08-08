@@ -62,6 +62,14 @@ const useStyles = makeStyles({
 
 // The value is carried by the text this ring stands beside, so the graphic is
 // left out of the accessibility tree rather than duplicating it as a meter.
+//
+// It is centred on the cap height of that text rather than on its line box: a
+// line box is taller below the baseline than the digits standing on it, so a
+// ring centred in it reads as riding high. The caller therefore aligns on the
+// baseline -- where a replaced element sits on its bottom edge -- and the ring
+// lifts its own centre to half a cap above it. `cap` is the font's own cap
+// height, so this holds at any size and under any font.
+// https://drafts.csswg.org/css-values-4/#cap
 export function ProgressRing({ className, percent, size = 16, tone }: {
   className?: string;
   /** Clamped to the ring: past 100 the arc is closed, not wound a second time. */
@@ -77,6 +85,7 @@ export function ProgressRing({ className, percent, size = 16, tone }: {
       aria-hidden
       className={mergeClasses('block flex-none', className)}
       height={size}
+      style={{ transform: 'translateY(calc(50% - 0.5cap))' }}
       viewBox={`0 0 ${DIAMETER} ${DIAMETER}`}
       width={size}
     >
