@@ -16,16 +16,22 @@ export const subscriptionLabel = (
 ): string | null =>
   subscriptionType ? { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType] : null;
 
-// The subscription's own name. `rateLimitTier` is Anthropic's raw string and the
-// only place the Max multiplier appears, so the trailing multiple is lifted off
-// it and anything else in the string is left alone.
+// The subscription's own name. `rate_limit_tier` is Anthropic's raw string and
+// the only place the Max multiple appears, but it carries that meaning only
+// under a Max organization: the same `default_claude_max_5x` under a Team
+// organization marks a premium seat, which the CLI reads as exactly that pair
+// rather than off the tier alone. A tier stating no multiple -- and every tier a
+// non-Max subscription carries, from `default_claude_ai` to internal codenames
+// like `default_raven` -- leaves the subscription to name itself.
+// https://claude.com/pricing
 export const planLabel = (
   account: { rateLimitTier?: string | null; subscriptionType?: 'pro' | 'max' | 'team' | 'enterprise' | null },
 ): string | null => {
   const subscription = subscriptionLabel(account.subscriptionType);
   if (subscription === null) return null;
+  if (account.subscriptionType !== 'max') return `Claude ${subscription}`;
   const multiple = account.rateLimitTier?.match(/_(\d+x)$/)?.[1] ?? null;
-  return multiple === null ? `Claude ${subscription}` : `Claude ${subscription} ${multiple}`;
+  return multiple === null ? 'Claude Max' : `Claude Max ${multiple}`;
 };
 
 export type CredentialLookup =

@@ -13,16 +13,34 @@ import type {
 
 export type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
-// `chatgpt_plan_type` is an open string on the id_token, so a value this
-// dashboard has not seen is title-cased onto the subscription's own name rather
-// than dropped.
+// `chatgpt_plan_type` is an untagged `Known | Unknown(String)` upstream, so the
+// raw value is preserved and a plan this table does not know is forwarded as it
+// arrived rather than dropped.
+// https://github.com/openai/codex/blob/936f5eb3ee223ab34dcb221fa7c5f9943c8092bd/codex-rs/protocol/src/auth.rs#L60
+//
+// Two entries read as contradictions and are not: OpenAI renamed ChatGPT Team
+// to ChatGPT Business without changing the wire identifier, and groups the
+// `business` identifier with its enterprise plans. Codex's own status line maps
+// them exactly this way, under a table test.
+// https://github.com/openai/codex/blob/936f5eb3ee223ab34dcb221fa7c5f9943c8092bd/codex-rs/tui/src/status/helpers.rs#L99
+// https://help.openai.com/en/articles/12111915-chatgpt-team-is-now-chatgpt-business
 const PLAN_NAMES: Record<string, string> = {
   free: 'Free',
+  go: 'Go',
   plus: 'Plus',
   pro: 'Pro',
-  team: 'Team',
-  business: 'Business',
+  prolite: 'Pro Lite',
+  team: 'Business',
+  self_serve_business_prolite: 'Business',
+  self_serve_business_usage_based: 'Business',
+  business: 'Enterprise',
+  ent26: 'Enterprise',
   enterprise: 'Enterprise',
+  hc: 'Enterprise',
+  enterprise_cbp_automation: 'Enterprise (Automation)',
+  enterprise_cbp_usage_based: 'Enterprise',
+  edu: 'Edu',
+  education: 'Edu',
 };
 
 export const planLabel = (account: CodexRecord['config']['accounts'][number]): string | null =>

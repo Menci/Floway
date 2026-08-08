@@ -143,9 +143,37 @@ describe('upstream readout by provider', () => {
   it('names a Claude subscription that carries no multiple by the subscription alone', () => {
     expect(readoutOf({
       kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'pro', rateLimitTier: 'default_pro' }] },
+      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'pro', rateLimitTier: 'default_claude_ai' }] },
       state: { accounts: [] },
     }).plan).toBe('Claude Pro');
+  });
+
+  // A Team premium seat carries `default_claude_max_5x`, which is not a Max
+  // multiple and would otherwise render as a plan Anthropic does not sell.
+  it('reads a Max multiple only under a Max subscription', () => {
+    const planFor = (subscriptionType: string, rateLimitTier: string) => readoutOf({
+      kind: 'claude-code',
+      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType, rateLimitTier }] },
+      state: { accounts: [] },
+    }).plan;
+
+    expect(planFor('team', 'default_claude_max_5x')).toBe('Claude Team');
+    expect(planFor('max', 'default_claude_max_5x')).toBe('Claude Max 5x');
+    expect(planFor('max', 'default_raven')).toBe('Claude Max');
+  });
+
+  // OpenAI renamed Team to Business without changing the wire identifier, and
+  // groups `business` with its enterprise plans.
+  it('names a ChatGPT plan as Codex itself displays it', () => {
+    const planFor = (planType: string) => readoutOf({
+      kind: 'codex',
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType }] },
+      state: { accounts: [] },
+    }).plan;
+
+    expect(planFor('team')).toBe('ChatGPT Business');
+    expect(planFor('business')).toBe('ChatGPT Enterprise');
+    expect(planFor('prolite')).toBe('ChatGPT Pro Lite');
   });
 
   it('reads the Ollama Cloud windows and the activity cost the probe stored', () => {
