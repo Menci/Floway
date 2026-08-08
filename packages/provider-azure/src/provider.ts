@@ -5,11 +5,11 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
-type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>;
+type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>;
 
 export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const azure = assertAzureUpstreamRecord(record);
@@ -27,7 +27,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     return streamingProviderCall(
       transport(
         azure.config,
-        { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
+        { method: 'POST', body: jsonRequestBody({ ...body, stream: true, model: upstreamModelId }), signal },
         { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
@@ -38,7 +38,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
-    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+    const response = await transport(azure.config, { method: 'POST', body: jsonRequestBody({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
     return { response, modelKey: upstreamModelId };
   };
 
@@ -75,7 +75,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         const upstreamModelId = upstreamModelIdOf(model);
         const response = await azureFetchResponsesCompact(
           azure.config,
-          { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
+          { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
           { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok

@@ -20,7 +20,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -117,7 +117,7 @@ const fetchShowForTag = async (
 ): Promise<OllamaRawModel | null> => {
   const response = await ollamaFetchShow(
     config,
-    { method: 'POST', body: JSON.stringify({ name: tag.name }) },
+    { method: 'POST', body: jsonRequestBody({ name: tag.name }) },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
   if (!response.ok) return null;
