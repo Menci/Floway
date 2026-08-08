@@ -126,4 +126,26 @@ describe('Zed provider name', () => {
     expect(screen.queryByText('Enter a name with no leading or trailing spaces.')).toBeNull();
     expect(input.value).toBe('Floway prod');
   });
+
+  // The local hold exists only to keep an invalid value out of the draft. It is
+  // keyed on the configuration it belongs to, so once a lease for another key
+  // lands the field shows that lease's name rather than the half-typed one.
+  it('yields to a configuration that arrives for another key', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
+      JSON.stringify({ ...lease('key-2'), configuration: { ...configuration('key-2'), zed: { providerName: 'Second' } } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))));
+    renderInApp(<Host />);
+    showZedTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Half-typed ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(input.value).toBe('Half-typed ');
+
+    await act(async () => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ }).value).toBe('Second');
+    vi.unstubAllGlobals();
+  });
 });

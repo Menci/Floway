@@ -187,7 +187,7 @@ const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseRespon
 
 // --- create: first use, restore, multi-page independence ---
 
-test('POST first use selects the first key and enables both agents at revision 1', async () => {
+test('POST first use selects the first key and configures every agent at revision 1', async () => {
   const h = harness();
   const body = await create(h);
 

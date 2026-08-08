@@ -297,7 +297,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 
   if (agent === 'zed') return <div className="grid gap-3">
     <div className={FIELD_GRID_CLASS}>
-      <ProviderNameField value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
+      <ProviderNameField configurationId={configuration.apiKeyId} value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
     </div>
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
   </div>;
@@ -317,10 +317,17 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 // control-character names; an invalid value is held locally and never patched
 // into the draft, because a 400 is not retryable and would strand the lease
 // with the copy button disabled and an untranslated Zod issue on screen.
-function ProviderNameField({ onChange, value }: { onChange: (value: string) => void; value: string }) {
+function ProviderNameField({ configurationId, onChange, value }: {
+  configurationId: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? value;
+  // The local hold keeps an invalid value out of the draft while it is being
+  // typed. It is keyed on the configuration it belongs to, so a lease for
+  // another key replaces it rather than rendering behind it.
+  const [draft, setDraft] = useState<{ against: string; value: string } | null>(null);
+  const shown = draft?.against === configurationId ? draft.value : value;
   const invalid = shown !== shown.trim() || shown.length === 0;
   return <Field
     label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
@@ -331,7 +338,7 @@ function ProviderNameField({ onChange, value }: { onChange: (value: string) => v
       maxLength={PROVIDER_NAME_MAX_LENGTH}
       value={shown}
       onChange={(_, data) => {
-        setDraft(data.value);
+        setDraft({ against: configurationId, value: data.value });
         if (data.value.length > 0 && data.value === data.value.trim()) onChange(data.value);
       }}
     />
