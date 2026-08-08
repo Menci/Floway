@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shortAccountId } from '../../../src/components/upstream-editor/account-id';
+import { shortAccountId } from '../../../src/components/upstreams/account-id';
 
 describe('account id elision', () => {
   it('elides only ids long enough to need it', () => {

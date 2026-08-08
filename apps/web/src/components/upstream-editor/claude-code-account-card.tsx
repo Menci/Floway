@@ -1,6 +1,5 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 
-import { shortAccountId } from './account-id';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime } from '../../lib/format-time';
@@ -9,6 +8,7 @@ import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
+import { shortAccountId } from '../upstreams/account-id';
 import {
   accountStatus,
   actionableDisabledReason,
