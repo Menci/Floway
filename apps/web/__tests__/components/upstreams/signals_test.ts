@@ -61,11 +61,14 @@ describe('upstream readout by provider', () => {
     }).plan;
 
     expect(planFor('plus_monthly_subscriber_quota')).toBe('Copilot Pro+');
-    expect(planFor('copilot_enterprise_seat_quota')).toBe('Copilot Enterprise');
+    expect(planFor('copilot_enterprise_seat_multi_quota')).toBe('Copilot Enterprise');
     expect(planFor('free_limited_copilot')).toBe('Copilot Free');
-    // An identifier GitHub has not published reads as no plan rather than as
-    // itself: these are internal names and none of them is a product name.
-    expect(planFor('some_new_seat_quota')).toBe('Copilot');
+    // An identifier no first-party source attests reads as no plan rather than
+    // as itself: these are internal names, none is a product name, and the
+    // namespace is open. `copilot_enterprise_seat_quota` is one of them -- it
+    // exists, but on `access_type_sku`, never on a token.
+    expect(planFor('max_monthly_subscriber_quota')).toBe('Copilot');
+    expect(planFor('copilot_enterprise_seat_quota')).toBe('Copilot');
     expect(planFor(null)).toBe('Copilot');
   });
 
