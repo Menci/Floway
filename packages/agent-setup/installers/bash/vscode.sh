@@ -121,14 +121,22 @@ vscode_write_settings() {
 
   if [ -e "$VSCODE_SETTINGS_PATH" ]; then
     VSCODE_SETTINGS_EXISTED=1
-    # `-e` rather than a filter that raises: jq runs a filter zero times on
-    # empty input and still exits 0, so an empty or whitespace-only file would
-    # pass this gate and fail later as a staging error naming the wrong cause.
-    # Elements are checked too: the merge indexes `.vendor` on each one, which
-    # aborts on a scalar, and PowerShell's filter would instead keep it and
-    # rewrite the file — the same document accepted on one platform, refused on
-    # the other.
-    if ! "$JQ" -e 'type == "array" and all(.[]; type == "object")' "$VSCODE_SETTINGS_PATH" >/dev/null 2>&1; then
+    # VS Code reads this file with its JSONC-tolerant scanner, so a comment is
+    # content the editor accepts and jq is about to refuse. Name that cause
+    # rather than reporting it as a malformed provider list.
+    if grep -q '^[[:space:]]*//' "$VSCODE_SETTINGS_PATH" 2>/dev/null; then
+      out_error "$VSCODE_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
+      return 1
+    fi
+    # `-s -e` rather than a filter that raises: jq runs a filter zero times on
+    # empty input and once per document on a stream, so an empty file and a
+    # multi-document file would both pass an unslurped gate and fail later as a
+    # staging error naming the wrong cause. Elements are checked too: the merge
+    # indexes `.vendor` on each one, which aborts on a scalar, and the
+    # PowerShell filter would instead keep it and rewrite the file — the same
+    # document accepted on one platform, refused on the other.
+    if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "array") and (.[0] | all(.[]; type == "object"))' \
+        "$VSCODE_SETTINGS_PATH" >/dev/null 2>&1; then
       out_error "$VSCODE_SETTINGS_PATH is not a valid provider list; leaving it untouched."
       return 1
     fi

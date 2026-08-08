@@ -104,7 +104,16 @@ function Write-SetupVSCodeSettings {
     # jq, which the Bash installer asks the same question, reads the text.
     # Get-Content -Raw yields $null for an empty file, which is not a list
     # either — and dereferencing it would report a PowerShell internal instead.
-    if ($null -eq $raw -or -not $raw.TrimStart().StartsWith('[')) {
+    # VS Code reads this file with its JSONC-tolerant scanner, so a comment is
+    # content the editor accepts. jq has no JSONC mode and refuses such a
+    # document, PowerShell 7 accepts it and drops the comment on the way out,
+    # and 5.1 errors — three outcomes for one file. Refusing is the only one all
+    # three can share.
+    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L223
+    if (Test-SetupJsonHasComment $raw) {
+      Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
+    }
+    if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
     # An empty list is recognized from the text rather than from the decode.

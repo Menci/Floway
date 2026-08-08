@@ -105,7 +105,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -3365,6 +3365,28 @@ for (const { half, run } of profileFailureCases) {
     t.equal(readVSCodeGroups(userDir).length, 1, 'and so is the default one');
   });
 }
+
+// VS Code reads this file with its JSONC-tolerant scanner, so a comment is
+// content the editor accepts. jq refuses such a document and PowerShell 7 drops
+// the comment on the way out — data loss reported as success. Both halves
+// refuse it and name the cause.
+test('vscode', 'both halves refuse a provider list carrying JSONC comments', async t => {
+  const commented = '[\n  // the operator put this here\n  {"vendor":"customendpoint","name":"Other gateway"}\n]';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-jsonc-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), commented);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.ok(run.code !== 0, `${which} refuses it`);
+    t.ok(run.combined.includes('JSONC comments'), `${which} names the cause:\n${run.combined}`);
+    t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), commented, `${which} leaves it byte-identical`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
 
 // --- output contract --------------------------------------------------------
 
