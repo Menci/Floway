@@ -158,7 +158,17 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
           const models = await deps.listModels(c, resolved.userId, resolved.configuration.apiKeyId);
           editorModels = projectZedModels(models);
         } catch (error) {
-          console.error('Agent Setup: failed to list models for a setup script', publicErrorDiagnostics(error, token));
+          // The served script tells the operator to check this log, so the
+          // reason has to be in it. publicErrorDiagnostics drops the message
+          // because a generic failure may carry a secret; here the two secrets
+          // in play are both in hand, so redact them and keep the reason.
+          const reason = error instanceof Error
+            ? error.message.replaceAll(token, '[setup-token]').replaceAll(resolved.apiKey, '[api-key]')
+            : `Thrown value type: ${typeof error}`;
+          console.error(
+            `Agent Setup: failed to list models for a setup script: ${reason}`,
+            publicErrorDiagnostics(error, token),
+          );
           return c.body(renderScriptFailure(language, MODEL_LISTING_FAILURE), 200, SCRIPT_RESPONSE_HEADERS);
         }
       }

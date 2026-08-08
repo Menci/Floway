@@ -2673,6 +2673,29 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
 
+// `providerName` is opaque text to Zed, so the schema accepts names PowerShell
+// reserves on every object. Add-Member throws on those even with -Force, so the
+// mutation has to sit inside the staging transaction or the backup outlives the
+// failed run.
+test('zed', 'PowerShell leaves no backup behind when the provider name is a reserved member', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  const original = JSON.stringify({ telemetry: { metrics: false } });
+  writeFileSync(zedSettingsPath(configDir), original);
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: zedConfig({ providerName: 'PSObject' }),
+    zedConfigDir: configDir,
+  });
+  t.ok(run.code !== 0, 'the run fails');
+  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the settings are unchanged');
+  const leftovers = readdirSync(configDir).filter(name => name.includes('.floway-'));
+  t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
+});
+
 test('zed', 'PowerShell leaves an unreadable settings document untouched', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();

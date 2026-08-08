@@ -69,8 +69,10 @@ function Write-SetupZedSettings {
     $script:ZedSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
-    # Every shape check completes before the backup exists, so a refusal cannot
-    # leave an orphan beside the operator's settings.
+    # Every shape check completes before the backup exists, so a refusal on
+    # the operator's existing document cannot leave an orphan beside it. The
+    # mutation that follows the backup runs inside the staging transaction,
+    # which removes the backup on any failure.
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
@@ -94,19 +96,24 @@ function Write-SetupZedSettings {
     $document = [PSCustomObject]@{}
   }
 
-  if ($document.PSObject.Properties.Name -notcontains 'language_models') {
-    $document | Add-Member -NotePropertyName language_models -NotePropertyValue ([PSCustomObject]@{})
-  }
-  if ($document.language_models.PSObject.Properties.Name -notcontains 'anthropic_compatible') {
-    $document.language_models | Add-Member -NotePropertyName anthropic_compatible -NotePropertyValue ([PSCustomObject]@{})
-  }
-  Set-SetupProp $document.language_models.anthropic_compatible $SetupZedProviderName ([PSCustomObject]@{
-    api_url = Get-SetupZedApiUrl
-    available_models = $script:ZedModels
-  })
-
   $stage = "$($script:ZedSettingsPath).floway-stage.$PID"
   try {
+    # Inside the transaction: a provider name PowerShell reserves on every
+    # object — PSObject, PSBase, PSTypeNames — makes Add-Member throw, and the
+    # schema accepts those names because Zed treats the key as opaque text. A
+    # throw out here would otherwise leave the backup beside the operator's
+    # settings forever.
+    if ($document.PSObject.Properties.Name -notcontains 'language_models') {
+      $document | Add-Member -NotePropertyName language_models -NotePropertyValue ([PSCustomObject]@{})
+    }
+    if ($document.language_models.PSObject.Properties.Name -notcontains 'anthropic_compatible') {
+      $document.language_models | Add-Member -NotePropertyName anthropic_compatible -NotePropertyValue ([PSCustomObject]@{})
+    }
+    Set-SetupProp $document.language_models.anthropic_compatible $SetupZedProviderName ([PSCustomObject]@{
+      api_url = Get-SetupZedApiUrl
+      available_models = $script:ZedModels
+    })
+
     $json = $document | ConvertTo-Json -Depth 100
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
