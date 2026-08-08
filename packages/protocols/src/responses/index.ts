@@ -190,7 +190,16 @@ export interface ResponsesInputImage {
   prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
-export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
+// Codex can ask the Responses service to encrypt selected structured tool
+// outputs. The ciphertext is replayable only on the producing Responses
+// target and must remain opaque to clients and translators.
+// https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/protocol/src/models.rs#L1842-L1865
+export interface ResponsesEncryptedContent {
+  type: 'encrypted_content';
+  encrypted_content: string;
+}
+
+export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile | ResponsesEncryptedContent;
 
 export interface ResponsesInputFile {
   type: 'input_file';
@@ -228,6 +237,14 @@ export interface ResponsesFunctionToolCallItem {
   name: string;
   namespace?: string;
   arguments: string;
+  // Codex marks the function arguments whose values were encrypted by the
+  // Responses service. An explicit empty list is the plaintext form. Codex
+  // removes that empty marker when replaying calls through providers not named
+  // exactly `OpenAI`, so absence is also a possible plaintext replay form;
+  // null or a non-empty list identifies encrypted arguments.
+  // https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/protocol/src/models.rs#L875-L890
+  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/client.rs#L848-L860
+  encrypted_function_args?: string[] | null;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: ResponsesToolCaller | null;
 }
@@ -424,7 +441,7 @@ export type ResponsesAgentMessageContent =
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
   | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
-  | { type: 'encrypted_content'; encrypted_content: string }
+  | ResponsesEncryptedContent
   | (Record<string, unknown> & { type: string });
 
 export interface ResponsesInputAgentMessageItem {
@@ -444,6 +461,15 @@ export type ResponsesMultiAgentAction =
   | 'send_message'
   | 'followup_task'
   | 'wait_agent';
+
+// These collaboration actions carry a message into another agent thread.
+// https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L102-L145
+// https://github.com/openai/codex/blob/f2d825533c9423728f319a6dbcbb31c21768aa69/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L186-L243
+export const RESPONSES_INTER_AGENT_MESSAGE_ACTIONS = [
+  'spawn_agent',
+  'send_message',
+  'followup_task',
+] as const satisfies readonly ResponsesMultiAgentAction[];
 
 export interface ResponsesInputMultiAgentCallItem {
   type: 'multi_agent_call';
@@ -1048,6 +1074,7 @@ export interface ResponsesOutputFunctionCall {
   name: string;
   namespace?: string;
   arguments: string;
+  encrypted_function_args?: string[] | null;
   status: string;
   caller?: ResponsesToolCaller | null;
 }

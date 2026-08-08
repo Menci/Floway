@@ -1,49 +1,7 @@
+import { replaceResponsesOpaqueLocations, responsesCarrierDomain, responsesOpaqueLocations } from './opaque-locations.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
-
-const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${canonicalItemType(itemType)}.${slot}`;
-
-const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
-  const slots: Array<{ key: string; value: string }> = [];
-  const record = item as unknown as Record<string, unknown>;
-  if (typeof record.encrypted_content === 'string') {
-    slots.push({ key: 'encrypted_content', value: record.encrypted_content });
-  }
-  if (item.type === 'program' && typeof item.fingerprint === 'string') {
-    slots.push({ key: 'fingerprint', value: item.fingerprint });
-  }
-  if (item.type === 'agent_message') {
-    item.content.forEach((content, index) => {
-      if (content.type === 'encrypted_content' && typeof content.encrypted_content === 'string') {
-        slots.push({ key: `content.${index}.encrypted_content`, value: content.encrypted_content });
-      }
-    });
-  }
-  return slots;
-};
-
-const replaceOpaqueSlots = (
-  item: ResponsesOutputItem,
-  replacements: ReadonlyMap<string, string>,
-): ResponsesOutputItem => {
-  const topLevel = Object.fromEntries([...replacements].filter(([key]) => !key.startsWith('content.')));
-  const content = item.type === 'agent_message'
-    ? item.content.map((part, index) => {
-        const replacement = replacements.get(`content.${index}.encrypted_content`);
-        return replacement === undefined ? part : { ...part, encrypted_content: replacement };
-      })
-    : undefined;
-  return {
-    ...item,
-    ...topLevel,
-    ...(content !== undefined ? { content } : {}),
-  } as ResponsesOutputItem;
-};
 
 const wrapNaturalResponsesAffinity = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
@@ -53,16 +11,16 @@ const wrapNaturalResponsesAffinity = async function* (
 
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     const replacements = new Map<string, string>();
-    await Promise.all(opaqueSlots(item).map(async slot => {
-      const cacheKey = `${outputIndex}\0${slot.key}\0${slot.value}`;
+    await Promise.all(responsesOpaqueLocations(item).map(async location => {
+      const cacheKey = `${outputIndex}\0${location.key}\0${location.value}`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(slot.value, options.affinity, carrierDomain(item.type, slot.key));
+        replacement = options.codec.wrap(location.value, options.affinity, location.domain);
         wrapped.set(cacheKey, replacement);
       }
-      replacements.set(slot.key, await replacement);
+      replacements.set(location.key, await replacement);
     }));
-    return replacements.size === 0 ? item : replaceOpaqueSlots(item, replacements);
+    return replacements.size === 0 ? item : replaceResponsesOpaqueLocations(item, replacements);
   };
 
   const wrapResult = async (response: ResponsesResult): Promise<ResponsesResult> => ({
@@ -98,7 +56,8 @@ const wrapNaturalResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
-  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
+  responsesOpaqueLocations(item).length > 0
+  || ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'program'].includes(item.type);
 
 const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
@@ -128,7 +87,7 @@ const wrapResponsesFirstCarrier = async function* (
   };
 
   const ensureItemCarrier = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
-    if (opaqueSlots(item).length > 0) return item;
+    if (responsesOpaqueLocations(item).length > 0) return item;
     if (!canCarryAffinity(item)) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
 
     if (item.type === 'program') {
@@ -136,27 +95,16 @@ const wrapResponsesFirstCarrier = async function* (
       const cacheKey = `${outputIndex}\0${slot}`;
       let fingerprint = syntheticCarriers.get(cacheKey);
       if (fingerprint === undefined) {
-        fingerprint = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
+        fingerprint = options.codec.wrap(undefined, options.affinity, responsesCarrierDomain(item.type, slot));
         syntheticCarriers.set(cacheKey, fingerprint);
       }
       return { ...item, fingerprint: await fingerprint };
     }
-    if (item.type === 'agent_message') {
-      const slot = `content.${item.content.length}.encrypted_content`;
-      const cacheKey = `${outputIndex}\0${slot}`;
-      let encrypted = syntheticCarriers.get(cacheKey);
-      if (encrypted === undefined) {
-        encrypted = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
-        syntheticCarriers.set(cacheKey, encrypted);
-      }
-      return { ...item, content: [...item.content, { type: 'encrypted_content', encrypted_content: await encrypted }] };
-    }
-
     const slot = 'encrypted_content';
     const cacheKey = `${outputIndex}\0${slot}`;
     let encrypted = syntheticCarriers.get(cacheKey);
     if (encrypted === undefined) {
-      encrypted = options.codec.wrap(undefined, options.affinity, carrierDomain(item.type, slot));
+      encrypted = options.codec.wrap(undefined, options.affinity, responsesCarrierDomain(item.type, slot));
       syntheticCarriers.set(cacheKey, encrypted);
     }
     return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;
@@ -177,7 +125,7 @@ const wrapResponsesFirstCarrier = async function* (
       encrypted_content: await options.codec.wrap(
         undefined,
         options.affinity,
-        carrierDomain('reasoning', 'encrypted_content'),
+        responsesCarrierDomain('reasoning', 'encrypted_content'),
         { syntheticItem: true },
       ),
     };

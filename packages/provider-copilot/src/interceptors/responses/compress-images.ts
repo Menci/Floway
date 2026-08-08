@@ -38,7 +38,7 @@ const compressInlineImages = async (ctx: ResponsesBoundaryCtx): Promise<void> =>
       compressedUrls.set(target.part, await compress(target.imageUrl));
     }),
   );
-  const hasCompressedImage = (part: ResponsesInputContent): part is CompressibleImagePart =>
+  const hasCompressedImage = (part: ResponsesInputContent | ResponsesToolOutputContent): part is CompressibleImagePart =>
     part.type === 'input_image' && compressedUrls.has(part as CompressibleImagePart);
   const rewriteImage = (part: CompressibleImagePart): CompressibleImagePart => {
     const imageUrl = compressedUrls.get(part);

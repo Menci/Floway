@@ -91,7 +91,7 @@ export const prepareResponsesServePlan = async (args: {
     runtimeLocation: ctx.runtimeLocation,
     clientDisconnectSignal: ctx.clientDisconnectSignal,
   });
-  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
+  const endpointViable = candidates.filter(candidate => responsesTarget.canServe(candidate.model.endpoints));
   await store.loadInputItems(prepared.input, payload.input);
   let hydrated: ReturnType<typeof hydrateResponsesPayload>;
   try {
@@ -102,7 +102,7 @@ export const prepareResponsesServePlan = async (args: {
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
   const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const selection = selectAffinityCandidates(viable, affinity);
+  const selection = selectAffinityCandidates(endpointViable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks

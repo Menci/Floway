@@ -40,6 +40,65 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
   }]);
 });
 
+test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', () => {
+  const namespaceTool: ResponsesTool = {
+    type: 'namespace',
+    name: 'collaboration_2',
+    tools: [{
+      type: 'function',
+      name: 'spawn_agent',
+      description: 'Start an agent',
+      parameters: { type: 'object', properties: { task_name: { type: 'string' } } },
+      strict: true,
+    }],
+  } as ResponsesTool;
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'function_call',
+      call_id: 'call_spawn',
+      namespace: 'collaboration_2',
+      name: 'spawn_agent',
+      arguments: '{"task_name":"worker"}',
+      status: 'completed',
+    }],
+    tools: [
+      { type: 'function', name: 'collaboration_2_spawn_agent', parameters: { type: 'object' } },
+      namespaceTool,
+    ],
+    tool_choice: { type: 'function', name: 'collaboration_2.spawn_agent' },
+  });
+
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([
+    ['collaboration_2.spawn_agent', 'collaboration_2_spawn_agent_2'],
+  ]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([
+    ['collaboration_2_spawn_agent_2', { namespace: 'collaboration_2', name: 'spawn_agent' }],
+  ]));
+  assertEquals(result.target.tools?.[1], {
+    type: 'function',
+    function: {
+      name: 'collaboration_2_spawn_agent_2',
+      description: 'Start an agent',
+      parameters: { type: 'object', properties: { task_name: { type: 'string' } } },
+      strict: true,
+    },
+  });
+  assertEquals(result.target.messages[0], {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{
+      id: 'call_spawn',
+      type: 'function',
+      function: { name: 'collaboration_2_spawn_agent_2', arguments: '{"task_name":"worker"}' },
+    }],
+  });
+  assertEquals(result.target.tool_choice, {
+    type: 'function',
+    function: { name: 'collaboration_2_spawn_agent_2' },
+  });
+});
+
 test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
@@ -364,30 +423,20 @@ test('buildTargetRequest returns undefined tools when only builtin tools are pre
   assertEquals(result.target.tools, undefined);
 });
 
-test('buildTargetRequest drops forced builtin tool_choice but keeps function tool_choice', () => {
-  // Forced builtin tool choices have no Chat Completions analogue;
-  // they should be dropped (falling back to auto/default).
-  const resultWithBuiltinChoice = buildTargetRequest({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: null,
-    tool_choice: {
-      type: 'web_search_preview',
-    } as unknown as ResponsesToolChoice,
-    metadata: null,
-    stream: null,
-    store: null,
-    parallel_tool_calls: null,
-    text: null,
-  });
+test('buildTargetRequest rejects unsupported forced tool choices', () => {
+  assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: 'Hi' }],
+      tools: null,
+      tool_choice: { type: 'web_search_preview' } as unknown as ResponsesToolChoice,
+    }),
+    Error,
+    "Cannot translate tool_choice type 'web_search_preview' to Chat Completions.",
+  );
+});
 
-  assertEquals(resultWithBuiltinChoice.target.tool_choice, undefined);
-
-  // Forced function tool_choice should be preserved.
+test('buildTargetRequest keeps forced function tool_choice', () => {
   const resultWithFunctionChoice = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
@@ -560,6 +609,21 @@ test('buildTargetRequest wires Responses tooling guards', () => {
     () => buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }),
     Error,
     'Programmatic',
+  );
+});
+
+test('buildTargetRequest rejects encrypted function output on Chat Completions targets', () => {
+  assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
+      }],
+    }),
+    Error,
+    'Cannot translate encrypted_content tool output to Chat Completions.',
   );
 });
 

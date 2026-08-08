@@ -15,7 +15,7 @@ const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
+    model: { ...base.model, id: 'model', endpoints: { responses: {} } },
   });
 };
 
@@ -68,53 +68,53 @@ test('restores an owned blob only for its exact target without changing item ids
   expect(select([mismatchedRules, candidateA], prepared).candidates).toEqual([candidateA, mismatchedRules]);
 });
 
-test('rewrites nested agent-message carriers and preserves foreign values', async () => {
-  const first = await codec.wrap(
-    'first',
-    targetFor(candidateA),
-    carrierDomain('agent_message', 'content.0.encrypted_content'),
-  );
-  const synthetic = await codec.wrap(
-    undefined,
-    targetFor(candidateA),
-    carrierDomain('agent_message', 'content.1.encrypted_content'),
-  );
-  const prepared = await analyzeResponsesAffinity({
-    model: 'model',
-    input: [{
-      type: 'agent_message',
-      id: 'amsg_client',
-      author: 'a',
-      recipient: 'b',
-      content: [
-        { type: 'encrypted_content', encrypted_content: first },
-        { type: 'encrypted_content', encrypted_content: synthetic },
-        { type: 'encrypted_content', encrypted_content: 'foreign' },
-        { type: 'input_text', text: 'visible' },
-      ],
-    }],
-  }, codec);
+test('leaves legacy encrypted agent messages outside affinity', async () => {
+  const item = {
+    type: 'agent_message' as const,
+    id: 'amsg_client',
+    author: 'a',
+    recipient: 'b',
+    content: [{ type: 'encrypted_content' as const, encrypted_content: 'opaque legacy message' }],
+  };
+  const prepared = await analyzeResponsesAffinity({ model: 'model', input: [item] }, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  expect(projectionA.materialize().input[0]).toMatchObject({
-    id: 'amsg_client',
-    content: [
-      { type: 'encrypted_content', encrypted_content: 'first' },
-      { type: 'encrypted_content', encrypted_content: 'foreign' },
-      { type: 'input_text', text: 'visible' },
-    ],
-  });
-  expect(projectionB.materialize().input[0]).toMatchObject({
-    id: 'amsg_client',
-    content: [
-      { type: 'encrypted_content', encrypted_content: 'foreign' },
-      { type: 'input_text', text: 'visible' },
-    ],
-  });
-  expect(projectionA.degrades).toBe(false);
-  expect(projectionB.degrades).toBe(true);
+  expect(prepared.requiredTargets).toEqual([]);
+  expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([]);
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input).toEqual([item]);
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().input).toEqual([item]);
 });
+
+test.each(['function_call_output', 'custom_tool_call_output'] as const)(
+  'forces encrypted content nested in %s to its native Responses upstream',
+  async type => {
+    const encrypted = await codec.wrap(
+      'opaque-output',
+      targetFor(candidateA),
+      `responses.${type}.output.1.encrypted_content`,
+    );
+    const prepared = await analyzeResponsesAffinity({
+      model: 'model',
+      input: [{
+        type,
+        id: 'out_1',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'visible' },
+          { type: 'encrypted_content', encrypted_content: encrypted },
+        ],
+      }],
+    }, codec);
+
+    expect(prepared.requiredNativeResponsesUpstreamIds).toEqual([candidateA.provider.upstreamId]);
+    expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+    expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({
+      output: [
+        { type: 'input_text', text: 'visible' },
+        { type: 'encrypted_content', encrypted_content: 'opaque-output' },
+      ],
+    });
+  },
+);
 
 test('removes only items explicitly marked synthetic and preserves markerless originless items', async () => {
   const syntheticItem = await codec.wrap(

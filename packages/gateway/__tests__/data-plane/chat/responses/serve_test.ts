@@ -7,12 +7,12 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent, ResponsesTool } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -595,6 +595,151 @@ test('generate falls through translate-out to chat-completions target', async ()
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
+});
+
+test('generate lowers plaintext collaboration through Chat Completions', async () => {
+  installRepo();
+  let captured: ChatCompletionsPayload | undefined;
+  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    captured = body as ChatCompletionsPayload;
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        {
+          id: 'chatcmpl_collaboration', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'hi' }, finish_reason: null }],
+        },
+        {
+          id: 'chatcmpl_collaboration', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        },
+      ]),
+      modelKey: 'chat-completions-key',
+      headers: new Headers(),
+    };
+  });
+  queueResolution([makeCandidate({
+    upstream: 'up_c',
+    endpoints: { chatCompletions: {} },
+    callChatCompletions,
+  })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({
+      tools: [{
+        type: 'namespace',
+        name: 'collaboration',
+        tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+      } as ResponsesTool],
+    }),
+    ctx: makeGatewayCtx(),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type === 'events') await collectEvents(result.events);
+  assertEquals(callChatCompletions.mock.calls.length, 1);
+  assertEquals(captured?.tools?.[0], {
+    type: 'function',
+    function: {
+      name: 'collaboration_2_spawn_agent',
+      parameters: { type: 'object' },
+    },
+  });
+});
+
+test.each(['item_reference', 'previous_response_id'] as const)(
+  'generate lets translation reject hydrated %s state that the target cannot represent',
+  async source => {
+    const repo = installRepo();
+    const itemId = 'tso_collaboration';
+    await repo.responsesItems.insertMany([{
+      id: itemId,
+      apiKeyId: API_KEY_ID,
+      itemHash: 'collaboration-tools-hash',
+      payload: {
+        item: {
+          type: 'tool_search_output',
+          id: itemId,
+          tools: [{
+            type: 'namespace',
+            name: 'collaboration',
+            tools: [{ type: 'function', name: 'spawn_agent', parameters: { type: 'object' } }],
+          } as ResponsesTool],
+        },
+      },
+      refreshedAt: Date.now(),
+    }], 0);
+    if (source === 'previous_response_id') {
+      await repo.responsesSnapshots.insert({
+        id: 'resp_collaboration',
+        apiKeyId: API_KEY_ID,
+        itemIds: [itemId],
+        refreshedAt: Date.now(),
+      });
+    }
+    const callChatCompletions = vi.fn();
+    const callMessages = vi.fn();
+    const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+      action: 'generate',
+      ok: true,
+      events: makeProtocolFrames([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: makeResponsesResult(),
+      }]),
+      modelKey: 'responses-key',
+      headers: new Headers(),
+    }));
+    queueResolution([
+      makeCandidate({ upstream: 'up_c', endpoints: { chatCompletions: {} }, callChatCompletions }),
+      makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages }),
+      makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses }),
+    ]);
+
+    await assertRejects(
+      async () => await responsesServe.generate({
+        payload: source === 'item_reference'
+          ? makePayload({ input: [{ type: 'item_reference', id: itemId }] })
+          : makePayload({ previous_response_id: 'resp_collaboration' }),
+        ctx: makeGatewayCtx(),
+        headers: new Headers(),
+      }),
+      Error,
+      "Invalid input item type 'tool_search_output'",
+    );
+    assertEquals(callChatCompletions.mock.calls.length, 0);
+    assertEquals(callMessages.mock.calls.length, 0);
+    assertEquals(callResponses.mock.calls.length, 0);
+  },
+);
+
+test('generate lets the Messages translator reject allowed_tools choices', async () => {
+  installRepo();
+  const callMessages = vi.fn();
+  queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages })]);
+
+  await assertRejects(
+    async () => await responsesServe.generate({
+      payload: makePayload({
+        tools: [{
+          type: 'namespace',
+          name: 'operations',
+          tools: [{ type: 'function', name: 'run', parameters: { type: 'object' } }],
+        } as ResponsesTool],
+        tool_choice: {
+          type: 'allowed_tools',
+          mode: 'required',
+          tools: [{ type: 'namespace', name: 'operations' }],
+        },
+      }),
+      ctx: makeGatewayCtx(),
+      headers: new Headers(),
+    }),
+    Error,
+    "Cannot translate tool_choice type 'allowed_tools' to Messages.",
+  );
+  assertEquals(callMessages.mock.calls.length, 0);
 });
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {

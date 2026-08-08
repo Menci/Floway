@@ -29,6 +29,36 @@ const response = (output: ResponsesResult['output'], status: ResponsesResult['st
 });
 
 describe('Responses affinity egress', () => {
+  test.each(['function_call_output', 'custom_tool_call_output'] as const)(
+    'wraps encrypted content nested in %s',
+    async type => {
+      const item = {
+        type,
+        id: 'out_1',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text' as const, text: 'visible' },
+          { type: 'encrypted_content' as const, encrypted_content: 'opaque-output' },
+        ],
+      };
+      const output: ResponsesStreamEvent[] = [];
+      for await (const frame of wrapResponsesAffinityEgress(frames([
+        eventFrame({ type: 'response.completed', response: response([item]) }),
+      ]), { codec: immediateCodec, affinity })) {
+        if (frame.type === 'event') output.push(frame.event);
+      }
+
+      const terminal = output.at(-1);
+      if (terminal?.type !== 'response.completed') throw new Error('Expected completed response');
+      expect(terminal.response.output[0]).toMatchObject({
+        output: [
+          { type: 'input_text', text: 'visible' },
+          { type: 'encrypted_content', encrypted_content: 'wrapped:opaque-output' },
+        ],
+      });
+    },
+  );
+
   test('wraps natural blobs inside queued response output', async () => {
     const reasoning: ResponsesOutputReasoning = {
       type: 'reasoning',

@@ -1,4 +1,5 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
+import { withCollaborationShim } from './collaboration-shim.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
@@ -24,8 +25,11 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
+//   - withCollaborationShim: projects the client collaboration contract once
+//     around the entire server-tool loop, so every upstream turn uses the same
+//     plaintext namespace and only the final client stream is restored.
 //   - withResponsesServerToolShim: wraps the multi-turn ReAct loop around
-//     the rest of the chain.
+//     the remaining target-facing interceptors.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
@@ -47,6 +51,7 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     body.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withResponsesCompactShim,
+  withCollaborationShim,
   withResponsesServerToolShim([
     webSearchServerTool,
     imageGenerationServerTool,

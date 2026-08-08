@@ -216,7 +216,14 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
+    return responses.itemAdded(state, outputIndex, responses.functionCallItem(
+      info.itemId,
+      info.toolCallId,
+      info.toolName,
+      info.toolArguments,
+      'in_progress',
+      info.toolNamespace,
+    ));
   }
   case 'fallback':
     state.model = event.content_block.to.model;
@@ -358,7 +365,14 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
     return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
+  const item = responses.functionCallItem(
+    info.itemId,
+    info.toolCallId,
+    info.toolName,
+    info.toolArguments,
+    'completed',
+    info.toolNamespace,
+  );
 
   state.completedItems.push(item);
 

@@ -113,9 +113,39 @@ test('buildTargetRequest wires Responses tooling guards', async () => {
   );
 });
 
+test('buildTargetRequest rejects encrypted function output on Messages targets', async () => {
+  await assertRejects(
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
+      }],
+    }),
+    Error,
+    'Cannot translate encrypted_content tool output to Messages.',
+  );
+});
+
 test('buildTargetRequest accepts null tool_choice', async () => {
   const result = await buildTargetRequest({ ...minimalPayload, tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);
+});
+
+test('buildTargetRequest rejects unsupported forced tool choices', async () => {
+  await assertRejects(
+    async () => await buildTargetRequest({
+      ...minimalPayload,
+      tool_choice: {
+        type: 'allowed_tools',
+        mode: 'required',
+        tools: [{ type: 'function', name: 'lookup' }],
+      },
+    }),
+    Error,
+    "Cannot translate tool_choice type 'allowed_tools' to Messages.",
+  );
 });
 
 test('buildTargetRequest rejects multimodal custom tool output', async () => {

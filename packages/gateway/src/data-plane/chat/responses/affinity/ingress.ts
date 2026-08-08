@@ -1,3 +1,4 @@
+import { replaceResponsesOpaqueLocations, responsesOpaqueLocations, type ResponsesOpaqueLocation } from './opaque-locations.ts';
 import {
   type AffinityCodec,
   type AffinityRequestAnalysis,
@@ -8,19 +9,18 @@ import {
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
+  projectNativeResponsesUpstreamAffinityBlob,
 } from '../../shared/affinity/index.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-interface ResponsesBlobLocation {
+interface ResponsesBlobLocation extends ResponsesOpaqueLocation {
   readonly itemIndex: number;
-  readonly slot: string;
-  readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
 }
 
 interface ResponsesBlobAnalysis extends ResponsesBlobLocation {
-  readonly required: boolean;
+  readonly requirement: 'target' | 'upstream' | null;
 }
 
 interface ResponsesItemAnalysis {
@@ -32,6 +32,7 @@ interface ResponsesItemAnalysis {
 
 interface ResponsesRequestAnalysis {
   readonly requiredTargets: readonly AffinityTarget[];
+  readonly requiredNativeResponsesUpstreamIds: readonly string[];
   readonly items: readonly ResponsesItemAnalysis[];
 }
 
@@ -40,19 +41,17 @@ interface ResponsesBlobCandidateProjection {
   readonly projection: OptionalAffinityBlobProjection;
 }
 
-const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
-
-const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${canonicalItemType(itemType)}.${slot}`;
-
 const itemInheritsRequiredTarget = (item: ResponsesInputItem): boolean =>
   ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
-const blobRequiresOriginalTarget = (item: ResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
-  item.type === 'context_compaction'
-    ? decoded.kind === 'owned' && decoded.value !== undefined
-    : itemInheritsRequiredTarget(item);
+const blobRequirement = (item: ResponsesInputItem, location: ResponsesBlobLocation): 'target' | 'upstream' | null => {
+  if (location.required && location.decoded.kind === 'owned' && location.decoded.value !== undefined) return 'upstream';
+  return (item.type === 'context_compaction'
+    ? location.decoded.kind === 'owned' && location.decoded.value !== undefined
+    : itemInheritsRequiredTarget(item))
+    ? 'target'
+    : null;
+};
 
 const opaqueBlobLocations = async (
   items: readonly ResponsesInputItem[],
@@ -60,32 +59,11 @@ const opaqueBlobLocations = async (
 ): Promise<ResponsesBlobLocation[]> => {
   const locations: ResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
-    const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
-    if (typeof topLevel === 'string') {
+    for (const location of responsesOpaqueLocations(item)) {
       locations.push({
+        ...location,
         itemIndex,
-        slot: 'encrypted_content',
-        decoded: await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content')),
-      });
-    }
-    if (item.type === 'program' && typeof item.fingerprint === 'string') {
-      locations.push({
-        itemIndex,
-        slot: 'fingerprint',
-        decoded: await codec.unwrap(item.fingerprint, carrierDomain(item.type, 'fingerprint')),
-      });
-    }
-    if (item.type !== 'agent_message') continue;
-    for (const [contentIndex, content] of item.content.entries()) {
-      if (content.type !== 'encrypted_content' || typeof content.encrypted_content !== 'string') continue;
-      locations.push({
-        itemIndex,
-        slot: `content.${contentIndex}.encrypted_content`,
-        contentIndex,
-        decoded: await codec.unwrap(
-          content.encrypted_content,
-          carrierDomain(item.type, `content.${contentIndex}.encrypted_content`),
-        ),
+        decoded: await codec.unwrap(location.value, location.domain),
       });
     }
   }
@@ -98,18 +76,20 @@ const analyzeResponsesRequest = (
 ): ResponsesRequestAnalysis => {
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
   const requiredTargets: AffinityTarget[] = [];
+  const requiredNativeResponsesUpstreamIds: string[] = [];
   const itemAnalyses: ResponsesItemAnalysis[] = [];
   let latestOwnedTarget: AffinityTarget | undefined;
 
   for (const [itemIndex, item] of items.entries()) {
     const itemLocations = locationsByItem.get(itemIndex) ?? [];
     const blobs = itemLocations.map(location => {
-      const required = blobRequiresOriginalTarget(item, location.decoded);
+      const requirement = blobRequirement(item, location);
       if (location.decoded.kind === 'owned') {
         latestOwnedTarget = location.decoded.affinity;
-        if (required) requiredTargets.push(latestOwnedTarget);
+        if (requirement === 'target') requiredTargets.push(latestOwnedTarget);
+        if (requirement === 'upstream') requiredNativeResponsesUpstreamIds.push(latestOwnedTarget.upstreamId);
       }
-      return { ...location, required };
+      return { ...location, requirement };
     });
     const inheritedRequiredTarget = itemInheritsRequiredTarget(item)
       && itemLocations.length === 0
@@ -126,7 +106,7 @@ const analyzeResponsesRequest = (
     });
   }
 
-  return { requiredTargets, items: itemAnalyses };
+  return { requiredTargets, requiredNativeResponsesUpstreamIds, items: itemAnalyses };
 };
 
 const materializeResponsesPayload = (
@@ -139,27 +119,11 @@ const materializeResponsesPayload = (
     if (projections === undefined) return [item];
     if (projections === null) return [];
 
-    const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
+    const replacements = new Map<string, string | undefined>();
     for (const { location, projection } of projections) {
-      if (location.contentIndex !== undefined) continue;
-      if (projection.kind === 'preserve') replacement[location.slot] = projection.value;
-      else delete replacement[location.slot];
+      replacements.set(location.key, projection.kind === 'preserve' ? projection.value : undefined);
     }
-
-    if (item.type === 'agent_message') {
-      const nested = new Map(projections.flatMap(projection =>
-        projection.location.contentIndex === undefined ? [] : [[projection.location.contentIndex, projection] as const]));
-      const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
-      agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
-        const projected = nested.get(contentIndex);
-        if (projected === undefined) return [content];
-        return projected.projection.kind === 'preserve'
-          ? [{ ...content, encrypted_content: projected.projection.value }]
-          : [];
-      });
-    }
-
-    return [replacement];
+    return [replaceResponsesOpaqueLocations(item, replacements)];
   });
   return candidatePayload;
 };
@@ -181,9 +145,11 @@ const evaluateResponsesCandidate = (
 
     const projections: ResponsesBlobCandidateProjection[] = [];
     for (const blob of item.blobs) {
-      const projection = blob.required
+      const projection = blob.requirement === 'target'
         ? projectRequiredAffinityBlob(blob.decoded, candidate)
-        : projectOptionalAffinityBlob(blob.decoded, candidate);
+        : blob.requirement === 'upstream'
+          ? projectNativeResponsesUpstreamAffinityBlob(blob.decoded, candidate)
+          : projectOptionalAffinityBlob(blob.decoded, candidate);
       if (projection.kind === 'reject') {
         unsatisfiedTargets.push(projection.requiredTarget);
         continue;
@@ -215,5 +181,6 @@ export const analyzeResponsesAffinity = async (
   return defineAffinityRequest(
     analysis.requiredTargets,
     candidate => evaluateResponsesCandidate(payload, analysis, candidate),
+    analysis.requiredNativeResponsesUpstreamIds,
   );
 };

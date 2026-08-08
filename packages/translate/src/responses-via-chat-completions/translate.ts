@@ -7,13 +7,13 @@ import type { ResponsesRequestPayload, ResponsesStreamEvent } from '@floway-dev/
 export const translateResponsesViaChatCompletions: TranslateTrip<
   ResponsesRequestPayload, ResponsesStreamEvent, ChatCompletionsPayload, ChatCompletionsStreamEvent
 > = async src => {
-  // customToolNames is produced inside the request translator (it sees the
-  // tools first) and read by the events translator so wrapped function calls
-  // can be projected back into `custom_tool_call` outputs.
-  const { target, customToolNames } = buildTargetRequest(src);
+  // Tool-name maps are produced inside the request translator (it sees the
+  // tools first) and read by the events translator so wrapped custom calls and
+  // flattened namespace calls recover their source Responses identities.
+  const { target, customToolNames, namespaceToolNames } = buildTargetRequest(src);
 
   return {
     target,
-    events: frames => translateToSourceEvents(frames, customToolNames),
+    events: frames => translateToSourceEvents(frames, customToolNames, namespaceToolNames.targetToSource),
   };
 };

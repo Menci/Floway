@@ -8,7 +8,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent, type ResponsesTool } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -189,6 +189,97 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(body.split('data: [DONE]').length - 1, 1);
   assert(body.endsWith('data: [DONE]\n\n'), 'expected the SSE body to terminate on the [DONE] sentinel');
   assertEquals(callResponses.mock.calls.length, 1);
+});
+
+test('POST /v1/responses keeps collaboration plaintext across output and history replay', async () => {
+  installRepo();
+  const tools: ResponsesTool[] = [{
+    type: 'namespace',
+    name: 'collaboration',
+    tools: [{
+      type: 'function',
+      name: 'spawn_agent',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_name: { type: 'string' },
+          message: { type: 'string', encrypted: true },
+        },
+      },
+    }],
+  } as ResponsesTool];
+  const observedBodies: Array<Omit<CanonicalResponsesPayload, 'model'>> = [];
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    observedBodies.push(structuredClone(body as Omit<CanonicalResponsesPayload, 'model'>));
+    const namespace = ((body as Omit<CanonicalResponsesPayload, 'model'>).tools?.[0] as { name: string }).name;
+    const result: ResponsesResult = {
+      id: `resp_${observedBodies.length}`,
+      object: 'response',
+      model: 'test-model',
+      status: 'completed',
+      output: observedBodies.length === 1
+        ? [{
+            type: 'function_call',
+            id: 'fc_spawn',
+            call_id: 'call_spawn',
+            namespace,
+            name: 'spawn_agent',
+            arguments: '{"task_name":"worker","message":"plain task"}',
+            status: 'completed',
+          }]
+        : [],
+      error: null,
+      incomplete_details: null,
+    };
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents(responsesResultToEvents(result).map(frame => frame.event)),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+
+  const first = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', input: 'start', tools }),
+  });
+  assertEquals(first.status, 200);
+  const firstBody = await first.json() as ResponsesResult;
+  const publicCall = firstBody.output.find(item => item.type === 'function_call');
+  if (publicCall?.type !== 'function_call') throw new Error('Expected collaboration call');
+  assertEquals(publicCall.namespace, 'collaboration');
+  assertEquals(publicCall.encrypted_function_args, []);
+  assertEquals(JSON.parse(publicCall.arguments).message, 'plain task');
+
+  const second = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      tools,
+      input: [publicCall, { type: 'function_call_output', call_id: publicCall.call_id, output: 'created' }],
+    }),
+  });
+  assertEquals(second.status, 200);
+  await second.json();
+
+  for (const body of observedBodies) {
+    const namespace = (body.tools?.[0] as { name: string }).name;
+    assertEquals(namespace, 'collaboration_2');
+    const messageSchema = (((body.tools?.[0] as unknown as { tools: Array<{ parameters: { properties: Record<string, Record<string, unknown>> } }> }).tools[0]
+      .parameters.properties.message));
+    assertEquals(messageSchema.encrypted, undefined);
+  }
+  const replay = observedBodies[1].input[0];
+  if (replay.type !== 'function_call') throw new Error('Expected replayed function call');
+  assertEquals(replay.namespace, (observedBodies[1].tools?.[0] as { name: string }).name);
+  assertEquals(replay.encrypted_function_args, undefined);
+  assertEquals(JSON.parse(replay.arguments).message, 'plain task');
 });
 
 test('POST /v1/responses makes a done reasoning item reusable before terminal', async () => {
