@@ -230,6 +230,20 @@ const config: Linter.Config[] = [
     },
   },
   {
+    // Server-side production sources only. `apps/web` runs in a browser, where
+    // Blob is the ordinary way to hand bytes to a download, and tests construct
+    // Blobs deliberately as fixtures for code that must accept a caller-supplied
+    // one — the hazard is retention across a long-lived process.
+    files: ['packages/**/*.ts', 'apps/platform-*/**/*.ts', 'tools/**/*.ts', 'scripts/**/*.ts'],
+    ignores: ['**/__tests__/**'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'NewExpression[callee.name="Blob"]',
+        message: 'Blob is a Node BaseObject rooted in the realm, and Blob.prototype.stream() never releases the source buffer, so the bytes are retained for the process lifetime and stay invisible to heapUsed. Build a ReadableStream directly — packages/gateway/src/shared/gzip.ts shows the shape. https://github.com/nodejs/node/issues/63574',
+      }],
+    },
+  },
+  {
     // Custom hooks live in plain .ts files, so scoping the React rules to .tsx
     // would leave rules-of-hooks unenforced exactly where it matters most.
     files: ['apps/web/**/*.{ts,tsx}'],
