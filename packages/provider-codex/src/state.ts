@@ -14,8 +14,9 @@ export interface CodexAccessTokenEntry {
   token: string;
   expiresAt: number;       // unix ms
   refreshedAt: string;     // ISO 8601
-  // Parsed from the id_token returned alongside this access token. Absent on
-  // legacy rows; callers fall back to the import-time identity in config.
+  // Parsed from the id_token returned alongside this access token. It may be
+  // absent on legacy state or when the token omits the claim; callers preserve
+  // the latest observation or fall back to the import-time identity.
   planType?: string;
 }
 

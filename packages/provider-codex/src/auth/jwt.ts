@@ -35,8 +35,9 @@ export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity =
 
 // Refresh responses need only update the capability-relevant plan claim. The
 // account identity was validated at import, and OpenAI may omit unrelated
-// profile claims from a later id_token. Missing plan remains the intentional
-// fail-open `unknown` state; malformed present claims still surface.
+// profile claims from a later id_token. Missing plan returns `undefined` so
+// callers can preserve the latest observation or use the import-time identity;
+// malformed present claims still surface.
 export const parseCodexIdTokenPlanType = (idToken: string): string | undefined => {
   const payload = parseCodexIdTokenPayload(idToken);
   const auth = payload['https://api.openai.com/auth'];

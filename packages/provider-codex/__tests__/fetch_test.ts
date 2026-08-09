@@ -863,6 +863,8 @@ describe('callCodexImagesGenerations', () => {
     });
     expect(result.response.status).toBe(200);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(2);
+    await flushMicrotasks();
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.planType).toBe('plus');
   });
 });
 

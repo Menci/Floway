@@ -137,6 +137,20 @@ describe('ensureCodexAccessToken', () => {
     expect(mint).toHaveBeenCalledWith('rt_v1');
   });
 
+  test('preserves the latest known plan when a refreshed token omits it', async () => {
+    const expiresSoon = Date.now() + 60 * 1000;
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old', planType: 'team' },
+      }],
+    });
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const out = await ensureCodexAccessToken(upstreamId, accountId, vi.fn().mockResolvedValue(minted));
+    expect(out.planType).toBe('team');
+    expect(storedState().accounts[0].accessToken?.planType).toBe('team');
+  });
+
   test('throws when the upstream row is missing', async () => {
     current = null;
     const mint = vi.fn();

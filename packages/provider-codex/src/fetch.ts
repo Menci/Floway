@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, preserveCodexAccessTokenPlan, putCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -456,7 +456,10 @@ const dispatchCodexImageCall = async (
 const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
+    const minted = preserveCodexAccessTokenPlan(
+      await mintAccessToken(opts, opts.account.refresh_token),
+      opts.account.accessToken?.planType,
+    );
     registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
     return { ok: true, accessToken: minted };
   } catch (err) {

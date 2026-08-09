@@ -13,6 +13,14 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
+export const preserveCodexAccessTokenPlan = (
+  entry: CodexAccessTokenEntry,
+  previousPlanType: string | undefined,
+): CodexAccessTokenEntry =>
+  entry.planType === undefined && previousPlanType !== undefined
+    ? { ...entry, planType: previousPlanType }
+    : entry;
+
 // The whole change is expressed against the state the repo hands us, so a
 // write that loses its race is simply replayed against the winner's document
 // and both changes survive. Storage failures propagate so the request path
@@ -142,8 +150,9 @@ const ensureCodexAccessTokenInner = async (
     }
     throw err;
   }
-  await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
-  return minted;
+  const effective = preserveCodexAccessTokenPlan(minted, account.accessToken?.planType);
+  await persistAccessToken(upstreamId, accountId, effective, 'ensureCodexAccessToken');
+  return effective;
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
