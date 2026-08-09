@@ -63,6 +63,21 @@ function Restore-SetupZedSettings {
 # existing document, back it up, build and validate the replacement beside it,
 # then rename it into place. Only the one provider key is touched; every other
 # setting in the file survives.
+# Folds A-Z and nothing else, which is what jq's ascii_downcase does. `-ieq`
+# folds Unicode case as well and would call FLOWÄY and flowäy the same name
+# where jq calls them different ones — one half then leaves two entries in the
+# picker and the other leaves one, from the same rename.
+function Test-SetupAsciiCaseEquals {
+  param([string]$Left, [string]$Right)
+  $fold = {
+    param([string]$Value)
+    -join ($Value.ToCharArray() | ForEach-Object {
+      if ($_ -ge [char]'A' -and $_ -le [char]'Z') { [char]([int]$_ + 32) } else { $_ }
+    })
+  }
+  return [string]::Equals((& $fold $Left), (& $fold $Right), [System.StringComparison]::Ordinal)
+}
+
 function Write-SetupZedSettings {
   $script:ZedSettingsPath = Resolve-SetupManagedPath (Join-Path $script:ZedConfigDir 'global_settings.json')
   $script:ZedSettingsBackup = $null
@@ -139,7 +154,16 @@ function Write-SetupZedSettings {
     # Removing and re-adding also puts the entry last, as the jq merge does.
     $bag = $document.language_models.anthropic_compatible
     foreach ($existing in @($bag.PSObject.Properties.Name)) {
-      if ($existing -ieq $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+      if (Test-SetupAsciiCaseEquals $existing $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+    }
+    # What survives the fold above and still collides is a name differing only
+    # outside ASCII. A property bag is Unicode case-insensitive and cannot hold
+    # both, so this document is one PowerShell cannot express — jq writes it
+    # without complaint. Refuse rather than remove someone else's provider to
+    # make room, and say which name is in the way.
+    $collision = @($bag.PSObject.Properties.Name) | Where-Object { $_ -ieq $SetupZedProviderName } | Select-Object -First 1
+    if ($null -ne $collision) {
+      Stop-Setup "$($script:ZedSettingsPath) already holds a provider named `"$collision`", which PowerShell cannot keep beside `"$SetupZedProviderName`"; rename one of them and run this again."
     }
     $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
       api_url = Get-SetupZedApiUrl

@@ -18,9 +18,10 @@ ZED_SETTINGS_MERGE_PROGRAM='
       # keys at once — adding `Floway` beside `floway` replaces it — so a half
       # that kept both would be a half that disagrees. Aligning here also means
       # a case-only rename stops leaving a stale provider in the Zed picker.
-      # ASCII case is what both sides fold; a non-ASCII case variant is left
-      # alone by jq and replaced by PowerShell, which no operator has reason to
-      # construct.
+      # ASCII case, on both halves: `ascii_downcase` folds A-Z and nothing else,
+      # and the PowerShell half folds the same range by hand rather than with
+      # `-ieq`, which would call FLOWÄY and flowäy one name where this calls
+      # them two.
       ((. // {}) | with_entries(select((.key | ascii_downcase) != ($providerName | ascii_downcase))))
       + { ($providerName): { "api_url": $apiUrl, "available_models": $models[0] } }
     )

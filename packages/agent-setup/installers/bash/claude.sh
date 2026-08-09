@@ -131,6 +131,10 @@ claude_write_settings() {
     fi
     _cw_base=$(cat "$CLAUDE_SETTINGS_PATH")
     CLAUDE_SETTINGS_BACKUP="$CLAUDE_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
+    # No `-p` here, unlike the Zed and Codex config backups: this document
+    # carries the key, so the copy is owner-only under the installer's
+    # `umask 077` rather than inheriting a mode the operator set before there
+    # was a credential in it.
     if ! cp "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
       out_error "could not back up $CLAUDE_SETTINGS_PATH"
       return 1

@@ -10,7 +10,7 @@
 # bounds a link cycle, which the framework call would raise on.
 function Resolve-SetupManagedPath {
   param([string]$Path)
-  for ($hops = 0; $hops -le 40; $hops++) {
+  for ($hops = 0; $hops -lt 40; $hops++) {
     # LinkType, not merely a non-empty Target: on the Windows PowerShell 5.1
     # build Target also enumerates a file's hard-link names, so a document with
     # a second hard link would resolve to itself until the hop bound tripped and

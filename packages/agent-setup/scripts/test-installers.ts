@@ -2902,32 +2902,38 @@ for (const { label, document } of [
 // `floway`, so keeping the old key is not something the two can agree on —
 // and dropping it is the better outcome anyway: a stale entry in the Zed picker
 // points at a provider whose credential no longer matches its name.
-test('zed', 'a case-only rename leaves one provider in both halves', async t => {
-  const runHalf = async (which: 'bash' | 'powershell') => {
-    const ws = makeWorkspace();
-    const configDir = makeZedConfigDir(ws);
-    placeFakeCredentialTools(ws);
-    writeFileSync(zedSettingsPath(configDir), JSON.stringify({
-      language_models: { anthropic_compatible: { floway: { api_url: 'https://stale', available_models: [] } } },
-    }));
-    const options = {
-      workspace: ws,
-      baseUrl: modelServer.url,
-      configuration: zedConfig({ providerName: 'Floway' }),
-      zedConfigDir: configDir,
+// jq folds A-Z and nothing else, and the PowerShell half now folds the same
+// range rather than leaning on `-ieq`, which folds Unicode case too and made
+// the same rename leave two picker entries on one half and one on the other.
+for (const { label, existing, chosen, expected } of [
+  { label: 'a case-only rename', existing: 'floway', chosen: 'Floway', expected: 'Floway' },
+]) {
+  test('zed', `${label} lands the same way in both halves`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const configDir = makeZedConfigDir(ws);
+      placeFakeCredentialTools(ws);
+      writeFileSync(zedSettingsPath(configDir), JSON.stringify({
+        language_models: { anthropic_compatible: { [existing]: { api_url: 'https://stale', available_models: [] } } },
+      }));
+      const options = {
+        workspace: ws,
+        baseUrl: modelServer.url,
+        configuration: zedConfig({ providerName: chosen }),
+        zedConfigDir: configDir,
+      };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      return (readSettings(zedSettingsPath(configDir)) as ZedSettings).language_models.anthropic_compatible;
     };
-    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
-    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
-    return (readSettings(zedSettingsPath(configDir)) as ZedSettings).language_models.anthropic_compatible;
-  };
 
-  const bash = await runHalf('bash');
-  t.equal(Object.keys(bash).join(','), 'Floway', 'Bash keeps only the chosen name');
-  if (!hostPwsh) return;
-  const powershell = await runHalf('powershell');
-  t.equal(Object.keys(powershell).join(','), 'Floway', 'PowerShell keeps only the chosen name');
-  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
-});
+    const bash = await runHalf('bash');
+    t.equal(Object.keys(bash).join(','), expected, `Bash writes ${expected}`);
+    if (!hostPwsh) return;
+    const powershell = await runHalf('powershell');
+    t.equal(Object.keys(powershell).join(','), expected, `PowerShell writes ${expected}`);
+  });
+}
 
 // Zed reads this file with serde_json_lenient, so a comment and a trailing
 // comma are both the operator's own content. jq refuses such a document, while
@@ -2960,6 +2966,31 @@ for (const { label, document } of [
     if (hostPwsh) await runHalf('powershell');
   });
 }
+
+// A name differing from an existing one only outside ASCII is a document jq can
+// write and a PowerShell property bag cannot hold: it is Unicode
+// case-insensitive, so `flowäy` and `FLOWÄY` are one key there. The halves
+// cannot agree on the outcome, so the PowerShell half refuses and names the
+// provider in the way rather than deleting it to make room.
+test('zed', 'PowerShell refuses a provider name it cannot keep beside an existing one', async t => {
+  if (!hostPwsh) skip('a PowerShell property-bag limitation');
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  const document = JSON.stringify({
+    language_models: { anthropic_compatible: { 'flowäy': { api_url: 'https://existing', available_models: [] } } },
+  });
+  writeFileSync(zedSettingsPath(configDir), document);
+
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: zedConfig({ providerName: 'FLOWÄY' }), zedConfigDir: configDir,
+  });
+
+  t.ok(run.code !== 0, `the run refuses it:\n${run.combined}`);
+  t.ok(run.combined.includes('flowäy'), 'and names the provider in the way');
+  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, 'leaving the document byte-identical');
+  t.equal(readdirSync(configDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup or stage behind');
+});
 
 // A `//` inside a value and a comma that separates rather than trails are
 // ordinary JSON, and a scanner that flagged them would refuse documents Zed and

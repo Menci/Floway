@@ -63,7 +63,13 @@ const ANTHROPIC_MIN_THINKING_BUDGET = 1024;
 // The `max_tokens` Zed sends when a model announces no output limit. The budget
 // has to stay under whatever Zed puts there, and Zed neither clamps the budget
 // nor derives max_tokens from it.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L72
+//
+// It is also the reservation the compaction check subtracts, which is a
+// different call site: `thread.rs` reads `max_output_tokens().unwrap_or(0)`, so
+// the arithmetic below would be wrong were it not that the provider resolves
+// the default to 4096 before the thread ever asks.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L72
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
 const ZED_FALLBACK_MAX_OUTPUT_TOKENS = 4096;
 
 // Thinking mode carries a usable budget or is not written at all: Zed
