@@ -2,13 +2,13 @@ import {
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
   SETUP_BASH_COMMON,
-  SETUP_BASH_ZED,
   SETUP_BASH_VSCODE,
+  SETUP_BASH_ZED,
   SETUP_POWERSHELL_CLAUDE,
   SETUP_POWERSHELL_CODEX,
   SETUP_POWERSHELL_COMMON,
-  SETUP_POWERSHELL_ZED,
   SETUP_POWERSHELL_VSCODE,
+  SETUP_POWERSHELL_ZED,
 } from './script-assets.generated.ts';
 
 export type ScriptAgent = 'claude' | 'codex' | 'zed' | 'vscode';

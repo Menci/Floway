@@ -3263,7 +3263,11 @@ test('vscode', 'maps limits, modalities, and reasoning onto the required fields'
   const zero = models.get('zero-limits')!;
   t.equal(zero.contextWindow, 0, 'a stated zero context window survives');
   t.equal(zero.maxOutputTokens, 0, 'a stated zero output limit survives');
-  t.equal(JSON.stringify(zero.supportsReasoningEffort), '[]', 'an empty effort list is still an effort list');
+  // Verbatim rather than dropped by truthiness — the distinction the projection
+  // draws is between an absent list and a stated one. VS Code itself makes no
+  // picker from either, returning early on a zero-length list.
+  // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/byokModelInfo.ts#L17-L19
+  t.equal(JSON.stringify(zero.supportsReasoningEffort), '[]', 'a stated empty effort list survives the projection');
 });
 
 // The group's own `apiKey` is declared `secret`, so VS Code runs its
@@ -3352,6 +3356,9 @@ test('vscode', 'writes through a symlinked provider list rather than replacing i
       `dotfiles-${which}-chatLanguageModels.json.floway-backup.<stamp>`,
       `${which}/${link} leaves one backup beside the target and no stage`,
     );
+    // The backup is a copy of a document that may already hold the key.
+    const backup = readdirSync(ws.home).find(name => name.includes('floway-backup'))!;
+    t.equal(statSync(join(ws.home, backup)).mode & 0o777, 0o600, `${which}/${link} restricts the backup too`);
   }
 });
 
@@ -3383,12 +3390,23 @@ test('vscode', 'an unreadable provider list is left untouched', async t => {
   t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), '{"vendor":"customendpoint"}', 'a non-array root is refused and the bytes survive');
 });
 
-test('vscode', 'a catalog with no chat models is refused rather than written empty', async t => {
-  const ws = makeWorkspace();
-  const userDir = makeVSCodeUserDir(ws);
-  const run = await runVSCode(ws, { vscodeUserDir: userDir, catalog: EDITOR_CATALOG.data.filter(model => model.kind !== 'chat') });
-  t.equal(run.code, 1, 'should fail');
-  t.ok(!existsSync(vscodeGroupsPath(userDir)), 'no provider list is written');
+test('vscode', 'both halves refuse a catalog with no chat models rather than write it empty', async t => {
+  const empty = EDITOR_CATALOG.data.filter(model => model.kind !== 'chat');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-nochat-${which}`);
+    const existing = '[{"vendor":"other","name":"Keep","models":[]}]';
+    writeFileSync(vscodeGroupsPath(userDir), existing);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir, catalog: empty })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir, catalog: empty });
+    t.ok(run.code !== 0, `${which} should fail`);
+    // Refused before anything is touched, so an existing list survives whole
+    // and no backup is left beside it.
+    t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), existing, `${which} leaves the document byte-identical`);
+    t.equal(readdirSync(userDir).filter(name => name.includes('.floway-')).join(','), '', `${which} leaves no backup or stage behind`);
+  }
 });
 
 test('vscode', 'PowerShell writes the same provider group as Bash', async t => {
@@ -3420,32 +3438,6 @@ test('vscode', 'PowerShell writes the same provider group as Bash', async t => {
   t.equal(group.apiType, 'messages', 'the group carries the selected API path');
   t.equal(ourGroup(bash, 'Other gateway').apiType, 'responses', 'a sibling gateway survives');
   t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment');
-});
-
-// An unreadable `profiles/` must cost that build, not every remaining one. The
-// enumeration is what throws, so it has to sit inside the per-profile count.
-test('vscode', 'an unreadable profiles directory does not stop the other builds', async t => {
-  if (process.platform === 'win32') skip('POSIX permission bits only');
-  const runHalf = async (which: 'bash' | 'powershell') => {
-    const ws = makeWorkspace();
-    const userDir = makeVSCodeUserDir(ws, `vscode-badprofiles-${which}`);
-    const profiles = join(userDir, 'profiles');
-    mkdirSync(profiles, { recursive: true });
-    chmodSync(profiles, 0o000);
-    try {
-      const run = which === 'bash'
-        ? await runVSCode(ws, { vscodeUserDir: userDir })
-        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
-      // The default profile is beside `profiles/` and is perfectly writable.
-      t.equal(readVSCodeGroups(userDir).length, 1, `${which} still configures the default profile`);
-      t.ok(!run.combined.includes('Unhandled'), `${which} reports rather than crashing:\n${run.combined}`);
-    } finally {
-      chmodSync(profiles, 0o755);
-    }
-  };
-
-  await runHalf('bash');
-  if (hostPwsh) await runHalf('powershell');
 });
 
 // A `User` path that is a file, or a `profiles` entry that is a file, is not a
@@ -3780,8 +3772,13 @@ test('vscode', 'a profile whose backup fails does not stop the others', async t 
 // `-ceq` against an array is a filter, and a non-empty result is truthy, so a
 // group whose `vendor` is an array would match our own and be deleted. jq keeps
 // it, because a non-string is not equal to a string.
-test('vscode', 'neither half deletes a group whose vendor is not a string', async t => {
-  const foreign = '[{"vendor":["customendpoint"],"name":"Floway","models":[]},{"vendor":"other","name":"Keep"}]';
+// jq compares `.vendor != "customendpoint"` and `.name != $providerName`, both
+// of which are true of a non-string, so it keeps the group. PowerShell's `-ceq`
+// against an array is true when any element matches, so without the type test
+// it would delete a group jq keeps. Both fields carry the same rule and both
+// need a case.
+test('vscode', 'neither half deletes a group whose vendor or name is not a string', async t => {
+  const foreign = '[{"vendor":["customendpoint"],"name":"Floway","models":[]},{"vendor":"customendpoint","name":["Floway"],"models":[]},{"vendor":"other","name":"Keep"}]';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const userDir = makeVSCodeUserDir(ws, `vscode-arrayvendor-${which}`);
@@ -3794,31 +3791,64 @@ test('vscode', 'neither half deletes a group whose vendor is not a string', asyn
   };
 
   const bash = await runHalf('bash');
-  t.equal(bash.length, 3, 'Bash keeps both foreign groups and adds ours');
+  t.equal(bash.length, 4, 'Bash keeps all three foreign groups and adds ours');
   if (!hostPwsh) return;
   const powershell = await runHalf('powershell');
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
 });
 
+// ConvertTo-Json stops at -Depth and emits what it could not reach as the
+// literal string "@{k=}", with a warning and no error. A sibling gateway's
+// group nested deeper than the serializer goes would be silently flattened into
+// that string — someone else's provider, destroyed quietly. `-WarningAction
+// Stop` is what turns it into a refusal, and nothing else in the suite nests
+// anything deep enough to reach it.
+test('vscode', 'a foreign group too deep to serialize is refused, not flattened', async t => {
+  if (!hostPwsh) skip('the depth limit is a PowerShell serializer property');
+  // 120 levels, past ConvertTo-Json's -Depth 100.
+  let nested: unknown = 'leaf';
+  for (let i = 0; i < 120; i++) nested = { k: nested };
+  const foreign = JSON.stringify([{ vendor: 'other', name: 'Deep gateway', models: [], extra: nested }]);
+
+  const ws = makeWorkspace();
+  const userDir = makeVSCodeUserDir(ws, 'vscode-deep');
+  writeFileSync(vscodeGroupsPath(userDir), foreign);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+
+  t.ok(run.code !== 0, `the run refuses it:\n${run.combined}`);
+  t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), foreign, 'and leaves the document byte-identical');
+  t.ok(!readFileSync(vscodeGroupsPath(userDir), 'utf8').includes('@{k='), 'nothing was flattened into place');
+});
+
 // A `profiles/` the run cannot enter yields nothing from the glob, which reads
 // as "no named profiles" — both halves have to say so rather than report a
 // clean install of the default profile alone.
-test('vscode', 'both halves warn about a profiles directory they cannot read', async t => {
+// A `profiles/` the run cannot enter must cost that build its named profiles
+// and nothing else: the default profile beside it is still writable, and so is
+// every other build the operator has installed.
+test('vscode', 'a profiles directory it cannot read costs that build alone', async t => {
   if (process.platform === 'win32') skip('POSIX permission bits only');
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
-    const userDir = makeVSCodeUserDir(ws, `vscode-warnprofiles-${which}`);
-    const profiles = join(userDir, 'profiles');
+    const blocked = makeVSCodeUserDir(ws, `vscode-warnprofiles-${which}`);
+    const profiles = join(blocked, 'profiles');
     mkdirSync(profiles, { recursive: true });
     chmodSync(profiles, 0o000);
+    // A second build, entirely healthy, reached only after the first one warns.
+    const healthy = makeVSCodeUserDir(ws, `vscode-healthy-${which}`);
+    const healthyProfile = join(healthy, 'profiles', 'a1b2c3');
+    mkdirSync(healthyProfile, { recursive: true });
     try {
+      const userDirs = `${blocked}\n${healthy}`;
       const run = which === 'bash'
-        ? await runVSCode(ws, { vscodeUserDir: userDir })
-        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+        ? await runVSCode(ws, { vscodeUserDir: userDirs })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDirs });
       // The exact sentence, not merely the word "warning": other output
       // mentions profiles, and a bare /warn/i would be satisfied by anything.
       t.ok(run.combined.includes('could not list profiles'), `${which} says which directory it could not read:\n${run.combined}`);
-      t.equal(readVSCodeGroups(userDir).length, 1, `${which} still configures the default profile`);
+      t.equal(readVSCodeGroups(blocked).length, 1, `${which} still configures the blocked build's default profile`);
+      t.ok(existsSync(vscodeGroupsPath(healthy)), `${which} still reaches the next build's default profile`);
+      t.ok(existsSync(vscodeGroupsPath(healthyProfile)), `${which} still reaches the next build's named profile`);
     } finally {
       chmodSync(profiles, 0o755);
     }

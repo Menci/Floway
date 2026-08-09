@@ -43,8 +43,13 @@ vscode_api_url() {
 # held to the same existence check, so a wrong path reports rather than failing
 # later against a directory nothing can be written to.
 vscode_user_dirs() {
+  # Newline-separated, because the real enumeration below yields several
+  # directories and an override that could only name one could not stand in for
+  # an operator running more than one build.
   if [ -n "${AGENT_SETUP_TEST_VSCODE_USER_DIR:-}" ]; then
-    [ -d "$AGENT_SETUP_TEST_VSCODE_USER_DIR" ] && printf '%s\n' "$AGENT_SETUP_TEST_VSCODE_USER_DIR"
+    printf '%s\n' "$AGENT_SETUP_TEST_VSCODE_USER_DIR" | while IFS= read -r _vud_override; do
+      [ -n "$_vud_override" ] && [ -d "$_vud_override" ] && printf '%s\n' "$_vud_override"
+    done
     return 0
   fi
   case "$(uname -s)" in
@@ -157,6 +162,17 @@ vscode_write_settings() {
       out_error "could not back up $VSCODE_SETTINGS_PATH"
       return 1
     fi
+    # A re-run copies a document that already holds the key, so the backup is
+    # restricted explicitly rather than left to the umask — the PowerShell half
+    # states it the same way. `cp` without `-p` is what puts the copy under the
+    # umask in the first place; here that is wanted, since the mode being
+    # dropped is the wide one an operator may have had before the first run.
+    if ! chmod 600 "$VSCODE_SETTINGS_BACKUP"; then
+      rm -f "$VSCODE_SETTINGS_BACKUP"
+      VSCODE_SETTINGS_BACKUP=""
+      out_error "could not protect the backup of $VSCODE_SETTINGS_PATH"
+      return 1
+    fi
   else
     _vw_base='[]'
   fi
@@ -185,6 +201,12 @@ vscode_write_settings() {
     return 1
   fi
 
+  # An assertion on the merge program, not a gate on operator input: an empty
+  # catalog is refused long before this, and every malformed document the merge
+  # could choke on is refused before the backup. Nothing reachable fails it,
+  # which is the point — it is what keeps a silently wrong merge from being
+  # renamed over the operator's file. The PowerShell half asserts the same two
+  # properties.
   if ! "$JQ" -e --arg providerName "$SETUP_VSCODE_PROVIDER_NAME" '
       (type == "array")
       and ([.[] | select(.vendor == "customendpoint" and .name == $providerName)] | length == 1)

@@ -29,7 +29,11 @@ function Get-SetupVSCodeApiUrl { "$SetupEndpoint/v1" }
 # later against a directory nothing can be written to.
 function Get-SetupVSCodeUserDirs {
   if ($env:AGENT_SETUP_TEST_VSCODE_USER_DIR) {
-    return @($env:AGENT_SETUP_TEST_VSCODE_USER_DIR | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
+    # Newline-separated, matching the Bash half: the real enumeration yields
+    # several directories, so an override that could only name one could not
+    # stand in for an operator running more than one build.
+    return @($env:AGENT_SETUP_TEST_VSCODE_USER_DIR -split "`n" | Where-Object { $_ } |
+      Where-Object { Test-Path -LiteralPath $_ -PathType Container })
   }
   $base = if (Test-SetupIsWindows) { $env:APPDATA }
     elseif ($IsMacOS) { Join-Path $HOME 'Library/Application Support' }
@@ -193,6 +197,10 @@ function Write-SetupVSCodeSettings {
     if (-not $json.TrimStart().StartsWith('[')) { $json = "[$json]" }
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
 
+    # Assertions on the projection above, not gates on operator input: nothing
+    # reachable fails them, which is the point — they are what keeps a silently
+    # wrong merge from being renamed over the operator's file. The Bash half
+    # asserts the same two properties in jq.
     $check = @(Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json)
     $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
