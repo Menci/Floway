@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
+import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from '../src/models.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
@@ -247,5 +247,30 @@ describe('codexRawToProviderModel', () => {
       reasoning_efforts: ['low', 'medium'],
       default_reasoning_effort: 'high',
     }, noFlags)).toThrow(/default_reasoning_level not in supported_reasoning_levels/);
+  });
+});
+
+describe('Codex image capability', () => {
+  test.each([
+    ['free', false],
+    [' FREE ', false],
+    ['plus', true],
+    ['team', true],
+    ['unknown', true],
+  ])('plan %j image eligibility is %s', (planType, expected) => {
+    expect(codexPlanSupportsImages(planType)).toBe(expected);
+  });
+
+  test('projects gpt-image-2 as a separate image model', () => {
+    const flags: ReadonlySet<FlagId> = new Set();
+    expect(codexImageProviderModel(flags)).toEqual({
+      id: 'gpt-image-2',
+      display_name: 'GPT Image 2',
+      owned_by: 'openai',
+      kind: 'image',
+      limits: {},
+      endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      enabledFlags: flags,
+    });
   });
 });

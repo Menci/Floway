@@ -3,6 +3,8 @@ import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
+  CODEX_IMAGES_EDITS_PATH,
+  CODEX_IMAGES_GENERATIONS_PATH,
   CODEX_ORIGINATOR,
   CODEX_RESPONSES_COMPACT_PATH,
   CODEX_RESPONSES_PATH,
@@ -15,9 +17,10 @@ import {
 } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
+import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { jsonRequestBody, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
+import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type ImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesCompactionResult; modelKey: string }
@@ -57,6 +60,14 @@ export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
   body: Record<string, unknown>;
 }
 
+export interface CallCodexImagesGenerationsOptions extends CodexBackendCallBase {
+  body: Omit<ImagesGenerationsPayload, 'model'>;
+}
+
+export interface CallCodexImagesEditsOptions extends CodexBackendCallBase {
+  request: ImagesEditsRequest;
+}
+
 type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponsesCompactOptions['body'];
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
@@ -77,6 +88,19 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   const ready = await prepareCodexCall(normalized);
   if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
+};
+
+export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
+  const ready = await prepareCodexCall(opts);
+  if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, false);
+};
+
+export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
+  const ready = await prepareCodexCall(opts);
+  if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
+  const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
@@ -343,6 +367,13 @@ const dispatchCodexHttpCall = async (
     signal: opts.signal,
   }));
 
+  return await classifyCodexHttpResponse(opts, response);
+};
+
+const classifyCodexHttpResponse = async (
+  opts: CodexBackendCallBase,
+  response: Response,
+): Promise<Response> => {
   if (response.ok) {
     const responseNow = new Date();
     const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
@@ -368,6 +399,30 @@ const dispatchCodexHttpCall = async (
   }
 
   return response;
+};
+
+const dispatchCodexImageCall = async (
+  opts: CodexBackendCallBase,
+  accessToken: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> => {
+  const headers = new Headers({
+    authorization: `Bearer ${accessToken}`,
+    'chatgpt-account-id': opts.account.chatgptAccountId,
+    originator: CODEX_ORIGINATOR,
+    'user-agent': CODEX_USER_AGENT,
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-codex-image-turn-id': trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7(),
+  });
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
+    method: 'POST',
+    headers,
+    body: jsonRequestBody(body),
+    signal: opts.signal,
+  }));
+  return await classifyCodexHttpResponse(opts, response);
 };
 
 // Force-mint a fresh access token after a 401, persisting it best-effort.
@@ -487,6 +542,22 @@ const performAlphaSearchCall = async (
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);
+  }
+  return { modelKey: opts.model.id, response };
+};
+
+const performImageCall = async (
+  opts: CodexBackendCallBase,
+  accessToken: string,
+  path: string,
+  body: Record<string, unknown>,
+  alreadyRetried: boolean,
+): Promise<ProviderCallResult> => {
+  const response = await dispatchCodexImageCall(opts, accessToken, path, body);
+  if (response.status === 401 && !alreadyRetried) {
+    const fresh = await refreshAccessTokenForRetry(opts);
+    if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
+    return await performImageCall(opts, fresh.accessToken, path, body, true);
   }
   return { modelKey: opts.model.id, response };
 };

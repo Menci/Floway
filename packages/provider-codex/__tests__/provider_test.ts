@@ -80,6 +80,7 @@ describe('createCodexProvider', () => {
       'session_id',
       'thread-id',
       'x-client-request-id',
+      'x-codex-image-turn-id',
       'x-codex-turn-metadata',
       'x-codex-window-id',
     ]);
@@ -98,8 +99,9 @@ describe('createCodexProvider', () => {
     const models = await instance.instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
-    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     expect(models[0].endpoints).toEqual({ responses: {} });
+    expect(models[2]).toMatchObject({ kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });
@@ -114,7 +116,7 @@ describe('createCodexProvider', () => {
     });
     const instance = createCodexProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
-    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
@@ -132,6 +134,26 @@ describe('createCodexProvider', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
     const instance = createCodexProvider(baseRecord);
     await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
+  });
+
+  test('getProvidedModels omits image models only for an explicit Free plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const models = await createCodexProvider(freeRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+  });
+
+  test('getProvidedModels fails open for an unknown future plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const futureRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'future-plan' }] },
+    };
+    const models = await createCodexProvider(futureRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toContain('gpt-image-2');
   });
 
   test('getProvidedModels propagates OAuth refresh failures', async () => {
@@ -207,10 +229,63 @@ describe('createCodexProvider', () => {
     if (!result.ok) expect(result.response.status).toBe(503);
   });
 
+  test('callImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      created: 1,
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const instance = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const options = noopUpstreamCallOptions();
+    options.headers.set('x-codex-image-turn-id', 'turn-image');
+    const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
+    expect(result.response.status).toBe(200);
+    expect(result.modelKey).toBe('gpt-image-2');
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at');
+    expect(headers.get('chatgpt-account-id')).toBe('acc');
+    expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
+    expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
+  });
+
+  test('callImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const instance = createCodexProvider(freeRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
+    expect(result.response.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('callImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      created: 1,
+      data: [{ b64_json: 'ZWRpdA==' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const instance = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const result = await instance.instance.callImagesEdits(model, {
+      images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
+      parameters: { prompt: 'make it blue' },
+    }, undefined, noopUpstreamCallOptions());
+    expect(result.response.status).toBe(200);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
+    expect(await readJsonRequest(init as RequestInit)).toEqual({
+      prompt: 'make it blue',
+      images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }],
+      model: 'gpt-image-2',
+    });
+  });
+
   test.each([
     'callEmbeddings',
-    'callImagesGenerations',
-    'callImagesEdits',
     'callAudioTranscriptions',
     'callChatCompletions',
     'callMessagesCountTokens',

@@ -47,6 +47,15 @@ export const CODEX_ALPHA_SEARCH_PATH = '/codex/alpha/search';
 export const CODEX_RESPONSES_COMPACT_PATH = '/codex/responses/compact';
 export const CODEX_MODELS_PATH = '/codex/models';
 
+// Codex's image extension does not discover this model through /codex/models.
+// It owns the capability and sends the fixed model id to these provider-
+// relative endpoints instead.
+// https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/ext/image-generation/src/tool.rs#L51-L59
+// https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/codex-api/src/endpoint/images.rs#L33-L70
+export const CODEX_IMAGE_MODEL_ID = 'gpt-image-2';
+export const CODEX_IMAGES_GENERATIONS_PATH = '/codex/images/generations';
+export const CODEX_IMAGES_EDITS_PATH = '/codex/images/edits';
+
 // codex_cli_rs version we impersonate on the data plane. Bumped against the
 // latest stable release at https://github.com/openai/codex/releases — newer entries in
 // /codex/models gate themselves behind a `minimal_client_version` (e.g.
