@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from '../src/constants.ts';
-import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from '../src/fetch.ts';
+import { callCodexAlphaSearch, callCodexImagesGenerations, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from '../src/fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -15,6 +15,7 @@ const makeEffects = (): CodexCallEffects => ({
 
 const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null };
 const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
+const imageModel = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
 
 const upstreamId = 'up_a';
 const UUID_V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -96,6 +97,19 @@ const sseResponse = (status = 200): Response => new Response(
 const errorJson = (status: number, body: unknown, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: new Headers({ 'content-type': 'application/json', ...extraHeaders }) });
 
+const idToken = (planType = 'plus'): string => [
+  Buffer.from('{}').toString('base64url'),
+  Buffer.from(JSON.stringify({
+    email: 'a@b.com',
+    'https://api.openai.com/auth': {
+      chatgpt_account_id: 'acc',
+      chatgpt_user_id: 'usr',
+      chatgpt_plan_type: planType,
+    },
+  })).toString('base64url'),
+  Buffer.from('signature').toString('base64url'),
+].join('.');
+
 describe('callCodexResponses — gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
     const result = await callCodexResponses({
@@ -131,7 +145,7 @@ describe('callCodexResponses — gates', () => {
 describe('callCodexResponses — token freshness', () => {
   test('refreshes before call when no cached access token', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const effects = makeEffects();
     const result = await callCodexResponses({
@@ -648,7 +662,7 @@ describe('callCodexResponses — upstream classification', () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'still expired' } }));
     const effects = makeEffects();
     const result = await callCodexResponses({
@@ -715,7 +729,7 @@ describe('callCodexResponses — background-write registration', () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
     await callCodexResponses({
@@ -726,6 +740,80 @@ describe('callCodexResponses — background-write registration', () => {
     // Two writes get registered: the freshly-minted access token (401 retry
     // path) and the quota snapshot from the successful second attempt.
     expect(waitUntil).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('callCodexImagesGenerations', () => {
+  test('does not replace a meaningful quota snapshot with a headerless image response', async () => {
+    const quotaSnapshot: CodexQuotaSnapshotEntryMap = {
+      premium: {
+        fetchedAt: 1,
+        data: { observed_at: '2026-01-01T00:00:00Z', active_limit: 'premium', primary_used_percent: 42 },
+      },
+    };
+    seedAccountState({ accessToken: { ...farFutureAccessToken, planType: 'plus' }, quotaSnapshot });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(200, { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] }));
+    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: (currentRecord.state as CodexUpstreamState).accounts[0],
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'plus',
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: { ...noopUpstreamCallOptions(), waitUntil },
+    });
+    expect(result.response.status).toBe(200);
+    expect(readQuotaEntry()).toEqual(quotaSnapshot);
+    expect(waitUntil).not.toHaveBeenCalled();
+  });
+
+  test('keeps image turn identity and originator stable across a 401 refresh retry', async () => {
+    seedFreshAccessToken({ ...farFutureAccessToken, planType: 'plus' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken('plus'), expires_in: 600 }))
+      .mockResolvedValueOnce(errorJson(200, { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] }));
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: (currentRecord.state as CodexUpstreamState).accounts[0],
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'plus',
+      headers: new Headers({ originator: 'chatgpt_cca' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(200);
+    const imageCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'));
+    expect(imageCalls).toHaveLength(2);
+    const firstHeaders = new Headers((imageCalls[0][1] as RequestInit).headers);
+    const secondHeaders = new Headers((imageCalls[1][1] as RequestInit).headers);
+    expect(firstHeaders.get('originator')).toBe('chatgpt_cca');
+    expect(secondHeaders.get('originator')).toBe('chatgpt_cca');
+    expect(firstHeaders.get('x-codex-image-turn-id')).toMatch(UUID_V7_RE);
+    expect(secondHeaders.get('x-codex-image-turn-id')).toBe(firstHeaders.get('x-codex-image-turn-id'));
+  });
+
+  test('uses a refreshed Free plan before dispatching the image request', async () => {
+    seedAccountState({ accessToken: null });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(200, {
+      access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken('free'), expires_in: 600,
+    }));
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: (currentRecord.state as CodexUpstreamState).accounts[0],
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'plus',
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(403);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/oauth/token');
   });
 });
 
@@ -799,7 +887,7 @@ describe('callCodexResponsesCompact', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(compactJsonResponse());
     const effects = makeEffects();
     const result = await callCodexResponsesCompact({

@@ -143,8 +143,8 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
 // while keeping the image model outside the remote chat-model catalog.
 // https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/internal/runtime/executor/codex_executor_request.go#L381-L449
 // https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/sdk/cliproxy/auth/conductor_execution.go#L1036-L1066
-export const codexPlanSupportsImages = (planType: string): boolean =>
-  planType.trim().toLowerCase() !== 'free';
+export const codexPlanSupportsImages = (planType: string | undefined): boolean =>
+  planType?.trim().toLowerCase() !== 'free';
 
 export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): ProviderModel => ({
   id: CODEX_IMAGE_MODEL_ID,

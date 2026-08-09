@@ -14,6 +14,9 @@ export interface CodexAccessTokenEntry {
   token: string;
   expiresAt: number;       // unix ms
   refreshedAt: string;     // ISO 8601
+  // Parsed from the id_token returned alongside this access token. Absent on
+  // legacy rows; callers fall back to the import-time identity in config.
+  planType?: string;
 }
 
 // Most recent quota observation derived from upstream response headers.
@@ -90,6 +93,7 @@ const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> =
   token: true,
   expiresAt: true,
   refreshedAt: true,
+  planType: true,
 };
 
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CodexQuotaSnapshotEntry, true> = {
@@ -115,6 +119,9 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
   }
   if (typeof obj.refreshedAt !== 'string' || obj.refreshedAt === '') {
     throw new TypeError(`${where}.refreshedAt must be a non-empty string`);
+  }
+  if (obj.planType !== undefined && (typeof obj.planType !== 'string' || obj.planType === '')) {
+    throw new TypeError(`${where}.planType must be a non-empty string when present`);
   }
 };
 

@@ -15,7 +15,9 @@ import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Pro
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/core/src/responses_metadata.rs#L255-L270
 // https://github.com/openai/codex/blob/bd8fc9adb93fa5bc0a69b396bd5ac78a5ec14487/codex-rs/codex-api/src/requests/headers.rs#L5-L16
+// https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/ext/image-generation/src/backend.rs#L81-L89
 const INBOUND_HEADER_ALLOWLIST = [
+  'originator',
   'session-id',
   'session_id',
   'thread-id',
@@ -109,7 +111,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
       const models = raw.map(r => codexRawToProviderModel(r, enabledFlags));
-      if (codexPlanSupportsImages(accountIdentity.planType)) models.push(codexImageProviderModel(enabledFlags));
+      if (codexPlanSupportsImages(access.planType ?? accountIdentity.planType)) models.push(codexImageProviderModel(enabledFlags));
       return models;
     },
 
@@ -165,14 +167,12 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     callChatCompletions: () => unsupportedStreamResult(),
     callEmbeddings: () => unsupportedCallResult(),
     callImagesGenerations: async (model, body, signal, opts) => {
-      if (!codexPlanSupportsImages(accountIdentity.planType)) return imageUnavailableResult(model.id);
       const { account } = await readActiveAccount();
-      return await callCodexImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body });
+      return await callCodexImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType });
     },
     callImagesEdits: async (model, request, signal, opts) => {
-      if (!codexPlanSupportsImages(accountIdentity.planType)) return imageUnavailableResult(model.id);
       const { account } = await readActiveAccount();
-      return await callCodexImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request });
+      return await callCodexImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType });
     },
     callAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
@@ -200,13 +200,3 @@ const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>
 
 const unsupportedCallResult = (): Promise<ProviderCallResult> =>
   Promise.resolve({ modelKey: '', response: synthetic405() });
-
-const imageUnavailableResult = (modelKey: string): ProviderCallResult => ({
-  modelKey,
-  response: new Response(JSON.stringify({
-    error: {
-      type: 'image_generation_unavailable',
-      message: 'ChatGPT Free accounts do not provide Codex image generation.',
-    },
-  }), { status: 403, headers: { 'content-type': 'application/json' } }),
-});

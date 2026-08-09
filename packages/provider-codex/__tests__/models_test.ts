@@ -257,6 +257,7 @@ describe('Codex image capability', () => {
     ['plus', true],
     ['team', true],
     ['unknown', true],
+    [undefined, true],
   ])('plan %j image eligibility is %s', (planType, expected) => {
     expect(codexPlanSupportsImages(planType)).toBe(expected);
   });
@@ -272,12 +273,14 @@ describe('Codex image capability', () => {
       endpoints: { imagesGenerations: {}, imagesEdits: {} },
       enabledFlags: flags,
       pricing: {
-        entries: [{ rates: {
-          input_tokens: '0.000005',
-          input_cache_read_tokens: '0.00000125',
-          input_image_tokens: '0.000008',
-          output_image_tokens: '0.00003',
-        } }],
+        entries: [{
+          rates: {
+            input_tokens: '0.000005',
+            input_cache_read_tokens: '0.00000125',
+            input_image_tokens: '0.000008',
+            output_image_tokens: '0.00003',
+          },
+        }],
       },
     });
   });

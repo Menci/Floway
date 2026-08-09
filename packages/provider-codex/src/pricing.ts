@@ -34,7 +34,6 @@ export const GPT_IMAGE_2_PRICING = modelPricing(
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
-  ['gpt-image-2', GPT_IMAGE_2_PRICING],
   // GPT-5.6 publishes standard short/long and priority-short entries. OpenAI-
   // direct does not publish priority-long rates, so that exact combination is
   // deliberately absent and resolves to the whole Base vector.

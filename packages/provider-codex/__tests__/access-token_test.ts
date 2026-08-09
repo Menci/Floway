@@ -4,12 +4,13 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import {
   ensureCodexAccessToken,
   invalidateCodexAccessToken,
+  mintCodexAccessToken,
   putCodexAccessToken,
   type CodexAccessTokenEntry,
 } from '../src/access-token.ts';
 import { CodexOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { CodexUpstreamState } from '../src/state.ts';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
@@ -193,5 +194,29 @@ describe('ensureCodexAccessToken', () => {
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);
     expect(repo.getById).toHaveBeenCalledTimes(1);
     expect(repo.writes).toEqual([]);
+  });
+});
+
+describe('mintCodexAccessToken', () => {
+  test('stores the current plan from the refreshed id_token', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({
+        email: 'a@b.com',
+        'https://api.openai.com/auth': {
+          chatgpt_account_id: accountId,
+          chatgpt_user_id: 'usr',
+          chatgpt_plan_type: 'team',
+        },
+      })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const persistRotation = vi.fn(async () => {});
+    const entry = await mintCodexAccessToken('rt_v1', directFetcher, persistRotation);
+    expect(entry.planType).toBe('team');
+    expect(persistRotation).toHaveBeenCalledWith('rt_v2');
   });
 });

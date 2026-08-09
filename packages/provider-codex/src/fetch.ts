@@ -11,11 +11,12 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { sha256JsonUuid, uuidV7 } from './ids.ts';
+import { codexPlanSupportsImages } from './models.ts';
 import {
   parseCodexQuotaHeaders,
   putCodexQuota,
 } from './quota.ts';
-import type { CodexAccountCredential } from './state.ts';
+import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -35,9 +36,9 @@ export interface CodexCallEffects {
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
 }
 
-// Account selection for one Codex call. Both Codex endpoints share the same
-// OAuth credential, the same quota row, and the same retry contract; only the
-// wire body and the response decoding differ.
+// Account selection shared by Codex backend calls. Every surface uses the same
+// OAuth credential, quota state, terminal-session classification, and refresh
+// retry contract; each operation owns its wire body and response decoding.
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
@@ -62,10 +63,12 @@ export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
 
 export interface CallCodexImagesGenerationsOptions extends CodexBackendCallBase {
   body: Omit<ImagesGenerationsPayload, 'model'>;
+  fallbackPlanType: string;
 }
 
 export interface CallCodexImagesEditsOptions extends CodexBackendCallBase {
   request: ImagesEditsRequest;
+  fallbackPlanType: string;
 }
 
 type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponsesCompactOptions['body'];
@@ -73,13 +76,13 @@ type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponses
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performStreamingResponsesCall(opts, ready.accessToken, false);
+  return await performStreamingResponsesCall(opts, ready.accessToken.token, false);
 };
 
 export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<ProviderCompactionResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performUnaryCompactCall(opts, ready.accessToken, false);
+  return await performUnaryCompactCall(opts, ready.accessToken.token, false);
 };
 
 export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): Promise<ProviderCallResult> => {
@@ -87,31 +90,35 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   const normalized = { ...opts, body: { ...opts.body, id: requestId } };
   const ready = await prepareCodexCall(normalized);
   if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
-  return await performAlphaSearchCall(normalized, ready.accessToken, false);
+  return await performAlphaSearchCall(normalized, ready.accessToken.token, false);
 };
 
 export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, false);
+  if (!codexPlanSupportsImages(ready.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
+  const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, false);
 };
 
 export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
+  if (!codexPlanSupportsImages(ready.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
-  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, false);
+  const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
-const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   if (opts.account.state !== 'active') {
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
   try {
     const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
-    return { ok: true, accessToken: entry.token };
+    return { ok: true, accessToken: entry };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -373,18 +380,23 @@ const dispatchCodexHttpCall = async (
 const classifyCodexHttpResponse = async (
   opts: CodexBackendCallBase,
   response: Response,
+  persistEmptyQuota = true,
 ): Promise<Response> => {
   if (response.ok) {
     const responseNow = new Date();
     const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-    registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    if (persistEmptyQuota || Object.keys(snapshot).length > 1) {
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    }
     return response;
   }
 
   if (response.status === 429) {
     const responseNow = new Date();
     const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-    registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    if (persistEmptyQuota || Object.keys(snapshot).length > 1) {
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    }
     return response;
   }
 
@@ -406,15 +418,16 @@ const dispatchCodexImageCall = async (
   accessToken: string,
   path: string,
   body: Record<string, unknown>,
+  turnId: string,
 ): Promise<Response> => {
   const headers = new Headers({
     authorization: `Bearer ${accessToken}`,
     'chatgpt-account-id': opts.account.chatgptAccountId,
-    originator: CODEX_ORIGINATOR,
+    originator: trimHeader(opts.headers, 'originator') ?? CODEX_ORIGINATOR,
     'user-agent': CODEX_USER_AGENT,
     accept: 'application/json',
     'content-type': 'application/json',
-    'x-codex-image-turn-id': trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7(),
+    'x-codex-image-turn-id': turnId,
   });
   const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
@@ -422,7 +435,7 @@ const dispatchCodexImageCall = async (
     body: jsonRequestBody(body),
     signal: opts.signal,
   }));
-  return await classifyCodexHttpResponse(opts, response);
+  return await classifyCodexHttpResponse(opts, response, false);
 };
 
 // Force-mint a fresh access token after a 401, persisting it best-effort.
@@ -551,13 +564,14 @@ const performImageCall = async (
   accessToken: string,
   path: string,
   body: Record<string, unknown>,
+  turnId: string,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
-  const response = await dispatchCodexImageCall(opts, accessToken, path, body);
+  const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    return await performImageCall(opts, fresh.accessToken, path, body, true);
+    return await performImageCall(opts, fresh.accessToken, path, body, turnId, true);
   }
   return { modelKey: opts.model.id, response };
 };
@@ -574,6 +588,16 @@ const parseUpstreamError = (rawText: string): { code: string | null; message: st
     return { code: null, message: rawText.slice(0, 256) };
   }
 };
+
+const imageUnavailableResult = (modelKey: string): ProviderCallResult => ({
+  modelKey,
+  response: new Response(JSON.stringify({
+    error: {
+      type: 'image_tools_unavailable',
+      message: 'ChatGPT Free accounts do not provide Codex image tools.',
+    },
+  }), { status: 403, headers: { 'content-type': 'application/json' } }),
+});
 
 const synthetic503 = (message: string): Response => new Response(JSON.stringify({ error: { type: 'codex_upstream_unavailable', message } }), {
   status: 503,

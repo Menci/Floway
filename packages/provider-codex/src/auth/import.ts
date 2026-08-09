@@ -41,6 +41,7 @@ const buildCodexImportResult = (params: {
         token: params.accessToken,
         expiresAt: params.expiresAt,
         refreshedAt: params.now,
+        planType: params.identity.planType,
       },
       quotaSnapshot: null,
     }],
