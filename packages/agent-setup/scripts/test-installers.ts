@@ -2516,7 +2516,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6[1m],gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2528,7 +2528,7 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
   const models = new Map(settings.language_models.anthropic_compatible.Floway!.available_models.map(entry => [entry.name, entry]));
 
-  const opus = models.get('claude-opus-4-6')!;
+  const opus = models.get('claude-opus-4-6[1m]')!;
   t.equal(opus.max_tokens, 1_000_000, 'context window becomes max_tokens');
   t.equal(opus.max_output_tokens, 64_000, 'output limit is carried through');
   t.equal(JSON.stringify(opus.capabilities), JSON.stringify({ tools: true, images: true, prompt_caching: true }), 'image modality becomes the images capability');
@@ -2558,6 +2558,12 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   // A stated 0 is a value, not an absent limit — asserted on this half too,
   // since the fixture claims to cover both merges and only the VS Code half
   // ever checked it.
+  // The catalog reports this row's merged 1M window, and only the `[1m]` id
+  // reaches the variant that honours it — so the name Zed sends back has to
+  // carry the suffix while the label the operator reads does not.
+  const merged = models.get('claude-opus-4-6[1m]')!;
+  t.equal(merged.display_name, 'Claude Opus 4.6', 'the label stays the one the operator recognises');
+
   const zero = models.get('zero-limits')!;
   t.equal(zero.max_tokens, 0, 'a stated zero window survives the Zed projection');
   t.equal(zero.max_output_tokens, 0, 'and so does a stated zero output limit');
@@ -2683,7 +2689,7 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
   t.equal(
     provider.available_models.map(entry => entry.name).join(','),
-    'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits',
+    'claude-opus-4-6[1m],gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits',
     'chat models only, in catalog order',
   );
   t.equal(bash.settings.language_models.anthropic_compatible.Existing?.api_url, 'https://existing', 'a sibling provider survives the merge');

@@ -92,6 +92,24 @@ const zedThinkingMode = (
   return usable === undefined ? undefined : { type: 'thinking', budget_tokens: usable };
 };
 
+// A merged Copilot row reports the 1M variant's limits — mergeClaudeVariants
+// takes the maximum of each limit across the family — but reaching that variant
+// needs a `context-1m-2025-08-07` beta the editors never send, so a caller
+// asking for the bare id resolves the 200k base and plans against a window it
+// cannot have. The `[1m]` suffix carries that beta, which is how the Claude
+// Code half of Agent Setup already addresses the same row. Editors send the id
+// back verbatim, so the suffix is what makes the projected limits true.
+// Ref: https://code.claude.com/docs/en/model-config
+const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
+
+export const addressableModelId = (model: PublicModel): string => {
+  const window = model.limits.max_context_window_tokens
+    ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
+  return window >= ONE_MILLION_CONTEXT_TOKENS && !model.id.endsWith('[1m]')
+    ? `${model.id}[1m]`
+    : model.id;
+};
+
 // Chat models only, and selected by `kind` rather than by `endpoints`: the
 // endpoint map is the upstream wire surface, while translation lets any chat
 // model serve a Messages request. Unlisted rows are dropped because they are
@@ -124,7 +142,7 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
   chatModels(models).map(model => {
     const mode = zedThinkingMode(model.chat?.reasoning, model.limits.max_output_tokens);
     return {
-      name: model.id,
+      name: addressableModelId(model),
       display_name: model.display_name,
       max_tokens: zedContextWindow(model.limits),
       capabilities: {
