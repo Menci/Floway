@@ -148,8 +148,24 @@ function Set-SetupOptionalProp {
 # one-object array, `[null]`, `[null,null]`, `[]` and `[1,2]`.
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
-  $parsed = ConvertFrom-Json -InputObject $Text
-  if ($parsed -is [System.Array]) { return $parsed }
-  # A lone element, `$null` included, stays one element through the return.
+  # `-NoEnumerate` on 6+, where it exists: without it PowerShell 7 flattens a
+  # one-element nested array during the decode, so `[[{…}]]` arrives as `[{…}]`
+  # and an element-type check passes where 5.1 and jq both refuse the document.
+  $parsed = if ($PSVersionTable.PSVersion.Major -ge 6) {
+    ConvertFrom-Json -InputObject $Text -NoEnumerate
+  } else {
+    ConvertFrom-Json -InputObject $Text
+  }
+  if ($parsed -isnot [System.Array]) { $parsed = @($parsed) }
+  # Comma-wrapped so the array survives the return with its element structure
+  # intact. That wraps it in a PSObject, and 5.1's ConvertTo-Json writes a
+  # wrapped collection as `{"value":[…],"Count":n}` rather than as an array —
+  # so every caller casts to `[object[]]`, which sheds the wrapper without
+  # touching the elements. `@()` sheds it too, but on pwsh 7 it also flattens a
+  # nested element, which is the shape this reader exists to preserve.
+  #
+  # Measured on 5.1.26100.8875 and pwsh 7.7, cast and serialized: a two-object
+  # array, a one-object array, `[]`, `[null]`, `[[{…}]]` and `[[],{…}]` all
+  # produce the same JSON on both.
   return ,$parsed
 }
