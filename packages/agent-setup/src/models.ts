@@ -168,7 +168,9 @@ export type VSCodeApiType = 'chat-completions' | 'responses' | 'messages';
 // `url`, `toolCalling`, `vision` and `maxOutputTokens` are required, and one of
 // `maxInputTokens` or `contextWindow` must be present. `url` is absent here and
 // supplied by the installer's merge, for the reason given at the top of this
-// file. Output tokens are clamped to the context window by VS Code itself.
+// file. `maxOutputTokens` is clamped to the context window, and on the Messages
+// path it is also sent as the wire `max_tokens` — so it is a hard output cap
+// there, not only a budgeting number.
 // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/package.json#L2190-L2209
 //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
 export interface VSCodeModel {
@@ -212,7 +214,7 @@ export const projectVSCodeModels = (
     const reasoning = model.chat?.reasoning;
     const supportedEfforts = reasoning?.effort?.supported;
     return {
-      id: model.id,
+      id: addressableModelId(model),
       name: model.display_name,
       // A chat model that cannot call tools is not one anyone routes here, and
       // without this VS Code drops it from agent mode and inline chat.

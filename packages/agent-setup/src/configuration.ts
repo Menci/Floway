@@ -108,9 +108,11 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   },
   vscode: {
     providerName: DEFAULT_EDITOR_PROVIDER_NAME,
-    // Anthropic Messages is the richest of the three on this path: it is the
-    // only one carrying thinking budgets, and `customendpoint` reaches it
-    // without the experiment flag the Copilot-hosted models need.
+    // Anthropic Messages, because `customendpoint` reaches it without the
+    // experiment flag the Copilot-hosted models need. Not for thinking budgets:
+    // the Messages path builds a thinking config only from capabilities
+    // `customendpoint` never forwards, so no apiType here can carry one.
+    // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L156-L171
     apiType: 'messages',
   },
 });

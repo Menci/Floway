@@ -214,6 +214,17 @@ describe('VS Code customendpoint model projection', () => {
     expect(resolve(small!).maxInputTokens).toBe(8192 - 2048);
   });
 
+  it('addresses the variant whose window it reports', () => {
+    const [merged, plain] = projectVSCodeModels([
+      catalogModel('claude-opus-4-7', { limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 936_000, max_output_tokens: 64_000 } }),
+      catalogModel('claude-sonnet-4-5', { limits: { max_context_window_tokens: 200_000 } }),
+    ], 'messages');
+    expect(merged!.id).toBe('claude-opus-4-7[1m]');
+    expect(plain!.id).toBe('claude-sonnet-4-5');
+    // The label the operator reads in the picker is untouched.
+    expect(merged!.name).toBe('claude-opus-4-7');
+  });
+
   it('keeps a stated zero verbatim rather than substituting a fallback', () => {
     const [zero] = projectVSCodeModels([
       catalogModel('zero', { limits: { max_context_window_tokens: 0, max_output_tokens: 0 } }),

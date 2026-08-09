@@ -2999,7 +2999,7 @@ test('vscode', 'enumerates the catalog into one customendpoint group', async t =
 
   const group = ourGroup(readVSCodeGroups(userDir));
   t.equal(group.apiType, 'messages', 'the group carries the selected API path');
-  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits,all-three-limits', 'chat models only, in catalog order');
+  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6[1m],gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits,all-three-limits', 'chat models only, in catalog order');
   t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment customendpoint appends a path to');
 });
 
@@ -3152,7 +3152,7 @@ test('vscode', 'the selected API path reaches both the group and the effort form
 
   const group = ourGroup(readVSCodeGroups(userDir));
   t.equal(group.apiType, 'responses', 'the group carries the selection');
-  t.equal(group.models!.find(entry => entry.id === 'claude-opus-4-6')!.reasoningEffortFormat, 'responses', 'the effort format follows it');
+  t.equal(group.models!.find(entry => entry.id === 'claude-opus-4-6[1m]')!.reasoningEffortFormat, 'responses', 'the effort format follows it');
 });
 
 test('vscode', 'an unreadable provider list is left untouched', async t => {
