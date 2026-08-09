@@ -174,6 +174,12 @@ zed_write_settings() {
     return 1
   fi
 
+  # An assertion on the merge program, not a gate on operator input: every
+  # malformed document is refused before the backup, so nothing reachable fails
+  # this. It is what keeps a silently wrong merge from being renamed over the
+  # operator's file. The PowerShell half asserts the same shape, and compares
+  # the model count exactly because a nested list is a failure mode jq has no
+  # equivalent of.
   if ! "$JQ" -e --arg providerName "$SETUP_ZED_PROVIDER_NAME" --arg apiUrl "$(zed_api_url)" '
       (type == "object")
       and (.language_models.anthropic_compatible[$providerName].api_url == $apiUrl)

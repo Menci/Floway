@@ -1,5 +1,22 @@
+# Reads a managed document as UTF-8 on every host.
+#
+# `Get-Content -Raw` decodes with the system ANSI code page on Windows
+# PowerShell 5.1 and with UTF-8 on 6+, so on a stock Windows box a document
+# holding a font name, a path or a localized string comes back mis-decoded,
+# gets written out again as UTF-8, and is mojibake from then on. Nothing would
+# refuse it: the mis-decoded text is still valid JSON. The Bash half passes the
+# bytes through untouched, so the two halves would disagree about one file.
+#
+# Measured: the bytes `63 61 66 E9` decode to three characters on 5.1 and four
+# on 7.6, which is the divergence itself. The writer beside this uses the same
+# encoding, and ReadAllText strips a BOM if one is there.
+function Get-SetupFileText {
+  param([string]$Path)
+  return [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # Does this JSON text open with the expected root — `{` for an object, `[` for
-# an array? Asked of the text rather than of the decoded value because
+# an array, whichever the caller asks for? Asked of the text rather than of the decoded value because
 # ConvertFrom-Json unwraps a top-level one-element array into a bare object and
 # yields `$null` for both `[]` and an empty file, so the decoded value cannot
 # tell those shapes apart. A zero-byte file, which `Get-Content -Raw` returns as
@@ -36,9 +53,17 @@ function Test-SetupJsonHasJsoncSyntax {
       if ($next -eq '/' -or $next -eq '*') { return $true }
     }
     if ($ch -eq ',') { $comma = $true; continue }
+<<<<<<< HEAD
     # JSON whitespace, not .NET's: `[char]::IsWhiteSpace` also accepts U+00A0
     # and friends, which the Bash scanner does not, and the two halves have to
     # decide the same way about the same bytes.
+=======
+    # JSON's whitespace, not .NET's. `[char]::IsWhiteSpace` also skips U+00A0,
+    # the vertical tab, the form feed and U+2028, none of which JSON allows and
+    # none of which the awk scanner skips — with the wider set the two halves
+    # still refuse `{"a":1,<FF>}` but name different causes, sending the
+    # operator after an error that is not there.
+>>>>>>> zed-agent-setup
     if ($ch -eq ' ' -or $ch -eq "`t" -or $ch -eq "`r" -or $ch -eq "`n") { continue }
     if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return $true }
     $comma = $false
@@ -74,10 +99,12 @@ function Set-SetupOptionalProp {
 # requires a list and drops the whole entry.
 #
 # Decided by type rather than by enumerating, because `foreach` skips a `$null`
-# and `[null]` has to stay one element — it is a document to refuse, not an
-# empty list. Measured on 5.1.26100.8875 and pwsh 7.7: both give 2, 1, 1, 2, 0
-# and 2 elements for a two-object array, a one-object array, `[null]`,
-# `[null,null]`, `[]` and `[1,2]`.
+# and `[null]` has to stay one element rather than collapse to an empty list.
+# No caller on this branch is fed a document that can contain one — Zed's is
+# the gateway's own projection — but a helper that silently drops null elements
+# is one the next caller cannot reason about. Measured on 5.1.26100.8875 and
+# pwsh 7.7: both give 2, 1, 1, 2, 0 and 2 elements for a two-object array, a
+# one-object array, `[null]`, `[null,null]`, `[]` and `[1,2]`.
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
   $parsed = ConvertFrom-Json -InputObject $Text

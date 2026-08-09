@@ -8,7 +8,11 @@
 # the file without it, so refusing is also what keeps the two halves from
 # reaching opposite verdicts on one document. Strings are walked rather than
 # matched by pattern, because a value like a URL contains `//` legitimately.
-# Mirrors Test-SetupJsonHasJsoncSyntax on the PowerShell side.
+# Mirrors Test-SetupJsonHasJsoncSyntax on the PowerShell side, down to the
+# whitespace it skips: space, tab and CR here, plus the newline there, which
+# awk never sees because it splits records on it. Anything wider — a form feed,
+# a non-breaking space — would have the two halves refuse one document under
+# two different names.
 _json_has_jsonc_syntax() {
   awk '
     BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0 }

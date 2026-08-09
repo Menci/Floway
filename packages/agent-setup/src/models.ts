@@ -154,9 +154,21 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
   if (prompt !== undefined) {
     const inBand = prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW
       && prompt + reserved >= ZED_MIN_COMPACTION_CONTEXT_WINDOW;
-    return inBand
-      ? { maxTokens: prompt, maxOutputTokens: stated }
-      : { maxTokens: prompt + reserved, maxOutputTokens: stated };
+    if (!inBand) return { maxTokens: prompt + reserved, maxOutputTokens: stated };
+    // In the band the window goes out one token under the threshold so the
+    // callout fires, and the reservation shrinks to fit beneath it — which
+    // leaves the budget at exactly the stated prompt limit. Sending the limit
+    // alone with the reservation untouched would instead subtract one from the
+    // other: Copilot's o3-mini states a 64k prompt limit beside a 100k output
+    // limit, and that arithmetic left it with no room to prompt at all.
+    const shrunk = ZED_MIN_COMPACTION_CONTEXT_WINDOW - 1 - prompt;
+    return shrunk >= ZED_FALLBACK_MAX_OUTPUT_TOKENS
+      ? { maxTokens: ZED_MIN_COMPACTION_CONTEXT_WINDOW - 1, maxOutputTokens: shrunk }
+      // Too little room left under the threshold to state a reservation worth
+      // stating, so the limit goes alone and Zed subtracts its own 4096. The
+      // budget is short by that much, on a prompt limit already within 4096 of
+      // the threshold.
+      : { maxTokens: prompt, maxOutputTokens: undefined };
   }
 
   const window = zedBound(limits.max_context_window_tokens) ?? ZED_FALLBACK_CONTEXT_TOKENS;

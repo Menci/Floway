@@ -2823,24 +2823,49 @@ test('zed', 'a single-model catalog still writes an array in both halves', async
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two documents still match');
 });
 
-test('zed', 'PowerShell leaves no backup behind when the provider name is a reserved member', async t => {
-  if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  placeFakeCredentialTools(ws);
-  const original = JSON.stringify({ telemetry: { metrics: false } });
-  writeFileSync(zedSettingsPath(configDir), original);
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: zedConfig({ providerName: 'PSObject' }),
-    zedConfigDir: configDir,
-  });
-  t.ok(run.code !== 0, 'the run fails');
-  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the settings are unchanged');
-  const leftovers = readdirSync(configDir).filter(name => name.includes('.floway-'));
-  t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
+// Both halves check that the credential tool exists before reaching for it, so
+// a host without it gets the installer's own sentence rather than a raw
+// command-not-found from the shell or from PowerShell's Stop preference.
+test('zed', 'both halves name a missing credential tool instead of crashing', async t => {
+  if (process.platform !== 'darwin') skip('the macOS credential arm reaches `security` only there');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    // No placeFakeCredentialTools: the tool is what is missing.
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} fails`);
+    t.ok(run.combined.includes('cannot store the API key'), `${which} names the cause:\n${run.combined}`);
+    t.ok(!existsSync(zedSettingsPath(configDir)), `${which} writes no settings`);
+  }
 });
+
+// A property bag refuses more names than the PSObject ones: an object method
+// throws, and so does anything `-NotePropertyName` converts to a PSMemberTypes
+// value — "2" does, "2024" does not. The Bash half writes all of them, so the
+// refusal has to say what to do rather than surface a raw Add-Member message.
+for (const providerName of ['PSObject', 'ToString', '2']) {
+  test('zed', `PowerShell refuses the provider name ${providerName} without leaving a backup`, async t => {
+    if (!hostPwsh) skip('no PowerShell interpreter on this host');
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const original = JSON.stringify({ telemetry: { metrics: false } });
+    writeFileSync(zedSettingsPath(configDir), original);
+    const run = await runPowerShellInstaller({
+      workspace: ws,
+      baseUrl: modelServer.url,
+      configuration: zedConfig({ providerName }),
+      zedConfigDir: configDir,
+    });
+    t.ok(run.code !== 0, 'the run fails');
+    t.ok(run.combined.includes('cannot use'), `the refusal says what to change:\n${run.combined}`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the settings are unchanged');
+    const leftovers = readdirSync(configDir).filter(name => name.includes('.floway-'));
+    t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
+  });
+}
 
 // This document holds no credential — Zed reads the key from the keychain — so
 // the run must not narrow permissions the operator chose, on success or on a
@@ -3062,15 +3087,11 @@ test('zed', 'both halves create a new settings file owner-only', async t => {
   }
 });
 
-// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
-// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
-// rewritten as an object with the array silently discarded, while jq refuses
-// it. Both halves decide the root from the text.
 // The atomic replacement Windows takes when the settings file already exists.
 // It is the only branch that runs File.Replace, and a `$null` PowerShell binds
 // as String.Empty makes that call reject the whole install — so the platform
 // conjunct is dropped here to execute it off-Windows.
-test('zed', 'PowerShell replaces existing settings atomically', async t => {
+test('zed', 'the Windows replacement branch keeps unrelated settings and the catalog', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
@@ -3124,14 +3145,21 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o640 });
       chmodSync(target, 0o640);
       // The absolute leg points through a `..` segment, which is how a dotfile
-      // manager may well write it: a resolved path that keeps the segment does
-      // not string-match the canonical one the backup prune enumerates, and the
-      // prune would then delete the backup it was told to keep.
+      // manager may well write it: a path that keeps the segment does not
+      // string-match the canonical one the backup prune enumerates, and the
+      // prune would then delete the backup it was told to keep. Two places
+      // canonicalize — the resolver and the prune's keep-path — so this leg
+      // observes the pair rather than either one.
       // Joined by hand, not with `join`, which would normalize the segment away.
       const linkTarget = link === 'absolute'
         ? `${ws.home}/dotfiles/../dotfiles-${which}-zed-settings.json`
         : relative(configDir, target);
       symlinkSync(linkTarget, zedSettingsPath(configDir));
+      // A stale backup beside the real document, so the prune has something to
+      // get wrong: with a keep-path that is not canonical it matches nothing
+      // there and takes this run's own backup along with the stale one.
+      const stale = `${target}.floway-backup.19700101000000.1`;
+      writeFileSync(stale, '{}');
 
       const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
       const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
@@ -3145,8 +3173,9 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       t.equal(
         readdirSync(ws.home).filter(name => name.includes('floway-')).map(name => name.replace(/\d+\.\d+$/, '<stamp>')).join(),
         `dotfiles-${which}-zed-settings.json.floway-backup.<stamp>`,
-        `${which}/${dialect}/${link} leaves one backup beside the target and no stage`,
+        `${which}/${dialect}/${link} prunes the stale backup and keeps this run's, and leaves no stage`,
       );
+      t.ok(!existsSync(stale), `${which}/${dialect}/${link} removed the stale backup`);
       t.equal(readdirSync(configDir).join(), 'global_settings.json', `${which}/${dialect}/${link} leaves nothing beside the link`);
     }
   }
@@ -3207,6 +3236,10 @@ test('zed', 'a refusal after the backup restores the file and its mode', async t
   }
 });
 
+// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
+// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
+// rewritten as an object with the array silently discarded, while jq refuses
+// it. Both halves decide the root from the text.
 test('zed', 'both halves refuse an array root', async t => {
   const arrayRoot = '[{"telemetry":{"metrics":false}}]';
   const runHalf = async (which: 'bash' | 'powershell') => {

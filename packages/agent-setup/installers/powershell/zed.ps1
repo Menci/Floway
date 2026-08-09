@@ -85,7 +85,7 @@ function Write-SetupZedSettings {
 
   if (Test-Path -LiteralPath $script:ZedSettingsPath) {
     $script:ZedSettingsExisted = $true
-    $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
+    $raw = Get-SetupFileText $script:ZedSettingsPath
     # PowerShell 7 accepts JSONC comments and drops them on the way out, while
     # 5.1 errors and jq refuses — three behaviors for one document. A trailing
     # comma splits the halves the same way: ConvertFrom-Json takes it and jq
@@ -112,6 +112,12 @@ function Write-SetupZedSettings {
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
+    # `-contains` and dotted member access are both case-insensitive, while
+    # jq's `has` is not, so a document with a differently-cased `Language_Models`
+    # would have this half write into the operator's key — which Zed's own
+    # deserializer will not read — while the Bash half creates the correct one
+    # beside it. Zed writes this file never and reads it with serde, so no
+    # document it produced can have one; noted rather than worked around.
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'
@@ -165,18 +171,36 @@ function Write-SetupZedSettings {
     if ($null -ne $collision) {
       Stop-Setup "$($script:ZedSettingsPath) already holds a provider named `"$collision`", which PowerShell cannot keep beside `"$SetupZedProviderName`"; rename one of them and run this again."
     }
-    $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
-      api_url = Get-SetupZedApiUrl
-      available_models = $script:ZedModels
-    })
+    # A property bag refuses two families of name outright: members the object
+    # already has (PSObject, PSBase, PSTypeNames, ToString, Equals) and anything
+    # `-NotePropertyName` can convert to a PSMemberTypes value, which is why
+    # "1" and "2" throw while "3", "2024", Count, Length, `a.b` and `a b` are
+    # all accepted and round-trip. Measured identical on 5.1.26100.8875 and
+    # pwsh 7.6. The Bash half writes every one of them, so this is a PowerShell
+    # limit rather than a rule of ours, and the raw Add-Member message names
+    # none of what the operator can do about it.
+    try {
+      $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
+        api_url = Get-SetupZedApiUrl
+        available_models = $script:ZedModels
+      })
+    } catch {
+      Stop-Setup "PowerShell cannot use `"$SetupZedProviderName`" as a provider name; choose one that is not a PSObject or object member name and is not a small number."
+    }
 
     # A subtree deeper than the serializer goes is emitted as the literal string
     # "@{k=}" with only a warning, which the staged check cannot see because it
     # inspects the provider entry alone. Promote it: losing an unrelated setting
     # is not something to do quietly.
+    #
+    # The promotion is a pwsh 7 guarantee only. Windows PowerShell 5.1 emits no
+    # warning at all for the same input — measured: a 120-deep object at
+    # -Depth 100 writes the truncated literal silently — so what stands between
+    # such a document and a rewrite there is ConvertFrom-Json's own recursion
+    # limit, which refuses it at 100 levels before this line runs.
     $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
-    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
+    $check = Get-SetupFileText $stage | ConvertFrom-Json
     # Read through the property bag rather than with `.$name`, which is dotted
     # member access over an operator-chosen string.
     $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value
@@ -301,6 +325,9 @@ function Set-SetupZedCredentialSecretService {
 # call: security takes the password only via -w/-X, and bare -w prompts on the
 # tty rather than reading stdin, which a piped installer cannot answer.
 function Set-SetupZedCredentialMacOS {
+  if (-not (Get-Command security -ErrorAction SilentlyContinue)) {
+    Stop-Setup 'the `security` command is unavailable; cannot store the API key.'
+  }
   $arguments = @('add-internet-password', '-s', (Get-SetupZedApiUrl), '-a', 'Bearer', '-U', '-w', $SetupApiKey)
   foreach ($bundle in @(
       '/Applications/Zed.app', (Join-Path $HOME 'Applications/Zed.app'),
