@@ -2,6 +2,7 @@ import type { InferResponseType } from 'hono/client';
 
 import type { ZedModel } from './agent-setup-models';
 import type { api } from '../../api/client';
+import { ZED_CREDENTIAL_CSHARP } from '@floway-dev/agent-setup/zed-credential';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
 export type AgentSetupConfiguration = AgentSetupLease['configuration'];
@@ -201,36 +202,15 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
     // cached type and rejects any source that differs under a name already in
     // the AppDomain, so the guard makes the second paste a no-op outright
     // rather than resting on that cache.
+    //
+    // The body is the installer's own, not a copy of it. Both define
+    // FlowayZedCredential and both guard the same way, so in a console where
+    // one has already run the other silently gets whichever version got there
+    // first — a snippet that differed by so much as where it zeroes the freed
+    // blob would disable the installer's scrubbing with nothing to show for it.
     `if (-not ('FlowayZedCredential' -as [type])) {`,
     'Add-Type -TypeDefinition @"',
-    'using System;',
-    'using System.Runtime.InteropServices;',
-    'public static class FlowayZedCredential {',
-    '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
-    '  private struct CREDENTIAL {',
-    '    public uint Flags; public uint Type; public string TargetName; public string Comment;',
-    '    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;',
-    '    public uint CredentialBlobSize; public IntPtr CredentialBlob; public uint Persist;',
-    '    public uint AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName;',
-    '  }',
-    '  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]',
-    '  private static extern bool CredWriteW(ref CREDENTIAL c, uint f);',
-    '  public static void Write(string target, string user, byte[] secret) {',
-    '    IntPtr blob = Marshal.AllocHGlobal(secret.Length);',
-    '    try {',
-    '      Marshal.Copy(secret, 0, blob, secret.Length);',
-    '      CREDENTIAL c = new CREDENTIAL();',
-    '      c.Type = 1; c.TargetName = target; c.CredentialBlobSize = (uint)secret.Length;',
-    '      c.CredentialBlob = blob; c.Persist = 2; c.UserName = user;',
-    '      if (!CredWriteW(ref c, 0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());',
-    // Zeroed before release, and byte-identical to the installer's body: both
-    // define FlowayZedCredential and both guard on the type already existing,
-    // so whichever runs first in a console defines it for the other. A snippet
-    // that skipped this would silently disable the installer's scrubbing.
-    '      for (int i = 0; i < secret.Length; i++) { Marshal.WriteByte(blob, i, 0); }',
-    '    } finally { Marshal.FreeHGlobal(blob); }',
-    '  }',
-    '}',
+    ZED_CREDENTIAL_CSHARP.trimEnd(),
     '"@',
     '}',
     `[FlowayZedCredential]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,

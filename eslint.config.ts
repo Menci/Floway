@@ -307,8 +307,8 @@ const config: Linter.Config[] = [
         // writes. Everything else in the package carries the route factories
         // and the persistence contract. Exports are matched as well as imports
         // — `export … from` reaches the bundle exactly the same way.
-        selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[exportKind!="type"][importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F(?!models$))/]',
-        message: 'apps/web may runtime-reach @floway-dev/agent-setup only through its /models subpath. The root carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
+        selector: ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration)[exportKind!="type"][importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F(?!models$|zed-credential$))/]',
+        message: 'apps/web may runtime-reach @floway-dev/agent-setup only through its /models and /zed-credential subpaths. The root carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
       }, {
         // Griffel injects its sheet after the utility sheet, and `Text`'s root
         // states white-space, overflow and text-overflow while `Link`'s states

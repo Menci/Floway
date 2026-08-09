@@ -11,6 +11,10 @@
     "./models": {
       "import": "./src/models.ts",
       "types": "./src/models.ts"
+    },
+    "./zed-credential": {
+      "import": "./src/zed-credential.ts",
+      "types": "./src/zed-credential.ts"
     }
   },
   "scripts": {

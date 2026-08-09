@@ -201,53 +201,9 @@ function Write-SetupZedSettings {
 #
 # Windows keeps it as a generic credential whose target name Zed builds as
 # "zed:url=" + api_url. The blob must be UTF-8 — Zed runs `str::from_utf8` over
-# it — which rules out `cmdkey`, whose blob is UTF-16LE.
+# it — which rules out `cmdkey`, whose blob is UTF-16LE. The C# that does the
+# write is in common/zed-credential.ps1, shared with the dashboard's snippet.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
-$SetupZedCredWriteSource = @'
-using System;
-using System.Runtime.InteropServices;
-
-public static class FlowayZedCredential {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  private struct CREDENTIAL {
-    public uint Flags;
-    public uint Type;
-    public string TargetName;
-    public string Comment;
-    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-    public uint CredentialBlobSize;
-    public IntPtr CredentialBlob;
-    public uint Persist;
-    public uint AttributeCount;
-    public IntPtr Attributes;
-    public string TargetAlias;
-    public string UserName;
-  }
-
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  private static extern bool CredWriteW(ref CREDENTIAL credential, uint flags);
-
-  public static void Write(string targetName, string userName, byte[] secret) {
-    IntPtr blob = Marshal.AllocHGlobal(secret.Length);
-    try {
-      Marshal.Copy(secret, 0, blob, secret.Length);
-      CREDENTIAL credential = new CREDENTIAL();
-      credential.Type = 1;              // CRED_TYPE_GENERIC
-      credential.TargetName = targetName;
-      credential.CredentialBlobSize = (uint)secret.Length;
-      credential.CredentialBlob = blob;
-      credential.Persist = 2;           // CRED_PERSIST_LOCAL_MACHINE
-      credential.UserName = userName;
-      if (!CredWriteW(ref credential, 0)) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-      }
-    } finally {
-      for (int i = 0; i < secret.Length; i++) { Marshal.WriteByte(blob, i, 0); }
-      Marshal.FreeHGlobal(blob);
-    }
-  }
-}
-'@
 
 function Set-SetupZedCredentialWindows {
   # Add-Type accepts a byte-identical re-add by returning its cached type and
