@@ -44,6 +44,11 @@ function Protect-SetupFile {
   # Set-Acl routes through the PowerShell filesystem provider and may persist
   # the untouched SACL, demanding SeSecurityPrivilege from a normal user. The
   # direct .NET APIs write only this descriptor's modified DACL.
+  #
+  # Measured on Windows PowerShell 5.1.26100.8875: the file comes back with
+  # inheritance blocked and exactly one rule, for the running user. The harness
+  # runs on Unix, where this branch never executes, so that is the only
+  # observation of it there is.
   # https://github.com/PowerShell/PowerShell/blob/0c226762e2580cd7853c058dd03fc32638a73971/src/System.Management.Automation/namespaces/FileSystemSecurity.cs#L130-L200
   # https://github.com/dotnet/runtime/blob/f94898a9b55df07348434e86915c7405962427b6/src/libraries/System.IO.FileSystem.AccessControl/src/System/Security/AccessControl/FileSystemSecurity.cs#L103-L125
   $acl = New-Object System.Security.AccessControl.FileSecurity

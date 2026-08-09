@@ -60,3 +60,25 @@ function Set-SetupOptionalProp {
   param($Target, [string]$Name, $Value)
   if ($null -eq $Value) { Remove-SetupProp $Target $Name } else { Set-SetupProp $Target $Name $Value }
 }
+
+# A top-level JSON array, as a flat array on both PowerShell versions.
+#
+# Windows PowerShell 5.1 hands the whole array to the pipeline as one object
+# where 7 streams its elements, so `@($text | ConvertFrom-Json)` is a
+# one-element array containing the real one there and the real one here.
+# `-InputObject` does not change that; only enumerating does. The nested form is
+# not merely a wrong count: ConvertTo-Json writes an inner collection as
+# `{"value":[…],"Count":n}`, so the editor reads an object where its schema
+# requires a list and the whole provider fails to load.
+#
+# Measured on 5.1.26100.8875 and pwsh 7.7: `@(json | ConvertFrom-Json).Count` is
+# 1 and 2 for a two-element array; enumerated, both give 2.
+function ConvertFrom-SetupJsonArray {
+  param([string]$Text)
+  $items = @()
+  foreach ($item in (ConvertFrom-Json -InputObject $Text)) { $items += $item }
+  # Returned bare, not comma-wrapped: every caller collects with `@()`, which
+  # rebuilds the array from the elements the return streams. A wrap would put
+  # one more level back on, which is the shape this exists to remove.
+  return $items
+}

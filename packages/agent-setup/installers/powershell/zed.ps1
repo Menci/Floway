@@ -50,7 +50,7 @@ function Assert-SetupZedConfigDir {
 # projection on the gateway cannot disagree with the Bash half the way two
 # hand-written ones did.
 function Get-SetupZedModels {
-  try { $models = @($SetupZedModels | ConvertFrom-Json) } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
+  try { $models = @(ConvertFrom-SetupJsonArray $SetupZedModels) } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
   if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
   $script:ZedModels = $models
 }
@@ -180,7 +180,12 @@ function Write-SetupZedSettings {
     # Read through the property bag rather than with `.$name`, which is dotted
     # member access over an operator-chosen string.
     $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value
-    if (($staged.api_url -cne (Get-SetupZedApiUrl)) -or (@($staged.available_models).Count -eq 0)) {
+    # The exact count, not merely a non-empty list: a model array that reached
+    # the document nested one level deep — which is what an unenumerated
+    # ConvertFrom-Json produces on Windows PowerShell 5.1 — has a count of 1 and
+    # would pass an emptiness check while Zed reads an object where its schema
+    # requires a list and drops the provider entirely.
+    if (($staged.api_url -cne (Get-SetupZedApiUrl)) -or (@($staged.available_models).Count -ne $script:ZedModels.Count)) {
       Stop-Setup 'staged Zed global settings failed validation.'
     }
     # This document holds no credential — Zed reads the key from the keychain —
@@ -207,6 +212,12 @@ function Write-SetupZedSettings {
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
     # unlink a settings file Zed is watching; File.Replace is atomic.
+    #
+    # Measured on Windows PowerShell 5.1.26100.8875: the destination's ACL comes
+    # through the replace byte-identical (same SDDL), which is why nothing
+    # re-applies it afterwards, and passing `$null` for the backup path really
+    # does fail with "The path is not of a legal form" where NullString does
+    # not. This branch never runs under the Unix harness.
     if ($script:ZedSettingsExisted -and (Test-SetupIsWindows)) {
       [System.IO.File]::Replace($stage, $script:ZedSettingsPath, [System.Management.Automation.Language.NullString]::Value)
     } else {
