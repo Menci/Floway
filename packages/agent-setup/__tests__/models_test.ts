@@ -268,6 +268,11 @@ describe('VS Code customendpoint model projection', () => {
     expect(resolve(small!).maxInputTokens).toBe(8192 - 2048);
   });
 
+  // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it
+  // and supplies the beta itself. Editors send the id back verbatim and the
+  // gateway's resolution has no notion of the suffix, so projecting it would
+  // address a model that does not exist. The row is a 1M one because that is
+  // what a suffix rule keys on — this stays red if one is ever added back.
   it('sends the id the gateway can resolve, suffix-free', () => {
     const [merged] = projectVSCodeModels([
       catalogModel('claude-opus-4-7', { limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 936_000, max_output_tokens: 64_000 } }),

@@ -257,7 +257,9 @@ export const projectVSCodeModels = (
       // budget — two different numbers VS Code reconciles itself, deriving the
       // second from the first when it is absent. A model that states a prompt
       // limit is entitled to have it stated rather than derived, so both are
-      // emitted; a model announcing only one gets the window it announced.
+      // emitted; a model announcing only a window gets that window and no
+      // prompt limit, and one announcing only a prompt limit gets a window
+      // rebuilt around it.
       contextWindow: plan.contextWindow,
       ...(model.limits.max_prompt_tokens === undefined ? {} : { maxInputTokens: model.limits.max_prompt_tokens }),
       ...(reasoning === undefined ? {} : { thinking: true }),

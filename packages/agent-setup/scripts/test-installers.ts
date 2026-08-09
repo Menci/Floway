@@ -3402,6 +3402,11 @@ test('vscode', 'both halves refuse a catalog with no chat models rather than wri
       ? await runVSCode(ws, { vscodeUserDir: userDir, catalog: empty })
       : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir, catalog: empty });
     t.ok(run.code !== 0, `${which} should fail`);
+    // The message, not merely the exit: the staged assertion downstream also
+    // refuses this and rolls back, so byte-identity and a missing backup alone
+    // cannot tell the early gate from the late one — and only the early gate
+    // names a cause the operator can act on.
+    t.ok(run.combined.includes('advertises no chat models'), `${which} names the cause:\n${run.combined}`);
     // Refused before anything is touched, so an existing list survives whole
     // and no backup is left beside it.
     t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), existing, `${which} leaves the document byte-identical`);
@@ -3777,6 +3782,37 @@ test('vscode', 'a profile whose backup fails does not stop the others', async t 
 // against an array is true when any element matches, so without the type test
 // it would delete a group jq keeps. Both fields carry the same rule and both
 // need a case.
+// A soft hyphen, a zero-width space and an NFD accent all carry no collation
+// weight in ICU, so a culture-aware comparison calls these names equal to ours
+// while jq, which compares code points, does not. A name pasted with a stray
+// invisible, or typed on a keyboard that composes accents, is the realistic
+// way in — and the cost is another gateway's group being deleted by one half
+// and kept by the other.
+test('vscode', 'neither half claims a group whose name only collates as ours', async t => {
+  const lookalikes = [
+    { label: 'soft hyphen', name: 'Floway\u00AD' },
+    { label: 'zero-width space', name: 'Floway\u200B' },
+    { label: 'NFD accent', name: 'Flowa\u0301y' },
+  ];
+  const foreign = JSON.stringify(lookalikes.map(({ name }) => ({ vendor: 'customendpoint', name, apiType: 'responses', models: [] })));
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-collate-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), foreign);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(bash.length, lookalikes.length + 1, 'Bash keeps every look-alike and adds ours');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
+});
+
 test('vscode', 'neither half deletes a group whose vendor or name is not a string', async t => {
   const foreign = '[{"vendor":["customendpoint"],"name":"Floway","models":[]},{"vendor":"customendpoint","name":["Floway"],"models":[]},{"vendor":"other","name":"Keep"}]';
   const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3845,6 +3881,7 @@ test('vscode', 'a profiles directory it cannot read costs that build alone', asy
         : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDirs });
       // The exact sentence, not merely the word "warning": other output
       // mentions profiles, and a bare /warn/i would be satisfied by anything.
+      t.equal(run.code, 0, `${which} still succeeds overall:\n${run.combined}`);
       t.ok(run.combined.includes('could not list profiles'), `${which} says which directory it could not read:\n${run.combined}`);
       t.equal(readVSCodeGroups(blocked).length, 1, `${which} still configures the blocked build's default profile`);
       t.ok(existsSync(vscodeGroupsPath(healthy)), `${which} still reaches the next build's default profile`);

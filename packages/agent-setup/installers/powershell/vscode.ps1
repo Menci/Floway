@@ -93,16 +93,27 @@ function Get-SetupVSCodeModels {
   $script:VSCodeModels = $models
 }
 
-# Is this entry the group this run owns? The type is asked first because `-ceq`
-# against an array is a filter and a non-empty result is truthy — so a group
-# whose `vendor` is `["customendpoint"]` would match, and be deleted or counted
-# as ours. jq answers false for a non-string, and this has to answer the same.
-# Stated once because it is asked twice: when filtering the operator's list, and
-# when validating what was staged.
+# Is this entry the group this run owns? jq compares strings by code point and
+# answers false for anything that is not a string, and this has to answer the
+# same — a group the two halves disagree about is one half deleting a gateway
+# the other keeps. Stated once because it is asked twice: when filtering the
+# operator's list, and when validating what was staged.
+#
+# `[string]::Equals` with Ordinal rather than `-ceq`, which is case-sensitive
+# but still culture-aware: it reports "Floway" and a "Floway" carrying a soft
+# hyphen, a zero-width space, or an NFD accent as equal, because ICU gives
+# those no collation weight. jq sees different strings, and the disagreement
+# costs a foreign gateway its group.
+#
+# The type is still asked separately: overload resolution converts a
+# single-element array to its element's string form before comparing, so
+# `["customendpoint"]` would match without it — the same case `-ceq` failed
+# by being a filter whose non-empty result is truthy.
 function Test-SetupVSCodeOwnGroup {
   param($Group)
-  return ($Group.vendor -is [string]) -and ($Group.vendor -ceq 'customendpoint') -and
-         ($Group.name -is [string]) -and ($Group.name -ceq $SetupVSCodeProviderName)
+  return ($Group.vendor -is [string]) -and ($Group.name -is [string]) -and
+         [string]::Equals($Group.vendor, 'customendpoint', [System.StringComparison]::Ordinal) -and
+         [string]::Equals($Group.name, $SetupVSCodeProviderName, [System.StringComparison]::Ordinal)
 }
 
 function Restore-SetupVSCodeSettings {
