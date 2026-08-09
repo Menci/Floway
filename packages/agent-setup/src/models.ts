@@ -129,9 +129,12 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 //     untouched. This can take the reservation below a stated output limit —
 //     responses get capped under what the upstream allows — which is the better
 //     half of the trade: the alternative is losing compaction on a long thread
-//     with nothing on screen saying why. If what remains is under Zed's own 4096
-//     default there is no split that both compacts and stays quiet, and the
-//     window is lowered to raise the callout instead.
+//     with nothing on screen saying why. Below Zed's own 4096 default the split
+//     stops being worth stating — such a window is within a rounding error of
+//     the threshold either way — so the window is lowered to raise the callout
+//     instead. (A split does exist there: an 82_000 window reserving 2_000
+//     compacts and stays quiet. It is not taken because a reservation that
+//     small is a worse answer than the callout.)
 //
 // Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent_ui/src/conversation_view/thread_view.rs#L11845
@@ -181,9 +184,22 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
   // one only where Zed's own 4096 would take more than a quarter — an Ollama
   // model with a 2048-token context would otherwise reserve twice its window
   // and reach the picker with a negative budget.
-  const bounded = stated === undefined
+  // Back through the same filter the catalog's own limits go through: a window
+  // of one to three tokens makes these quotients 0, and a stated 0 is the value
+  // that filter exists to refuse — it would reach Zed as a Messages
+  // `max_tokens` of 0, which the upstream rejects on every request. Absent
+  // instead, which leaves Zed its own 4096.
+  // Clamped to leave at least one token on each side, and back through the
+  // filter the catalog's own limits go through: the quotients are 0 for a
+  // window of one to three tokens, and a stated 0 reaches Zed as a Messages
+  // `max_tokens` of 0, which the upstream rejects on every request.
+  const quotient = stated === undefined
     ? (Math.floor(window / 4) < ZED_FALLBACK_MAX_OUTPUT_TOKENS ? Math.floor(window / 4) : undefined)
     : Math.min(stated, Math.floor(window / 2));
+  // At least one token, so a window of three does not reserve zero. No upper
+  // clamp is needed: both quotients are already under the window, and a window
+  // of one leaves nothing for the prompt, which the projection drops below.
+  const bounded = quotient === undefined ? undefined : Math.max(quotient, 1);
   const carried = bounded ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
 
   if (window < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: bounded };
@@ -196,13 +212,17 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
 };
 
 export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
-  chatModels(models).map(model => {
+  chatModels(models).flatMap(model => {
     const plan = zedTokenPlan(model.limits);
+    // Zed subtracts its reservation from the window and prompts with the rest,
+    // so a window that cannot carry both is a model it would list and refuse on
+    // every request. Better absent from the picker than present and broken.
+    if (plan.maxTokens - (plan.maxOutputTokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS) <= 0) return [];
     // The ceiling is the reservation Zed will actually send, which the band may
     // have shrunk — a budget under the stated limit but over the shrunk one is
     // still one Anthropic rejects on every request.
     const mode = zedThinkingMode(model.chat?.reasoning, plan.maxOutputTokens);
-    return {
+    return [{
       name: model.id,
       display_name: model.display_name,
       max_tokens: plan.maxTokens,
@@ -216,7 +236,7 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
       },
       ...(plan.maxOutputTokens === undefined ? {} : { max_output_tokens: plan.maxOutputTokens }),
       ...(mode === undefined ? {} : { mode }),
-    };
+    }];
   });
 
 // The three API paths `customendpoint` resolves a bare base URL to. Floway

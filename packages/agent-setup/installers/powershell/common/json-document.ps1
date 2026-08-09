@@ -12,7 +12,14 @@
 # still yields the `Ã©` mojibake while this reader yields `é`. (The two runtimes
 # also differ on a truncated trailing sequence — 5.1 drops it, 7.6 substitutes
 # U+FFFD — but that is a decoder detail, not the gap this closes.) The writer
-# beside this uses the same encoding, and ReadAllText strips a BOM if present.
+# beside this uses the same encoding, and ReadAllText strips a UTF-8 BOM if one
+# is present.
+#
+# What it does not do is ignore a UTF-16 or UTF-32 BOM: ReadAllText builds its
+# StreamReader with byte-order-mark detection on, so such a file decodes here
+# and would be rewritten as UTF-8 while jq refuses it outright. Neither editor
+# writes one and no operator has reason to, but the encoding argument is the
+# fallback rather than the rule.
 function Get-SetupFileText {
   param([string]$Path)
   return [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))
@@ -43,15 +50,28 @@ function Test-SetupJsonRoot {
 #
 # Strings are walked rather than stripped by regex, because a value like a model
 # id or a URL contains `//` legitimately. The JSONC arm mirrors
-# _json_has_jsonc_syntax; the strict arm mirrors what jq accepts.
+# _json_has_jsonc_syntax; the strict arm is RFC 8259, which jq implements with
+# two leniencies of its own — it takes `NaN`, `Infinity` and a leading `+`, all
+# refused here. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
+# rejects on both versions, so the Bash half configures it and this one stops.
+# Both are documents no editor writes; the parity this arm buys is over the
+# constructs an operator can actually type.
 function Get-SetupJsonVerdict {
   param([string]$Text)
   $inString = $false
   $escaped = $false
   $comma = $false
+  # The strict verdict is carried rather than returned at once: a document with
+  # both a comment and a lenient construct would otherwise answer on whichever
+  # came first, while the awk scanner only looks for JSONC and always says
+  # `jsonc`. The two halves have to name one cause for one file.
+  $strict = $true
   for ($i = 0; $i -lt $Text.Length; $i++) {
     $ch = $Text[$i]
     if ($inString) {
+      # A raw control character is not allowed inside a JSON string; jq refuses
+      # one and both decoders take it, which is the split this arm exists for.
+      if ([int]$ch -lt 0x20) { $strict = $false }
       if ($escaped) { $escaped = $false }
       elseif ($ch -eq '\') { $escaped = $true }
       elseif ($ch -eq '"') { $inString = $false }
@@ -79,17 +99,17 @@ function Get-SetupJsonVerdict {
         $i += $literal.Length - 1
         continue
       }
-      return 'invalid'
+      $strict = $false
+      continue
     }
     # What remains that JSON allows outside a string: structure, and the
     # characters a number is spelled with. Anything else — a stray form feed, a
     # single quote opening a string, any other letter — is a document jq
     # refuses, and refusing it here is what keeps the two halves from
     # disagreeing about one file.
-    if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) {
-      return 'invalid'
-    }
+    if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) { $strict = $false }
   }
+  if (-not $strict) { return 'invalid' }
   return 'ok'
 }
 

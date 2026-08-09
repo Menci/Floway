@@ -2931,7 +2931,14 @@ for (const { label, document } of [
   { label: 'an unquoted key', document: '{telemetry:{"metrics":false}}' },
   // Spelled only from the letters `true`, `false` and `null` are spelled with,
   // which a character-membership gate would let through.
-  { label: 'an unquoted key spelled from literal letters', document: '{"a":1,"telemetry":{"metrics":false},sane:1}' },
+  // `features` is a real Zed top-level key and is spelled only from the letters
+  // `true`, `false` and `null` use, which a character-membership gate lets by.
+  { label: 'an unquoted key spelled from literal letters', document: '{features:{"a":1}}' },
+  // A document carrying both must name the JSONC cause, not whichever offence
+  // the scan reaches first.
+  { label: 'a lenient construct beside a comment', document: "{'a':1} // and this" },
+  // A raw tab inside a string: jq refuses it, both decoders take it.
+  { label: 'a raw control character in a string', document: '{"telemetry":{"note":"a\tb"}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {

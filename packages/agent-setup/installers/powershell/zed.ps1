@@ -97,9 +97,10 @@ function Write-SetupZedSettings {
     if ($verdict -eq 'jsonc') {
       Stop-Setup "$($script:ZedSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
     }
-    # Newtonsoft would take a single-quoted string or an unquoted key and write
-    # the document back in canonical form, where jq refuses it outright — so the
-    # verdict decides, not the decoder, and the sentence matches the Bash half's.
+    # Both decoders take a single-quoted string and an unquoted key — measured
+    # on 5.1.26100.8875 and pwsh 7.7 — and would write the document back in
+    # canonical form where jq refuses it outright. So the verdict decides, not
+    # the decoder, and the sentence matches the Bash half's.
     if ($verdict -eq 'invalid') {
       Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched."
     }
