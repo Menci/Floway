@@ -47,10 +47,10 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // accepts and nothing else.
 // https://docs.claude.com/en/docs/claude-code/settings
 const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>[];
-// Restated rather than imported: the dashboard may not runtime-import
-// @floway-dev/agent-setup, so this mirrors `editorProviderName`'s bound in
-// packages/agent-setup/src/configuration.ts. It only stops typing early — the
-// gateway still enforces the rule.
+// Restated rather than imported: the dashboard reaches @floway-dev/agent-setup
+// only through its `/models` subpath, and `editorProviderName` lives in
+// configuration.ts alongside the route factories, which are not on that
+// surface. It only stops typing early — the gateway still enforces the rule.
 const PROVIDER_NAME_MAX_LENGTH = 120;
 // Mirrors `editorProviderName` at the gateway, and is the single condition both
 // the error state and the draft gate ask. A text input strips only CR and LF, so

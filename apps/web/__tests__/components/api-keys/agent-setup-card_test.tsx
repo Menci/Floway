@@ -52,6 +52,12 @@ const clipboard = { copy: vi.fn(), outcomeFor: () => 'idle' as const };
 
 const PICK_SECOND_KEY = 'pick the second key';
 
+// What a stubbed fetch was asked to send. A field that shows an error while the
+// value is already on its way is the failure these tests exist to catch, so the
+// assertion has to read the request rather than the screen.
+const requestBodies = (fetchMock: { mock: { calls: unknown[][] } }): string[] =>
+  fetchMock.mock.calls.map(call => String((call[1] as RequestInit | undefined)?.body ?? ''));
+
 const Host = () => {
   const [keyId, setKeyId] = useState('key-1');
   return <>
@@ -99,7 +105,7 @@ describe('Agent Setup card fields', () => {
 describe('Zed provider name', () => {
   const showZedTab = () => { act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); }); };
 
-  it('reports a padded name at the field and withholds it from the draft', () => {
+  it('reports a padded name at the field and withholds it from the draft', async () => {
     const saved = vi.fn(() => new Promise<Response>(() => {}));
     renderInApp(<Host />);
     showZedTab();
@@ -112,14 +118,18 @@ describe('Zed provider name', () => {
     });
     expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
     expect(input.value).toBe('Floway ');
+
+    // The half of the name this test claims: past the save debounce, nothing
+    // carrying the padding may have left.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    expect(requestBodies(saved).some(body => body.includes('Floway '))).toBe(false);
     vi.unstubAllGlobals();
   });
 
   // A text input strips only CR and LF, so a tab pasted from a spreadsheet
-  // reaches the field. The gateway rejects it with a 400 that is not retryable.
-  // Named for what matters: showing the error is not the guarantee — never
-  // sending the value is. The gateway rejects it with a 400 that is not
-  // retryable, so a value that reaches the draft strands the lease.
+  // reaches the field. Showing the error is not the guarantee — never sending
+  // the value is: the gateway rejects it with a 400 that is not retryable, so a
+  // value that reaches the draft strands the lease.
   it('withholds a name carrying a control character', async () => {
     const sent = vi.fn(() => new Promise<Response>(() => {}));
     renderInApp(<Host />);
@@ -134,8 +144,7 @@ describe('Zed provider name', () => {
 
     // Past the save debounce: nothing carrying the tab may have left.
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
-    const bodies = sent.mock.calls.map(call => String((call as unknown as [string, RequestInit])[1]?.body ?? ''));
-    expect(bodies.some(body => body.includes('Ops\\tbox') || body.includes('Ops\tbox'))).toBe(false);
+    expect(requestBodies(sent).some(body => body.includes('Ops\\tbox') || body.includes('Ops\tbox'))).toBe(false);
     vi.unstubAllGlobals();
   });
 

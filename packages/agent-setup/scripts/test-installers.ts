@@ -2752,7 +2752,7 @@ test('zed', 'preserves the settings file mode through a write and through a refu
 // A case-only rename must leave exactly one provider, under the new name, in
 // both halves. The PowerShell property bag cannot hold `Floway` beside
 // `floway`, so keeping the old key is not something the two can agree on —
-// and dropping it is the better outcome anyway: a stale entry in Zed`s picker
+// and dropping it is the better outcome anyway: a stale entry in the Zed picker
 // points at a provider whose credential no longer matches its name.
 test('zed', 'a case-only rename leaves one provider in both halves', async t => {
   const runHalf = async (which: 'bash' | 'powershell') => {
@@ -2781,7 +2781,7 @@ test('zed', 'a case-only rename leaves one provider in both halves', async t => 
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
 });
 
-// Zed reads this file with serde_json_lenient, so a comment is the operator`s
+// Zed reads this file with serde_json_lenient, so a comment is the operator's
 // own content. jq refuses such a document; PowerShell 7 accepts it and drops
 // the comment on the way out, which is data loss reported as success. Both
 // halves refuse it, and neither mistakes a `//` inside a value for one.
@@ -2814,12 +2814,8 @@ test('zed', 'both halves refuse a settings document carrying JSONC comments', as
   t.equal(ok.code, 0, `a URL in a value is not a comment:\n${ok.combined}`);
 });
 
-// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
-// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
-// rewritten as an object with the array silently discarded, while jq refuses
-// it. Both halves decide the root from the text.
 // A file this run creates is ours to set. Bash gets owner-only from the
-// installer`s own umask; PowerShell would otherwise take the ambient one and
+// installer's own umask; PowerShell would otherwise take the ambient one and
 // write 0644, so the same fresh install would land two different modes.
 test('zed', 'both halves create a new settings file owner-only', async t => {
   if (process.platform === 'win32') skip('POSIX modes only');
@@ -2835,6 +2831,10 @@ test('zed', 'both halves create a new settings file owner-only', async t => {
   }
 });
 
+// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
+// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
+// rewritten as an object with the array silently discarded, while jq refuses
+// it. Both halves decide the root from the text.
 test('zed', 'both halves refuse an array root', async t => {
   const arrayRoot = '[{"telemetry":{"metrics":false}}]';
   const runHalf = async (which: 'bash' | 'powershell') => {
