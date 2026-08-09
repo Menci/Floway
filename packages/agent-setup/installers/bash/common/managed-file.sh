@@ -33,8 +33,13 @@ _json_has_comment() {
 # A file's permission bits as an octal string, or empty when neither stat
 # dialect answers. GNU takes `-c`, BSD takes `-f`; a caller that gets nothing
 # leaves the mode alone rather than guessing one.
+#
+# `-L` because a managed document may be a symlink — chezmoi and stow both place
+# one — and stat without it reports the link's own 0755 rather than the target's
+# mode. This is the only mode source on BSD, where `chmod --reference` does not
+# exist, so without it a run would widen the file it was asked to preserve.
 _stat_mode() {
-  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf ''
+  stat -L -c '%a' "$1" 2>/dev/null || stat -L -f '%Lp' "$1" 2>/dev/null || printf ''
 }
 
 # Rollback retains a backup when restoration fails so manual recovery remains
