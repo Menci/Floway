@@ -148,16 +148,25 @@ describe('Zed provider name', () => {
     vi.unstubAllGlobals();
   });
 
-  it('accepts a valid name', () => {
+  // The mirror of the two withholding cases: showing no error is not the
+  // guarantee, reaching the draft is. A name held back never reaches the served
+  // script or the pasted snippet, and nothing on screen would say so.
+  it('sends a valid name to the draft', async () => {
+    const sent = vi.fn(() => new Promise<Response>(() => {}));
     renderInApp(<Host />);
     showZedTab();
     const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', sent);
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway prod');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     expect(screen.queryByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeNull();
     expect(input.value).toBe('Floway prod');
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    expect(requestBodies(sent).some(body => body.includes('"providerName":"Floway prod"'))).toBe(true);
+    vi.unstubAllGlobals();
   });
 
   // The local hold exists only to keep an invalid value out of the draft. It is

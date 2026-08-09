@@ -88,7 +88,13 @@ describe('renderShellPrefix', () => {
       editorModels: ZED_MODELS,
     });
     expect(prefix).toContain("SETUP_ZED_PROVIDER_NAME='Ops'\\'' box'");
-    expect(prefix).toContain(`SETUP_ZED_MODELS='${JSON.stringify(ZED_MODELS)}'`);
+    // Spelled out rather than recomputed with JSON.stringify: an expectation
+    // built by the production serializer follows it through any change of key
+    // order or spacing, which is exactly what jq's --slurpfile would then have
+    // to parse differently.
+    expect(prefix).toContain(`SETUP_ZED_MODELS='[{"name":"${ZED_MODELS[0]!.name}",`);
+    expect(prefix).toContain('"capabilities":{"tools":true,');
+    expect(prefix).not.toContain('SETUP_ZED_MODELS=\'[\n');
     expect(prefix).not.toContain('SETUP_CLAUDE_');
     expect(prefix).not.toContain('SETUP_CODEX_');
   });
