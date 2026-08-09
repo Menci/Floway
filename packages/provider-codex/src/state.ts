@@ -18,6 +18,9 @@ export interface CodexAccessTokenEntry {
   // the claim. It is absent only when no refresh has supplied it and legacy
   // state has none, in which case callers use the import-time identity.
   planType?: string;
+  // Observation time for planType, independent from the token's refreshedAt
+  // so out-of-order token writes cannot promote an older plan observation.
+  planObservedAt?: string;
 }
 
 // Most recent quota observation derived from upstream response headers.
@@ -95,6 +98,7 @@ const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> =
   expiresAt: true,
   refreshedAt: true,
   planType: true,
+  planObservedAt: true,
 };
 
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CodexQuotaSnapshotEntry, true> = {
@@ -123,6 +127,12 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
   }
   if (obj.planType !== undefined && (typeof obj.planType !== 'string' || obj.planType === '')) {
     throw new TypeError(`${where}.planType must be a non-empty string when present`);
+  }
+  if (obj.planObservedAt !== undefined && (typeof obj.planObservedAt !== 'string' || obj.planObservedAt === '')) {
+    throw new TypeError(`${where}.planObservedAt must be a non-empty string when present`);
+  }
+  if (obj.planObservedAt !== undefined && obj.planType === undefined) {
+    throw new TypeError(`${where}.planObservedAt requires planType`);
   }
 };
 

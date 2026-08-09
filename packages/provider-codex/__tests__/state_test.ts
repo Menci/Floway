@@ -93,6 +93,9 @@ describe('assertCodexUpstreamState', () => {
     expect(() => assertCodexUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planType: '' } }],
     })).toThrow(/planType/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planObservedAt: 'x' } }],
+    })).toThrow(/requires planType/);
   });
 
   test('accepts quotaSnapshot absent / null / populated', () => {

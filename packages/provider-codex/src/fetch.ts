@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -97,21 +97,26 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
 export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  const effectivePlanType = ready.accessToken.planType ?? opts.fallbackPlanType;
-  if (!codexPlanSupportsImages(effectivePlanType)) return imageUnavailableResult(opts.model.id);
+  const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
+  if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlanType, false);
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
 };
 
 export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  const effectivePlanType = ready.accessToken.planType ?? opts.fallbackPlanType;
-  if (!codexPlanSupportsImages(effectivePlanType)) return imageUnavailableResult(opts.model.id);
+  const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
+  if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlanType, false);
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
 };
+
+const accessTokenPlan = (entry: CodexAccessTokenEntry): CodexPlanObservation | null =>
+  entry.planType === undefined
+    ? null
+    : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
 
 // Pre-fetch gates + initial access-token mint.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
@@ -455,7 +460,7 @@ const dispatchCodexImageCall = async (
 // result also resolves the latest plan metadata used to authorize the retry.
 const refreshAccessTokenForRetry = async (
   opts: CodexBackendCallBase,
-  fallbackPlanType?: string,
+  fallbackPlan?: CodexPlanObservation,
 ): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
@@ -464,7 +469,9 @@ const refreshAccessTokenForRetry = async (
       opts.upstreamId,
       opts.account.chatgptAccountId,
       minted,
-      fallbackPlanType ?? opts.account.accessToken?.planType,
+      fallbackPlan ?? (opts.account.accessToken === null || opts.account.accessToken === undefined
+        ? undefined
+        : accessTokenPlan(opts.account.accessToken) ?? undefined),
     );
     return { ok: true, accessToken: effective };
   } catch (err) {
@@ -579,16 +586,16 @@ const performImageCall = async (
   path: string,
   body: Record<string, unknown>,
   turnId: string,
-  effectivePlanType: string,
+  effectivePlan: CodexPlanObservation,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, effectivePlanType);
+    const fresh = await refreshAccessTokenForRetry(opts, effectivePlan);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    const refreshedPlanType = fresh.accessToken.planType ?? effectivePlanType;
-    if (!codexPlanSupportsImages(refreshedPlanType)) return imageUnavailableResult(opts.model.id);
-    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, refreshedPlanType, true);
+    const refreshedPlan = accessTokenPlan(fresh.accessToken) ?? effectivePlan;
+    if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
+    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, refreshedPlan, true);
   }
   return { modelKey: opts.model.id, response };
 };

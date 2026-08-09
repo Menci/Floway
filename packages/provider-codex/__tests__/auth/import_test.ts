@@ -37,6 +37,7 @@ describe('importCodexFromAuthJson', () => {
     expect(result.state.accounts[0].state).toBe('active');
     expect(result.state.accounts[0].accessToken?.token).toBe('at1');
     expect(result.state.accounts[0].accessToken?.planType).toBe('plus');
+    expect(result.state.accounts[0].accessToken?.planObservedAt).toBe(result.state.accounts[0].accessToken?.refreshedAt);
     expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
     expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
@@ -65,6 +66,7 @@ describe('importCodexFromCallback', () => {
     expect(result.state.accounts[0].refresh_token).toBe('rt');
     expect(result.state.accounts[0].accessToken?.token).toBe('at');
     expect(result.state.accounts[0].accessToken?.planType).toBe('plus');
+    expect(result.state.accounts[0].accessToken?.planObservedAt).toBe(result.state.accounts[0].accessToken?.refreshedAt);
     expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 

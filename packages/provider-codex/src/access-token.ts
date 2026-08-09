@@ -13,13 +13,52 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
-const preserveCodexAccessTokenPlan = (
-  entry: CodexAccessTokenEntry,
-  previousPlanType: string | undefined,
-): CodexAccessTokenEntry =>
-  entry.planType === undefined && previousPlanType !== undefined
-    ? { ...entry, planType: previousPlanType }
-    : entry;
+export interface CodexPlanObservation {
+  planType: string;
+  observedAt?: string;
+}
+
+const planObservation = (entry: CodexAccessTokenEntry | null | undefined): CodexPlanObservation | null =>
+  entry?.planType === undefined
+    ? null
+    : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
+
+const observationTime = (observation: CodexPlanObservation): number => {
+  const parsed = observation.observedAt === undefined ? Number.NaN : Date.parse(observation.observedAt);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+};
+
+const latestPlanObservation = (
+  first: CodexPlanObservation | null,
+  second: CodexPlanObservation | null,
+  fallback: CodexPlanObservation | undefined,
+): CodexPlanObservation | null => {
+  const observations = [first, second].filter((value): value is CodexPlanObservation => value !== null);
+  if (observations.length === 0) return fallback ?? null;
+  return observations.reduce((latest, candidate) =>
+    observationTime(candidate) > observationTime(latest) ? candidate : latest);
+};
+
+const mergeCodexAccessTokenEntry = (
+  incoming: CodexAccessTokenEntry,
+  current: CodexAccessTokenEntry | null | undefined,
+  fallbackPlan: CodexPlanObservation | undefined,
+): CodexAccessTokenEntry => {
+  const incomingTime = Date.parse(incoming.refreshedAt);
+  const currentTime = current === null || current === undefined ? Number.NEGATIVE_INFINITY : Date.parse(current.refreshedAt);
+  const token = Number.isFinite(currentTime) && (!Number.isFinite(incomingTime) || currentTime >= incomingTime)
+    ? current!
+    : incoming;
+  const plan = latestPlanObservation(planObservation(incoming), planObservation(current), fallbackPlan);
+  const { planType: _planType, planObservedAt: _planObservedAt, ...tokenFields } = token;
+  return plan === null
+    ? tokenFields
+    : {
+        ...tokenFields,
+        planType: plan.planType,
+        ...(plan.observedAt === undefined ? {} : { planObservedAt: plan.observedAt }),
+      };
+};
 
 // The whole change is expressed against the state the repo hands us, so a
 // write that loses its race is simply replayed against the winner's document
@@ -30,7 +69,7 @@ const persistAccessToken = async (
   accountId: string,
   entry: CodexAccessTokenEntry | null,
   where: string,
-  fallbackPlanType?: string,
+  fallbackPlan?: CodexPlanObservation,
 ): Promise<CodexAccessTokenEntry | null> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
@@ -48,23 +87,10 @@ const persistAccessToken = async (
       // Invalidating an already-null slot has nothing to write — the case where
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
-      const currentEntry = state.accounts[idx].accessToken;
-      if (entry !== null && currentEntry !== null && currentEntry !== undefined) {
-        const incomingObservedAt = Date.parse(entry.refreshedAt);
-        const currentObservedAt = Date.parse(currentEntry.refreshedAt);
-        // OAuth refreshes may finish their access-token writes out of order.
-        // Keep the later observation (and return it to the caller) so an older
-        // explicit plan/token pair cannot overwrite a newer one during replay.
-        if (Number.isFinite(incomingObservedAt) && Number.isFinite(currentObservedAt) && currentObservedAt >= incomingObservedAt) {
-          effectiveEntry = preserveCodexAccessTokenPlan(currentEntry, entry.planType);
-          return effectiveEntry === currentEntry
-            ? current
-            : replaceCodexAccount(state, idx, account => ({ ...account, accessToken: effectiveEntry }));
-        }
-      }
       effectiveEntry = entry === null
         ? null
-        : preserveCodexAccessTokenPlan(entry, state.accounts[idx].accessToken?.planType ?? fallbackPlanType);
+        : mergeCodexAccessTokenEntry(entry, state.accounts[idx].accessToken, fallbackPlan);
+      if (JSON.stringify(effectiveEntry) === JSON.stringify(state.accounts[idx].accessToken)) return current;
       return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: effectiveEntry }));
     });
   } catch (err) {
@@ -85,9 +111,9 @@ export const putCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
   entry: CodexAccessTokenEntry,
-  fallbackPlanType?: string,
+  fallbackPlan?: CodexPlanObservation,
 ): Promise<CodexAccessTokenEntry> =>
-  (await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken', fallbackPlanType)) ?? entry;
+  (await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken', fallbackPlan)) ?? entry;
 
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
@@ -177,7 +203,7 @@ const ensureCodexAccessTokenInner = async (
     accountId,
     minted,
     'ensureCodexAccessToken',
-    account.accessToken?.planType,
+    planObservation(account.accessToken) ?? undefined,
   )) ?? minted;
 };
 
@@ -232,10 +258,11 @@ export const mintCodexAccessToken = async (
   const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
   await persistRefreshTokenRotation(tokens.refresh_token);
   const planType = parseCodexIdTokenPlanType(tokens.id_token);
+  const refreshedAt = new Date().toISOString();
   return {
     token: tokens.access_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,
-    refreshedAt: new Date().toISOString(),
-    ...(planType === undefined ? {} : { planType }),
+    refreshedAt,
+    ...(planType === undefined ? {} : { planType, planObservedAt: refreshedAt }),
   };
 };

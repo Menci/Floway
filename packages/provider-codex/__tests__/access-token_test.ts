@@ -78,7 +78,7 @@ describe('putCodexAccessToken', () => {
       }],
     });
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
-    const effective = await putCodexAccessToken(upstreamId, accountId, entry, 'team');
+    const effective = await putCodexAccessToken(upstreamId, accountId, entry, { planType: 'team' });
     expect(effective.planType).toBe('free');
     expect(storedState().accounts[0].accessToken?.planType).toBe('free');
   });
@@ -101,8 +101,9 @@ describe('putCodexAccessToken', () => {
       planType: olderPlan,
     };
     const effective = await putCodexAccessToken(upstreamId, accountId, older);
-    expect(effective).toEqual(newer);
-    expect(storedState().accounts[0].accessToken).toEqual(newer);
+    const expected = { ...newer, planObservedAt: newer.refreshedAt };
+    expect(effective).toEqual(expected);
+    expect(storedState().accounts[0].accessToken).toEqual(expected);
   });
 
   test.each(['free', 'team'])('keeps the newer token while merging an older explicit %s plan', async olderPlan => {
@@ -119,8 +120,38 @@ describe('putCodexAccessToken', () => {
       planType: olderPlan,
     };
     const effective = await putCodexAccessToken(upstreamId, accountId, older);
-    expect(effective).toEqual({ ...newer, planType: olderPlan });
-    expect(storedState().accounts[0].accessToken).toEqual({ ...newer, planType: olderPlan });
+    const expected = { ...newer, planType: olderPlan, planObservedAt: older.refreshedAt };
+    expect(effective).toEqual(expected);
+    expect(storedState().accounts[0].accessToken).toEqual(expected);
+  });
+
+  test('orders token and explicit plan observations independently', async () => {
+    const tokenOnly: CodexAccessTokenEntry = {
+      token: 'at_t3',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:03.000Z',
+    };
+    await putCodexAccessToken(upstreamId, accountId, tokenOnly);
+    await putCodexAccessToken(upstreamId, accountId, {
+      token: 'at_t1',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: 'free',
+      planObservedAt: '2026-08-10T00:00:01.000Z',
+    });
+    const effective = await putCodexAccessToken(upstreamId, accountId, {
+      token: 'at_t2',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(effective).toEqual({
+      ...tokenOnly,
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(storedState().accounts[0].accessToken).toEqual(effective);
   });
 
   test('propagates storage failures so the request path surfaces them', async () => {
@@ -284,6 +315,7 @@ describe('mintCodexAccessToken', () => {
     const persistRotation = vi.fn(async () => {});
     const entry = await mintCodexAccessToken('rt_v1', directFetcher, persistRotation);
     expect(entry.planType).toBe('team');
+    expect(entry.planObservedAt).toBe(entry.refreshedAt);
     expect(persistRotation).toHaveBeenCalledWith('rt_v2');
   });
 
