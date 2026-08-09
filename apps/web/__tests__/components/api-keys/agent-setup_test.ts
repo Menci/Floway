@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentClaudeSnippet, buildAgentCodexSnippet } from '../../../src/components/api-keys/agent-setup';
+import { buildAgentClaudeSnippet, buildAgentCodexSnippet, zedWindowsCredentialSnippet } from '../../../src/components/api-keys/agent-setup';
+import { ZED_CREDENTIAL_CSHARP } from '@floway-dev/agent-setup/zed-credential';
 
 describe('Agent Setup snippets', () => {
   it('renders selected Codex model and reasoning effort', () => {
@@ -87,5 +88,31 @@ describe('Agent Setup snippets', () => {
       cleanupPeriodDays: 365,
       attribution: { commit: '', pr: '', sessionUrl: false },
     });
+  });
+});
+
+// The pasted snippet and the installer both define `FlowayZedCredential` and
+// both guard on the type already being in the AppDomain, so in one console
+// whichever ran first defines it for the other. Any difference between them is
+// therefore a silent substitution rather than an error, and the installer would
+// end up running the snippet's version.
+describe('Zed Windows credential snippet', () => {
+  it('emits the installer own C#, not a copy of it', () => {
+    const snippet = zedWindowsCredentialSnippet('https://gateway.example', 'sk-test');
+    expect(snippet).toContain(ZED_CREDENTIAL_CSHARP.trimEnd());
+  });
+
+  // The scrubbing is in `finally`, so a CredWriteW that throws does not leave
+  // the key sitting in the block the next line frees.
+  it('zeroes the blob on the failure path too', () => {
+    const finallyAt = ZED_CREDENTIAL_CSHARP.indexOf('} finally {');
+    expect(finallyAt).toBeGreaterThan(-1);
+    expect(ZED_CREDENTIAL_CSHARP.indexOf('Marshal.WriteByte(blob, i, 0)')).toBeGreaterThan(finallyAt);
+  });
+
+  it('doubles a single quote in the key and the target', () => {
+    const snippet = zedWindowsCredentialSnippet("https://gateway.example/it's", "sk-it's");
+    expect(snippet).toContain("'zed:url=https://gateway.example/it''s'");
+    expect(snippet).toContain("GetBytes('sk-it''s')");
   });
 });

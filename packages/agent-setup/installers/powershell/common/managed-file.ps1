@@ -10,12 +10,24 @@
 # bounds a link cycle, which the framework call would raise on.
 function Resolve-SetupManagedPath {
   param([string]$Path)
-  for ($hops = 0; $hops -le 40; $hops++) {
+  for ($hops = 0; $hops -lt 40; $hops++) {
+    # LinkType, not merely a non-empty Target: on the Windows PowerShell 5.1
+    # build Target also enumerates a file's hard-link names. Measured there
+    # (5.1.26100.8875): a file with only its own name reports Target empty, and
+    # one given a second name with `mklink /H` reports that name — so the loop
+    # below would resolve such a document to itself until the hop bound tripped
+    # and the run stopped having configured nothing. LinkType reads HardLink
+    # there and SymbolicLink for a real link, which is the question `[ -L ]`
+    # asks on the other half.
     $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item -or [string]::IsNullOrEmpty($item.Target)) { return $Path }
+    if ($null -eq $item -or $item.LinkType -ne 'SymbolicLink') { return $Path }
     $target = @($item.Target)[0]
-    $Path = if ([System.IO.Path]::IsPathRooted($target)) { $target }
-            else { [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Path) $target)) }
+    # Canonicalized on both branches, not just the relative one: the prune
+    # compares this against Get-ChildItem's own canonical FullName, so a target
+    # written with a `..` segment — which is how a dotfile manager may well
+    # write it — would match nothing there and take the backup meant to be kept.
+    $Path = [System.IO.Path]::GetFullPath(
+      $(if ([System.IO.Path]::IsPathRooted($target)) { $target } else { Join-Path (Split-Path -Parent $Path) $target }))
   }
   Stop-Setup "$Path does not resolve to a file: too many symlink hops."
 }
@@ -74,20 +86,28 @@ function Restore-SetupManagedFile {
   }
 }
 
-# Anything under the backup prefix that is not a file is refused rather than
-# removed or skipped. This installer only ever creates files there, so a
-# directory is a state nobody here produced and deleting it recursively could
-# take something of the operator's with it. `-File` would have skipped it and
-# reported success, while the Bash half's `rm -f` fails on it and rolls the
-# write back — one run's outcome must not depend on which half served it.
+# A directory under the backup prefix is refused rather than removed or skipped.
+# This installer only ever creates files there, so a directory is a state nobody
+# here produced and removing it recursively could take something of the
+# operator's along. `-File` would have skipped it and reported success, while
+# the Bash half's `rm -f` fails on it — one run's outcome must not depend on
+# which half served it.
+#
+# The question is link-ness, not which wrapper .NET chose: a symlink pointing at
+# a directory arrives as DirectoryInfo but unlinks like any other entry, which
+# is what `rm -f` does with it on the other half.
 function Remove-SetupOlderBackups {
   param([string]$Path, [string]$Keep)
   $directory = Split-Path -Parent $Path
   $prefix = [System.IO.Path]::GetFileName($Path) + '.floway-backup.'
+  # Empty when this run made no backup, and GetFullPath rejects an empty path.
+  $keepFull = if ([string]::IsNullOrEmpty($Keep)) { $Keep } else { [System.IO.Path]::GetFullPath($Keep) }
   Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop |
-    Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
+    Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $keepFull } |
     ForEach-Object {
-      if ($_ -isnot [System.IO.FileInfo]) { throw "could not remove obsolete backup $($_.FullName)" }
+      if ($_ -is [System.IO.DirectoryInfo] -and $null -eq $_.LinkType) {
+        throw "could not remove obsolete backup $($_.FullName)"
+      }
       Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
     }
 }

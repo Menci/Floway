@@ -1,12 +1,17 @@
-# Does this JSON file carry a `//` or `/*` comment outside a string? Both
-# editors read their managed document with a JSONC-tolerant parser, so a comment
-# is the operator's content — but jq has no JSONC mode and would refuse the file
-# while naming the wrong cause. Strings are walked rather than matched by
-# pattern, because a value like a URL contains `//` legitimately. Mirrors
-# Test-SetupJsonHasComment on the PowerShell side.
-_json_has_comment() {
+# Does this JSON file use a JSONC construct — a `//` or `/*` comment, or a
+# comma before a closing brace or bracket? Both editors read their managed
+# document with a parser that accepts these (Zed's serde_json_lenient, VS Code's
+# `allowTrailingComma` visitor), so they are the operator's content, but jq has
+# no lenient mode and would refuse the file while naming the wrong cause.
+#
+# ConvertFrom-Json accepts a trailing comma and would have gone on to rewrite
+# the file without it, so refusing is also what keeps the two halves from
+# reaching opposite verdicts on one document. Strings are walked rather than
+# matched by pattern, because a value like a URL contains `//` legitimately.
+# Mirrors Test-SetupJsonHasJsoncSyntax on the PowerShell side.
+_json_has_jsonc_syntax() {
   awk '
-    BEGIN { in_string = 0; escaped = 0; found = 0 }
+    BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0 }
     {
       for (i = 1; i <= length($0); i++) {
         c = substr($0, i, 1)
@@ -16,11 +21,17 @@ _json_has_comment() {
           else if (c == "\"") { in_string = 0 }
           continue
         }
-        if (c == "\"") { in_string = 1; continue }
         if (c == "/") {
           n = substr($0, i + 1, 1)
           if (n == "/" || n == "*") { found = 1; exit }
         }
+        # A comma survives across lines, because `,\n}` is how a trailing comma
+        # is usually written.
+        if (c == ",") { comma = 1; continue }
+        if (c == " " || c == "\t" || c == "\r") { continue }
+        if (comma && (c == "}" || c == "]")) { found = 1; exit }
+        comma = 0
+        if (c == "\"") { in_string = 1 }
       }
       escaped = 0
     }
@@ -94,7 +105,10 @@ _prune_managed_backups() {
   _pmb_path=$1
   _pmb_keep=$2
   for _pmb_backup in "$_pmb_path".floway-backup.*; do
-    [ -e "$_pmb_backup" ] || continue
+    # `-e` alone follows the link, so a leftover pointing at nothing would be
+    # skipped here and never removed; `-L` asks about the entry itself. The
+    # PowerShell half enumerates the directory and sees both the same way.
+    { [ -e "$_pmb_backup" ] || [ -L "$_pmb_backup" ]; } || continue
     [ "$_pmb_backup" = "$_pmb_keep" ] && continue
     if ! rm -f "$_pmb_backup"; then
       out_error "could not remove obsolete backup $_pmb_backup"

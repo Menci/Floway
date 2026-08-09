@@ -63,6 +63,21 @@ function Restore-SetupZedSettings {
 # existing document, back it up, build and validate the replacement beside it,
 # then rename it into place. Only the one provider key is touched; every other
 # setting in the file survives.
+# Folds A-Z and nothing else, which is what jq's ascii_downcase does. `-ieq`
+# folds Unicode case as well and would call FLOWÄY and flowäy the same name
+# where jq calls them different ones — one half then leaves two entries in the
+# picker and the other leaves one, from the same rename.
+function Test-SetupAsciiCaseEquals {
+  param([string]$Left, [string]$Right)
+  $fold = {
+    param([string]$Value)
+    -join ($Value.ToCharArray() | ForEach-Object {
+      if ($_ -ge [char]'A' -and $_ -le [char]'Z') { [char]([int]$_ + 32) } else { $_ }
+    })
+  }
+  return [string]::Equals((& $fold $Left), (& $fold $Right), [System.StringComparison]::Ordinal)
+}
+
 function Write-SetupZedSettings {
   $script:ZedSettingsPath = Resolve-SetupManagedPath (Join-Path $script:ZedConfigDir 'global_settings.json')
   $script:ZedSettingsBackup = $null
@@ -72,12 +87,14 @@ function Write-SetupZedSettings {
     $script:ZedSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
     # PowerShell 7 accepts JSONC comments and drops them on the way out, while
-    # 5.1 errors and jq refuses — three behaviors for one document. Zed reads
-    # this file with serde_json_lenient, so a comment is the operator's content
-    # and silently deleting it is data loss. Refuse, as the Bash half does.
+    # 5.1 errors and jq refuses — three behaviors for one document. A trailing
+    # comma splits the halves the same way: ConvertFrom-Json takes it and jq
+    # does not. Zed reads this file with serde_json_lenient, so both are the
+    # operator's content and silently deleting either is data loss. Refuse, as
+    # the Bash half does.
     # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/fallible_options.rs#L11-L19
-    if (Test-SetupJsonHasComment $raw) {
-      Stop-Setup "$($script:ZedSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
+    if (Test-SetupJsonHasJsoncSyntax $raw) {
+      Stop-Setup "$($script:ZedSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
     }
     # The root is judged from the text before anything is decoded: an empty file
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
@@ -137,7 +154,16 @@ function Write-SetupZedSettings {
     # Removing and re-adding also puts the entry last, as the jq merge does.
     $bag = $document.language_models.anthropic_compatible
     foreach ($existing in @($bag.PSObject.Properties.Name)) {
-      if ($existing -ieq $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+      if (Test-SetupAsciiCaseEquals $existing $SetupZedProviderName) { $bag.PSObject.Properties.Remove($existing) }
+    }
+    # What survives the fold above and still collides is a name differing only
+    # outside ASCII. A property bag is Unicode case-insensitive and cannot hold
+    # both, so this document is one PowerShell cannot express — jq writes it
+    # without complaint. Refuse rather than remove someone else's provider to
+    # make room, and say which name is in the way.
+    $collision = @($bag.PSObject.Properties.Name) | Where-Object { $_ -ieq $SetupZedProviderName } | Select-Object -First 1
+    if ($null -ne $collision) {
+      Stop-Setup "$($script:ZedSettingsPath) already holds a provider named `"$collision`", which PowerShell cannot keep beside `"$SetupZedProviderName`"; rename one of them and run this again."
     }
     $bag | Add-Member -NotePropertyName $SetupZedProviderName -NotePropertyValue ([PSCustomObject]@{
       api_url = Get-SetupZedApiUrl
@@ -201,53 +227,9 @@ function Write-SetupZedSettings {
 #
 # Windows keeps it as a generic credential whose target name Zed builds as
 # "zed:url=" + api_url. The blob must be UTF-8 — Zed runs `str::from_utf8` over
-# it — which rules out `cmdkey`, whose blob is UTF-16LE.
+# it — which rules out `cmdkey`, whose blob is UTF-16LE. The C# that does the
+# write is in common/zed-credential.ps1, shared with the dashboard's snippet.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
-$SetupZedCredWriteSource = @'
-using System;
-using System.Runtime.InteropServices;
-
-public static class FlowayZedCredential {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  private struct CREDENTIAL {
-    public uint Flags;
-    public uint Type;
-    public string TargetName;
-    public string Comment;
-    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-    public uint CredentialBlobSize;
-    public IntPtr CredentialBlob;
-    public uint Persist;
-    public uint AttributeCount;
-    public IntPtr Attributes;
-    public string TargetAlias;
-    public string UserName;
-  }
-
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-  private static extern bool CredWriteW(ref CREDENTIAL credential, uint flags);
-
-  public static void Write(string targetName, string userName, byte[] secret) {
-    IntPtr blob = Marshal.AllocHGlobal(secret.Length);
-    try {
-      Marshal.Copy(secret, 0, blob, secret.Length);
-      CREDENTIAL credential = new CREDENTIAL();
-      credential.Type = 1;              // CRED_TYPE_GENERIC
-      credential.TargetName = targetName;
-      credential.CredentialBlobSize = (uint)secret.Length;
-      credential.CredentialBlob = blob;
-      credential.Persist = 2;           // CRED_PERSIST_LOCAL_MACHINE
-      credential.UserName = userName;
-      if (!CredWriteW(ref credential, 0)) {
-        throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-      }
-    } finally {
-      for (int i = 0; i < secret.Length; i++) { Marshal.WriteByte(blob, i, 0); }
-      Marshal.FreeHGlobal(blob);
-    }
-  }
-}
-'@
 
 function Set-SetupZedCredentialWindows {
   # Add-Type accepts a byte-identical re-add by returning its cached type and

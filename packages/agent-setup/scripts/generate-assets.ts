@@ -54,6 +54,7 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_OUTPUT', file: 'installers/powershell/common/output.ps1' },
       { name: 'SETUP_POWERSHELL_COMMON_PLATFORM', file: 'installers/powershell/common/platform.ps1', end: 'function Get-SetupPlatform' },
       { name: 'SETUP_POWERSHELL_COMMON_JSON_DOCUMENT', file: 'installers/powershell/common/json-document.ps1', append: '\n' },
+      { name: 'SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL', file: 'installers/powershell/common/zed-credential.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', end: '# --- run' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', end: '# Rollback retains' },
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Run a fixed package-manager' },

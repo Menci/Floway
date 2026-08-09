@@ -18,9 +18,10 @@ ZED_SETTINGS_MERGE_PROGRAM='
       # keys at once — adding `Floway` beside `floway` replaces it — so a half
       # that kept both would be a half that disagrees. Aligning here also means
       # a case-only rename stops leaving a stale provider in the Zed picker.
-      # ASCII case is what both sides fold; a non-ASCII case variant is left
-      # alone by jq and replaced by PowerShell, which no operator has reason to
-      # construct.
+      # ASCII case, on both halves: `ascii_downcase` folds A-Z and nothing else,
+      # and the PowerShell half folds the same range by hand rather than with
+      # `-ieq`, which would call FLOWÄY and flowäy one name where this calls
+      # them two.
       ((. // {}) | with_entries(select((.key | ascii_downcase) != ($providerName | ascii_downcase))))
       + { ($providerName): { "api_url": $apiUrl, "available_models": $models[0] } }
     )
@@ -111,11 +112,11 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
-    # Zed reads this file with serde_json_lenient, so a comment is the
-    # operator's content and jq is about to refuse it. Name that cause rather
-    # than reporting a malformed object.
-    if _json_has_comment "$ZED_SETTINGS_PATH"; then
-      out_error "$ZED_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
+    # Zed reads this file with serde_json_lenient, so a comment or a trailing
+    # comma is the operator's content and jq is about to refuse it. Name that
+    # cause rather than reporting a malformed object.
+    if _json_has_jsonc_syntax "$ZED_SETTINGS_PATH"; then
+      out_error "$ZED_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
       return 1
     fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on

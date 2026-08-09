@@ -112,7 +112,7 @@ describe('agentSetupConfigurationSchema', () => {
   });
 
   test('accepts a Zed provider name with spaces and non-ASCII characters', () => {
-    for (const providerName of ['Floway', 'Ops box', '自建网关', 'floway.dev']) {
+    for (const providerName of ['Floway', 'Ops box', '自建网关', 'floway.dev', 'F'.repeat(120)]) {
       expect(agentSetupConfigurationSchema.safeParse({
         ...fullConfiguration,
         zed: { providerName },
@@ -120,8 +120,11 @@ describe('agentSetupConfigurationSchema', () => {
     }
   });
 
-  test('rejects a Zed provider name that is empty, padded, or carries a control character', () => {
-    for (const providerName of ['', ' Floway', 'Floway ', 'Flo\tway', 'Flo\0way', 'Flo\x7fway']) {
+  // The length bound is the one condition the dashboard's own check leaves to
+  // the input's maxLength attribute, so the schema is the only place it is
+  // enforced against anything that did not come from that field.
+  test('rejects a Zed provider name that is empty, padded, over-long, or carries a control character', () => {
+    for (const providerName of ['', ' Floway', 'Floway ', 'Flo\tway', 'Flo\0way', 'Flo\x7fway', 'F'.repeat(121)]) {
       expect(agentSetupConfigurationSchema.safeParse({
         ...fullConfiguration,
         zed: { providerName },

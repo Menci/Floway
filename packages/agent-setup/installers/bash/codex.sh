@@ -65,7 +65,11 @@ codex_backup_files() {
   if [ -e "$CODEX_CONFIG_PATH" ]; then
     CODEX_CONFIG_EXISTED=1
     CODEX_CONFIG_BACKUP="$CODEX_CONFIG_PATH.floway-backup.$_cbf_stamp"
-    if ! cp "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
+    # `-p` because the backup is what a rollback hands back: created under the
+    # installer's `umask 077` it would return narrower than the operator's own
+    # file, so a run reporting that it changed nothing would still have changed
+    # its mode. The PowerShell half's Copy-Item preserves the mode already.
+    if ! cp -p "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
       out_error "could not back up $CODEX_CONFIG_PATH"
       return 1
     fi
@@ -73,6 +77,8 @@ codex_backup_files() {
   if [ -e "$CODEX_TOKEN_PATH" ]; then
     CODEX_TOKEN_EXISTED=1
     CODEX_TOKEN_BACKUP="$CODEX_TOKEN_PATH.floway-backup.$_cbf_stamp"
+    # No `-p`: the provider token is the credential, so its backup is
+    # owner-only, which the chmod below states outright.
     if ! cp "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP"; then
       out_error "could not back up $CODEX_TOKEN_PATH"
       return 1
