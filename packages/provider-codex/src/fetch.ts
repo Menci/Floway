@@ -172,12 +172,13 @@ const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown
 // this snapshot, not separate sources of truth":
 // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L184-L189
 //
-// Only the body surfaces are rebuilt per turn. The WebSocket transport writes
-// its headers once, during the upgrade, and then carries many turns of
-// differing `request_kind` and `window_id` over that one socket without
-// reconnecting, so reading a header there yields the handshake's value for the
-// life of the connection. Resolve the body first and keep the header as the
-// fallback for callers that only speak the header projection.
+// Only the body surfaces are rebuilt per turn on every transport. The
+// WebSocket transport writes its headers once, during the upgrade, and then
+// carries many turns of differing `request_kind` and `window_id` over that one
+// socket without reconnecting, so reading a header there yields the
+// handshake's value for the life of the connection. Resolve the body first and
+// keep the header as the fallback for callers that only speak the header
+// projection.
 const callerTurnMetadata = (opts: CodexBackendCallBase, clientMetadata: Record<string, unknown>): Record<string, unknown> | null =>
   parseClientTurnMetadataJson(stringField(clientMetadata, 'x-codex-turn-metadata'))
     ?? parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
@@ -221,6 +222,7 @@ const buildCodexRequestIdentity = (
   // send it as a header carrying the thread id, which is immutable for the
   // life of a connection anyway:
   // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/codex-api/src/endpoint/responses.rs#L87-L91
+  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/client.rs#L1134-L1136
   const clientRequestId = trimHeader(opts.headers, 'x-client-request-id') ?? threadId;
   const installationId = stringField(clientMetadata, 'x-codex-installation-id')
     ?? stringField(clientTurnMetadata, 'installation_id')
