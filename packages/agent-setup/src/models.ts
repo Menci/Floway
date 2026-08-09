@@ -145,13 +145,13 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 // Zed's `u64` deserialization and take the whole settings document down with
 // them, so they are refused here as well.
 // Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
-const zedBound = (value: number | undefined): number | undefined =>
+const usableLimit = (value: number | undefined): number | undefined =>
   value === undefined || !Number.isInteger(value) || value <= 0 ? undefined : value;
 
 const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOutputTokens: number | undefined } => {
-  const stated = zedBound(limits.max_output_tokens);
+  const stated = usableLimit(limits.max_output_tokens);
   const reserved = stated ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
-  const prompt = zedBound(limits.max_prompt_tokens);
+  const prompt = usableLimit(limits.max_prompt_tokens);
 
   if (prompt !== undefined) {
     const inBand = prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW
@@ -173,7 +173,7 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
       : { maxTokens: prompt, maxOutputTokens: undefined };
   }
 
-  const window = zedBound(limits.max_context_window_tokens) ?? ZED_FALLBACK_CONTEXT_TOKENS;
+  const window = usableLimit(limits.max_context_window_tokens) ?? ZED_FALLBACK_CONTEXT_TOKENS;
 
   // Here the reservation and the prompt come out of one total, so it is bounded
   // against the window: a stated one to half, because past that the prompt gets
@@ -272,17 +272,24 @@ const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 // fallback is bounded, to a quarter of whatever bound the catalog did state.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
 const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number; maxOutputTokens: number } => {
-  const statedWindow = limits.max_context_window_tokens;
-  const prompt = limits.max_prompt_tokens;
+  // Read through the same filter the Zed projection uses: a zero, negative or
+  // fractional limit is no bound at either wire. VS Code's fields are required
+  // numbers too — a zero window is a model in the picker that can never be
+  // prompted, and a zero output limit is sent as the Messages `max_tokens`,
+  // which the upstream rejects on every request.
+  const statedWindow = usableLimit(limits.max_context_window_tokens);
+  const prompt = usableLimit(limits.max_prompt_tokens);
 
   // A stated prompt limit puts the reservation on top of the window it builds,
   // so nothing crowds the prompt out — unless the catalog also states a window,
   // in which case the reservation comes out of that one and is bounded against
   // it exactly as it is below.
   if (prompt !== undefined) {
-    const stated = limits.max_output_tokens;
+    const stated = usableLimit(limits.max_output_tokens);
     const reserved = stated === undefined
-      ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(prompt / 4))
+      // Bounded against the window it comes out of when the catalog states one,
+      // and against the prompt limit it sits on top of when it does not.
+      ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor((statedWindow ?? prompt) / 4))
       : (statedWindow === undefined ? stated : Math.min(stated, Math.floor(statedWindow / 2)));
     return { contextWindow: statedWindow ?? prompt + reserved, maxOutputTokens: reserved };
   }
@@ -299,9 +306,10 @@ const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number
   // the reconciliation floors the prompt at zero and every request is over
   // budget before it starts.
   const window = statedWindow ?? VSCODE_FALLBACK_CONTEXT_TOKENS;
-  const maxOutputTokens = limits.max_output_tokens === undefined
+  const statedOutput = usableLimit(limits.max_output_tokens);
+  const maxOutputTokens = statedOutput === undefined
     ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(window / 4))
-    : Math.min(limits.max_output_tokens, Math.floor(window / 2));
+    : Math.min(statedOutput, Math.floor(window / 2));
   return { contextWindow: window, maxOutputTokens };
 };
 
@@ -331,7 +339,11 @@ export const projectVSCodeModels = (
       // prompt limit, and one announcing only a prompt limit gets a window
       // rebuilt around it.
       contextWindow: plan.contextWindow,
-      ...(model.limits.max_prompt_tokens === undefined ? {} : { maxInputTokens: model.limits.max_prompt_tokens }),
+      // Through the same filter as the plan above, so an unusable prompt limit
+      // is absent here rather than stated as a negative budget.
+      ...(usableLimit(model.limits.max_prompt_tokens) === undefined
+        ? {}
+        : { maxInputTokens: model.limits.max_prompt_tokens }),
       ...(reasoning === undefined ? {} : { thinking: true }),
       ...(supportedEfforts === undefined
         ? {}

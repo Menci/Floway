@@ -128,8 +128,20 @@ function Set-SetupOptionalProp {
 # one-object array, `[null]`, `[null,null]`, `[]` and `[1,2]`.
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
-  $parsed = ConvertFrom-Json -InputObject $Text
-  if ($parsed -is [System.Array]) { return $parsed }
-  # A lone element, `$null` included, stays one element through the return.
-  return ,$parsed
+  # `-NoEnumerate` on 6+, where it exists: without it PowerShell 7 flattens a
+  # one-element nested array during the decode, so `[[{…}]]` arrives as
+  # `[{…}]` and an element-type check passes where 5.1 and jq both refuse the
+  # document. With it the two versions return the same structure for every
+  # shape — measured on 5.1.26100.8875 and pwsh 7.6 across a nested array, an
+  # empty-array element, a two-object array, a one-object array, `[null]`,
+  # `[]`, `[[null]]` and `[1,2]`.
+  $parsed = if ($PSVersionTable.PSVersion.Major -ge 6) {
+    ConvertFrom-Json -InputObject $Text -NoEnumerate
+  } else {
+    ConvertFrom-Json -InputObject $Text
+  }
+  if ($parsed -is [System.Array]) { return ,$parsed }
+  # Comma-wrapped so the array survives the return intact — callers assign it
+  # directly, because `@()` around this would put a second level back on.
+  return ,@($parsed)
 }

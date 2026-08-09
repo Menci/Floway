@@ -3008,6 +3008,7 @@ for (const { label, document } of [
   { label: 'a trailing comma before a brace', document: '{\n  "telemetry": { "metrics": false },\n}' },
   { label: 'a trailing comma before a bracket', document: '{\n  "features": [\n    "one",\n  ]\n}' },
 ]) {
+  const cause = 'JSONC syntax';
   test('zed', `both halves refuse a settings document carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
       const ws = makeWorkspace();
@@ -3019,8 +3020,7 @@ for (const { label, document } of [
       t.ok(run.code !== 0, `${which} refuses it`);
       // Both halves must name the syntax. Refusing for the wrong stated reason
       // sends the operator looking for an error that is not there.
-      t.ok(run.combined.includes('JSONC syntax') || run.combined.includes('is not a provider list'),
-        `${which} names the cause:\n${run.combined}`);
+      t.ok(run.combined.includes(cause), `${which} names the cause "${cause}":\n${run.combined}`);
       t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, `${which} leaves it byte-identical`);
     };
 
@@ -3415,8 +3415,11 @@ test('vscode', 'maps limits, modalities, and reasoning onto the required fields'
   t.equal(allThree.maxInputTokens, 128_000, 'and so does the stated prompt limit');
 
   const zero = models.get('zero-limits')!;
-  t.equal(zero.contextWindow, 0, 'a stated zero context window survives');
-  t.equal(zero.maxOutputTokens, 0, 'a stated zero output limit survives');
+  // A stated zero is no bound at VS Code's wire either: a zero window is a
+  // model that can never be prompted, and on the Messages path the output
+  // limit is sent as the wire `max_tokens`, which the upstream rejects at zero.
+  t.equal(zero.contextWindow, 128_000, 'a stated zero context window falls through to the default');
+  t.equal(zero.maxOutputTokens, 8192, 'and a stated zero output limit to the fallback');
   // Verbatim rather than dropped by truthiness — the distinction the projection
   // draws is between an absent list and a stated one. VS Code itself makes no
   // picker from either, returning early on a zero-length list.
@@ -3758,6 +3761,28 @@ test('vscode', 'PowerShell refuses an empty provider list file by name', async t
 // A list holding a non-object element is not a provider list. jq's merge
 // indexes `.vendor` on every element and aborts on a scalar, so without a gate
 // the same document would be rewritten by PowerShell and refused by Bash.
+// A collection element is enumerated out of a PowerShell pipeline, so a piped
+// type check sees the inner object and passes while jq refuses the document —
+// and an element that is an empty array disappears before the check runs.
+test('vscode', 'neither half flattens a provider list nested one level deep', async t => {
+  for (const { label, document } of [
+    { label: 'a nested array', document: '[[{"vendor":"other","name":"Keep"}]]' },
+    { label: 'an empty array element', document: '[[],{"vendor":"other","name":"Keep"}]' },
+  ]) {
+    for (const which of ['bash', 'powershell'] as const) {
+      if (which === 'powershell' && !hostPwsh) continue;
+      const ws = makeWorkspace();
+      const userDir = makeVSCodeUserDir(ws, `vscode-nested-${which}-${label.replaceAll(' ', '-')}`);
+      writeFileSync(vscodeGroupsPath(userDir), document);
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.ok(run.code !== 0, `${which} refuses ${label}`);
+      t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), document, `${which} leaves ${label} byte-identical`);
+    }
+  }
+});
+
 test('vscode', 'Bash refuses a provider list holding a non-object element', async t => {
   const ws = makeWorkspace();
   const userDir = makeVSCodeUserDir(ws, 'vscode-scalar-sh');
@@ -3889,18 +3914,19 @@ for (const { half, run } of profileFailureCases) {
 // while ConvertFrom-Json takes it and drops what it cannot represent — data
 // loss on one half and a refusal on the other, for one file. Both refuse and
 // name the cause.
-for (const { label, document } of [
+for (const { label, document, cause } of [
   // A block comment and a trailing one, not just a line-leading `//`: a
   // pattern that matches only the latter refuses these for the wrong stated
-  // reason, which is the whole point of naming the cause.
-  { label: 'comments', document: '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]' },
-  { label: 'a trailing comma', document: '[\n  {"vendor":"customendpoint","name":"Other gateway"},\n]' },
+  // reason, which is the whole point of naming the cause — so each case
+  // carries the sentence it must produce.
+  { label: 'comments', document: '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]', cause: 'JSONC syntax' },
+  { label: 'a trailing comma', document: '[\n  {"vendor":"customendpoint","name":"Other gateway"},\n]', cause: 'JSONC syntax' },
   // Newtonsoft takes these and would write the document back in canonical
   // form, where jq refuses them — so one half would stop and the other rewrite
   // the operator's file. The scanner decides, not the decoder.
-  { label: 'single-quoted strings', document: "[{'vendor':'other','name':'Keep'}]" },
-  { label: 'an unquoted key', document: '[{vendor:"other","name":"Keep"}]' },
-  { label: 'a form feed between members', document: '[{"vendor":"other",\f"name":"Keep"}]' },
+  { label: 'single-quoted strings', document: "[{'vendor':'other','name':'Keep'}]", cause: 'is not a provider list' },
+  { label: 'an unquoted key', document: '[{vendor:"other","name":"Keep"}]', cause: 'is not a provider list' },
+  { label: 'a form feed between members', document: '[{"vendor":"other",\f"name":"Keep"}]', cause: 'is not a provider list' },
 ]) {
   test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3911,8 +3937,7 @@ for (const { label, document } of [
         ? await runVSCode(ws, { vscodeUserDir: userDir })
         : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
       t.ok(run.code !== 0, `${which} refuses it`);
-      t.ok(run.combined.includes('JSONC syntax') || run.combined.includes('is not a provider list'),
-        `${which} names the cause:\n${run.combined}`);
+      t.ok(run.combined.includes(cause), `${which} names the cause "${cause}":\n${run.combined}`);
       t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), document, `${which} leaves it byte-identical`);
     };
 

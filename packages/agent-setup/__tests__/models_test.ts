@@ -277,6 +277,7 @@ describe('Zed available_models projection', () => {
 // `maxInputTokens` to that remainder.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
 describe('VS Code customendpoint model projection', () => {
+  const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
   // What VS Code computes from what we wrote.
   const resolve = (entry: { contextWindow: number; maxOutputTokens: number; maxInputTokens?: number }) => {
     const maxOutputTokens = Math.min(entry.maxOutputTokens, entry.contextWindow);
@@ -341,6 +342,10 @@ describe('VS Code customendpoint model projection', () => {
       // Ordinary rows must be left alone by the bound.
       catalogModel('roomy', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
       catalogModel('all-three-roomy', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
+      // A window and a prompt limit with no output limit: the reservation has
+      // to come out of the window, not out of a prompt limit that exceeds it.
+      catalogModel('window-under-prompt', { limits: { max_context_window_tokens: 4096, max_prompt_tokens: 100_000 } }),
+      catalogModel('tiny-window-with-prompt', { limits: { max_context_window_tokens: 2048, max_prompt_tokens: 8192 } }),
     ], 'messages');
 
     for (const row of rows) {
@@ -359,6 +364,8 @@ describe('VS Code customendpoint model projection', () => {
     // And a stated prompt limit still reaches VS Code intact where it fits.
     expect(by('all-three-roomy').maxOutputTokens).toBe(64_000);
     expect(resolve(by('all-three-roomy')).maxInputTokens).toBe(128_000);
+    expect(by('window-under-prompt').maxOutputTokens).toBe(1024);
+    expect(by('tiny-window-with-prompt').maxOutputTokens).toBe(512);
   });
 
   // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it
@@ -373,17 +380,20 @@ describe('VS Code customendpoint model projection', () => {
     expect(merged!.id).toBe('claude-opus-4-7');
   });
 
-  // The window is non-zero on purpose: pairing a stated `max_output_tokens: 0`
-  // with a zero window makes the fallback arm produce 0 as well, so the test
-  // could not fail on the substitution it is named for.
-  // A prompt limit of 0 is a stated limit; truthiness would drop the field and
-  // let VS Code derive a budget the upstream never offered.
-  it('states a prompt limit of zero rather than dropping it', () => {
-    const [zeroPrompt, absent] = projectVSCodeModels([
+  // A prompt limit of 0 is a limit VS Code cannot act on — it would register the
+  // model with nothing to prompt with — so it is absent rather than stated,
+  // which leaves VS Code to derive the budget from the window. A stated one it
+  // can act on is passed through, which is what separates this from truthiness
+  // dropping the field.
+  it('drops a prompt limit of zero and states one it can use', () => {
+    const [zeroPrompt, stated, absent] = projectVSCodeModels([
       catalogModel('zero-prompt', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 0 } }),
+      catalogModel('stated-prompt', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 128_000 } }),
       catalogModel('absent', { limits: { max_context_window_tokens: 200_000 } }),
     ], 'messages');
-    expect(zeroPrompt!.maxInputTokens).toBe(0);
+    expect(zeroPrompt).not.toHaveProperty('maxInputTokens');
+    expect(resolve(zeroPrompt!).maxInputTokens).toBeGreaterThan(0);
+    expect(stated!.maxInputTokens).toBe(128_000);
     expect(absent).not.toHaveProperty('maxInputTokens');
   });
 
@@ -397,13 +407,27 @@ describe('VS Code customendpoint model projection', () => {
     expect(projected.map(entry => entry.toolCalling)).toEqual([true, true]);
   });
 
-  it('keeps a stated zero verbatim rather than substituting a fallback', () => {
-    const [zeroOutput, zeroWindow] = projectVSCodeModels([
+  // A stated zero is a value in the catalog and no bound at VS Code's wire, the
+  // same way it is at Zed's: a zero window is a model in the picker that can
+  // never be prompted, and on the Messages path `maxOutputTokens` is sent as
+  // the wire `max_tokens`, which the upstream rejects at zero. Negative and
+  // fractional limits are refused for the same reason — the schema bounds none
+  // of them, so an upstream-editor typo reaches here.
+  it('treats a limit VS Code cannot act on as no limit at all', () => {
+    const [zeroOutput, zeroWindow, negative, fractional] = projectVSCodeModels([
       catalogModel('zero-output', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 0 } }),
       catalogModel('zero-window', { limits: { max_context_window_tokens: 0, max_output_tokens: 0 } }),
+      catalogModel('negative', { limits: { max_context_window_tokens: -1, max_prompt_tokens: -1000 } }),
+      catalogModel('fractional', { limits: { max_context_window_tokens: 1000.5 } }),
     ], 'messages');
-    expect(zeroOutput!.maxOutputTokens).toBe(0);
     expect(zeroOutput!.contextWindow).toBe(200_000);
-    expect(zeroWindow!.contextWindow).toBe(0);
+    expect(zeroOutput!.maxOutputTokens).toBe(VSCODE_FALLBACK_OUTPUT_TOKENS);
+    expect(zeroWindow!.contextWindow).toBe(128_000);
+    expect(negative!.contextWindow).toBe(128_000);
+    expect(negative).not.toHaveProperty('maxInputTokens');
+    expect(fractional!.contextWindow).toBe(128_000);
+    for (const row of [zeroOutput, zeroWindow, negative, fractional]) {
+      expect(resolve(row!).maxInputTokens, `${row!.id} has no room to prompt`).toBeGreaterThan(0);
+    }
   });
 });

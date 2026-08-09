@@ -50,7 +50,7 @@ function Assert-SetupZedConfigDir {
 # projection on the gateway cannot disagree with the Bash half the way two
 # hand-written ones did.
 function Get-SetupZedModels {
-  try { $models = @(ConvertFrom-SetupJsonArray $SetupZedModels) } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
+  try { $models = ConvertFrom-SetupJsonArray $SetupZedModels } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
   if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
   $script:ZedModels = $models
 }
