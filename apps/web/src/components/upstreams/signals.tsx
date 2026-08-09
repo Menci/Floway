@@ -198,22 +198,12 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   });
 
   // `rejected` on the unified status is Anthropic saying it turned the request
-  // away, which it reports apart from the per-window utilization beside it. An
-  // undated refusal states the fact alone; there is nothing to count down.
-  if (quota?.status !== 'rejected') return windows;
-  if (quota.reset !== null) {
-    if (!isRateLimitedNow(credential?.quotaSnapshot, now)) return windows;
-    const blocked = blockedSignal(quota.reset, t, locale, now);
-    return blocked === null ? windows : windows.concat(blocked);
-  }
-  return windows.concat({
-    key: 'rate-limited',
-    percent: null,
-    value: t('dashboard.upstreams.signals.rateLimited'),
-    label: null,
-    detail: t('dashboard.upstreams.signals.rateLimitedUndated'),
-    blocked: true,
-  });
+  // away. Whether that is a limit this row should state is the one question the
+  // shared rule answers, so the answer is the same here, on the account card,
+  // and at the router that decides whether to send the upstream any work.
+  if (!isRateLimitedNow(credential?.quotaSnapshot, now) || quota?.reset == null) return windows;
+  const blocked = blockedSignal(quota.reset, t, locale, now);
+  return blocked === null ? windows : windows.concat(blocked);
 };
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {

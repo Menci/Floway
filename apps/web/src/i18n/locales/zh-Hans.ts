@@ -428,7 +428,6 @@ const zhHansCN = {
           window: { primary: '主窗口', secondary: '次窗口' },
           rateLimited: '限流',
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
-          rateLimitedUndated: '该上游正在拒绝请求',
           credits: '{{balance, number}} 点额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
           cost: '该账号已产生的费用',

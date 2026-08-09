@@ -452,7 +452,6 @@ const en = {
           window: { primary: 'Primary', secondary: 'Secondary' },
           rateLimited: 'Rate limited',
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
-          rateLimitedUndated: 'This upstream is refusing requests',
           credits: '{{balance, number}} credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
           cost: 'Charged to this account',

@@ -117,13 +117,14 @@ describe('upstream readout by provider', () => {
     });
 
     expect(rowFor('2026-07-28T15:00:00.000Z')).toBe('Claude Max 20x | Rate limited 3h');
-    // Nothing to count down: the refusal stands on its own.
-    expect(rowFor(null)).toBe('Claude Max 20x | Rate limited');
     // The snapshot holds until a response replaces it, so a rejection whose
     // reset has passed is the steady state of an upstream serving again -- the
     // data plane stops gating on it at exactly this instant.
     expect(rowFor('2026-07-28T09:00:00.000Z')).toBe('Claude Max 20x');
     expect(rowFor('2026-07-28T12:00:00.000Z')).toBe('Claude Max 20x');
+    // A refusal with no date is not one the router gates on either, so the row
+    // does not contradict it by painting one.
+    expect(rowFor(null)).toBe('Claude Max 20x');
   });
 
   it('reports nothing for a Copilot seat no response has been observed on', () => {
