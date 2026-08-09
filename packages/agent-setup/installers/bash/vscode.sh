@@ -121,9 +121,11 @@ vscode_write_settings() {
 
   if [ -e "$VSCODE_SETTINGS_PATH" ]; then
     VSCODE_SETTINGS_EXISTED=1
-    # VS Code reads this file with its JSONC-tolerant scanner, so a comment is
-    # content the editor accepts and jq is about to refuse. Name that cause
-    # rather than reporting it as a malformed provider list.
+    # jq has no JSONC mode and is about to refuse this file. Name that cause
+    # rather than reporting a malformed provider list. Unlike Zed's document the
+    # comment is not the operator's to keep — VS Code rewrites this file whole
+    # on its own next edit — so the refusal is about the two halves agreeing,
+    # not about preserving anything.
     if _json_has_comment "$VSCODE_SETTINGS_PATH"; then
       out_error "$VSCODE_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
       return 1
@@ -137,7 +139,7 @@ vscode_write_settings() {
     # document accepted on one platform, refused on the other.
     if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "array") and (.[0] | all(.[]; type == "object"))' \
         "$VSCODE_SETTINGS_PATH" >/dev/null 2>&1; then
-      out_error "$VSCODE_SETTINGS_PATH is not a valid provider list; leaving it untouched."
+      out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
       return 1
     fi
     _vw_base=$(cat "$VSCODE_SETTINGS_PATH")
@@ -222,6 +224,7 @@ configure_agent() {
   : > "$_ca_list"
   printf '%s\n' "$_ca_dirs" | while IFS= read -r _ca_user; do
     [ -n "$_ca_user" ] || continue
+    out_info "VS Code user directory: $_ca_user"
     vscode_profile_dirs "$_ca_user" >> "$_ca_list"
   done
 

@@ -104,12 +104,13 @@ function Write-SetupVSCodeSettings {
     # jq, which the Bash installer asks the same question, reads the text.
     # Get-Content -Raw yields $null for an empty file, which is not a list
     # either — and dereferencing it would report a PowerShell internal instead.
-    # VS Code reads this file with its JSONC-tolerant scanner, so a comment is
-    # content the editor accepts. jq has no JSONC mode and refuses such a
-    # document, PowerShell 7 accepts it and drops the comment on the way out,
-    # and 5.1 errors — three outcomes for one file. Refusing is the only one all
-    # three can share.
-    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L223
+    # Unlike Zed's document, a comment here is not the operator's to keep: VS
+    # Code rewrites this whole file through `model.setValue(JSON.stringify(…))`
+    # whenever Manage Models changes anything, so its own next edit deletes the
+    # comment too. The refusal exists because jq has no JSONC mode and the Bash
+    # half therefore cannot accept such a file — and the two halves have to give
+    # one answer, rather than pwsh silently dropping what jq refuses.
+    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L232
     if (Test-SetupJsonHasComment $raw) {
       Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
     }
@@ -142,7 +143,10 @@ function Write-SetupVSCodeSettings {
     } catch {
       if (Test-Path -LiteralPath $script:VSCodeSettingsBackup) { Remove-Item -LiteralPath $script:VSCodeSettingsBackup -Force }
       $script:VSCodeSettingsBackup = $null
-      throw
+      # Named here so the per-profile catch counts it rather than describing a
+      # raw .NET message, matching the Bash half's "could not back up".
+      if ($_.Exception.Message -ceq 'setup-handled') { throw }
+      Stop-Setup "could not back up $($script:VSCodeSettingsPath)"
     }
   }
 
@@ -210,11 +214,17 @@ function Set-SetupAgent {
   foreach ($userDir in $userDirs) {
     Write-SetupInfo "VS Code user directory: $userDir"
     foreach ($profileDir in Get-SetupVSCodeProfileDirs $userDir) {
-      # Stop-Setup throws 'setup-handled' once the profile has reported itself
-      # and rolled back; anything else is a fault this fragment cannot describe.
+      # Any failure is this profile's failure. Stop-Setup has already named the
+      # cause and rolled back; anything else — a denied backup, a locked file,
+      # a serializer that refused — is named here instead. Gating on
+      # 'setup-handled' would let one profile's unexpected fault abort every
+      # remaining profile, which is what the Bash half never does: there, every
+      # write failure is a counted profile.
       try { Write-SetupVSCodeSettings $profileDir }
       catch {
-        if ($_.Exception.Message -cne 'setup-handled') { throw }
+        if ($_.Exception.Message -cne 'setup-handled') {
+          Write-SetupError "could not configure $profileDir`: $(Protect-SetupSecret ([string]$_.Exception.Message))"
+        }
         $failed++
       }
     }

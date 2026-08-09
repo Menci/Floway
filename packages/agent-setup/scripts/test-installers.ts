@@ -3243,7 +3243,7 @@ test('vscode', 'Bash refuses an empty provider list file by name', async t => {
   writeFileSync(vscodeGroupsPath(userDir), '');
   const run = await runVSCode(ws, { vscodeUserDir: userDir });
   t.ok(run.code !== 0, 'it is refused');
-  t.ok(run.combined.includes('is not a valid provider list'), `the file is named, not a later stage:\n${run.combined}`);
+  t.ok(run.combined.includes('is not a provider list'), `the file is named, not a later stage:\n${run.combined}`);
 });
 
 test('vscode', 'PowerShell refuses an empty provider list file by name', async t => {
@@ -3268,7 +3268,7 @@ test('vscode', 'Bash refuses a provider list holding a non-object element', asyn
   writeFileSync(vscodeGroupsPath(userDir), original);
   const run = await runVSCode(ws, { vscodeUserDir: userDir });
   t.ok(run.code !== 0, 'it is refused');
-  t.ok(run.combined.includes('is not a valid provider list'), `the operator's file is named:\n${run.combined}`);
+  t.ok(run.combined.includes('is not a provider list'), `the operator's file is named:\n${run.combined}`);
   t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), original, 'and left byte-identical');
 });
 
@@ -3405,6 +3405,37 @@ test('vscode', 'both halves refuse a provider list carrying JSONC comments', asy
     t.ok(run.code !== 0, `${which} refuses it`);
     t.ok(run.combined.includes('JSONC comments'), `${which} names the cause:\n${run.combined}`);
     t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), commented, `${which} leaves it byte-identical`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// One profile whose backup cannot even be written must not cost the operator
+// every remaining profile. The Bash half counts any write failure as one
+// profile; the PowerShell half has to treat an unexpected fault the same way,
+// or a denied backup aborts the whole run with a raw .NET message.
+test('vscode', 'a profile whose backup fails does not stop the others', async t => {
+  if (process.platform === 'win32') skip('POSIX permission bits only');
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-backupfail-${which}`);
+    // The default profile holds a file whose directory denies new entries, so
+    // the backup cannot be created; a named profile beside it is writable.
+    writeFileSync(vscodeGroupsPath(userDir), '[{"vendor":"customendpoint","name":"Other gateway"}]');
+    const healthy = join(userDir, 'profiles', 'bbb');
+    mkdirSync(healthy, { recursive: true });
+    chmodSync(userDir, 0o555);
+    try {
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.ok(run.code !== 0, `${which} reports failure`);
+      t.ok(run.combined.includes('profile(s) could not be configured'), `${which} summarizes the failure:\n${run.combined}`);
+      t.equal(readVSCodeGroups(healthy).length, 1, `${which} still configures the writable profile`);
+    } finally {
+      chmodSync(userDir, 0o755);
+    }
   };
 
   await runHalf('bash');
