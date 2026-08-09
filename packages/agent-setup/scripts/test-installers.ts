@@ -3826,30 +3826,36 @@ for (const { half, run } of profileFailureCases) {
   });
 }
 
-// VS Code reads this file with its JSONC-tolerant scanner, so a comment is
-// content the editor accepts. jq refuses such a document and PowerShell 7 drops
-// the comment on the way out — data loss reported as success. Both halves
-// refuse it and name the cause.
-test('vscode', 'both halves refuse a provider list carrying JSONC comments', async t => {
+// VS Code reads this file with its JSONC-tolerant scanner, and its parse
+// options set `allowTrailingComma`, so both a comment and a comma before a
+// closing bracket are syntax the editor accepts. jq refuses such a document
+// while ConvertFrom-Json takes it and drops what it cannot represent — data
+// loss on one half and a refusal on the other, for one file. Both refuse and
+// name the cause.
+for (const { label, document } of [
   // A block comment and a trailing one, not just a line-leading `//`: a
   // pattern that matches only the latter refuses these for the wrong stated
   // reason, which is the whole point of naming the cause.
-  const commented = '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]';
-  const runHalf = async (which: 'bash' | 'powershell') => {
-    const ws = makeWorkspace();
-    const userDir = makeVSCodeUserDir(ws, `vscode-jsonc-${which}`);
-    writeFileSync(vscodeGroupsPath(userDir), commented);
-    const run = which === 'bash'
-      ? await runVSCode(ws, { vscodeUserDir: userDir })
-      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
-    t.ok(run.code !== 0, `${which} refuses it`);
-    t.ok(run.combined.includes('JSONC comments'), `${which} names the cause:\n${run.combined}`);
-    t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), commented, `${which} leaves it byte-identical`);
-  };
+  { label: 'comments', document: '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]' },
+  { label: 'a trailing comma', document: '[\n  {"vendor":"customendpoint","name":"Other gateway"},\n]' },
+]) {
+  test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const userDir = makeVSCodeUserDir(ws, `vscode-jsonc-${which}-${label.replaceAll(' ', '-')}`);
+      writeFileSync(vscodeGroupsPath(userDir), document);
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.ok(run.code !== 0, `${which} refuses it`);
+      t.ok(run.combined.includes('JSONC syntax'), `${which} names the cause:\n${run.combined}`);
+      t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), document, `${which} leaves it byte-identical`);
+    };
 
-  await runHalf('bash');
-  if (hostPwsh) await runHalf('powershell');
-});
+    await runHalf('bash');
+    if (hostPwsh) await runHalf('powershell');
+  });
+}
 
 // One profile whose backup cannot even be written must not cost the operator
 // every remaining profile. The Bash half counts any write failure as one

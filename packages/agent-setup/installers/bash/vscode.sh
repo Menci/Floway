@@ -135,13 +135,13 @@ vscode_write_settings() {
 
   if [ -e "$VSCODE_SETTINGS_PATH" ]; then
     VSCODE_SETTINGS_EXISTED=1
-    # jq has no JSONC mode and is about to refuse this file. Name that cause
+    # jq has no lenient mode and is about to refuse this file. Name that cause
     # rather than reporting a malformed provider list. Unlike Zed's document the
-    # comment is not the operator's to keep — VS Code rewrites this file whole
-    # on its own next edit — so the refusal is about the two halves agreeing,
-    # not about preserving anything.
-    if _json_has_comment "$VSCODE_SETTINGS_PATH"; then
-      out_error "$VSCODE_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
+    # syntax is not the operator's to keep — VS Code rewrites this file whole on
+    # its own next edit — so the refusal is about the two halves agreeing, not
+    # about preserving anything.
+    if _json_has_jsonc_syntax "$VSCODE_SETTINGS_PATH"; then
+      out_error "$VSCODE_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
       return 1
     fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on

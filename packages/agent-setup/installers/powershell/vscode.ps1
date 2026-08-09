@@ -144,9 +144,13 @@ function Write-SetupVSCodeSettings {
     # comment too. The refusal exists because jq has no JSONC mode and the Bash
     # half therefore cannot accept such a file — and the two halves have to give
     # one answer, rather than pwsh silently dropping what jq refuses.
-    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L232
-    if (Test-SetupJsonHasComment $raw) {
-      Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
+    # A trailing comma splits the halves the same way and for the same reason:
+    # VS Code parses this document with `allowTrailingComma`, ConvertFrom-Json
+    # takes one, and jq does not.
+    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L232
+    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/base/common/json.ts#L144-L148
+    if (Test-SetupJsonHasJsoncSyntax $raw) {
+      Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
     }
     if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
