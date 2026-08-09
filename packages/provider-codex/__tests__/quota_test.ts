@@ -88,6 +88,58 @@ describe('parseCodexQuotaHeaders', () => {
     expect(snapshot.ratelimited_until).toBeUndefined();
   });
 
+  // Upstream added `-reset-at` on 2025-10-17 and kept sending the offset it
+  // replaced, so the absolute instant wins and the offset is the fallback.
+  test('prefers the absolute reset instant over the offset it replaced', () => {
+    const headers = new Headers({
+      'x-codex-primary-reset-at': '1780272000',
+      'x-codex-primary-reset-after-seconds': '18000',
+      'x-codex-secondary-reset-after-seconds': '7200',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.primary_reset_after_at).toBe(new Date(1780272000 * 1000).toISOString());
+    // No absolute instant for the secondary, so the offset still dates it.
+    expect(snapshot.secondary_reset_after_at).toBe('2026-06-05T02:00:00.000Z');
+  });
+
+  // Builds from the three days after the header landed sent RFC 3339 instead of
+  // epoch seconds, which is why every client that reads it accepts both.
+  test('reads an absolute reset instant sent as RFC 3339', () => {
+    const headers = new Headers({ 'x-codex-primary-reset-at': '2026-06-05T05:00:00.000Z' });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.primary_reset_after_at).toBe('2026-06-05T05:00:00.000Z');
+  });
+
+  // A plan whose secondary window is zero minutes wide reports a blank instant
+  // beside a zero offset. That is "no such window", not "it resets now".
+  test('reports no reset for a window this plan does not have', () => {
+    const headers = new Headers({
+      'x-codex-secondary-window-minutes': '0',
+      'x-codex-secondary-reset-at': '',
+      'x-codex-secondary-reset-after-seconds': '0',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.secondary_reset_after_at).toBeUndefined();
+  });
+
+  // `Number('')` is 0, so a blank reading would otherwise land as a confident
+  // zero balance rather than as nothing observed.
+  test('reads a blank numeric header as absent rather than as zero', () => {
+    const headers = new Headers({ 'x-codex-credits-balance': '', 'x-codex-secondary-used-percent': '  ' });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.credits_balance).toBeUndefined();
+    expect(snapshot.secondary_used_percent).toBeUndefined();
+  });
+
+  test('dates a 429 from the absolute instant when only that header arrives', () => {
+    const headers = new Headers({
+      'x-codex-primary-reset-at': '1780272000',
+      'x-codex-secondary-reset-at': '1780358400',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBe(new Date(1780358400 * 1000).toISOString());
+  });
+
   test('sets ratelimited_until from max(primary, secondary) reset window on 429', () => {
     const headers = new Headers({
       'x-codex-primary-reset-after-seconds': '3600',

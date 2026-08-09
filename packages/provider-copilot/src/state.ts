@@ -5,7 +5,7 @@
 // concurrent write intact.
 
 import type { CopilotKnownModels } from './known-models.ts';
-import type { CopilotQuotaSnapshot } from './quota.ts';
+import type { CopilotQuotaSnapshot, CopilotSeat } from './quota.ts';
 
 // Short-lived Copilot session token minted by exchanging the operator-supplied
 // GitHub PAT against /copilot_internal/v2/token. The PAT itself lives in
@@ -18,14 +18,6 @@ export interface CopilotTokenEntry {
   token: string;
   expiresAt: number;
   baseUrl: string;
-  // The seat's plan, as GitHub's own SKU identifier. Typed open because
-  // Microsoft types its own as `WellKnownSku | string`: GitHub introduces a SKU
-  // whenever it introduces a plan.
-  // https://github.com/microsoft/vscode/blob/5fb9376dbdc8b0f1bdc9eb8186f429e023503f92/extensions/copilot/src/platform/authentication/common/copilotToken.ts#L330-L376
-  //
-  // Null on an entry minted before this slot existed; the next mint fills it,
-  // which is at most one token lifetime of traffic away.
-  sku: string | null;
 }
 
 // Most recent entitlement observation, from either quota source. `fetchedAt`
@@ -42,23 +34,39 @@ export interface CopilotQuotaSnapshotEntry {
   data: CopilotQuotaSnapshot;
 }
 
+// The seat's plan, from the one source that names it. It sits apart from the
+// quota snapshot because the two are written by different paths: every upstream
+// response harvests a quota snapshot, and none of them carries a plan, so a
+// shared slot would blank the plan whenever the passive path won the race.
+// `fetchedAt` is unix ms, as on the snapshot beside it.
+export interface CopilotSeatEntry {
+  fetchedAt: number;
+  data: CopilotSeat;
+}
+
 export interface CopilotUpstreamState {
   knownModels: CopilotKnownModels | null;
   copilotToken: CopilotTokenEntry | null;
   quotaSnapshot: CopilotQuotaSnapshotEntry | null;
+  seat: CopilotSeatEntry | null;
 }
 
 const ALLOWED_STATE_KEYS_MAP: Record<keyof CopilotUpstreamState, true> = {
   knownModels: true,
   copilotToken: true,
   quotaSnapshot: true,
+  seat: true,
+};
+
+const ALLOWED_SEAT_KEYS_MAP: Record<keyof CopilotSeatEntry, true> = {
+  fetchedAt: true,
+  data: true,
 };
 
 const ALLOWED_TOKEN_KEYS_MAP: Record<keyof CopilotTokenEntry, true> = {
   token: true,
   expiresAt: true,
   baseUrl: true,
-  sku: true,
 };
 
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CopilotQuotaSnapshotEntry, true> = {
@@ -84,9 +92,6 @@ const assertCopilotTokenEntry = (value: unknown, where: string): void => {
   }
   if (typeof obj.baseUrl !== 'string' || obj.baseUrl === '') {
     throw new TypeError(`${where}.baseUrl must be a non-empty string`);
-  }
-  if (obj.sku !== null && obj.sku !== undefined && (typeof obj.sku !== 'string' || obj.sku === '')) {
-    throw new TypeError(`${where}.sku must be a non-empty string or null`);
   }
 };
 
@@ -124,6 +129,26 @@ const assertCopilotQuotaSnapshotEntry = (value: unknown, where: string): void =>
   }
 };
 
+// The seat's own fields are the endpoint's open strings, so the wrapper is all
+// that is checked here; quota.ts owns what goes inside it.
+const assertCopilotSeatEntry = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (!Object.hasOwn(ALLOWED_SEAT_KEYS_MAP, key)) {
+      throw new TypeError(`${where} has unexpected key '${key}'`);
+    }
+  }
+  if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
+    throw new TypeError(`${where}.fetchedAt must be a finite number`);
+  }
+  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
+    throw new TypeError(`${where}.data must be a plain object`);
+  }
+};
+
 export function assertCopilotUpstreamState(value: unknown): asserts value is CopilotUpstreamState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError('CopilotUpstreamState must be a plain object');
@@ -145,12 +170,16 @@ export function assertCopilotUpstreamState(value: unknown): asserts value is Cop
   if (obj.quotaSnapshot !== null && obj.quotaSnapshot !== undefined) {
     assertCopilotQuotaSnapshotEntry(obj.quotaSnapshot, 'CopilotUpstreamState.quotaSnapshot');
   }
+  if (obj.seat !== null && obj.seat !== undefined) {
+    assertCopilotSeatEntry(obj.seat, 'CopilotUpstreamState.seat');
+  }
 }
 
 export const emptyCopilotUpstreamState = (): CopilotUpstreamState => ({
   knownModels: null,
   copilotToken: null,
   quotaSnapshot: null,
+  seat: null,
 });
 
 export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => {
@@ -158,9 +187,8 @@ export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => 
   assertCopilotUpstreamState(raw);
   return {
     knownModels: raw.knownModels ?? null,
-    copilotToken: raw.copilotToken === null || raw.copilotToken === undefined
-      ? null
-      : { ...raw.copilotToken, sku: raw.copilotToken.sku ?? null },
+    copilotToken: raw.copilotToken ?? null,
     quotaSnapshot: raw.quotaSnapshot ?? null,
+    seat: raw.seat ?? null,
   };
 };
