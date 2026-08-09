@@ -1,4 +1,4 @@
-import { replaceResponsesOpaqueLocations, responsesCarrierDomain, responsesOpaqueLocations } from './opaque-locations.ts';
+import { replaceResponsesOpaqueLocations, responsesCarrierDomain, responsesOpaqueLocations, responsesSyntheticCarrierSlot } from './opaque-locations.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -56,8 +56,7 @@ const wrapNaturalResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
-  responsesOpaqueLocations(item).length > 0
-  || ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'program'].includes(item.type);
+  responsesOpaqueLocations(item).length > 0 || responsesSyntheticCarrierSlot(item) !== undefined;
 
 const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
@@ -88,26 +87,16 @@ const wrapResponsesFirstCarrier = async function* (
 
   const ensureItemCarrier = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     if (responsesOpaqueLocations(item).length > 0) return item;
-    if (!canCarryAffinity(item)) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
+    const slot = responsesSyntheticCarrierSlot(item);
+    if (slot === undefined) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
 
-    if (item.type === 'program') {
-      const slot = 'fingerprint';
-      const cacheKey = `${outputIndex}\0${slot}`;
-      let fingerprint = syntheticCarriers.get(cacheKey);
-      if (fingerprint === undefined) {
-        fingerprint = options.codec.wrap(undefined, options.affinity, responsesCarrierDomain(item.type, slot));
-        syntheticCarriers.set(cacheKey, fingerprint);
-      }
-      return { ...item, fingerprint: await fingerprint };
+    const cacheKey = `${outputIndex}\0${slot.key}`;
+    let carrier = syntheticCarriers.get(cacheKey);
+    if (carrier === undefined) {
+      carrier = options.codec.wrap(undefined, options.affinity, slot.domain);
+      syntheticCarriers.set(cacheKey, carrier);
     }
-    const slot = 'encrypted_content';
-    const cacheKey = `${outputIndex}\0${slot}`;
-    let encrypted = syntheticCarriers.get(cacheKey);
-    if (encrypted === undefined) {
-      encrypted = options.codec.wrap(undefined, options.affinity, responsesCarrierDomain(item.type, slot));
-      syntheticCarriers.set(cacheKey, encrypted);
-    }
-    return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;
+    return replaceResponsesOpaqueLocations(item, new Map([[slot.key, await carrier]]));
   };
 
   const insertPrefix = async function* (
