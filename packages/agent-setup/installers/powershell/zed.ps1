@@ -207,6 +207,12 @@ function Write-SetupZedSettings {
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
     # unlink a settings file Zed is watching; File.Replace is atomic.
+    #
+    # Measured on Windows PowerShell 5.1.26100.8875: the destination's ACL comes
+    # through the replace byte-identical (same SDDL), which is why nothing
+    # re-applies it afterwards, and passing `$null` for the backup path really
+    # does fail with "The path is not of a legal form" where NullString does
+    # not. This branch never runs under the Unix harness.
     if ($script:ZedSettingsExisted -and (Test-SetupIsWindows)) {
       [System.IO.File]::Replace($stage, $script:ZedSettingsPath, [System.Management.Automation.Language.NullString]::Value)
     } else {
