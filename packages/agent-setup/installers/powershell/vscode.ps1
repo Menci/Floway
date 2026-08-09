@@ -83,7 +83,7 @@ function Get-SetupVSCodeProfileDirs {
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/package.json#L2010-L2016
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L185-L212
 function Get-SetupVSCodeModels {
-  try { $models = @($SetupVSCodeModels | ConvertFrom-Json) } catch { Stop-Setup 'the embedded VS Code model list is not readable.' }
+  try { $models = @(ConvertFrom-SetupJsonArray $SetupVSCodeModels) } catch { Stop-Setup 'the embedded VS Code model list is not readable.' }
   if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
   $apiUrl = Get-SetupVSCodeApiUrl
   foreach ($model in $models) {
@@ -163,7 +163,7 @@ function Write-SetupVSCodeSettings {
     if ($raw -match '^\s*\[\s*\]\s*$') {
       $parsed = @()
     } else {
-      try { $parsed = @($raw | ConvertFrom-Json) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
+      try { $parsed = @(ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
     }
     # Every element must be an object, matching the Bash gate: jq's merge
     # indexes `.vendor` on each one and aborts on a scalar, so without this the
@@ -216,10 +216,14 @@ function Write-SetupVSCodeSettings {
     # reachable fails them, which is the point — they are what keeps a silently
     # wrong merge from being renamed over the operator's file. The Bash half
     # asserts the same two properties in jq.
-    $check = @(Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json)
+    $check = @(ConvertFrom-SetupJsonArray (Get-Content -Raw -LiteralPath $stage))
     $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
-    if (@($ours[0].models).Count -eq 0) { Stop-Setup 'the staged VS Code provider list carries no models.' }
+    # The exact count, not merely a non-empty list: a model array nested one
+    # level deep — what an unenumerated ConvertFrom-Json produces on Windows
+    # PowerShell 5.1 — has a count of 1 and would pass an emptiness check while
+    # VS Code reads an object where its schema requires a list.
+    if (@($ours[0].models).Count -ne $script:VSCodeModels.Count) { Stop-Setup 'the staged VS Code provider list carries no models.' }
 
     $runningOnWindows = Test-SetupIsWindows
     if ($script:VSCodeSettingsExisted -and $runningOnWindows) {
