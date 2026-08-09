@@ -126,6 +126,21 @@ describe('Zed available_models projection', () => {
     expect(merged!.name).toBe('claude-opus-4-7');
   });
 
+  // A stated 0 is a value, not an absent limit. `||` and truthiness cannot tell
+  // the two apart, and the difference reaches Zed as a 200k window on a model
+  // that announced none, or a silently dropped output limit.
+  it('distinguishes a stated zero from an absent limit', () => {
+    const [zeroWindow, zeroOutput, absent] = projectZedModels([
+      catalogModel('zero-window', { limits: { max_context_window_tokens: 0 } }),
+      catalogModel('zero-output', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 0 } }),
+      catalogModel('absent'),
+    ]);
+    expect(zeroWindow!.max_tokens).toBe(0);
+    expect(zeroOutput!.max_output_tokens).toBe(0);
+    expect(absent!.max_tokens).toBe(200_000);
+    expect(absent).not.toHaveProperty('max_output_tokens');
+  });
+
   it('omits max_output_tokens when the catalog announces none', () => {
     const [withOutput, withoutOutput] = projectZedModels([
       catalogModel('bounded', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
@@ -216,11 +231,37 @@ describe('VS Code customendpoint model projection', () => {
     expect(merged!.id).toBe('claude-opus-4-7');
   });
 
-  it('keeps a stated zero verbatim rather than substituting a fallback', () => {
-    const [zero] = projectVSCodeModels([
-      catalogModel('zero', { limits: { max_context_window_tokens: 0, max_output_tokens: 0 } }),
+  // The window is non-zero on purpose: pairing a stated `max_output_tokens: 0`
+  // with a zero window makes the fallback arm produce 0 as well, so the test
+  // could not fail on the substitution it is named for.
+  // A prompt limit of 0 is a stated limit; truthiness would drop the field and
+  // let VS Code derive a budget the upstream never offered.
+  it('states a prompt limit of zero rather than dropping it', () => {
+    const [zeroPrompt, absent] = projectVSCodeModels([
+      catalogModel('zero-prompt', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 0 } }),
+      catalogModel('absent', { limits: { max_context_window_tokens: 200_000 } }),
     ], 'messages');
-    expect(zero!.maxOutputTokens).toBe(0);
-    expect(zero!.contextWindow).toBe(0);
+    expect(zeroPrompt!.maxInputTokens).toBe(0);
+    expect(absent).not.toHaveProperty('maxInputTokens');
+  });
+
+  // Without this VS Code drops the model from agent mode and inline chat, which
+  // is most of what an operator installs it for.
+  it('declares tool calling on every projected model', () => {
+    const projected = projectVSCodeModels([
+      catalogModel('plain', { contextWindow: 200_000 }),
+      catalogModel('reasoner', { contextWindow: 200_000, chat: { reasoning: { adaptive: true } } }),
+    ], 'messages');
+    expect(projected.map(entry => entry.toolCalling)).toEqual([true, true]);
+  });
+
+  it('keeps a stated zero verbatim rather than substituting a fallback', () => {
+    const [zeroOutput, zeroWindow] = projectVSCodeModels([
+      catalogModel('zero-output', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 0 } }),
+      catalogModel('zero-window', { limits: { max_context_window_tokens: 0, max_output_tokens: 0 } }),
+    ], 'messages');
+    expect(zeroOutput!.maxOutputTokens).toBe(0);
+    expect(zeroOutput!.contextWindow).toBe(200_000);
+    expect(zeroWindow!.contextWindow).toBe(0);
   });
 });
