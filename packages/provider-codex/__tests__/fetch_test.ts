@@ -731,7 +731,7 @@ describe('callCodexResponses — background-write registration', () => {
     expect(waitUntil).toHaveBeenCalledTimes(1);
   });
 
-  test('401-retry registers the freshly-minted access-token put via opts.call.waitUntil', async () => {
+  test('401-retry persists the fresh access token before returning', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
@@ -743,9 +743,10 @@ describe('callCodexResponses — background-write registration', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
     });
-    // Two writes get registered: the freshly-minted access token (401 retry
-    // path) and the quota snapshot from the successful second attempt.
-    expect(waitUntil).toHaveBeenCalledTimes(2);
+    // The access-token write is awaited because its CAS result carries the
+    // effective plan; only the successful retry's quota write is backgrounded.
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at2');
   });
 });
 

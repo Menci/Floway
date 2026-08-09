@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, preserveCodexAccessTokenPlan, putCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -444,24 +444,29 @@ const dispatchCodexImageCall = async (
   return await classifyCodexHttpResponse(opts, response, 'when-present');
 };
 
-// Force-mint a fresh access token after a 401, persisting it best-effort.
+// Force-mint a fresh access token after a 401 and persist it before retrying.
 // `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
 // re-read can still observe the token we just invalidated: a sibling that
 // minted before our 401 lands its `putCodexAccessToken` after our
 // invalidation, restoring the broken token, and Codex tokens carry multi-day
 // expiresAt so the freshness gate hands it straight back — sending us into an
 // immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally sidesteps that window, and persisting best-effort is enough
-// because the next request re-mints if its read still sees the dead token.
-const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
+// unconditionally sidesteps that window. The write is awaited because its CAS
+// result also resolves the latest plan metadata used to authorize the retry.
+const refreshAccessTokenForRetry = async (
+  opts: CodexBackendCallBase,
+  fallbackPlanType?: string,
+): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
-    const minted = preserveCodexAccessTokenPlan(
-      await mintAccessToken(opts, opts.account.refresh_token),
-      opts.account.accessToken?.planType,
+    const minted = await mintAccessToken(opts, opts.account.refresh_token);
+    const effective = await putCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      minted,
+      fallbackPlanType ?? opts.account.accessToken?.planType,
     );
-    registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
-    return { ok: true, accessToken: minted };
+    return { ok: true, accessToken: effective };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -579,7 +584,7 @@ const performImageCall = async (
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, effectivePlanType);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     const refreshedPlanType = fresh.accessToken.planType ?? effectivePlanType;
     if (!codexPlanSupportsImages(refreshedPlanType)) return imageUnavailableResult(opts.model.id);

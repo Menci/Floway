@@ -30,10 +30,12 @@ const persistAccessToken = async (
   accountId: string,
   entry: CodexAccessTokenEntry | null,
   where: string,
-): Promise<void> => {
+  fallbackPlanType?: string,
+): Promise<CodexAccessTokenEntry | null> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
   let accountMissing = false;
+  let effectiveEntry = entry;
   try {
     await getProviderRepo().upstreams.saveState(upstreamId, current => {
       const state = readCodexUpstreamState(current);
@@ -46,7 +48,10 @@ const persistAccessToken = async (
       // Invalidating an already-null slot has nothing to write — the case where
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
-      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
+      effectiveEntry = entry === null
+        ? null
+        : preserveCodexAccessTokenPlan(entry, state.accounts[idx].accessToken?.planType ?? fallbackPlanType);
+      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: effectiveEntry }));
     });
   } catch (err) {
     // A minted access token is bookkeeping the next request re-derives, so an
@@ -54,18 +59,21 @@ const persistAccessToken = async (
     // request over. Every other storage failure still propagates.
     if (!(err instanceof UpstreamGoneError)) throw err;
     console.warn(`${where}: Codex upstream ${upstreamId} disappeared mid-request`);
-    return;
+    return effectiveEntry;
   }
   if (accountMissing) {
     console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
   }
+  return effectiveEntry;
 };
 
 export const putCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
   entry: CodexAccessTokenEntry,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken'); };
+  fallbackPlanType?: string,
+): Promise<CodexAccessTokenEntry> =>
+  (await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken', fallbackPlanType)) ?? entry;
 
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
@@ -150,9 +158,13 @@ const ensureCodexAccessTokenInner = async (
     }
     throw err;
   }
-  const effective = preserveCodexAccessTokenPlan(minted, account.accessToken?.planType);
-  await persistAccessToken(upstreamId, accountId, effective, 'ensureCodexAccessToken');
-  return effective;
+  return (await persistAccessToken(
+    upstreamId,
+    accountId,
+    minted,
+    'ensureCodexAccessToken',
+    account.accessToken?.planType,
+  )) ?? minted;
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced

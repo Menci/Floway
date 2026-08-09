@@ -70,6 +70,17 @@ describe('putCodexAccessToken', () => {
     expect(storedState()).toEqual({ accounts: [{ ...baseAccount, accessToken: entry }] });
   });
 
+  test('prefers the current CAS plan over an older fallback when the new token omits it', async () => {
+    current = makeRecord({ accounts: [{
+      ...baseAccount,
+      accessToken: { token: 'at_current', expiresAt: farFutureMs, refreshedAt: 'current', planType: 'free' },
+    }] });
+    const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
+    const effective = await putCodexAccessToken(upstreamId, accountId, entry, 'team');
+    expect(effective.planType).toBe('free');
+    expect(storedState().accounts[0].accessToken?.planType).toBe('free');
+  });
+
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };

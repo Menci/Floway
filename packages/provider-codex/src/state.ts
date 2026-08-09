@@ -9,14 +9,14 @@ export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 're
 // Short-lived OAuth access state minted by exchanging the stored refresh_token
 // against /oauth/token. The refresh_token itself stays on CodexAccountCredential
 // so a cache loss never forces operator re-import; this entry keeps the minted
-// token, its lifetime, and capability metadata observed at the same refresh.
+// token, its lifetime, and the account's latest observed capability metadata.
 export interface CodexAccessTokenEntry {
   token: string;
   expiresAt: number;       // unix ms
   refreshedAt: string;     // ISO 8601
-  // Parsed from the id_token returned alongside this access token. It may be
-  // absent on legacy state or when the token omits the claim; callers preserve
-  // the latest observation or fall back to the import-time identity.
+  // Observed from refresh id_tokens and retained across later tokens that omit
+  // the claim. It is absent only when no refresh has supplied it and legacy
+  // state has none, in which case callers use the import-time identity.
   planType?: string;
 }
 
