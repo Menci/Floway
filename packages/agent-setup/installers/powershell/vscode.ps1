@@ -196,7 +196,7 @@ function Write-SetupVSCodeSettings {
       $script:VSCodeSettingsBackup = $null
       # Named here so the per-profile catch counts it rather than describing a
       # raw .NET message, matching the Bash half's "could not back up".
-      if ($_.Exception.Message -ceq 'setup-handled') { throw }
+      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
       Stop-Setup "could not back up $($script:VSCodeSettingsPath)"
     }
   }
@@ -214,21 +214,29 @@ function Write-SetupVSCodeSettings {
     # secret JSON reaches it.
     [System.IO.File]::Create($stage).Dispose()
     Protect-SetupFile $stage
-    # A one-element array must still serialize as an array, and `-AsArray` does
-    # not exist on the Windows PowerShell 5.1 baseline, so the brackets are
-    # restored by hand when ConvertTo-Json unwraps a lone object.
+    # A one-element array must still serialize as an array. `-InputObject` keeps
+    # the brackets on both versions — measured on 5.1.26100.8875 and pwsh 7.6 —
+    # where the pipeline form unwraps a lone object on both and `-AsArray` does
+    # not exist on the 5.1 baseline at all.
+    #
     # A sibling gateway's group nested deeper than the serializer goes would be
     # emitted as the literal string "@{k=}" with only a warning, and the staged
     # check inspects our own group alone. Losing someone else's provider is not
-    # something to do quietly.
+    # something to do quietly, so the warning is promoted — on pwsh 7. Windows
+    # PowerShell 5.1 emits none for the same input, and what refuses such a
+    # document there is ConvertFrom-Json's own recursion limit, before the merge
+    # runs. jq has no ceiling at all, so the Bash half keeps the group whole;
+    # the halves differ in how deep a foreign group may be, not in whether one
+    # survives.
     $json = ConvertTo-Json -InputObject @($groups) -Depth 100 -WarningAction Stop
-    if (-not $json.TrimStart().StartsWith('[')) { $json = "[$json]" }
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
 
     # Assertions on the projection above, not gates on operator input: nothing
     # reachable fails them, which is the point — they are what keeps a silently
     # wrong merge from being renamed over the operator's file. The Bash half
-    # asserts the same two properties in jq.
+    # asserts the same shape; the count here is exact rather than non-zero
+    # because a list nested one level deep is a PowerShell failure mode jq has
+    # no equivalent of.
     $check = @(ConvertFrom-SetupJsonArray (Get-Content -Raw -LiteralPath $stage))
     $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
@@ -283,7 +291,7 @@ function Set-SetupAgent {
       # write failure is a counted profile.
       try { Write-SetupVSCodeSettings $profileDir }
       catch {
-        if ($_.Exception.Message -cne 'setup-handled') {
+        if (-not [string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) {
           Write-SetupError "could not configure $profileDir`: $(Protect-SetupSecret ([string]$_.Exception.Message))"
         }
         $failed++

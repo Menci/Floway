@@ -3461,11 +3461,20 @@ test('vscode', 'writes every profile of the user directory', async t => {
 });
 
 test('vscode', 'the written document is owner-only because it carries the key', async t => {
-  const ws = makeWorkspace();
-  const userDir = makeVSCodeUserDir(ws);
-  const run = await runVSCode(ws, { vscodeUserDir: userDir });
-  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.equal(statSync(vscodeGroupsPath(userDir)).mode & 0o777, 0o600, 'mode is 0600');
+  if (process.platform === 'win32') skip('POSIX modes only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-owner-${which}`);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    // The PowerShell half inherits a 022 umask, so this observes its explicit
+    // restriction; the Bash half runs under `umask 077`, which reaches the same
+    // mode on its own, and there the assertion cannot separate the two.
+    t.equal(statSync(vscodeGroupsPath(userDir)).mode & 0o777, 0o600, `${which}: mode is 0600`);
+  }
 });
 
 // chezmoi and stow both place a symlink where VS Code expects its provider
@@ -3626,8 +3635,10 @@ test('vscode', 'PowerShell replaces only its own group', async t => {
   t.ok(!ourGroup(groups).models!.some(entry => entry.id === 'stale'), 'our previous models are gone');
 });
 
-// A lone group must still round-trip as an array; ConvertTo-Json unwraps a
-// one-element array and `-AsArray` does not exist on the 5.1 baseline.
+// A lone group must still round-trip as an array. `ConvertTo-Json`'s pipeline
+// form unwraps a one-element array on both versions and `-AsArray` does not
+// exist on the 5.1 baseline, so the serialization goes through `-InputObject`,
+// which keeps the brackets on both — this is what says it stays that way.
 test('vscode', 'PowerShell writes an array even when ours is the only group', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
