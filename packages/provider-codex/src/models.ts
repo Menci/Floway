@@ -6,7 +6,7 @@ import {
   CODEX_ORIGINATOR,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { pricingForCodexModelKey } from './pricing.ts';
+import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
@@ -154,4 +154,5 @@ export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): Prov
   limits: {},
   endpoints: { imagesGenerations: {}, imagesEdits: {} },
   enabledFlags,
+  pricing: GPT_IMAGE_2_PRICING,
 });

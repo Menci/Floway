@@ -19,7 +19,22 @@ const GPT_5_4_PRICING = modelPricing(
   tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
 );
 
+// GPT Image 2 bills text input, image input, and image output as distinct token
+// modalities. Cached input uses the published text-cache rate here; image
+// responses currently report modality splits for input/output tokens but do
+// not expose a modality split for cached tokens.
+// https://developers.openai.com/api/docs/pricing#image-generation
+export const GPT_IMAGE_2_PRICING = modelPricing(
+  tokenPricingEntry({
+    input_tokens: '5',
+    input_cache_read_tokens: '1.25',
+    input_image_tokens: '8',
+    output_image_tokens: '30',
+  }),
+);
+
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
+  ['gpt-image-2', GPT_IMAGE_2_PRICING],
   // GPT-5.6 publishes standard short/long and priority-short entries. OpenAI-
   // direct does not publish priority-long rates, so that exact combination is
   // deliberately absent and resolves to the whole Base vector.
