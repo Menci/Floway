@@ -285,14 +285,31 @@ describe('VS Code customendpoint model projection', () => {
   // otherwise reserve the whole window for output and register with a prompt
   // budget of zero: present in the picker, over budget before it starts.
   it('never leaves a small-context model with no room to prompt', () => {
-    const [tiny, small] = projectVSCodeModels([
+    const rows = projectVSCodeModels([
       catalogModel('ollama-4k', { limits: { max_context_window_tokens: 4096 } }),
       catalogModel('ollama-8k', { limits: { max_context_window_tokens: 8192 } }),
+      // A stated output limit can swallow the window just as an unstated one
+      // can: at or over it the reconciliation floors the prompt at zero, and
+      // the model registers with nothing to prompt with.
+      catalogModel('output-only', { limits: { max_output_tokens: 128_000 } }),
+      catalogModel('output-over-fallback', { limits: { max_output_tokens: 200_000 } }),
+      catalogModel('output-fills-window', { limits: { max_context_window_tokens: 128_000, max_output_tokens: 128_000 } }),
+      catalogModel('output-past-half', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 180_000 } }),
+      // Ordinary rows must be left alone by the bound.
+      catalogModel('roomy', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
     ], 'messages');
 
-    expect(resolve(tiny!).maxInputTokens).toBeGreaterThan(0);
-    expect(resolve(small!).maxInputTokens).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(resolve(row).maxInputTokens, `${row.id} has no room to prompt`).toBeGreaterThan(0);
+    }
+    const [tiny, small] = rows;
+    expect(resolve(tiny!).maxInputTokens).toBe(4096 - 1024);
     expect(resolve(small!).maxInputTokens).toBe(8192 - 2048);
+    // A reservation past half the window is kept to half; one under it stands.
+    const by = (id: string) => rows.find(row => row.id === id)!;
+    expect(by('output-fills-window').maxOutputTokens).toBe(64_000);
+    expect(by('output-past-half').maxOutputTokens).toBe(100_000);
+    expect(by('roomy').maxOutputTokens).toBe(64_000);
   });
 
   // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it

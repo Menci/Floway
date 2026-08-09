@@ -160,7 +160,20 @@ function Write-SetupVSCodeSettings {
     # on PowerShell 7, and the two are not reliably distinguishable on the 5.1
     # baseline — where telling them apart matters, because `[]` is a list VS
     # Code itself writes and `[null]` is not a provider list at all.
-    if ($raw -match '^\s*\[\s*\]\s*$') {
+    # The class is spelled out rather than `\s`, which in .NET also matches
+    # U+00A0 and the rest of Unicode's whitespace. This shortcut decides what
+    # counts as the empty list VS Code itself writes, and that is JSON's
+    # whitespace, not .NET's.
+    #
+    # It does not close the gap underneath: VS Code's own scanner treats
+    # non-breaking space, ogham, the en-quad block and the BOM as trivia, so
+    # `[\u00A0]` is an empty list to the editor and to ConvertFrom-Json, while
+    # jq refuses it and the Bash half stops. Both outcomes are safe — one
+    # rewrites a document the editor reads as empty, the other leaves it — and
+    # closing it would mean normalizing the operator's whitespace before jq
+    # sees it. Noted rather than fixed.
+    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/base/common/json.ts#L561-L565
+    if ($raw -match '^[ \t\r\n]*\[[ \t\r\n]*\][ \t\r\n]*$') {
       $parsed = @()
     } else {
       try { $parsed = @(ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }

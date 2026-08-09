@@ -36,7 +36,10 @@ function Test-SetupJsonHasJsoncSyntax {
       if ($next -eq '/' -or $next -eq '*') { return $true }
     }
     if ($ch -eq ',') { $comma = $true; continue }
-    if ([char]::IsWhiteSpace($ch)) { continue }
+    # JSON whitespace, not .NET's: `[char]::IsWhiteSpace` also accepts U+00A0
+    # and friends, which the Bash scanner does not, and the two halves have to
+    # decide the same way about the same bytes.
+    if ($ch -eq ' ' -or $ch -eq "`t" -or $ch -eq "`r" -or $ch -eq "`n") { continue }
     if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return $true }
     $comma = $false
     if ($ch -eq '"') { $inString = $true }

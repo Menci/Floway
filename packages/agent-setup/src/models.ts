@@ -246,19 +246,31 @@ const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number; maxOutputTokens: number } => {
   const statedWindow = limits.max_context_window_tokens;
   const prompt = limits.max_prompt_tokens;
-  // The quarter-window cap applies to a stated window only, because that is the
-  // only case where the reservation competes with the prompt for one fixed
-  // total. Where the window is reconstructed from a prompt limit the
-  // reservation is added on top, so it cannot crowd the prompt out and there is
-  // nothing to protect against — scaling it down there would be inventing a
-  // ceiling the catalog never implied.
-  const maxOutputTokens = limits.max_output_tokens ?? (statedWindow === undefined
-    ? VSCODE_FALLBACK_OUTPUT_TOKENS
-    : Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(statedWindow / 4)));
-  return {
-    contextWindow: statedWindow ?? (prompt === undefined ? VSCODE_FALLBACK_CONTEXT_TOKENS : prompt + maxOutputTokens),
-    maxOutputTokens,
-  };
+
+  // A stated prompt limit puts the reservation on top of the window, so it
+  // cannot crowd the prompt out and neither bound below applies.
+  if (prompt !== undefined) {
+    const reserved = limits.max_output_tokens
+      ?? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(prompt / 4));
+    return { contextWindow: statedWindow ?? prompt + reserved, maxOutputTokens: reserved };
+  }
+
+  // Without one, the reservation and the prompt come out of the same total, and
+  // VS Code hands the prompt only what is left. Two bounds keep that remainder
+  // usable. A reservation the catalog did not state stays at a quarter of the
+  // window: an 8k Ollama model would otherwise reserve its whole context and
+  // register with nothing to prompt with. One the catalog did state is kept to
+  // half, because an output ceiling past half the window leaves the prompt the
+  // smaller share of a budget it is supposed to dominate — and a model that
+  // truly answers with 128k tokens would come with a window that says so, not
+  // with our fallback. At or above the window it is worse than a small budget:
+  // the reconciliation floors the prompt at zero and every request is over
+  // budget before it starts.
+  const window = statedWindow ?? VSCODE_FALLBACK_CONTEXT_TOKENS;
+  const maxOutputTokens = limits.max_output_tokens === undefined
+    ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(window / 4))
+    : Math.min(limits.max_output_tokens, Math.floor(window / 2));
+  return { contextWindow: window, maxOutputTokens };
 };
 
 export const projectVSCodeModels = (
