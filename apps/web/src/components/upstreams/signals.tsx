@@ -47,7 +47,7 @@ const useStyles = makeStyles({
   },
   // Both switch outright. WinUI eases a control's own fill and nothing else --
   // its foreground crosses instantly -- and a reading is foreground throughout.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L175
   value: { color: 'var(--floway-signal-value)' },
   label: { color: 'var(--floway-signal-label)' },
   // A reading that says the upstream is refusing work outranks its own tone.
