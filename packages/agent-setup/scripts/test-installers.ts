@@ -2768,7 +2768,7 @@ test('zed', 'preserves the settings file mode through a write and through a refu
     // The refusal has to name the operator's document. Passing this gate and
     // failing later reports a staging fault instead, pointing at our own list
     // rather than at the file they need to fix — and only after a backup existed.
-    t.ok(bad.combined.includes('is not a valid JSON object'), `the refusal names the document:\n${bad.combined}`);
+    t.ok(bad.combined.includes('is not a valid Zed settings document'), `the refusal names the document:\n${bad.combined}`);
     t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
   }
 });
@@ -2880,6 +2880,42 @@ test('zed', 'PowerShell replaces existing settings atomically', async t => {
   const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
   t.equal(JSON.stringify(settings.telemetry), JSON.stringify({ metrics: false }), 'the unrelated key survives the replacement');
   t.ok(settings.language_models.anthropic_compatible.Floway!.available_models.length > 0, 'and our provider carries the catalog');
+});
+
+// A refusal that happens after the backup exists is the only path that runs
+// zed_rollback_settings, and it was reachable but unobserved: every other Zed
+// refusal is caught before the copy, so `cp -p` — which exists so a rollback
+// cannot narrow the operator's mode — could be deleted with the suite green.
+// The staged document is what fails here, since the shape checks now all
+// precede the backup.
+test('zed', 'a refusal after the backup restores the file and its mode', async t => {
+  if (process.platform === 'win32') skip('POSIX modes only');
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  const original = JSON.stringify({ telemetry: { metrics: false } });
+  writeFileSync(zedSettingsPath(configDir), original, { mode: 0o644 });
+  chmodSync(zedSettingsPath(configDir), 0o644);
+
+  // The staged file is written beside the settings and renamed over them. A
+  // directory standing where the settings file must land makes `mv` fail, so
+  // the run reaches rollback with the backup already taken — no test hook, just
+  // a filesystem the rename cannot satisfy.
+  const stale = `${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`;
+  writeFileSync(stale, '{}');
+  chmodSync(configDir, 0o555);
+  let run;
+  try {
+    run = await runShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
+    });
+  } finally {
+    chmodSync(configDir, 0o755);
+  }
+
+  t.ok(run.code !== 0, 'the run fails');
+  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the document is restored');
+  t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o644, 'and at the mode the operator chose');
 });
 
 test('zed', 'both halves refuse an array root', async t => {

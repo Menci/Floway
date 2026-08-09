@@ -79,7 +79,7 @@ function Write-SetupZedSettings {
     # The root is judged from the text before anything is decoded: an empty file
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
     # into a bare object, so neither is distinguishable afterwards.
-    if (-not (Test-SetupJsonRoot $raw '{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid JSON object; leaving it untouched." }
+    if (-not (Test-SetupJsonRoot $raw '{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched." }
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
     # Every shape check completes before the backup exists, so a refusal on
     # the operator's existing document cannot leave an orphan beside it. The
@@ -160,10 +160,14 @@ function Write-SetupZedSettings {
     if (-not (Test-SetupIsWindows)) {
       if ($script:ZedSettingsExisted) {
         # `--reference` is GNU-only; BSD chmod takes the mode itself.
-        # GNU stat takes -c, BSD takes -f; neither answering leaves the mode
-        # alone rather than guessing one, as the Bash helper does.
-        $mode = & stat -c '%a' $script:ZedSettingsPath 2>$null
-        if (-not $mode) { $mode = & stat -f '%Lp' $script:ZedSettingsPath 2>$null }
+        # `-L` because the settings path may be a symlink — chezmoi and stow both
+        # place one here — and stat without it reports the link's own mode, which
+        # would hand the target's replacement 755. The Bash half uses
+        # `chmod --reference`, which dereferences, so this is what keeps the two
+        # agreeing. GNU stat takes -c, BSD takes -f; neither answering leaves the
+        # mode alone rather than guessing one, as the Bash helper does.
+        $mode = & stat -L -c '%a' $script:ZedSettingsPath 2>$null
+        if (-not $mode) { $mode = & stat -L -f '%Lp' $script:ZedSettingsPath 2>$null }
         if ($mode) { & chmod $mode $stage }
       } else {
         # A file we create is ours to set: owner-only, matching the Bash half,
