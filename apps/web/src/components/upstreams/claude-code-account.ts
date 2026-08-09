@@ -146,19 +146,23 @@ export type AccountStatus =
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
-// Whether the account is refusing work at this instant, on the same terms the
-// data plane uses to decide whether to send it any: a rejection dated in the
-// past has lifted, and one reported without a date at all is not treated as a
-// limit, because the snapshot is only rewritten by a response and an upstream
-// nobody calls would otherwise stay locked out forever. Both surfaces that show
-// this state read it here, so neither can disagree with the router.
-export const isRateLimitedNow = (
+// When the account stops refusing work, or null if it is not refusing any, on
+// the same terms the data plane uses to decide whether to send it any: a
+// rejection dated in the past has lifted, and one reported without a date at all
+// is not treated as a limit, because the snapshot is only rewritten by a
+// response and an upstream nobody calls would otherwise stay locked out forever.
+// Both surfaces that show this state read it here, so neither can disagree with
+// the router.
+//
+// It answers with the instant rather than a yes, because every caller that wants
+// the answer also wants to say how long the wait has left.
+export const rateLimitedUntil = (
   quota: ClaudeCodeAccountCredentialSummary['quotaSnapshot'] | null | undefined,
   now: number,
-): boolean => {
+): string | null => {
   const data = quota?.data;
-  if (data?.status !== 'rejected' || !data.reset) return false;
-  return Date.parse(data.reset) > now;
+  if (data?.status !== 'rejected' || !data.reset) return null;
+  return Date.parse(data.reset) > now ? data.reset : null;
 };
 
 export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], now: number): AccountStatus => {
@@ -170,7 +174,7 @@ export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], no
   // separate optional window. The snapshot is held until a response replaces
   // it, so this asks whether the limit is still running rather than whether one
   // was ever reported -- the data plane draws the line at the same instant.
-  if (isRateLimitedNow(credential.quotaSnapshot, now)) return { tone: 'danger', reason: 'exhausted' };
+  if (rateLimitedUntil(credential.quotaSnapshot, now) !== null) return { tone: 'danger', reason: 'exhausted' };
   const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };

@@ -4,7 +4,7 @@
 // so an upstream with nothing to report contributes nothing and its row stays
 // one line high.
 
-import { findCredential, isRateLimitedNow, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
+import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, rateLimitedUntil, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
@@ -104,23 +104,16 @@ const percentValue = (t: TFunction, percent: number): string =>
 // says how long the wait still has to run rather than when it ends -- an instant
 // has to be subtracted from the clock before it means anything.
 //
-// A limit whose instant has passed is not a limit. Both providers hold the
-// deciding snapshot until something replaces it, and one of them keeps writing
-// `rejected` beside a reset that has since elapsed, so the wait is measured here
-// rather than at either call site: an elapsed one yields no signal at all,
-// instead of a countdown clamped at zero standing where a live one stood.
-const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal | null => {
-  const remaining = Date.parse(until) - now;
-  if (!Number.isFinite(remaining) || remaining <= 0) return null;
-  return {
-    key: 'rate-limited',
-    percent: null,
-    value: t('dashboard.upstreams.signals.rateLimited'),
-    label: formatRemaining(remaining, locale),
-    detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
-    blocked: true,
-  };
-};
+// Each provider decides whether its limit is still running before reaching here,
+// so this is handed an instant that has not passed and words the wait it leaves.
+const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal => ({
+  key: 'rate-limited',
+  percent: null,
+  value: t('dashboard.upstreams.signals.rateLimited'),
+  label: formatRemaining(Date.parse(until) - now, locale),
+  detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
+  blocked: true,
+});
 
 const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const quota = copilotQuota(record);
@@ -175,14 +168,14 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
   }
   // The windows beside it can read low while it holds: a 429 names the limit
   // family that tripped, which is not always one of the two this row shows.
-  const blocked = entry?.rateLimitedUntil == null ? null : blockedSignal(entry.rateLimitedUntil, t, locale, now);
-  return blocked === null ? signals : signals.concat(blocked);
+  // `quotaEntries` has already dropped a limit that has lifted.
+  if (entry?.rateLimitedUntil == null) return signals;
+  return signals.concat(blockedSignal(entry.rateLimitedUntil, t, locale, now));
 };
 
 const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
-  const quota = credential?.quotaSnapshot?.data ?? null;
   const windows: UpstreamSignal[] = quotaWindows(credential).map(row => {
     const length = windowLengthLabel(WINDOW_MINUTES[row.key]);
     // Anthropic reports the Sonnet allowance as a second window of the same
@@ -201,9 +194,8 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   // away. Whether that is a limit this row should state is the one question the
   // shared rule answers, so the answer is the same here, on the account card,
   // and at the router that decides whether to send the upstream any work.
-  if (!isRateLimitedNow(credential?.quotaSnapshot, now) || quota?.reset == null) return windows;
-  const blocked = blockedSignal(quota.reset, t, locale, now);
-  return blocked === null ? windows : windows.concat(blocked);
+  const until = rateLimitedUntil(credential?.quotaSnapshot, now);
+  return until === null ? windows : windows.concat(blockedSignal(until, t, locale, now));
 };
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
