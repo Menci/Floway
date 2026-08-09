@@ -196,7 +196,7 @@ export const projectVSCodeModels = (
     const reasoning = model.chat?.reasoning;
     const supportedEfforts = reasoning?.effort?.supported;
     return {
-      id: addressableModelId(model),
+      id: model.id,
       name: model.display_name,
       // A chat model that cannot call tools is not one anyone routes here, and
       // without this VS Code drops it from agent mode and inline chat.
