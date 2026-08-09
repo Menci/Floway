@@ -235,7 +235,7 @@ describe('createCodexProvider', () => {
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     const options = noopUpstreamCallOptions();
     options.headers.set('x-codex-image-turn-id', 'turn-image');
     const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
@@ -257,7 +257,7 @@ describe('createCodexProvider', () => {
       config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
     };
     const instance = createCodexProvider(freeRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
     expect(result.response.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -269,7 +269,7 @@ describe('createCodexProvider', () => {
       data: [{ b64_json: 'ZWRpdA==' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT Image 2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     const result = await instance.instance.callImagesEdits(model, {
       images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
       parameters: { prompt: 'make it blue' },

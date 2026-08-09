@@ -265,7 +265,7 @@ describe('Codex image capability', () => {
     const flags: ReadonlySet<FlagId> = new Set();
     expect(codexImageProviderModel(flags)).toEqual({
       id: 'gpt-image-2',
-      display_name: 'GPT Image 2',
+      display_name: 'GPT-Image-2',
       owned_by: 'openai',
       kind: 'image',
       limits: {},

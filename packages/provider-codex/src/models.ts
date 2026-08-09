@@ -148,7 +148,7 @@ export const codexPlanSupportsImages = (planType: string): boolean =>
 
 export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): ProviderModel => ({
   id: CODEX_IMAGE_MODEL_ID,
-  display_name: 'GPT Image 2',
+  display_name: 'GPT-Image-2',
   owned_by: 'openai',
   kind: 'image',
   limits: {},
