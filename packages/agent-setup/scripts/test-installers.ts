@@ -528,6 +528,43 @@ const zedCredentialSecret = (workspace: Workspace): string => join(workspace.roo
 // newline-delimited, and `cat` is the only byte-preserving tool on the
 // harness's hermetic PATH — a pipeline through `od` or `xxd` would silently
 // produce nothing there.
+// Makes the workspace look like stock macOS: `chmod` without `--reference` and
+// `stat` without `-c`. On a GNU host `chmod --reference` succeeds and
+// `_stat_mode` is never called at all, so the mode fallback — the only mode
+// source BSD has — ships unexecuted unless the dialect is forced.
+const placeBsdToolShims = (workspace: Workspace): void => {
+  const realChmod = resolveTool('chmod')!;
+  const realStat = resolveTool('stat')!;
+  writeFileSync(join(workspace.binDir, 'chmod'), `#!/bin/bash
+for arg in "$@"; do
+  case "$arg" in --reference=*) printf 'chmod: illegal option -- -\n' >&2; exit 1 ;; esac
+done
+exec ${JSON.stringify(realChmod)} "$@"
+`, { mode: 0o755 });
+  // Rejects -c as BSD does, and answers `-f '%Lp'` by translating it to
+  // whatever the host's stat speaks — the shim has to serve the BSD call, not
+  // just refuse the GNU one, or the fallback would look broken when it is the
+  // shim that cannot answer.
+  writeFileSync(join(workspace.binDir, 'stat'), `#!/bin/bash
+deref=""
+fmt=""
+target=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c) printf 'stat: illegal option -- c\n' >&2; exit 1 ;;
+    -L) deref=-L ;;
+    -f) fmt=$2; shift ;;
+    *) target=$1 ;;
+  esac
+  shift
+done
+case "$fmt" in
+  '%Lp') exec ${JSON.stringify(realStat)} $deref -c '%a' "$target" ;;
+  *) printf 'stat: unsupported format\n' >&2; exit 1 ;;
+esac
+`, { mode: 0o755 });
+};
+
 const placeFakeCredentialTools = (workspace: Workspace): void => {
   const record = zedCredentialRecord(workspace);
   writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
@@ -2897,20 +2934,25 @@ test('zed', 'preserves the mode of a symlinked settings file', async t => {
   if (process.platform === 'win32') skip('POSIX modes and symlinks only');
   for (const which of ['bash', 'powershell'] as const) {
     if (which === 'powershell' && !hostPwsh) continue;
-    const ws = makeWorkspace();
-    const configDir = makeZedConfigDir(ws);
-    placeFakeCredentialTools(ws);
-    // The real document lives elsewhere, at a mode the operator chose; the path
-    // Zed reads is a link to it.
-    const target = join(ws.home, 'dotfiles-zed-settings.json');
-    writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
-    chmodSync(target, 0o600);
-    symlinkSync(target, zedSettingsPath(configDir));
+    for (const dialect of ['gnu', 'bsd'] as const) {
+      const ws = makeWorkspace();
+      const configDir = makeZedConfigDir(ws);
+      placeFakeCredentialTools(ws);
+      // GNU answers `chmod --reference` and `stat -c`, so on a GNU host the BSD
+      // fallback — the only mode source macOS has — would never execute.
+      if (dialect === 'bsd') placeBsdToolShims(ws);
+      // The real document lives elsewhere, at a mode the operator chose; the path
+      // Zed reads is a link to it.
+      const target = join(ws.home, 'dotfiles-zed-settings.json');
+      writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
+      chmodSync(target, 0o600);
+      symlinkSync(target, zedSettingsPath(configDir));
 
-    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
-    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
-    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
-    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which} keeps the target's mode, not the link's`);
+      const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which}/${dialect} keeps the target's mode, not the link's`);
+    }
   }
 });
 
