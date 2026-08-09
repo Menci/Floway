@@ -2766,15 +2766,16 @@ test('zed', 'preserves the settings file mode through a write and through a refu
     const written = makeWorkspace();
     const writtenDir = makeZedConfigDir(written);
     placeFakeCredentialTools(written);
-    // 0600 rather than 0644: the umask a run inherits is usually 022, so a
-    // stage that does not carry the operator mode comes back WIDER than the
-    // file they deliberately tightened.
-    writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
-    chmodSync(zedSettingsPath(writtenDir), 0o600);
+    // 0644, not 0600: main sets `umask 077`, so a stage that carries no mode at
+    // all is already 0600 and an assertion of 0600 would restate the umask
+    // rather than the preservation. A mode wider than the umask can only come
+    // from the operator's own file.
+    writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o644 });
+    chmodSync(zedSettingsPath(writtenDir), 0o644);
     const options = { workspace: written, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: writtenDir };
     const ok = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
     t.equal(ok.code, 0, `${which} should succeed:\n${ok.combined}`);
-    t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o600, `${which}: a successful write keeps the operator mode`);
+    t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o644, `${which}: a successful write keeps the operator mode`);
   }
 
   for (const which of ['bash', 'powershell'] as const) {
@@ -2906,12 +2907,37 @@ test('zed', 'PowerShell replaces existing settings atomically', async t => {
   t.ok(settings.language_models.anthropic_compatible.Floway!.available_models.length > 0, 'and our provider carries the catalog');
 });
 
-// A refusal that happens after the backup exists is the only path that runs
-// zed_rollback_settings, and it was reachable but unobserved: every other Zed
-// refusal is caught before the copy, so `cp -p` — which exists so a rollback
-// cannot narrow the operator's mode — could be deleted with the suite green.
-// The staged document is what fails here, since the shape checks now all
-// precede the backup.
+// The only path that runs zed_rollback_settings, and the only reason `cp -p`
+// exists: a rollback must hand the operator's document back at the mode they
+// chose. A read-only config directory does not reach it — `cp` fails before the
+// backup is made — so the failure is injected downstream instead: a stale
+// backup that is a directory makes the prune's `rm -f` fail, which happens
+// after the write has already been renamed into place.
+// chezmoi and stow both place a symlink here, and `stat` without `-L` reports
+// the link's own 0755 rather than the target's mode — so a run would widen the
+// file it was asked to preserve. On BSD this is the only mode source, since
+// `chmod --reference` does not exist there.
+test('zed', 'preserves the mode of a symlinked settings file', async t => {
+  if (process.platform === 'win32') skip('POSIX modes and symlinks only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    // The real document lives elsewhere, at a mode the operator chose; the path
+    // Zed reads is a link to it.
+    const target = join(ws.home, 'dotfiles-zed-settings.json');
+    writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
+    chmodSync(target, 0o600);
+    symlinkSync(target, zedSettingsPath(configDir));
+
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which} keeps the target's mode, not the link's`);
+  }
+});
+
 test('zed', 'a refusal after the backup restores the file and its mode', async t => {
   if (process.platform === 'win32') skip('POSIX modes only');
   const ws = makeWorkspace();
@@ -2920,22 +2946,11 @@ test('zed', 'a refusal after the backup restores the file and its mode', async t
   const original = JSON.stringify({ telemetry: { metrics: false } });
   writeFileSync(zedSettingsPath(configDir), original, { mode: 0o644 });
   chmodSync(zedSettingsPath(configDir), 0o644);
+  mkdirSync(`${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`, { recursive: true });
 
-  // The staged file is written beside the settings and renamed over them. A
-  // directory standing where the settings file must land makes `mv` fail, so
-  // the run reaches rollback with the backup already taken — no test hook, just
-  // a filesystem the rename cannot satisfy.
-  const stale = `${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`;
-  writeFileSync(stale, '{}');
-  chmodSync(configDir, 0o555);
-  let run;
-  try {
-    run = await runShellInstaller({
-      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
-    });
-  } finally {
-    chmodSync(configDir, 0o755);
-  }
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
+  });
 
   t.ok(run.code !== 0, 'the run fails');
   t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the document is restored');
