@@ -359,8 +359,9 @@ function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
   const summary = upstreamSummary(record, t);
 
+  // No width of its own: the column is what states it, and a cap here would
+  // ellipsise a line the column had room for.
   return <TableCellLayout
-    className="max-w-[520px]"
     // Fluent stacks the two lines with no gap at all, which leaves the second
     // reading as a wrapped continuation of the first rather than as its own
     // line. One step of the vertical ramp separates them.
@@ -408,7 +409,7 @@ function UpstreamsTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
-        <TableColumns widths={['120px', '220px', '360px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['120px', '200px', null, '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>

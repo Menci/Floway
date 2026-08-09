@@ -218,7 +218,10 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
         <span className="winui-focus-rect inline-flex items-baseline gap-1 min-w-0" tabIndex={0}>
           {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
           <Text size={200} className="text-fui-fg3" weight="medium" wrap={false}>{signal.value}</Text>
-          {signal.label !== null && <Text size={200} className="text-fui-fg3" truncate wrap={false}>{signal.label}</Text>}
+          {/* The window a reading covers is quieter than the reading: the
+              operator asked for the quietest tint the WinUI text ramp has,
+              which it names for a disabled control rather than for emphasis. */}
+          {signal.label !== null && <Text size={200} className="text-[var(--winui-text-fill-disabled)]" truncate wrap={false}>{signal.label}</Text>}
         </span>
       </Tooltip>)}
     </div>
