@@ -221,6 +221,11 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
     '      c.Type = 1; c.TargetName = target; c.CredentialBlobSize = (uint)secret.Length;',
     '      c.CredentialBlob = blob; c.Persist = 2; c.UserName = user;',
     '      if (!CredWriteW(ref c, 0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());',
+    // Zeroed before release, and byte-identical to the installer's body: both
+    // define FlowayZedCredential and both guard on the type already existing,
+    // so whichever runs first in a console defines it for the other. A snippet
+    // that skipped this would silently disable the installer's scrubbing.
+    '      for (int i = 0; i < secret.Length; i++) { Marshal.WriteByte(blob, i, 0); }',
     '    } finally { Marshal.FreeHGlobal(blob); }',
     '  }',
     '}',
