@@ -615,6 +615,7 @@ describe('callCodexResponses — upstream classification', () => {
       body: {
         input: [], stream: true,
         client_metadata: {
+          session_id: 'body-session',
           'x-codex-window-id': 'thread-1:2',
           'x-codex-turn-metadata': JSON.stringify({
             window_id: 'thread-1:2',
@@ -627,7 +628,7 @@ describe('callCodexResponses — upstream classification', () => {
       // A WebSocket upgrade's headers are frozen for the life of the socket,
       // so they carry the connection's first turn, not this one.
       headers: new Headers({
-        'session-id': 'sess',
+        'session-id': 'header-session',
         'x-codex-window-id': 'thread-1:0',
         'x-codex-turn-metadata': JSON.stringify({
           window_id: 'thread-1:0',
@@ -644,6 +645,7 @@ describe('callCodexResponses — upstream classification', () => {
     expect(turnMetadata.request_kind).toBe('compaction');
     expect(turnMetadata.compaction).toEqual({ trigger: 'auto', reason: 'context_limit' });
     expect(turnMetadata.turn_started_at_unix_ms).toBe(1700000000002);
+    expect(turnMetadata.session_id).toBe('body-session');
     // The window advances on every auto-compaction and the advanced value
     // reaches us in the body alone.
     expect(turnMetadata.window_id).toBe('thread-1:2');
@@ -687,7 +689,7 @@ describe('callCodexResponses — upstream classification', () => {
       upstreamId, account: activeAccount, model,
       body: {
         input: [], stream: true,
-        client_metadata: { 'x-extra-key': 'caller-supplied', session_id: 'body-session' },
+        client_metadata: { 'x-extra-key': 'caller-supplied', session_id: '   ' },
       } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
       headers: new Headers({ 'session-id': 'header-session' }),
       effects: makeEffects(),
@@ -698,13 +700,13 @@ describe('callCodexResponses — upstream classification', () => {
     const clientMetadata = body.client_metadata as Record<string, unknown>;
     // Non-identity extras pass through verbatim.
     expect(clientMetadata['x-extra-key']).toBe('caller-supplied');
-    // Identity-mirror keys come from identity, and identity reads the body
-    // before the header, so the three surfaces never disagree and a frozen
-    // handshake header never outranks the current turn.
-    expect(clientMetadata.session_id).toBe('body-session');
-    expect(clientMetadata.thread_id).toBe('body-session');
+    // A mirrored key identity could not absorb — a blank `session_id` resolves
+    // to nothing, so identity falls back to the header — still comes from
+    // identity instead of being spread over it.
+    expect(clientMetadata.session_id).toBe('header-session');
+    expect(clientMetadata.thread_id).toBe('header-session');
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
-    expect(headers.get('session-id')).toBe('body-session');
+    expect(headers.get('session-id')).toBe('header-session');
   });
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
