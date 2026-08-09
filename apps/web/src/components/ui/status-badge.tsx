@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useBadgeHue, type BadgeHue } from './badge-hue';
 import { fluentComponents } from '../../fluent';
 
-const { Badge, mergeClasses } = fluentComponents;
+const { Badge, makeStyles, mergeClasses } = fluentComponents;
 
 export type BadgeTone = 'accent' | 'danger' | 'neutral' | 'success' | 'warning';
 
@@ -27,6 +27,33 @@ const TONE_HUES: Record<BadgeTone, BadgeHue> = {
   warning: { light: '#9d5d00', dark: '#fce100' },
 };
 
+/** Fluent's private `tagSpacingSmall`, which is what ./chip.tsx's `small` step pads its root by.
+ * https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L23
+ * https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L185-L187
+ * https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L199-L201 */
+const CHIP_ROOT_PADDING = '5px';
+
+// The dashboard has two badge shapes -- this one and ./chip.tsx -- and a label
+// has to sit the same distance inside either. The chip reaches its inset in
+// three parts: a real 1px border, the root padding above, and
+// spacingHorizontalXXS on the label slot. Badge draws its stroke as an inset
+// ::after so that a border costs no layout, which leaves padding as the whole
+// inset -- and Fluent's large step, spacingHorizontalXS plus the same XXS it
+// calls textPadding, lands two pixels short of the chip.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L46
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L320-L325
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/library/src/components/Badge/useBadgeStyles.styles.ts#L14-L16
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/library/src/components/Badge/useBadgeStyles.styles.ts#L77-L81
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-badge/library/src/components/Badge/useBadgeStyles.styles.ts#L99-L101
+const LABEL_INSET = `calc(var(--strokeWidthThin) + ${CHIP_ROOT_PADDING} + var(--spacingHorizontalXXS))`;
+
+const useStyles = makeStyles({
+  root: {
+    paddingLeft: LABEL_INSET,
+    paddingRight: LABEL_INSET,
+  },
+});
+
 /** Fluent's `medium` default has an empty size rule, leaving the 20px root reset box, so every dashboard badge is `large`. */
 export function StatusBadge({ children, className, tone }: {
   children: ReactNode;
@@ -34,5 +61,6 @@ export function StatusBadge({ children, className, tone }: {
   tone: BadgeTone;
 }) {
   const hue = useBadgeHue(TONE_HUES[tone]);
-  return <Badge appearance="tint" className={mergeClasses(hue.className, className)} size="large" style={hue.style}>{children}</Badge>;
+  const styles = useStyles();
+  return <Badge appearance="tint" className={mergeClasses(styles.root, hue.className, className)} size="large" style={hue.style}>{children}</Badge>;
 }
