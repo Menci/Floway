@@ -63,22 +63,22 @@ function Set-SetupOptionalProp {
 
 # A top-level JSON array, as a flat array on both PowerShell versions.
 #
-# Windows PowerShell 5.1 hands the whole array to the pipeline as one object
-# where 7 streams its elements, so `@($text | ConvertFrom-Json)` is a
-# one-element array containing the real one there and the real one here.
-# `-InputObject` does not change that; only enumerating does. The nested form is
-# not merely a wrong count: ConvertTo-Json writes an inner collection as
-# `{"value":[…],"Count":n}`, so the editor reads an object where its schema
-# requires a list and the whole provider fails to load.
+# Windows PowerShell 5.1 hands the whole array back as one object where 7 hands
+# back its elements, so `@($text | ConvertFrom-Json)` is a one-element array
+# holding the real one there and the real one here. The nested form is not
+# merely a wrong count: ConvertTo-Json writes an inner collection as
+# `{"value":[…],"Count":n}`, so an editor reads an object where its schema
+# requires a list and drops the whole entry.
 #
-# Measured on 5.1.26100.8875 and pwsh 7.7: `@(json | ConvertFrom-Json).Count` is
-# 1 and 2 for a two-element array; enumerated, both give 2.
+# Decided by type rather than by enumerating, because `foreach` skips a `$null`
+# and `[null]` has to stay one element — it is a document to refuse, not an
+# empty list. Measured on 5.1.26100.8875 and pwsh 7.7: both give 2, 1, 1, 2, 0
+# and 2 elements for a two-object array, a one-object array, `[null]`,
+# `[null,null]`, `[]` and `[1,2]`.
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
-  $items = @()
-  foreach ($item in (ConvertFrom-Json -InputObject $Text)) { $items += $item }
-  # Returned bare, not comma-wrapped: every caller collects with `@()`, which
-  # rebuilds the array from the elements the return streams. A wrap would put
-  # one more level back on, which is the shape this exists to remove.
-  return $items
+  $parsed = ConvertFrom-Json -InputObject $Text
+  if ($parsed -is [System.Array]) { return $parsed }
+  # A lone element, `$null` included, stays one element through the return.
+  return ,$parsed
 }
