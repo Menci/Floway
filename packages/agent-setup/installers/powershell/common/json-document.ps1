@@ -50,12 +50,27 @@ function Test-SetupJsonRoot {
 #
 # Strings are walked rather than stripped by regex, because a value like a model
 # id or a URL contains `//` legitimately. The JSONC arm mirrors
-# _json_has_jsonc_syntax; the strict arm is RFC 8259, which jq implements with
-# two leniencies of its own — it takes `NaN`, `Infinity` and a leading `+`, all
-# refused here. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
+# _json_has_jsonc_syntax; the strict arm is RFC 8259 minus the leniencies jq
+# shares — a leading `+` stays in the number set because jq rewrites it rather
+# than refusing it, so refusing here would make this half stricter for a file
+# the other half repairs. `NaN` and `Infinity`, which jq also takes, are
+# refused: those it passes through unchanged. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
 # rejects on both versions, so the Bash half configures it and this one stops.
 # Both are documents no editor writes; the parity this arm buys is over the
 # constructs an operator can actually type.
+# Does a `:` follow the value that ends at $End, ignoring JSON whitespace? Then
+# that value was used as a key, which JSON does not allow and both PowerShell
+# decoders do.
+function Test-SetupJsonKeyFollows {
+  param([string]$Text, [int]$End)
+  for ($k = $End + 1; $k -lt $Text.Length; $k++) {
+    $c = $Text[$k]
+    if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`r" -or $c -eq "`n") { continue }
+    return $c -eq ':'
+  }
+  return $false
+}
+
 function Get-SetupJsonVerdict {
   param([string]$Text)
   $inString = $false
@@ -97,6 +112,11 @@ function Get-SetupJsonVerdict {
       if ($i + $literal.Length -le $Text.Length -and
           [string]::Equals($Text.Substring($i, $literal.Length), $literal, [System.StringComparison]::Ordinal)) {
         $i += $literal.Length - 1
+        # A literal is a value, so a `:` cannot follow it — that is an unquoted
+        # key spelled `true`, `false` or `null`, which both decoders take and jq
+        # refuses. A number is a value the same way, which is why the scan looks
+        # past both.
+        if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
         continue
       }
       $strict = $false
@@ -107,7 +127,17 @@ function Get-SetupJsonVerdict {
     # single quote opening a string, any other letter — is a document jq
     # refuses, and refusing it here is what keeps the two halves from
     # disagreeing about one file.
+    # `+` is in the set although JSON has no leading plus: jq takes one as an
+    # extension and rewrites it as a plain number, so the Bash half configures
+    # such a file and repairs it. Refusing here would make this half the stricter
+    # one for a document the other half fixes — the decoders already disagree
+    # (pwsh 7 refuses, 5.1 accepts and canonicalizes) and that is theirs to own.
     if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) { $strict = $false }
+    elseif ('0123456789+-'.IndexOf($ch) -ge 0) {
+      # Walk the number to its end and ask the same question of what follows.
+      while ($i + 1 -lt $Text.Length -and '0123456789+-.eE'.IndexOf($Text[$i + 1]) -ge 0) { $i++ }
+      if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
+    }
   }
   if (-not $strict) { return 'invalid' }
   return 'ok'

@@ -51,7 +51,7 @@ function Assert-SetupZedConfigDir {
 # hand-written ones did.
 function Get-SetupZedModels {
   try { $models = [object[]](ConvertFrom-SetupJsonArray $SetupZedModels) } catch { Stop-Setup 'the embedded Zed model list is not readable.' }
-  if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
+  if ($models.Count -eq 0) { Stop-Setup 'no chat model this gateway serves can be configured for Zed.' }
   $script:ZedModels = $models
 }
 

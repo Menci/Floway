@@ -85,7 +85,7 @@ zed_stage_models() {
     return 1
   fi
   if [ "$ZED_MODEL_COUNT" -eq 0 ]; then
-    out_error 'the gateway advertises no chat models; nothing to configure.'
+    out_error 'no chat model this gateway serves can be configured for Zed.'
     return 1
   fi
 }

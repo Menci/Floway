@@ -184,15 +184,6 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
   // one only where Zed's own 4096 would take more than a quarter — an Ollama
   // model with a 2048-token context would otherwise reserve twice its window
   // and reach the picker with a negative budget.
-  // Back through the same filter the catalog's own limits go through: a window
-  // of one to three tokens makes these quotients 0, and a stated 0 is the value
-  // that filter exists to refuse — it would reach Zed as a Messages
-  // `max_tokens` of 0, which the upstream rejects on every request. Absent
-  // instead, which leaves Zed its own 4096.
-  // Clamped to leave at least one token on each side, and back through the
-  // filter the catalog's own limits go through: the quotients are 0 for a
-  // window of one to three tokens, and a stated 0 reaches Zed as a Messages
-  // `max_tokens` of 0, which the upstream rejects on every request.
   const quotient = stated === undefined
     ? (Math.floor(window / 4) < ZED_FALLBACK_MAX_OUTPUT_TOKENS ? Math.floor(window / 4) : undefined)
     : Math.min(stated, Math.floor(window / 2));
