@@ -113,22 +113,17 @@ describe('Zed available_models projection', () => {
     expect(rows.find(r => r.name === 'roomy')!.max_tokens - 64_000).toBe(128_000);
   });
 
-  // Copilot merges its 1M Claude variants into the base row, so the catalog
-  // reports a 1M window that the bare id cannot reach — the beta that unlocks it
-  // rides on the `[1m]` suffix, which is how the Claude Code half already
-  // addresses this row. Without it the projected limits are a promise the
-  // upstream refuses.
-  it('addresses the variant whose window it reports', () => {
-    const [merged, plain, already] = projectZedModels([
+  // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it
+  // and supplies the beta itself. Editors send the id back verbatim and the
+  // gateway's resolution has no notion of the suffix, so projecting it would
+  // address a model that does not exist. The merged row's window is optimistic
+  // as a result, which is the lesser of the two — a 404 on every 1M model is
+  // not.
+  it('sends the id the gateway can resolve, suffix-free', () => {
+    const [merged] = projectZedModels([
       catalogModel('claude-opus-4-7', { limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 936_000, max_output_tokens: 64_000 } }),
-      catalogModel('claude-sonnet-4-5', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 168_000, max_output_tokens: 32_000 } }),
-      catalogModel('vendor/claude-opus-4-7[1m]', { limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 936_000 } }),
     ]);
-    expect(merged!.name).toBe('claude-opus-4-7[1m]');
-    expect(plain!.name).toBe('claude-sonnet-4-5');
-    expect(already!.name).toBe('vendor/claude-opus-4-7[1m]');
-    // The label the operator recognises is untouched.
-    expect(merged!.display_name).toBe('claude-opus-4-7');
+    expect(merged!.name).toBe('claude-opus-4-7');
   });
 
   it('omits max_output_tokens when the catalog announces none', () => {
@@ -214,15 +209,11 @@ describe('VS Code customendpoint model projection', () => {
     expect(resolve(small!).maxInputTokens).toBe(8192 - 2048);
   });
 
-  it('addresses the variant whose window it reports', () => {
-    const [merged, plain] = projectVSCodeModels([
+  it('sends the id the gateway can resolve, suffix-free', () => {
+    const [merged] = projectVSCodeModels([
       catalogModel('claude-opus-4-7', { limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 936_000, max_output_tokens: 64_000 } }),
-      catalogModel('claude-sonnet-4-5', { limits: { max_context_window_tokens: 200_000 } }),
     ], 'messages');
-    expect(merged!.id).toBe('claude-opus-4-7[1m]');
-    expect(plain!.id).toBe('claude-sonnet-4-5');
-    // The label the operator reads in the picker is untouched.
-    expect(merged!.name).toBe('claude-opus-4-7');
+    expect(merged!.id).toBe('claude-opus-4-7');
   });
 
   it('keeps a stated zero verbatim rather than substituting a fallback', () => {
