@@ -151,6 +151,21 @@ export interface VSCodeModel {
 const VSCODE_FALLBACK_CONTEXT_TOKENS = 128_000;
 const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 
+const vscodeContextWindow = (limits: PublicModel['limits']): number =>
+  limits.max_context_window_tokens ?? limits.max_prompt_tokens ?? VSCODE_FALLBACK_CONTEXT_TOKENS;
+
+// VS Code reserves the output budget out of the window and gives the prompt
+// whatever is left, so an output fallback larger than the window leaves a
+// prompt budget of zero — the model appears in the picker and every request is
+// over budget before it starts. Ollama states a context length and no output
+// limit at all, so an 8k model hits exactly that. A stated 0 still survives
+// verbatim; only the fallback is bounded, to a quarter of the window.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
+const vscodeOutputTokens = (limits: PublicModel['limits']): number => {
+  if (limits.max_output_tokens !== undefined) return limits.max_output_tokens;
+  return Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(vscodeContextWindow(limits) / 4));
+};
+
 export const projectVSCodeModels = (
   models: readonly PublicModel[],
   apiType: VSCodeApiType,
@@ -167,15 +182,13 @@ export const projectVSCodeModels = (
       //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts#L63-L72
       toolCalling: true,
       vision: model.chat?.modalities?.input.includes('image') ?? false,
-      maxOutputTokens: model.limits.max_output_tokens ?? VSCODE_FALLBACK_OUTPUT_TOKENS,
+      maxOutputTokens: vscodeOutputTokens(model.limits),
       // `contextWindow` is the whole window and `maxInputTokens` the prompt
       // budget — two different numbers VS Code reconciles itself, deriving the
       // second from the first when it is absent. A model that states a prompt
       // limit is entitled to have it stated rather than derived, so both are
       // emitted; a model announcing only one gets the window it announced.
-      contextWindow: model.limits.max_context_window_tokens
-        ?? model.limits.max_prompt_tokens
-        ?? VSCODE_FALLBACK_CONTEXT_TOKENS,
+      contextWindow: vscodeContextWindow(model.limits),
       ...(model.limits.max_prompt_tokens === undefined ? {} : { maxInputTokens: model.limits.max_prompt_tokens }),
       ...(reasoning === undefined ? {} : { thinking: true }),
       ...(supportedEfforts === undefined

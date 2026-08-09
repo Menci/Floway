@@ -375,6 +375,14 @@ const EDITOR_CATALOG = {
       chat: { reasoning: { effort: { supported: [], default: 'low' } } },
     },
     {
+      // States a window, a prompt limit and an output limit — the shape Copilot
+      // reports. The two editors derive different things from it, so it has to
+      // survive the projection and both merges intact.
+      id: 'all-three-limits', object: 'model', type: 'model', display_name: 'All Three',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 },
+    },
+    {
       // Addressable but not listed: the dashboard asks for these to populate
       // its alias combobox, and a setup run must not advertise one.
       id: 'vendor/unlisted-chat', object: 'model', type: 'model', display_name: 'Unlisted',
@@ -2532,7 +2540,7 @@ test('zed', 'projects the catalog into available_models and keeps unrelated sett
   );
   const provider = settings.language_models.anthropic_compatible.Floway!;
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin Zed appends /v1/messages to');
-  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+  t.equal(provider.available_models.map(entry => entry.name).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits,all-three-limits', 'chat models only, in catalog order');
 });
 
 test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', async t => {
@@ -2692,7 +2700,7 @@ test('zed', 'PowerShell writes the same provider document as Bash', async t => {
   t.equal(provider.api_url, modelServer.url, 'api_url is the bare origin');
   t.equal(
     provider.available_models.map(entry => entry.name).join(','),
-    'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits',
+    'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits,all-three-limits',
     'chat models only, in catalog order',
   );
   t.equal(bash.settings.language_models.anthropic_compatible.Existing?.api_url, 'https://existing', 'a sibling provider survives the merge');
@@ -2978,7 +2986,7 @@ test('vscode', 'enumerates the catalog into one customendpoint group', async t =
 
   const group = ourGroup(readVSCodeGroups(userDir));
   t.equal(group.apiType, 'messages', 'the group carries the selected API path');
-  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits,all-three-limits', 'chat models only, in catalog order');
   t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment customendpoint appends a path to');
 });
 
@@ -3045,6 +3053,13 @@ test('vscode', 'maps limits, modalities, and reasoning onto the required fields'
 
   // A stated 0 is a value, not an absent limit; the fallbacks belong to models
   // that announce nothing. Truthiness tests cannot tell the two apart.
+  // Both limits have to reach the written document: the window for planning,
+  // the prompt budget so VS Code does not derive a larger one than the upstream
+  // accepts.
+  const allThree = models.get('all-three-limits')!;
+  t.equal(allThree.contextWindow, 216_000, 'the window reaches the document');
+  t.equal(allThree.maxInputTokens, 128_000, 'and so does the stated prompt limit');
+
   const zero = models.get('zero-limits')!;
   t.equal(zero.contextWindow, 0, 'a stated zero context window survives');
   t.equal(zero.maxOutputTokens, 0, 'a stated zero output limit survives');

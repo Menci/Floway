@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { catalogModel } from './model-fixture.ts';
-import { projectZedModels } from '../src/models.ts';
+import { projectVSCodeModels, projectZedModels } from '../src/models.ts';
 
 describe('Zed available_models projection', () => {
   it('keeps chat models and drops other kinds', () => {
@@ -122,5 +122,56 @@ describe('Zed available_models projection', () => {
     expect(ceilingOnly!.mode).toEqual({ type: 'thinking', budget_tokens: 32_000 });
     expect(effortOnly).not.toHaveProperty('mode');
     expect(plain).not.toHaveProperty('mode');
+  });
+});
+
+// VS Code reconciles the two limits itself: it reserves the output budget out
+// of the window and gives the prompt whatever remains, clamping an explicit
+// `maxInputTokens` to that remainder.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
+describe('VS Code customendpoint model projection', () => {
+  // What VS Code computes from what we wrote.
+  const resolve = (entry: { contextWindow: number; maxOutputTokens: number; maxInputTokens?: number }) => {
+    const maxOutputTokens = Math.min(entry.maxOutputTokens, entry.contextWindow);
+    const remaining = Math.max(0, entry.contextWindow - maxOutputTokens);
+    return { maxOutputTokens, maxInputTokens: Math.min(entry.maxInputTokens ?? remaining, remaining) };
+  };
+
+  it('states the prompt limit rather than letting it be derived', () => {
+    const [both, windowOnly] = projectVSCodeModels([
+      catalogModel('both', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
+      catalogModel('window-only', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 32_000 } }),
+    ], 'messages');
+
+    expect(both!.contextWindow).toBe(216_000);
+    expect(both!.maxInputTokens).toBe(128_000);
+    // Derived rather than stated, the prompt budget would have been 152k — more
+    // than the upstream accepts.
+    expect(resolve(both!).maxInputTokens).toBe(128_000);
+
+    expect(windowOnly).not.toHaveProperty('maxInputTokens');
+    expect(resolve(windowOnly!).maxInputTokens).toBe(168_000);
+  });
+
+  // Ollama states a context length and no output limit, so an 8k model would
+  // otherwise reserve the whole window for output and register with a prompt
+  // budget of zero: present in the picker, over budget before it starts.
+  it('never leaves a small-context model with no room to prompt', () => {
+    const [tiny, small] = projectVSCodeModels([
+      catalogModel('ollama-4k', { limits: { max_context_window_tokens: 4096 } }),
+      catalogModel('ollama-8k', { limits: { max_context_window_tokens: 8192 } }),
+    ], 'messages');
+
+    expect(resolve(tiny!).maxInputTokens).toBeGreaterThan(0);
+    expect(resolve(small!).maxInputTokens).toBeGreaterThan(0);
+    expect(resolve(small!).maxInputTokens).toBe(8192 - 2048);
+  });
+
+  it('keeps a stated zero verbatim rather than substituting a fallback', () => {
+    const [zero] = projectVSCodeModels([
+      catalogModel('zero', { limits: { max_context_window_tokens: 0, max_output_tokens: 0 } }),
+    ], 'messages');
+    expect(zero!.maxOutputTokens).toBe(0);
+    expect(zero!.contextWindow).toBe(0);
   });
 });
