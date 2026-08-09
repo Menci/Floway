@@ -46,10 +46,15 @@ describe('Zed available_models projection', () => {
       catalogModel('no-output-limit', { contextWindow: 200_000, chat: { reasoning: { budget_tokens: { max: 32_000 } } } }),
       catalogModel('budget-at-the-limit', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 8000 } } } }),
       catalogModel('budget-under-the-limit', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 4000 } } } }),
+      // The band shrinks this row's reservation from 64_000 to 48_000, and it
+      // is the shrunk one Zed sends — a budget between the two is under the
+      // catalog's limit and over what actually goes on the wire.
+      catalogModel('budget-over-the-shrunk-limit', { limits: { max_context_window_tokens: 128_000, max_output_tokens: 64_000 }, chat: { reasoning: { budget_tokens: { min: 50_000 } } } }),
     ]).map(entry => entry.mode);
     expect(modes[0]).toBeUndefined();
     expect(modes[1]).toBeUndefined();
     expect(modes[2]).toEqual({ type: 'thinking', budget_tokens: 4000 });
+    expect(modes[3]).toBeUndefined();
   });
 
   // `max_tokens` is the context window, and Zed derives the prompt budget by
@@ -104,6 +109,14 @@ describe('Zed available_models projection', () => {
       catalogModel('roomy', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
       catalogModel('window-only', { contextWindow: 400_000 }),
       catalogModel('unbounded'),
+      // No prompt limit — the branch the band check reached last. An
+      // OpenAI-compatible upstream states window and output and nothing else,
+      // and every one of these falls in the band on the stated pair.
+      catalogModel('window-and-output', { limits: { max_context_window_tokens: 128_000, max_output_tokens: 64_000 } }),
+      catalogModel('window-and-output-wide', { limits: { max_context_window_tokens: 100_000, max_output_tokens: 32_000 } }),
+      catalogModel('window-and-output-narrow', { limits: { max_context_window_tokens: 82_000, max_output_tokens: 32_000 } }),
+      // Output absent, so Zed reserves 4096 of a window that leaves too little.
+      catalogModel('window-just-over-threshold', { contextWindow: 82_000 }),
     ]);
 
     for (const row of rows) {
@@ -111,6 +124,17 @@ describe('Zed available_models projection', () => {
     }
     // And above the threshold the budget is still exactly what the catalog said.
     expect(rows.find(r => r.name === 'roomy')!.max_tokens - 64_000).toBe(128_000);
+
+    const row = (name: string) => rows.find(r => r.name === name)!;
+    // With no prompt limit stated, the split is ours: the window is left whole
+    // and the reservation shrinks to put the budget on the threshold.
+    expect(row('window-and-output')).toMatchObject({ max_tokens: 128_000, max_output_tokens: 48_000 });
+    expect(row('window-and-output-wide')).toMatchObject({ max_tokens: 100_000, max_output_tokens: 20_000 });
+    // Under 4096 left over there is no split that compacts, so the window drops
+    // below the threshold to raise the callout and the reservation stands.
+    expect(row('window-and-output-narrow')).toMatchObject({ max_tokens: 79_999, max_output_tokens: 32_000 });
+    expect(row('window-just-over-threshold')!.max_tokens).toBe(79_999);
+    expect(row('window-just-over-threshold')).not.toHaveProperty('max_output_tokens');
   });
 
   // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it

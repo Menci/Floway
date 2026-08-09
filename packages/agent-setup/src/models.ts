@@ -99,34 +99,61 @@ const zedThinkingMode = (
 const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
   models.filter(model => model.kind === 'chat' && model.unlisted !== true);
 
-// Zed subtracts its output reservation from this to get the prompt budget, so a
-// catalog stating a prompt limit gets that limit plus the reservation back. The
-// stated window is not usable in its place: on a live Copilot catalog the
-// window equals prompt + output for most rows and is smaller for a third of
-// them, and where it is larger it is often a merged 1M Claude variant the
-// editors cannot reach — all of which would have Zed plan against headroom the
-// upstream will not honour.
+// Zed subtracts its output reservation from `max_tokens` to get the prompt
+// budget, and asks the 80_000 threshold of both numbers: compaction of the
+// derived budget, the small-context warning of the raw window. A model must
+// never land between them — compaction off with the callout suppressed is a
+// silent degradation with nothing on screen to explain it.
 //
-// Except below the compaction threshold, where adding the reservation would
-// carry the raw value over it while the derived value stays under: compaction
-// off AND the warning suppressed, which is the silent degradation this whole
-// reconstruction exists to avoid. There the stated prompt limit goes out alone,
-// so the callout fires. The budget is then conservative by the reservation,
-// which costs nothing — compaction is already unavailable at that size.
-const zedContextWindow = (limits: PublicModel['limits']): number => {
+// Which lever closes the band depends on whether the catalog states a prompt
+// limit, because that decides whether the budget is ours to move:
+//
+//   - Stated. `max_tokens` is that limit plus the reservation, so the budget
+//     comes back exactly as stated. In the band the reservation is dropped and
+//     the limit goes out alone, putting the raw value under the threshold so the
+//     callout fires. Raising the budget instead would have Zed plan against
+//     headroom the upstream refuses.
+//   - Not stated. The window is the only bound, and how it splits into prompt
+//     and output is ours to choose. In the band the reservation shrinks until
+//     the budget reaches the threshold, which turns compaction on and leaves the
+//     total untouched — unless what remains is under Zed's own 4096 default, in
+//     which case there is no split that both compacts and stays quiet, and the
+//     window is lowered to raise the callout instead.
+//
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent_ui/src/conversation_view/thread_view.rs#L11845
+const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOutputTokens: number | undefined } => {
+  const stated = limits.max_output_tokens;
+  const reserved = stated ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
   const prompt = limits.max_prompt_tokens;
-  if (prompt === undefined) return limits.max_context_window_tokens ?? ZED_FALLBACK_CONTEXT_TOKENS;
-  if (prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return prompt;
-  return prompt + (limits.max_output_tokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS);
+
+  if (prompt !== undefined) {
+    return prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW
+      ? { maxTokens: prompt, maxOutputTokens: stated }
+      : { maxTokens: prompt + reserved, maxOutputTokens: stated };
+  }
+
+  const window = limits.max_context_window_tokens ?? ZED_FALLBACK_CONTEXT_TOKENS;
+  if (window < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
+  if (window - reserved >= ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
+
+  const shrunk = window - ZED_MIN_COMPACTION_CONTEXT_WINDOW;
+  return shrunk >= ZED_FALLBACK_MAX_OUTPUT_TOKENS
+    ? { maxTokens: window, maxOutputTokens: shrunk }
+    : { maxTokens: ZED_MIN_COMPACTION_CONTEXT_WINDOW - 1, maxOutputTokens: stated };
 };
 
 export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
   chatModels(models).map(model => {
-    const mode = zedThinkingMode(model.chat?.reasoning, model.limits.max_output_tokens);
+    const plan = zedTokenPlan(model.limits);
+    // The ceiling is the reservation Zed will actually send, which the band may
+    // have shrunk — a budget under the stated limit but over the shrunk one is
+    // still one Anthropic rejects on every request.
+    const mode = zedThinkingMode(model.chat?.reasoning, plan.maxOutputTokens);
     return {
       name: model.id,
       display_name: model.display_name,
-      max_tokens: zedContextWindow(model.limits),
+      max_tokens: plan.maxTokens,
       capabilities: {
         // A chat model that cannot call tools is not one anyone routes here.
         tools: true,
@@ -135,7 +162,7 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
         // entirely; on, it marks where the stable prefix ends.
         prompt_caching: true,
       },
-      ...(model.limits.max_output_tokens === undefined ? {} : { max_output_tokens: model.limits.max_output_tokens }),
+      ...(plan.maxOutputTokens === undefined ? {} : { max_output_tokens: plan.maxOutputTokens }),
       ...(mode === undefined ? {} : { mode }),
     };
   });
