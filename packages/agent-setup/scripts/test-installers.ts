@@ -871,6 +871,24 @@ const networkReachable = (): boolean => {
   return probe.status === 0;
 };
 
+// Each installer replaces an existing managed file atomically, but only on
+// Windows — so on every other host that branch would ship unexecuted, and it is
+// where a `$null` PowerShell binds as String.Empty aborts the whole install.
+// Dropping the platform conjunct runs it here. Keyed per agent and asserted
+// rather than chained as .replace calls, because a rewrite that silently
+// stopped matching would restore the gap it exists to close.
+const WINDOWS_REPLACEMENT_GUARDS: Record<ScriptAgent, string> = {
+  claude: 'if ($script:ClaudeSettingsExisted -and $runningOnWindows)',
+  codex: 'if ($script:CodexTokenExisted -and $runningOnWindows)',
+  zed: 'if ($script:ZedSettingsExisted -and (Test-SetupIsWindows))',
+};
+
+const forceWindowsReplacement = (agent: ScriptAgent, body: string): string => {
+  const guard = WINDOWS_REPLACEMENT_GUARDS[agent];
+  if (!body.includes(guard)) throw new Error(`${agent}: no Windows replacement guard matching ${guard}`);
+  return body.replace(guard, `${guard.slice(0, guard.indexOf(' -and '))})`);
+};
+
 // Runs the PowerShell body under a real interpreter, mirroring runShellInstaller
 // but rendering the PowerShell prefix. Model-directory traffic is in-process, so
 // this too must be async to keep the event loop free.
@@ -881,11 +899,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
   const canonicalBody = powerShellBody(agent);
-  const body = options.forcePowerShellWindowsReplacement
-    ? canonicalBody
-        .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
-        .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
-    : canonicalBody;
+  const body = options.forcePowerShellWindowsReplacement ? forceWindowsReplacement(agent, canonicalBody) : canonicalBody;
   const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog) }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
@@ -2835,6 +2849,29 @@ test('zed', 'both halves create a new settings file owner-only', async t => {
 // a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
 // rewritten as an object with the array silently discarded, while jq refuses
 // it. Both halves decide the root from the text.
+// The atomic replacement Windows takes when the settings file already exists.
+// It is the only branch that runs File.Replace, and a `$null` PowerShell binds
+// as String.Empty makes that call reject the whole install — so the platform
+// conjunct is dropped here to execute it off-Windows.
+test('zed', 'PowerShell replaces existing settings atomically', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  writeFileSync(zedSettingsPath(configDir), JSON.stringify({ telemetry: { metrics: false } }));
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    baseUrl: modelServer.url,
+    configuration: zedConfig(),
+    zedConfigDir: configDir,
+    forcePowerShellWindowsReplacement: true,
+  });
+  t.equal(run.code, 0, `File.Replace should succeed:\n${run.combined}`);
+  const settings = readSettings(zedSettingsPath(configDir)) as ZedSettings;
+  t.equal(JSON.stringify(settings.telemetry), JSON.stringify({ metrics: false }), 'the unrelated key survives the replacement');
+  t.ok(settings.language_models.anthropic_compatible.Floway!.available_models.length > 0, 'and our provider carries the catalog');
+});
+
 test('zed', 'both halves refuse an array root', async t => {
   const arrayRoot = '[{"telemetry":{"metrics":false}}]';
   const runHalf = async (which: 'bash' | 'powershell') => {

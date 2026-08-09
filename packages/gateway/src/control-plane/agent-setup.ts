@@ -42,7 +42,13 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   // scope, so a setup script never advertises a model the key cannot reach.
   listModels: async (c, userId, apiKeyId) => {
     const [key, user] = await Promise.all([getRepo().apiKeys.getById(apiKeyId), getRepo().users.getById(userId)]);
-    if (key?.userId !== userId || user === null) return [];
+    // resolveApiKey already proved both exist; reaching here means one was
+    // deleted mid-request. Throwing renders the listing-failure script, which
+    // says something went wrong — returning an empty catalog would instead
+    // tell the operator their gateway advertises no chat models.
+    if (key?.userId !== userId || user === null) {
+      throw new Error(`Agent Setup: API key ${apiKeyId} or its owner disappeared while serving a setup script`);
+    }
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
     const upstreamIds = intersectUpstreamIds(user.upstreamIds ?? null, key.upstreamIds ?? null);
     const catalog = await loadModels(upstreamIds, fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
