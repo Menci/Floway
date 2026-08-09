@@ -31,13 +31,17 @@ export interface ZedModel {
   mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens: number };
 }
 
-// `max_tokens` is a required u64 on Zed's model entry and is consumed verbatim
-// as the input window, so Zed has nothing to fall back to — a model without it
-// fails deserialization and takes the whole provider down. This number is
-// therefore ours, not Zed's: a window to state when the catalog announces none.
+// `max_tokens` is a required u64 on Zed's model entry, copied straight into
+// `max_input_tokens` and returned by `max_token_count()` — so it is the PROMPT
+// budget Zed compacts against, not the full context window. Filling it from the
+// window would tell Zed a 128k-prompt model accepts 216k, so it never compacts
+// and every long request 400s upstream with nothing in the UI to explain it.
+// Zed has nothing to fall back to either: a model without it fails
+// deserialization and takes the whole provider down, so this number is ours.
 // Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L57
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L71
-const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L421-L422
+const ZED_FALLBACK_PROMPT_TOKENS = 200_000;
 
 // Anthropic rejects a thinking budget below this, so a smaller one is not a
 // budget Zed can use — and `budget_tokens.min` is only a lower bound an
@@ -90,9 +94,12 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
     return {
       name: model.id,
       display_name: model.display_name,
-      max_tokens: model.limits.max_context_window_tokens
-        ?? model.limits.max_prompt_tokens
-        ?? ZED_FALLBACK_CONTEXT_TOKENS,
+      // The prompt limit first, the window only as a stand-in when no prompt
+      // limit is stated — the same precedence the Gemini catalog projection
+      // uses for an input limit.
+      max_tokens: model.limits.max_prompt_tokens
+        ?? model.limits.max_context_window_tokens
+        ?? ZED_FALLBACK_PROMPT_TOKENS,
       capabilities: {
         // A chat model that cannot call tools is not one anyone routes here.
         tools: true,

@@ -52,12 +52,17 @@ describe('Zed available_models projection', () => {
     expect(modes[2]).toEqual({ type: 'thinking', budget_tokens: 4000 });
   });
 
-  it('prefers the context window, falls back to prompt tokens, then to a default', () => {
+  // Zed copies `max_tokens` into `max_input_tokens` and compacts against it, so
+  // it is the prompt budget. A model stating both — which Copilot routinely
+  // does — must not be handed the window, or Zed never compacts and every long
+  // request 400s upstream.
+  it('fills the prompt budget from the prompt limit, not the window', () => {
     expect(projectZedModels([
-      catalogModel('windowed', { contextWindow: 400_000 }),
+      catalogModel('both', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000 } }),
+      catalogModel('window-only', { contextWindow: 400_000 }),
       catalogModel('prompt-only', { limits: { max_prompt_tokens: 120_000 } }),
       catalogModel('unbounded'),
-    ]).map(entry => entry.max_tokens)).toEqual([400_000, 120_000, 200_000]);
+    ]).map(entry => entry.max_tokens)).toEqual([128_000, 400_000, 120_000, 200_000]);
   });
 
   it('omits max_output_tokens when the catalog announces none', () => {
