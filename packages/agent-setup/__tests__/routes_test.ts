@@ -502,10 +502,6 @@ test('GET re-reads the current configuration each request', async () => {
   expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
 });
 
-// Zed cannot discover models, so the script carries the projection and listing
-// happens here. A listing failure is the operator's to see: an opaque 404 would
-// read as a dead setup link and a 500 as a gateway fault, so the script says
-// what happened and exits non-zero before touching anything.
 test('the served VS Code script carries the projected catalog and its API path', async () => {
   const h = harness();
   const lease = await create(h);
@@ -520,6 +516,10 @@ test('the served VS Code script carries the projected catalog and its API path',
   expect(embedded).not.toContain('requestHeaders');
 });
 
+// Neither editor can discover models, so the script carries the projection and
+// listing happens here. A listing failure is the operator's to see: an opaque
+// 404 would read as a dead setup link and a 500 as a gateway fault, so the
+// script says what happened and exits non-zero before touching anything.
 test('a model listing failure serves a script that reports it', async () => {
   const h = harness({ publicOverrides: { listModels: () => Promise.reject(new Error('upstream listing exploded')) } });
   const lease = await create(h);

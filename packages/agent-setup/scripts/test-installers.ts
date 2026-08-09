@@ -885,6 +885,25 @@ const networkReachable = (): boolean => {
   return probe.status === 0;
 };
 
+// Each installer replaces an existing managed file atomically, but only on
+// Windows — so on every other host that branch would ship unexecuted, and it is
+// where a `$null` PowerShell binds as String.Empty aborts the whole install.
+// Dropping the platform conjunct runs it here. Keyed per agent and asserted
+// rather than chained as .replace calls, because a rewrite that silently
+// stopped matching would restore the gap it exists to close.
+const WINDOWS_REPLACEMENT_GUARDS: Record<ScriptAgent, string> = {
+  claude: 'if ($script:ClaudeSettingsExisted -and $runningOnWindows)',
+  codex: 'if ($script:CodexTokenExisted -and $runningOnWindows)',
+  vscode: 'if ($script:VSCodeSettingsExisted -and $runningOnWindows)',
+  zed: 'if ($script:ZedSettingsExisted -and (Test-SetupIsWindows))',
+};
+
+const forceWindowsReplacement = (agent: ScriptAgent, body: string): string => {
+  const guard = WINDOWS_REPLACEMENT_GUARDS[agent];
+  if (!body.includes(guard)) throw new Error(`${agent}: no Windows replacement guard matching ${guard}`);
+  return body.replace(guard, `${guard.slice(0, guard.indexOf(' -and '))})`);
+};
+
 // Runs the PowerShell body under a real interpreter, mirroring runShellInstaller
 // but rendering the PowerShell prefix. Model-directory traffic is in-process, so
 // this too must be async to keep the event loop free.
@@ -895,11 +914,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
   const canonicalBody = powerShellBody(agent);
-  const body = options.forcePowerShellWindowsReplacement
-    ? canonicalBody
-        .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
-        .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
-    : canonicalBody;
+  const body = options.forcePowerShellWindowsReplacement ? forceWindowsReplacement(agent, canonicalBody) : canonicalBody;
   const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog, configuration.vscode.apiType) }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
@@ -3104,31 +3119,75 @@ test('vscode', 'a catalog with no chat models is refused rather than written emp
 
 test('vscode', 'PowerShell writes the same provider group as Bash', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const userDir = makeVSCodeUserDir(ws);
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: vscodeConfig(),
-    vscodeUserDir: userDir,
-  });
-  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const existing = JSON.stringify([{ vendor: 'customendpoint', name: 'Other gateway', apiType: 'responses', models: [] }]);
 
-  const group = ourGroup(readVSCodeGroups(userDir));
+  // Both halves run over the same catalog and the same prior document, and the
+  // results are compared to each other rather than to a restated copy of one:
+  // a hand-kept expectation can drift from both implementations at once.
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-parity-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), existing);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(!run.combined.includes(SENTINEL_KEY), `${which} never prints the key`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  const powershell = await runHalf('powershell');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'the two halves write byte-identical documents, keys and order included');
+
+  // Anchored once so the comparison cannot pass by both halves being wrong the
+  // same way.
+  const group = ourGroup(bash);
   t.equal(group.apiType, 'messages', 'the group carries the selected API path');
-  t.equal(group.models!.map(entry => entry.id).join(','), 'claude-opus-4-6,gpt-5.6,plain-chat,effort-only,floor-only,ceiling-only,zero-limits', 'chat models only, in catalog order');
+  t.equal(ourGroup(bash, 'Other gateway').apiType, 'responses', 'a sibling gateway survives');
+  t.equal(group.models![0]!.url, `${modelServer.url}/v1`, 'the model url carries the version segment');
+});
 
-  const models = new Map(group.models!.map(entry => [entry.id, entry]));
-  t.equal(models.get('claude-opus-4-6')!.supportsReasoningEffort?.join(','), 'low,high', 'discrete effort levels survive the PowerShell projection');
-  t.equal(models.get('gpt-5.6')!.thinking, true, 'a budget-only reasoner still declares thinking');
-  t.equal(models.get('plain-chat')!.contextWindow, 128_000, 'the unlimited model gets the same fallback window');
-  // The divergence this parity test exists to catch: PowerShell truthiness
-  // treats 0 and an empty array as false, jq treats both as true.
-  t.equal(models.get('zero-limits')!.contextWindow, 0, 'a stated zero survives the PowerShell projection');
-  t.equal(models.get('zero-limits')!.maxOutputTokens, 0, 'so does a stated zero output limit');
-  t.equal(JSON.stringify(models.get('zero-limits')!.supportsReasoningEffort), '[]', 'and an empty effort list is kept');
-  t.equal(models.get('plain-chat')!.requestHeaders.authorization, `Bearer ${SENTINEL_KEY}`, 'the key rides in the per-model header');
-  t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
+// An unreadable `profiles/` must cost that build, not every remaining one. The
+// enumeration is what throws, so it has to sit inside the per-profile count.
+test('vscode', 'an unreadable profiles directory does not stop the other builds', async t => {
+  if (process.platform === 'win32') skip('POSIX permission bits only');
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-badprofiles-${which}`);
+    const profiles = join(userDir, 'profiles');
+    mkdirSync(profiles, { recursive: true });
+    chmodSync(profiles, 0o000);
+    try {
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      // The default profile is beside `profiles/` and is perfectly writable.
+      t.equal(readVSCodeGroups(userDir).length, 1, `${which} still configures the default profile`);
+      t.ok(!run.combined.includes('Unhandled'), `${which} reports rather than crashing:\n${run.combined}`);
+    } finally {
+      chmodSync(profiles, 0o755);
+    }
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// A `User` path that is a file, or a `profiles` entry that is a file, is not a
+// directory to walk into — Bash asks `[ -d ]`, so PowerShell asks for a
+// container too.
+test('vscode', 'a file where a directory belongs is skipped by both halves', async t => {
+  const ws = makeWorkspace();
+  const notADir = join(ws.home, 'vscode-user-is-a-file');
+  writeFileSync(notADir, 'not a directory');
+  const bash = await runVSCode(ws, { vscodeUserDir: notADir });
+  t.ok(bash.code !== 0, 'Bash finds no user directory');
+  if (!hostPwsh) return;
+  const ps = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: notADir,
+  });
+  t.ok(ps.code !== 0, 'PowerShell finds none either');
 });
 
 test('vscode', 'PowerShell replaces only its own group', async t => {

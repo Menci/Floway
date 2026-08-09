@@ -29,7 +29,7 @@ function Get-SetupVSCodeApiUrl { "$SetupEndpoint/v1" }
 # later against a directory nothing can be written to.
 function Get-SetupVSCodeUserDirs {
   if ($env:AGENT_SETUP_TEST_VSCODE_USER_DIR) {
-    return @($env:AGENT_SETUP_TEST_VSCODE_USER_DIR | Where-Object { Test-Path -LiteralPath $_ })
+    return @($env:AGENT_SETUP_TEST_VSCODE_USER_DIR | Where-Object { Test-Path -LiteralPath $_ -PathType Container })
   }
   $base = if (Test-SetupIsWindows) { $env:APPDATA }
     elseif ($IsMacOS) { Join-Path $HOME 'Library/Application Support' }
@@ -37,7 +37,7 @@ function Get-SetupVSCodeUserDirs {
     else { Join-Path $HOME '.config' }
   @('Code', 'Code - Insiders', 'VSCodium') |
     ForEach-Object { Join-Path (Join-Path $base $_) 'User' } |
-    Where-Object { Test-Path -LiteralPath $_ }
+    Where-Object { Test-Path -LiteralPath $_ -PathType Container }
 }
 
 # A named profile keeps its own copy of the file under an opaque directory, so
@@ -48,8 +48,15 @@ function Get-SetupVSCodeProfileDirs {
   param([string]$UserDir)
   $dirs = @($UserDir)
   $profiles = Join-Path $UserDir 'profiles'
-  if (Test-Path -LiteralPath $profiles) {
-    $dirs += Get-ChildItem -LiteralPath $profiles -Directory | ForEach-Object { $_.FullName }
+  if (Test-Path -LiteralPath $profiles -PathType Container) {
+    try {
+      $dirs += Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction Stop | ForEach-Object { $_.FullName }
+    } catch {
+      # The named profiles are lost, not the build: the default profile sits
+      # beside this directory and is configured either way, which is what the
+      # Bash glob does when it cannot read `profiles/`.
+      Write-SetupWarn "could not list profiles under ${profiles}: $(Protect-SetupSecret ([string]$_.Exception.Message))"
+    }
   }
   $dirs
 }
