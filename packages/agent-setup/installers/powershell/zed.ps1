@@ -152,13 +152,23 @@ function Write-SetupZedSettings {
     # so the replacement carries the mode of the file it replaces rather than
     # the process umask, matching the Bash half. Windows needs nothing here:
     # File.Replace preserves the destination ACL.
+    # Through chmod rather than [File]::SetUnixFileMode, which arrived in
+    # .NET 8 and is therefore missing on pwsh 7.0-7.2 — a MethodNotFound there
+    # would abort the run after the credential had already been stored, leaving
+    # an orphan keychain entry and no provider. Every other permission change in
+    # this installer set goes through chmod for the same reason.
     if (-not (Test-SetupIsWindows)) {
       if ($script:ZedSettingsExisted) {
-        [System.IO.File]::SetUnixFileMode($stage, [System.IO.File]::GetUnixFileMode($script:ZedSettingsPath))
+        # `--reference` is GNU-only; BSD chmod takes the mode itself.
+        # GNU stat takes -c, BSD takes -f; neither answering leaves the mode
+        # alone rather than guessing one, as the Bash helper does.
+        $mode = & stat -c '%a' $script:ZedSettingsPath 2>$null
+        if (-not $mode) { $mode = & stat -f '%Lp' $script:ZedSettingsPath 2>$null }
+        if ($mode) { & chmod $mode $stage }
       } else {
         # A file we create is ours to set: owner-only, matching the Bash half,
         # which writes it under the installer's own `umask 077`.
-        [System.IO.File]::SetUnixFileMode($stage, 'UserRead, UserWrite')
+        & chmod 600 $stage
       }
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
