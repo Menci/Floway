@@ -149,19 +149,16 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     };
   });
 
-  if (credits?.credits_has_credits === false) {
+  // A balance of nothing says nothing here, whether the account reports it as a
+  // zero or as having no credits at all -- and Codex's own status line drops any
+  // balance at or below zero. The editor card keeps both, as it keeps a charge
+  // of nothing.
+  const balance = credits?.credits_has_credits === false ? 0 : credits?.credits_balance;
+  if (balance !== undefined && Number.isFinite(balance) && balance > 0) {
     signals.push({
       key: 'credits',
       percent: null,
-      value: t('dashboard.upstreams.signals.noCredits'),
-      label: null,
-      detail: t('dashboard.upstreams.signals.creditsDetail'),
-    });
-  } else if (credits?.credits_balance !== undefined) {
-    signals.push({
-      key: 'credits',
-      percent: null,
-      value: t('dashboard.upstreams.signals.credits', { balance: credits.credits_balance }),
+      value: t('dashboard.upstreams.signals.credits', { balance }),
       label: null,
       detail: t('dashboard.upstreams.signals.creditsDetail'),
     });

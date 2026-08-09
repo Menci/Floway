@@ -430,7 +430,6 @@ const zhHansCN = {
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           rateLimitedUndated: '该上游正在拒绝请求',
           credits: '{{balance, number}} 点额度',
-          noCredits: '无额度',
           creditsDetail: 'ChatGPT 账号的额度余额',
           cost: '该账号已产生的费用',
           costLast4Weeks: '该账号最近 4 周产生的费用',

@@ -454,7 +454,6 @@ const en = {
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           rateLimitedUndated: 'This upstream is refusing requests',
           credits: '{{balance, number}} credits',
-          noCredits: 'No credits',
           creditsDetail: 'Credit balance on the ChatGPT account',
           cost: 'Charged to this account',
           costLast4Weeks: 'Charged to this account in the last 4 weeks',
