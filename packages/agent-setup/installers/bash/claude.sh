@@ -107,7 +107,9 @@ claude_rollback_settings() {
 # Same-directory staging keeps the mode-0600 replacement rename atomic.
 claude_write_settings() {
   _cw_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  CLAUDE_SETTINGS_PATH="$_cw_dir/settings.json"
+  if ! CLAUDE_SETTINGS_PATH=$(_resolve_managed_path "$_cw_dir/settings.json"); then
+    return 1
+  fi
   CLAUDE_SETTINGS_BACKUP=""
   CLAUDE_SETTINGS_EXISTED=0
 

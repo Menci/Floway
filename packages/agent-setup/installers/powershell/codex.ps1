@@ -271,8 +271,11 @@ function Set-SetupAgent {
 
   Write-SetupAgentNotice 'Configuring' 'Codex'
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-  $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
-  $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
+  # Resolved even though `codex login` writes config.toml itself: the backup and
+  # the rollback rename are ours, and a rename onto the link would leave the
+  # operator's dotfile behind while the CLI kept editing the real file.
+  $script:CodexConfigPath = Resolve-SetupManagedPath (Join-Path $script:CodexHomeDir 'config.toml')
+  $script:CodexTokenPath = Resolve-SetupManagedPath (Join-Path $script:CodexHomeDir 'floway-token')
   if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
   }

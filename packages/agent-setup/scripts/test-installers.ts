@@ -1233,6 +1233,31 @@ test('claude', 'honors an explicit CLAUDE_CONFIG_DIR', async t => {
   t.ok(!existsSync(join(ws.home, '.claude', 'settings.json')), 'the default location is not used when overridden');
 });
 
+// The resolver lives in the shared helper, so every managed document gets it:
+// `~/.claude/settings.json` is the one an operator is most likely to have under
+// chezmoi or stow, and Codex's `config.toml` and provider token reach the same
+// rename through backup and rollback even though the CLI writes the config.
+test('claude', 'writes through a symlinked settings file rather than replacing it', async t => {
+  if (process.platform === 'win32') skip('symlinks only');
+  for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    placeFakeClaude(ws.binDir);
+    const configDir = join(ws.root, `claude-symlink-${which}`);
+    mkdirSync(configDir, { recursive: true });
+    const target = join(ws.home, `dotfiles-${which}-claude-settings.json`);
+    writeFileSync(target, JSON.stringify({ theme: 'dark' }));
+    symlinkSync(link === 'absolute' ? target : relative(configDir, target), join(configDir, 'settings.json'));
+
+    const options = { workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(lstatSync(join(configDir, 'settings.json')).isSymbolicLink(), `${which}/${link} leaves the link in place`);
+    t.ok(readFileSync(target, 'utf8').includes('ANTHROPIC_BASE_URL'), `${which}/${link} writes the settings into the linked-to file`);
+    t.ok(JSON.parse(readFileSync(target, 'utf8')).theme === 'dark', `${which}/${link} keeps what the operator had there`);
+  }
+});
+
 test('claude', 'missing jq without a download fails before mutating settings', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1830,6 +1855,30 @@ test('codex', 'existing CLI configures via the app-server and stages the provide
   t.includes(run.stdout, '==> Completed Agent Setup: Codex', 'the final outcome is explicit');
   assertCodexBaseEdits(t, ws, modelServer.url);
   assertStagedToken(t, ws);
+});
+
+// The provider token is the file this installer renames into place itself; the
+// config is the CLI's to write, but the backup and the rollback rename are ours
+// and would land on the link just the same.
+test('codex', 'writes through a symlinked provider token rather than replacing it', async t => {
+  if (process.platform === 'win32') skip('symlinks only');
+  for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    placeFakeCodex(ws.binDir);
+    const codexHome = join(ws.root, `codex-symlink-${which}`);
+    mkdirSync(codexHome, { recursive: true });
+    const target = join(ws.home, `dotfiles-${which}-floway-token`);
+    writeFileSync(target, 'previous-token', { mode: 0o600 });
+    symlinkSync(link === 'absolute' ? target : relative(codexHome, target), join(codexHome, 'floway-token'));
+
+    const options = { workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(lstatSync(join(codexHome, 'floway-token')).isSymbolicLink(), `${which}/${link} leaves the link in place`);
+    t.equal(readFileSync(target, 'utf8'), SENTINEL_KEY, `${which}/${link} writes the key into the linked-to file`);
+    t.equal(statSync(target).mode & 0o777, 0o600, `${which}/${link} keeps the file holding the key owner-only`);
+  }
 });
 
 test('codex', 'the batch clears model and effort when unset', async t => {
