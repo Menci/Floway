@@ -93,8 +93,15 @@ function Write-SetupZedSettings {
     # operator's content and silently deleting either is data loss. Refuse, as
     # the Bash half does.
     # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/fallible_options.rs#L11-L19
-    if (Test-SetupJsonHasJsoncSyntax $raw) {
+    $verdict = Get-SetupJsonVerdict $raw
+    if ($verdict -eq 'jsonc') {
       Stop-Setup "$($script:ZedSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
+    }
+    # Newtonsoft would take a single-quoted string or an unquoted key and write
+    # the document back in canonical form, where jq refuses it outright — so the
+    # verdict decides, not the decoder, and the sentence matches the Bash half's.
+    if ($verdict -eq 'invalid') {
+      Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched."
     }
     # The root is judged from the text before anything is decoded: an empty file
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
@@ -172,10 +179,12 @@ function Write-SetupZedSettings {
       Stop-Setup "$($script:ZedSettingsPath) already holds a provider named `"$collision`", which PowerShell cannot keep beside `"$SetupZedProviderName`"; rename one of them and run this again."
     }
     # A property bag refuses two families of name outright: members the object
-    # already has (PSObject, PSBase, PSTypeNames, ToString, Equals) and anything
-    # `-NotePropertyName` can convert to a PSMemberTypes value, which is why
-    # "1" and "2" throw while "3", "2024", Count, Length, `a.b` and `a b` are
-    # all accepted and round-trip. Measured identical on 5.1.26100.8875 and
+    # already has (PSObject, PSBase, PSTypeNames, ToString, Equals, GetType,
+    # GetHashCode), and the name or decimal value of a member type Add-Member
+    # can create — AliasProperty, CodeProperty, NoteProperty, ScriptProperty,
+    # PropertySet, CodeMethod, ScriptMethod, MemberSet, and 1, 2, 8, 16, 32,
+    # 128, 256, 1024. Everything else goes through: "3", "4", "64", "2024",
+    # Count, Length, `a.b`, `a b`. Measured identical on 5.1.26100.8875 and
     # pwsh 7.6. The Bash half writes every one of them, so this is a PowerShell
     # limit rather than a rule of ours, and the raw Add-Member message names
     # none of what the operator can do about it.
@@ -185,7 +194,7 @@ function Write-SetupZedSettings {
         available_models = $script:ZedModels
       })
     } catch {
-      Stop-Setup "PowerShell cannot use `"$SetupZedProviderName`" as a provider name; choose one that is not a PSObject or object member name and is not a small number."
+      Stop-Setup "PowerShell cannot use `"$SetupZedProviderName`" as a provider name; it is either a member this object already has or the name or number of a PowerShell member type. Choose another name and run this again."
     }
 
     # A subtree deeper than the serializer goes is emitted as the literal string
@@ -197,7 +206,10 @@ function Write-SetupZedSettings {
     # warning at all for the same input — measured: a 120-deep object at
     # -Depth 100 writes the truncated literal silently — so what stands between
     # such a document and a rewrite there is ConvertFrom-Json's own recursion
-    # limit, which refuses it at 100 levels before this line runs.
+    # limit, measured to accept 101 levels and refuse 102. A document nested
+    # exactly 101 deep therefore parses and is then truncated silently; no
+    # settings file reaches that, but the bound is one level wider than the
+    # serializer's.
     $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-SetupFileText $stage | ConvertFrom-Json

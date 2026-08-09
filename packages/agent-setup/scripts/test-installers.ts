@@ -2922,6 +2922,13 @@ for (const { label, document } of [
   // would pass this and fail later inside the merge.
   { label: 'a stream of two documents', document: '{"a":1}{"b":2}' },
   { label: 'a truncated object', document: '{"telemetry":' },
+  // Newtonsoft takes all three and would write the document back in canonical
+  // form, where jq refuses them — so one half would stop and the other rewrite
+  // the operator's file. The scanner decides, not the decoder.
+  { label: 'a form feed between members', document: '{"a":1,\f"b":2}' },
+  { label: 'a non-breaking space between members', document: '{"a":1,\u00A0"b":2}' },
+  { label: 'single-quoted strings', document: "{'telemetry':{'metrics':false}}" },
+  { label: 'an unquoted key', document: '{telemetry:{"metrics":false}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -2938,11 +2945,13 @@ for (const { label, document } of [
     };
 
     const bash = await runHalf('bash');
-    t.ok(bash.includes('is not a valid Zed settings document'), `Bash names the document:\n${bash}`);
+    t.ok(bash.includes('is not a valid Zed settings document') || bash.includes('carries JSONC syntax'),
+      `Bash names the document:\n${bash}`);
     if (!hostPwsh) return;
     const powershell = await runHalf('powershell');
-    t.ok(powershell.includes('is not a valid Zed settings document') || powershell.includes('is not a JSON object'),
-      `PowerShell names the document:\n${powershell}`);
+    t.ok(powershell.includes('is not a valid Zed settings document') || powershell.includes('is not a JSON object')
+      || powershell.includes('carries JSONC syntax'),
+    `PowerShell names the document:\n${powershell}`);
   });
 }
 
@@ -3110,12 +3119,6 @@ test('zed', 'the Windows replacement branch keeps unrelated settings and the cat
   t.ok(settings.language_models.anthropic_compatible.Floway!.available_models.length > 0, 'and our provider carries the catalog');
 });
 
-// The only path that runs zed_rollback_settings, and the only reason `cp -p`
-// exists: a rollback must hand the operator's document back at the mode they
-// chose. A read-only config directory does not reach it — `cp` fails before the
-// backup is made — so the failure is injected downstream instead: a stale
-// backup that is a directory makes the prune's `rm -f` fail, which happens
-// after the write has already been renamed into place.
 // chezmoi and stow both place a symlink where Zed expects its document. Writing
 // through a staged file and renaming it into place replaces the link itself, so
 // the operator's dotfile stops being what Zed reads and their next edit there
@@ -3211,6 +3214,12 @@ test('zed', 'both halves clear a symlinked stale backup instead of tripping on i
   }
 });
 
+// The only path that runs zed_rollback_settings, and the only reason `cp -p`
+// exists: a rollback must hand the operator's document back at the mode they
+// chose. A read-only config directory does not reach it — `cp` fails before the
+// backup is made — so the failure is injected downstream instead: a stale
+// backup that is a directory makes the prune's `rm -f` fail, which happens
+// after the write has already been renamed into place.
 test('zed', 'a refusal after the backup restores the file and its mode', async t => {
   if (process.platform === 'win32') skip('POSIX modes only');
   for (const which of ['bash', 'powershell'] as const) {

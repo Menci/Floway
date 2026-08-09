@@ -131,7 +131,7 @@ function Write-SetupVSCodeSettings {
   $groups = @()
   if (Test-Path -LiteralPath $script:VSCodeSettingsPath) {
     $script:VSCodeSettingsExisted = $true
-    $raw = Get-Content -Raw -LiteralPath $script:VSCodeSettingsPath
+    $raw = Get-SetupFileText $script:VSCodeSettingsPath
     # The root shape is decided from the text, not from what ConvertFrom-Json
     # returned: it unwraps a one-element array into a bare object and decodes
     # `[]` to $null, so the decoded value cannot tell an array from an object.
@@ -149,8 +149,15 @@ function Write-SetupVSCodeSettings {
     # takes one, and jq does not.
     # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L232
     #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/base/common/json.ts#L144-L148
-    if (Test-SetupJsonHasJsoncSyntax $raw) {
+    $verdict = Get-SetupJsonVerdict $raw
+    if ($verdict -eq 'jsonc') {
       Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
+    }
+    # Newtonsoft would take a single-quoted string or an unquoted key and write
+    # the document back in canonical form where jq refuses it outright, so the
+    # verdict decides rather than the decoder.
+    if ($verdict -eq 'invalid') {
+      Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
     if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
@@ -237,7 +244,7 @@ function Write-SetupVSCodeSettings {
     # asserts the same shape; the count here is exact rather than non-zero
     # because a list nested one level deep is a PowerShell failure mode jq has
     # no equivalent of.
-    $check = @(ConvertFrom-SetupJsonArray (Get-Content -Raw -LiteralPath $stage))
+    $check = @(ConvertFrom-SetupJsonArray (Get-SetupFileText $stage))
     $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
     # The exact count, not merely a non-empty list: a model array nested one
