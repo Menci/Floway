@@ -3071,7 +3071,7 @@ test('zed', 'both halves create a new settings file owner-only', async t => {
 // It is the only branch that runs File.Replace, and a `$null` PowerShell binds
 // as String.Empty makes that call reject the whole install — so the platform
 // conjunct is dropped here to execute it off-Windows.
-test('zed', 'PowerShell replaces existing settings atomically', async t => {
+test('zed', 'the Windows replacement branch keeps unrelated settings and the catalog', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);

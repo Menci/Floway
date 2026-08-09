@@ -16,7 +16,7 @@ function Get-SetupFileText {
 }
 
 # Does this JSON text open with the expected root — `{` for an object, `[` for
-# an array? Asked of the text rather than of the decoded value because
+# an array, whichever the caller asks for? Asked of the text rather than of the decoded value because
 # ConvertFrom-Json unwraps a top-level one-element array into a bare object and
 # yields `$null` for both `[]` and an empty file, so the decoded value cannot
 # tell those shapes apart. A zero-byte file, which `Get-Content -Raw` returns as
@@ -93,10 +93,12 @@ function Set-SetupOptionalProp {
 # requires a list and drops the whole entry.
 #
 # Decided by type rather than by enumerating, because `foreach` skips a `$null`
-# and `[null]` has to stay one element — it is a document to refuse, not an
-# empty list. Measured on 5.1.26100.8875 and pwsh 7.7: both give 2, 1, 1, 2, 0
-# and 2 elements for a two-object array, a one-object array, `[null]`,
-# `[null,null]`, `[]` and `[1,2]`.
+# and `[null]` has to stay one element rather than collapse to an empty list.
+# No caller on this branch is fed a document that can contain one — Zed's is
+# the gateway's own projection — but a helper that silently drops null elements
+# is one the next caller cannot reason about. Measured on 5.1.26100.8875 and
+# pwsh 7.7: both give 2, 1, 1, 2, 0 and 2 elements for a two-object array, a
+# one-object array, `[null]`, `[null,null]`, `[]` and `[1,2]`.
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
   $parsed = ConvertFrom-Json -InputObject $Text

@@ -96,8 +96,8 @@ function Restore-SetupManagedFile {
 # which half served it.
 #
 # The question is link-ness, not which wrapper .NET chose: a symlink pointing at
-# a directory arrives as DirectoryInfo but unlinks like any other entry, which
-# is what `rm -f` does with it on the other half.
+# a directory arrives as DirectoryInfo and is unlinked rather than refused,
+# which is what `rm -f` does with it on the other half.
 function Remove-SetupOlderBackups {
   param([string]$Path, [string]$Keep)
   $directory = Split-Path -Parent $Path
@@ -110,6 +110,16 @@ function Remove-SetupOlderBackups {
       if ($_ -is [System.IO.DirectoryInfo] -and $null -eq $_.LinkType) {
         throw "could not remove obsolete backup $($_.FullName)"
       }
-      Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+      if ($_ -is [System.IO.DirectoryInfo]) {
+        # A symlink to a directory. `Remove-Item -Force` unlinks it on pwsh 7
+        # but on Windows PowerShell 5.1 it asks for confirmation regardless —
+        # measured: the call blocks, which in an `irm | iex` console is a prompt
+        # nobody expects mid-install and in a non-interactive host is a hang.
+        # Directory.Delete with recurse:$false unlinks on both and leaves what
+        # the link pointed at alone.
+        [System.IO.Directory]::Delete($_.FullName, $false)
+      } else {
+        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+      }
     }
 }

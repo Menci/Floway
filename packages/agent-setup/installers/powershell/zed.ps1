@@ -112,6 +112,12 @@ function Write-SetupZedSettings {
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
+    # `-contains` and dotted member access are both case-insensitive, while
+    # jq's `has` is not, so a document with a differently-cased `Language_Models`
+    # would have this half write into the operator's key — which Zed's own
+    # deserializer will not read — while the Bash half creates the correct one
+    # beside it. Zed writes this file never and reads it with serde, so no
+    # document it produced can have one; noted rather than worked around.
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'
@@ -186,6 +192,12 @@ function Write-SetupZedSettings {
     # "@{k=}" with only a warning, which the staged check cannot see because it
     # inspects the provider entry alone. Promote it: losing an unrelated setting
     # is not something to do quietly.
+    #
+    # The promotion is a pwsh 7 guarantee only. Windows PowerShell 5.1 emits no
+    # warning at all for the same input — measured: a 120-deep object at
+    # -Depth 100 writes the truncated literal silently — so what stands between
+    # such a document and a rewrite there is ConvertFrom-Json's own recursion
+    # limit, which refuses it at 100 levels before this line runs.
     $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-SetupFileText $stage | ConvertFrom-Json
