@@ -19,7 +19,8 @@ const t = ((key: string, values?: Record<string, unknown>) => {
   return template.replace(/\{\{(\w+)[^}]*\}\}/g, (_, name: string) => String(values?.[name]));
 }) as unknown as TFunction;
 
-const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en');
+const NOW = Date.parse('2026-07-28T12:00:00.000Z');
+const readoutOf = (record: unknown) => upstreamReadout(record as UpstreamRecord, t, 'en', NOW);
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);
   return [plan, ...signals.map(signal => [signal.value, signal.label].filter(Boolean).join(' '))].join(' | ');
@@ -73,26 +74,28 @@ describe('upstream readout by provider', () => {
     expect(planFor(null, null)).toBe('Copilot');
   });
 
-  // A block and a spent window are different facts: the row states the block
-  // rather than inferring it from a percentage that can read low while it holds.
-  it('states a Codex block ahead of the windows it does not follow from', () => {
-    const row = rowOf({
+  // A rate limit and a spent window are different facts: the row states the
+  // limit rather than inferring it from a percentage that can read low while it
+  // holds, and states how long the wait still has to run rather than when it
+  // ends. Hours are the largest unit it uses.
+  it('states a Codex rate limit last, as the time it still has to run', () => {
+    const rowFor = (until: string) => rowOf({
       kind: 'codex',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
       state: { accounts: [] },
       codex_quota: {
-        premium: {
-          observed_at: OBSERVED,
-          primary_used_percent: 12, primary_window_minutes: 300,
-          ratelimited_until: '2126-07-28T14:00:00.000Z',
-        },
+        premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: until },
       },
     });
-    expect(row.startsWith('ChatGPT Pro | Blocked until ')).toBe(true);
-    expect(row.endsWith(' | 12% 5h')).toBe(true);
+
+    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe('ChatGPT Pro | 12% 5h | Rate limited 2h 30m');
+    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe('ChatGPT Pro | 12% 5h | Rate limited 45m');
+    // A day out still reads in hours, and any time left never reads as none.
+    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe('ChatGPT Pro | 12% 5h | Rate limited 48h');
+    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 12% 5h | Rate limited 1m');
   });
 
-  it('lets an elapsed Codex block go rather than holding it on the row', () => {
+  it('lets an elapsed Codex rate limit go rather than holding it on the row', () => {
     expect(rowOf({
       kind: 'codex',
       config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
@@ -102,20 +105,20 @@ describe('upstream readout by provider', () => {
   });
 
   it('states a Claude Code refusal from the status Anthropic reports it under', () => {
-    const row = rowOf({
+    const rowFor = (reset: string | null) => rowOf({
       kind: 'claude-code',
       config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
       state: {
         accounts: [{
           accountUuid: 'uuid-1',
-          quotaSnapshot: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: { status: 'rejected', reset: '2026-07-28T15:00:00.000Z', fiveHour: { status: 'rejected', reset: null, utilization: 1 }, raw: {} },
-          },
+          quotaSnapshot: { fetchedAt: Date.parse(OBSERVED), data: { status: 'rejected', reset, raw: {} } },
         }],
       },
     });
-    expect(row.startsWith('Claude Max 20x | Blocked until ')).toBe(true);
+
+    expect(rowFor('2026-07-28T15:00:00.000Z')).toBe('Claude Max 20x | Rate limited 3h');
+    // Nothing to count down: the refusal stands on its own.
+    expect(rowFor(null)).toBe('Claude Max 20x | Rate limited');
   });
 
   it('reports nothing for a Copilot seat no response has been observed on', () => {

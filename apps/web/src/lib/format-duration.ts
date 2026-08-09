@@ -9,7 +9,7 @@ export const formatDuration = (ms: number | null): string => {
   return `${Math.round(ms)}ms`;
 };
 
-const unit = (value: number, name: 'minute' | 'second', locale: string): string =>
+const unit = (value: number, name: 'hour' | 'minute' | 'second', locale: string): string =>
   new Intl.NumberFormat(locale, { style: 'unit', unit: name, unitDisplay: 'narrow' }).format(value);
 
 // A live countdown keeps its seconds all the way down, so it cannot go through
@@ -20,4 +20,18 @@ export const formatCountdown = (seconds: number, locale: string): string => {
   const minutes = Math.floor(whole / 60);
   const rest = unit(whole % 60, 'second', locale);
   return minutes > 0 ? `${unit(minutes, 'minute', locale)} ${rest}` : rest;
+};
+
+// How long a wait still has to run, for a reading that is about the wait rather
+// than about the instant it ends. Hours are the largest unit: a window measured
+// in days is one an operator plans around rather than waits out, and "1d 3h"
+// invites reading the leading number as the whole answer.
+//
+// Minutes round up, so a wait with any time left never reads as none left.
+export const formatRemaining = (ms: number, locale: string): string => {
+  const minutes = Math.max(0, Math.ceil(ms / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return unit(minutes, 'minute', locale);
+  return rest === 0 ? unit(hours, 'hour', locale) : `${unit(hours, 'hour', locale)} ${unit(rest, 'minute', locale)}`;
 };

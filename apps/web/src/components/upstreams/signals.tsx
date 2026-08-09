@@ -11,12 +11,14 @@ import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostText, isZeroActivityCost, readActivityCost, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
-import { quotaRingTone, windowLengthLabel } from './subscription-quota';
+import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
+import { formatRemaining } from '../../lib/format-duration';
 import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
+import { useNow } from '../../lib/use-now';
 import { ProgressRing } from '../ui/progress-ring';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -43,8 +45,26 @@ const useStyles = makeStyles({
       '--floway-signal-label': 'var(--winui-text-fill-secondary)',
     },
   },
-  value: { color: 'var(--floway-signal-value)' },
-  label: { color: 'var(--floway-signal-label)' },
+  // The colours cross on the duration this layer gives a control's own fill,
+  // and clamp under the reduced-motion preference to the token that says why
+  // that clamp is not zero. WinUI switches a foreground instantly and animates
+  // only the fill, so easing this one is the operator's departure.
+  value: {
+    color: 'var(--floway-signal-value)',
+    transitionProperty: 'color',
+    transitionDuration: 'var(--winui-control-faster-animation-duration)',
+    '@media (prefers-reduced-motion: reduce)': {
+      transitionDuration: 'var(--winui-reduced-motion-duration)',
+    },
+  },
+  label: {
+    color: 'var(--floway-signal-label)',
+    transitionProperty: 'color',
+    transitionDuration: 'var(--winui-control-faster-animation-duration)',
+    '@media (prefers-reduced-motion: reduce)': {
+      transitionDuration: 'var(--winui-reduced-motion-duration)',
+    },
+  },
   // A reading that says the upstream is refusing work outranks its own tone.
   blocked: { color: 'var(--winui-system-fill-critical)' },
 });
@@ -95,6 +115,18 @@ const meterDetail = (t: TFunction, label: string, percent: number, resetAt: stri
 const percentValue = (t: TFunction, percent: number): string =>
   t('dashboard.upstreams.signals.percent', { percent: Math.round(percent) });
 
+// Last on the line: the windows are what an operator reads at a glance, and this
+// says how long the wait still has to run rather than when it ends -- an instant
+// has to be subtracted from the clock before it means anything.
+const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal => ({
+  key: 'rate-limited',
+  percent: null,
+  value: t('dashboard.upstreams.signals.rateLimited'),
+  label: formatRemaining(Date.parse(until) - now, locale),
+  detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
+  blocked: true,
+});
+
 const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const quota = copilotQuota(record);
   if (quota === null) return [];
@@ -114,11 +146,8 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     }));
 };
 
-const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string): UpstreamSignal[] => {
-  // `quotaEntries` dates the rate limit it also computes; this readout states
-  // the windows and not that, so the instant it is dated against is read here
-  // rather than threaded through every provider.
-  const entry = latestQuotaEntry(quotaEntries(record.codex_quota, Date.now()));
+const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
+  const entry = latestQuotaEntry(quotaEntries(record.codex_quota, now));
   const credits = latestCredits(record.codex_quota);
   const signals: UpstreamSignal[] = entry === null ? [] : entry.windows.map(item => {
     // Codex states each window's length in minutes and nothing else names it,
@@ -134,21 +163,6 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
       detail: meterDetail(t, label, item.percent, item.resetAt, entry.observedAt, locale),
     };
   });
-
-  // Stated ahead of the windows: it is the fact that decides whether this
-  // upstream can serve anything at all, and the windows beside it can read low
-  // while it holds -- a 429 names the limit family that tripped, which is not
-  // always one of the two this row shows.
-  if (entry?.rateLimitedUntil != null) {
-    signals.unshift({
-      key: 'blocked',
-      percent: null,
-      value: t('dashboard.upstreams.signals.blocked'),
-      label: t('dashboard.upstreams.signals.blockedUntil', { time: dateTime(entry.rateLimitedUntil, locale) }),
-      detail: t('dashboard.upstreams.signals.blockedDetail', { time: dateTime(entry.rateLimitedUntil, locale) }),
-      blocked: true,
-    });
-  }
 
   if (credits?.credits_has_credits === false) {
     signals.push({
@@ -167,30 +181,17 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
       detail: t('dashboard.upstreams.signals.creditsDetail'),
     });
   }
+  // The windows beside it can read low while it holds: a 429 names the limit
+  // family that tripped, which is not always one of the two this row shows.
+  if (entry?.rateLimitedUntil != null) signals.push(blockedSignal(entry.rateLimitedUntil, t, locale, now));
   return signals;
 };
 
-const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string): UpstreamSignal[] => {
+const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
   const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   const quota = credential?.quotaSnapshot?.data ?? null;
-  const signals: UpstreamSignal[] = [];
-  // `rejected` on the unified status is Anthropic saying it turned the request
-  // away, which it reports apart from the per-window utilization beside it.
-  if (quota?.status === 'rejected') {
-    signals.push({
-      key: 'blocked',
-      percent: null,
-      value: t('dashboard.upstreams.signals.blocked'),
-      label: quota.reset === null ? null : t('dashboard.upstreams.signals.blockedUntil', { time: dateTime(quota.reset, locale) }),
-      detail: quota.reset === null
-        ? t('dashboard.upstreams.signals.blockedUndated')
-        : t('dashboard.upstreams.signals.blockedDetail', { time: dateTime(quota.reset, locale) }),
-      blocked: true,
-    });
-  }
-
-  return signals.concat(quotaWindows(credential).map(row => {
+  const windows: UpstreamSignal[] = quotaWindows(credential).map(row => {
     const length = windowLengthLabel(WINDOW_MINUTES[row.key]);
     // Anthropic reports the Sonnet allowance as a second window of the same
     // length, so the model it covers is what tells the two apart.
@@ -202,7 +203,22 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
       label,
       detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
     };
-  }));
+  });
+
+  // `rejected` on the unified status is Anthropic saying it turned the request
+  // away, which it reports apart from the per-window utilization beside it. An
+  // undated refusal states the fact alone; there is nothing to count down.
+  if (quota?.status !== 'rejected') return windows;
+  return windows.concat(quota.reset === null
+    ? [{
+        key: 'rate-limited',
+        percent: null,
+        value: t('dashboard.upstreams.signals.rateLimited'),
+        label: null,
+        detail: t('dashboard.upstreams.signals.rateLimitedUndated'),
+        blocked: true,
+      }]
+    : [blockedSignal(quota.reset, t, locale, now)]);
 };
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
@@ -237,15 +253,15 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   return signals;
 };
 
-const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string): UpstreamSignal[] => {
+const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
   case 'custom':
   case 'azure':
     return [];
   case 'copilot': return copilotSignals(record, t, locale);
-  case 'codex': return codexSignals(record, t, locale);
-  case 'claude-code': return claudeCodeSignals(record, t, locale);
+  case 'codex': return codexSignals(record, t, locale, now);
+  case 'claude-code': return claudeCodeSignals(record, t, locale, now);
   case 'ollama': return ollamaSignals(record, t, locale);
   }
 };
@@ -266,16 +282,19 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
   }
 };
 
-export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string): UpstreamReadout => ({
+export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number): UpstreamReadout => ({
   plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
-  signals: upstreamSignals(record, t, locale),
+  signals: upstreamSignals(record, t, locale, now),
 });
 
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const styles = useStyles();
-  const { plan, signals } = upstreamReadout(record, t, locale);
+  // A rate limit is stated as the time it still has to run, so the readout
+  // counts down on the wall clock rather than only when the record changes.
+  const now = useNow(WALL_CLOCK_REFRESH_MS);
+  const { plan, signals } = upstreamReadout(record, t, locale, now);
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
     <Text size={200} className="text-fui-fg3 flex-none" weight="medium" wrap={false}>
