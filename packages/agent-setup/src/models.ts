@@ -200,19 +200,39 @@ export interface VSCodeModel {
 const VSCODE_FALLBACK_CONTEXT_TOKENS = 128_000;
 const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 
-const vscodeContextWindow = (limits: PublicModel['limits']): number =>
-  limits.max_context_window_tokens ?? limits.max_prompt_tokens ?? VSCODE_FALLBACK_CONTEXT_TOKENS;
-
-// VS Code reserves the output budget out of the window and gives the prompt
-// whatever is left, so an output fallback larger than the window leaves a
-// prompt budget of zero — the model appears in the picker and every request is
-// over budget before it starts. Ollama states a context length and no output
-// limit at all, so an 8k model hits exactly that. A stated 0 still survives
-// verbatim; only the fallback is bounded, to a quarter of the window.
+// The window and the output reservation are decided together, because VS Code
+// reconciles them against each other:
+//
+//   contextWindow  = stated ?? (maxInputTokens + maxOutputTokens)
+//   maxOutputTokens = min(stated output, contextWindow)
+//   maxInputTokens  = min(stated input, contextWindow - maxOutputTokens)
+//
+// Two consequences drive what goes out. A window that is really a prompt limit
+// gets the reservation subtracted from it a second time, so a catalog stating a
+// prompt limit and no window — the shape every Codex model has — has to have
+// the reservation added back, exactly as the Zed projection does. And an output
+// fallback larger than the window leaves a prompt budget of zero, so the model
+// appears in the picker and every request is over budget before it starts;
+// Ollama states a context length and no output limit at all, and an 8k model
+// hits precisely that. A stated 0 survives verbatim either way; only the
+// fallback is bounded, to a quarter of whatever bound the catalog did state.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
-const vscodeOutputTokens = (limits: PublicModel['limits']): number => {
-  if (limits.max_output_tokens !== undefined) return limits.max_output_tokens;
-  return Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(vscodeContextWindow(limits) / 4));
+const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number; maxOutputTokens: number } => {
+  const statedWindow = limits.max_context_window_tokens;
+  const prompt = limits.max_prompt_tokens;
+  // The quarter-window cap applies to a stated window only, because that is the
+  // only case where the reservation competes with the prompt for one fixed
+  // total. Where the window is reconstructed from a prompt limit the
+  // reservation is added on top, so it cannot crowd the prompt out and there is
+  // nothing to protect against — scaling it down there would be inventing a
+  // ceiling the catalog never implied.
+  const maxOutputTokens = limits.max_output_tokens ?? (statedWindow === undefined
+    ? VSCODE_FALLBACK_OUTPUT_TOKENS
+    : Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(statedWindow / 4)));
+  return {
+    contextWindow: statedWindow ?? (prompt === undefined ? VSCODE_FALLBACK_CONTEXT_TOKENS : prompt + maxOutputTokens),
+    maxOutputTokens,
+  };
 };
 
 export const projectVSCodeModels = (
@@ -222,6 +242,7 @@ export const projectVSCodeModels = (
   chatModels(models).map(model => {
     const reasoning = model.chat?.reasoning;
     const supportedEfforts = reasoning?.effort?.supported;
+    const plan = vscodeTokenPlan(model.limits);
     return {
       id: model.id,
       name: model.display_name,
@@ -231,13 +252,13 @@ export const projectVSCodeModels = (
       //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts#L63-L72
       toolCalling: true,
       vision: model.chat?.modalities?.input.includes('image') ?? false,
-      maxOutputTokens: vscodeOutputTokens(model.limits),
+      maxOutputTokens: plan.maxOutputTokens,
       // `contextWindow` is the whole window and `maxInputTokens` the prompt
       // budget — two different numbers VS Code reconciles itself, deriving the
       // second from the first when it is absent. A model that states a prompt
       // limit is entitled to have it stated rather than derived, so both are
       // emitted; a model announcing only one gets the window it announced.
-      contextWindow: vscodeContextWindow(model.limits),
+      contextWindow: plan.contextWindow,
       ...(model.limits.max_prompt_tokens === undefined ? {} : { maxInputTokens: model.limits.max_prompt_tokens }),
       ...(reasoning === undefined ? {} : { thinking: true }),
       ...(supportedEfforts === undefined

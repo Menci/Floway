@@ -234,6 +234,26 @@ describe('VS Code customendpoint model projection', () => {
     expect(resolve(windowOnly!).maxInputTokens).toBe(168_000);
   });
 
+  // A window that is really a prompt limit gets the reservation subtracted from
+  // it a second time. The shape every Codex model has — a prompt limit and no
+  // window — reached VS Code as a budget short by the whole reservation.
+  it('leaves VS Code the prompt budget the catalog states, with no window to go on', () => {
+    const [promptOnly, promptAndOutput, nothing] = projectVSCodeModels([
+      catalogModel('prompt-only', { limits: { max_prompt_tokens: 120_000 } }),
+      catalogModel('prompt-and-output', { limits: { max_prompt_tokens: 120_000, max_output_tokens: 32_000 } }),
+      catalogModel('unbounded'),
+    ], 'messages');
+
+    expect(resolve(promptOnly!).maxInputTokens).toBe(120_000);
+    expect(resolve(promptAndOutput!).maxInputTokens).toBe(120_000);
+    // The reservation survives the round trip rather than being eaten by the
+    // clamp, so the model keeps the output ceiling the catalog gave it.
+    expect(resolve(promptAndOutput!).maxOutputTokens).toBe(32_000);
+    // Nothing stated at all still gets a window and a usable split.
+    expect(nothing!.contextWindow).toBe(128_000);
+    expect(resolve(nothing!).maxInputTokens).toBeGreaterThan(0);
+  });
+
   // Ollama states a context length and no output limit, so an 8k model would
   // otherwise reserve the whole window for output and register with a prompt
   // budget of zero: present in the picker, over budget before it starts.
