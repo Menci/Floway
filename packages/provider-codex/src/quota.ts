@@ -52,6 +52,10 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setNumber = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
+    // Blank rather than absent is how this backend reports a field that does
+    // not apply -- a plan with no secondary window, an account with no credit
+    // balance -- and `Number('')` is 0, which would render as a confident zero.
+    if (v.trim() === '') return;
     const n = Number(v);
     if (Number.isFinite(n)) assign[key] = n;
   };
@@ -62,31 +66,59 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
     if (lower === 'true') assign[key] = true;
     else if (lower === 'false') assign[key] = false;
   };
-  const setResetAfter = (key: keyof CodexQuotaSnapshot, header: string): void => {
-    const v = headers.get(header);
-    if (v === null) return;
-    const seconds = Number(v);
-    if (!Number.isFinite(seconds)) return;
-    assign[key] = new Date(options.now.getTime() + seconds * 1000).toISOString();
+  // Upstream renamed this reading on 2025-10-17: `-reset-at` states the instant
+  // outright, where `-reset-after-seconds` states the offset from receipt. Both
+  // are still sent, and a capture from 2025-09 carries only the offset, so the
+  // rename added a header rather than replacing one. The instant is preferred
+  // and the offset is the fallback, which is the shape the third-party clients
+  // that read both settled on -- and which keeps this working on the day the
+  // offset stops being sent.
+  // https://github.com/openai/codex/commit/0e08dd605
+  //
+  // Zero and blank both mean "this plan has no such window" rather than "it
+  // resets now": a capture pairs a blank `-reset-at` with a zero
+  // `-reset-after-seconds` on a plan whose secondary window is 0 minutes wide.
+  const resetInstant = (prefix: string): string | undefined => {
+    const at = headers.get(`${prefix}-reset-at`)?.trim();
+    if (at !== undefined && at !== '') {
+      const epochSeconds = Number(at);
+      // Epoch seconds today; RFC 3339 in builds from the three days after the
+      // header landed, which is why clients that read it accept both.
+      const instant = Number.isFinite(epochSeconds) ? epochSeconds * 1000 : Date.parse(at);
+      if (Number.isFinite(instant) && instant > 0) return new Date(instant).toISOString();
+    }
+    const after = headers.get(`${prefix}-reset-after-seconds`)?.trim();
+    if (after === undefined || after === '') return undefined;
+    const seconds = Number(after);
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    return new Date(options.now.getTime() + seconds * 1000).toISOString();
+  };
+
+  const setReset = (key: keyof CodexQuotaSnapshot, prefix: string): void => {
+    const instant = resetInstant(prefix);
+    if (instant !== undefined) assign[key] = instant;
   };
 
   setString('active_limit', 'x-codex-active-limit');
   setString('plan_type', 'x-codex-plan-type');
   setNumber('primary_used_percent', 'x-codex-primary-used-percent');
   setNumber('primary_window_minutes', 'x-codex-primary-window-minutes');
-  setResetAfter('primary_reset_after_at', 'x-codex-primary-reset-after-seconds');
+  setReset('primary_reset_after_at', 'x-codex-primary');
   setNumber('secondary_used_percent', 'x-codex-secondary-used-percent');
   setNumber('secondary_window_minutes', 'x-codex-secondary-window-minutes');
-  setResetAfter('secondary_reset_after_at', 'x-codex-secondary-reset-after-seconds');
+  setReset('secondary_reset_after_at', 'x-codex-secondary');
   setBool('credits_has_credits', 'x-codex-credits-has-credits');
   setNumber('credits_balance', 'x-codex-credits-balance');
 
+  // The furthest window is when the block lifts, read through the same
+  // preference so a response carrying only the new header still dates it.
   if (options.isRateLimited) {
-    const primary = Number(headers.get('x-codex-primary-reset-after-seconds'));
-    const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds'));
-    const seconds = Math.max(Number.isFinite(primary) ? primary : 0, Number.isFinite(secondary) ? secondary : 0);
-    if (seconds > 0) {
-      snapshot.ratelimited_until = new Date(options.now.getTime() + seconds * 1000).toISOString();
+    const horizons = [snapshot.primary_reset_after_at, snapshot.secondary_reset_after_at]
+      .filter((instant): instant is string => instant !== undefined)
+      .map(instant => Date.parse(instant))
+      .filter(Number.isFinite);
+    if (horizons.length > 0) {
+      snapshot.ratelimited_until = new Date(Math.max(...horizons)).toISOString();
     }
   }
 
