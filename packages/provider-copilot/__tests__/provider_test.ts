@@ -943,8 +943,9 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
       { object: 'list', data: [{ id: 'm1', name: 'm1', version: '1', supported_endpoints: [], capabilities: { type: 'chat', limits: {} } }] },
       1_000_000,
     ),
-    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com', sku: 'monthly_subscriber_quota' },
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
     quotaSnapshot: null,
+    seat: null,
   };
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken?.token, 'tok');

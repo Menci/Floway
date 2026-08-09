@@ -6,8 +6,9 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 test('readCopilotUpstreamState passes through a complete new-shape entry verbatim', () => {
   const seeded = {
     knownModels: null,
-    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com', sku: 'monthly_subscriber_quota' },
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
     quotaSnapshot: null,
+    seat: null,
   } satisfies CopilotUpstreamState;
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken, seeded.copilotToken);
@@ -42,8 +43,8 @@ test('readCopilotUpstreamState treats a state without copilotToken key as valid'
 });
 
 test('readCopilotUpstreamState collapses null/undefined raw to empty state', () => {
-  assertEquals(readCopilotUpstreamState(null), { knownModels: null, copilotToken: null, quotaSnapshot: null });
-  assertEquals(readCopilotUpstreamState(undefined), { knownModels: null, copilotToken: null, quotaSnapshot: null });
+  assertEquals(readCopilotUpstreamState(null), { knownModels: null, copilotToken: null, quotaSnapshot: null, seat: null });
+  assertEquals(readCopilotUpstreamState(undefined), { knownModels: null, copilotToken: null, quotaSnapshot: null, seat: null });
 });
 
 test('assertCopilotUpstreamState rejects an unknown top-level key', () => {
@@ -83,15 +84,38 @@ test('assertCopilotUpstreamState rejects prototype-named keys', () => {
   }
 });
 
-// The slot was added after the shape shipped, so a row minted before it has no
-// key at all. That is the one absent-key case the reader normalizes rather than
-// rejects: the seat is still usable, and the next mint fills the plan in.
-test('readCopilotUpstreamState reads a token entry minted before the SKU slot as having none', () => {
+// The seat is written by the one path that reads the entitlement endpoint, so a
+// row from before that path existed carries no slot at all.
+test('readCopilotUpstreamState reads a row written before the seat slot as having none', () => {
   const round = readCopilotUpstreamState({
     knownModels: null,
     copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
     quotaSnapshot: null,
   });
-  assertEquals(round.copilotToken?.token, 'tok');
-  assertEquals(round.copilotToken?.sku, null);
+  assertEquals(round.seat, null);
+});
+
+test('readCopilotUpstreamState round-trips a seat verbatim', () => {
+  const seeded = {
+    knownModels: null,
+    copilotToken: null,
+    quotaSnapshot: null,
+    seat: { fetchedAt: 3_000_000, data: { observed_at: '2026-08-09T00:00:00.000Z', plan: 'individual_max', sku: null } },
+  } satisfies CopilotUpstreamState;
+  assertEquals(readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded))).seat, seeded.seat);
+});
+
+// The token entry is a closed key set, and migration 0079 strips the `sku` that
+// used to sit in it, so a row that still carries one must fail loudly rather
+// than be tolerated here.
+test('readCopilotUpstreamState throws on a token entry that still carries a sku', () => {
+  assertThrows(
+    () => readCopilotUpstreamState({
+      knownModels: null,
+      copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com', sku: 'monthly_subscriber_quota' },
+      quotaSnapshot: null,
+    }),
+    TypeError,
+    "CopilotUpstreamState.copilotToken has unexpected key 'sku'",
+  );
 });

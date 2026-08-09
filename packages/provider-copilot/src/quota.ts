@@ -200,6 +200,8 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
 // https://github.com/TopiCsarno/yapcap/blob/152ea67c3abd44776268627d58533003099da951/fixtures/copilot/copilot_user_response.json
 // https://github.com/bugwz/AIMeter/blob/b93c15558863c3eb3fe1a0e71197c233343c9400/docs/providers/copliot/demo.free.json
 export interface CopilotUsageResponse {
+  access_type_sku?: string;
+  copilot_plan?: string;
   quota_reset_date_utc?: string;
   quota_snapshots?: Record<string, {
     entitlement?: number;
@@ -256,6 +258,35 @@ export const projectCopilotUsageResponse = (body: CopilotUsageResponse, now: Dat
     reset_at: resetInstantOrNull(body.quota_reset_date_utc),
     quotas,
   };
+};
+
+// The seat's plan, as the only endpoint that names it reports it. Both fields
+// are forwarded verbatim: `copilot_plan` names a paid seat's plan, and
+// `access_type_sku` is what VS Code matches first, because a free or education
+// seat is discriminated by its SKU rather than by a plan of its own.
+// https://github.com/microsoft/vscode/blob/b285c0292b56772e2784d014ac1dbcf809c58a17/src/vs/workbench/services/chat/common/chatEntitlementService.ts#L1013-L1030
+export interface CopilotSeat {
+  observed_at: string;
+  plan: string | null;
+  sku: string | null;
+}
+
+// A body naming neither is "nothing observed" rather than a seat with no plan,
+// on the same contract as the quota projection beside it: the operator's
+// refresh must not blank a reading an earlier one had already stored.
+export const projectCopilotSeat = (body: CopilotUsageResponse, now: Date): CopilotSeat | null => {
+  const plan = typeof body.copilot_plan === 'string' && body.copilot_plan !== '' ? body.copilot_plan : null;
+  const sku = typeof body.access_type_sku === 'string' && body.access_type_sku !== '' ? body.access_type_sku : null;
+  if (plan === null && sku === null) return null;
+  return { observed_at: now.toISOString(), plan, sku };
+};
+
+export const putCopilotSeat = async (upstreamId: string, seat: CopilotSeat): Promise<void> => {
+  const fetchedAt = Date.now();
+  await getProviderRepo().upstreams.saveState(upstreamId, current => ({
+    ...readCopilotUpstreamState(current),
+    seat: { fetchedAt, data: seat },
+  } satisfies CopilotUpstreamState));
 };
 
 export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<Response> =>
