@@ -30,16 +30,41 @@ _json_has_comment() {
   ' "$1" 2>/dev/null
 }
 
+# The file a managed path ultimately names. chezmoi and stow both place a
+# symlink where an editor expects its document, and renaming a staged file onto
+# that path replaces the link itself: the operator's dotfile silently stops
+# being what the editor reads, and their next change there has no effect.
+# Resolving up front keeps the write, the backup, the mode, and the backup prune
+# all acting on the real document. Mirrors Resolve-SetupManagedPath.
+#
+# Walked by hand rather than with `readlink -f` or `realpath`, neither of which
+# BSD offers before macOS 12.3.
+# Refs: https://github.com/apple-oss-distributions/file_cmds/blob/file_cmds-400/realpath/realpath.1
+_resolve_managed_path() {
+  _rmp_path=$1
+  _rmp_hops=0
+  while [ -L "$_rmp_path" ]; do
+    _rmp_hops=$((_rmp_hops + 1))
+    if [ "$_rmp_hops" -gt 40 ]; then
+      out_error "$1 does not resolve to a file: too many symlink hops."
+      return 1
+    fi
+    _rmp_target=$(readlink "$_rmp_path") || return 1
+    case "$_rmp_target" in
+      /*) _rmp_path=$_rmp_target ;;
+      *) _rmp_path=${_rmp_path%/*}/$_rmp_target ;;
+    esac
+  done
+  printf '%s' "$_rmp_path"
+}
+
 # A file's permission bits as an octal string, or empty when neither stat
 # dialect answers. GNU takes `-c`, BSD takes `-f`; a caller that gets nothing
-# leaves the mode alone rather than guessing one.
-#
-# `-L` because a managed document may be a symlink — chezmoi and stow both place
-# one — and stat without it reports the link's own 0755 rather than the target's
-# mode. This is the only mode source on BSD, where `chmod --reference` does not
-# exist, so without it a run would widen the file it was asked to preserve.
+# leaves the mode alone rather than guessing one. This is the only mode source
+# on BSD, where `chmod --reference` does not exist, so a run that lost it would
+# widen the file it was asked to preserve.
 _stat_mode() {
-  stat -L -c '%a' "$1" 2>/dev/null || stat -L -f '%Lp' "$1" 2>/dev/null || printf ''
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || printf ''
 }
 
 # Rollback retains a backup when restoration fails so manual recovery remains

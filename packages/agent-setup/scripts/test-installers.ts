@@ -18,10 +18,10 @@
 // `--agent claude` / `--agent codex`.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, lstatSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
@@ -105,7 +105,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'readlink', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -539,6 +539,33 @@ const zedCredentialSecret = (workspace: Workspace): string => join(workspace.roo
 // newline-delimited, and `cat` is the only byte-preserving tool on the
 // harness's hermetic PATH — a pipeline through `od` or `xxd` would silently
 // produce nothing there.
+// Makes the workspace's `stat` look like stock macOS: no `-c`, only `-f`. On a
+// GNU host the `-c` branch answers and the BSD one — the only mode source macOS
+// has — would ship unexecuted unless the dialect is forced.
+//
+// The shim serves the BSD call as well as refusing the GNU one, translating
+// `-f '%Lp'` to the host's `-c '%a'`; refusing without serving would make the
+// fallback look broken when it is the shim that cannot answer.
+const placeBsdStatShim = (workspace: Workspace): void => {
+  const realStat = resolveTool('stat')!;
+  writeFileSync(join(workspace.binDir, 'stat'), `#!/bin/bash
+fmt=""
+target=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -c) printf 'stat: illegal option -- c\n' >&2; exit 1 ;;
+    -f) fmt=$2; shift ;;
+    *) target=$1 ;;
+  esac
+  shift
+done
+case "$fmt" in
+  '%Lp') exec ${JSON.stringify(realStat)} -c '%a' "$target" ;;
+  *) printf 'stat: unsupported format\n' >&2; exit 1 ;;
+esac
+`, { mode: 0o755 });
+};
+
 const placeFakeCredentialTools = (workspace: Workspace): void => {
   const record = zedCredentialRecord(workspace);
   writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
@@ -2913,28 +2940,51 @@ test('zed', 'PowerShell replaces existing settings atomically', async t => {
 // backup is made — so the failure is injected downstream instead: a stale
 // backup that is a directory makes the prune's `rm -f` fail, which happens
 // after the write has already been renamed into place.
-// chezmoi and stow both place a symlink here, and `stat` without `-L` reports
-// the link's own 0755 rather than the target's mode — so a run would widen the
-// file it was asked to preserve. On BSD this is the only mode source, since
-// `chmod --reference` does not exist there.
-test('zed', 'preserves the mode of a symlinked settings file', async t => {
+// chezmoi and stow both place a symlink where Zed expects its document. Writing
+// through a staged file and renaming it into place replaces the link itself, so
+// the operator's dotfile stops being what Zed reads and their next edit there
+// has no effect — the settings path has to be resolved before anything touches
+// it. The mode of the resolved file is the operator's too; on BSD `stat` is the
+// only way to read it, since `chmod --reference` does not exist there.
+test('zed', 'writes through a symlinked settings file rather than replacing it', async t => {
   if (process.platform === 'win32') skip('POSIX modes and symlinks only');
   for (const which of ['bash', 'powershell'] as const) {
     if (which === 'powershell' && !hostPwsh) continue;
-    const ws = makeWorkspace();
-    const configDir = makeZedConfigDir(ws);
-    placeFakeCredentialTools(ws);
-    // The real document lives elsewhere, at a mode the operator chose; the path
-    // Zed reads is a link to it.
-    const target = join(ws.home, 'dotfiles-zed-settings.json');
-    writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
-    chmodSync(target, 0o600);
-    symlinkSync(target, zedSettingsPath(configDir));
+    // The stat dialect and the link's own form are independent, so they are
+    // paired rather than crossed: stow writes a relative link, chezmoi an
+    // absolute one, and both forms have to survive on both dialects.
+    for (const { dialect, link } of [{ dialect: 'gnu', link: 'absolute' }, { dialect: 'bsd', link: 'relative' }] as const) {
+      const ws = makeWorkspace();
+      const configDir = makeZedConfigDir(ws);
+      placeFakeCredentialTools(ws);
+      if (dialect === 'bsd') placeBsdStatShim(ws);
+      // The real document lives elsewhere, at a mode the operator chose; the path
+      // Zed reads is a link to it.
+      // 0640 because it is a mode neither half produces on its own: a staged
+      // file that inherited nothing lands on 0600 under the Bash half's
+      // `umask 077` and on 0644 under the PowerShell half's inherited umask, so
+      // either of those as the fixture would pass one half without observing it.
+      const target = join(ws.home, 'dotfiles-zed-settings.json');
+      writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o640 });
+      chmodSync(target, 0o640);
+      symlinkSync(link === 'absolute' ? target : relative(configDir, target), zedSettingsPath(configDir));
 
-    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
-    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
-    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
-    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which} keeps the target's mode, not the link's`);
+      const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      t.ok(lstatSync(zedSettingsPath(configDir)).isSymbolicLink(), `${which}/${dialect}/${link} leaves the link in place`);
+      t.ok(readFileSync(target, 'utf8').includes('anthropic_compatible'), `${which}/${dialect}/${link} writes the provider into the linked-to file`);
+      t.equal(statSync(target).mode & 0o777, 0o640, `${which}/${dialect}/${link} keeps the mode the operator chose`);
+      // The backup and the staged write follow the resolved file, so an
+      // operator restoring by hand finds the backup next to their dotfile
+      // rather than next to the link.
+      t.equal(
+        readdirSync(ws.home).filter(name => name.includes('floway-')).map(name => name.replace(/\d+\.\d+$/, '<stamp>')).join(),
+        'dotfiles-zed-settings.json.floway-backup.<stamp>',
+        `${which}/${dialect}/${link} leaves one backup beside the target and no stage`,
+      );
+      t.equal(readdirSync(configDir).join(), 'global_settings.json', `${which}/${dialect}/${link} leaves nothing beside the link`);
+    }
   }
 });
 

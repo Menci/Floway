@@ -1,3 +1,25 @@
+# The file a managed path ultimately names. chezmoi and stow both place a
+# symlink where an editor expects its document, and replacing that path with a
+# staged file replaces the link itself: the operator's dotfile silently stops
+# being what the editor reads, and their next change there has no effect.
+# Resolving up front keeps the write, the backup, the mode, and the backup prune
+# all acting on the real document. Mirrors _resolve_managed_path.
+#
+# `Get-Item -Force` rather than ResolveLinkTarget, which arrived in .NET 6 and
+# is therefore missing on pwsh 7.0-7.1; the hop loop this needs anyway also
+# bounds a link cycle, which the framework call would raise on.
+function Resolve-SetupManagedPath {
+  param([string]$Path)
+  for ($hops = 0; $hops -le 40; $hops++) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item -or [string]::IsNullOrEmpty($item.Target)) { return $Path }
+    $target = @($item.Target)[0]
+    $Path = if ([System.IO.Path]::IsPathRooted($target)) { $target }
+            else { [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Path) $target)) }
+  }
+  Stop-Setup "$Path does not resolve to a file: too many symlink hops."
+}
+
 # Restrict a file to the current user: chmod 0600 on Unix, an inheritance-free
 # owner-only ACL on Windows.
 function Protect-SetupFile {
