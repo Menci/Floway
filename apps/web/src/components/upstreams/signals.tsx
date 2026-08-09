@@ -45,26 +45,11 @@ const useStyles = makeStyles({
       '--floway-signal-label': 'var(--winui-text-fill-secondary)',
     },
   },
-  // The colours cross on the duration this layer gives a control's own fill,
-  // and clamp under the reduced-motion preference to the token that says why
-  // that clamp is not zero. WinUI switches a foreground instantly and animates
-  // only the fill, so easing this one is the operator's departure.
-  value: {
-    color: 'var(--floway-signal-value)',
-    transitionProperty: 'color',
-    transitionDuration: 'var(--winui-control-faster-animation-duration)',
-    '@media (prefers-reduced-motion: reduce)': {
-      transitionDuration: 'var(--winui-reduced-motion-duration)',
-    },
-  },
-  label: {
-    color: 'var(--floway-signal-label)',
-    transitionProperty: 'color',
-    transitionDuration: 'var(--winui-control-faster-animation-duration)',
-    '@media (prefers-reduced-motion: reduce)': {
-      transitionDuration: 'var(--winui-reduced-motion-duration)',
-    },
-  },
+  // Both switch outright. WinUI eases a control's own fill and nothing else --
+  // its foreground crosses instantly -- and a reading is foreground throughout.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606
+  value: { color: 'var(--floway-signal-value)' },
+  label: { color: 'var(--floway-signal-label)' },
   // A reading that says the upstream is refusing work outranks its own tone.
   blocked: { color: 'var(--winui-system-fill-critical)' },
 });
