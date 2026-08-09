@@ -61,7 +61,7 @@ function Restore-SetupZedSettings {
 # then rename it into place. Only the one provider key is touched; every other
 # setting in the file survives.
 function Write-SetupZedSettings {
-  $script:ZedSettingsPath = Join-Path $script:ZedConfigDir 'global_settings.json'
+  $script:ZedSettingsPath = Resolve-SetupManagedPath (Join-Path $script:ZedConfigDir 'global_settings.json')
   $script:ZedSettingsBackup = $null
   $script:ZedSettingsExisted = $false
 
@@ -159,15 +159,10 @@ function Write-SetupZedSettings {
     # this installer set goes through chmod for the same reason.
     if (-not (Test-SetupIsWindows)) {
       if ($script:ZedSettingsExisted) {
-        # `--reference` is GNU-only; BSD chmod takes the mode itself.
-        # `-L` because the settings path may be a symlink — chezmoi and stow both
-        # place one here — and stat without it reports the link's own mode, which
-        # would hand the target's replacement 755. The Bash half uses
-        # `chmod --reference`, which dereferences, so this is what keeps the two
-        # agreeing. GNU stat takes -c, BSD takes -f; neither answering leaves the
-        # mode alone rather than guessing one, as the Bash helper does.
-        $mode = & stat -L -c '%a' $script:ZedSettingsPath 2>$null
-        if (-not $mode) { $mode = & stat -L -f '%Lp' $script:ZedSettingsPath 2>$null }
+        # GNU stat takes -c, BSD takes -f. Neither answering leaves the mode
+        # alone rather than guessing one, as _stat_mode does.
+        $mode = & stat -c '%a' $script:ZedSettingsPath 2>$null
+        if (-not $mode) { $mode = & stat -f '%Lp' $script:ZedSettingsPath 2>$null }
         if ($mode) { & chmod $mode $stage }
       } else {
         # A file we create is ours to set: owner-only, matching the Bash half,

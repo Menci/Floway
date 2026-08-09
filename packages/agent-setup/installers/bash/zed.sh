@@ -100,7 +100,9 @@ zed_rollback_settings() {
 # run creates is owner-only, because main sets `umask 077` before anything is
 # written — the PowerShell half states the same mode explicitly.
 zed_write_settings() {
-  ZED_SETTINGS_PATH="$ZED_CONFIG_DIR/global_settings.json"
+  if ! ZED_SETTINGS_PATH=$(_resolve_managed_path "$ZED_CONFIG_DIR/global_settings.json"); then
+    return 1
+  fi
   ZED_SETTINGS_BACKUP=""
   ZED_SETTINGS_EXISTED=0
 
@@ -175,10 +177,15 @@ zed_write_settings() {
   fi
 
   # Carry the existing document's mode onto the replacement before it takes its
-  # place, so a run cannot narrow a file it was only asked to edit.
-  if [ "$ZED_SETTINGS_EXISTED" -eq 1 ] && ! chmod --reference="$ZED_SETTINGS_PATH" "$_zw_stage" 2>/dev/null; then
-    # BSD chmod has no --reference; read the mode and apply it.
-    _zw_mode=$(_stat_mode "$ZED_SETTINGS_PATH") && [ -n "$_zw_mode" ] && chmod "$_zw_mode" "$_zw_stage"
+  # place, so a run cannot narrow a file it was only asked to edit. `chmod
+  # --reference` would read and apply it in one step but is GNU-only, and the
+  # PowerShell half has to read the mode itself either way — going through
+  # _stat_mode on both keeps one path to review rather than two that agree by
+  # inspection. A mode neither stat dialect answers is left alone rather than
+  # guessed at.
+  if [ "$ZED_SETTINGS_EXISTED" -eq 1 ]; then
+    _zw_mode=$(_stat_mode "$ZED_SETTINGS_PATH")
+    [ -n "$_zw_mode" ] && chmod "$_zw_mode" "$_zw_stage"
   fi
 
   if ! mv "$_zw_stage" "$ZED_SETTINGS_PATH"; then
