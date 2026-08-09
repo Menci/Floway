@@ -21,7 +21,10 @@ function Get-SetupZedApiUrl { $SetupEndpoint }
 # no channel branching, so a single file serves Stable, Preview and Nightly.
 # XDG is consulted on Linux and FreeBSD only — macOS falls through to an
 # unconditional `~/.config`, never `~/Library/Application Support`, and never
-# `XDG_CONFIG_HOME` even when one is exported.
+# `XDG_CONFIG_HOME` even when one is exported. The branch ahead of all of these
+# is `--user-data-dir`, which relocates the configuration wholesale; a Zed
+# started that way is out of scope here, and the override below is how an
+# operator running one points this installer at it.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
 function Get-SetupZedConfigDir {
   if ($env:AGENT_SETUP_TEST_ZED_CONFIG_DIR) { return $env:AGENT_SETUP_TEST_ZED_CONFIG_DIR }
@@ -80,12 +83,18 @@ function Write-SetupZedSettings {
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
     # into a bare object, so neither is distinguishable afterwards.
     if (-not (Test-SetupJsonRoot $raw '{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched." }
-    try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
+    # One message for every way the parse can fail, matching the Bash half: its
+    # jq gate cannot say which conjunct refused either, and to the operator a
+    # JSON stream and a truncated object are the same instruction — fix the file.
+    try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched." }
+    # No root-type check here: the brace root is already established above and
+    # every brace-rooted document decodes to PSCustomObject. The Bash half needs
+    # its `type == "object"` conjunct because it has no text-level root check.
+    #
     # Every shape check completes before the backup exists, so a refusal on
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
-    if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'
@@ -193,6 +202,7 @@ function Write-SetupZedSettings {
 # Windows keeps it as a generic credential whose target name Zed builds as
 # "zed:url=" + api_url. The blob must be UTF-8 — Zed runs `str::from_utf8` over
 # it — which rules out `cmdkey`, whose blob is UTF-16LE.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
 $SetupZedCredWriteSource = @'
 using System;
 using System.Runtime.InteropServices;
@@ -287,6 +297,10 @@ function Set-SetupZedCredentialSecretService {
   if ($exitCode -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
 }
 
+# macOS keeps it as an internet password, where Zed's `url` is the server and
+# its username the account — exactly what `-s` and `-a` set.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
+#
 # `-T` grants a bundle access without the authorization prompt a later read
 # would raise, and a path that does not exist fails the whole call — so only
 # bundles found on this host are named, across every channel and both install

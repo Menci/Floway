@@ -49,7 +49,10 @@ _resolve_managed_path() {
       out_error "$1 does not resolve to a file: too many symlink hops."
       return 1
     fi
-    _rmp_target=$(readlink "$_rmp_path") || return 1
+    if ! _rmp_target=$(readlink "$_rmp_path"); then
+      out_error "could not read the symlink at $_rmp_path"
+      return 1
+    fi
     case "$_rmp_target" in
       /*) _rmp_path=$_rmp_target ;;
       *) _rmp_path=${_rmp_path%/*}/$_rmp_target ;;

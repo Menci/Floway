@@ -2,11 +2,11 @@
 # an array? Asked of the text rather than of the decoded value because
 # ConvertFrom-Json unwraps a top-level one-element array into a bare object and
 # yields `$null` for both `[]` and an empty file, so the decoded value cannot
-# tell those shapes apart. `Get-Content -Raw` returns `$null` for a zero-byte
-# file, which is not a document of any shape.
+# tell those shapes apart. A zero-byte file, which `Get-Content -Raw` returns as
+# `$null` and the parameter binder turns into the empty string, opens with
+# nothing and is therefore no shape at all.
 function Test-SetupJsonRoot {
   param([string]$Text, [char]$Open)
-  if ($null -eq $Text) { return $false }
   return $Text.TrimStart().StartsWith($Open)
 }
 

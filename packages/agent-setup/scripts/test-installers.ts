@@ -1257,6 +1257,31 @@ test('claude', 'honors an explicit CLAUDE_CONFIG_DIR', async t => {
   t.ok(!existsSync(join(ws.home, '.claude', 'settings.json')), 'the default location is not used when overridden');
 });
 
+// The resolver lives in the shared helper, so every managed document gets it:
+// `~/.claude/settings.json` is the one an operator is most likely to have under
+// chezmoi or stow, and Codex's `config.toml` and provider token reach the same
+// rename through backup and rollback even though the CLI writes the config.
+test('claude', 'writes through a symlinked settings file rather than replacing it', async t => {
+  if (process.platform === 'win32') skip('symlinks only');
+  for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    placeFakeClaude(ws.binDir);
+    const configDir = join(ws.root, `claude-symlink-${which}`);
+    mkdirSync(configDir, { recursive: true });
+    const target = join(ws.home, `dotfiles-${which}-claude-settings.json`);
+    writeFileSync(target, JSON.stringify({ theme: 'dark' }));
+    symlinkSync(link === 'absolute' ? target : relative(configDir, target), join(configDir, 'settings.json'));
+
+    const options = { workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(lstatSync(join(configDir, 'settings.json')).isSymbolicLink(), `${which}/${link} leaves the link in place`);
+    t.ok(readFileSync(target, 'utf8').includes('ANTHROPIC_BASE_URL'), `${which}/${link} writes the settings into the linked-to file`);
+    t.ok(JSON.parse(readFileSync(target, 'utf8')).theme === 'dark', `${which}/${link} keeps what the operator had there`);
+  }
+});
+
 test('claude', 'missing jq without a download fails before mutating settings', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1854,6 +1879,30 @@ test('codex', 'existing CLI configures via the app-server and stages the provide
   t.includes(run.stdout, '==> Completed Agent Setup: Codex', 'the final outcome is explicit');
   assertCodexBaseEdits(t, ws, modelServer.url);
   assertStagedToken(t, ws);
+});
+
+// The provider token is the file this installer renames into place itself; the
+// config is the CLI's to write, but the backup and the rollback rename are ours
+// and would land on the link just the same.
+test('codex', 'writes through a symlinked provider token rather than replacing it', async t => {
+  if (process.platform === 'win32') skip('symlinks only');
+  for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    placeFakeCodex(ws.binDir);
+    const codexHome = join(ws.root, `codex-symlink-${which}`);
+    mkdirSync(codexHome, { recursive: true });
+    const target = join(ws.home, `dotfiles-${which}-floway-token`);
+    writeFileSync(target, 'previous-token', { mode: 0o600 });
+    symlinkSync(link === 'absolute' ? target : relative(codexHome, target), join(codexHome, 'floway-token'));
+
+    const options = { workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(lstatSync(join(codexHome, 'floway-token')).isSymbolicLink(), `${which}/${link} leaves the link in place`);
+    t.equal(readFileSync(target, 'utf8'), SENTINEL_KEY, `${which}/${link} writes the key into the linked-to file`);
+    t.equal(statSync(target).mode & 0o777, 0o600, `${which}/${link} keeps the file holding the key owner-only`);
+  }
 });
 
 test('codex', 'the batch clears model and effort when unset', async t => {
@@ -2793,16 +2842,16 @@ test('zed', 'preserves the settings file mode through a write and through a refu
     const written = makeWorkspace();
     const writtenDir = makeZedConfigDir(written);
     placeFakeCredentialTools(written);
-    // 0644, not 0600: main sets `umask 077`, so a stage that carries no mode at
-    // all is already 0600 and an assertion of 0600 would restate the umask
-    // rather than the preservation. A mode wider than the umask can only come
-    // from the operator's own file.
-    writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o644 });
-    chmodSync(zedSettingsPath(writtenDir), 0o644);
+    // 0640 because it is a mode neither half produces on its own: a stage that
+    // carried none is 0600 under the Bash half's `umask 077` and 0644 under the
+    // PowerShell half's inherited umask, so either as the fixture would restate
+    // one half's umask instead of observing the preservation.
+    writeFileSync(zedSettingsPath(writtenDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o640 });
+    chmodSync(zedSettingsPath(writtenDir), 0o640);
     const options = { workspace: written, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: writtenDir };
     const ok = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
     t.equal(ok.code, 0, `${which} should succeed:\n${ok.combined}`);
-    t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o644, `${which}: a successful write keeps the operator mode`);
+    t.equal(statSync(zedSettingsPath(writtenDir)).mode & 0o777, 0o640, `${which}: a successful write keeps the operator mode`);
   }
 
   for (const which of ['bash', 'powershell'] as const) {
@@ -2824,6 +2873,43 @@ test('zed', 'preserves the settings file mode through a write and through a refu
     t.equal(readdirSync(refusedDir).filter(name => name.includes('.floway-')).join(','), '', 'with no backup left behind');
   }
 });
+
+// The shape gate has to refuse everything the merge would abort on, and it has
+// to do so before a backup exists — a jq error naming our own list, with the
+// operator's file already copied beside itself, is the outcome these cases
+// exist to keep from coming back. Both halves must refuse identically: same
+// exit, same untouched bytes, same sentence.
+for (const { label, document } of [
+  { label: 'a language_models that is not an object', document: '{"language_models":5}' },
+  { label: 'an anthropic_compatible that is not an object', document: '{"language_models":{"anthropic_compatible":5}}' },
+  // Two documents in one file. jq runs a filter once per document on a stream
+  // and zero times on empty input, exiting 0 either way, so an unslurped gate
+  // would pass this and fail later inside the merge.
+  { label: 'a stream of two documents', document: '{"a":1}{"b":2}' },
+  { label: 'a truncated object', document: '{"telemetry":' },
+]) {
+  test('zed', `both halves refuse ${label}`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const configDir = makeZedConfigDir(ws);
+      placeFakeCredentialTools(ws);
+      writeFileSync(zedSettingsPath(configDir), document);
+      const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.ok(run.code !== 0, `${which} refuses it`);
+      t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, `${which} leaves it byte-identical`);
+      t.equal(readdirSync(configDir).filter(name => name.includes('.floway-')).join(','), '', `${which} leaves no backup or stage behind`);
+      return run.combined;
+    };
+
+    const bash = await runHalf('bash');
+    t.ok(bash.includes('is not a valid Zed settings document'), `Bash names the document:\n${bash}`);
+    if (!hostPwsh) return;
+    const powershell = await runHalf('powershell');
+    t.ok(powershell.includes('is not a valid Zed settings document') || powershell.includes('is not a JSON object'),
+      `PowerShell names the document:\n${powershell}`);
+  });
+}
 
 // A case-only rename must leave exactly one provider, under the new name, in
 // both halves. The PowerShell property bag cannot hold `Floway` beside
@@ -2990,21 +3076,27 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
 
 test('zed', 'a refusal after the backup restores the file and its mode', async t => {
   if (process.platform === 'win32') skip('POSIX modes only');
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  placeFakeCredentialTools(ws);
-  const original = JSON.stringify({ telemetry: { metrics: false } });
-  writeFileSync(zedSettingsPath(configDir), original, { mode: 0o644 });
-  chmodSync(zedSettingsPath(configDir), 0o644);
-  mkdirSync(`${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`, { recursive: true });
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const original = JSON.stringify({ telemetry: { metrics: false } });
+    writeFileSync(zedSettingsPath(configDir), original, { mode: 0o640 });
+    chmodSync(zedSettingsPath(configDir), 0o640);
+    // A stale backup that is a directory: this installer creates only files
+    // there, so neither half may remove it, and both fail the prune — which is
+    // the only failure that lands after the write has already been renamed
+    // into place, and so the only way to reach the rollback from there.
+    mkdirSync(`${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`, { recursive: true });
 
-  const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
-  });
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
 
-  t.ok(run.code !== 0, 'the run fails');
-  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the document is restored');
-  t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o644, 'and at the mode the operator chose');
+    t.ok(run.code !== 0, `${which}: the run fails`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, `${which}: the document is restored`);
+    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o640, `${which}: and at the mode the operator chose`);
+  }
 });
 
 test('zed', 'both halves refuse an array root', async t => {

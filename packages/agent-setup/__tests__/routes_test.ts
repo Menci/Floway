@@ -526,20 +526,33 @@ test('the served VS Code script carries the projected catalog and its API path',
 });
 
 // Neither editor can discover models, so the script carries the projection and
-// listing happens here. A listing failure is the operator's to see: an opaque
-// 404 would read as a dead setup link and a 500 as a gateway fault, so the
-// script says what happened and exits non-zero before touching anything.
+// listing happens on the gateway. A listing failure is the operator's to see:
+// an opaque 404 would read as a dead setup link and a 500 as a gateway fault,
+// so the script says what happened and exits non-zero before touching anything.
 test('a model listing failure serves a script that reports it', async () => {
   const h = harness({ publicOverrides: { listModels: () => Promise.reject(new Error('upstream listing exploded')) } });
   const lease = await create(h);
-  const response = await h.request(lease.scripts.zed.sh, { method: 'GET' });
-  expect(response.status).toBe(200);
-  const body = await response.text();
-  expect(body).toContain('could not list models');
-  expect(body).toContain('exit 1');
-  // The upstream detail stays in the operator's log; anyone holding the setup
-  // URL can read this body.
-  expect(body).not.toContain('exploded');
+  for (const editor of ['zed', 'vscode'] as const) {
+    const sh = await h.request(lease.scripts[editor].sh, { method: 'GET' });
+    expect(sh.status).toBe(200);
+    const shBody = await sh.text();
+    expect(shBody).toContain('could not list models');
+    expect(shBody).toContain('exit 1');
+    // The upstream detail stays in the operator's log; anyone holding the setup
+    // URL can read this body.
+    expect(shBody).not.toContain('exploded');
+
+    // The PowerShell arm cannot use `exit`: it runs as `irm … | iex` in the
+    // operator's own console, which `exit` would close, taking the message with
+    // it. Nothing else exercises that arm.
+    const ps1 = await h.request(lease.scripts[editor].ps1, { method: 'GET' });
+    expect(ps1.status).toBe(200);
+    const ps1Body = await ps1.text();
+    expect(ps1Body).toContain('could not list models');
+    expect(ps1Body).toContain('$global:LASTEXITCODE = 1');
+    expect(ps1Body).not.toMatch(/^exit\b/m);
+    expect(ps1Body).not.toContain('exploded');
+  }
 });
 
 test('the served Zed script carries the projected catalog', async () => {

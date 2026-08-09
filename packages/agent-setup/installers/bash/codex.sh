@@ -358,8 +358,11 @@ configure_agent() {
     return 1
   fi
   CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
+  # Resolved even though `codex login` writes config.toml itself: the backup and
+  # the rollback rename are ours, and a rename onto the link would leave the
+  # operator's dotfile behind while the CLI kept editing the real file.
+  CODEX_CONFIG_PATH=$(_resolve_managed_path "$CODEX_HOME_DIR/config.toml") || return 1
+  CODEX_TOKEN_PATH=$(_resolve_managed_path "$CODEX_HOME_DIR/floway-token") || return 1
   if ! mkdir -p "$CODEX_HOME_DIR"; then
     out_error "could not create $CODEX_HOME_DIR"
     return 1

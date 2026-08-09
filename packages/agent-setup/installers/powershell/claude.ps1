@@ -62,7 +62,7 @@ function Install-SetupClaude {
 # same directory, then atomically rename it into place with owner-only access.
 function Write-SetupClaudeSettings {
   $configDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
-  $script:ClaudeSettingsPath = Join-Path $configDir 'settings.json'
+  $script:ClaudeSettingsPath = Resolve-SetupManagedPath (Join-Path $configDir 'settings.json')
   $script:ClaudeSettingsBackup = $null
   $script:ClaudeSettingsExisted = $false
   if (-not (Test-Path -LiteralPath $configDir)) {

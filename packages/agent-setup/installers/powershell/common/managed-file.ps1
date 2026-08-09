@@ -74,11 +74,20 @@ function Restore-SetupManagedFile {
   }
 }
 
+# Anything under the backup prefix that is not a file is refused rather than
+# removed or skipped. This installer only ever creates files there, so a
+# directory is a state nobody here produced and deleting it recursively could
+# take something of the operator's with it. `-File` would have skipped it and
+# reported success, while the Bash half's `rm -f` fails on it and rolls the
+# write back — one run's outcome must not depend on which half served it.
 function Remove-SetupOlderBackups {
   param([string]$Path, [string]$Keep)
   $directory = Split-Path -Parent $Path
   $prefix = [System.IO.Path]::GetFileName($Path) + '.floway-backup.'
-  Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
+  Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop |
     Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
-    Remove-Item -Force -ErrorAction Stop
+    ForEach-Object {
+      if ($_ -isnot [System.IO.FileInfo]) { throw "could not remove obsolete backup $($_.FullName)" }
+      Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+    }
 }

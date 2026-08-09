@@ -36,7 +36,10 @@ zed_api_url() {
 # no channel branching, so a single file serves Stable, Preview and Nightly.
 # XDG is consulted on Linux and FreeBSD only — macOS falls through to an
 # unconditional `~/.config`, never `~/Library/Application Support`, and never
-# `XDG_CONFIG_HOME` even when one is exported.
+# `XDG_CONFIG_HOME` even when one is exported. The branch ahead of all of these
+# is `--user-data-dir`, which relocates the configuration wholesale; a Zed
+# started that way is out of scope here, and the override below is how an
+# operator running one points this installer at it.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
 zed_config_dir() {
   if [ -n "${AGENT_SETUP_TEST_ZED_CONFIG_DIR:-}" ]; then
@@ -118,14 +121,19 @@ zed_write_settings() {
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped
-    # gate and fail later as a staging error naming the wrong cause — after a
-    # backup already existed. Slurping asks for exactly one document.
+    # gate and fail later as a staging error naming the wrong cause. Slurping
+    # asks for exactly one document.
     # The nested shape checks belong here too, not in the merge program: the
     # merge does not run until a backup exists, so a `language_models` of null
     # or 5 was refused with "failed to construct updated Zed global settings" —
     # naming our list rather than the operator's file — plus a raw jq error on
-    # stderr, and left the backup behind. The PowerShell half and the VS Code
-    # installer both check everything their merge can abort on before copying.
+    # stderr. The PowerShell half and the VS Code installer both check
+    # everything their merge can abort on before copying.
+    # The `language_models` conjunct would be redundant if judged by outcome
+    # alone: the one after it calls `has` on the same value, which raises on a
+    # non-object and fails the gate anyway. It stays because refusing by type
+    # is what this gate means, and leaning on a raised jq error would make the
+    # next edit to the conjunct below silently take this case with it.
     if ! "$JQ" -s -e '
         length == 1
         and (.[0] | type == "object")
@@ -220,6 +228,10 @@ zed_macos_app_bundles() {
   return 0
 }
 
+# macOS keeps the key as an internet password, where Zed's `url` is the server
+# and its username the account — exactly what `-s` and `-a` set below.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
+#
 # `-U` makes a re-run idempotent. The key is unavoidably an argv element for the
 # duration of this call: `security` takes the password only via `-w`/`-X`, and
 # bare `-w` prompts on the tty rather than reading stdin, which a piped
