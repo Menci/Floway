@@ -2905,6 +2905,9 @@ for (const { label, document } of [
   { label: 'a non-breaking space between members', document: '{"a":1,\u00A0"b":2}' },
   { label: 'single-quoted strings', document: "{'telemetry':{'metrics':false}}" },
   { label: 'an unquoted key', document: '{telemetry:{"metrics":false}}' },
+  // Spelled only from the letters `true`, `false` and `null` are spelled with,
+  // which a character-membership gate would let through.
+  { label: 'an unquoted key spelled from literal letters', document: '{"a":1,"telemetry":{"metrics":false},sane:1}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {

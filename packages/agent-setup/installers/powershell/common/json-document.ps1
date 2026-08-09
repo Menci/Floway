@@ -68,12 +68,25 @@ function Get-SetupJsonVerdict {
     if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return 'jsonc' }
     $comma = $false
     if ($ch -eq '"') { $inString = $true; continue }
-    # Everything JSON allows outside a string: structure, and the characters
-    # numbers and the three literals are spelled with. Anything else — a stray
-    # form feed, a single quote opening a string, a letter starting an unquoted
-    # key — is a document jq refuses, and refusing it here is what keeps the two
-    # halves from disagreeing about one file.
-    if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0 -and 'truefalsn'.IndexOf($ch) -lt 0) {
+    # The three literals are matched as whole tokens, not by which letters they
+    # are spelled with: a key like `test` or `nu` uses only those letters and
+    # would otherwise pass, and Newtonsoft would then accept the unquoted key
+    # and write the document back with it quoted.
+    if ($ch -eq 't' -or $ch -eq 'f' -or $ch -eq 'n') {
+      $literal = if ($ch -eq 't') { 'true' } elseif ($ch -eq 'f') { 'false' } else { 'null' }
+      if ($i + $literal.Length -le $Text.Length -and
+          [string]::Equals($Text.Substring($i, $literal.Length), $literal, [System.StringComparison]::Ordinal)) {
+        $i += $literal.Length - 1
+        continue
+      }
+      return 'invalid'
+    }
+    # What remains that JSON allows outside a string: structure, and the
+    # characters a number is spelled with. Anything else — a stray form feed, a
+    # single quote opening a string, any other letter — is a document jq
+    # refuses, and refusing it here is what keeps the two halves from
+    # disagreeing about one file.
+    if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) {
       return 'invalid'
     }
   }
