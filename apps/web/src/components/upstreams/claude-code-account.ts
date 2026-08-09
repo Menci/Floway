@@ -146,13 +146,31 @@ export type AccountStatus =
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
-export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): AccountStatus => {
+// Whether the account is refusing work at this instant, on the same terms the
+// data plane uses to decide whether to send it any: a rejection dated in the
+// past has lifted, and one reported without a date at all is not treated as a
+// limit, because the snapshot is only rewritten by a response and an upstream
+// nobody calls would otherwise stay locked out forever. Both surfaces that show
+// this state read it here, so neither can disagree with the router.
+export const isRateLimitedNow = (
+  quota: ClaudeCodeAccountCredentialSummary['quotaSnapshot'] | null | undefined,
+  now: number,
+): boolean => {
+  const data = quota?.data;
+  if (data?.status !== 'rejected' || !data.reset) return false;
+  return Date.parse(data.reset) > now;
+};
+
+export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], now: number): AccountStatus => {
   if (lookup.kind === 'uuid-mismatch') return { tone: 'danger', reason: 'uuid-mismatch' };
   const { credential } = lookup;
   if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
   if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
-  // `rejected` on the primary status means a limit was hit; overage is a separate optional window.
-  if (credential.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
+  // `rejected` on the primary status means a limit was hit; overage is a
+  // separate optional window. The snapshot is held until a response replaces
+  // it, so this asks whether the limit is still running rather than whether one
+  // was ever reported -- the data plane draws the line at the same instant.
+  if (isRateLimitedNow(credential.quotaSnapshot, now)) return { tone: 'danger', reason: 'exhausted' };
   const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };

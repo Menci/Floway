@@ -41,7 +41,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   const quota = credential?.quotaSnapshot?.data ?? null;
   const probe = readProbeSnapshot(credential);
   const windows = quotaWindows(credential);
-  const status = accountStatus(lookup, windows);
+  const status = accountStatus(lookup, windows, now);
   const disabledReason = actionableDisabledReason(credential);
 
   const accountUuidShort = shortAccountId(account.accountUuid);

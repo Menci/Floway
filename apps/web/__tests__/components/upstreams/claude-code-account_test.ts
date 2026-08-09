@@ -18,6 +18,7 @@ import {
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
 const ACCOUNT_UUID = '11111111-2222-3333-4444-555555555555';
+const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 
 const quotaData = (overrides: Partial<ClaudeCodeQuotaSnapshotData> = {}): ClaudeCodeQuotaSnapshotData => ({
   status: null,
@@ -146,26 +147,38 @@ describe('probe snapshot', () => {
 });
 
 describe('account status', () => {
-  it('treats a rejected plan window as exhausted', () => {
-    const lookup = findCredential(record({ accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected' }) } })] }));
-    expect(accountStatus(lookup, [])).toMatchObject({ tone: 'danger', reason: 'exhausted' });
+  const rejectedAt = (reset: string | null) => findCredential(record({
+    accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected', reset }) } })],
+  }));
+
+  it('treats a rejected plan window as exhausted while its limit is still running', () => {
+    expect(accountStatus(rejectedAt('2026-07-28T15:00:00.000Z'), [], NOW)).toMatchObject({ tone: 'danger', reason: 'exhausted' });
+  });
+
+  // The snapshot is held until a response replaces it, so a rejection dated in
+  // the past is the steady state of an account that is serving again -- which is
+  // where the data plane stops gating on it too. A rejection with no date at all
+  // is not treated as a limit for the same reason it is not one there.
+  it('lets a rejection that has lifted, or was never dated, go', () => {
+    expect(accountStatus(rejectedAt('2026-07-28T09:00:00.000Z'), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
+    expect(accountStatus(rejectedAt(null), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
   });
 
   it('warns once any window crosses the heavy-usage threshold', () => {
     const lookup = findCredential(record({ accounts: [credential()] }));
     const windows = quotaWindows(credential({ usageProbeSnapshot: { fetchedAt: 1, data: { five_hour: { utilization: 12 }, seven_day: { utilization: 81 } } } }));
-    expect(accountStatus(lookup, windows)).toEqual({ tone: 'warning', reason: 'heavy', percent: 81 });
+    expect(accountStatus(lookup, windows, NOW)).toEqual({ tone: 'warning', reason: 'heavy', percent: 81 });
   });
 
   it('reports a terminated session ahead of any usage reading', () => {
     const lookup = findCredential(record({ accounts: [credential({ state: 'session_terminated', stateMessage: 'revoked' })] }));
-    expect(accountStatus(lookup, [{ key: 'fiveHour', percent: 99, resetAt: null, status: null, source: 'probe', fetchedAt: 1 }]))
+    expect(accountStatus(lookup, [{ key: 'fiveHour', percent: 99, resetAt: null, status: null, source: 'probe', fetchedAt: 1 }], NOW))
       .toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
   });
 
   it('stays active when nothing is wrong', () => {
     const lookup = findCredential(record({ accounts: [credential()] }));
-    expect(accountStatus(lookup, [])).toEqual({ tone: 'success', reason: 'active' });
+    expect(accountStatus(lookup, [], NOW)).toEqual({ tone: 'success', reason: 'active' });
   });
 });
 

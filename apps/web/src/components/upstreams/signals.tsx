@@ -4,7 +4,7 @@
 // so an upstream with nothing to report contributes nothing and its row stays
 // one line high.
 
-import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
+import { findCredential, isRateLimitedNow, planLabel as claudeCodePlanLabel, quotaWindows, WINDOW_MINUTES } from './claude-code-account';
 import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
@@ -202,6 +202,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   // undated refusal states the fact alone; there is nothing to count down.
   if (quota?.status !== 'rejected') return windows;
   if (quota.reset !== null) {
+    if (!isRateLimitedNow(credential?.quotaSnapshot, now)) return windows;
     const blocked = blockedSignal(quota.reset, t, locale, now);
     return blocked === null ? windows : windows.concat(blocked);
   }
