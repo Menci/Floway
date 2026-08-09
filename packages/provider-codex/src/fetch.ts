@@ -449,15 +449,10 @@ const dispatchCodexImageCall = async (
   return await classifyCodexHttpResponse(opts, response, 'when-present');
 };
 
-// Force-mint a fresh access token after a 401 and persist it before retrying.
-// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
-// re-read can still observe the token we just invalidated: a sibling that
-// minted before our 401 lands its `putCodexAccessToken` after our
-// invalidation, restoring the broken token, and Codex tokens carry multi-day
-// expiresAt so the freshness gate hands it straight back — sending us into an
-// immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally sidesteps that window. The write is awaited because its CAS
-// result also resolves the latest plan metadata used to authorize the retry.
+// Recover from a 401 without deleting a sibling's newer credential: invalidate
+// only the exact token that failed, reuse a winner already stored by another
+// request, otherwise force a fresh coalesced mint. The resulting CAS write is
+// awaited because it also resolves the latest plan observation for the retry.
 const refreshAccessTokenForRetry = async (
   opts: CodexBackendCallBase,
   failedEntry: CodexAccessTokenEntry,
@@ -477,6 +472,7 @@ const refreshAccessTokenForRetry = async (
         const minted = await mintAccessToken(opts, refreshToken);
         return mergeRetryPlan(minted, fallbackPlan ?? accessTokenPlan(failedEntry) ?? undefined);
       },
+      true,
     );
     return { ok: true, accessToken: effective };
   } catch (err) {
@@ -523,7 +519,7 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performStreamingResponsesCall(opts, fresh.accessToken, true);
   }
@@ -552,7 +548,7 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performUnaryCompactCall(opts, fresh.accessToken, true);
   }
@@ -590,7 +586,7 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);
   }
