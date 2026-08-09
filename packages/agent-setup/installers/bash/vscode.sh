@@ -65,6 +65,13 @@ vscode_profile_dirs() {
   _vpd_user=$1
   printf '%s\n' "$_vpd_user"
   [ -d "$_vpd_user/profiles" ] || return 0
+  # A directory we cannot enter yields nothing from the glob, which would read
+  # as "no named profiles" and report success. The PowerShell half warns; say
+  # the same thing here rather than silently configuring only the default.
+  if [ ! -r "$_vpd_user/profiles" ] || [ ! -x "$_vpd_user/profiles" ]; then
+    out_warn "could not list profiles under $_vpd_user/profiles; configuring the default profile only."
+    return 0
+  fi
   for _vpd_profile in "$_vpd_user"/profiles/*/; do
     [ -d "$_vpd_profile" ] && printf '%s\n' "${_vpd_profile%/}"
   done

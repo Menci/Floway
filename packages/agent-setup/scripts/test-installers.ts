@@ -2931,6 +2931,7 @@ interface VSCodeModelEntry {
   vision: boolean;
   maxOutputTokens: number;
   contextWindow: number;
+  maxInputTokens?: number;
   requestHeaders: Record<string, string>;
   thinking?: boolean;
   supportsReasoningEffort?: string[];
@@ -3205,12 +3206,14 @@ test('vscode', 'a file where a directory belongs is skipped by both halves', asy
   const notADir = join(ws.home, 'vscode-user-is-a-file');
   writeFileSync(notADir, 'not a directory');
   const bash = await runVSCode(ws, { vscodeUserDir: notADir });
-  t.ok(bash.code !== 0, 'Bash finds no user directory');
+  t.ok(bash.combined.includes('no VS Code user directory found'), `Bash names it:\n${bash.combined}`);
   if (!hostPwsh) return;
   const ps = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: notADir,
   });
-  t.ok(ps.code !== 0, 'PowerShell finds none either');
+  // Not just a non-zero exit: the broken version also exits non-zero, via a raw
+  // `Exception calling "Create"` instead of the reason Bash gives.
+  t.ok(ps.combined.includes('no VS Code user directory found'), `PowerShell names it:\n${ps.combined}`);
 });
 
 test('vscode', 'PowerShell replaces only its own group', async t => {
@@ -3517,6 +3520,57 @@ test('vscode', 'a profile whose backup fails does not stop the others', async t 
       t.equal(readVSCodeGroups(healthy).length, 1, `${which} still configures the writable profile`);
     } finally {
       chmodSync(userDir, 0o755);
+    }
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// `-ceq` against an array is a filter, and a non-empty result is truthy, so a
+// group whose `vendor` is an array would match our own and be deleted. jq keeps
+// it, because a non-string is not equal to a string.
+test('vscode', 'neither half deletes a group whose vendor is not a string', async t => {
+  const foreign = '[{"vendor":["customendpoint"],"name":"Floway","models":[]},{"vendor":"other","name":"Keep"}]';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-arrayvendor-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), foreign);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(bash.length, 3, 'Bash keeps both foreign groups and adds ours');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
+});
+
+// A `profiles/` the run cannot enter yields nothing from the glob, which reads
+// as "no named profiles" — both halves have to say so rather than report a
+// clean install of the default profile alone.
+test('vscode', 'both halves warn about a profiles directory they cannot read', async t => {
+  if (process.platform === 'win32') skip('POSIX permission bits only');
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-warnprofiles-${which}`);
+    const profiles = join(userDir, 'profiles');
+    mkdirSync(profiles, { recursive: true });
+    chmodSync(profiles, 0o000);
+    try {
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      // The exact sentence, not merely the word "warning": other output
+      // mentions profiles, and a bare /warn/i would be satisfied by anything.
+      t.ok(run.combined.includes('could not list profiles'), `${which} says which directory it could not read:\n${run.combined}`);
+      t.equal(readVSCodeGroups(userDir).length, 1, `${which} still configures the default profile`);
+    } finally {
+      chmodSync(profiles, 0o755);
     }
   };
 

@@ -89,6 +89,18 @@ function Get-SetupVSCodeModels {
   $script:VSCodeModels = $models
 }
 
+# Is this entry the group this run owns? The type is asked first because `-ceq`
+# against an array is a filter and a non-empty result is truthy — so a group
+# whose `vendor` is `["customendpoint"]` would match, and be deleted or counted
+# as ours. jq answers false for a non-string, and this has to answer the same.
+# Stated once because it is asked twice: when filtering the operator's list, and
+# when validating what was staged.
+function Test-SetupVSCodeOwnGroup {
+  param($Group)
+  return ($Group.vendor -is [string]) -and ($Group.vendor -ceq 'customendpoint') -and
+         ($Group.name -is [string]) -and ($Group.name -ceq $SetupVSCodeProviderName)
+}
+
 function Restore-SetupVSCodeSettings {
   Restore-SetupManagedFile $script:VSCodeSettingsExisted $script:VSCodeSettingsBackup $script:VSCodeSettingsPath 'file' 'VS Code language models'
 }
@@ -140,7 +152,7 @@ function Write-SetupVSCodeSettings {
     if (@($parsed | Where-Object { $_ -isnot [System.Management.Automation.PSCustomObject] }).Count -gt 0) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
-    $groups = @($parsed | Where-Object { -not (($_.vendor -ceq 'customendpoint') -and ($_.name -ceq $SetupVSCodeProviderName)) })
+    $groups = @($parsed | Where-Object { -not (Test-SetupVSCodeOwnGroup $_) })
 
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:VSCodeSettingsBackup = "$($script:VSCodeSettingsPath).floway-backup.$stamp.$PID"
@@ -182,7 +194,7 @@ function Write-SetupVSCodeSettings {
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
 
     $check = @(Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json)
-    $ours = @($check | Where-Object { ($_.vendor -ceq 'customendpoint') -and ($_.name -ceq $SetupVSCodeProviderName) })
+    $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
     if (@($ours[0].models).Count -eq 0) { Stop-Setup 'the staged VS Code provider list carries no models.' }
 

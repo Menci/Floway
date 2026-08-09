@@ -133,6 +133,7 @@ export interface VSCodeModel {
   vision: boolean;
   maxOutputTokens: number;
   contextWindow: number;
+  maxInputTokens?: number;
   thinking?: boolean;
   supportsReasoningEffort?: string[];
   reasoningEffortFormat?: VSCodeApiType;
@@ -160,9 +161,15 @@ export const projectVSCodeModels = (
       toolCalling: true,
       vision: model.chat?.modalities?.input.includes('image') ?? false,
       maxOutputTokens: model.limits.max_output_tokens ?? VSCODE_FALLBACK_OUTPUT_TOKENS,
+      // `contextWindow` is the whole window and `maxInputTokens` the prompt
+      // budget — two different numbers VS Code reconciles itself, deriving the
+      // second from the first when it is absent. A model that states a prompt
+      // limit is entitled to have it stated rather than derived, so both are
+      // emitted; a model announcing only one gets the window it announced.
       contextWindow: model.limits.max_context_window_tokens
         ?? model.limits.max_prompt_tokens
         ?? VSCODE_FALLBACK_CONTEXT_TOKENS,
+      ...(model.limits.max_prompt_tokens === undefined ? {} : { maxInputTokens: model.limits.max_prompt_tokens }),
       ...(reasoning === undefined ? {} : { thinking: true }),
       ...(supportedEfforts === undefined
         ? {}

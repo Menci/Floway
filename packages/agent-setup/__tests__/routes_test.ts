@@ -220,6 +220,10 @@ test('POST first use selects the first key and configures every agent at revisio
   assertEquals(body.scripts.zed.sh, `/api/setup/${body.token}/zed.sh`);
   assertEquals(body.scripts.zed.ps1, `/api/setup/${body.token}/zed.ps1`);
   assertEquals(body.configuration.zed.providerName, 'Floway');
+  assertEquals(body.scripts.vscode.sh, `/api/setup/${body.token}/vscode.sh`);
+  assertEquals(body.scripts.vscode.ps1, `/api/setup/${body.token}/vscode.ps1`);
+  assertEquals(body.configuration.vscode.providerName, 'Floway');
+  assertEquals(body.configuration.vscode.apiType, 'messages');
 });
 
 test('POST creates the lease for the requested selectable key', async () => {
@@ -505,6 +509,11 @@ test('GET re-reads the current configuration each request', async () => {
 test('the served VS Code script carries the projected catalog and its API path', async () => {
   const h = harness();
   const lease = await create(h);
+  // Both languages, because the lease projects both and a typo in either path
+  // makes the feature's own one-liner 404 with nothing else noticing.
+  const ps1 = await h.request(lease.scripts.vscode.ps1, { method: 'GET' });
+  expect(ps1.status).toBe(200);
+  expect(await ps1.text()).toContain("$SetupVSCodeProviderName = 'Floway'");
   const body = await (await h.request(lease.scripts.vscode.sh, { method: 'GET' })).text();
   expect(body).toContain("SETUP_VSCODE_PROVIDER_NAME='Floway'");
   expect(body).toContain("SETUP_VSCODE_API_TYPE='messages'");
