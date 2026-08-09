@@ -31,17 +31,20 @@ export interface ZedModel {
   mode?: { type: 'adaptive' } | { type: 'thinking'; budget_tokens: number };
 }
 
-// `max_tokens` is a required u64 on Zed's model entry, copied straight into
-// `max_input_tokens` and returned by `max_token_count()` — so it is the PROMPT
-// budget Zed compacts against, not the full context window. Filling it from the
-// window would tell Zed a 128k-prompt model accepts 216k, so it never compacts
-// and every long request 400s upstream with nothing in the UI to explain it.
-// Zed has nothing to fall back to either: a model without it fails
-// deserialization and takes the whole provider down, so this number is ours.
-// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L57
-//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L71
-//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/language_models/src/provider/anthropic_compatible.rs#L421-L422
-const ZED_FALLBACK_PROMPT_TOKENS = 200_000;
+// `max_tokens` is the model's CONTEXT WINDOW — the field says so, and Zed
+// derives the prompt budget from it by subtracting the output reservation:
+// `max_token_count().saturating_sub(max_output_tokens)`. (`max_input_tokens`
+// inside anthropic::Model is a misnomer; it is only what `max_token_count()`
+// returns.) The subtraction is why a bare prompt limit cannot go here: below
+// 80_000 of derived headroom Zed switches auto-compaction off entirely and just
+// warns, so a 216k/128k/64k model sent its prompt limit would leave 64k and
+// lose compaction on a model that has room for it. Zed has nothing to fall back
+// to either — a model without this fails deserialization and takes the whole
+// provider down — so the absent case is ours to state.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L56-L57
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L124
+const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
 
 // Anthropic rejects a thinking budget below this, so a smaller one is not a
 // budget Zed can use — and `budget_tokens.min` is only a lower bound an
@@ -94,12 +97,16 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
     return {
       name: model.id,
       display_name: model.display_name,
-      // The prompt limit first, the window only as a stand-in when no prompt
-      // limit is stated — the same precedence the Gemini catalog projection
-      // uses for an input limit.
-      max_tokens: model.limits.max_prompt_tokens
-        ?? model.limits.max_context_window_tokens
-        ?? ZED_FALLBACK_PROMPT_TOKENS,
+      // A window whose remainder after Zed's own subtraction is the prompt
+      // budget the catalog states. An upstream that reports both — Copilot
+      // does — usually reports a window larger than prompt + output, and
+      // handing that window over would let Zed plan against headroom the
+      // upstream will not accept. Same reconstruction the Copilot provider
+      // and the dashboard's own ranking already use.
+      max_tokens: (model.limits.max_prompt_tokens === undefined
+        ? model.limits.max_context_window_tokens
+        : model.limits.max_prompt_tokens + (model.limits.max_output_tokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS))
+        ?? ZED_FALLBACK_CONTEXT_TOKENS,
       capabilities: {
         // A chat model that cannot call tools is not one anyone routes here.
         tools: true,

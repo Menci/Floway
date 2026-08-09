@@ -52,17 +52,36 @@ describe('Zed available_models projection', () => {
     expect(modes[2]).toEqual({ type: 'thinking', budget_tokens: 4000 });
   });
 
-  // Zed copies `max_tokens` into `max_input_tokens` and compacts against it, so
-  // it is the prompt budget. A model stating both — which Copilot routinely
-  // does — must not be handed the window, or Zed never compacts and every long
-  // request 400s upstream.
-  it('fills the prompt budget from the prompt limit, not the window', () => {
-    expect(projectZedModels([
-      catalogModel('both', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000 } }),
+  // `max_tokens` is the context window, and Zed derives the prompt budget by
+  // subtracting the output reservation — then disables auto-compaction when
+  // fewer than 80_000 tokens remain. So the property worth asserting is what
+  // Zed computes, not the number we hand it.
+  // Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
+  //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L124
+  it('leaves Zed the prompt budget the catalog states', () => {
+    const ZED_FALLBACK_OUTPUT = 4096;
+    const ZED_MIN_COMPACTION = 80_000;
+    // What Zed does with what we wrote.
+    const derivedPromptBudget = (entry: { max_tokens: number; max_output_tokens?: number }) =>
+      entry.max_tokens - (entry.max_output_tokens ?? ZED_FALLBACK_OUTPUT);
+
+    const [both, windowOnly, promptOnly, unbounded] = projectZedModels([
+      catalogModel('both', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
       catalogModel('window-only', { contextWindow: 400_000 }),
       catalogModel('prompt-only', { limits: { max_prompt_tokens: 120_000 } }),
       catalogModel('unbounded'),
-    ]).map(entry => entry.max_tokens)).toEqual([128_000, 400_000, 120_000, 200_000]);
+    ]);
+
+    // The case that matters: an upstream stating all three. Handing Zed the
+    // 216k window would let it plan against headroom the upstream refuses;
+    // handing it the bare 128k prompt limit leaves 64k and silently switches
+    // compaction off.
+    expect(derivedPromptBudget(both!)).toBe(128_000);
+    expect(derivedPromptBudget(both!)).toBeGreaterThanOrEqual(ZED_MIN_COMPACTION);
+
+    expect(windowOnly!.max_tokens).toBe(400_000);
+    expect(derivedPromptBudget(promptOnly!)).toBe(120_000);
+    expect(unbounded!.max_tokens).toBe(200_000);
   });
 
   it('omits max_output_tokens when the catalog announces none', () => {
