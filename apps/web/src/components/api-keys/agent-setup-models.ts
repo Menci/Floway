@@ -1,5 +1,4 @@
 import type { ControlPlaneModel } from '../../api/types';
-import { addressableModelId } from '@floway-dev/agent-setup/models';
 
 export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
@@ -73,9 +72,20 @@ export const rankAgentSetupModels = (
   }).map(entry => entry.model);
 };
 
-// The `[1m]` suffix is stated once, in the shared projection, because the
-// editors need the same reconstruction: a merged Copilot row reports the 1M
-// variant's window, and only the suffix carries the beta that reaches it.
+const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
+
+// Claude Code only. The suffix is a discovery-protocol representation the CLI
+// itself unwinds — it strips `[1m]` and pairs the request with the
+// `context-1m-2025-08-07` beta — so the gateway's own resolution never sees it
+// and an editor sending it back verbatim would address a model that does not
+// exist. https://code.claude.com/docs/en/model-config
+const claudeModelOverride = (model: ControlPlaneModel): string => {
+  const contextWindow = model.limits.max_context_window_tokens
+    ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
+  return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !model.id.endsWith('[1m]')
+    ? `${model.id}[1m]`
+    : model.id;
+};
 
 export const buildAgentModelOptions = (
   models: readonly ControlPlaneModel[],
@@ -85,7 +95,7 @@ export const buildAgentModelOptions = (
   const values = new Set<string>();
   for (const model of rankAgentSetupModels(models, ranking)) {
     const value = ranking.family === 'claude'
-      ? addressableModelId(model)
+      ? claudeModelOverride(model)
       : model.id;
     if (values.has(value)) continue;
     values.add(value);
@@ -102,4 +112,4 @@ export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'co
 // setup script, so a preview built from a second implementation could show a
 // document a setup run would never write. The dashboard renders exactly what
 // the script carries.
-export { addressableModelId, projectZedModels, type ZedModel } from '@floway-dev/agent-setup/models';
+export { projectZedModels, type ZedModel } from '@floway-dev/agent-setup/models';
