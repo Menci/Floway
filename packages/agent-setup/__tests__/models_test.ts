@@ -126,6 +126,21 @@ describe('Zed available_models projection', () => {
     expect(merged!.name).toBe('claude-opus-4-7');
   });
 
+  // A stated 0 is a value, not an absent limit. `||` and truthiness cannot tell
+  // the two apart, and the difference reaches Zed as a 200k window on a model
+  // that announced none, or a silently dropped output limit.
+  it('distinguishes a stated zero from an absent limit', () => {
+    const [zeroWindow, zeroOutput, absent] = projectZedModels([
+      catalogModel('zero-window', { limits: { max_context_window_tokens: 0 } }),
+      catalogModel('zero-output', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 0 } }),
+      catalogModel('absent'),
+    ]);
+    expect(zeroWindow!.max_tokens).toBe(0);
+    expect(zeroOutput!.max_output_tokens).toBe(0);
+    expect(absent!.max_tokens).toBe(200_000);
+    expect(absent).not.toHaveProperty('max_output_tokens');
+  });
+
   it('omits max_output_tokens when the catalog announces none', () => {
     const [withOutput, withoutOutput] = projectZedModels([
       catalogModel('bounded', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
