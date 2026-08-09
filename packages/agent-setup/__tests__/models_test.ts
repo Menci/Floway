@@ -100,7 +100,11 @@ describe('Zed available_models projection', () => {
     const MIN_COMPACTION = 80_000;
     const compacts = (e: { max_tokens: number; max_output_tokens?: number }) =>
       e.max_tokens - (e.max_output_tokens ?? ZED_FALLBACK_OUTPUT) >= MIN_COMPACTION;
-    const warns = (e: { max_tokens: number }) => e.max_tokens < MIN_COMPACTION;
+    // `max_tokens: 0` does not warn: the callout falls through to the usage
+    // ratio, which is forced to Normal at zero. Without this conjunct the
+    // predicate would call a zero row "warned" and the band would stay open.
+    // Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
+    const warns = (e: { max_tokens: number }) => e.max_tokens > 0 && e.max_tokens < MIN_COMPACTION;
 
     const rows = projectZedModels([
       catalogModel('gpt-4o', { limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 64_000, max_output_tokens: 16_384 } }),
@@ -117,6 +121,13 @@ describe('Zed available_models projection', () => {
       catalogModel('window-and-output-narrow', { limits: { max_context_window_tokens: 82_000, max_output_tokens: 32_000 } }),
       // Output absent, so Zed reserves 4096 of a window that leaves too little.
       catalogModel('window-just-over-threshold', { contextWindow: 82_000 }),
+      // Every shape that could reach Zed as a zero window.
+      catalogModel('zero-window', { limits: { max_context_window_tokens: 0 } }),
+      catalogModel('zero-prompt', { limits: { max_prompt_tokens: 0 } }),
+      catalogModel('zero-everything', { limits: { max_context_window_tokens: 0, max_prompt_tokens: 0, max_output_tokens: 0 } }),
+      // A stated prompt limit well below the band: the reservation stays on, so
+      // the budget is the one the catalog stated rather than that minus 16k.
+      catalogModel('small-prompt', { limits: { max_context_window_tokens: 48_384, max_prompt_tokens: 32_000, max_output_tokens: 16_384 } }),
     ]);
 
     for (const row of rows) {
@@ -124,6 +135,11 @@ describe('Zed available_models projection', () => {
     }
     // And above the threshold the budget is still exactly what the catalog said.
     expect(rows.find(r => r.name === 'roomy')!.max_tokens - 64_000).toBe(128_000);
+    // Below the band it is too: dropping the reservation there would cost the
+    // operator 16k of prompt budget and buy nothing, since the callout fires
+    // either way.
+    const small = rows.find(r => r.name === 'small-prompt')!;
+    expect(small.max_tokens - small.max_output_tokens!).toBe(32_000);
 
     const row = (name: string) => rows.find(r => r.name === name)!;
     // With no prompt limit stated, the split is ours: the window is left whole
@@ -150,17 +166,28 @@ describe('Zed available_models projection', () => {
     expect(merged!.name).toBe('claude-opus-4-7');
   });
 
-  // A stated 0 is a value, not an absent limit. `||` and truthiness cannot tell
-  // the two apart, and the difference reaches Zed as a 200k window on a model
-  // that announced none, or a silently dropped output limit.
-  it('distinguishes a stated zero from an absent limit', () => {
-    const [zeroWindow, zeroOutput, absent] = projectZedModels([
+  // A stated 0 is a value in the catalog and no bound at all at Zed's wire,
+  // where these are required u64s sent verbatim with no encoding for "unknown".
+  // A 0 window is a 0-token context whose callout the ratio guard suppresses —
+  // neither compaction nor warning — and a 0 output limit becomes a Messages
+  // `max_tokens` of 0, which Anthropic rejects on every request. Negative and
+  // fractional values fail Zed's deserialization and take the whole settings
+  // document with them.
+  it('treats a limit Zed cannot represent as no limit at all', () => {
+    const [zeroWindow, zeroOutput, negativeWindow, fractionalWindow, zeroPrompt, absent] = projectZedModels([
       catalogModel('zero-window', { limits: { max_context_window_tokens: 0 } }),
       catalogModel('zero-output', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 0 } }),
+      catalogModel('negative-window', { limits: { max_context_window_tokens: -1 } }),
+      catalogModel('fractional-window', { limits: { max_context_window_tokens: 1.5 } }),
+      catalogModel('zero-prompt', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 0 } }),
       catalogModel('absent'),
     ]);
-    expect(zeroWindow!.max_tokens).toBe(0);
-    expect(zeroOutput!.max_output_tokens).toBe(0);
+    expect(zeroWindow!.max_tokens).toBe(200_000);
+    expect(zeroOutput).not.toHaveProperty('max_output_tokens');
+    expect(negativeWindow!.max_tokens).toBe(200_000);
+    expect(fractionalWindow!.max_tokens).toBe(200_000);
+    // The prompt limit is unusable, so the window it does state is what goes.
+    expect(zeroPrompt!.max_tokens).toBe(200_000);
     expect(absent!.max_tokens).toBe(200_000);
     expect(absent).not.toHaveProperty('max_output_tokens');
   });

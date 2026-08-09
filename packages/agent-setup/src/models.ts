@@ -109,31 +109,51 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 // limit, because that decides whether the budget is ours to move:
 //
 //   - Stated. `max_tokens` is that limit plus the reservation, so the budget
-//     comes back exactly as stated. In the band the reservation is dropped and
-//     the limit goes out alone, putting the raw value under the threshold so the
-//     callout fires. Raising the budget instead would have Zed plan against
-//     headroom the upstream refuses.
-//   - Not stated. The window is the only bound, and how it splits into prompt
-//     and output is ours to choose. In the band the reservation shrinks until
-//     the budget reaches the threshold, which turns compaction on and leaves the
-//     total untouched — unless what remains is under Zed's own 4096 default, in
-//     which case there is no split that both compacts and stays quiet, and the
+//     comes back exactly as stated. Only inside the band is the reservation
+//     dropped and the limit sent alone, putting the raw value under the
+//     threshold so the callout fires; raising the budget instead would have Zed
+//     plan against headroom the upstream refuses. Below the band the callout
+//     fires either way, so dropping it there would cost the operator the
+//     reservation and buy nothing.
+//   - Not stated. The window is the only bound the catalog gave, so how it
+//     splits is ours. In the band the reservation shrinks until the budget
+//     reaches the threshold, which turns compaction on and leaves the total
+//     untouched. This can take the reservation below a stated output limit —
+//     responses get capped under what the upstream allows — which is the better
+//     half of the trade: the alternative is losing compaction on a long thread
+//     with nothing on screen saying why. If what remains is under Zed's own 4096
+//     default there is no split that both compacts and stays quiet, and the
 //     window is lowered to raise the callout instead.
 //
 // Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent_ui/src/conversation_view/thread_view.rs#L11845
+//
+// A stated 0 is a value everywhere else in the catalog and no bound at all
+// here. Zed's fields are required `u64`s it sends verbatim, with no encoding
+// for "unknown": a 0 window is a 0-token context whose callout is suppressed by
+// the ratio guard below — neither compaction nor warning, the band reached from
+// the other side — and a 0 output limit becomes a Messages `max_tokens` of 0,
+// which Anthropic rejects on every request. Negative and fractional values fail
+// Zed's `u64` deserialization and take the whole settings document down with
+// them, so they are refused here as well.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
+const zedBound = (value: number | undefined): number | undefined =>
+  value === undefined || !Number.isInteger(value) || value <= 0 ? undefined : value;
+
 const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOutputTokens: number | undefined } => {
-  const stated = limits.max_output_tokens;
+  const stated = zedBound(limits.max_output_tokens);
   const reserved = stated ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
-  const prompt = limits.max_prompt_tokens;
+  const prompt = zedBound(limits.max_prompt_tokens);
 
   if (prompt !== undefined) {
-    return prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW
+    const inBand = prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW
+      && prompt + reserved >= ZED_MIN_COMPACTION_CONTEXT_WINDOW;
+    return inBand
       ? { maxTokens: prompt, maxOutputTokens: stated }
       : { maxTokens: prompt + reserved, maxOutputTokens: stated };
   }
 
-  const window = limits.max_context_window_tokens ?? ZED_FALLBACK_CONTEXT_TOKENS;
+  const window = zedBound(limits.max_context_window_tokens) ?? ZED_FALLBACK_CONTEXT_TOKENS;
   if (window < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
   if (window - reserved >= ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
 
