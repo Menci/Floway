@@ -59,6 +59,11 @@ const jsonBody = async (request: ImagesEditsRequest): Promise<Record<string, unk
   };
 };
 
+export const serializeOpenAIImagesEditsJsonPayload = async (
+  request: ImagesEditsRequest,
+  model: string,
+): Promise<Record<string, unknown>> => ({ ...await jsonBody(request), model });
+
 const multipartBody = (request: ImagesEditsRequest, model: string): FormData | null => {
   const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
   const compatibleSources = sources.every(source =>
@@ -89,5 +94,5 @@ const multipartBody = (request: ImagesEditsRequest, model: string): FormData | n
 export const serializeOpenAIImagesEditsRequest = async (request: ImagesEditsRequest, model: string): Promise<FormData | ReplayableBody> => {
   const multipart = multipartBody(request, model);
   if (multipart !== null) return multipart;
-  return jsonRequestBody({ ...await jsonBody(request), model });
+  return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
 };

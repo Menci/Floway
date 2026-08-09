@@ -1,23 +1,28 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
+  CODEX_IMAGES_EDITS_PATH,
+  CODEX_IMAGES_GENERATIONS_PATH,
   CODEX_ORIGINATOR,
   CODEX_RESPONSES_COMPACT_PATH,
   CODEX_RESPONSES_PATH,
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { sha256JsonUuid, uuidV7 } from './ids.ts';
+import { codexPlanSupportsImages } from './models.ts';
 import {
+  hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
 } from './quota.ts';
-import type { CodexAccountCredential } from './state.ts';
+import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
+import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { jsonRequestBody, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
+import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type ImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesCompactionResult; modelKey: string }
@@ -32,9 +37,9 @@ export interface CodexCallEffects {
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
 }
 
-// Account selection for one Codex call. Both Codex endpoints share the same
-// OAuth credential, the same quota row, and the same retry contract; only the
-// wire body and the response decoding differ.
+// Account selection shared by Codex backend calls. Every surface uses the same
+// OAuth credential, quota state, terminal-session classification, and refresh
+// retry contract; each operation owns its wire body and response decoding.
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
@@ -55,6 +60,16 @@ export interface CallCodexResponsesCompactOptions extends CodexBackendCallBase {
 
 export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
   body: Record<string, unknown>;
+}
+
+export interface CallCodexImagesGenerationsOptions extends CodexBackendCallBase {
+  body: Omit<ImagesGenerationsPayload, 'model'>;
+  fallbackPlanType: string;
+}
+
+export interface CallCodexImagesEditsOptions extends CodexBackendCallBase {
+  request: ImagesEditsRequest;
+  fallbackPlanType: string;
 }
 
 type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponsesCompactOptions['body'];
@@ -79,15 +94,39 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
+export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
+  const ready = await prepareCodexCall(opts);
+  if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
+  const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
+  if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
+  const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
+};
+
+export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
+  const ready = await prepareCodexCall(opts);
+  if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
+  const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
+  if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
+  const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
+  const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
+};
+
+const accessTokenPlan = (entry: CodexAccessTokenEntry): CodexPlanObservation | null =>
+  entry.planType === undefined
+    ? null
+    : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
+
 // Pre-fetch gates + initial access-token mint.
-const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   if (opts.account.state !== 'active') {
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
   try {
     const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
-    return { ok: true, accessToken: entry.token };
+    return { ok: true, accessToken: entry };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -390,17 +429,21 @@ const dispatchCodexHttpCall = async (
     signal: opts.signal,
   }));
 
+  return await classifyCodexHttpResponse(opts, response);
+};
+
+const classifyCodexHttpResponse = async (
+  opts: CodexBackendCallBase,
+  response: Response,
+  quotaPolicy: 'always' | 'when-present' = 'always',
+): Promise<Response> => {
   if (response.ok) {
-    const responseNow = new Date();
-    const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-    registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    persistCodexQuotaObservation(opts, response, false, quotaPolicy);
     return response;
   }
 
   if (response.status === 429) {
-    const responseNow = new Date();
-    const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-    registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+    persistCodexQuotaObservation(opts, response, true, quotaPolicy);
     return response;
   }
 
@@ -417,21 +460,68 @@ const dispatchCodexHttpCall = async (
   return response;
 };
 
-// Force-mint a fresh access token after a 401, persisting it best-effort.
-// `ensureCodexAccessToken`'s read-then-maybe-mint is bypassed because a
-// re-read can still observe the token we just invalidated: a sibling that
-// minted before our 401 lands its `putCodexAccessToken` after our
-// invalidation, restoring the broken token, and Codex tokens carry multi-day
-// expiresAt so the freshness gate hands it straight back — sending us into an
-// immediate second 401 with `alreadyRetried` already flipped. Minting
-// unconditionally sidesteps that window, and persisting best-effort is enough
-// because the next request re-mints if its read still sees the dead token.
-const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
+const persistCodexQuotaObservation = (
+  opts: CodexBackendCallBase,
+  response: Response,
+  isRateLimited: boolean,
+  policy: 'always' | 'when-present',
+): void => {
+  const snapshot = parseCodexQuotaHeaders(response.headers, { now: new Date(), isRateLimited });
+  if (policy === 'when-present' && !hasCodexQuotaReading(snapshot)) return;
+  registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
+};
+
+const dispatchCodexImageCall = async (
+  opts: CodexBackendCallBase,
+  accessToken: string,
+  path: string,
+  body: Record<string, unknown>,
+  turnId: string,
+): Promise<Response> => {
+  const headers = new Headers({
+    authorization: `Bearer ${accessToken}`,
+    'chatgpt-account-id': opts.account.chatgptAccountId,
+    originator: trimHeader(opts.headers, 'originator') ?? CODEX_ORIGINATOR,
+    'user-agent': CODEX_USER_AGENT,
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-codex-image-turn-id': turnId,
+  });
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
+    method: 'POST',
+    headers,
+    body: jsonRequestBody(body),
+    signal: opts.signal,
+  }));
+  return await classifyCodexHttpResponse(opts, response, 'when-present');
+};
+
+// Recover from a 401 without deleting a sibling's newer credential: invalidate
+// only the exact token that failed, reuse a winner already stored by another
+// request, otherwise force a fresh coalesced mint. The resulting CAS write is
+// awaited because it also resolves the latest plan observation for the retry.
+const refreshAccessTokenForRetry = async (
+  opts: CodexBackendCallBase,
+  failedEntry: CodexAccessTokenEntry,
+  fallbackPlan?: CodexPlanObservation,
+): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
-    registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
-    return { ok: true, accessToken: minted.token };
+    const retained = await invalidateCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      failedEntry.token,
+    );
+    if (retained !== null) return { ok: true, accessToken: retained };
+    const effective = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      async refreshToken => {
+        const minted = await mintAccessToken(opts, refreshToken);
+        return mergeRetryPlan(minted, fallbackPlan ?? accessTokenPlan(failedEntry) ?? undefined);
+      },
+      true,
+    );
+    return { ok: true, accessToken: effective };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -441,9 +531,21 @@ const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{
   }
 };
 
+const mergeRetryPlan = (
+  entry: CodexAccessTokenEntry,
+  fallback: CodexPlanObservation | undefined,
+): CodexAccessTokenEntry => {
+  if (entry.planType !== undefined || fallback === undefined) return entry;
+  return {
+    ...entry,
+    planType: fallback.planType,
+    ...(fallback.observedAt === undefined ? {} : { planObservedAt: fallback.observedAt }),
+  };
+};
+
 const performStreamingResponsesCall = async (
   opts: CallCodexResponsesOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   const clientMetadata = clientCodexClientMetadata(opts.body);
@@ -453,7 +555,7 @@ const performStreamingResponsesCall = async (
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_RESPONSES_PATH,
     'text/event-stream',
     buildCodexResponsesBody(opts, identity, turnMetadataJson.body),
@@ -464,7 +566,7 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performStreamingResponsesCall(opts, fresh.accessToken, true);
   }
@@ -474,7 +576,7 @@ const performStreamingResponsesCall = async (
 
 const performUnaryCompactCall = async (
   opts: CallCodexResponsesCompactOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderCompactionResult> => {
   const clientMetadata = clientCodexClientMetadata(opts.body);
@@ -484,7 +586,7 @@ const performUnaryCompactCall = async (
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_RESPONSES_COMPACT_PATH,
     'application/json',
     { ...opts.body, model: opts.model.id },
@@ -493,7 +595,7 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
     return await performUnaryCompactCall(opts, fresh.accessToken, true);
   }
@@ -506,7 +608,7 @@ const performUnaryCompactCall = async (
 
 const performAlphaSearchCall = async (
   opts: CallCodexAlphaSearchOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const requestId = stringField(opts.body, 'id');
@@ -522,7 +624,7 @@ const performAlphaSearchCall = async (
   const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata');
   const response = await dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_ALPHA_SEARCH_PATH,
     'application/json',
     { ...opts.body, model: opts.model.id },
@@ -531,9 +633,29 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     return await performAlphaSearchCall(opts, fresh.accessToken, true);
+  }
+  return { modelKey: opts.model.id, response };
+};
+
+const performImageCall = async (
+  opts: CodexBackendCallBase & { fallbackPlanType: string },
+  accessToken: CodexAccessTokenEntry,
+  path: string,
+  body: Record<string, unknown>,
+  turnId: string,
+  effectivePlan: CodexPlanObservation,
+  alreadyRetried: boolean,
+): Promise<ProviderCallResult> => {
+  const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
+  if (response.status === 401 && !alreadyRetried) {
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken, effectivePlan);
+    if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
+    const refreshedPlan = accessTokenPlan(fresh.accessToken) ?? effectivePlan;
+    if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
+    return await performImageCall(opts, fresh.accessToken, path, body, turnId, refreshedPlan, true);
   }
   return { modelKey: opts.model.id, response };
 };
@@ -550,6 +672,16 @@ const parseUpstreamError = (rawText: string): { code: string | null; message: st
     return { code: null, message: rawText.slice(0, 256) };
   }
 };
+
+const imageUnavailableResult = (modelKey: string): ProviderCallResult => ({
+  modelKey,
+  response: new Response(JSON.stringify({
+    error: {
+      type: 'image_tools_unavailable',
+      message: 'ChatGPT Free accounts do not provide Codex image tools.',
+    },
+  }), { status: 403, headers: { 'content-type': 'application/json' } }),
+});
 
 const synthetic503 = (message: string): Response => new Response(JSON.stringify({ error: { type: 'codex_upstream_unavailable', message } }), {
   status: 503,

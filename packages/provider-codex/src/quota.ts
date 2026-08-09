@@ -123,6 +123,11 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   return snapshot;
 };
 
+export const hasCodexQuotaReading = (snapshot: CodexQuotaSnapshot): boolean => {
+  const { observed_at: _observationTime, ...reading } = snapshot;
+  return Object.keys(reading).length > 0;
+};
+
 // Every quota snapshot this account has observed, keyed by active limit.
 //
 // No TTL, which is the rule the other three providers state at their own slots:
