@@ -2555,6 +2555,13 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   // 4096 is what Zed assumes when the model announces no output limit.
   t.equal(effortOnly.max_tokens - 4096, 120_000, 'the derived prompt budget is the stated prompt limit');
 
+  // A stated 0 is a value, not an absent limit — asserted on this half too,
+  // since the fixture claims to cover both merges and only the VS Code half
+  // ever checked it.
+  const zero = models.get('zero-limits')!;
+  t.equal(zero.max_tokens, 0, 'a stated zero window survives the Zed projection');
+  t.equal(zero.max_output_tokens, 0, 'and so does a stated zero output limit');
+
   const floorOnly = models.get('floor-only')!;
   t.equal(JSON.stringify(floorOnly.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'a floor with no ceiling still yields a budget');
 

@@ -84,6 +84,35 @@ describe('Zed available_models projection', () => {
     expect(unbounded!.max_tokens).toBe(200_000);
   });
 
+  // Zed asks the same 80_000 threshold of two different numbers: compaction of
+  // `max_tokens - max_output_tokens`, and the small-context warning of the raw
+  // `max_tokens`. A model must never land between them — that is compaction off
+  // with the callout suppressed, and nothing on screen explains it. Copilot's
+  // gpt-4o rows (128k window, 64k prompt, 16k output) sit exactly there under a
+  // naive prompt+output reconstruction.
+  it('never leaves a model without compaction and without the warning', () => {
+    const ZED_FALLBACK_OUTPUT = 4096;
+    const MIN_COMPACTION = 80_000;
+    const compacts = (e: { max_tokens: number; max_output_tokens?: number }) =>
+      e.max_tokens - (e.max_output_tokens ?? ZED_FALLBACK_OUTPUT) >= MIN_COMPACTION;
+    const warns = (e: { max_tokens: number }) => e.max_tokens < MIN_COMPACTION;
+
+    const rows = projectZedModels([
+      catalogModel('gpt-4o', { limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 64_000, max_output_tokens: 16_384 } }),
+      catalogModel('just-under', { limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 79_999, max_output_tokens: 8000 } }),
+      catalogModel('just-over', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 80_000, max_output_tokens: 64_000 } }),
+      catalogModel('roomy', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
+      catalogModel('window-only', { contextWindow: 400_000 }),
+      catalogModel('unbounded'),
+    ]);
+
+    for (const row of rows) {
+      expect(compacts(row) || warns(row), `${row.name} gets neither compaction nor a warning`).toBe(true);
+    }
+    // And above the threshold the budget is still exactly what the catalog said.
+    expect(rows.find(r => r.name === 'roomy')!.max_tokens - 64_000).toBe(128_000);
+  });
+
   it('omits max_output_tokens when the catalog announces none', () => {
     const [withOutput, withoutOutput] = projectZedModels([
       catalogModel('bounded', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),

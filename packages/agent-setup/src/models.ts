@@ -46,6 +46,14 @@ export interface ZedModel {
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L124
 const ZED_FALLBACK_CONTEXT_TOKENS = 200_000;
 
+// Zed asks this threshold twice, of two different numbers. Auto-compaction is
+// enabled when `max_tokens - max_output_tokens` reaches it; the small-context
+// warning is suppressed when the RAW `max_tokens` reaches it. Between them lies
+// a band where a model gets neither — no compaction, and no callout saying why.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent_ui/src/conversation_view/thread_view.rs#L11841-L11847
+const ZED_MIN_COMPACTION_CONTEXT_WINDOW = 80_000;
+
 // Anthropic rejects a thinking budget below this, so a smaller one is not a
 // budget Zed can use — and `budget_tokens.min` is only a lower bound an
 // operator may legitimately record as 0, meaning "no lower bound stated".
@@ -91,22 +99,34 @@ const zedThinkingMode = (
 const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
   models.filter(model => model.kind === 'chat' && model.unlisted !== true);
 
+// Zed subtracts its output reservation from this to get the prompt budget, so a
+// catalog stating a prompt limit gets that limit plus the reservation back. The
+// stated window is not usable in its place: on a live Copilot catalog the
+// window equals prompt + output for most rows and is smaller for a third of
+// them, and where it is larger it is often a merged 1M Claude variant the
+// editors cannot reach — all of which would have Zed plan against headroom the
+// upstream will not honour.
+//
+// Except below the compaction threshold, where adding the reservation would
+// carry the raw value over it while the derived value stays under: compaction
+// off AND the warning suppressed, which is the silent degradation this whole
+// reconstruction exists to avoid. There the stated prompt limit goes out alone,
+// so the callout fires. The budget is then conservative by the reservation,
+// which costs nothing — compaction is already unavailable at that size.
+const zedContextWindow = (limits: PublicModel['limits']): number => {
+  const prompt = limits.max_prompt_tokens;
+  if (prompt === undefined) return limits.max_context_window_tokens ?? ZED_FALLBACK_CONTEXT_TOKENS;
+  if (prompt < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return prompt;
+  return prompt + (limits.max_output_tokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS);
+};
+
 export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
   chatModels(models).map(model => {
     const mode = zedThinkingMode(model.chat?.reasoning, model.limits.max_output_tokens);
     return {
       name: model.id,
       display_name: model.display_name,
-      // A window whose remainder after Zed's own subtraction is the prompt
-      // budget the catalog states. An upstream that reports both — Copilot
-      // does — usually reports a window larger than prompt + output, and
-      // handing that window over would let Zed plan against headroom the
-      // upstream will not accept. Same reconstruction the Copilot provider
-      // and the dashboard's own ranking already use.
-      max_tokens: (model.limits.max_prompt_tokens === undefined
-        ? model.limits.max_context_window_tokens
-        : model.limits.max_prompt_tokens + (model.limits.max_output_tokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS))
-        ?? ZED_FALLBACK_CONTEXT_TOKENS,
+      max_tokens: zedContextWindow(model.limits),
       capabilities: {
         // A chat model that cannot call tools is not one anyone routes here.
         tools: true,
