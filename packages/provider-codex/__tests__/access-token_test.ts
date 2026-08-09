@@ -71,14 +71,38 @@ describe('putCodexAccessToken', () => {
   });
 
   test('prefers the current CAS plan over an older fallback when the new token omits it', async () => {
-    current = makeRecord({ accounts: [{
-      ...baseAccount,
-      accessToken: { token: 'at_current', expiresAt: farFutureMs, refreshedAt: 'current', planType: 'free' },
-    }] });
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: { token: 'at_current', expiresAt: farFutureMs, refreshedAt: 'current', planType: 'free' },
+      }],
+    });
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
     const effective = await putCodexAccessToken(upstreamId, accountId, entry, 'team');
     expect(effective.planType).toBe('free');
     expect(storedState().accounts[0].accessToken?.planType).toBe('free');
+  });
+
+  test.each([
+    ['team', 'free'],
+    ['free', 'team'],
+  ])('an older explicit %s observation cannot replace newer %s', async (olderPlan, newerPlan) => {
+    const newer: CodexAccessTokenEntry = {
+      token: 'at_newer',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: newerPlan,
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
+    const older: CodexAccessTokenEntry = {
+      token: 'at_older',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: olderPlan,
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, older);
+    expect(effective).toEqual(newer);
+    expect(storedState().accounts[0].accessToken).toEqual(newer);
   });
 
   test('propagates storage failures so the request path surfaces them', async () => {

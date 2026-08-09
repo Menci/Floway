@@ -13,7 +13,7 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
-export const preserveCodexAccessTokenPlan = (
+const preserveCodexAccessTokenPlan = (
   entry: CodexAccessTokenEntry,
   previousPlanType: string | undefined,
 ): CodexAccessTokenEntry =>
@@ -48,6 +48,18 @@ const persistAccessToken = async (
       // Invalidating an already-null slot has nothing to write — the case where
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
+      const currentEntry = state.accounts[idx].accessToken;
+      if (entry !== null && currentEntry !== null && currentEntry !== undefined) {
+        const incomingObservedAt = Date.parse(entry.refreshedAt);
+        const currentObservedAt = Date.parse(currentEntry.refreshedAt);
+        // OAuth refreshes may finish their access-token writes out of order.
+        // Keep the later observation (and return it to the caller) so an older
+        // explicit plan/token pair cannot overwrite a newer one during replay.
+        if (Number.isFinite(incomingObservedAt) && Number.isFinite(currentObservedAt) && currentObservedAt >= incomingObservedAt) {
+          effectiveEntry = currentEntry;
+          return current;
+        }
+      }
       effectiveEntry = entry === null
         ? null
         : preserveCodexAccessTokenPlan(entry, state.accounts[idx].accessToken?.planType ?? fallbackPlanType);

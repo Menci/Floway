@@ -579,7 +579,7 @@ const performImageCall = async (
   path: string,
   body: Record<string, unknown>,
   turnId: string,
-  effectivePlanType: string | undefined,
+  effectivePlanType: string,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
