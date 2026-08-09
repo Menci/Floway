@@ -386,7 +386,7 @@ const zhHansCN = {
           codexConfigHint: '合并到 <path>~/.codex/config.toml</path>。',
           codexConfigHintWindows: '合并到 <path>%USERPROFILE%\\.codex\\config.toml</path>。',
           codexAuthHint: '将 Floway provider token 保存在该配置旁，不影响官方账号登录。',
-          zedConfigHint: '保存为 <path>~/.config/zed/global_settings.json</path>，这是 Zed 在你自己的设置文件之下读取的配置层。如果该文件已有其他 provider，请手动合并。',
+          zedConfigHint: '保存为 <path>~/.config/zed/global_settings.json</path>；如果你在 Linux 上设置了 <path>$XDG_CONFIG_HOME</path>，则保存到其下。这是 Zed 在你自己的设置文件之下读取的配置层。如果该文件已有其他 provider，请手动合并。',
           zedConfigHintWindows: '保存为 <path>%APPDATA%\\Zed\\global_settings.json</path>，这是 Zed 在你自己的设置文件之下读取的配置层。如果该文件已有其他 provider，请手动合并。',
           zedAuthHint: 'Zed 从操作系统的凭据存储读取密钥，而不是从设置文件。',
         },

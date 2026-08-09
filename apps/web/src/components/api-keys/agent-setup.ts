@@ -159,9 +159,12 @@ export const buildAgentZedSnippet = (
 }, null, 2);
 
 // Zed reads the key from the OS credential store, indexed by api_url under the
-// fixed username "Bearer"; there is no settings field for it. The Secret
-// Service label is compared exactly on read, so it is a literal.
-// Ref: https://github.com/zed-industries/zed/issues/43671
+// fixed username "Bearer"; there is no settings field for it. On macOS that is
+// an internet password whose server is the url and whose account is the
+// username — what `-s` and `-a` set. The Secret Service label is compared
+// exactly on read, so it is a literal.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
+//       https://github.com/zed-industries/zed/issues/43671
 export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedKey = `'${apiKey.replaceAll("'", `'"'"'`)}'`;
   const quotedUrl = `'${origin.replaceAll("'", `'"'"'`)}'`;
@@ -188,6 +191,7 @@ export const zedUnixCredentialSnippet = (origin: string, apiKey: string) => {
 // Windows keeps it as a generic credential whose target name Zed builds as
 // "zed:url=" + api_url. The blob must be UTF-8 because Zed runs str::from_utf8
 // over it, which rules out cmdkey — that writes UTF-16LE.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
 export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
   const quotedKey = `'${apiKey.replaceAll("'", "''")}'`;
   const quotedTarget = `'${`zed:url=${origin}`.replaceAll("'", "''")}'`;

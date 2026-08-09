@@ -36,7 +36,10 @@ zed_api_url() {
 # no channel branching, so a single file serves Stable, Preview and Nightly.
 # XDG is consulted on Linux and FreeBSD only — macOS falls through to an
 # unconditional `~/.config`, never `~/Library/Application Support`, and never
-# `XDG_CONFIG_HOME` even when one is exported.
+# `XDG_CONFIG_HOME` even when one is exported. The branch ahead of all of these
+# is `--user-data-dir`, which relocates the configuration wholesale; a Zed
+# started that way is out of scope here, and the override below is how an
+# operator running one points this installer at it.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
 zed_config_dir() {
   if [ -n "${AGENT_SETUP_TEST_ZED_CONFIG_DIR:-}" ]; then
@@ -225,6 +228,10 @@ zed_macos_app_bundles() {
   return 0
 }
 
+# macOS keeps the key as an internet password, where Zed's `url` is the server
+# and its username the account — exactly what `-s` and `-a` set below.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
+#
 # `-U` makes a re-run idempotent. The key is unavoidably an argv element for the
 # duration of this call: `security` takes the password only via `-w`/`-X`, and
 # bare `-w` prompts on the tty rather than reading stdin, which a piped

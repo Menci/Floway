@@ -21,7 +21,10 @@ function Get-SetupZedApiUrl { $SetupEndpoint }
 # no channel branching, so a single file serves Stable, Preview and Nightly.
 # XDG is consulted on Linux and FreeBSD only — macOS falls through to an
 # unconditional `~/.config`, never `~/Library/Application Support`, and never
-# `XDG_CONFIG_HOME` even when one is exported.
+# `XDG_CONFIG_HOME` even when one is exported. The branch ahead of all of these
+# is `--user-data-dir`, which relocates the configuration wholesale; a Zed
+# started that way is out of scope here, and the override below is how an
+# operator running one points this installer at it.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
 function Get-SetupZedConfigDir {
   if ($env:AGENT_SETUP_TEST_ZED_CONFIG_DIR) { return $env:AGENT_SETUP_TEST_ZED_CONFIG_DIR }
@@ -199,6 +202,7 @@ function Write-SetupZedSettings {
 # Windows keeps it as a generic credential whose target name Zed builds as
 # "zed:url=" + api_url. The blob must be UTF-8 — Zed runs `str::from_utf8` over
 # it — which rules out `cmdkey`, whose blob is UTF-16LE.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
 $SetupZedCredWriteSource = @'
 using System;
 using System.Runtime.InteropServices;
@@ -293,6 +297,10 @@ function Set-SetupZedCredentialSecretService {
   if ($exitCode -ne 0) { Stop-Setup 'secret-tool could not store the API key.' }
 }
 
+# macOS keeps it as an internet password, where Zed's `url` is the server and
+# its username the account — exactly what `-s` and `-a` set.
+# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
+#
 # `-T` grants a bundle access without the authorization prompt a later read
 # would raise, and a path that does not exist fails the whole call — so only
 # bundles found on this host are named, across every channel and both install

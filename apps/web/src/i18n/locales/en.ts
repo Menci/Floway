@@ -404,7 +404,7 @@ const en = {
           codexConfigHint: 'Merge into <path>~/.codex/config.toml</path>.',
           codexConfigHintWindows: 'Merge into <path>%USERPROFILE%\\.codex\\config.toml</path>.',
           codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
-          zedConfigHint: 'Save as <path>~/.config/zed/global_settings.json</path>, a settings layer Zed reads below your own settings file. Merge it by hand if that file already holds other providers.',
+          zedConfigHint: 'Save as <path>~/.config/zed/global_settings.json</path> — or under <path>$XDG_CONFIG_HOME</path> on Linux, if you set one — a settings layer Zed reads below your own settings file. Merge it by hand if that file already holds other providers.',
           zedConfigHintWindows: 'Save as <path>%APPDATA%\\Zed\\global_settings.json</path>, a settings layer Zed reads below your own settings file. Merge it by hand if that file already holds other providers.',
           zedAuthHint: 'Zed reads the key from your operating system credential store, not from a settings file.',
         },
