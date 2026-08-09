@@ -165,6 +165,23 @@ const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown
   }
 };
 
+// Codex owns one metadata snapshot per turn and projects it onto three
+// surfaces — the request headers, the body's flat `client_metadata` keys, and
+// the body's `client_metadata["x-codex-turn-metadata"]` blob — with the blob
+// declared canonical and the other two declared "compatibility projections of
+// this snapshot, not separate sources of truth":
+// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L184-L189
+//
+// Only the body surfaces are rebuilt per turn. The WebSocket transport writes
+// its headers once, during the upgrade, and then carries many turns of
+// differing `request_kind` and `window_id` over that one socket without
+// reconnecting, so reading a header there yields the handshake's value for the
+// life of the connection. Resolve the body first and keep the header as the
+// fallback for callers that only speak the header projection.
+const callerTurnMetadata = (opts: CodexBackendCallBase, clientMetadata: Record<string, unknown>): Record<string, unknown> | null =>
+  parseClientTurnMetadataJson(stringField(clientMetadata, 'x-codex-turn-metadata'))
+    ?? parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
+
 // Identity-mirror keys live on `identity` and are projected onto every
 // surface (headers, body's `client_metadata`, body's `x-codex-turn-metadata`
 // blob). Drop them from caller spreads so a caller that supplies the same
@@ -184,27 +201,37 @@ const buildCodexRequestIdentity = (
   clientMetadata: Record<string, unknown>,
   clientTurnMetadata: Record<string, unknown> | null,
 ): CodexRequestIdentity => {
-  // Identity priority for every mirrored id: caller-supplied header → caller
-  // body `client_metadata` key → parsed `x-codex-turn-metadata` key → gateway
-  // default. So a caller can split its identity across surfaces and we still
-  // emit consistent values everywhere.
-  const sessionId = trimHeader(opts.headers, 'session-id')
-    ?? trimHeader(opts.headers, 'session_id')
-    ?? stringField(clientMetadata, 'session_id')
+  // Identity priority for every mirrored id follows the same per-turn rule as
+  // `callerTurnMetadata`: caller body `client_metadata` key → parsed
+  // `x-codex-turn-metadata` key → caller-supplied header → gateway default. So
+  // a caller can split its identity across surfaces and we still emit
+  // consistent values everywhere, and a long-lived socket's frozen handshake
+  // headers never outrank the current turn's body.
+  const sessionId = stringField(clientMetadata, 'session_id')
     ?? stringField(clientTurnMetadata, 'session_id')
+    ?? trimHeader(opts.headers, 'session-id')
+    ?? trimHeader(opts.headers, 'session_id')
     ?? deriveSessionIdFromInput(body)
     ?? uuidV7();
-  const threadId = trimHeader(opts.headers, 'thread-id')
-    ?? stringField(clientMetadata, 'thread_id')
+  const threadId = stringField(clientMetadata, 'thread_id')
     ?? stringField(clientTurnMetadata, 'thread_id')
+    ?? trimHeader(opts.headers, 'thread-id')
     ?? sessionId;
+  // Codex has no `client_metadata` counterpart for this one — both transports
+  // send it as a header carrying the thread id, which is immutable for the
+  // life of a connection anyway:
+  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/codex-api/src/endpoint/responses.rs#L87-L91
   const clientRequestId = trimHeader(opts.headers, 'x-client-request-id') ?? threadId;
   const installationId = stringField(clientMetadata, 'x-codex-installation-id')
     ?? stringField(clientTurnMetadata, 'installation_id')
     ?? opts.account.openaiDeviceId;
-  const windowId = trimHeader(opts.headers, 'x-codex-window-id')
-    ?? stringField(clientMetadata, 'x-codex-window-id')
+  // Codex advances the window on every auto-compaction — the id is
+  // `{thread_id}:{auto_compact_window_number}` — and a reused socket carries
+  // the advanced value in the frame body alone:
+  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/session/mod.rs#L3684-L3689
+  const windowId = stringField(clientMetadata, 'x-codex-window-id')
     ?? stringField(clientTurnMetadata, 'window_id')
+    ?? trimHeader(opts.headers, 'x-codex-window-id')
     ?? `${sessionId}:0`;
   const turnId = stringField(clientMetadata, 'turn_id')
     ?? stringField(clientTurnMetadata, 'turn_id')
@@ -267,12 +294,30 @@ const buildCodexTurnMetadata = (
   return base;
 };
 
+// The blob rides both the body and a header. Codex keeps the unbounded tool
+// inventory in the body copy only, "so HTTP and WebSocket compatibility
+// headers remain bounded":
+// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L291-L300
+const HEADER_OMITTED_TURN_METADATA_KEYS = new Set<string>(['tool_namespaces_info']);
+
+interface CodexTurnMetadataJson {
+  body: string;
+  header: string;
+}
+
 const buildCodexTurnMetadataJson = (
   identity: CodexRequestIdentity,
   options: CodexTurnMetadataOptions,
   clientOverrides: Record<string, unknown> | null,
-): string =>
-  JSON.stringify(buildCodexTurnMetadata(identity, options, clientOverrides));
+): CodexTurnMetadataJson => {
+  const turnMetadata = buildCodexTurnMetadata(identity, options, clientOverrides);
+  return {
+    body: JSON.stringify(turnMetadata),
+    header: JSON.stringify(Object.fromEntries(
+      Object.entries(turnMetadata).filter(([key]) => !HEADER_OMITTED_TURN_METADATA_KEYS.has(key)),
+    )),
+  };
+};
 
 const buildCodexClientMetadata = (identity: CodexRequestIdentity, turnMetadataJson: string): Record<string, string> => ({
   'x-codex-installation-id': identity.installationId,
@@ -399,8 +444,8 @@ const performStreamingResponsesCall = async (
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
-  const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
+  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
   const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
@@ -409,9 +454,9 @@ const performStreamingResponsesCall = async (
     accessToken,
     CODEX_RESPONSES_PATH,
     'text/event-stream',
-    buildCodexResponsesBody(opts, identity, turnMetadataJson),
+    buildCodexResponsesBody(opts, identity, turnMetadataJson.body),
     identity,
-    turnMetadataJson,
+    turnMetadataJson.header,
   ).then(ensureSseContentType);
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
@@ -430,8 +475,8 @@ const performUnaryCompactCall = async (
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderCompactionResult> => {
-  const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
+  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
   const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = { requestKind: 'compaction' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
@@ -442,7 +487,7 @@ const performUnaryCompactCall = async (
     'application/json',
     { ...opts.body, model: opts.model.id },
     identity,
-    turnMetadataJson,
+    turnMetadataJson.header,
   );
 
   if (response.status === 401 && !alreadyRetried) {

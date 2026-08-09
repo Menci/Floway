@@ -9,7 +9,7 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/sh
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -65,7 +65,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
+const connectResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
@@ -76,6 +76,7 @@ const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebS
     headers: {
       upgrade: 'websocket',
       'x-api-key': apiKey,
+      ...upgradeHeaders,
     },
   }), {}, executionCtx);
   assertEquals(response.status, 101);
@@ -1467,4 +1468,124 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
   } finally {
     generateSpy.mockRestore();
   }
+});
+
+test('Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCodexUpstreamRecord());
+  const upstreamBodies: Record<string, unknown>[] = [];
+
+  // The handshake carries the connection's first turn, exactly as the Codex
+  // client sends it. Every later turn arrives on the frame body alone, so a
+  // dispatch that re-reads these headers announces turn 1 forever.
+  const handshakeTurnMetadata = {
+    session_id: 'codex-session',
+    thread_id: 'codex-thread',
+    window_id: 'codex-thread:0',
+    turn_id: 'handshake-turn',
+    request_kind: 'turn',
+    turn_started_at_unix_ms: 1700000000000,
+  };
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/backend-api/codex/models') return jsonResponse(codexModels([{ slug: 'gpt-5.4' }]));
+      if (url.pathname === '/backend-api/codex/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+        const turn = upstreamBodies.length;
+        return sseResponsesResponse({
+          id: `resp_codex_ws_${turn}`,
+          object: 'response',
+          model: 'gpt-5.4',
+          status: 'completed',
+          output_text: `answer ${turn}`,
+          output: [{
+            id: `assistant_codex_ws_${turn}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const socket = await connectResponsesWebSocket(apiKey.key, {
+        'session-id': 'codex-session',
+        'thread-id': 'codex-thread',
+        'x-codex-window-id': 'codex-thread:0',
+        'x-codex-turn-metadata': JSON.stringify(handshakeTurnMetadata),
+      });
+
+      const firstTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-5.4',
+          input: 'turn one input',
+          client_metadata: {
+            session_id: 'codex-session',
+            thread_id: 'codex-thread',
+            'x-codex-window-id': 'codex-thread:0',
+            turn_id: 'turn-1',
+            'x-codex-turn-metadata': JSON.stringify(handshakeTurnMetadata),
+          },
+        },
+      }));
+      await firstTerminal;
+
+      const secondTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-5.4',
+          input: [
+            { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'turn two input' }] },
+            { type: 'compaction_trigger' },
+          ],
+          client_metadata: {
+            session_id: 'codex-session',
+            thread_id: 'codex-thread',
+            // Codex advances the window on auto-compaction and the advanced
+            // value never reaches the handshake.
+            'x-codex-window-id': 'codex-thread:1',
+            turn_id: 'turn-2',
+            'x-codex-turn-metadata': JSON.stringify({
+              session_id: 'codex-session',
+              thread_id: 'codex-thread',
+              window_id: 'codex-thread:1',
+              turn_id: 'turn-2',
+              request_kind: 'compaction',
+              compaction: { trigger: 'auto', reason: 'context_limit', implementation: 'responses_compaction_v2', phase: 'standalone_turn', strategy: 'memento' },
+              turn_started_at_unix_ms: 1700000000002,
+            }),
+          },
+        },
+      }));
+      await secondTerminal;
+
+      assertEquals(upstreamBodies.length, 2);
+      const turnMetadataOf = (body: Record<string, unknown>): Record<string, unknown> =>
+        JSON.parse((body.client_metadata as Record<string, string>)['x-codex-turn-metadata']) as Record<string, unknown>;
+
+      const first = turnMetadataOf(upstreamBodies[0]);
+      assertEquals(first.request_kind, 'turn');
+      assertEquals(first.window_id, 'codex-thread:0');
+      assertEquals(first.turn_started_at_unix_ms, 1700000000000);
+
+      const second = turnMetadataOf(upstreamBodies[1]);
+      assertEquals(second.request_kind, 'compaction');
+      assertEquals(second.window_id, 'codex-thread:1');
+      assertEquals(second.turn_id, 'turn-2');
+      assertEquals(second.turn_started_at_unix_ms, 1700000000002);
+      assertEquals((upstreamBodies[1].client_metadata as Record<string, string>)['x-codex-window-id'], 'codex-thread:1');
+    }),
+  );
 });

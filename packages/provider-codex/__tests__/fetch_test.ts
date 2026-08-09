@@ -607,6 +607,79 @@ describe('callCodexResponses — upstream classification', () => {
     expect((body.client_metadata as Record<string, unknown>).turn_id).toBe('caller-turn');
   });
 
+  test('reads the turn-metadata blob from the body before the header', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: {
+        input: [], stream: true,
+        client_metadata: {
+          'x-codex-window-id': 'thread-1:2',
+          'x-codex-turn-metadata': JSON.stringify({
+            window_id: 'thread-1:2',
+            request_kind: 'compaction',
+            compaction: { trigger: 'auto', reason: 'context_limit' },
+            turn_started_at_unix_ms: 1700000000002,
+          }),
+        },
+      } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
+      // A WebSocket upgrade's headers are frozen for the life of the socket,
+      // so they carry the connection's first turn, not this one.
+      headers: new Headers({
+        'session-id': 'sess',
+        'x-codex-window-id': 'thread-1:0',
+        'x-codex-turn-metadata': JSON.stringify({
+          window_id: 'thread-1:0',
+          request_kind: 'turn',
+          turn_started_at_unix_ms: 1700000000000,
+        }),
+      }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    const turnMetadata = JSON.parse(headers.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
+    expect(turnMetadata.request_kind).toBe('compaction');
+    expect(turnMetadata.compaction).toEqual({ trigger: 'auto', reason: 'context_limit' });
+    expect(turnMetadata.turn_started_at_unix_ms).toBe(1700000000002);
+    // The window advances on every auto-compaction and the advanced value
+    // reaches us in the body alone.
+    expect(turnMetadata.window_id).toBe('thread-1:2');
+    expect(headers.get('x-codex-window-id')).toBe('thread-1:2');
+  });
+
+  test('keeps the unbounded tool inventory in the body blob and out of the header blob', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const toolNamespacesInfo = { namespaces: [{ name: 'shell', tools: ['exec'] }] };
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: {
+        input: [], stream: true,
+        client_metadata: {
+          'x-codex-turn-metadata': JSON.stringify({ tool_namespaces_info: toolNamespacesInfo, thread_source: 'user' }),
+        },
+      } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
+      headers: new Headers({ 'session-id': 'sess' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    const headerMetadata = JSON.parse(headers.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
+    expect(headerMetadata.tool_namespaces_info).toBeUndefined();
+    expect(headerMetadata.thread_source).toBe('user');
+
+    const body = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
+    const bodyMetadata = JSON.parse(
+      (body.client_metadata as Record<string, string>)['x-codex-turn-metadata'],
+    ) as Record<string, unknown>;
+    expect(bodyMetadata.tool_namespaces_info).toEqual(toolNamespacesInfo);
+    expect(bodyMetadata.thread_source).toBe('user');
+  });
+
   test('preserves caller client_metadata extras while keeping identity-mirror keys gateway-owned', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -614,9 +687,9 @@ describe('callCodexResponses — upstream classification', () => {
       upstreamId, account: activeAccount, model,
       body: {
         input: [], stream: true,
-        client_metadata: { 'x-extra-key': 'caller-supplied', session_id: 'caller-override' },
+        client_metadata: { 'x-extra-key': 'caller-supplied', session_id: 'body-session' },
       } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
-      headers: new Headers({ 'session-id': 'sess' }),
+      headers: new Headers({ 'session-id': 'header-session' }),
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
@@ -625,10 +698,13 @@ describe('callCodexResponses — upstream classification', () => {
     const clientMetadata = body.client_metadata as Record<string, unknown>;
     // Non-identity extras pass through verbatim.
     expect(clientMetadata['x-extra-key']).toBe('caller-supplied');
-    // Identity-mirror keys come from identity (header beats body), so the
-    // three surfaces never disagree.
-    expect(clientMetadata.session_id).toBe('sess');
-    expect(clientMetadata.thread_id).toBe('sess');
+    // Identity-mirror keys come from identity, and identity reads the body
+    // before the header, so the three surfaces never disagree and a frozen
+    // handshake header never outranks the current turn.
+    expect(clientMetadata.session_id).toBe('body-session');
+    expect(clientMetadata.thread_id).toBe('body-session');
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('session-id')).toBe('body-session');
   });
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
