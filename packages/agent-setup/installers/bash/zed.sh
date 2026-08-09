@@ -111,11 +111,11 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
-    # Zed reads this file with serde_json_lenient, so a comment is the
-    # operator's content and jq is about to refuse it. Name that cause rather
-    # than reporting a malformed object.
-    if _json_has_comment "$ZED_SETTINGS_PATH"; then
-      out_error "$ZED_SETTINGS_PATH carries JSONC comments this installer cannot preserve; leaving it untouched."
+    # Zed reads this file with serde_json_lenient, so a comment or a trailing
+    # comma is the operator's content and jq is about to refuse it. Name that
+    # cause rather than reporting a malformed object.
+    if _json_has_jsonc_syntax "$ZED_SETTINGS_PATH"; then
+      out_error "$ZED_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
       return 1
     fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on

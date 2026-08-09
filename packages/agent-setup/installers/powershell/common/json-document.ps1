@@ -10,14 +10,19 @@ function Test-SetupJsonRoot {
   return $Text.TrimStart().StartsWith($Open)
 }
 
-# Does this JSON text carry a `//` or `/*` comment outside a string? Strings
-# are walked rather than stripped by regex, because a value like a model id or
-# a URL contains `//` legitimately and a naive match would refuse a document
-# that is perfectly valid JSON.
-function Test-SetupJsonHasComment {
+# Does this JSON text use a JSONC construct — a `//` or `/*` comment, or a comma
+# before a closing brace or bracket? Both editors read their managed document
+# with a parser that accepts these, so they are the operator's content, but jq
+# has no lenient mode and refuses the file. ConvertFrom-Json accepts a trailing
+# comma and would go on to rewrite the document without it, so this is what
+# keeps the two halves from reaching opposite verdicts on one file. Strings are
+# walked rather than stripped by regex, because a value like a model id or a URL
+# contains `//` legitimately. Mirrors _json_has_jsonc_syntax.
+function Test-SetupJsonHasJsoncSyntax {
   param([string]$Text)
   $inString = $false
   $escaped = $false
+  $comma = $false
   for ($i = 0; $i -lt $Text.Length; $i++) {
     $ch = $Text[$i]
     if ($inString) {
@@ -26,11 +31,15 @@ function Test-SetupJsonHasComment {
       elseif ($ch -eq '"') { $inString = $false }
       continue
     }
-    if ($ch -eq '"') { $inString = $true; continue }
     if ($ch -eq '/' -and $i + 1 -lt $Text.Length) {
       $next = $Text[$i + 1]
       if ($next -eq '/' -or $next -eq '*') { return $true }
     }
+    if ($ch -eq ',') { $comma = $true; continue }
+    if ([char]::IsWhiteSpace($ch)) { continue }
+    if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return $true }
+    $comma = $false
+    if ($ch -eq '"') { $inString = $true }
   }
   return $false
 }

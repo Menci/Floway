@@ -532,9 +532,12 @@ const zedCredentialSecret = (workspace: Workspace): string => join(workspace.roo
 // GNU host the `-c` branch answers and the BSD one — the only mode source macOS
 // has — would ship unexecuted unless the dialect is forced.
 //
-// The shim serves the BSD call as well as refusing the GNU one, translating
-// `-f '%Lp'` to the host's `-c '%a'`; refusing without serving would make the
-// fallback look broken when it is the shim that cannot answer.
+// The shim serves the BSD call as well as refusing the GNU one; refusing
+// without serving would make the fallback look broken when it is the shim that
+// cannot answer. It asks the host's own stat in whichever dialect that stat
+// speaks — a macOS runner without coreutils has only `-f`, and hardcoding `-c`
+// there would fail this test as a mode regression on the very platform the leg
+// exists to model.
 const placeBsdStatShim = (workspace: Workspace): void => {
   const realStat = resolveTool('stat')!;
   writeFileSync(join(workspace.binDir, 'stat'), `#!/bin/bash
@@ -549,7 +552,10 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 case "$fmt" in
-  '%Lp') exec ${JSON.stringify(realStat)} -c '%a' "$target" ;;
+  '%Lp')
+    ${JSON.stringify(realStat)} -c '%a' "$target" 2>/dev/null \
+      || ${JSON.stringify(realStat)} -f '%Lp' "$target"
+    ;;
   *) printf 'stat: unsupported format\n' >&2; exit 1 ;;
 esac
 `, { mode: 0o755 });
@@ -2923,24 +2929,52 @@ test('zed', 'a case-only rename leaves one provider in both halves', async t => 
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two agree');
 });
 
-// Zed reads this file with serde_json_lenient, so a comment is the operator's
-// own content. jq refuses such a document; PowerShell 7 accepts it and drops
-// the comment on the way out, which is data loss reported as success. Both
-// halves refuse it, and neither mistakes a `//` inside a value for one.
-test('zed', 'both halves refuse a settings document carrying JSONC comments', async t => {
-  const commented = '{\n  // the operator put this here\n  "telemetry": { "metrics": false }\n}';
+// Zed reads this file with serde_json_lenient, so a comment and a trailing
+// comma are both the operator's own content. jq refuses such a document, while
+// PowerShell 7 accepts it and writes it back without the comment or the comma —
+// data loss reported as success, and two halves reaching opposite verdicts on
+// one file. Both refuse, and neither mistakes a `//` inside a value, or a comma
+// that is not trailing, for either.
+for (const { label, document } of [
+  { label: 'a line comment', document: '{\n  // the operator put this here\n  "telemetry": { "metrics": false }\n}' },
+  { label: 'a block comment', document: '{\n  /* the operator put this here */\n  "telemetry": { "metrics": false }\n}' },
+  { label: 'a trailing comma before a brace', document: '{\n  "telemetry": { "metrics": false },\n}' },
+  { label: 'a trailing comma before a bracket', document: '{\n  "features": [\n    "one",\n  ]\n}' },
+]) {
+  test('zed', `both halves refuse a settings document carrying ${label}`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const configDir = makeZedConfigDir(ws);
+      placeFakeCredentialTools(ws);
+      writeFileSync(zedSettingsPath(configDir), document);
+      const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.ok(run.code !== 0, `${which} refuses it`);
+      // Both halves must name the syntax. Refusing for the wrong stated reason
+      // sends the operator looking for an error that is not there.
+      t.ok(run.combined.includes('JSONC syntax'), `${which} names the cause:\n${run.combined}`);
+      t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, `${which} leaves it byte-identical`);
+    };
+
+    await runHalf('bash');
+    if (hostPwsh) await runHalf('powershell');
+  });
+}
+
+// A `//` inside a value and a comma that separates rather than trails are
+// ordinary JSON, and a scanner that flagged them would refuse documents Zed and
+// jq both accept.
+test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,]",\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
     placeFakeCredentialTools(ws);
-    writeFileSync(zedSettingsPath(configDir), commented);
+    writeFileSync(zedSettingsPath(configDir), plain);
     const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
     const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
-    t.ok(run.code !== 0, `${which} refuses it`);
-    // Both halves must name the comment. Refusing for the wrong stated reason
-    // sends the operator looking for a syntax error that is not there.
-    t.ok(run.combined.includes('JSONC comments'), `${which} names the cause:\n${run.combined}`);
-    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), commented, `${which} leaves it byte-identical`);
+    t.equal(run.code, 0, `${which} accepts it:\n${run.combined}`);
+    t.equal((readSettings(zedSettingsPath(configDir)) as ZedSettings).note, 'see https://example.com/a,]', `${which} keeps the value intact`);
   };
 
   await runHalf('bash');
@@ -3030,10 +3064,19 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       // file that inherited nothing lands on 0600 under the Bash half's
       // `umask 077` and on 0644 under the PowerShell half's inherited umask, so
       // either of those as the fixture would pass one half without observing it.
-      const target = join(ws.home, 'dotfiles-zed-settings.json');
+      mkdirSync(join(ws.home, 'dotfiles'), { recursive: true });
+      const target = join(ws.home, `dotfiles-${which}-zed-settings.json`);
       writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o640 });
       chmodSync(target, 0o640);
-      symlinkSync(link === 'absolute' ? target : relative(configDir, target), zedSettingsPath(configDir));
+      // The absolute leg points through a `..` segment, which is how a dotfile
+      // manager may well write it: a resolved path that keeps the segment does
+      // not string-match the canonical one the backup prune enumerates, and the
+      // prune would then delete the backup it was told to keep.
+      // Joined by hand, not with `join`, which would normalize the segment away.
+      const linkTarget = link === 'absolute'
+        ? `${ws.home}/dotfiles/../dotfiles-${which}-zed-settings.json`
+        : relative(configDir, target);
+      symlinkSync(linkTarget, zedSettingsPath(configDir));
 
       const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
       const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
@@ -3046,11 +3089,41 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       // rather than next to the link.
       t.equal(
         readdirSync(ws.home).filter(name => name.includes('floway-')).map(name => name.replace(/\d+\.\d+$/, '<stamp>')).join(),
-        'dotfiles-zed-settings.json.floway-backup.<stamp>',
+        `dotfiles-${which}-zed-settings.json.floway-backup.<stamp>`,
         `${which}/${dialect}/${link} leaves one backup beside the target and no stage`,
       );
       t.equal(readdirSync(configDir).join(), 'global_settings.json', `${which}/${dialect}/${link} leaves nothing beside the link`);
     }
+  }
+});
+
+// A leftover backup that is a symlink unlinks like any other entry, so both
+// halves remove it and the run completes. A dangling one is the case Bash could
+// skip forever, since `-e` follows the link before deciding. Only a real
+// directory is refused, and that case is the rollback test below.
+test('zed', 'both halves clear a symlinked stale backup instead of tripping on it', async t => {
+  if (process.platform === 'win32') skip('symlinks only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), JSON.stringify({ telemetry: { metrics: false } }));
+    const elsewhere = join(ws.home, `stale-target-${which}`);
+    mkdirSync(elsewhere, { recursive: true });
+    const toDirectory = `${zedSettingsPath(configDir)}.floway-backup.19700101000000.1`;
+    const dangling = `${zedSettingsPath(configDir)}.floway-backup.19700101000000.2`;
+    symlinkSync(elsewhere, toDirectory);
+    symlinkSync(join(ws.home, 'nothing-is-here'), dangling);
+
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(!existsSync(toDirectory) && !lstatSync(dangling, { throwIfNoEntry: false }), `${which} removed both stale links`);
+    t.ok(existsSync(elsewhere), `${which} removed the link, not what it pointed at`);
+    // The run's own backup is the one that stays.
+    t.equal(readdirSync(configDir).filter(name => name.includes('.floway-backup.')).length, 1, `${which} keeps this run's backup`);
   }
 });
 

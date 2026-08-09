@@ -72,12 +72,14 @@ function Write-SetupZedSettings {
     $script:ZedSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
     # PowerShell 7 accepts JSONC comments and drops them on the way out, while
-    # 5.1 errors and jq refuses — three behaviors for one document. Zed reads
-    # this file with serde_json_lenient, so a comment is the operator's content
-    # and silently deleting it is data loss. Refuse, as the Bash half does.
+    # 5.1 errors and jq refuses — three behaviors for one document. A trailing
+    # comma splits the halves the same way: ConvertFrom-Json takes it and jq
+    # does not. Zed reads this file with serde_json_lenient, so both are the
+    # operator's content and silently deleting either is data loss. Refuse, as
+    # the Bash half does.
     # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/fallible_options.rs#L11-L19
-    if (Test-SetupJsonHasComment $raw) {
-      Stop-Setup "$($script:ZedSettingsPath) carries JSONC comments this installer cannot preserve; leaving it untouched."
+    if (Test-SetupJsonHasJsoncSyntax $raw) {
+      Stop-Setup "$($script:ZedSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
     }
     # The root is judged from the text before anything is decoded: an empty file
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
