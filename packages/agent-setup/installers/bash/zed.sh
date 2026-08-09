@@ -10,13 +10,9 @@
 # third party can own the file outright. Editing `settings.json` instead would
 # mean a comment-preserving JSONC edit, which no portable tool does correctly.
 # Ref: https://github.com/zed-industries/zed/pull/30444
+# Shape is settled before the backup exists, so this program only merges.
 ZED_SETTINGS_MERGE_PROGRAM='
-  if type != "object" then error("root is not a JSON object")
-  elif (has("language_models") and ((.language_models | type) != "object")) then error("language_models is not a JSON object")
-  elif (has("language_models") and (.language_models | has("anthropic_compatible")) and ((.language_models.anthropic_compatible | type) != "object"))
-    then error("anthropic_compatible is not a JSON object")
-  else . end
-  | .language_models.anthropic_compatible |= (
+  . .language_models.anthropic_compatible |= (
       # Drop any entry whose key differs from the chosen name only by case
       # before writing it. The PowerShell property bag cannot hold two such
       # keys at once — adding `Floway` beside `floway` replaces it — so a half
@@ -122,8 +118,21 @@ zed_write_settings() {
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped
     # gate and fail later as a staging error naming the wrong cause — after a
     # backup already existed. Slurping asks for exactly one document.
-    if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "object")' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
-      out_error "$ZED_SETTINGS_PATH is not a valid JSON object; leaving it untouched."
+    # The nested shape checks belong here too, not in the merge program: the
+    # merge does not run until a backup exists, so a `language_models` of null
+    # or 5 was refused with "failed to construct updated Zed global settings" —
+    # naming our list rather than the operator's file — plus a raw jq error on
+    # stderr, and left the backup behind. The PowerShell half and the VS Code
+    # installer both check everything their merge can abort on before copying.
+    if ! "$JQ" -s -e '
+        length == 1
+        and (.[0] | type == "object")
+        and (.[0] | (has("language_models") | not) or (.language_models | type == "object"))
+        and (.[0] | (has("language_models") | not)
+             or (.language_models | has("anthropic_compatible") | not)
+             or (.language_models.anthropic_compatible | type == "object"))
+      ' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
+      out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
       return 1
     fi
     _zw_base=$(cat "$ZED_SETTINGS_PATH")
