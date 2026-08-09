@@ -2566,7 +2566,10 @@ test('zed', 'maps limits, modalities, and reasoning onto Zed model fields', asyn
   // null budget on every Messages request and the model would 400.
   const effortOnly = models.get('effort-only')!;
   t.ok(effortOnly.mode === undefined, 'reasoning without a budget stays in default mode');
-  t.equal(effortOnly.max_tokens, 120_000, 'prompt tokens stand in for an absent context window');
+  // Zed subtracts its output reservation from max_tokens, so a catalog stating
+  // only a prompt limit gets a window that leaves exactly that limit behind —
+  // 4096 is what Zed assumes when the model announces no output limit.
+  t.equal(effortOnly.max_tokens - 4096, 120_000, 'the derived prompt budget is the stated prompt limit');
 
   const floorOnly = models.get('floor-only')!;
   t.equal(JSON.stringify(floorOnly.mode), JSON.stringify({ type: 'thinking', budget_tokens: 1024 }), 'a floor with no ceiling still yields a budget');
