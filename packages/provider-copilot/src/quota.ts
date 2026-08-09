@@ -163,30 +163,32 @@ export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQu
 // `organization_login_list`), and the entitlement flags (`chat_enabled`,
 // `cli_enabled`, `cli_remote_control_enabled`, `cloud_session_storage_enabled`,
 // `copilotignore_enabled`, `editor_preview_features_enabled`, `is_mcp_enabled`,
-// `can_upgrade_plan`, `can_signup_for_limited`, `restricted_telemetry`). Inside
+// `can_upgrade_plan`, `can_signup_for_limited`, `restricted_telemetry`,
+// `copilot_app_enabled`, `te`). Inside
 // each bucket: `quota_id`, `remaining` (the integer form of `quota_remaining`),
 // `quota_reset_at`, `timestamp_utc` (per bucket rather than per snapshot), and
 // a per-bucket `token_based_billing`. `has_quota` is also there and is the one
 // omission with a reason of its own — see `CopilotQuotaDetail` above.
 //
-// Two further per-bucket fields are on the wire without appearing in any
-// capture we hold: `overage_entitlement` (the overage cap, which VS Code reads
-// only off `premium_interactions`) and `credits_used` (AI-Credits consumed).
-// Microsoft declares both on the body it `JSON.parse`s straight out of this
-// endpoint, so this is a declaration of GitHub's shape rather than a client-side
-// reshape:
+// Two further per-bucket fields arrived after the captures linked below:
+// `overage_entitlement` (the overage cap, which VS Code reads only off
+// `premium_interactions`) and `credits_used` (AI-Credits consumed). Both are
+// declared by Microsoft on the body it `JSON.parse`s straight out of this
+// endpoint, and both were observed on a live enterprise seat's
+// `premium_interactions` on 2026-08-09.
 // https://github.com/microsoft/vscode/blob/9afe2783a7239c915d5fc6d1bd9c842f9ca06c2e/src/vs/base/common/defaultAccount.ts#L8-L20
 // `overage_entitlement` landed 2026-06-11 (microsoft/vscode#321023) and
 // `credits_used` on 2026-07-08 at 19:59Z (microsoft/vscode#325002) — the capture
-// below was taken that same day at 12:01Z, hours early, on a seat with no
-// overage to report. Neither field appears in `@github/copilot-sdk@1.0.8`, which
-// conversely declares a `codex_agent_enabled` no capture carries: both of our
-// secondary sources for this endpoint lag the wire, in opposite directions.
+// below was taken that same day at 12:01Z, hours early, which is why it carries
+// neither. Neither appears in `@github/copilot-sdk@1.0.8`, which conversely
+// declares a `codex_agent_enabled` no capture carries: both of our secondary
+// sources for this endpoint lag the wire, in opposite directions.
 //
-// Nothing consumes any of it yet, and the header path cannot supply any of it,
-// so projecting one today would mean a field that silently blanks out whenever
-// the passive path wins the race. Widen this interface and
-// `projectCopilotUsageResponse` together when something needs them.
+// Nothing consumes the rest yet, and the header path cannot supply any of it,
+// so projecting one into the quota snapshot would mean a field that silently
+// blanks out whenever the passive path wins the race — which is why the two
+// this file does project have a slot of their own. Widen this interface and
+// `projectCopilotUsageResponse` together when something needs the others.
 //
 // Two body shapes are live at once, split by GitHub's 2026-06-01 AI-Credits
 // change. A seat on the current shape reports `quota_snapshots` whatever its
