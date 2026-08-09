@@ -253,9 +253,10 @@ describe('upstream readout by provider', () => {
     }).plan;
 
     expect(planFor('max')).toBe('Ollama Max');
+    expect(planFor('enterprise')).toBe('Ollama Enterprise');
     // The identifiers are plain words, so one this table has not seen reads as
     // itself rather than as nothing.
-    expect(planFor('enterprise')).toBe('Ollama enterprise');
+    expect(planFor('ultra')).toBe('Ollama ultra');
     expect(planFor(null)).toBe('Ollama');
   });
 
