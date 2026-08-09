@@ -103,14 +103,24 @@ const percentValue = (t: TFunction, percent: number): string =>
 // Last on the line: the windows are what an operator reads at a glance, and this
 // says how long the wait still has to run rather than when it ends -- an instant
 // has to be subtracted from the clock before it means anything.
-const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal => ({
-  key: 'rate-limited',
-  percent: null,
-  value: t('dashboard.upstreams.signals.rateLimited'),
-  label: formatRemaining(Date.parse(until) - now, locale),
-  detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
-  blocked: true,
-});
+//
+// A limit whose instant has passed is not a limit. Both providers hold the
+// deciding snapshot until something replaces it, and one of them keeps writing
+// `rejected` beside a reset that has since elapsed, so the wait is measured here
+// rather than at either call site: an elapsed one yields no signal at all,
+// instead of a countdown clamped at zero standing where a live one stood.
+const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal | null => {
+  const remaining = Date.parse(until) - now;
+  if (!Number.isFinite(remaining) || remaining <= 0) return null;
+  return {
+    key: 'rate-limited',
+    percent: null,
+    value: t('dashboard.upstreams.signals.rateLimited'),
+    label: formatRemaining(remaining, locale),
+    detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
+    blocked: true,
+  };
+};
 
 const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const quota = copilotQuota(record);
@@ -165,8 +175,8 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
   }
   // The windows beside it can read low while it holds: a 429 names the limit
   // family that tripped, which is not always one of the two this row shows.
-  if (entry?.rateLimitedUntil != null) signals.push(blockedSignal(entry.rateLimitedUntil, t, locale, now));
-  return signals;
+  const blocked = entry?.rateLimitedUntil == null ? null : blockedSignal(entry.rateLimitedUntil, t, locale, now);
+  return blocked === null ? signals : signals.concat(blocked);
 };
 
 const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string, now: number): UpstreamSignal[] => {
@@ -191,16 +201,18 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
   // away, which it reports apart from the per-window utilization beside it. An
   // undated refusal states the fact alone; there is nothing to count down.
   if (quota?.status !== 'rejected') return windows;
-  return windows.concat(quota.reset === null
-    ? [{
-        key: 'rate-limited',
-        percent: null,
-        value: t('dashboard.upstreams.signals.rateLimited'),
-        label: null,
-        detail: t('dashboard.upstreams.signals.rateLimitedUndated'),
-        blocked: true,
-      }]
-    : [blockedSignal(quota.reset, t, locale, now)]);
+  if (quota.reset !== null) {
+    const blocked = blockedSignal(quota.reset, t, locale, now);
+    return blocked === null ? windows : windows.concat(blocked);
+  }
+  return windows.concat({
+    key: 'rate-limited',
+    percent: null,
+    value: t('dashboard.upstreams.signals.rateLimited'),
+    label: null,
+    detail: t('dashboard.upstreams.signals.rateLimitedUndated'),
+    blocked: true,
+  });
 };
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
