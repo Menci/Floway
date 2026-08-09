@@ -85,7 +85,7 @@ function Write-SetupZedSettings {
 
   if (Test-Path -LiteralPath $script:ZedSettingsPath) {
     $script:ZedSettingsExisted = $true
-    $raw = Get-Content -Raw -LiteralPath $script:ZedSettingsPath
+    $raw = Get-SetupFileText $script:ZedSettingsPath
     # PowerShell 7 accepts JSONC comments and drops them on the way out, while
     # 5.1 errors and jq refuses — three behaviors for one document. A trailing
     # comma splits the halves the same way: ConvertFrom-Json takes it and jq
@@ -176,7 +176,7 @@ function Write-SetupZedSettings {
     # is not something to do quietly.
     $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
-    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
+    $check = Get-SetupFileText $stage | ConvertFrom-Json
     # Read through the property bag rather than with `.$name`, which is dotted
     # member access over an operator-chosen string.
     $staged = $check.language_models.anthropic_compatible.PSObject.Properties[$SetupZedProviderName].Value

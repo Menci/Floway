@@ -1,3 +1,20 @@
+# Reads a managed document as UTF-8 on every host.
+#
+# `Get-Content -Raw` decodes with the system ANSI code page on Windows
+# PowerShell 5.1 and with UTF-8 on 6+, so on a stock Windows box a document
+# holding a font name, a path or a localized string comes back mis-decoded,
+# gets written out again as UTF-8, and is mojibake from then on. Nothing would
+# refuse it: the mis-decoded text is still valid JSON. The Bash half passes the
+# bytes through untouched, so the two halves would disagree about one file.
+#
+# Measured: the bytes `63 61 66 E9` decode to three characters on 5.1 and four
+# on 7.6, which is the divergence itself. The writer beside this uses the same
+# encoding, and ReadAllText strips a BOM if one is there.
+function Get-SetupFileText {
+  param([string]$Path)
+  return [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # Does this JSON text open with the expected root — `{` for an object, `[` for
 # an array? Asked of the text rather than of the decoded value because
 # ConvertFrom-Json unwraps a top-level one-element array into a bare object and

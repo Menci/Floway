@@ -71,7 +71,7 @@ function Write-SetupClaudeSettings {
 
   if (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
     $script:ClaudeSettingsExisted = $true
-    $raw = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath
+    $raw = Get-SetupFileText $script:ClaudeSettingsPath
     try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup "existing Claude settings root is not a JSON object." }
     if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
@@ -139,7 +139,7 @@ function Write-SetupClaudeSettings {
     # Write UTF-8 without a BOM on every PowerShell version so downstream JSON
     # parsers accept the file.
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
-    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
+    $check = Get-SetupFileText $stage | ConvertFrom-Json
     if (($check.env.ANTHROPIC_BASE_URL -cne $SetupEndpoint) -or ($check.env.ANTHROPIC_AUTH_TOKEN -cne $SetupApiKey)) {
       Stop-Setup "staged Claude settings failed validation."
     }

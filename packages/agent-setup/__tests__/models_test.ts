@@ -98,11 +98,14 @@ describe('Zed available_models projection', () => {
   it('never leaves a model without compaction and without the warning', () => {
     const ZED_FALLBACK_OUTPUT = 4096;
     const MIN_COMPACTION = 80_000;
-    const compacts = (e: { max_tokens: number; max_output_tokens?: number }) =>
-      e.max_tokens - (e.max_output_tokens ?? ZED_FALLBACK_OUTPUT) >= MIN_COMPACTION;
+    const derived = (e: { max_tokens: number; max_output_tokens?: number }) =>
+      e.max_tokens - (e.max_output_tokens ?? ZED_FALLBACK_OUTPUT);
+    const compacts = (e: { max_tokens: number; max_output_tokens?: number }) => derived(e) >= MIN_COMPACTION;
     // `max_tokens: 0` does not warn: the callout falls through to the usage
-    // ratio, which is forced to Normal at zero. Without this conjunct the
-    // predicate would call a zero row "warned" and the band would stay open.
+    // ratio, which is forced to Normal at zero. No projected row reaches that
+    // today — the projection turns a stated zero into no bound at all — so this
+    // conjunct is what keeps the predicate a faithful model of Zed rather than
+    // a model of what the projection happens to emit.
     // Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
     const warns = (e: { max_tokens: number }) => e.max_tokens > 0 && e.max_tokens < MIN_COMPACTION;
 
@@ -128,10 +131,21 @@ describe('Zed available_models projection', () => {
       // A stated prompt limit well below the band: the reservation stays on, so
       // the budget is the one the catalog stated rather than that minus 16k.
       catalogModel('small-prompt', { limits: { max_context_window_tokens: 48_384, max_prompt_tokens: 32_000, max_output_tokens: 16_384 } }),
+      // Copilot's o3-mini shape: an output limit larger than the prompt limit.
+      // Subtracting one from the other leaves no room to prompt at all.
+      catalogModel('o3-mini', { limits: { max_prompt_tokens: 64_000, max_output_tokens: 100_000 } }),
+      catalogModel('o1', { limits: { max_prompt_tokens: 20_000, max_output_tokens: 100_000 } }),
+      catalogModel('equal-limits', { limits: { max_prompt_tokens: 60_000, max_output_tokens: 60_000 } }),
+      // A prompt limit within the fallback reservation of the threshold: there
+      // is no reservation small enough to state, so Zed's own 4096 applies.
+      catalogModel('just-under-threshold', { limits: { max_prompt_tokens: 79_999, max_output_tokens: 8000 } }),
     ]);
 
     for (const row of rows) {
       expect(compacts(row) || warns(row), `${row.name} gets neither compaction nor a warning`).toBe(true);
+      // And a window with nothing left to prompt with is no better than the
+      // band: the model is in the picker and every request is over budget.
+      expect(derived(row), `${row.name} has no room to prompt`).toBeGreaterThan(0);
     }
     // And above the threshold the budget is still exactly what the catalog said.
     expect(rows.find(r => r.name === 'roomy')!.max_tokens - 64_000).toBe(128_000);
@@ -140,6 +154,14 @@ describe('Zed available_models projection', () => {
     // either way.
     const small = rows.find(r => r.name === 'small-prompt')!;
     expect(small.max_tokens - small.max_output_tokens!).toBe(32_000);
+    // In the band the budget is still exactly the stated limit, because the
+    // reservation shrinks to fit under the threshold rather than being
+    // subtracted from it.
+    const byName = (name: string) => rows.find(r => r.name === name)!;
+    expect(derived(byName('o3-mini'))).toBe(64_000);
+    expect(derived(byName('o1'))).toBe(20_000);
+    expect(derived(byName('equal-limits'))).toBe(60_000);
+    expect(byName('just-under-threshold')).not.toHaveProperty('max_output_tokens');
 
     const row = (name: string) => rows.find(r => r.name === name)!;
     // With no prompt limit stated, the split is ours: the window is left whole
