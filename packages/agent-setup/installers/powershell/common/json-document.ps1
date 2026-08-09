@@ -53,7 +53,12 @@ function Test-SetupJsonHasJsoncSyntax {
       if ($next -eq '/' -or $next -eq '*') { return $true }
     }
     if ($ch -eq ',') { $comma = $true; continue }
-    if ([char]::IsWhiteSpace($ch)) { continue }
+    # JSON's whitespace, not .NET's. `[char]::IsWhiteSpace` also skips U+00A0,
+    # the vertical tab, the form feed and U+2028, none of which JSON allows and
+    # none of which the awk scanner skips — with the wider set the two halves
+    # still refuse `{"a":1,<FF>}` but name different causes, sending the
+    # operator after an error that is not there.
+    if ($ch -eq ' ' -or $ch -eq "`t" -or $ch -eq "`r" -or $ch -eq "`n") { continue }
     if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return $true }
     $comma = $false
     if ($ch -eq '"') { $inString = $true }

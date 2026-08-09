@@ -2799,24 +2799,49 @@ test('zed', 'a single-model catalog still writes an array in both halves', async
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and the two documents still match');
 });
 
-test('zed', 'PowerShell leaves no backup behind when the provider name is a reserved member', async t => {
-  if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  placeFakeCredentialTools(ws);
-  const original = JSON.stringify({ telemetry: { metrics: false } });
-  writeFileSync(zedSettingsPath(configDir), original);
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: zedConfig({ providerName: 'PSObject' }),
-    zedConfigDir: configDir,
-  });
-  t.ok(run.code !== 0, 'the run fails');
-  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the settings are unchanged');
-  const leftovers = readdirSync(configDir).filter(name => name.includes('.floway-'));
-  t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
+// Both halves check that the credential tool exists before reaching for it, so
+// a host without it gets the installer's own sentence rather than a raw
+// command-not-found from the shell or from PowerShell's Stop preference.
+test('zed', 'both halves name a missing credential tool instead of crashing', async t => {
+  if (process.platform !== 'darwin') skip('the macOS credential arm reaches `security` only there');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    // No placeFakeCredentialTools: the tool is what is missing.
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} fails`);
+    t.ok(run.combined.includes('cannot store the API key'), `${which} names the cause:\n${run.combined}`);
+    t.ok(!existsSync(zedSettingsPath(configDir)), `${which} writes no settings`);
+  }
 });
+
+// A property bag refuses more names than the PSObject ones: an object method
+// throws, and so does anything `-NotePropertyName` converts to a PSMemberTypes
+// value — "2" does, "2024" does not. The Bash half writes all of them, so the
+// refusal has to say what to do rather than surface a raw Add-Member message.
+for (const providerName of ['PSObject', 'ToString', '2']) {
+  test('zed', `PowerShell refuses the provider name ${providerName} without leaving a backup`, async t => {
+    if (!hostPwsh) skip('no PowerShell interpreter on this host');
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const original = JSON.stringify({ telemetry: { metrics: false } });
+    writeFileSync(zedSettingsPath(configDir), original);
+    const run = await runPowerShellInstaller({
+      workspace: ws,
+      baseUrl: modelServer.url,
+      configuration: zedConfig({ providerName }),
+      zedConfigDir: configDir,
+    });
+    t.ok(run.code !== 0, 'the run fails');
+    t.ok(run.combined.includes('cannot use'), `the refusal says what to change:\n${run.combined}`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), original, 'the settings are unchanged');
+    const leftovers = readdirSync(configDir).filter(name => name.includes('.floway-'));
+    t.equal(leftovers.join(','), '', 'and no backup or stage file is left behind');
+  });
+}
 
 // This document holds no credential — Zed reads the key from the keychain — so
 // the run must not narrow permissions the operator chose, on success or on a
