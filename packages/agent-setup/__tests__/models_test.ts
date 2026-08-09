@@ -148,6 +148,12 @@ describe('Zed available_models projection', () => {
       catalogModel('window-lt-output', { limits: { max_context_window_tokens: 64_000, max_output_tokens: 100_000 } }),
       catalogModel('window-eq-output', { limits: { max_context_window_tokens: 32_000, max_output_tokens: 32_000 } }),
       catalogModel('narrow-band-output', { limits: { max_context_window_tokens: 82_000, max_output_tokens: 100_000 } }),
+      // A window of one to three tokens makes the quotients zero, which is the
+      // value the limit filter exists to keep off Zed's wire. Clamped to leave
+      // a token on each side instead — and a window of one, which cannot carry
+      // both, is dropped from the projection rather than listed and broken.
+      catalogModel('window-of-three', { contextWindow: 3 }),
+      catalogModel('window-of-one', { limits: { max_context_window_tokens: 1, max_output_tokens: 1 } }),
     ]);
 
     for (const row of rows) {
@@ -179,6 +185,9 @@ describe('Zed available_models projection', () => {
     // A stated one is kept to half the window it shares.
     expect(byName('window-lt-output').max_output_tokens).toBe(32_000);
     expect(byName('window-eq-output').max_output_tokens).toBe(16_000);
+    // Never a stated zero, which Anthropic rejects on every request.
+    expect(byName('window-of-three').max_output_tokens).toBe(1);
+    expect(rows.some(r => r.name === 'window-of-one')).toBe(false);
 
     const row = (name: string) => rows.find(r => r.name === name)!;
     // With no prompt limit stated, the split is ours: the window is left whole
