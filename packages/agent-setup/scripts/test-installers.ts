@@ -3016,7 +3016,8 @@ for (const { label, document } of [
       t.ok(run.code !== 0, `${which} refuses it`);
       // Both halves must name the syntax. Refusing for the wrong stated reason
       // sends the operator looking for an error that is not there.
-      t.ok(run.combined.includes('JSONC syntax'), `${which} names the cause:\n${run.combined}`);
+      t.ok(run.combined.includes('JSONC syntax') || run.combined.includes('is not a provider list'),
+        `${which} names the cause:\n${run.combined}`);
       t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, `${which} leaves it byte-identical`);
     };
 
@@ -3891,6 +3892,12 @@ for (const { label, document } of [
   // reason, which is the whole point of naming the cause.
   { label: 'comments', document: '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]' },
   { label: 'a trailing comma', document: '[\n  {"vendor":"customendpoint","name":"Other gateway"},\n]' },
+  // Newtonsoft takes these and would write the document back in canonical
+  // form, where jq refuses them — so one half would stop and the other rewrite
+  // the operator's file. The scanner decides, not the decoder.
+  { label: 'single-quoted strings', document: "[{'vendor':'other','name':'Keep'}]" },
+  { label: 'an unquoted key', document: '[{vendor:"other","name":"Keep"}]' },
+  { label: 'a form feed between members', document: '[{"vendor":"other",\f"name":"Keep"}]' },
 ]) {
   test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3901,7 +3908,8 @@ for (const { label, document } of [
         ? await runVSCode(ws, { vscodeUserDir: userDir })
         : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
       t.ok(run.code !== 0, `${which} refuses it`);
-      t.ok(run.combined.includes('JSONC syntax'), `${which} names the cause:\n${run.combined}`);
+      t.ok(run.combined.includes('JSONC syntax') || run.combined.includes('is not a provider list'),
+        `${which} names the cause:\n${run.combined}`);
       t.equal(readFileSync(vscodeGroupsPath(userDir), 'utf8'), document, `${which} leaves it byte-identical`);
     };
 

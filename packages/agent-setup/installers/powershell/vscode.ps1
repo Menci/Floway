@@ -162,29 +162,7 @@ function Write-SetupVSCodeSettings {
     if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
-    # An empty list is recognized from the text rather than from the decode.
-    # ConvertFrom-Json yields nothing for `[]` and a literal $null for `[null]`
-    # on PowerShell 7, and the two are not reliably distinguishable on the 5.1
-    # baseline — where telling them apart matters, because `[]` is a list VS
-    # Code itself writes and `[null]` is not a provider list at all.
-    # The class is spelled out rather than `\s`, which in .NET also matches
-    # U+00A0 and the rest of Unicode's whitespace. This shortcut decides what
-    # counts as the empty list VS Code itself writes, and that is JSON's
-    # whitespace, not .NET's.
-    #
-    # It does not close the gap underneath: VS Code's own scanner treats
-    # non-breaking space, ogham, the en-quad block and the BOM as trivia, so
-    # `[\u00A0]` is an empty list to the editor and to ConvertFrom-Json, while
-    # jq refuses it and the Bash half stops. Both outcomes are safe — one
-    # rewrites a document the editor reads as empty, the other leaves it — and
-    # closing it would mean normalizing the operator's whitespace before jq
-    # sees it. Noted rather than fixed.
-    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/base/common/json.ts#L561-L565
-    if ($raw -match '^[ \t\r\n]*\[[ \t\r\n]*\][ \t\r\n]*$') {
-      $parsed = @()
-    } else {
-      try { $parsed = @(ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
-    }
+    try { $parsed = @(ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
     # Every element must be an object, matching the Bash gate: jq's merge
     # indexes `.vendor` on each one and aborts on a scalar, so without this the
     # same document would be rewritten here and refused there.
@@ -251,7 +229,7 @@ function Write-SetupVSCodeSettings {
     # level deep — what an unenumerated ConvertFrom-Json produces on Windows
     # PowerShell 5.1 — has a count of 1 and would pass an emptiness check while
     # VS Code reads an object where its schema requires a list.
-    if (@($ours[0].models).Count -ne $script:VSCodeModels.Count) { Stop-Setup 'the staged VS Code provider list carries no models.' }
+    if (@($ours[0].models).Count -ne $script:VSCodeModels.Count) { Stop-Setup 'the staged VS Code provider list does not carry the projected catalog.' }
 
     $runningOnWindows = Test-SetupIsWindows
     if ($script:VSCodeSettingsExisted -and $runningOnWindows) {

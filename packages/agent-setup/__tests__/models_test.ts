@@ -334,8 +334,13 @@ describe('VS Code customendpoint model projection', () => {
       catalogModel('output-over-fallback', { limits: { max_output_tokens: 200_000 } }),
       catalogModel('output-fills-window', { limits: { max_context_window_tokens: 128_000, max_output_tokens: 128_000 } }),
       catalogModel('output-past-half', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 180_000 } }),
+      // A stated prompt limit does not exempt the reservation when the catalog
+      // also states the window it comes out of.
+      catalogModel('all-three-output-fills', { limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 128_000 } }),
+      catalogModel('all-three-output-past-half', { limits: { max_context_window_tokens: 200_000, max_prompt_tokens: 150_000, max_output_tokens: 180_000 } }),
       // Ordinary rows must be left alone by the bound.
       catalogModel('roomy', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 } }),
+      catalogModel('all-three-roomy', { limits: { max_context_window_tokens: 216_000, max_prompt_tokens: 128_000, max_output_tokens: 64_000 } }),
     ], 'messages');
 
     for (const row of rows) {
@@ -349,6 +354,11 @@ describe('VS Code customendpoint model projection', () => {
     expect(by('output-fills-window').maxOutputTokens).toBe(64_000);
     expect(by('output-past-half').maxOutputTokens).toBe(100_000);
     expect(by('roomy').maxOutputTokens).toBe(64_000);
+    expect(by('all-three-output-fills').maxOutputTokens).toBe(64_000);
+    expect(by('all-three-output-past-half').maxOutputTokens).toBe(100_000);
+    // And a stated prompt limit still reaches VS Code intact where it fits.
+    expect(by('all-three-roomy').maxOutputTokens).toBe(64_000);
+    expect(resolve(by('all-three-roomy')).maxInputTokens).toBe(128_000);
   });
 
   // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it

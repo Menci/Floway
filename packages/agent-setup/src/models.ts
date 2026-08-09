@@ -261,8 +261,10 @@ const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 //
 // Two consequences drive what goes out. A window that is really a prompt limit
 // gets the reservation subtracted from it a second time, so a catalog stating a
-// prompt limit and no window — the shape every Codex model has — has to have
-// the reservation added back, exactly as the Zed projection does. And an output
+// prompt limit and no window — which an OpenAI-compatible upstream reached
+// through provider-custom, or an operator's announced-metadata override, may
+// well be — has to have the reservation added back, exactly as the Zed
+// projection does. And an output
 // fallback larger than the window leaves a prompt budget of zero, so the model
 // appears in the picker and every request is over budget before it starts;
 // Ollama states a context length and no output limit at all, and an 8k model
@@ -273,11 +275,15 @@ const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number
   const statedWindow = limits.max_context_window_tokens;
   const prompt = limits.max_prompt_tokens;
 
-  // A stated prompt limit puts the reservation on top of the window, so it
-  // cannot crowd the prompt out and neither bound below applies.
+  // A stated prompt limit puts the reservation on top of the window it builds,
+  // so nothing crowds the prompt out — unless the catalog also states a window,
+  // in which case the reservation comes out of that one and is bounded against
+  // it exactly as it is below.
   if (prompt !== undefined) {
-    const reserved = limits.max_output_tokens
-      ?? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(prompt / 4));
+    const stated = limits.max_output_tokens;
+    const reserved = stated === undefined
+      ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(prompt / 4))
+      : (statedWindow === undefined ? stated : Math.min(stated, Math.floor(statedWindow / 2)));
     return { contextWindow: statedWindow ?? prompt + reserved, maxOutputTokens: reserved };
   }
 
