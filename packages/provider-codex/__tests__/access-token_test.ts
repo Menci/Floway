@@ -105,6 +105,24 @@ describe('putCodexAccessToken', () => {
     expect(storedState().accounts[0].accessToken).toEqual(newer);
   });
 
+  test.each(['free', 'team'])('keeps the newer token while merging an older explicit %s plan', async olderPlan => {
+    const newer: CodexAccessTokenEntry = {
+      token: 'at_newer',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
+    const older: CodexAccessTokenEntry = {
+      token: 'at_older',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: olderPlan,
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, older);
+    expect(effective).toEqual({ ...newer, planType: olderPlan });
+    expect(storedState().accounts[0].accessToken).toEqual({ ...newer, planType: olderPlan });
+  });
+
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };

@@ -56,8 +56,10 @@ const persistAccessToken = async (
         // Keep the later observation (and return it to the caller) so an older
         // explicit plan/token pair cannot overwrite a newer one during replay.
         if (Number.isFinite(incomingObservedAt) && Number.isFinite(currentObservedAt) && currentObservedAt >= incomingObservedAt) {
-          effectiveEntry = currentEntry;
-          return current;
+          effectiveEntry = preserveCodexAccessTokenPlan(currentEntry, entry.planType);
+          return effectiveEntry === currentEntry
+            ? current
+            : replaceCodexAccount(state, idx, account => ({ ...account, accessToken: effectiveEntry }));
         }
       }
       effectiveEntry = entry === null
