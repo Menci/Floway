@@ -32,8 +32,6 @@ export const codexQuotaActiveLimitKey = (snapshot: CodexQuotaSnapshot): string =
   return key && !isUnsafeActiveLimitKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
 };
 
-const TTL_FLOOR_MS = 24 * 60 * 60 * 1000;
-
 interface ParseCodexQuotaOptions {
   now: Date;
   isRateLimited: boolean;
@@ -125,20 +123,13 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   return snapshot;
 };
 
-// Bound TTL by the furthest reset horizon to keep a hot account's state
-// alive through its entire window; floor at 24h so dashboard reads survive
-// quiet periods between bursts.
-export const computeCodexQuotaTtlMs = (snapshot: CodexQuotaSnapshot, now: Date): number => {
-  const horizons = [snapshot.primary_reset_after_at, snapshot.secondary_reset_after_at, snapshot.ratelimited_until]
-    .map(s => s ? new Date(s).getTime() - now.getTime() : 0)
-    .filter(ms => ms > 0);
-  return Math.max(TTL_FLOOR_MS, ...horizons);
-};
-
-// Returns all fresh quota snapshots keyed by active limit. Stale buckets read as
-// absent — the next upstream response for that active limit will overwrite it.
-// state_json is unbounded, so freshness is gated inline by
-// computeCodexQuotaTtlMs.
+// Every quota snapshot this account has observed, keyed by active limit.
+//
+// No TTL, which is the rule the other three providers state at their own slots:
+// a reading rendered with the instant it was taken tells an operator more than
+// an empty card does, and any traffic on the upstream replaces it. Only the
+// dashboard reads this -- the data plane routes without consulting it -- so
+// withholding a reading buys nothing and costs the page the only answer it has.
 export const getCodexQuota = async (
   upstreamId: string,
   accountId: string,
@@ -147,14 +138,9 @@ export const getCodexQuota = async (
   if (!fresh) return null;
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
-  if (!account?.quotaSnapshot) return null;
-  const now = new Date();
-  const freshSnapshots: CodexQuotaSnapshotMap = {};
-  for (const [key, entry] of Object.entries(account.quotaSnapshot)) {
-    const ttlMs = computeCodexQuotaTtlMs(entry.data, now);
-    if (now.getTime() - entry.fetchedAt <= ttlMs) freshSnapshots[key] = entry.data;
-  }
-  return Object.keys(freshSnapshots).length ? freshSnapshots : null;
+  const snapshots = account?.quotaSnapshot;
+  if (!snapshots || Object.keys(snapshots).length === 0) return null;
+  return Object.fromEntries(Object.entries(snapshots).map(([key, entry]) => [key, entry.data]));
 };
 
 export const putCodexQuota = async (

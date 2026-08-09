@@ -4,7 +4,6 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import {
   CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT,
   codexQuotaActiveLimitKey,
-  computeCodexQuotaTtlMs,
   getCodexQuota,
   parseCodexQuotaHeaders,
   putCodexQuota,
@@ -188,26 +187,27 @@ describe('getCodexQuota', () => {
     expect(await getCodexQuota(upstreamId, accountId)).toEqual({ premium: snap });
   });
 
-  test('returns null when every bucket is past its TTL window', async () => {
-    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z' };
-    const fetchedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt, data: snap } } }] });
-    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
-  });
-
-  test('filters stale buckets independently', async () => {
-    const freshSnap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'fresh' };
-    const staleSnap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'stale' };
+  // An old reading rendered with the instant it was taken tells an operator
+  // more than an empty card, so age withholds nothing -- the dashboard is the
+  // only reader, and traffic on the upstream replaces what it shows.
+  test('returns every bucket however long ago it was observed', async () => {
+    const recent: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'recent' };
+    const ancient: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'ancient' };
     current = makeRecord({
       accounts: [{
         ...baseAccount,
         quotaSnapshot: {
-          fresh: { fetchedAt: Date.now(), data: freshSnap },
-          stale: { fetchedAt: Date.now() - 2 * 24 * 60 * 60 * 1000, data: staleSnap },
+          recent: { fetchedAt: Date.now(), data: recent },
+          ancient: { fetchedAt: Date.now() - 90 * 24 * 60 * 60 * 1000, data: ancient },
         },
       }],
     });
-    expect(await getCodexQuota(upstreamId, accountId)).toEqual({ fresh: freshSnap });
+    expect(await getCodexQuota(upstreamId, accountId)).toEqual({ recent, ancient });
+  });
+
+  test('returns null when the account has an empty snapshot map', async () => {
+    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: {} }] });
+    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
   });
 
   test('returns null when the requested account is not in the pool', async () => {
@@ -260,21 +260,5 @@ describe('putCodexQuota', () => {
   test('throws when the requested account is not in the pool', async () => {
     await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
     expect(repo.writes).toEqual([]);
-  });
-});
-
-describe('computeCodexQuotaTtlMs', () => {
-  test('floors at 24h when no reset horizons are present', () => {
-    const now = new Date('2026-06-05T00:00:00.000Z');
-    expect(computeCodexQuotaTtlMs({ observed_at: now.toISOString() }, now)).toBe(24 * 60 * 60 * 1000);
-  });
-
-  test('extends past floor to the furthest reset horizon', () => {
-    const now = new Date('2026-06-05T00:00:00.000Z');
-    const snap: CodexQuotaSnapshot = {
-      observed_at: now.toISOString(),
-      primary_reset_after_at: '2026-06-08T00:00:00.000Z',
-    };
-    expect(computeCodexQuotaTtlMs(snap, now)).toBe(3 * 24 * 60 * 60 * 1000);
   });
 });
