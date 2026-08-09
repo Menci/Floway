@@ -3063,10 +3063,6 @@ test('zed', 'both halves create a new settings file owner-only', async t => {
   }
 });
 
-// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
-// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
-// rewritten as an object with the array silently discarded, while jq refuses
-// it. Both halves decide the root from the text.
 // The atomic replacement Windows takes when the settings file already exists.
 // It is the only branch that runs File.Replace, and a `$null` PowerShell binds
 // as String.Empty makes that call reject the whole install — so the platform
@@ -3125,14 +3121,21 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       writeFileSync(target, JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o640 });
       chmodSync(target, 0o640);
       // The absolute leg points through a `..` segment, which is how a dotfile
-      // manager may well write it: a resolved path that keeps the segment does
-      // not string-match the canonical one the backup prune enumerates, and the
-      // prune would then delete the backup it was told to keep.
+      // manager may well write it: a path that keeps the segment does not
+      // string-match the canonical one the backup prune enumerates, and the
+      // prune would then delete the backup it was told to keep. Two places
+      // canonicalize — the resolver and the prune's keep-path — so this leg
+      // observes the pair rather than either one.
       // Joined by hand, not with `join`, which would normalize the segment away.
       const linkTarget = link === 'absolute'
         ? `${ws.home}/dotfiles/../dotfiles-${which}-zed-settings.json`
         : relative(configDir, target);
       symlinkSync(linkTarget, zedSettingsPath(configDir));
+      // A stale backup beside the real document, so the prune has something to
+      // get wrong: with a keep-path that is not canonical it matches nothing
+      // there and takes this run's own backup along with the stale one.
+      const stale = `${target}.floway-backup.19700101000000.1`;
+      writeFileSync(stale, '{}');
 
       const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
       const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
@@ -3146,8 +3149,9 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       t.equal(
         readdirSync(ws.home).filter(name => name.includes('floway-')).map(name => name.replace(/\d+\.\d+$/, '<stamp>')).join(),
         `dotfiles-${which}-zed-settings.json.floway-backup.<stamp>`,
-        `${which}/${dialect}/${link} leaves one backup beside the target and no stage`,
+        `${which}/${dialect}/${link} prunes the stale backup and keeps this run's, and leaves no stage`,
       );
+      t.ok(!existsSync(stale), `${which}/${dialect}/${link} removed the stale backup`);
       t.equal(readdirSync(configDir).join(), 'global_settings.json', `${which}/${dialect}/${link} leaves nothing beside the link`);
     }
   }
@@ -3208,6 +3212,10 @@ test('zed', 'a refusal after the backup restores the file and its mode', async t
   }
 });
 
+// ConvertFrom-Json unwraps a top-level one-element array into a bare object, so
+// a decoded-value check cannot tell `[{...}]` from `{...}` — it would be
+// rewritten as an object with the array silently discarded, while jq refuses
+// it. Both halves decide the root from the text.
 test('zed', 'both halves refuse an array root', async t => {
   const arrayRoot = '[{"telemetry":{"metrics":false}}]';
   const runHalf = async (which: 'bash' | 'powershell') => {
