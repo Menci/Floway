@@ -122,7 +122,9 @@ vscode_rollback_settings() {
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L185-L212
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L257-L298
 vscode_write_settings() {
-  VSCODE_SETTINGS_PATH="$1/chatLanguageModels.json"
+  if ! VSCODE_SETTINGS_PATH=$(_resolve_managed_path "$1/chatLanguageModels.json"); then
+    return 1
+  fi
   VSCODE_SETTINGS_BACKUP=""
   VSCODE_SETTINGS_EXISTED=0
 
@@ -160,6 +162,17 @@ vscode_write_settings() {
   fi
 
   _vw_stage="$VSCODE_SETTINGS_PATH.floway-stage.$$"
+  # The document carries the API key, so the stage is owner-only before any
+  # secret JSON reaches it, matching the PowerShell half. The umask this script
+  # sets would produce the same mode, but a file holding a key should not depend
+  # on a setting made at a distance. The redirect below overwrites this file
+  # rather than recreating it, so the mode carries through to the rename.
+  if ! : > "$_vw_stage" || ! chmod 600 "$_vw_stage"; then
+    out_error "could not create $_vw_stage"
+    rm -f "$_vw_stage"
+    vscode_rollback_settings
+    return 1
+  fi
   if ! printf '%s' "$_vw_base" | SETUP_API_KEY="$SETUP_API_KEY" "$JQ" \
       --arg providerName "$SETUP_VSCODE_PROVIDER_NAME" \
       --arg apiType "$SETUP_VSCODE_API_TYPE" \
@@ -178,13 +191,6 @@ vscode_write_settings() {
       and (any(.[]; .vendor == "customendpoint" and .name == $providerName and (.models | length) > 0))
     ' "$_vw_stage" >/dev/null 2>&1; then
     out_error 'the staged VS Code provider list failed validation.'
-    rm -f "$_vw_stage"
-    vscode_rollback_settings
-    return 1
-  fi
-
-  # The document carries the API key, so it is owner-only before it is named.
-  if ! chmod 600 "$_vw_stage"; then
     rm -f "$_vw_stage"
     vscode_rollback_settings
     return 1

@@ -109,7 +109,7 @@ function Restore-SetupVSCodeSettings {
 # other group — including other `customendpoint` gateways — untouched.
 function Write-SetupVSCodeSettings {
   param([string]$ProfileDir)
-  $script:VSCodeSettingsPath = Join-Path $ProfileDir 'chatLanguageModels.json'
+  $script:VSCodeSettingsPath = Resolve-SetupManagedPath (Join-Path $ProfileDir 'chatLanguageModels.json')
   $script:VSCodeSettingsBackup = $null
   $script:VSCodeSettingsExisted = $false
 
@@ -205,8 +205,10 @@ function Write-SetupVSCodeSettings {
       # String.Empty, and File.Replace rejects an empty backup path outright.
       [System.IO.File]::Replace($stage, $script:VSCodeSettingsPath, [System.Management.Automation.Language.NullString]::Value)
     } else {
+      # No Protect afterwards: the rename carries the stage's own mode, which
+      # was restricted before the key was written into it. Re-restricting here
+      # would only hide a stage that had not been.
       Move-Item -LiteralPath $stage -Destination $script:VSCodeSettingsPath -Force
-      Protect-SetupFile $script:VSCodeSettingsPath
     }
     Remove-SetupOlderBackups -Path $script:VSCodeSettingsPath -Keep $script:VSCodeSettingsBackup
   } catch {

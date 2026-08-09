@@ -3231,6 +3231,38 @@ test('vscode', 'the written document is owner-only because it carries the key', 
   t.equal(statSync(vscodeGroupsPath(userDir)).mode & 0o777, 0o600, 'mode is 0600');
 });
 
+// chezmoi and stow both place a symlink where VS Code expects its provider
+// list. Renaming a staged file onto that path replaces the link itself, so the
+// operator's dotfile stops being what VS Code reads. Unlike Zed's document this
+// one carries the key, so the resolved file is restricted rather than given the
+// mode it had.
+test('vscode', 'writes through a symlinked provider list rather than replacing it', async t => {
+  if (process.platform === 'win32') skip('POSIX modes and symlinks only');
+  // stow writes a relative link, chezmoi an absolute one; both have to survive.
+  for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-symlink-${which}`);
+    const target = join(ws.home, `dotfiles-${which}-chatLanguageModels.json`);
+    writeFileSync(target, '[]', { mode: 0o644 });
+    chmodSync(target, 0o644);
+    symlinkSync(link === 'absolute' ? target : relative(userDir, target), vscodeGroupsPath(userDir));
+
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(lstatSync(vscodeGroupsPath(userDir)).isSymbolicLink(), `${which}/${link} leaves the link in place`);
+    t.equal(ourGroup(JSON.parse(readFileSync(target, 'utf8'))).vendor, 'customendpoint', `${which}/${link} writes the group into the linked-to file`);
+    t.equal(statSync(target).mode & 0o777, 0o600, `${which}/${link} restricts the file that now holds the key`);
+    t.equal(
+      readdirSync(ws.home).filter(name => name.includes('floway-')).map(name => name.replace(/\d+\.\d+$/, '<stamp>')).join(),
+      `dotfiles-${which}-chatLanguageModels.json.floway-backup.<stamp>`,
+      `${which}/${link} leaves one backup beside the target and no stage`,
+    );
+  }
+});
+
 test('vscode', 'a renamed provider writes under the chosen name', async t => {
   const ws = makeWorkspace();
   const userDir = makeVSCodeUserDir(ws);
