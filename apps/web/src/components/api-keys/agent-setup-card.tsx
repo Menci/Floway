@@ -202,12 +202,12 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // an empty group yields no provider and no error at all.
   // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1236-L1252
   //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1264-L1273
-  const noChatModels = <div className="border-t border-t-solid border-fui-divider pt-4">
-    <OutcomeMessageBar intent="warning">{t('dashboard.apiKeys.agentSetup.noChatModels')}</OutcomeMessageBar>
+  const noChatModelsFor = (editor: 'zed' | 'vscode') => <div className="border-t border-t-solid border-fui-divider pt-4">
+    <OutcomeMessageBar intent="warning">{t(editor === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}</OutcomeMessageBar>
   </div>;
   if (agent === 'vscode') {
     const vscodeModels = projectVSCodeModels(models, configuration.vscode.apiType);
-    if (vscodeModels.length === 0) return noChatModels;
+    if (vscodeModels.length === 0) return noChatModelsFor('vscode');
     const snippet = buildAgentVSCodeSnippet(origin, apiKey, configuration.vscode, vscodeModels);
     return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
       <Text size={200} className="text-fui-fg2">
@@ -219,7 +219,7 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   }
   if (agent === 'zed') {
     const zedModels = projectZedModels(models);
-    if (zedModels.length === 0) return noChatModels;
+    if (zedModels.length === 0) return noChatModelsFor('zed');
     const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);
     const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
     const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';
@@ -332,7 +332,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 
   if (agent === 'vscode') return <div className="grid gap-3">
     <div className={FIELD_GRID_CLASS}>
-      <ProviderNameField fieldId={`${configuration.apiKeyId}/vscode`} value={configuration.vscode.providerName} onChange={providerName => patchVSCode({ providerName })} />
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/vscode`} hintKey="vscodeProviderNameHint" value={configuration.vscode.providerName} onChange={providerName => patchVSCode({ providerName })} />
       <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.apiType'), t('dashboard.apiKeys.agentSetup.apiTypeHint')) }}>
         <Dropdown
           selectedOptions={[configuration.vscode.apiType]}
@@ -351,7 +351,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 
   if (agent === 'zed') return <div className="grid gap-3">
     <div className={FIELD_GRID_CLASS}>
-      <ProviderNameField fieldId={`${configuration.apiKeyId}/zed`} value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/zed`} hintKey="zedProviderNameHint" value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
     </div>
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
   </div>;
@@ -371,8 +371,13 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
 // control-character names; an invalid value is held locally and never patched
 // into the draft, because a 400 is not retryable and would strand the lease
 // with the copy button disabled and an untranslated Zod issue on screen.
-function ProviderNameField({ fieldId, onChange, value }: {
+function ProviderNameField({ fieldId, hintKey, onChange, value }: {
   fieldId: string;
+  // The hint names where the operator will see this name, which differs by
+  // editor — Zed's model picker against a group in VS Code's provider list.
+  // Not asserted anywhere: it renders inside an InfoButton popover, which does
+  // not open under the test renderer.
+  hintKey: 'zedProviderNameHint' | 'vscodeProviderNameHint';
   onChange: (value: string) => void;
   value: string;
 }) {
@@ -386,7 +391,7 @@ function ProviderNameField({ fieldId, onChange, value }: {
   const shown = draft?.against === fieldId ? draft.value : value;
   const invalid = !acceptableProviderName(shown);
   return <Field
-    label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t('dashboard.apiKeys.agentSetup.providerNameHint')) }}
+    label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t(hintKey === 'zedProviderNameHint' ? 'dashboard.apiKeys.agentSetup.zedProviderNameHint' : 'dashboard.apiKeys.agentSetup.vscodeProviderNameHint')) }}
     validationMessage={invalid ? t('dashboard.apiKeys.agentSetup.providerNameInvalid') : undefined}
     validationState={invalid ? 'error' : undefined}
   >

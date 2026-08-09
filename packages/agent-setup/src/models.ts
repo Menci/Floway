@@ -279,8 +279,10 @@ const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 // fallback larger than the window leaves a prompt budget of zero, so the model
 // appears in the picker and every request is over budget before it starts;
 // Ollama states a context length and no output limit at all, and an 8k model
-// hits precisely that. A stated 0 survives verbatim either way; only the
-// fallback is bounded, to a quarter of whatever bound the catalog did state.
+// hits precisely that. Every limit goes through `usableLimit` first, so a
+// stated 0 is no bound at all rather than a bound of zero; a stated reservation
+// is then bounded to half the window it comes out of and an unstated one to a
+// quarter, and both to at least one token.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
 const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number; maxOutputTokens: number } => {
   // Read through the same filter the Zed projection uses: a zero, negative or
@@ -297,11 +299,15 @@ const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number
   // it exactly as it is below.
   if (prompt !== undefined) {
     const stated = usableLimit(limits.max_output_tokens);
-    const reserved = stated === undefined
-      // Bounded against the window it comes out of when the catalog states one,
-      // and against the prompt limit it sits on top of when it does not.
+    // Bounded against the window it comes out of when the catalog states one,
+    // and against the prompt limit it sits on top of when it does not — and at
+    // least one token either way, because the quotients are 0 for a bound of
+    // one to three and VS Code sends this as the wire `max_tokens` on the
+    // Messages path, which the upstream rejects at zero. The Zed projection
+    // floors the same quotients for the same reason.
+    const reserved = Math.max(1, stated === undefined
       ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor((statedWindow ?? prompt) / 4))
-      : (statedWindow === undefined ? stated : Math.min(stated, Math.floor(statedWindow / 2)));
+      : (statedWindow === undefined ? stated : Math.min(stated, Math.floor(statedWindow / 2))));
     return { contextWindow: statedWindow ?? prompt + reserved, maxOutputTokens: reserved };
   }
 
@@ -318,9 +324,9 @@ const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number
   // budget before it starts.
   const window = statedWindow ?? VSCODE_FALLBACK_CONTEXT_TOKENS;
   const statedOutput = usableLimit(limits.max_output_tokens);
-  const maxOutputTokens = statedOutput === undefined
+  const maxOutputTokens = Math.max(1, statedOutput === undefined
     ? Math.min(VSCODE_FALLBACK_OUTPUT_TOKENS, Math.floor(window / 4))
-    : Math.min(statedOutput, Math.floor(window / 2));
+    : Math.min(statedOutput, Math.floor(window / 2)));
   return { contextWindow: window, maxOutputTokens };
 };
 
@@ -328,11 +334,15 @@ export const projectVSCodeModels = (
   models: readonly PublicModel[],
   apiType: VSCodeApiType,
 ): VSCodeModel[] =>
-  chatModels(models).map(model => {
+  chatModels(models).flatMap(model => {
     const reasoning = model.chat?.reasoning;
     const supportedEfforts = reasoning?.effort?.supported;
     const plan = vscodeTokenPlan(model.limits);
-    return {
+    // VS Code gives the prompt what the window leaves after the reservation, so
+    // a window that cannot carry both is a model it would list and refuse on
+    // every request. Dropped rather than listed, as the Zed projection does.
+    if (plan.contextWindow - plan.maxOutputTokens <= 0) return [];
+    return [{
       id: model.id,
       name: model.display_name,
       // A chat model that cannot call tools is not one anyone routes here, and
@@ -359,7 +369,7 @@ export const projectVSCodeModels = (
       ...(supportedEfforts === undefined
         ? {}
         : { supportsReasoningEffort: [...supportedEfforts], reasoningEffortFormat: apiType }),
-    };
+    }];
   });
 
 // A group entry as it lands in `chatLanguageModels.json`: the projection plus

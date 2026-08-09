@@ -204,12 +204,14 @@ describe.each([
 // registers a group only `if (models.length)` — so an empty snippet would leave
 // the operator with no provider and no error at all. The Host renders with an
 // empty catalog, which is exactly that case.
-describe.each(['Zed', 'VS Code'])('%s snippet with no chat models', tab => {
+// The warning names the editor whose tab it is: a VS Code operator told to fix
+// Zed has no way to know the sentence is about the tab they are not on.
+describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s snippet with no chat models', (tab, editor) => {
   it('offers the warning instead of a document that configures nothing', () => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: tab }).click(); });
     act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
-    expect(screen.getByText('No chat model this gateway serves can be configured for Zed yet. Add an upstream that serves one.')).toBeTruthy();
+    expect(screen.getByText(`No chat model this gateway serves can be configured for ${editor} yet. Add an upstream that serves one.`)).toBeTruthy();
     expect(screen.queryByText(/customendpoint|anthropic_compatible/)).toBeNull();
   });
 });

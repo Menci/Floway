@@ -355,6 +355,11 @@ describe('VS Code customendpoint model projection', () => {
       // to come out of the window, not out of a prompt limit that exceeds it.
       catalogModel('window-under-prompt', { limits: { max_context_window_tokens: 4096, max_prompt_tokens: 100_000 } }),
       catalogModel('tiny-window-with-prompt', { limits: { max_context_window_tokens: 2048, max_prompt_tokens: 8192 } }),
+      // A bound of one to three tokens makes every quotient zero, which is what
+      // the wire `max_tokens` would then be on the Messages path.
+      catalogModel('window-of-three', { limits: { max_context_window_tokens: 3 } }),
+      catalogModel('window-of-one', { limits: { max_context_window_tokens: 1 } }),
+      catalogModel('prompt-of-three', { limits: { max_prompt_tokens: 3 } }),
     ], 'messages');
 
     for (const row of rows) {
@@ -375,6 +380,13 @@ describe('VS Code customendpoint model projection', () => {
     expect(resolve(by('all-three-roomy')).maxInputTokens).toBe(128_000);
     expect(by('window-under-prompt').maxOutputTokens).toBe(1024);
     expect(by('tiny-window-with-prompt').maxOutputTokens).toBe(512);
+    // Never zero, which the upstream rejects on every request.
+    for (const name of ['window-of-three', 'prompt-of-three']) {
+      expect(by(name).maxOutputTokens, `${name} reserves nothing`).toBeGreaterThan(0);
+    }
+    // A window of one cannot carry both, so the row is absent rather than
+    // listed and refused on use — the same answer the Zed projection gives.
+    expect(rows.some(row => row.id === 'window-of-one')).toBe(false);
   });
 
   // The `[1m]` suffix is Claude Code's discovery convention: the CLI strips it
