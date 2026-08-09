@@ -110,6 +110,12 @@ const idToken = (planType = 'plus'): string => [
   Buffer.from('signature').toString('base64url'),
 ].join('.');
 
+const idTokenWithoutPlan = (): string => [
+  Buffer.from('{}').toString('base64url'),
+  Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': {} })).toString('base64url'),
+  Buffer.from('signature').toString('base64url'),
+].join('.');
+
 describe('callCodexResponses — gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
     const result = await callCodexResponses({
@@ -835,6 +841,28 @@ describe('callCodexImagesGenerations', () => {
     });
     expect(result.response.status).toBe(403);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(1);
+  });
+
+  test('keeps the latest known plan when a retry refresh omits the plan claim', async () => {
+    seedFreshAccessToken({ ...farFutureAccessToken, planType: 'plus' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(errorJson(200, {
+        access_token: 'at2', refresh_token: 'rt_v2', id_token: idTokenWithoutPlan(), expires_in: 600,
+      }))
+      .mockResolvedValueOnce(errorJson(200, { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] }));
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: (currentRecord.state as CodexUpstreamState).accounts[0],
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'free',
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(200);
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(2);
   });
 });
 

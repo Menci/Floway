@@ -97,18 +97,20 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
 export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  if (!codexPlanSupportsImages(ready.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
+  const effectivePlanType = ready.accessToken.planType ?? opts.fallbackPlanType;
+  if (!codexPlanSupportsImages(effectivePlanType)) return imageUnavailableResult(opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, false);
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlanType, false);
 };
 
 export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  if (!codexPlanSupportsImages(ready.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
+  const effectivePlanType = ready.accessToken.planType ?? opts.fallbackPlanType;
+  if (!codexPlanSupportsImages(effectivePlanType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, false);
+  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlanType, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
@@ -569,14 +571,16 @@ const performImageCall = async (
   path: string,
   body: Record<string, unknown>,
   turnId: string,
+  effectivePlanType: string | undefined,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    if (!codexPlanSupportsImages(fresh.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
-    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, true);
+    const refreshedPlanType = fresh.accessToken.planType ?? effectivePlanType;
+    if (!codexPlanSupportsImages(refreshedPlanType)) return imageUnavailableResult(opts.model.id);
+    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, refreshedPlanType, true);
   }
   return { modelKey: opts.model.id, response };
 };
