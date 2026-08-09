@@ -50,12 +50,27 @@ function Test-SetupJsonRoot {
 #
 # Strings are walked rather than stripped by regex, because a value like a model
 # id or a URL contains `//` legitimately. The JSONC arm mirrors
-# _json_has_jsonc_syntax; the strict arm is RFC 8259, which jq implements with
-# two leniencies of its own — it takes `NaN`, `Infinity` and a leading `+`, all
-# refused here. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
+# _json_has_jsonc_syntax; the strict arm is RFC 8259 minus the leniencies jq
+# shares — a leading `+` stays in the number set because jq rewrites it rather
+# than refusing it, so refusing here would make this half stricter for a file
+# the other half repairs. `NaN` and `Infinity`, which jq also takes, are
+# refused: those it passes through unchanged. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
 # rejects on both versions, so the Bash half configures it and this one stops.
 # Both are documents no editor writes; the parity this arm buys is over the
 # constructs an operator can actually type.
+# Does a `:` follow the value that ends at $End, ignoring JSON whitespace? Then
+# that value was used as a key, which JSON does not allow and both PowerShell
+# decoders do.
+function Test-SetupJsonKeyFollows {
+  param([string]$Text, [int]$End)
+  for ($k = $End + 1; $k -lt $Text.Length; $k++) {
+    $c = $Text[$k]
+    if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`r" -or $c -eq "`n") { continue }
+    return $c -eq ':'
+  }
+  return $false
+}
+
 function Get-SetupJsonVerdict {
   param([string]$Text)
   $inString = $false
@@ -97,6 +112,11 @@ function Get-SetupJsonVerdict {
       if ($i + $literal.Length -le $Text.Length -and
           [string]::Equals($Text.Substring($i, $literal.Length), $literal, [System.StringComparison]::Ordinal)) {
         $i += $literal.Length - 1
+        # A literal is a value, so a `:` cannot follow it — that is an unquoted
+        # key spelled `true`, `false` or `null`, which both decoders take and jq
+        # refuses. A number is a value the same way, which is why the scan looks
+        # past both.
+        if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
         continue
       }
       $strict = $false
@@ -107,7 +127,17 @@ function Get-SetupJsonVerdict {
     # single quote opening a string, any other letter — is a document jq
     # refuses, and refusing it here is what keeps the two halves from
     # disagreeing about one file.
+    # `+` is in the set although JSON has no leading plus: jq takes one as an
+    # extension and rewrites it as a plain number, so the Bash half configures
+    # such a file and repairs it. Refusing here would make this half the stricter
+    # one for a document the other half fixes — the decoders already disagree
+    # (pwsh 7 refuses, 5.1 accepts and canonicalizes) and that is theirs to own.
     if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) { $strict = $false }
+    elseif ('0123456789+-'.IndexOf($ch) -ge 0) {
+      # Walk the number to its end and ask the same question of what follows.
+      while ($i + 1 -lt $Text.Length -and '0123456789+-.eE'.IndexOf($Text[$i + 1]) -ge 0) { $i++ }
+      if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
+    }
   }
   if (-not $strict) { return 'invalid' }
   return 'ok'
@@ -149,19 +179,23 @@ function Set-SetupOptionalProp {
 function ConvertFrom-SetupJsonArray {
   param([string]$Text)
   # `-NoEnumerate` on 6+, where it exists: without it PowerShell 7 flattens a
-  # one-element nested array during the decode, so `[[{…}]]` arrives as
-  # `[{…}]` and an element-type check passes where 5.1 and jq both refuse the
-  # document. With it the two versions return the same structure for every
-  # shape — measured on 5.1.26100.8875 and pwsh 7.6 across a nested array, an
-  # empty-array element, a two-object array, a one-object array, `[null]`,
-  # `[]`, `[[null]]` and `[1,2]`.
+  # one-element nested array during the decode, so `[[{…}]]` arrives as `[{…}]`
+  # and an element-type check passes where 5.1 and jq both refuse the document.
   $parsed = if ($PSVersionTable.PSVersion.Major -ge 6) {
     ConvertFrom-Json -InputObject $Text -NoEnumerate
   } else {
     ConvertFrom-Json -InputObject $Text
   }
-  if ($parsed -is [System.Array]) { return ,$parsed }
-  # Comma-wrapped so the array survives the return intact — callers assign it
-  # directly, because `@()` around this would put a second level back on.
-  return ,@($parsed)
+  if ($parsed -isnot [System.Array]) { $parsed = @($parsed) }
+  # Comma-wrapped so the array survives the return with its element structure
+  # intact. That wraps it in a PSObject, and 5.1's ConvertTo-Json writes a
+  # wrapped collection as `{"value":[…],"Count":n}` rather than as an array —
+  # so every caller casts to `[object[]]`, which sheds the wrapper without
+  # touching the elements. `@()` sheds it too, but on pwsh 7 it also flattens a
+  # nested element, which is the shape this reader exists to preserve.
+  #
+  # Measured on 5.1.26100.8875 and pwsh 7.7, cast and serialized: a two-object
+  # array, a one-object array, `[]`, `[null]`, `[[{…}]]` and `[[],{…}]` all
+  # produce the same JSON on both.
+  return ,$parsed
 }

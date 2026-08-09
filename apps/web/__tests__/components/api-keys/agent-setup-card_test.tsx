@@ -209,7 +209,7 @@ describe.each(['Zed', 'VS Code'])('%s snippet with no chat models', tab => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: tab }).click(); });
     act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
-    expect(screen.getByText('This gateway advertises no chat models, so there is nothing to configure yet. Add an upstream that serves one.')).toBeTruthy();
+    expect(screen.getByText('No chat model this gateway serves can be configured for Zed yet. Add an upstream that serves one.')).toBeTruthy();
     expect(screen.queryByText(/customendpoint|anthropic_compatible/)).toBeNull();
   });
 });

@@ -83,7 +83,7 @@ function Get-SetupVSCodeProfileDirs {
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/package.json#L2010-L2016
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L185-L212
 function Get-SetupVSCodeModels {
-  try { $models = ConvertFrom-SetupJsonArray $SetupVSCodeModels } catch { Stop-Setup 'the embedded VS Code model list is not readable.' }
+  try { $models = [object[]](ConvertFrom-SetupJsonArray $SetupVSCodeModels) } catch { Stop-Setup 'the embedded VS Code model list is not readable.' }
   if ($models.Count -eq 0) { Stop-Setup 'the gateway advertises no chat models; nothing to configure.' }
   $apiUrl = Get-SetupVSCodeApiUrl
   foreach ($model in $models) {
@@ -162,7 +162,7 @@ function Write-SetupVSCodeSettings {
     if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
-    try { $parsed = ConvertFrom-SetupJsonArray $raw } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
+    try { $parsed = [object[]](ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
     # Every element must be an object, matching the Bash gate: jq's merge
     # indexes `.vendor` on each one and aborts on a scalar, so without this the
     # same document would be rewritten here and refused there.
@@ -229,7 +229,7 @@ function Write-SetupVSCodeSettings {
     # asserts the same shape; the count here is exact rather than non-zero
     # because a list nested one level deep is a PowerShell failure mode jq has
     # no equivalent of.
-    $check = ConvertFrom-SetupJsonArray (Get-SetupFileText $stage)
+    $check = [object[]](ConvertFrom-SetupJsonArray (Get-SetupFileText $stage))
     $ours = @($check | Where-Object { Test-SetupVSCodeOwnGroup $_ })
     if ($ours.Count -ne 1) { Stop-Setup 'the staged VS Code provider list failed validation.' }
     # The exact count, not merely a non-empty list: a model array nested one

@@ -2743,15 +2743,21 @@ test('zed', 'an unreadable settings document is left untouched', async t => {
   t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), '{ this is not json', 'the original bytes survive');
 });
 
-test('zed', 'a catalog with no chat models is refused rather than written empty', async t => {
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  const run = await runZed(ws, { zedConfigDir: configDir, catalog: EDITOR_CATALOG.data.filter(model => model.kind !== 'chat') });
-  t.equal(run.code, 1, 'should fail');
-  t.ok(!existsSync(zedSettingsPath(configDir)), 'no settings file is written');
-  // The refusal precedes credential storage, so an unusable catalog leaves no
-  // orphan entry behind.
-  t.equal(readCredentialCalls(ws).length, 0, 'no credential is stored');
+test('zed', 'both halves refuse a catalog with nothing to configure rather than write it empty', async t => {
+  const empty = EDITOR_CATALOG.data.filter(model => model.kind !== 'chat');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir, catalog: empty };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.ok(run.code !== 0, `${which} should fail`);
+    t.ok(!existsSync(zedSettingsPath(configDir)), `${which} writes no settings file`);
+    // The refusal precedes credential storage, so an unusable catalog leaves no
+    // orphan entry behind.
+    t.equal(readCredentialCalls(ws).length, 0, `${which} stores no credential`);
+  }
 });
 
 test('zed', 'PowerShell writes the same provider document as Bash', async t => {
@@ -2939,6 +2945,11 @@ for (const { label, document } of [
   { label: 'a lenient construct beside a comment', document: "{'a':1} // and this" },
   // A raw tab inside a string: jq refuses it, both decoders take it.
   { label: 'a raw control character in a string', document: '{"telemetry":{"note":"a\tb"}}' },
+  // An unquoted key that is itself a literal or a number: consuming the token
+  // is not enough — what follows it decides whether it was a value or a key.
+  { label: 'a literal used as an unquoted key', document: '{true:1}' },
+  { label: 'a number used as an unquoted key', document: '{123:1}' },
+
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
