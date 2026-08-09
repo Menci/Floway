@@ -118,14 +118,19 @@ zed_write_settings() {
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped
-    # gate and fail later as a staging error naming the wrong cause — after a
-    # backup already existed. Slurping asks for exactly one document.
+    # gate and fail later as a staging error naming the wrong cause. Slurping
+    # asks for exactly one document.
     # The nested shape checks belong here too, not in the merge program: the
     # merge does not run until a backup exists, so a `language_models` of null
     # or 5 was refused with "failed to construct updated Zed global settings" —
     # naming our list rather than the operator's file — plus a raw jq error on
-    # stderr, and left the backup behind. The PowerShell half and the VS Code
-    # installer both check everything their merge can abort on before copying.
+    # stderr. The PowerShell half and the VS Code installer both check
+    # everything their merge can abort on before copying.
+    # The `language_models` conjunct would be redundant if judged by outcome
+    # alone: the one after it calls `has` on the same value, which raises on a
+    # non-object and fails the gate anyway. It stays because refusing by type
+    # is what this gate means, and leaning on a raised jq error would make the
+    # next edit to the conjunct below silently take this case with it.
     if ! "$JQ" -s -e '
         length == 1
         and (.[0] | type == "object")

@@ -80,12 +80,18 @@ function Write-SetupZedSettings {
     # reads as $null, and ConvertFrom-Json unwraps a top-level one-element array
     # into a bare object, so neither is distinguishable afterwards.
     if (-not (Test-SetupJsonRoot $raw '{')) { Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched." }
-    try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not valid JSON; leaving it untouched." }
+    # One message for every way the parse can fail, matching the Bash half: its
+    # jq gate cannot say which conjunct refused either, and to the operator a
+    # JSON stream and a truncated object are the same instruction — fix the file.
+    try { $document = $raw | ConvertFrom-Json } catch { Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched." }
+    # No root-type check here: the brace root is already established above and
+    # every brace-rooted document decodes to PSCustomObject. The Bash half needs
+    # its `type == "object"` conjunct because it has no text-level root check.
+    #
     # Every shape check completes before the backup exists, so a refusal on
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
-    if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-Setup 'existing Zed global settings root is not a JSON object.' }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'
