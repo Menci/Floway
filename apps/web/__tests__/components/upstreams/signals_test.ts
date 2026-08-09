@@ -54,22 +54,68 @@ describe('upstream readout by provider', () => {
     expect(readoutOf(record).signals[0].detail).toContain('premium interactions: 29% used');
   });
 
-  it('names the Copilot seat by the SKU the token exchange carried', () => {
-    const planFor = (sku: string | null) => readoutOf({
+  it('names the Copilot seat the way VS Code names it', () => {
+    const planFor = (plan: string | null, sku: string | null) => readoutOf({
       kind: 'copilot',
-      state: { copilotToken: { baseUrl: 'https://api.individual.githubcopilot.com', sku } },
+      state: { seat: { fetchedAt: Date.parse(OBSERVED), data: { observed_at: OBSERVED, plan, sku } } },
     }).plan;
 
-    expect(planFor('plus_monthly_subscriber_quota')).toBe('Copilot Pro+');
-    expect(planFor('copilot_enterprise_seat_multi_quota')).toBe('Copilot Enterprise');
-    expect(planFor('free_limited_copilot')).toBe('Copilot Free');
-    // An identifier no first-party source attests reads as no plan rather than
-    // as itself: these are internal names, none is a product name, and the
-    // namespace is open. `copilot_enterprise_seat_quota` is one of them -- it
-    // exists, but on `access_type_sku`, never on a token.
-    expect(planFor('max_monthly_subscriber_quota')).toBe('Copilot');
-    expect(planFor('copilot_enterprise_seat_quota')).toBe('Copilot');
-    expect(planFor(null)).toBe('Copilot');
+    expect(planFor('individual_pro', null)).toBe('Copilot Pro+');
+    expect(planFor('individual_max', null)).toBe('Copilot Max');
+    expect(planFor('business', null)).toBe('Copilot Business');
+    // A live enterprise seat: the plan names it, and its SKU is one no table needs.
+    expect(planFor('enterprise', 'copilot_enterprise_seat_quota')).toBe('Copilot Enterprise');
+    // The SKU is matched first, because a free seat carries no plan of its own.
+    expect(planFor(null, 'free_limited_copilot')).toBe('Copilot Free');
+    expect(planFor('individual', 'free_educational_quota')).toBe('Copilot Student');
+    // Both namespaces are open, so an unknown value names no plan.
+    expect(planFor('individual_ultra', null)).toBe('Copilot');
+    expect(planFor(null, null)).toBe('Copilot');
+  });
+
+  // A block and a spent window are different facts: the row states the block
+  // rather than inferring it from a percentage that can read low while it holds.
+  it('states a Codex block ahead of the windows it does not follow from', () => {
+    const row = rowOf({
+      kind: 'codex',
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
+      state: { accounts: [] },
+      codex_quota: {
+        premium: {
+          observed_at: OBSERVED,
+          primary_used_percent: 12, primary_window_minutes: 300,
+          ratelimited_until: '2126-07-28T14:00:00.000Z',
+        },
+      },
+    });
+    expect(row.startsWith('ChatGPT Pro | Blocked until ')).toBe(true);
+    expect(row.endsWith(' | 12% 5h')).toBe(true);
+  });
+
+  it('lets an elapsed Codex block go rather than holding it on the row', () => {
+    expect(rowOf({
+      kind: 'codex',
+      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
+      state: { accounts: [] },
+      codex_quota: { premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: '2020-01-01T00:00:00.000Z' } },
+    })).toBe('ChatGPT Pro | 12% 5h');
+  });
+
+  it('states a Claude Code refusal from the status Anthropic reports it under', () => {
+    const row = rowOf({
+      kind: 'claude-code',
+      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
+      state: {
+        accounts: [{
+          accountUuid: 'uuid-1',
+          quotaSnapshot: {
+            fetchedAt: Date.parse(OBSERVED),
+            data: { status: 'rejected', reset: '2026-07-28T15:00:00.000Z', fiveHour: { status: 'rejected', reset: null, utilization: 1 }, raw: {} },
+          },
+        }],
+      },
+    });
+    expect(row.startsWith('Claude Max 20x | Blocked until ')).toBe(true);
   });
 
   it('reports nothing for a Copilot seat no response has been observed on', () => {

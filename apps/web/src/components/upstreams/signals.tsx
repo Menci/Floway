@@ -19,7 +19,35 @@ import { dateTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { ProgressRing } from '../ui/progress-ring';
 
-const { Text, Tooltip } = fluentComponents;
+const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+
+const useStyles = makeStyles({
+  // The reading and the window it covers are two steps of the same line, and
+  // hovering lifts both together, so the colours are named on the signal and
+  // read by the parts. The label's resting alpha is the operator's, not a step
+  // of the WinUI text ramp -- its quietest is 0.36, and this line wanted less.
+  signal: {
+    '--floway-signal-value': 'var(--winui-text-fill-tertiary)',
+    '--floway-signal-label': 'rgba(0, 0, 0, 0.25)',
+    '@media (prefers-color-scheme: dark)': {
+      '--floway-signal-label': 'rgba(255, 255, 255, 0.25)',
+    },
+    ':hover': {
+      '--floway-signal-value': 'var(--winui-text-fill-primary)',
+      '--floway-signal-label': 'var(--winui-text-fill-secondary)',
+    },
+    // The signal is reachable by keyboard for its tooltip, so it answers focus
+    // the same way it answers the pointer.
+    ':focus-visible': {
+      '--floway-signal-value': 'var(--winui-text-fill-primary)',
+      '--floway-signal-label': 'var(--winui-text-fill-secondary)',
+    },
+  },
+  value: { color: 'var(--floway-signal-value)' },
+  label: { color: 'var(--floway-signal-label)' },
+  // A reading that says the upstream is refusing work outranks its own tone.
+  blocked: { color: 'var(--winui-system-fill-critical)' },
+});
 
 // One signal is a reading and what the reading is of: a percentage of a window,
 // or an amount that stands alone. The reading leads, because a row of them is
@@ -31,6 +59,12 @@ export interface UpstreamSignal {
   value: string;
   label: string | null;
   detail: string;
+  /**
+   * The upstream is refusing work right now. It is stated rather than inferred
+   * from a percentage: a block and a full window are different facts, and an
+   * account can be refused while every window this row shows reads low.
+   */
+  blocked?: boolean;
 }
 
 // What the upstream connects as: the subscription when it names one, and the
@@ -101,6 +135,21 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
     };
   });
 
+  // Stated ahead of the windows: it is the fact that decides whether this
+  // upstream can serve anything at all, and the windows beside it can read low
+  // while it holds -- a 429 names the limit family that tripped, which is not
+  // always one of the two this row shows.
+  if (entry?.rateLimitedUntil != null) {
+    signals.unshift({
+      key: 'blocked',
+      percent: null,
+      value: t('dashboard.upstreams.signals.blocked'),
+      label: t('dashboard.upstreams.signals.blockedUntil', { time: dateTime(entry.rateLimitedUntil, locale) }),
+      detail: t('dashboard.upstreams.signals.blockedDetail', { time: dateTime(entry.rateLimitedUntil, locale) }),
+      blocked: true,
+    });
+  }
+
   if (credits?.credits_has_credits === false) {
     signals.push({
       key: 'credits',
@@ -123,7 +172,25 @@ const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFu
 
 const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code' }>, t: TFunction, locale: string): UpstreamSignal[] => {
   const lookup = findCredential(record);
-  return quotaWindows(lookup.kind === 'present' ? lookup.credential : null).map(row => {
+  const credential = lookup.kind === 'present' ? lookup.credential : null;
+  const quota = credential?.quotaSnapshot?.data ?? null;
+  const signals: UpstreamSignal[] = [];
+  // `rejected` on the unified status is Anthropic saying it turned the request
+  // away, which it reports apart from the per-window utilization beside it.
+  if (quota?.status === 'rejected') {
+    signals.push({
+      key: 'blocked',
+      percent: null,
+      value: t('dashboard.upstreams.signals.blocked'),
+      label: quota.reset === null ? null : t('dashboard.upstreams.signals.blockedUntil', { time: dateTime(quota.reset, locale) }),
+      detail: quota.reset === null
+        ? t('dashboard.upstreams.signals.blockedUndated')
+        : t('dashboard.upstreams.signals.blockedDetail', { time: dateTime(quota.reset, locale) }),
+      blocked: true,
+    });
+  }
+
+  return signals.concat(quotaWindows(credential).map(row => {
     const length = windowLengthLabel(WINDOW_MINUTES[row.key]);
     // Anthropic reports the Sonnet allowance as a second window of the same
     // length, so the model it covers is what tells the two apart.
@@ -135,7 +202,7 @@ const claudeCodeSignals = (record: Extract<UpstreamRecord, { kind: 'claude-code'
       label,
       detail: meterDetail(t, label, row.percent, row.resetAt, row.fetchedAt, locale),
     };
-  });
+  }));
 };
 
 const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: TFunction, locale: string): UpstreamSignal[] => {
@@ -207,6 +274,7 @@ export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: st
 export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
   const locale = useLocale();
+  const styles = useStyles();
   const { plan, signals } = upstreamReadout(record, t, locale);
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
@@ -215,13 +283,10 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
     </Text>
     <div className="flex items-baseline gap-x-3 min-w-0">
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">
-        <span className="winui-focus-rect inline-flex items-baseline gap-1 min-w-0" tabIndex={0}>
+        <span className={mergeClasses('winui-focus-rect inline-flex items-baseline gap-1 min-w-0', styles.signal)} tabIndex={0}>
           {signal.percent !== null && <ProgressRing percent={signal.percent} tone={quotaRingTone(signal.percent)} />}
-          <Text size={200} className="text-fui-fg3" weight="medium" wrap={false}>{signal.value}</Text>
-          {/* The window a reading covers is quieter than the reading: the
-              operator asked for the quietest tint the WinUI text ramp has,
-              which it names for a disabled control rather than for emphasis. */}
-          {signal.label !== null && <Text size={200} className="text-[var(--winui-text-fill-disabled)]" truncate wrap={false}>{signal.label}</Text>}
+          <Text size={200} className={signal.blocked === true ? styles.blocked : styles.value} weight="medium" wrap={false}>{signal.value}</Text>
+          {signal.label !== null && <Text size={200} className={styles.label} truncate wrap={false}>{signal.label}</Text>}
         </span>
       </Tooltip>)}
     </div>
