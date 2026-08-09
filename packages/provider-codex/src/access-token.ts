@@ -33,8 +33,9 @@ const latestPlanObservation = (
   second: CodexPlanObservation | null,
   fallback: CodexPlanObservation | undefined,
 ): CodexPlanObservation | null => {
-  const observations = [first, second].filter((value): value is CodexPlanObservation => value !== null);
-  if (observations.length === 0) return fallback ?? null;
+  const observations = [first, second, fallback ?? null]
+    .filter((value): value is CodexPlanObservation => value !== null);
+  if (observations.length === 0) return null;
   return observations.reduce((latest, candidate) =>
     observationTime(candidate) > observationTime(latest) ? candidate : latest);
 };

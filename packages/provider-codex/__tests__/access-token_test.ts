@@ -154,6 +154,35 @@ describe('putCodexAccessToken', () => {
     expect(storedState().accounts[0].accessToken).toEqual(effective);
   });
 
+  test('includes a captured retry plan in LWW ordering after token invalidation', async () => {
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: {
+          token: 'at_stale',
+          expiresAt: farFutureMs,
+          refreshedAt: '2026-08-10T00:00:01.000Z',
+          planType: 'free',
+          planObservedAt: '2026-08-10T00:00:01.000Z',
+        },
+      }],
+    });
+    const incoming: CodexAccessTokenEntry = {
+      token: 'at_new',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:03.000Z',
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, incoming, {
+      planType: 'plus',
+      observedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(effective).toEqual({
+      ...incoming,
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+  });
+
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
