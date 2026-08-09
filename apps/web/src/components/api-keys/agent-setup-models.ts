@@ -1,4 +1,5 @@
 import type { ControlPlaneModel } from '../../api/types';
+import { addressableModelId } from '@floway-dev/agent-setup/models';
 
 export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
@@ -72,19 +73,9 @@ export const rankAgentSetupModels = (
   }).map(entry => entry.model);
 };
 
-const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
-
-// The docs name the `[1m]` suffix only for the pinned opus and sonnet
-// variables, but its whole wire effect is a `context-1m-2025-08-07` beta added
-// behind a test with no family condition, so every picker is offered the window
-// its model reports. https://code.claude.com/docs/en/model-config
-const claudeModelOverride = (model: ControlPlaneModel): string => {
-  const contextWindow = model.limits.max_context_window_tokens
-    ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
-  return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !model.id.endsWith('[1m]')
-    ? `${model.id}[1m]`
-    : model.id;
-};
+// The `[1m]` suffix is stated once, in the shared projection, because the
+// editors need the same reconstruction: a merged Copilot row reports the 1M
+// variant's window, and only the suffix carries the beta that reaches it.
 
 export const buildAgentModelOptions = (
   models: readonly ControlPlaneModel[],
@@ -94,7 +85,7 @@ export const buildAgentModelOptions = (
   const values = new Set<string>();
   for (const model of rankAgentSetupModels(models, ranking)) {
     const value = ranking.family === 'claude'
-      ? claudeModelOverride(model)
+      ? addressableModelId(model)
       : model.id;
     if (values.has(value)) continue;
     values.add(value);
@@ -111,4 +102,4 @@ export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'co
 // setup script, so a preview built from a second implementation could show a
 // document a setup run would never write. The dashboard renders exactly what
 // the script carries.
-export { addressVSCodeModels, projectVSCodeModels, projectZedModels, type VSCodeApiType, type VSCodeModel, type ZedModel } from '@floway-dev/agent-setup/models';
+export { addressVSCodeModels, addressableModelId, projectVSCodeModels, projectZedModels, type VSCodeApiType, type VSCodeModel, type ZedModel } from '@floway-dev/agent-setup/models';
