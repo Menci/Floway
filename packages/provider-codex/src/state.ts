@@ -6,10 +6,10 @@ import type { CodexQuotaSnapshot } from './quota.ts';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
-// Short-lived OAuth access token minted by exchanging the stored refresh_token
+// Short-lived OAuth access state minted by exchanging the stored refresh_token
 // against /oauth/token. The refresh_token itself stays on CodexAccountCredential
-// so a KV/cache wipe never forces operator re-import; only the minted token
-// (and its expiry) belong in state alongside it.
+// so a cache loss never forces operator re-import; this entry keeps the minted
+// token, its lifetime, and capability metadata observed at the same refresh.
 export interface CodexAccessTokenEntry {
   token: string;
   expiresAt: number;       // unix ms

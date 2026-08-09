@@ -13,6 +13,7 @@ import {
 import { sha256JsonUuid, uuidV7 } from './ids.ts';
 import { codexPlanSupportsImages } from './models.ts';
 import {
+  hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
 } from './quota.ts';
@@ -380,23 +381,15 @@ const dispatchCodexHttpCall = async (
 const classifyCodexHttpResponse = async (
   opts: CodexBackendCallBase,
   response: Response,
-  persistEmptyQuota = true,
+  quotaPolicy: 'always' | 'when-present' = 'always',
 ): Promise<Response> => {
   if (response.ok) {
-    const responseNow = new Date();
-    const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-    if (persistEmptyQuota || Object.keys(snapshot).length > 1) {
-      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
-    }
+    persistCodexQuotaObservation(opts, response, false, quotaPolicy);
     return response;
   }
 
   if (response.status === 429) {
-    const responseNow = new Date();
-    const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-    if (persistEmptyQuota || Object.keys(snapshot).length > 1) {
-      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
-    }
+    persistCodexQuotaObservation(opts, response, true, quotaPolicy);
     return response;
   }
 
@@ -411,6 +404,17 @@ const classifyCodexHttpResponse = async (
   }
 
   return response;
+};
+
+const persistCodexQuotaObservation = (
+  opts: CodexBackendCallBase,
+  response: Response,
+  isRateLimited: boolean,
+  policy: 'always' | 'when-present',
+): void => {
+  const snapshot = parseCodexQuotaHeaders(response.headers, { now: new Date(), isRateLimited });
+  if (policy === 'when-present' && !hasCodexQuotaReading(snapshot)) return;
+  registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
 };
 
 const dispatchCodexImageCall = async (
@@ -435,7 +439,7 @@ const dispatchCodexImageCall = async (
     body: jsonRequestBody(body),
     signal: opts.signal,
   }));
-  return await classifyCodexHttpResponse(opts, response, false);
+  return await classifyCodexHttpResponse(opts, response, 'when-present');
 };
 
 // Force-mint a fresh access token after a 401, persisting it best-effort.
@@ -447,12 +451,12 @@ const dispatchCodexImageCall = async (
 // immediate second 401 with `alreadyRetried` already flipped. Minting
 // unconditionally sidesteps that window, and persisting best-effort is enough
 // because the next request re-mints if its read still sees the dead token.
-const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
+const refreshAccessTokenForRetry = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
     const minted = await mintAccessToken(opts, opts.account.refresh_token);
     registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
-    return { ok: true, accessToken: minted.token };
+    return { ok: true, accessToken: minted };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -487,7 +491,7 @@ const performStreamingResponsesCall = async (
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performStreamingResponsesCall(opts, fresh.accessToken, true);
+    return await performStreamingResponsesCall(opts, fresh.accessToken.token, true);
   }
 
   return result;
@@ -516,7 +520,7 @@ const performUnaryCompactCall = async (
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performUnaryCompactCall(opts, fresh.accessToken, true);
+    return await performUnaryCompactCall(opts, fresh.accessToken.token, true);
   }
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
@@ -554,13 +558,13 @@ const performAlphaSearchCall = async (
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    return await performAlphaSearchCall(opts, fresh.accessToken, true);
+    return await performAlphaSearchCall(opts, fresh.accessToken.token, true);
   }
   return { modelKey: opts.model.id, response };
 };
 
 const performImageCall = async (
-  opts: CodexBackendCallBase,
+  opts: CodexBackendCallBase & { fallbackPlanType: string },
   accessToken: string,
   path: string,
   body: Record<string, unknown>,
@@ -571,7 +575,8 @@ const performImageCall = async (
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    return await performImageCall(opts, fresh.accessToken, path, body, turnId, true);
+    if (!codexPlanSupportsImages(fresh.accessToken.planType ?? opts.fallbackPlanType)) return imageUnavailableResult(opts.model.id);
+    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, true);
   }
   return { modelKey: opts.model.id, response };
 };

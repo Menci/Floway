@@ -815,6 +815,27 @@ describe('callCodexImagesGenerations', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/oauth/token');
   });
+
+  test('stops a 401 retry when the refreshed plan becomes Free', async () => {
+    seedFreshAccessToken({ ...farFutureAccessToken, planType: 'plus' });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(errorJson(200, {
+        access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken('free'), expires_in: 600,
+      }));
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: (currentRecord.state as CodexUpstreamState).accounts[0],
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'plus',
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(403);
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(1);
+  });
 });
 
 // `callCodexResponsesCompact` shares OAuth + quota + 401-retry plumbing with

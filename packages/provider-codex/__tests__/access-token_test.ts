@@ -219,4 +219,31 @@ describe('mintCodexAccessToken', () => {
     expect(entry.planType).toBe('team');
     expect(persistRotation).toHaveBeenCalledWith('rt_v2');
   });
+
+  test('accepts refreshed id_tokens without import-only identity or plan claims', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': {} })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const entry = await mintCodexAccessToken('rt_v1', directFetcher, async () => {});
+    expect(entry.planType).toBeUndefined();
+  });
+
+  test('persists a rotated refresh token before surfacing malformed plan metadata', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 42 } })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const persistRotation = vi.fn(async () => {});
+    await expect(mintCodexAccessToken('rt_v1', directFetcher, persistRotation)).rejects.toThrow(/chatgpt_plan_type/);
+    expect(persistRotation).toHaveBeenCalledWith('rt_v2');
+  });
 });

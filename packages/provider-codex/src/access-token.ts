@@ -1,4 +1,4 @@
-import { parseCodexIdTokenClaims } from './auth/jwt.ts';
+import { parseCodexIdTokenPlanType } from './auth/jwt.ts';
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry } from './state.ts';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
@@ -195,12 +195,12 @@ export const mintCodexAccessToken = async (
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
 ): Promise<CodexAccessTokenEntry> => {
   const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
-  const identity = parseCodexIdTokenClaims(tokens.id_token);
   await persistRefreshTokenRotation(tokens.refresh_token);
+  const planType = parseCodexIdTokenPlanType(tokens.id_token);
   return {
     token: tokens.access_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,
     refreshedAt: new Date().toISOString(),
-    planType: identity.planType,
+    ...(planType === undefined ? {} : { planType }),
   };
 };

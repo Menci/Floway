@@ -12,17 +12,7 @@ export interface CodexIdTokenIdentity {
 }
 
 export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity => {
-  const segments = idToken.split('.');
-  if (segments.length !== 3) throw new Error(`id_token must have 3 segments, got ${segments.length}`);
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(decodeBase64UrlToUtf8(segments[1]));
-  } catch (cause) {
-    throw new Error('id_token payload is not base64url-encoded JSON', { cause: cause as Error });
-  }
-
-  if (!isObject(payload)) throw new Error('id_token payload is not an object');
+  const payload = parseCodexIdTokenPayload(idToken);
 
   const auth = payload['https://api.openai.com/auth'];
   if (!isObject(auth)) throw new Error('id_token missing https://api.openai.com/auth claim');
@@ -41,6 +31,36 @@ export const parseCodexIdTokenClaims = (idToken: string): CodexIdTokenIdentity =
     chatgptUserId: pickString(auth, 'chatgpt_user_id'),
     planType: pickString(auth, 'chatgpt_plan_type'),
   };
+};
+
+// Refresh responses need only update the capability-relevant plan claim. The
+// account identity was validated at import, and OpenAI may omit unrelated
+// profile claims from a later id_token. Missing plan remains the intentional
+// fail-open `unknown` state; malformed present claims still surface.
+export const parseCodexIdTokenPlanType = (idToken: string): string | undefined => {
+  const payload = parseCodexIdTokenPayload(idToken);
+  const auth = payload['https://api.openai.com/auth'];
+  if (auth === undefined) return undefined;
+  if (!isObject(auth)) throw new Error('id_token https://api.openai.com/auth claim is not an object');
+  const planType = auth.chatgpt_plan_type;
+  if (planType === undefined) return undefined;
+  if (typeof planType !== 'string' || planType === '') throw new Error('id_token has malformed chatgpt_plan_type claim');
+  return planType;
+};
+
+const parseCodexIdTokenPayload = (idToken: string): Record<string, unknown> => {
+  const segments = idToken.split('.');
+  if (segments.length !== 3) throw new Error(`id_token must have 3 segments, got ${segments.length}`);
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(decodeBase64UrlToUtf8(segments[1]));
+  } catch (cause) {
+    throw new Error('id_token payload is not base64url-encoded JSON', { cause: cause as Error });
+  }
+
+  if (!isObject(payload)) throw new Error('id_token payload is not an object');
+  return payload;
 };
 
 const decodeBase64UrlToUtf8 = (value: string): string => {

@@ -5,6 +5,7 @@ import {
   CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT,
   codexQuotaActiveLimitKey,
   getCodexQuota,
+  hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
   type CodexQuotaSnapshot,
@@ -14,6 +15,11 @@ import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
+
+test('hasCodexQuotaReading ignores an observation timestamp without quota data', () => {
+  expect(hasCodexQuotaReading({ observed_at: '2026-01-01T00:00:00Z' })).toBe(false);
+  expect(hasCodexQuotaReading({ observed_at: '2026-01-01T00:00:00Z', plan_type: 'plus' })).toBe(true);
+});
 
 const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   id: upstreamId,
