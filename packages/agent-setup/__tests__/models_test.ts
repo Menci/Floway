@@ -139,6 +139,15 @@ describe('Zed available_models projection', () => {
       // A prompt limit within the fallback reservation of the threshold: there
       // is no reservation small enough to state, so Zed's own 4096 applies.
       catalogModel('just-under-threshold', { limits: { max_prompt_tokens: 79_999, max_output_tokens: 8000 } }),
+      // Ollama states a context length and nothing else, so Zed's own 4096
+      // reservation is what the window has to survive: a 2048-token local
+      // model would reserve twice its context and reach a negative budget.
+      catalogModel('ollama-4k', { contextWindow: 4096 }),
+      catalogModel('ollama-2k', { contextWindow: 2048 }),
+      // A stated output limit at or over the window it shares.
+      catalogModel('window-lt-output', { limits: { max_context_window_tokens: 64_000, max_output_tokens: 100_000 } }),
+      catalogModel('window-eq-output', { limits: { max_context_window_tokens: 32_000, max_output_tokens: 32_000 } }),
+      catalogModel('narrow-band-output', { limits: { max_context_window_tokens: 82_000, max_output_tokens: 100_000 } }),
     ]);
 
     for (const row of rows) {
@@ -162,6 +171,14 @@ describe('Zed available_models projection', () => {
     expect(derived(byName('o1'))).toBe(20_000);
     expect(derived(byName('equal-limits'))).toBe(60_000);
     expect(byName('just-under-threshold')).not.toHaveProperty('max_output_tokens');
+    // A window small enough that Zed's default would take more than a quarter
+    // gets an explicit reservation; a roomy one is left to that default.
+    expect(byName('ollama-4k').max_output_tokens).toBe(1024);
+    expect(byName('ollama-2k').max_output_tokens).toBe(512);
+    expect(byName('window-only')).not.toHaveProperty('max_output_tokens');
+    // A stated one is kept to half the window it shares.
+    expect(byName('window-lt-output').max_output_tokens).toBe(32_000);
+    expect(byName('window-eq-output').max_output_tokens).toBe(16_000);
 
     const row = (name: string) => rows.find(r => r.name === name)!;
     // With no prompt limit stated, the split is ours: the window is left whole

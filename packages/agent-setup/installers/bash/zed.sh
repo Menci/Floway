@@ -193,11 +193,11 @@ zed_write_settings() {
 
   # Carry the existing document's mode onto the replacement before it takes its
   # place, so a run cannot narrow a file it was only asked to edit. `chmod
-  # --reference` would read and apply it in one step but is GNU-only, and the
-  # PowerShell half has to read the mode itself either way — going through
-  # _stat_mode on both keeps one path to review rather than two that agree by
-  # inspection. A mode neither stat dialect answers is left alone rather than
-  # guessed at.
+  # --reference` would read and apply it in one step but is GNU-only, so the
+  # mode is read explicitly here. The PowerShell half asks the same two stat
+  # dialects inline rather than sharing this helper, which lives on this side
+  # only — the two are kept in step by the fixture, not by one implementation.
+  # A mode neither stat dialect answers is left alone rather than guessed at.
   if [ "$ZED_SETTINGS_EXISTED" -eq 1 ]; then
     _zw_mode=$(_stat_mode "$ZED_SETTINGS_PATH")
     [ -n "$_zw_mode" ] && chmod "$_zw_mode" "$_zw_stage"

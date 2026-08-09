@@ -4,9 +4,9 @@
 # `allowTrailingComma` visitor), so they are the operator's content, but jq has
 # no lenient mode and would refuse the file while naming the wrong cause.
 #
-# ConvertFrom-Json accepts a trailing comma and would have gone on to rewrite
-# the file without it, so refusing is also what keeps the two halves from
-# reaching opposite verdicts on one document. Strings are walked rather than
+# PowerShell 6+ accepts a trailing comma and would have gone on to rewrite the
+# file without it — 5.1 refuses it itself — so refusing is also what keeps the
+# two halves from reaching opposite verdicts on one document, on either host. Strings are walked rather than
 # matched by pattern, because a value like a URL contains `//` legitimately.
 # Mirrors Test-SetupJsonHasJsoncSyntax on the PowerShell side, down to the
 # whitespace it skips: space, tab and CR here, plus the newline there, which

@@ -7,9 +7,12 @@
 # refuse it: the mis-decoded text is still valid JSON. The Bash half passes the
 # bytes through untouched, so the two halves would disagree about one file.
 #
-# Measured: the bytes `63 61 66 E9` decode to three characters on 5.1 and four
-# on 7.6, which is the divergence itself. The writer beside this uses the same
-# encoding, and ReadAllText strips a BOM if one is there.
+# What settles it is that the encoding is an argument rather than a host
+# setting: measured on an ACP-65001 box, reading `café.json` through CP1252
+# still yields the `Ã©` mojibake while this reader yields `é`. (The two runtimes
+# also differ on a truncated trailing sequence — 5.1 drops it, 7.6 substitutes
+# U+FFFD — but that is a decoder detail, not the gap this closes.) The writer
+# beside this uses the same encoding, and ReadAllText strips a BOM if present.
 function Get-SetupFileText {
   param([string]$Path)
   return [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))
@@ -19,23 +22,29 @@ function Get-SetupFileText {
 # an array, whichever the caller asks for? Asked of the text rather than of the decoded value because
 # ConvertFrom-Json unwraps a top-level one-element array into a bare object and
 # yields `$null` for both `[]` and an empty file, so the decoded value cannot
-# tell those shapes apart. A zero-byte file, which `Get-Content -Raw` returns as
-# `$null` and the parameter binder turns into the empty string, opens with
-# nothing and is therefore no shape at all.
+# tell those shapes apart. A zero-byte file, which the reader above returns as
+# the empty string, opens with nothing and is therefore no shape at all.
 function Test-SetupJsonRoot {
   param([string]$Text, [char]$Open)
   return $Text.TrimStart().StartsWith($Open)
 }
 
-# Does this JSON text use a JSONC construct — a `//` or `/*` comment, or a comma
-# before a closing brace or bracket? Both editors read their managed document
-# with a parser that accepts these, so they are the operator's content, but jq
-# has no lenient mode and refuses the file. ConvertFrom-Json accepts a trailing
-# comma and would go on to rewrite the document without it, so this is what
-# keeps the two halves from reaching opposite verdicts on one file. Strings are
-# walked rather than stripped by regex, because a value like a model id or a URL
-# contains `//` legitimately. Mirrors _json_has_jsonc_syntax.
-function Test-SetupJsonHasJsoncSyntax {
+# Classifies a JSON text the way the Bash half's toolchain does: 'jsonc' for a
+# construct the editor accepts and jq does not, 'invalid' for anything outside
+# JSON's grammar, 'ok' otherwise.
+#
+# Both are needed because ConvertFrom-Json cannot be the arbiter. jq implements
+# RFC 8259; PowerShell 6+ decodes through Newtonsoft, which takes single-quoted
+# strings, unquoted keys, trailing commas and any Unicode whitespace — so a
+# document jq refuses would be parsed here and written back in canonical form,
+# one half stopping and the other rewriting the operator's file. Windows
+# PowerShell 5.1 is stricter still and refuses some of these itself, which is
+# why the answer cannot be left to whichever decoder the host happens to have.
+#
+# Strings are walked rather than stripped by regex, because a value like a model
+# id or a URL contains `//` legitimately. The JSONC arm mirrors
+# _json_has_jsonc_syntax; the strict arm mirrors what jq accepts.
+function Get-SetupJsonVerdict {
   param([string]$Text)
   $inString = $false
   $escaped = $false
@@ -50,20 +59,25 @@ function Test-SetupJsonHasJsoncSyntax {
     }
     if ($ch -eq '/' -and $i + 1 -lt $Text.Length) {
       $next = $Text[$i + 1]
-      if ($next -eq '/' -or $next -eq '*') { return $true }
+      if ($next -eq '/' -or $next -eq '*') { return 'jsonc' }
     }
     if ($ch -eq ',') { $comma = $true; continue }
-    # JSON's whitespace, not .NET's. `[char]::IsWhiteSpace` also skips U+00A0,
-    # the vertical tab, the form feed and U+2028, none of which JSON allows and
-    # none of which the awk scanner skips — with the wider set the two halves
-    # still refuse `{"a":1,<FF>}` but name different causes, sending the
-    # operator after an error that is not there.
+    # JSON's whitespace, not .NET's: `[char]::IsWhiteSpace` also skips U+00A0,
+    # the vertical tab, the form feed and U+2028, none of which JSON allows.
     if ($ch -eq ' ' -or $ch -eq "`t" -or $ch -eq "`r" -or $ch -eq "`n") { continue }
-    if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return $true }
+    if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return 'jsonc' }
     $comma = $false
-    if ($ch -eq '"') { $inString = $true }
+    if ($ch -eq '"') { $inString = $true; continue }
+    # Everything JSON allows outside a string: structure, and the characters
+    # numbers and the three literals are spelled with. Anything else — a stray
+    # form feed, a single quote opening a string, a letter starting an unquoted
+    # key — is a document jq refuses, and refusing it here is what keeps the two
+    # halves from disagreeing about one file.
+    if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0 -and 'truefalsn'.IndexOf($ch) -lt 0) {
+      return 'invalid'
+    }
   }
-  return $false
+  return 'ok'
 }
 
 function Set-SetupProp {

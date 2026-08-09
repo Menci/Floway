@@ -115,12 +115,14 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 // limit, because that decides whether the budget is ours to move:
 //
 //   - Stated. `max_tokens` is that limit plus the reservation, so the budget
-//     comes back exactly as stated. Only inside the band is the reservation
-//     dropped and the limit sent alone, putting the raw value under the
-//     threshold so the callout fires; raising the budget instead would have Zed
-//     plan against headroom the upstream refuses. Below the band the callout
-//     fires either way, so dropping it there would cost the operator the
-//     reservation and buy nothing.
+//     comes back exactly as stated. Inside the band the window goes out one
+//     token under the threshold with the reservation shrunk to fit beneath it,
+//     which raises the callout and still leaves the budget at the stated limit;
+//     raising the budget instead would have Zed plan against headroom the
+//     upstream refuses. Where too little room remains under the threshold to
+//     state a reservation worth stating, the limit goes alone and Zed's own
+//     4096 applies. Below the band nothing is adjusted: the callout fires
+//     either way.
 //   - Not stated. The window is the only bound the catalog gave, so how it
 //     splits is ours. In the band the reservation shrinks until the budget
 //     reaches the threshold, which turns compaction on and leaves the total
@@ -172,13 +174,25 @@ const zedTokenPlan = (limits: PublicModel['limits']): { maxTokens: number; maxOu
   }
 
   const window = zedBound(limits.max_context_window_tokens) ?? ZED_FALLBACK_CONTEXT_TOKENS;
-  if (window < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
-  if (window - reserved >= ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: stated };
+
+  // Here the reservation and the prompt come out of one total, so it is bounded
+  // against the window: a stated one to half, because past that the prompt gets
+  // the smaller share of a budget it is supposed to dominate, and an unstated
+  // one only where Zed's own 4096 would take more than a quarter — an Ollama
+  // model with a 2048-token context would otherwise reserve twice its window
+  // and reach the picker with a negative budget.
+  const bounded = stated === undefined
+    ? (Math.floor(window / 4) < ZED_FALLBACK_MAX_OUTPUT_TOKENS ? Math.floor(window / 4) : undefined)
+    : Math.min(stated, Math.floor(window / 2));
+  const carried = bounded ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
+
+  if (window < ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: bounded };
+  if (window - carried >= ZED_MIN_COMPACTION_CONTEXT_WINDOW) return { maxTokens: window, maxOutputTokens: bounded };
 
   const shrunk = window - ZED_MIN_COMPACTION_CONTEXT_WINDOW;
   return shrunk >= ZED_FALLBACK_MAX_OUTPUT_TOKENS
     ? { maxTokens: window, maxOutputTokens: shrunk }
-    : { maxTokens: ZED_MIN_COMPACTION_CONTEXT_WINDOW - 1, maxOutputTokens: stated };
+    : { maxTokens: ZED_MIN_COMPACTION_CONTEXT_WINDOW - 1, maxOutputTokens: bounded };
 };
 
 export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
