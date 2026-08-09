@@ -219,6 +219,21 @@ describe('invalidateCodexAccessToken', () => {
     await invalidateCodexAccessToken(upstreamId, accountId);
     expect(repo.writes).toEqual([]);
   });
+
+  test('retains a sibling token that replaced the failed token', async () => {
+    const winner: CodexAccessTokenEntry = {
+      token: 'at_winner',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: 'free',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: winner }] });
+    const retained = await invalidateCodexAccessToken(upstreamId, accountId, 'at_failed');
+    expect(retained).toEqual(winner);
+    expect(storedState().accounts[0].accessToken).toEqual(winner);
+    expect(repo.writes).toEqual([]);
+  });
 });
 
 describe('ensureCodexAccessToken', () => {

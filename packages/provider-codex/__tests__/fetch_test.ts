@@ -711,6 +711,20 @@ describe('callCodexResponses — upstream classification', () => {
     expect(effects.persistTerminalState).not.toHaveBeenCalled();
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
+
+  test('retains a newly observed plan when the 401 refresh omits it', async () => {
+    seedAccountState({ accessToken: null });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at1', refresh_token: 'rt1', id_token: idToken('free'), expires_in: 600 }))
+      .mockResolvedValueOnce(sseResponse(401))
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at2', refresh_token: 'rt2', id_token: idTokenWithoutPlan(), expires_in: 600 }))
+      .mockResolvedValueOnce(sseResponse());
+    const result = await callCodexResponses({
+      upstreamId, account: activeAccount, model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.planType).toBe('free');
+  });
 });
 
 describe('callCodexResponses — background-write registration', () => {
@@ -844,6 +858,34 @@ describe('callCodexImagesGenerations', () => {
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(1);
   });
 
+  test('does not invalidate a sibling token that won before the 401 was handled', async () => {
+    seedFreshAccessToken({ ...farFutureAccessToken, token: 'at_failed', planType: 'plus' });
+    const winner: CodexAccessTokenEntry = {
+      token: 'at_winner',
+      expiresAt: farFutureAccessToken.expiresAt,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: 'free',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () => {
+      seedAccountState({ refresh_token: 'rt_winner', accessToken: winner });
+      return errorJson(401, { error: { code: 'expired_token', message: 'expired' } });
+    });
+    const result = await callCodexImagesGenerations({
+      upstreamId,
+      account: { ...activeAccount, accessToken: { ...farFutureAccessToken, token: 'at_failed', planType: 'plus' } },
+      model: imageModel,
+      body: { prompt: 'an orange circle' },
+      fallbackPlanType: 'plus',
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(403);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken).toEqual(winner);
+  });
+
   test('keeps the latest known plan when a retry refresh omits the plan claim', async () => {
     seedFreshAccessToken({ ...farFutureAccessToken, planType: 'plus' });
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
@@ -953,6 +995,26 @@ describe('callCodexResponsesCompact', () => {
     expect(new Headers((fetchSpy.mock.calls[2][1] as RequestInit).headers).get('authorization')).toBe('Bearer at2');
   });
 
+  test('retains a newly observed plan when the compact 401 refresh omits it', async () => {
+    seedAccountState({ accessToken: null });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at1', refresh_token: 'rt1', id_token: idToken('free'), expires_in: 600 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at2', refresh_token: 'rt2', id_token: idTokenWithoutPlan(), expires_in: 600 }))
+      .mockResolvedValueOnce(compactJsonResponse());
+    const result = await callCodexResponsesCompact({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: { input: [], instructions: 'compact' },
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.planType).toBe('free');
+  });
+
   test('401 token_invalidated → persistTerminalState session_terminated, return synthetic 503', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
@@ -1032,6 +1094,26 @@ describe('callCodexAlphaSearch', () => {
       model: 'gpt-5.4',
       commands: { search_query: [{ q: 'Floway' }] },
     });
+  });
+
+  test('retains a newly observed plan when the search 401 refresh omits it', async () => {
+    seedAccountState({ accessToken: null });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at1', refresh_token: 'rt1', id_token: idToken('free'), expires_in: 600 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(errorJson(200, { access_token: 'at2', refresh_token: 'rt2', id_token: idTokenWithoutPlan(), expires_in: 600 }))
+      .mockResolvedValueOnce(errorJson(200, { encrypted_output: null, output: 'Search result', results: [] }));
+    const result = await callCodexAlphaSearch({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: { commands: { search_query: [{ q: 'Floway' }] } },
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    expect(result.response.status).toBe(200);
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.planType).toBe('free');
   });
 
   test('normalizes a missing request id and omits absent turn metadata', async () => {

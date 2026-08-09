@@ -119,7 +119,26 @@ export const putCodexAccessToken = async (
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
+  expectedToken?: string,
+): Promise<CodexAccessTokenEntry | null> => {
+  if (expectedToken === undefined) {
+    return await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken');
+  }
+  let retained: CodexAccessTokenEntry | null = null;
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) throw new Error(`invalidateCodexAccessToken: Codex account ${accountId} not found in upstream ${upstreamId}`);
+    const entry = state.accounts[idx].accessToken;
+    if (entry !== null && entry.token !== expectedToken) {
+      retained = entry;
+      return current;
+    }
+    if (entry === null) return current;
+    return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: null }));
+  });
+  return retained;
+};
 
 // Reads, mints, and persists. The mint callback is responsible for routing
 // the rotated refresh_token through the upstream's persistence hook;

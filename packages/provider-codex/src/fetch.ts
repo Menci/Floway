@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -77,13 +77,13 @@ type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponses
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performStreamingResponsesCall(opts, ready.accessToken.token, false);
+  return await performStreamingResponsesCall(opts, ready.accessToken, false);
 };
 
 export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<ProviderCompactionResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performUnaryCompactCall(opts, ready.accessToken.token, false);
+  return await performUnaryCompactCall(opts, ready.accessToken, false);
 };
 
 export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): Promise<ProviderCallResult> => {
@@ -91,7 +91,7 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   const normalized = { ...opts, body: { ...opts.body, id: requestId } };
   const ready = await prepareCodexCall(normalized);
   if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
-  return await performAlphaSearchCall(normalized, ready.accessToken.token, false);
+  return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
 export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
@@ -100,7 +100,7 @@ export const callCodexImagesGenerations = async (opts: CallCodexImagesGeneration
   const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
 };
 
 export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
@@ -110,7 +110,7 @@ export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): P
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken.token, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
+  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
 };
 
 const accessTokenPlan = (entry: CodexAccessTokenEntry): CodexPlanObservation | null =>
@@ -460,18 +460,23 @@ const dispatchCodexImageCall = async (
 // result also resolves the latest plan metadata used to authorize the retry.
 const refreshAccessTokenForRetry = async (
   opts: CodexBackendCallBase,
+  failedEntry: CodexAccessTokenEntry,
   fallbackPlan?: CodexPlanObservation,
 ): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
-  await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
   try {
-    const minted = await mintAccessToken(opts, opts.account.refresh_token);
-    const effective = await putCodexAccessToken(
+    const retained = await invalidateCodexAccessToken(
       opts.upstreamId,
       opts.account.chatgptAccountId,
-      minted,
-      fallbackPlan ?? (opts.account.accessToken === null || opts.account.accessToken === undefined
-        ? undefined
-        : accessTokenPlan(opts.account.accessToken) ?? undefined),
+      failedEntry.token,
+    );
+    if (retained !== null) return { ok: true, accessToken: retained };
+    const effective = await ensureCodexAccessToken(
+      opts.upstreamId,
+      opts.account.chatgptAccountId,
+      async refreshToken => {
+        const minted = await mintAccessToken(opts, refreshToken);
+        return mergeRetryPlan(minted, fallbackPlan ?? accessTokenPlan(failedEntry) ?? undefined);
+      },
     );
     return { ok: true, accessToken: effective };
   } catch (err) {
@@ -483,9 +488,21 @@ const refreshAccessTokenForRetry = async (
   }
 };
 
+const mergeRetryPlan = (
+  entry: CodexAccessTokenEntry,
+  fallback: CodexPlanObservation | undefined,
+): CodexAccessTokenEntry => {
+  if (entry.planType !== undefined || fallback === undefined) return entry;
+  return {
+    ...entry,
+    planType: fallback.planType,
+    ...(fallback.observedAt === undefined ? {} : { planObservedAt: fallback.observedAt }),
+  };
+};
+
 const performStreamingResponsesCall = async (
   opts: CallCodexResponsesOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
@@ -495,7 +512,7 @@ const performStreamingResponsesCall = async (
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_RESPONSES_PATH,
     'text/event-stream',
     buildCodexResponsesBody(opts, identity, turnMetadataJson),
@@ -506,9 +523,9 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performStreamingResponsesCall(opts, fresh.accessToken.token, true);
+    return await performStreamingResponsesCall(opts, fresh.accessToken, true);
   }
 
   return result;
@@ -516,7 +533,7 @@ const performStreamingResponsesCall = async (
 
 const performUnaryCompactCall = async (
   opts: CallCodexResponsesCompactOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderCompactionResult> => {
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
@@ -526,7 +543,7 @@ const performUnaryCompactCall = async (
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_RESPONSES_COMPACT_PATH,
     'application/json',
     { ...opts.body, model: opts.model.id },
@@ -535,9 +552,9 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performUnaryCompactCall(opts, fresh.accessToken.token, true);
+    return await performUnaryCompactCall(opts, fresh.accessToken, true);
   }
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
@@ -548,7 +565,7 @@ const performUnaryCompactCall = async (
 
 const performAlphaSearchCall = async (
   opts: CallCodexAlphaSearchOptions,
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const requestId = stringField(opts.body, 'id');
@@ -564,7 +581,7 @@ const performAlphaSearchCall = async (
   const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata');
   const response = await dispatchCodexHttpCall(
     opts,
-    accessToken,
+    accessToken.token,
     CODEX_ALPHA_SEARCH_PATH,
     'application/json',
     { ...opts.body, model: opts.model.id },
@@ -573,29 +590,29 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken, accessTokenPlan(accessToken) ?? undefined);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    return await performAlphaSearchCall(opts, fresh.accessToken.token, true);
+    return await performAlphaSearchCall(opts, fresh.accessToken, true);
   }
   return { modelKey: opts.model.id, response };
 };
 
 const performImageCall = async (
   opts: CodexBackendCallBase & { fallbackPlanType: string },
-  accessToken: string,
+  accessToken: CodexAccessTokenEntry,
   path: string,
   body: Record<string, unknown>,
   turnId: string,
   effectivePlan: CodexPlanObservation,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
-  const response = await dispatchCodexImageCall(opts, accessToken, path, body, turnId);
+  const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
   if (response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, effectivePlan);
+    const fresh = await refreshAccessTokenForRetry(opts, accessToken, effectivePlan);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
     const refreshedPlan = accessTokenPlan(fresh.accessToken) ?? effectivePlan;
     if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
-    return await performImageCall(opts, fresh.accessToken.token, path, body, turnId, refreshedPlan, true);
+    return await performImageCall(opts, fresh.accessToken, path, body, turnId, refreshedPlan, true);
   }
   return { modelKey: opts.model.id, response };
 };
