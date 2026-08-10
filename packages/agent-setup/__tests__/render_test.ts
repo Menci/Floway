@@ -193,16 +193,26 @@ describe('renderPowerShellPrefix', () => {
   });
 
   test('carries the Zed provider name and catalog, through the same literal encoder', () => {
-    const prefix = renderPowerShellPrefix({
-      agent: 'zed',
+    const input = {
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
       editorModels: ZED_MODELS,
-    });
+    } as const;
+    const prefix = renderPowerShellPrefix({ agent: 'zed', ...input });
     expect(prefix).toContain("$SetupZedProviderName = 'Ops'' box'");
-    // Byte-identical to the shell rendering: one projection, serialized once.
-    expect(prefix).toContain(`$SetupZedModels = '${JSON.stringify(ZED_MODELS)}'`);
+    // Spelled out for the same reason the shell case spells it out: an
+    // expectation built by the production serializer would follow it through
+    // any change of key order or spacing.
+    expect(prefix).toContain(`$SetupZedModels = '[{"name":"${ZED_MODELS[0]!.name}",`);
+    expect(prefix).toContain('"capabilities":{"tools":true,');
+    // And the two halves carry one serialization, not two: the installers'
+    // merges are two implementations of one mapping, so a catalog that differed
+    // between them would be a provider that differed between them.
+    const shellCatalog = /SETUP_ZED_MODELS='(.*)'\n/.exec(renderShellPrefix({ agent: 'zed', ...input }));
+    const powerShellCatalog = /\$SetupZedModels = '(.*)'\n/.exec(prefix);
+    expect(shellCatalog?.[1]).toBeTruthy();
+    expect(powerShellCatalog?.[1]).toBe(shellCatalog?.[1]);
     expect(prefix).not.toContain('$SetupClaude');
     expect(prefix).not.toContain('$SetupCodex');
   });
