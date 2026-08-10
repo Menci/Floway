@@ -574,6 +574,38 @@ test('a model listing failure serves a script that reports it', async () => {
   }
 });
 
+// The listing catch is the only place in this module that puts an upstream
+// message in the log, and an upstream is not ours: whatever it says may quote
+// the request it was given. Both secrets in hand are redacted by hand there,
+// and nothing observed either redaction — the served body carries neither, so
+// asserting on the body alone leaves the log free to carry both.
+test('a model listing failure keeps both secrets out of the log', async () => {
+  // The message is built when the listing runs, by which point the lease it
+  // quotes has been created.
+  let servedToken = '';
+  const h = harness({
+    publicOverrides: {
+      listModels: () => Promise.reject(new Error(`upstream refused ${RAW_KEY} for lease ${servedToken}`)),
+    },
+  });
+  const lease = await create(h);
+  servedToken = lease.token;
+  const logged: string[] = [];
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  try {
+    const response = await h.request(lease.scripts.zed.sh, { method: 'GET' });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('could not list models');
+  } finally {
+    errorSpy.mockRestore();
+  }
+  const joined = logged.join('\n');
+  expect(joined).toContain('[api-key]');
+  expect(joined).toContain('[setup-token]');
+  expect(joined).not.toContain(RAW_KEY);
+  expect(joined).not.toContain(lease.token);
+});
+
 test('the served Zed script carries the projected catalog', async () => {
   const h = harness();
   const lease = await create(h);
