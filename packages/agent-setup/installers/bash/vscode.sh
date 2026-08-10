@@ -79,12 +79,13 @@ vscode_profile_dirs() {
   fi
   for _vpd_profile in "$_vpd_user"/profiles/*/; do
     [ -d "$_vpd_profile" ] || continue
-    # `builtin` holds the agents window's own profile, and VS Code's scan
-    # excludes that directory by name — a document written there is a
-    # key-bearing file the editor never reads. The agents window shares the
-    # default profile's language models, so nothing is missed by skipping it.
-    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L232
-    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L565
+    # `builtin` is not a profile: it is the container the agents window's
+    # profile sits under, at `profiles/builtin/agents`. That profile's language
+    # models resolve to the default profile's file, so a document written at
+    # `profiles/builtin` is one nothing reads — and it would carry the key.
+    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L402
+    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L204
+    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L300
     _vpd_name=${_vpd_profile%/}
     [ "${_vpd_name##*/}" = builtin ] && continue
     printf '%s\n' "${_vpd_profile%/}"

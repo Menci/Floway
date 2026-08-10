@@ -3495,10 +3495,10 @@ test('vscode', 'replaces only its own group and leaves every other one intact', 
   t.ok(!ourGroup(groups).models!.some(entry => entry.id === 'stale'), 'our previous models are gone');
 });
 
-// VS Code stores the agents window's own profile under `profiles/builtin` and
-// excludes that directory from its own scan by name. A document written there
-// carries the key into a file the editor never reads; the agents window shares
-// the default profile's language models, so nothing is lost by skipping it.
+// `profiles/builtin` is a container, not a profile: the agents window's profile
+// lives at `profiles/builtin/agents`, and its language models resolve to the
+// default profile's file. So a document written at `profiles/builtin` carries
+// the key into a file nothing reads, and skipping it loses nothing.
 test('vscode', 'neither half writes into the builtin profile directory', async t => {
   for (const which of ['bash', 'powershell'] as const) {
     if (which === 'powershell' && !hostPwsh) continue;

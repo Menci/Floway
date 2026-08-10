@@ -54,12 +54,14 @@ function Get-SetupVSCodeProfileDirs {
   $profiles = Join-Path $UserDir 'profiles'
   if (Test-Path -LiteralPath $profiles -PathType Container) {
     try {
-      # `builtin` holds the agents window's own profile, and VS Code's scan
-      # excludes that directory by name — a document written there is a
-      # key-bearing file the editor never reads. The agents window shares the
-      # default profile's language models, so nothing is missed by skipping it.
-      # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L232
-      #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L565
+      # `builtin` is not a profile: it is the container the agents window's
+      # profile sits under, at `profiles/builtin/agents`. That profile's
+      # language models resolve to the default profile's file, so a document
+      # written at `profiles/builtin` is one nothing reads — and it would carry
+      # the key.
+      # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L402
+      #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L204
+      #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L300
       $dirs += Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction Stop |
         Where-Object { -not [string]::Equals($_.Name, 'builtin', [System.StringComparison]::Ordinal) } |
         ForEach-Object { $_.FullName }
