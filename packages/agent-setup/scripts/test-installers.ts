@@ -3050,6 +3050,9 @@ for (const { label, document } of [
   // 1.797…e308, and a long enough integer needs no exponent at all.
   { label: 'a mantissa past the double range', document: '{"telemetry":{"metrics":9e308}}' },
   { label: 'an integer past the double range', document: `{"telemetry":{"metrics":1${'0'.repeat(309)}}}` },
+  // A sign belongs to the number, not to the text before it — treating it as
+  // interior hid the whole token from the scan.
+  { label: 'a negative number past the double range', document: '{"telemetry":{"metrics":-1e400}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3176,7 +3179,7 @@ test('zed', 'PowerShell refuses a provider name it cannot keep beside an existin
 // jq both accept.
 test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // 1e308 is representable and must pass; a `NaN` inside a string is text.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "list": ["a", "b"]\n}';
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-400,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
