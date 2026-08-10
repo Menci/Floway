@@ -83,6 +83,14 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   const [platform, setPlatform] = useState<Platform>(() => detectAgentSetupPlatform(window.navigator.platform, window.navigator.userAgent));
   const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError, initialApiKeyId);
 
+  // The installer refuses a catalog it cannot configure, and the dashboard knows
+  // that before the operator runs anything — so the setup pane says it rather
+  // than handing over a command that will fail. The snippet pane says the same
+  // thing in its own place.
+  const nothingToConfigure = models === undefined ? false
+    : agent === 'zed' ? projectZedModels(models).length === 0
+      : agent === 'vscode' ? projectVSCodeModels(models, setup.draft.vscode.apiType).length === 0
+        : false;
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
   // Both shells comment with `#`, so an unavailable command says why inside the block it will occupy.
@@ -127,16 +135,22 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
-            : <div className="border-t border-t-solid border-fui-divider pt-4">
-                <CodeBlock
-                  code={command}
-                  copyOutcome={clipboard.outcomeFor(`agent-setup-${agent}-${platform}`)}
-                  disabled={!setup.canCopy}
-                  header={<PlatformTabs onChange={setPlatform} platform={platform} />}
-                  language={platform === 'unix' ? 'bash' : 'powershell'}
-                  onCopy={() => setup.canCopy && clipboard.copy(command, `agent-setup-${agent}-${platform}`)}
-                />
-              </div>}
+            : nothingToConfigure
+              ? <div className="border-t border-t-solid border-fui-divider pt-4">
+                  <OutcomeMessageBar intent="warning">
+                    {t(agent === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}
+                  </OutcomeMessageBar>
+                </div>
+              : <div className="border-t border-t-solid border-fui-divider pt-4">
+                  <CodeBlock
+                    code={command}
+                    copyOutcome={clipboard.outcomeFor(`agent-setup-${agent}-${platform}`)}
+                    disabled={!setup.canCopy}
+                    header={<PlatformTabs onChange={setPlatform} platform={platform} />}
+                    language={platform === 'unix' ? 'bash' : 'powershell'}
+                    onCopy={() => setup.canCopy && clipboard.copy(command, `agent-setup-${agent}-${platform}`)}
+                  />
+                </div>}
 
         {(selectedKey !== null || view === 'setup') && (
           <Text size={200} className="text-fui-fg2">

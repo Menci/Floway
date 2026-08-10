@@ -36,6 +36,19 @@ function Test-SetupJsonRoot {
   return $Text.TrimStart().StartsWith($Open)
 }
 
+# Does a `:` follow the value that ends at $End, ignoring JSON whitespace? Then
+# that value was used as a key, which JSON does not allow and both PowerShell
+# decoders do.
+function Test-SetupJsonKeyFollows {
+  param([string]$Text, [int]$End)
+  for ($k = $End + 1; $k -lt $Text.Length; $k++) {
+    $c = $Text[$k]
+    if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`r" -or $c -eq "`n") { continue }
+    return $c -eq ':'
+  }
+  return $false
+}
+
 # Classifies a JSON text the way the Bash half's toolchain does: 'jsonc' for a
 # construct the editor accepts and jq does not, 'invalid' for anything outside
 # JSON's grammar, 'ok' otherwise.
@@ -58,19 +71,6 @@ function Test-SetupJsonRoot {
 # rejects on both versions, so the Bash half configures it and this one stops.
 # Both are documents no editor writes; the parity this arm buys is over the
 # constructs an operator can actually type.
-# Does a `:` follow the value that ends at $End, ignoring JSON whitespace? Then
-# that value was used as a key, which JSON does not allow and both PowerShell
-# decoders do.
-function Test-SetupJsonKeyFollows {
-  param([string]$Text, [int]$End)
-  for ($k = $End + 1; $k -lt $Text.Length; $k++) {
-    $c = $Text[$k]
-    if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`r" -or $c -eq "`n") { continue }
-    return $c -eq ':'
-  }
-  return $false
-}
-
 function Get-SetupJsonVerdict {
   param([string]$Text)
   $inString = $false

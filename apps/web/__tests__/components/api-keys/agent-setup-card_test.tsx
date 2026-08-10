@@ -253,3 +253,15 @@ describe('provider name across editors', () => {
     vi.unstubAllGlobals();
   });
 });
+
+// The dashboard knows the installer will refuse this catalog before the
+// operator runs anything, and the setup pane is the one they see first —
+// handing over a command that fails there is worse than saying so.
+describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s with no chat models', (tab, editor) => {
+  it('warns in the setup pane instead of offering a command', () => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    expect(screen.getByText(`No chat model this gateway serves can be configured for ${editor} yet. Add an upstream that serves one.`)).toBeTruthy();
+    expect(screen.queryByText(/curl |irm /)).toBeNull();
+  });
+});

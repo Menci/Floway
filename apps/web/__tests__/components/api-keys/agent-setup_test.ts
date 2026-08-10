@@ -100,6 +100,11 @@ describe('Zed Windows credential snippet', () => {
   it('emits the installer own C#, not a copy of it', () => {
     const snippet = zedWindowsCredentialSnippet('https://gateway.example', 'sk-test');
     expect(snippet).toContain(ZED_CREDENTIAL_CSHARP.trimEnd());
+    // In a literal here-string, as the installer uses. `@"` would interpolate a
+    // `$` or a backtick in the shared body, so the same type name would carry
+    // two different programs depending on which ran first in the console.
+    expect(snippet).toContain("Add-Type -TypeDefinition @'");
+    expect(snippet).not.toContain('Add-Type -TypeDefinition @"');
   });
 
   // The scrubbing is in `finally`, so a CredWriteW that throws does not leave
