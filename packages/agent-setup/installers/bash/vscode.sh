@@ -159,8 +159,9 @@ vscode_write_settings() {
     # syntax is not the operator's to keep — VS Code rewrites this file whole on
     # its own next edit — so the refusal is about the two halves agreeing, not
     # about preserving anything.
-    # Captured with `||` because a clean document exits 1, which `set -e` would
-    # otherwise take as a failure.
+    # The status is captured rather than branched on directly: the scanner
+    # answers with three of them, and `$?` would be clobbered by the `case`
+    # itself.
     # Readability is asked first: awk prints no verdict for a file it cannot
     # open, and that is indistinguishable from the scanner failing — the
     # operator would be sent after the scanner for a permission problem.

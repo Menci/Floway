@@ -11,7 +11,6 @@ import {
   SETUP_POWERSHELL_COMMON,
   SETUP_POWERSHELL_COMMON_CLI,
   SETUP_POWERSHELL_COMMON_JSON_DOCUMENT,
-  SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL,
   SETUP_POWERSHELL_COMMON_MAIN,
   SETUP_POWERSHELL_COMMON_MANAGED_FILE,
   SETUP_POWERSHELL_COMMON_OUTPUT,
@@ -19,6 +18,7 @@ import {
   SETUP_POWERSHELL_COMMON_PROCESS,
   SETUP_SCRIPT_SOURCE_FRAGMENTS,
 } from '../src/script-assets.generated.ts';
+import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 interface Section {
@@ -49,7 +49,6 @@ const POWERSHELL_COMMON_SECTIONS: readonly Section[] = [
   { file: 'installers/powershell/common/output.ps1', source: SETUP_POWERSHELL_COMMON_OUTPUT },
   { file: 'installers/powershell/common/platform.ps1', source: SETUP_POWERSHELL_COMMON_PLATFORM, end: 'function Get-SetupPlatform' },
   { file: 'installers/powershell/common/json-document.ps1', source: SETUP_POWERSHELL_COMMON_JSON_DOCUMENT, append: '\n' },
-  { file: 'installers/powershell/common/zed-credential.ps1', source: SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL, append: '\n' },
   { file: 'installers/powershell/common/main.ps1', source: SETUP_POWERSHELL_COMMON_MAIN, end: '# --- run' },
   { file: 'installers/powershell/common/managed-file.ps1', source: SETUP_POWERSHELL_COMMON_MANAGED_FILE, end: '# Rollback retains' },
   { file: 'installers/powershell/common/process.ps1', source: SETUP_POWERSHELL_COMMON_PROCESS, end: '# Run a fixed package-manager' },
@@ -102,5 +101,19 @@ test.each(PLATFORM_COMMONS)('every byte of each $platform source file reaches th
   for (const [file, source] of sourceByFile) {
     const tiles = sections.filter(section => section.file === file).sort((a, b) => startOffset(a) - startOffset(b));
     assertEquals(tiles.map(sliceOf).join(''), source, `${file} is not fully covered by its sections`);
+  }
+});
+
+// The credential writer compiles a P/Invoke declaration into the console it
+// runs in. Only the Zed script calls it, and a served script is a
+// credential-bearing response an operator may well read before running — so a
+// block of C# in the Codex one is both dead weight and an unexplained thing to
+// find there.
+test('only the Zed PowerShell script carries the credential writer', () => {
+  // The C# body itself, not the type name: the Zed script names the type at its
+  // call site either way, so a body that never reached the script would still
+  // satisfy a search for the name.
+  for (const [agent, bodies] of Object.entries(SETUP_SCRIPT_BODIES)) {
+    assertEquals(bodies.ps1.includes("$SetupZedCredWriteSource = @'"), agent === 'zed', `${agent}.ps1`);
   }
 });

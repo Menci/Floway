@@ -211,6 +211,11 @@ function Write-SetupVSCodeSettings {
     # vendor/name, because member access would take a `Settings` too.
     # Presence, not truth: a `settings` of null or false is the operator's
     # value as much as an object is, and the other half asks `has`.
+    #
+    # The search ends at the first group that carries one, not at the first
+    # group under our name: a hand-merged file — which is what the dashboard's
+    # own snippet hint asks the operator to produce — can hold two, and jq takes
+    # the first `settings` among them.
     foreach ($group in $parsed) {
       if (Test-SetupVSCodeOwnGroup $group) {
         $found = $group.PSObject.Properties |
@@ -219,8 +224,8 @@ function Write-SetupVSCodeSettings {
         if ($null -ne $found) {
           $keptSettings = $found.Value
           $hasKeptSettings = $true
+          break
         }
-        break
       }
     }
     $groups = @($parsed | Where-Object { -not (Test-SetupVSCodeOwnGroup $_) })

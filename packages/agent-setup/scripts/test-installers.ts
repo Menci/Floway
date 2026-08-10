@@ -3701,6 +3701,35 @@ test('vscode', 'both halves keep the per-model settings VS Code wrote into our g
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
 });
 
+// A hand-merged file can hold two groups under our name — which is what the
+// snippet pane asks the operator to produce — and only one of them carries the
+// settings VS Code wrote. The halves searched differently: jq takes the first
+// `settings` among them, and a search that stopped at the first group under our
+// name instead dropped it.
+test('vscode', 'both halves keep the settings of whichever own group carries them', async t => {
+  const settings = { 'claude-opus-4-6': { reasoningEffort: 'high' } };
+  const existing = JSON.stringify([
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [] },
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings },
+  ]);
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-duplicate-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), existing);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(bash.length, 1, 'Bash collapses the duplicates into one group');
+  t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(settings), 'and keeps the settings the second one carried');
+  if (!hostPwsh) return;
+  t.equal(JSON.stringify(await runHalf('powershell')), JSON.stringify(bash), 'and PowerShell writes the same document');
+});
+
 // `settings` is the operator's whatever its value: jq's `//` and a PowerShell
 // null test both read a stored `null` or `false` as absent and would drop the
 // key on one half while the other kept it — one document, two answers.

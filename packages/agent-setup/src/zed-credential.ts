@@ -1,4 +1,4 @@
-import { SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL } from './script-assets.generated.ts';
+import { SETUP_POWERSHELL_ZED_CREDENTIAL } from './script-assets.generated.ts';
 
 // The C# body the installer compiles to write Zed's Windows credential, lifted
 // out of the PowerShell fragment that carries it.
@@ -23,4 +23,4 @@ const between = (source: string): string => {
   return source.slice(start + OPEN.length, end);
 };
 
-export const ZED_CREDENTIAL_CSHARP = between(SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL);
+export const ZED_CREDENTIAL_CSHARP = between(SETUP_POWERSHELL_ZED_CREDENTIAL);

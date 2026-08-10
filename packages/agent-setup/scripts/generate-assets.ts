@@ -26,6 +26,11 @@ interface SourceSection {
 interface PlatformSources {
   common: readonly SourceSection[];
   agents: readonly SourceSection[];
+  // Embedded as a constant but joined into no platform body: a fragment only
+  // one agent's script needs, composed into that script by `script-assets.ts`.
+  // Putting it in `common` would compile a P/Invoke declaration into every
+  // operator's console for the three agents that never call it.
+  standalone?: readonly SourceSection[];
 }
 
 // Source files are grouped by responsibility, while these section boundaries
@@ -54,7 +59,6 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_OUTPUT', file: 'installers/powershell/common/output.ps1' },
       { name: 'SETUP_POWERSHELL_COMMON_PLATFORM', file: 'installers/powershell/common/platform.ps1', end: 'function Get-SetupPlatform' },
       { name: 'SETUP_POWERSHELL_COMMON_JSON_DOCUMENT', file: 'installers/powershell/common/json-document.ps1', append: '\n' },
-      { name: 'SETUP_POWERSHELL_COMMON_ZED_CREDENTIAL', file: 'installers/powershell/common/zed-credential.ps1', append: '\n' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', end: '# --- run' },
       { name: 'SETUP_POWERSHELL_COMMON_MANAGED_FILE', file: 'installers/powershell/common/managed-file.ps1', end: '# Rollback retains' },
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', end: '# Run a fixed package-manager' },
@@ -70,6 +74,9 @@ const scriptSources = {
       { name: 'SETUP_POWERSHELL_COMMON_PROCESS', file: 'installers/powershell/common/process.ps1', start: '# Run a child process with captured output' },
       { name: 'SETUP_POWERSHELL_COMMON_MAIN', file: 'installers/powershell/common/main.ps1', start: '# --- run' },
     ],
+    standalone: [
+      { name: 'SETUP_POWERSHELL_ZED_CREDENTIAL', file: 'installers/powershell/zed-credential.ps1' },
+    ],
     agents: [
       { name: 'SETUP_POWERSHELL_CLAUDE', file: 'installers/powershell/claude.ps1' },
       { name: 'SETUP_POWERSHELL_CODEX', file: 'installers/powershell/codex.ps1' },
@@ -79,7 +86,8 @@ const scriptSources = {
   },
 } as const satisfies Record<string, PlatformSources>;
 
-const allSections = Object.values(scriptSources).flatMap(({ common, agents }) => [...common, ...agents]);
+const allSections = Object.values(scriptSources).flatMap(({ common, agents, ...rest }) =>
+  [...common, ...('standalone' in rest ? rest.standalone : []), ...agents]);
 const sourceFiles = new Map<string, string>();
 for (const { name, file } of allSections) {
   const existing = sourceFiles.get(name);
