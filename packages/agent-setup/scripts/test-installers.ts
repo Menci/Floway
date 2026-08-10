@@ -21,7 +21,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, lstatSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
@@ -3986,6 +3986,52 @@ test('vscode', 'a file where a directory belongs is skipped by both halves', asy
   t.ok(ps.combined.includes('no VS Code user directory found'), `PowerShell names it:\n${ps.combined}`);
 });
 
+// Every test above names its user directories through the override, so the
+// derivation from HOME — the only path a real operator takes — would ship
+// unexecuted. Two builds, because the enumeration is what makes one run serve
+// whichever build they actually open.
+test('vscode', 'both halves find the builds under HOME with no override', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const base = process.platform === 'darwin' ? join('Library', 'Application Support') : '.config';
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const dirs = ['Code', 'VSCodium'].map(app => join(ws.home, base, app, 'User'));
+    for (const dir of dirs) mkdirSync(dir, { recursive: true });
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig() };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    for (const dir of dirs) t.ok(existsSync(vscodeGroupsPath(dir)), `${which} configures ${basename(dirname(dir))}`);
+    // The third build is absent, and an absent build is not a failure.
+    t.ok(!run.combined.includes('Code - Insiders'), `${which} says nothing about the build that is not installed`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// `profiles/` holds one directory per named profile. A file there is not a
+// profile, and treating it as one writes the key to a path VS Code never reads
+// — or fails the whole build against it.
+test('vscode', 'neither half takes a file under profiles for a profile', async t => {
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-profile-file-${which}`);
+    const profiles = join(userDir, 'profiles');
+    mkdirSync(join(profiles, 'real-profile'), { recursive: true });
+    writeFileSync(join(profiles, 'stray-file'), 'not a profile');
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(existsSync(vscodeGroupsPath(userDir)), `${which} configures the default profile`);
+    t.ok(existsSync(vscodeGroupsPath(join(profiles, 'real-profile'))), `${which} configures the named profile`);
+    t.equal(readFileSync(join(profiles, 'stray-file'), 'utf8'), 'not a profile', `${which} leaves the stray file alone`);
+    t.equal(readdirSync(profiles).sort().join(','), 'real-profile,stray-file', `${which} creates nothing beside it`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
 test('vscode', 'PowerShell replaces only its own group', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
@@ -4245,6 +4291,34 @@ const profileFailureCases = [
     }),
   },
 ] as const;
+
+// The profile loop's other arm: a failure this installer never named, raised by
+// the framework rather than by a refusal of ours. The corrupt-document case
+// above reaches the loop through Stop-Setup, which has already reported itself,
+// so nothing observed the arm that has to describe an unexpected fault — and a
+// profile lost to one must still cost only that profile.
+for (const { half, run } of profileFailureCases) {
+  test('vscode', `${half} names an unexpected profile failure and configures the rest`, async t => {
+    if (half === 'PowerShell' && !hostPwsh) skip('no PowerShell interpreter on this host');
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-unexpected-${half}`);
+    const blocked = join(userDir, 'profiles', 'aaa');
+    const healthy = join(userDir, 'profiles', 'bbb');
+    mkdirSync(blocked, { recursive: true });
+    mkdirSync(healthy, { recursive: true });
+    chmodSync(blocked, 0o555);
+    try {
+      const result = await run(ws, userDir);
+      t.ok(result.code !== 0, 'the run reports failure');
+      t.includes(result.combined, blocked, 'the message names the profile that failed');
+      t.ok(!existsSync(vscodeGroupsPath(blocked)), 'nothing lands in the profile that could not be written');
+      t.equal(readVSCodeGroups(healthy).length, 1, 'a later profile is still configured');
+      t.equal(readVSCodeGroups(userDir).length, 1, 'and so is the default one');
+    } finally {
+      chmodSync(blocked, 0o755);
+    }
+  });
+}
 
 for (const { half, run } of profileFailureCases) {
   test('vscode', `${half} configures healthy profiles despite a corrupt one`, async t => {

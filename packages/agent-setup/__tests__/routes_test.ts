@@ -529,8 +529,15 @@ test('the served VS Code script carries the projected catalog and its API path',
   const embedded = body.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!;
   expect(embedded).toContain('"id":"claude-opus-4-6"');
   // The configured path reaches the projection, not just the shell variable:
-  // `reasoningEffortFormat` is the only field it lands in.
+  // `reasoningEffortFormat` is the only field it lands in. Asserted against a
+  // path the operator chose rather than the default, or a projection that
+  // hardcoded the default would satisfy it.
   expect(embedded).toContain('"reasoningEffortFormat":"messages"');
+  const chosen = { ...lease.configuration, vscode: { ...lease.configuration.vscode, apiType: 'responses' } };
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: chosen, expectedRevision: lease.configurationRevision }));
+  const rechosen = await (await h.request(lease.scripts.vscode.sh, { method: 'GET' })).text();
+  expect(rechosen).toContain("SETUP_VSCODE_API_TYPE='responses'");
+  expect(rechosen.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!).toContain('"reasoningEffortFormat":"responses"');
   // The endpoint and the credential are the merge's to attach, so the embedded
   // catalog carries neither — the merge program in the body still names them.
   expect(embedded).not.toContain('"url"');

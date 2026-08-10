@@ -146,6 +146,11 @@ function Write-SetupVSCodeSettings {
   $script:VSCodeSettingsExisted = $false
 
   $groups = @()
+  # Declared with the list they belong beside: a document that does not exist
+  # yet leaves the loop below unrun, and reading an unassigned variable as
+  # "absent" is a coincidence of PowerShell rather than a decision.
+  $keptSettings = $null
+  $hasKeptSettings = $false
   if (Test-Path -LiteralPath $script:VSCodeSettingsPath) {
     $script:VSCodeSettingsExisted = $true
     # The same sentence the Bash half gives, rather than the framework's: a
@@ -206,8 +211,6 @@ function Write-SetupVSCodeSettings {
     # vendor/name, because member access would take a `Settings` too.
     # Presence, not truth: a `settings` of null or false is the operator's
     # value as much as an object is, and the other half asks `has`.
-    $keptSettings = $null
-    $hasKeptSettings = $false
     foreach ($group in $parsed) {
       if (Test-SetupVSCodeOwnGroup $group) {
         $found = $group.PSObject.Properties |

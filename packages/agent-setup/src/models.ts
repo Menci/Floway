@@ -275,14 +275,18 @@ const VSCODE_FALLBACK_OUTPUT_TOKENS = 8192;
 // prompt limit and no window — which an OpenAI-compatible upstream reached
 // through provider-custom, or an operator's announced-metadata override, may
 // well be — has to have the reservation added back, exactly as the Zed
-// projection does. And an output
-// fallback larger than the window leaves a prompt budget of zero, so the model
-// appears in the picker and every request is over budget before it starts;
-// Ollama states a context length and no output limit at all, and an 8k model
-// hits precisely that. Every limit goes through `usableLimit` first, so a
-// stated 0 is no bound at all rather than a bound of zero; a stated reservation
-// is then bounded to half the window it comes out of and an unstated one to a
-// quarter, and both to at least one token.
+// projection does. And an output fallback larger than the window leaves a
+// prompt budget of zero, so the model appears in the picker and every request
+// is over budget before it starts; Ollama states a context length and no output
+// limit at all, and an 8k model hits precisely that.
+//
+// Every limit goes through `usableLimit` first, so a stated 0 is no bound at
+// all rather than a bound of zero. The reservation is then bounded against the
+// window it comes out of — half of it when the catalog stated the reservation,
+// and the smaller of the fallback and a quarter when it did not — and to at
+// least one token either way. A reservation that comes out of no window, which
+// is the prompt-limit-only case below, keeps what the catalog stated: it is
+// added to the window rather than taken out of it.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L125-L134
 const vscodeTokenPlan = (limits: PublicModel['limits']): { contextWindow: number; maxOutputTokens: number } => {
   // Read through the same filter the Zed projection uses: a zero, negative or

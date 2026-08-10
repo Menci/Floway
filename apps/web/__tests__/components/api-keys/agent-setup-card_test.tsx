@@ -274,7 +274,7 @@ describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s with no chat models'
 // picked the card has nothing to project, and saying "no chat models" there
 // tells a first-time visitor their upstreams are wrong when they have simply
 // not chosen a key.
-describe('Zed with an unknown catalog', () => {
+describe('an unknown catalog', () => {
   const renderUnknown = (selectedKey: ApiKey | null) => renderInApp(<AgentSetupCard
     clipboard={clipboard}
     initialApiKeyId={selectedKey?.id ?? null}
@@ -306,7 +306,7 @@ describe('Zed with an unknown catalog', () => {
     expect(screen.getAllByText(/model_provider/).length).toBeGreaterThan(0);
   });
 
-  it('blames the catalog on neither pane', () => {
+  it('blames the catalog on neither Zed pane', () => {
     renderUnknown(apiKey('key-1'));
     act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
     expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
