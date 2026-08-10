@@ -208,16 +208,29 @@ describe('Zed with no chat models', () => {
 // picked the card has nothing to project, and saying "no chat models" there
 // tells a first-time visitor their upstreams are wrong when they have simply
 // not chosen a key.
-describe('Zed with no key selected', () => {
+describe('Zed with an unknown catalog', () => {
+  const renderUnknown = (selectedKey: ApiKey | null) => renderInApp(<AgentSetupCard
+    clipboard={clipboard}
+    initialApiKeyId={selectedKey?.id ?? null}
+    initialError={null}
+    initialLease={selectedKey ? lease(selectedKey.id) : null}
+    models={null}
+    selectedKey={selectedKey}
+  />);
+
+  // A listing that failed is not a gateway with nothing to serve. Both panes
+  // have to tell those apart; the setup pane learned it first and the snippet
+  // pane kept collapsing `null` to an empty array.
+  it('blames the catalog on neither pane', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+  });
+
   it('asks for a key rather than blaming the catalog', () => {
-    renderInApp(<AgentSetupCard
-      clipboard={clipboard}
-      initialApiKeyId={null}
-      initialError={null}
-      initialLease={null}
-      models={null}
-      selectedKey={null}
-    />);
+    renderUnknown(null);
     act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
     expect(screen.getByText(/Select an API key above/)).toBeTruthy();
     expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();

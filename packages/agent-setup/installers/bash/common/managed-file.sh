@@ -40,10 +40,15 @@ _json_has_jsonc_syntax() {
         # and to 1.797e308, so accepting such a document here would have this
         # half silently alter a value inside a foreign entry while the
         # PowerShell half refuses the file. Refused on both instead.
+        #
+        # Matched case-insensitively and on the short form, because jq takes
+        # all of nan, NAN, nAn, inf, Inf and INFINITY. The letters are checked
+        # outside strings only, so a value that merely begins with them is
+        # ordinary text.
         # (No apostrophes in this program: it is a single-quoted shell word.)
-        if (c == "N" || c == "I") {
-          rest = substr($0, i)
-          if (rest ~ /^NaN/ || rest ~ /^Infinity/) { bad = 1 }
+        if (c == "N" || c == "n" || c == "I" || c == "i") {
+          rest = tolower(substr($0, i))
+          if (rest ~ /^nan/ || rest ~ /^inf/) { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
@@ -87,15 +92,25 @@ _resolve_managed_path() {
       *) _rmp_path=${_rmp_path%/*}/$_rmp_target ;;
     esac
   done
-  # Canonicalized when the shell can, so the path this run reports is the one
-  # the operator would type — the PowerShell half canonicalizes through
-  # GetFullPath and would otherwise name a different file for the same link.
-  # `cd -P` resolves the directory without needing readlink -f or realpath,
-  # neither of which BSD had before macOS 12.3; a directory that cannot be
-  # entered leaves the walked path, which is still correct to write to.
-  _rmp_dir=$(CDPATH= cd -P -- "${_rmp_path%/*}" 2>/dev/null && pwd -P) || _rmp_dir=''
-  [ -n "$_rmp_dir" ] && _rmp_path="$_rmp_dir/${_rmp_path##*/}"
-  printf '%s' "$_rmp_path"
+  # `.` and `..` are collapsed textually, matching what GetFullPath does on the
+  # PowerShell half, so the two report the same path and the backup prune —
+  # which compares this against the directory listing — matches its own file.
+  #
+  # Textually, not through `cd -P`: resolving a symlinked ancestor would name a
+  # directory the operator never typed, and would name a different one than the
+  # PowerShell half, which does not resolve them either.
+  _rmp_out=''
+  _rmp_rest=${_rmp_path#/}
+  while [ -n "$_rmp_rest" ]; do
+    _rmp_seg=${_rmp_rest%%/*}
+    case "$_rmp_rest" in */*) _rmp_rest=${_rmp_rest#*/} ;; *) _rmp_rest='' ;; esac
+    case "$_rmp_seg" in
+      '' | .) ;;
+      ..) _rmp_out=${_rmp_out%/*} ;;
+      *) _rmp_out="$_rmp_out/$_rmp_seg" ;;
+    esac
+  done
+  printf '%s' "${_rmp_out:-/}"
 }
 
 # A file's permission bits as an octal string, or empty when neither stat

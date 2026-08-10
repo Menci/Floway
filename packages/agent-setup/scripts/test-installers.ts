@@ -2934,6 +2934,11 @@ for (const { label, document } of [
   // was not asked to touch while the PowerShell half refuses the file.
   { label: 'a NaN value', document: '{"telemetry":{"metrics":NaN}}' },
   { label: 'an Infinity value', document: '{"telemetry":{"metrics":Infinity}}' },
+  // jq takes every one of these spellings, so the scanner has to as well.
+  { label: 'a lowercase nan value', document: '{"telemetry":{"metrics":nan}}' },
+  { label: 'a mixed-case nAn value', document: '{"telemetry":{"metrics":nAn}}' },
+  { label: 'a short inf value', document: '{"telemetry":{"metrics":inf}}' },
+  { label: 'an INFINITY value', document: '{"telemetry":{"metrics":INFINITY}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {

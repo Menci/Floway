@@ -69,7 +69,10 @@ function Test-SetupJsonKeyFollows {
 # stricter for a file the other half repairs. `NaN` and `Infinity` are refused
 # because jq rewrites those too, to `null` and to 1.797e308, which changes a
 # value inside an entry this run was not asked to touch; the awk scanner refuses
-# them for the same reason, so the two halves still answer alike. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
+# every spelling jq takes — nan, NAN, inf, Inf, INFINITY — for the same reason,
+# so the two halves still answer alike. One number form is left to the decoders:
+# jq rewrites `1e400` to `1E+400` and ConvertFrom-Json refuses it on both
+# versions, which is a range limit rather than a grammar the scanner can see. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
 # rejects on both versions, so the Bash half configures it and this one stops.
 # Both are documents no editor writes; the parity this arm buys is over the
 # constructs an operator can actually type.

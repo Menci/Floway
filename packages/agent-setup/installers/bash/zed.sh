@@ -115,8 +115,9 @@ zed_write_settings() {
     # Zed reads this file with serde_json_lenient, so a comment or a trailing
     # comma is the operator's content and jq is about to refuse it. Name that
     # cause rather than reporting a malformed object.
-    # Captured with `||` because a clean document exits 1, which `set -e` would
-    # otherwise take as a failure.
+    # The status is captured rather than branched on directly, because the
+    # scanner answers with three of them and `$?` would be clobbered by the
+    # `case` itself.
     _zw_verdict=0
     _json_has_jsonc_syntax "$ZED_SETTINGS_PATH" || _zw_verdict=$?
     case $_zw_verdict in
