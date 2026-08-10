@@ -121,6 +121,15 @@ const harness = (options: {
       kind: 'chat', endpoints: { messages: {} },
       limits: { max_context_window_tokens: 1_000_000, max_output_tokens: 64_000 },
     },
+    // Discrete efforts, because `reasoningEffortFormat` is the only field the
+    // configured API path reaches — without a reasoning model the wiring
+    // between the two cannot be observed at all.
+    {
+      id: 'effort-model', object: 'model', type: 'model', display_name: 'Effort',
+      kind: 'chat', endpoints: { messages: {} },
+      limits: { max_context_window_tokens: 200_000 },
+      chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'low' } } },
+    },
   ];
 
   const publicDeps: AgentSetupPublicDeps = {
@@ -519,6 +528,9 @@ test('the served VS Code script carries the projected catalog and its API path',
   expect(body).toContain("SETUP_VSCODE_API_TYPE='messages'");
   const embedded = body.split('\n').find(line => line.startsWith('SETUP_VSCODE_MODELS='))!;
   expect(embedded).toContain('"id":"claude-opus-4-6"');
+  // The configured path reaches the projection, not just the shell variable:
+  // `reasoningEffortFormat` is the only field it lands in.
+  expect(embedded).toContain('"reasoningEffortFormat":"messages"');
   // The endpoint and the credential are the merge's to attach, so the embedded
   // catalog carries neither — the merge program in the body still names them.
   expect(embedded).not.toContain('"url"');

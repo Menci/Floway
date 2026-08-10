@@ -138,7 +138,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models ?? []} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : nothingToConfigure
@@ -193,7 +193,10 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   agent: Agent;
   apiKey: string;
   configuration: AgentSetupConfiguration;
-  models: ControlPlaneModel[];
+  // `null` while the catalog is unknown — a listing that failed — as against an
+  // empty array, which is a gateway that serves nothing. Only the second is the
+  // operator's to act on.
+  models: ControlPlaneModel[] | null;
   clipboard: ClipboardCopy;
   onPlatformChange: (platform: Platform) => void;
   platform: Platform;
@@ -213,6 +216,9 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
+  // Nothing to project from a catalog that is not known yet; the page's own
+  // listing error is the message that belongs there.
+  if (models === null) return null;
   // Both editor installers refuse a catalog with no chat models rather than
   // write a provider that has none, so neither panel may hand the operator a
   // document to paste that would leave the editor with an unusable entry and no

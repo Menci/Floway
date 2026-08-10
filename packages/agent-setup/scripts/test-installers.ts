@@ -2958,6 +2958,11 @@ for (const { label, document } of [
   // was not asked to touch while the PowerShell half refuses the file.
   { label: 'a NaN value', document: '{"telemetry":{"metrics":NaN}}' },
   { label: 'an Infinity value', document: '{"telemetry":{"metrics":Infinity}}' },
+  // jq takes every one of these spellings, so the scanner has to as well.
+  { label: 'a lowercase nan value', document: '{"telemetry":{"metrics":nan}}' },
+  { label: 'a mixed-case nAn value', document: '{"telemetry":{"metrics":nAn}}' },
+  { label: 'a short inf value', document: '{"telemetry":{"metrics":inf}}' },
+  { label: 'an INFINITY value', document: '{"telemetry":{"metrics":INFINITY}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3604,7 +3609,7 @@ test('vscode', 'the selected API path reaches both the group and the effort form
   t.equal(group.models!.find(entry => entry.id === 'claude-opus-4-6')!.reasoningEffortFormat, 'responses', 'the effort format follows it');
 });
 
-test('vscode', 'an unreadable provider list is left untouched', async t => {
+test('vscode', 'a non-array root is left untouched', async t => {
   const ws = makeWorkspace();
   const userDir = makeVSCodeUserDir(ws);
   writeFileSync(vscodeGroupsPath(userDir), '{"vendor":"customendpoint"}');
@@ -3992,6 +3997,9 @@ for (const { label, document, cause } of [
   // foreign group; the PowerShell half refuses them outright.
   { label: 'a NaN value in a foreign group', document: '[{"vendor":"other","name":"Keep","x":NaN}]', cause: 'is not a provider list' },
   { label: 'an Infinity value in a foreign group', document: '[{"vendor":"other","name":"Keep","x":Infinity}]', cause: 'is not a provider list' },
+  // Two documents in one file. jq runs a filter once per document on a stream,
+  // so an unslurped gate would pass this and rewrite the operator's file.
+  { label: 'a stream of two provider lists', document: '[{"vendor":"other","name":"Keep"}]\n[{"vendor":"other","name":"Second"}]\n', cause: 'is not a provider list' },
 ]) {
   test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {

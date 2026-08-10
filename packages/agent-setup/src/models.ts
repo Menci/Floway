@@ -338,6 +338,7 @@ export const projectVSCodeModels = (
     const reasoning = model.chat?.reasoning;
     const supportedEfforts = reasoning?.effort?.supported;
     const plan = vscodeTokenPlan(model.limits);
+    const promptLimit = usableLimit(model.limits.max_prompt_tokens);
     // VS Code gives the prompt what the window leaves after the reservation, so
     // a window that cannot carry both is a model it would list and refuse on
     // every request. Dropped rather than listed, as the Zed projection does.
@@ -361,10 +362,9 @@ export const projectVSCodeModels = (
       // rebuilt around it.
       contextWindow: plan.contextWindow,
       // Through the same filter as the plan above, so an unusable prompt limit
-      // is absent here rather than stated as a negative budget.
-      ...(usableLimit(model.limits.max_prompt_tokens) === undefined
-        ? {}
-        : { maxInputTokens: model.limits.max_prompt_tokens }),
+      // is absent here rather than stated as a negative budget — bound once and
+      // emitted, rather than tested filtered and read raw.
+      ...(promptLimit === undefined ? {} : { maxInputTokens: promptLimit }),
       ...(reasoning === undefined ? {} : { thinking: true }),
       ...(supportedEfforts === undefined
         ? {}
