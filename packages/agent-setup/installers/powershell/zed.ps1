@@ -85,7 +85,10 @@ function Write-SetupZedSettings {
 
   if (Test-Path -LiteralPath $script:ZedSettingsPath) {
     $script:ZedSettingsExisted = $true
-    $raw = Get-SetupFileText $script:ZedSettingsPath
+    # The same sentence the Bash half gives, rather than the framework's: a
+    # denied read is not something the operator can fix in the document.
+    try { $raw = Get-SetupFileText $script:ZedSettingsPath }
+    catch { Stop-Setup "$($script:ZedSettingsPath) could not be read; leaving it untouched." }
     # PowerShell 7 accepts JSONC comments and drops them on the way out, while
     # 5.1 errors and jq refuses — three behaviors for one document. A trailing
     # comma splits the halves the same way: ConvertFrom-Json takes it and jq
@@ -126,6 +129,17 @@ function Write-SetupZedSettings {
     # deserializer will not read — while the Bash half creates the correct one
     # beside it. Zed writes this file never and reads it with serde, so no
     # document it produced can have one; noted rather than worked around.
+    # `-contains` and dotted member access are both case-insensitive, while jq's
+    # `has` is not — so a differently-cased `Language_Models` would have this
+    # half write the provider into the operator's key, which Zed's deserializer
+    # never reads, and report success. Refused instead: a configured provider
+    # that does not exist is the one outcome worth stopping for.
+    $casedKey = $document.PSObject.Properties |
+      Where-Object { $_.Name -ieq 'language_models' -and -not [string]::Equals($_.Name, 'language_models', [System.StringComparison]::Ordinal) } |
+      Select-Object -First 1
+    if ($null -ne $casedKey) {
+      Stop-Setup "$($script:ZedSettingsPath) holds a `"$($casedKey.Name)`" key that Zed does not read; rename it to language_models and run this again."
+    }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'
@@ -213,6 +227,11 @@ function Write-SetupZedSettings {
     # serializer's.
     $json = $document | ConvertTo-Json -Depth 100 -WarningAction Stop
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
+    # Owner-only before the mode carry-over below, because that step leaves the
+    # mode alone when neither stat dialect answers — and "alone" here means the
+    # inherited umask, which is wider than the Bash half's stage. Widening the
+    # file is what the carry-over exists to prevent.
+    if (-not (Test-SetupIsWindows)) { & chmod 600 $stage }
     $check = Get-SetupFileText $stage | ConvertFrom-Json
     # Read through the property bag rather than with `.$name`, which is dotted
     # member access over an operator-chosen string.

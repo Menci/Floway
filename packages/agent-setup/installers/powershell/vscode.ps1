@@ -148,7 +148,10 @@ function Write-SetupVSCodeSettings {
   $groups = @()
   if (Test-Path -LiteralPath $script:VSCodeSettingsPath) {
     $script:VSCodeSettingsExisted = $true
-    $raw = Get-SetupFileText $script:VSCodeSettingsPath
+    # The same sentence the Bash half gives, rather than the framework's: a
+    # denied read is not something the operator can fix in the document.
+    try { $raw = Get-SetupFileText $script:VSCodeSettingsPath }
+    catch { Stop-Setup "$($script:VSCodeSettingsPath) could not be read; leaving it untouched." }
     # The root shape is decided from the text, not from what ConvertFrom-Json
     # returned: it unwraps a one-element array into a bare object and decodes
     # `[]` to $null, so the decoded value cannot tell an array from an object.

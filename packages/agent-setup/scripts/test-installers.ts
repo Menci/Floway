@@ -549,6 +549,15 @@ const zedCredentialSecret = (workspace: Workspace): string => join(workspace.roo
 // speaks — a macOS runner without coreutils has only `-f`, and hardcoding `-c`
 // there would fail this test as a mode regression on the very platform the leg
 // exists to model.
+// A `stat` that answers neither dialect. Both halves then leave the mode alone
+// — and "alone" is a different mode on each: the Bash stage comes from a shell
+// redirect under `umask 077`, the PowerShell one from WriteAllText under the
+// inherited umask. Widening the operator's file is what the carry-over exists
+// to prevent, so neither may fall back to its own umask.
+const placeMuteStatShim = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'stat'), '#!/bin/bash\nprintf \'stat: unavailable\\n\' >&2\nexit 1\n', { mode: 0o755 });
+};
+
 const placeBsdStatShim = (workspace: Workspace): void => {
   const realStat = resolveTool('stat')!;
   writeFileSync(join(workspace.binDir, 'stat'), `#!/bin/bash
@@ -664,6 +673,9 @@ interface RunOptions {
   workspace: Workspace;
   configuration: InstallerTestConfiguration;
   agent?: ScriptAgent;
+  // Where the installer runs from, for the cases where a relative override has
+  // to resolve against something the test controls.
+  cwd?: string;
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
@@ -825,7 +837,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
   const signal = options.signalDuringInstall;
   return new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/bash', [scriptPath], { env, detached: signal !== undefined });
+    const child = spawn('/bin/bash', [scriptPath], { cwd: options.cwd, env, detached: signal !== undefined });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -1267,6 +1279,23 @@ test('claude', 'honors an explicit CLAUDE_CONFIG_DIR', async t => {
 // `~/.claude/settings.json` is the one an operator is most likely to have under
 // chezmoi or stow, and Codex's `config.toml` and provider token reach the same
 // rename through backup and rollback even though the CLI writes the config.
+// `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME` all accept a relative
+// path, and the resolver rebuilds from the root — so one that is not anchored
+// first comes back pointing at the filesystem root while the directory the run
+// created stays where the operator meant it.
+test('claude', 'honors a relative CLAUDE_CONFIG_DIR', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    configDir: 'relative-claude-config', cwd: ws.root,
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.root, 'relative-claude-config', 'settings.json')),
+    'settings land under the relative directory, not at the filesystem root');
+});
+
 test('claude', 'writes through a symlinked settings file rather than replacing it', async t => {
   if (process.platform === 'win32') skip('symlinks only');
   for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
@@ -2734,7 +2763,74 @@ test('zed', 'a missing configuration directory stops before any write', async t 
   t.ok(!existsSync(zedSettingsPath(absent)), 'no settings file is created');
 });
 
-test('zed', 'an unreadable settings document is left untouched', async t => {
+// A denied read is not a malformed document, and neither half may report it as
+// one — awk exits 2 on a file it cannot open, which the scanner's vocabulary
+// would call a value jq would rewrite, and ReadAllText raises a framework
+// message naming a path the operator already knows.
+test('zed', 'both halves name an unreadable settings document as unreadable', async t => {
+  if (process.platform === 'win32') skip('POSIX permission bits only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const original = JSON.stringify({ telemetry: { metrics: false } });
+    writeFileSync(zedSettingsPath(configDir), original);
+    chmodSync(zedSettingsPath(configDir), 0o000);
+    try {
+      const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.ok(run.code !== 0, `${which} refuses it`);
+      t.ok(run.combined.includes('could not be read'), `${which} names it unreadable:\n${run.combined}`);
+      t.ok(!run.combined.includes('Exception calling'), `${which} does not leak a framework message`);
+    } finally {
+      chmodSync(zedSettingsPath(configDir), 0o600);
+    }
+  }
+});
+
+// PowerShell resolves `.language_models` against a `Language_Models` key and
+// jq does not, so this half would write the provider into a key Zed never reads
+// and report success. Refusing is the answer: a configured provider that does
+// not exist is worse than a stop.
+test('zed', 'PowerShell refuses a case-variant language_models key', async t => {
+  if (!hostPwsh) skip('a PowerShell member-access property');
+  const ws = makeWorkspace();
+  const configDir = makeZedConfigDir(ws);
+  placeFakeCredentialTools(ws);
+  const document = JSON.stringify({ Language_Models: { anthropic_compatible: {} } });
+  writeFileSync(zedSettingsPath(configDir), document);
+
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
+  });
+
+  t.ok(run.code !== 0, `the run refuses it:\n${run.combined}`);
+  t.ok(run.combined.includes('Language_Models'), 'and names the key in the way');
+  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, 'leaving the document byte-identical');
+});
+
+// With no mode to read, neither half may leave the document wider than the
+// operator had it.
+test('zed', 'neither half widens the document when stat answers nothing', async t => {
+  if (process.platform === 'win32') skip('POSIX modes only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    placeMuteStatShim(ws);
+    writeFileSync(zedSettingsPath(configDir), JSON.stringify({ telemetry: { metrics: false } }), { mode: 0o600 });
+    chmodSync(zedSettingsPath(configDir), 0o600);
+
+    const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.equal(statSync(zedSettingsPath(configDir)).mode & 0o777, 0o600, `${which} leaves it owner-only`);
+  }
+});
+
+test('zed', 'a malformed settings document is left untouched', async t => {
   const ws = makeWorkspace();
   const configDir = makeZedConfigDir(ws);
   writeFileSync(zedSettingsPath(configDir), '{ this is not json');
@@ -2963,6 +3059,10 @@ for (const { label, document } of [
   { label: 'a mixed-case nAn value', document: '{"telemetry":{"metrics":nAn}}' },
   { label: 'a short inf value', document: '{"telemetry":{"metrics":inf}}' },
   { label: 'an INFINITY value', document: '{"telemetry":{"metrics":INFINITY}}' },
+  // A magnitude no double can hold: jq rewrites it, 5.1 refuses it, and pwsh 7
+  // decodes it to Infinity and writes it back as the string "Infinity" — a
+  // changed type reported as success.
+  { label: 'a number past the double range', document: '{"telemetry":{"metrics":1e400}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3089,7 +3189,8 @@ test('zed', 'PowerShell refuses a provider name it cannot keep beside an existin
 // ordinary JSON, and a scanner that flagged them would refuse documents Zed and
 // jq both accept.
 test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,]",\n  "list": ["a", "b"]\n}';
+  // 1e308 is representable and must pass; a `NaN` inside a string is text.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
@@ -3098,7 +3199,7 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
     const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
     const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
     t.equal(run.code, 0, `${which} accepts it:\n${run.combined}`);
-    t.equal((readSettings(zedSettingsPath(configDir)) as ZedSettings).note, 'see https://example.com/a,]', `${which} keeps the value intact`);
+    t.equal((readSettings(zedSettingsPath(configDir)) as ZedSettings).note, 'see https://example.com/a,] NaN Infinity', `${which} keeps the value intact`);
   };
 
   await runHalf('bash');
@@ -3607,6 +3708,31 @@ test('vscode', 'the selected API path reaches both the group and the effort form
   const group = ourGroup(readVSCodeGroups(userDir));
   t.equal(group.apiType, 'responses', 'the group carries the selection');
   t.equal(group.models!.find(entry => entry.id === 'claude-opus-4-6')!.reasoningEffortFormat, 'responses', 'the effort format follows it');
+});
+
+// A denied read is not a malformed document, and neither half may report it as
+// one — awk exits 2 on a file it cannot open, and ReadAllText raises a
+// framework message naming a path the operator already knows.
+test('vscode', 'both halves name an unreadable provider list as unreadable', async t => {
+  if (process.platform === 'win32') skip('POSIX permission bits only');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-unreadable-${which}`);
+    const original = '[{"vendor":"other","name":"Keep"}]';
+    writeFileSync(vscodeGroupsPath(userDir), original);
+    chmodSync(vscodeGroupsPath(userDir), 0o000);
+    try {
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.ok(run.code !== 0, `${which} refuses it`);
+      t.ok(run.combined.includes('could not be read'), `${which} names it unreadable:\n${run.combined}`);
+      t.ok(!run.combined.includes('Exception calling'), `${which} does not leak a framework message`);
+    } finally {
+      chmodSync(vscodeGroupsPath(userDir), 0o600);
+    }
+  }
 });
 
 test('vscode', 'a non-array root is left untouched', async t => {

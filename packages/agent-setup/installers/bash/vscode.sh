@@ -152,6 +152,13 @@ vscode_write_settings() {
     # about preserving anything.
     # Captured with `||` because a clean document exits 1, which `set -e` would
     # otherwise take as a failure.
+    # Readability is asked first: awk exits 2 on a file it cannot open, which
+    # the scanner's own vocabulary would report as a value jq would rewrite —
+    # blaming the operator's content for a permission problem.
+    if [ ! -r "$VSCODE_SETTINGS_PATH" ]; then
+      out_error "$VSCODE_SETTINGS_PATH could not be read; leaving it untouched."
+      return 1
+    fi
     _vw_verdict=0
     _json_has_jsonc_syntax "$VSCODE_SETTINGS_PATH" || _vw_verdict=$?
     case $_vw_verdict in

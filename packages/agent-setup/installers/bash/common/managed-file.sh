@@ -50,6 +50,18 @@ _json_has_jsonc_syntax() {
           rest = tolower(substr($0, i))
           if (rest ~ /^nan/ || rest ~ /^inf/) { bad = 1 }
         }
+        # A magnitude no double can hold, which jq rewrites and the two
+        # PowerShell versions disagree about. The exponent is compared rather
+        # than counted: 1e308 is representable and 1e309 is not.
+        if (c ~ /[0-9]/) {
+          num = substr($0, i)
+          if (num ~ /^[0-9]+([.][0-9]+)?[eE][+]?[0-9]+/) {
+            expn = num
+            sub(/^[0-9]+([.][0-9]+)?[eE][+]?/, "", expn)
+            sub(/[^0-9].*$/, "", expn)
+            if (expn + 0 > 308) { bad = 1 }
+          }
+        }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
         if (comma && (c == "}" || c == "]")) { found = 1; exit }
@@ -99,6 +111,14 @@ _resolve_managed_path() {
   # Textually, not through `cd -P`: resolving a symlinked ancestor would name a
   # directory the operator never typed, and would name a different one than the
   # PowerShell half, which does not resolve them either.
+  # Anchored first: the collapse below rebuilds from the root, so a relative
+  # path — which `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME` all
+  # accept — would come back pointing at the filesystem root while the
+  # directory this run creates stays where the operator meant it.
+  case $_rmp_path in
+    /*) ;;
+    *) _rmp_path="$PWD/$_rmp_path" ;;
+  esac
   _rmp_out=''
   _rmp_rest=${_rmp_path#/}
   while [ -n "$_rmp_rest" ]; do

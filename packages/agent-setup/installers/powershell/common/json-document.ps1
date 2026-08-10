@@ -70,9 +70,10 @@ function Test-SetupJsonKeyFollows {
 # because jq rewrites those too, to `null` and to 1.797e308, which changes a
 # value inside an entry this run was not asked to touch; the awk scanner refuses
 # every spelling jq takes — nan, NAN, inf, Inf, INFINITY — for the same reason,
-# so the two halves still answer alike. One number form is left to the decoders:
-# jq rewrites `1e400` to `1E+400` and ConvertFrom-Json refuses it on both
-# versions, which is a range limit rather than a grammar the scanner can see. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
+# so the two halves still answer alike. A magnitude no double can hold is
+# refused here for the same reason: jq rewrites `1e400` to `1E+400`, 5.1 refuses
+# it, and pwsh 7 decodes it to Infinity and writes it back as the string
+# "Infinity" — a changed type reported as success. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
 # rejects on both versions, so the Bash half configures it and this one stops.
 # Both are documents no editor writes; the parity this arm buys is over the
 # constructs an operator can actually type.
@@ -150,8 +151,19 @@ function Get-SetupJsonVerdict {
     if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) { $strict = $false }
     elseif ('0123456789+-'.IndexOf($ch) -ge 0) {
       # Walk the number to its end and ask the same question of what follows.
+      $numberStart = $i
       while ($i + 1 -lt $Text.Length -and '0123456789+-.eE'.IndexOf($Text[$i + 1]) -ge 0) { $i++ }
       if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
+      # A magnitude no double can hold. pwsh 7 decodes `1e400` to Infinity and
+      # then writes it back as the *string* "Infinity" — a changed type reported
+      # as success — while 5.1 refuses it and jq rewrites it to `1E+400`. Three
+      # answers for one file unless this arm refuses it.
+      $token = $Text.Substring($numberStart, $i - $numberStart + 1)
+      $parsed = 0.0
+      if ([double]::TryParse($token, [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+        if ([double]::IsInfinity($parsed) -or [double]::IsNaN($parsed)) { $strict = $false }
+      }
     }
   }
   # An unterminated container, or a string that never closed.
