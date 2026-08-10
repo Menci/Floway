@@ -160,44 +160,22 @@ vscode_write_settings() {
 
   if [ -e "$VSCODE_SETTINGS_PATH" ]; then
     VSCODE_SETTINGS_EXISTED=1
-    # jq has no lenient mode and is about to refuse this file. Name that cause
-    # rather than reporting a malformed provider list. Unlike Zed's document the
-    # syntax is not the operator's to keep — VS Code rewrites this file whole on
-    # its own next edit — so the refusal is about the two halves agreeing, not
-    # about preserving anything.
-    # The status is captured rather than branched on directly: the scanner
-    # answers with three of them, and `$?` would be clobbered by the `case`
-    # itself.
-    # Readability is asked first: awk prints no verdict for a file it cannot
-    # open, and that is indistinguishable from the scanner failing — the
-    # operator would be sent after the scanner for a permission problem.
+    # Readability is asked first: what follows reads the file rather than
+    # opening it by name, so a denied read would surface as a document this
+    # installer calls malformed.
     if [ ! -r "$VSCODE_SETTINGS_PATH" ]; then
       out_error "$VSCODE_SETTINGS_PATH could not be read; leaving it untouched."
       return 1
     fi
-    _vw_verdict=0
-    _json_has_jsonc_syntax "$VSCODE_SETTINGS_PATH" || _vw_verdict=$?
-    case $_vw_verdict in
-      0)
-        out_error "$VSCODE_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
-        return 1
-        ;;
-      2)
-        # jq would take NaN or Infinity and rewrite it, changing a value inside
-        # a foreign group. The PowerShell half refuses such a document, and one
-        # file has to get one answer.
-        out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
-        return 1
-        ;;
-      3)
-        # No verdict came back at all: the scanner itself failed. Its own
-        # vocabulary cannot describe that, and the document is readable and may
-        # be perfectly valid, so blaming its content would send the operator
-        # after the wrong file.
-        out_error "${VSCODE_SETTINGS_PATH} could not be examined; leaving it untouched."
-        return 1
-        ;;
-    esac
+    # VS Code parses this file with `allowTrailingComma`, so an operator may
+    # have left one; neither writer here takes it. Stripping first is what lets
+    # both halves merge the same document, and nothing is lost that survives
+    # the rewrite — VS Code writes this file whole on its own next edit.
+    _vw_base=$(_strip_jsonc "$VSCODE_SETTINGS_PATH")
+    if printf '%s' "$_vw_base" | _json_has_nonfinite; then
+      out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
+      return 1
+    fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and once per document on a stream, so an empty file and a
     # multi-document file would both pass an unslurped gate and fail later as a
@@ -206,12 +184,12 @@ vscode_write_settings() {
     # that one indexes to `null` and would be carried through the rewrite — and
     # the PowerShell filter would keep either and rewrite the file, so the same
     # document would be accepted on one platform and refused on the other.
-    if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "array") and (.[0] | all(.[]; type == "object"))' \
-        "$VSCODE_SETTINGS_PATH" >/dev/null 2>&1; then
+    if ! printf '%s' "$_vw_base" \
+        | "$JQ" -s -e 'length == 1 and (.[0] | type == "array") and (.[0] | all(.[]; type == "object"))' \
+        >/dev/null 2>&1; then
       out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
       return 1
     fi
-    _vw_base=$(cat "$VSCODE_SETTINGS_PATH")
     VSCODE_SETTINGS_BACKUP="$VSCODE_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
     if ! _back_up_managed_file "$VSCODE_SETTINGS_PATH" "$VSCODE_SETTINGS_BACKUP" own-mode; then
       VSCODE_SETTINGS_BACKUP=""

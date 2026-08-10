@@ -120,42 +120,22 @@ zed_write_settings() {
 
   if [ -e "$ZED_SETTINGS_PATH" ]; then
     ZED_SETTINGS_EXISTED=1
-    # Zed reads this file with serde_json_lenient, so a comment or a trailing
-    # comma is the operator's content and jq is about to refuse it. Name that
-    # cause rather than reporting a malformed object.
-    # The status is captured rather than branched on directly, because the
-    # scanner answers with three of them and `$?` would be clobbered by the
-    # `case` itself.
-    # Readability is asked first: awk prints no verdict for a file it cannot
-    # open, and that is indistinguishable from the scanner failing — the
-    # operator would be sent after the scanner for a permission problem.
+    # Readability is asked first: what follows reads the file rather than
+    # opening it by name, so a denied read would surface as a document this
+    # installer calls malformed.
     if [ ! -r "$ZED_SETTINGS_PATH" ]; then
       out_error "$ZED_SETTINGS_PATH could not be read; leaving it untouched."
       return 1
     fi
-    _zw_verdict=0
-    _json_has_jsonc_syntax "$ZED_SETTINGS_PATH" || _zw_verdict=$?
-    case $_zw_verdict in
-      0)
-        out_error "$ZED_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
-        return 1
-        ;;
-      2)
-        # jq would take NaN or Infinity and rewrite it, changing a value this
-        # run was not asked to touch. The PowerShell half refuses the document
-        # outright, and one file has to get one answer.
-        out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
-        return 1
-        ;;
-      3)
-        # No verdict came back at all: the scanner itself failed. Its own
-        # vocabulary cannot describe that, and the document is readable and may
-        # be perfectly valid, so blaming its content would send the operator
-        # after the wrong file.
-        out_error "${ZED_SETTINGS_PATH} could not be examined; leaving it untouched."
-        return 1
-        ;;
-    esac
+    # Zed reads this file with serde_json_lenient, so a comment or a trailing
+    # comma is the operator's own content — and neither writer here takes one.
+    # Stripping them first is what lets both halves merge the same document;
+    # they do not survive into the result, which is rewritten wholesale anyway.
+    _zw_base=$(_strip_jsonc "$ZED_SETTINGS_PATH")
+    if printf '%s' "$_zw_base" | _json_has_nonfinite; then
+      out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
+      return 1
+    fi
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped
@@ -172,18 +152,17 @@ zed_write_settings() {
     # non-object and fails the gate anyway. It stays because refusing by type
     # is what this gate means, and leaning on a raised jq error would make the
     # next edit to the conjunct below silently take this case with it.
-    if ! "$JQ" -s -e '
+    if ! printf '%s' "$_zw_base" | "$JQ" -s -e '
         length == 1
         and (.[0] | type == "object")
         and (.[0] | (has("language_models") | not) or (.language_models | type == "object"))
         and (.[0] | (has("language_models") | not)
              or (.language_models | has("anthropic_compatible") | not)
              or (.language_models.anthropic_compatible | type == "object"))
-      ' "$ZED_SETTINGS_PATH" >/dev/null 2>&1; then
+      ' >/dev/null 2>&1; then
       out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
       return 1
     fi
-    _zw_base=$(cat "$ZED_SETTINGS_PATH")
     ZED_SETTINGS_BACKUP="$ZED_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
     # `-p` because the backup is the file this run may have to restore: created
     # under `umask 077` it would come back narrower than the operator's own

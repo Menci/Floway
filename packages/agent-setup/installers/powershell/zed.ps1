@@ -99,22 +99,18 @@ function Write-SetupZedSettings {
     # denied read is not something the operator can fix in the document.
     try { $raw = Get-SetupFileText $script:ZedSettingsPath }
     catch { Stop-Setup "$($script:ZedSettingsPath) could not be read; leaving it untouched." }
-    # PowerShell 7 accepts JSONC comments and drops them on the way out, while
-    # 5.1 errors and jq refuses — three behaviors for one document. A trailing
-    # comma splits the halves the same way: ConvertFrom-Json takes it and jq
-    # does not. Zed reads this file with serde_json_lenient, so both are the
-    # operator's content and silently deleting either is data loss. Refuse, as
-    # the Bash half does.
+    # Zed reads this file with serde_json_lenient, so a comment or a trailing
+    # comma is the operator's own content. Neither writer here takes one — 5.1
+    # errors on both and jq refuses them — so they are stripped before anything
+    # else looks at the document, which is what lets both halves merge the same
+    # text. They do not survive the rewrite either way.
     # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/fallible_options.rs#L11-L19
-    $verdict = Get-SetupJsonVerdict $raw
-    if ($verdict -eq 'jsonc') {
-      Stop-Setup "$($script:ZedSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
-    }
-    # Both decoders take a single-quoted string and an unquoted key — measured
-    # on 5.1.26100.8875 and pwsh 7.7 — and would write the document back in
-    # canonical form where jq refuses it outright. So the verdict decides, not
-    # the decoder, and the sentence matches the Bash half's.
-    if ($verdict -eq 'invalid') {
+    $raw = Remove-SetupJsonComments $raw
+    # Both decoders take a single-quoted string, an unquoted key and a raw
+    # control character, and would write the document back in canonical form
+    # where jq refuses it outright. The strict check decides, not the decoder,
+    # and the sentence matches the Bash half's.
+    if (-not (Test-SetupJsonStrict $raw)) {
       Stop-Setup "$($script:ZedSettingsPath) is not a valid Zed settings document; leaving it untouched."
     }
     # The root is judged from the text before anything is decoded: an empty file

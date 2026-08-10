@@ -172,25 +172,17 @@ function Write-SetupVSCodeSettings {
     # jq, which the Bash installer asks the same question, reads the text.
     # Get-Content -Raw yields $null for an empty file, which is not a list
     # either — and dereferencing it would report a PowerShell internal instead.
-    # Unlike Zed's document, a comment here is not the operator's to keep: VS
-    # Code rewrites this whole file through `model.setValue(JSON.stringify(…))`
-    # whenever Manage Models changes anything, so its own next edit deletes the
-    # comment too. The refusal exists because jq has no JSONC mode and the Bash
-    # half therefore cannot accept such a file — and the two halves have to give
-    # one answer, rather than pwsh silently dropping what jq refuses.
-    # A trailing comma splits the halves the same way and for the same reason:
-    # VS Code parses this document with `allowTrailingComma`, ConvertFrom-Json
-    # takes one, and jq does not.
+    # VS Code parses this document with `allowTrailingComma`, so an operator may
+    # have left one, and a comment is legal here too — its own writer deletes
+    # both on its next edit. Neither writer here takes them, so they are
+    # stripped first and both halves merge the same text.
     # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L232
     #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/base/common/json.ts#L144-L148
-    $verdict = Get-SetupJsonVerdict $raw
-    if ($verdict -eq 'jsonc') {
-      Stop-Setup "$($script:VSCodeSettingsPath) carries JSONC syntax this installer cannot preserve; leaving it untouched."
-    }
-    # Newtonsoft would take a single-quoted string or an unquoted key and write
-    # the document back in canonical form where jq refuses it outright, so the
-    # verdict decides rather than the decoder.
-    if ($verdict -eq 'invalid') {
+    $raw = Remove-SetupJsonComments $raw
+    # Both decoders take a single-quoted string, an unquoted key and a raw
+    # control character, and would write the document back in canonical form
+    # where jq refuses it outright. The strict check decides, not the decoder.
+    if (-not (Test-SetupJsonStrict $raw)) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
     if (-not (Test-SetupJsonRoot $raw '[')) {

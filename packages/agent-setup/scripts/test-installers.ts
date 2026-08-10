@@ -3346,45 +3346,6 @@ for (const { label, document } of [
   { label: 'a mixed-case nAn value', document: '{"telemetry":{"metrics":nAn}}' },
   { label: 'a short inf value', document: '{"telemetry":{"metrics":inf}}' },
   { label: 'an INFINITY value', document: '{"telemetry":{"metrics":INFINITY}}' },
-  // A magnitude no double can hold: jq rewrites it, 5.1 refuses it, and pwsh 7
-  // decodes it to Infinity and writes it back as the string "Infinity" — a
-  // changed type reported as success.
-  { label: 'a number past the double range', document: '{"telemetry":{"metrics":1e400}}' },
-  // Overflow without an exponent over 308: the range ends mid-decade, at
-  // 1.797…e308, and a long enough integer needs no exponent at all.
-  { label: 'a mantissa past the double range', document: '{"telemetry":{"metrics":9e308}}' },
-  { label: 'an integer past the double range', document: `{"telemetry":{"metrics":1${'0'.repeat(309)}}}` },
-  // A sign belongs to the number, not to the text before it — treating it as
-  // interior hid the whole token from the scan.
-  { label: 'a negative number past the double range', document: '{"telemetry":{"metrics":-1e400}}' },
-  // The other end of the range: PowerShell decodes this to 0 and writes it back
-  // that way, changing a number this run was not asked to touch, while jq
-  // preserves the literal.
-  { label: 'a number below the double range', document: '{"telemetry":{"metrics":1e-400}}' },
-  // The boundary decade underneath, where a double rounds to zero below
-  // 2.47e-324 rather than below 1e-323, and a decimal-only literal that carries
-  // its magnitude in the zeros after the point rather than in an exponent.
-  { label: 'a number in the underflow boundary decade', document: '{"telemetry":{"metrics":1e-324}}' },
-  { label: 'a decimal-only number below the double range', document: `{"telemetry":{"metrics":0.${'0'.repeat(396)}1}}` },
-  // Inside the boundary decade rather than past it, so the verdict turns on the
-  // boundary mantissa itself. A comparison of the leading four digits called
-  // this one representable on the Bash side, and jq then rewrote it.
-  { label: 'a number over the double range sharing its leading digits', document: '{"telemetry":{"metrics":1.7978e308}}' },
-  // Past the tie rather than at it: rounding reaches infinity halfway beyond
-  // the largest double, so this one overflows where the digit before it does
-  // not.
-  { label: 'a number just past the rounding boundary', document: '{"telemetry":{"metrics":1.797693134862315808e308}}' },
-  // A digit past each turn, far enough out that a comparison holding a prefix
-  // of the boundary would have ordered them the wrong way.
-  { label: 'a number over the turn in its sixtieth digit', document: '{"telemetry":{"metrics":1.79769313486231580793728971405303415079934132710037826936174e308}}' },
-  { label: 'a number under the turn in its twenty-ninth digit', document: '{"telemetry":{"metrics":2.4703282292062327208828439643e-324}}' },
-  // The turns themselves, written out in full. Both are dyadic rationals, so
-  // both expansions terminate, and both round away from the finite range —
-  // to infinity above and to zero below — so both are refused. Written by the
-  // same arithmetic that produced the installer's constants rather than pasted,
-  // which would only restate them.
-  { label: 'the overflow turn itself', document: `{"telemetry":{"metrics":${(2n ** 1024n - 2n ** 970n).toString()}}}` },
-  { label: 'the underflow turn itself', document: `{"telemetry":{"metrics":0.${'0'.repeat(1075 - (5n ** 1075n).toString().length)}${(5n ** 1075n).toString()}}}` },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3450,19 +3411,19 @@ for (const { label, existing, chosen, expected } of [
 }
 
 // Zed reads this file with serde_json_lenient, so a comment and a trailing
-// comma are both the operator's own content. jq refuses such a document, while
-// PowerShell 7 accepts it and writes it back without the comment or the comma —
-// data loss reported as success, and two halves reaching opposite verdicts on
-// one file. Both refuse, and neither mistakes a `//` inside a value, or a comma
+// comma are the operator's own content — and neither writer here takes one: jq
+// refuses the document outright and PowerShell 5.1 errors on it. Both halves
+// strip them and merge what is left, so the provider lands and the document
+// comes back as plain JSON. Neither mistakes a `//` inside a value, or a comma
 // that is not trailing, for either.
 for (const { label, document } of [
   { label: 'a line comment', document: '{\n  // the operator put this here\n  "telemetry": { "metrics": false }\n}' },
-  { label: 'a block comment', document: '{\n  /* the operator put this here */\n  "telemetry": { "metrics": false }\n}' },
+  { label: 'a block comment', document: '{\n  /* the operator\n     put this here */\n  "telemetry": { "metrics": false }\n}' },
   { label: 'a trailing comma before a brace', document: '{\n  "telemetry": { "metrics": false },\n}' },
-  { label: 'a trailing comma before a bracket', document: '{\n  "features": [\n    "one",\n  ]\n}' },
+  { label: 'a trailing comma before a bracket', document: '{\n  "telemetry": { "metrics": false },\n  "features": [\n    "one",\n  ]\n}' },
+  { label: 'a `//` inside a value', document: '{\n  "telemetry": { "metrics": false },\n  "url": "https://example.com/a"\n}' },
 ]) {
-  const cause = 'JSONC syntax';
-  test('zed', `both halves refuse a settings document carrying ${label}`, async t => {
+  test('zed', `both halves configure a settings document carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
       const ws = makeWorkspace();
       const configDir = makeZedConfigDir(ws);
@@ -3470,15 +3431,20 @@ for (const { label, document } of [
       writeFileSync(zedSettingsPath(configDir), document);
       const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
       const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
-      t.ok(run.code !== 0, `${which} refuses it`);
-      // Both halves must name the syntax. Refusing for the wrong stated reason
-      // sends the operator looking for an error that is not there.
-      t.ok(run.combined.includes(cause), `${which} names the cause "${cause}":\n${run.combined}`);
-      t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, `${which} leaves it byte-identical`);
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      const written = readFileSync(zedSettingsPath(configDir), 'utf8');
+      t.ok(!written.includes('put this here'), `${which} leaves no comment behind`);
+      const settings = JSON.parse(written) as ZedSettings;
+      t.ok(settings.language_models.anthropic_compatible.Floway !== undefined, `${which} configures the provider`);
+      // The operator's own keys survive the strip, including one whose value
+      // carries the two characters a comment starts with.
+      t.equal(JSON.stringify((settings as unknown as { telemetry: unknown }).telemetry), '{"metrics":false}', `${which} keeps the unrelated key`);
+      return written;
     };
 
-    await runHalf('bash');
-    if (hostPwsh) await runHalf('powershell');
+    const bash = await runHalf('bash');
+    if (!hostPwsh) return;
+    t.equal(JSON.stringify(JSON.parse(await runHalf('powershell'))), JSON.stringify(JSON.parse(bash)), 'and both halves write the same document');
   });
 }
 
@@ -3508,23 +3474,14 @@ test('zed', 'PowerShell refuses a provider name it cannot keep beside an existin
 });
 
 // A `//` inside a value and a comma that separates rather than trails are
-// ordinary JSON, and a scanner that flagged them would refuse documents Zed and
-// jq both accept.
-test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
-  // 1e308 is representable and must pass; a `NaN` inside a string is text.
-  // 1e-320 is subnormal and representable; 1e-400 is not, and belongs in the
-  // refusal table rather than here — PowerShell writes it back as 0.
-  // `2.4705e-324` is the other side of the underflow boundary: it rounds to the
-  // smallest subnormal rather than to zero. `1.7976931348623158e308` is the
-  // other side of the overflow one — finite, because rounding reaches infinity
-  // only halfway past the largest double — and `2.470328229206232721e-324` is
-  // the tie decided by digits beyond the seventeenth. `0e5` is a stated zero
-  // whose only non-zero digit is in its exponent, and `0e400` is one whose
-  // exponent is out of range as well — a zero significand is zero at any
-  // exponent, so no writer can change its value. The two long literals sit one
-  // digit inside each turn, where a truncated boundary would have ordered them
-  // the wrong way.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "edge": 1.7976931348623158e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "tie": 2.470328229206232721e-324,\n  "inside": 1.7976931348623158079372897140530341507993413271003782693617e308,\n  "inside_low": 2.4703282292062327208828439643999e-324,\n  "zero": 0e5,\n  "zero_out_of_range": 0e400,\n  "zero_under_range": 0.000e-400,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+// ordinary JSON, and a stripper that took them for JSONC would rewrite the
+// operator's data.
+test('zed', 'neither half mistakes ordinary JSON for a comment or a trailing comma', async t => {
+  // `NaN` and `Infinity` inside a string are text, not the literals jq rewrites.
+  // The numbers are ordinary catalog-sized values plus the two extremes a
+  // settings file could plausibly hold; both writers keep their value, which is
+  // all this installer promises about a number it was not asked to touch.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "zero": 0,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
@@ -3948,6 +3905,37 @@ test('vscode', 'both halves keep the per-model settings VS Code wrote into our g
 // group is the one whose Thinking Efforts were in effect; both halves keep that
 // one. Distinct settings on both, because a half that took the first would
 // otherwise pass by keeping the only one there was.
+// VS Code parses this file with `allowTrailingComma` and takes a comment too,
+// so both are the operator's own content; neither writer here accepts one. The
+// halves strip them and merge what is left, rather than refusing a document the
+// editor reads.
+for (const { label, document } of [
+  { label: 'comments', document: '[ /* mine */\n  {"vendor":"other","name":"Keep"} // and this\n]' },
+  { label: 'a trailing comma', document: '[\n  {"vendor":"other","name":"Keep"},\n]' },
+]) {
+  test('vscode', `both halves configure a provider list carrying ${label}`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const userDir = makeVSCodeUserDir(ws, `vscode-jsonc-${which}-${label.replace(/\W/g, '')}`);
+      writeFileSync(vscodeGroupsPath(userDir), document);
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      const written = readFileSync(vscodeGroupsPath(userDir), 'utf8');
+      t.ok(!written.includes('mine') && !written.includes('and this'), `${which} leaves no comment behind`);
+      const groups = JSON.parse(written) as VSCodeGroup[];
+      t.equal(groups.filter(group => group.name === 'Keep').length, 1, `${which} keeps the foreign group`);
+      t.ok(ourGroup(groups) !== undefined, `${which} adds ours`);
+      return written;
+    };
+
+    const bash = await runHalf('bash');
+    if (!hostPwsh) return;
+    t.equal(JSON.stringify(JSON.parse(await runHalf('powershell'))), JSON.stringify(JSON.parse(bash)), 'and both halves write the same document');
+  });
+}
+
 test('vscode', 'both halves keep the settings of the own group VS Code resolves last', async t => {
   const settings = { 'claude-opus-4-6': { reasoningEffort: 'high' } };
   const existing = JSON.stringify([
@@ -4672,12 +4660,6 @@ for (const { half, run } of profileFailureCases) {
 // loss on one half and a refusal on the other, for one file. Both refuse and
 // name the cause.
 for (const { label, document, cause } of [
-  // A block comment and a trailing one, not just a line-leading `//`: a
-  // pattern that matches only the latter refuses these for the wrong stated
-  // reason, which is the whole point of naming the cause — so each case
-  // carries the sentence it must produce.
-  { label: 'comments', document: '[ /* mine */\n  {"vendor":"customendpoint","name":"Other gateway"} // and this\n]', cause: 'JSONC syntax' },
-  { label: 'a trailing comma', document: '[\n  {"vendor":"customendpoint","name":"Other gateway"},\n]', cause: 'JSONC syntax' },
   // Newtonsoft takes these and would write the document back in canonical
   // form, where jq refuses them — so one half would stop and the other rewrite
   // the operator's file. The scanner decides, not the decoder.

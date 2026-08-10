@@ -1,63 +1,78 @@
-# Does this JSON file use a JSONC construct — a `//` or `/*` comment, or a
-# comma before a closing brace or bracket? Both editors read their managed
-# document with a parser that accepts these (Zed's serde_json_lenient, VS Code's
-# `allowTrailingComma` visitor), so they are the operator's content, but jq has
-# no lenient mode and would refuse the file while naming the wrong cause.
+# Rewrites a JSONC document as plain JSON on stdout: comments removed, a comma
+# before a closing brace or bracket dropped, a leading byte-order mark dropped.
 #
-# PowerShell 6+ accepts a trailing comma and would have gone on to rewrite the
-# file without it — 5.1 refuses it itself — so refusing is also what keeps the
-# two halves from reaching opposite verdicts on one document, on either host. Strings are walked rather than
-# matched by pattern, because a value like a URL contains `//` legitimately.
-# Exits 0 for a JSONC construct, 2 for a value jq would rewrite rather than
-# refuse, and 1 for a document neither applies to.
+# Both editors read their managed document with a parser that accepts these
+# (Zed through serde_json_lenient, VS Code through an `allowTrailingComma`
+# visitor), so an operator may well have written them, while neither writer this
+# installer uses will take them: jq refuses the file outright, and
+# `ConvertFrom-Json` refuses it on the Windows PowerShell 5.1 baseline. Stripping
+# first gives both halves the same plain document to merge, at the cost of the
+# comments — the managed file is rewritten wholesale either way.
 #
-# Mirrors the `jsonc` arm of Get-SetupJsonVerdict, down to the
-# whitespace it skips: space, tab and CR here, plus the newline there, which
-# awk never sees because it splits records on it. Anything wider — a form feed,
-# a non-breaking space — would have the two halves refuse one document under
-# two different names. That function has a second arm this one does not: jq
-# decides what is valid JSON for this half, so there is nothing here to mirror
-# the strict verdict PowerShell has to reach by hand.
-_json_scan_verdict() {
-  # `LC_ALL=C` makes awk byte-oriented. Under a UTF-8 locale — the default on
-  # macOS — it dies with a multibyte conversion error on any non-ASCII byte
-  # outside a string, and a smart quote or a non-breaking space pasted out of a
-  # web page is exactly that. The scan only ever compares against ASCII
-  # structure, so bytes are the right unit for it; the merge still reads the
-  # file itself, where jq handles encoding.
+# Strings are walked rather than matched by pattern, because a value like a URL
+# contains `//` legitimately. `LC_ALL=C` makes awk byte-oriented: under a UTF-8
+# locale it dies with a multibyte conversion error on any non-ASCII byte outside
+# a string, and a smart quote pasted out of a web page is exactly that.
+_strip_jsonc() {
   LC_ALL=C awk '
-    # Orders two significand digit runs by value: zero-pad the shorter, then
-    # compare as strings, which for equal-length digit runs is the same order.
-    function _digitcmp(a, b,   n) {
-      n = length(a) > length(b) ? length(a) : length(b)
-      while (length(a) < n) a = a "0"
-      while (length(b) < n) b = b "0"
-      return a < b ? -1 : (a > b ? 1 : 0)
+    { doc = doc $0 "\n" }
+    END {
+      # A comma is held back until the next structural byte says whether it was
+      # a separator or a trailing one, so `,` and `}` on separate lines are seen
+      # together.
+      pending = ""
+      held = ""
+      n = length(doc)
+      for (i = 1; i <= n; i++) {
+        c = substr(doc, i, 1)
+        if (i == 1 && substr(doc, 1, 3) == "\357\273\277") { i = 3; continue }
+        if (in_string) {
+          out = out c
+          if (escaped) { escaped = 0 }
+          else if (c == "\\") { escaped = 1 }
+          else if (c == "\"") { in_string = 0 }
+          continue
+        }
+        if (c == "/" && (substr(doc, i + 1, 1) == "/" || substr(doc, i + 1, 1) == "*")) {
+          if (substr(doc, i + 1, 1) == "/") {
+            while (i <= n && substr(doc, i, 1) != "\n") { i++ }
+            held = held "\n"
+          } else {
+            i = i + 2
+            while (i < n && substr(doc, i, 2) != "*/") { i++ }
+            i = i + 1
+          }
+          continue
+        }
+        if (pending != "") {
+          if (c == " " || c == "\t" || c == "\r" || c == "\n") { held = held c; continue }
+          # The comma was a trailing one, so only what stood between it and the
+          # bracket is kept.
+          out = out (c == "}" || c == "]" ? "" : pending) held
+          pending = ""
+          held = ""
+        }
+        if (c == ",") { pending = ","; continue }
+        out = out c
+        if (c == "\"") { in_string = 1 }
+      }
+      printf "%s%s%s", out, pending, held
     }
-    BEGIN {
-      # 2^1024 - 2^970, the value at which rounding reaches infinity, and
-      # 2^-1075, half the smallest subnormal. Both expansions are exact.
-      OVERFLOW_TURN = "179769313486231580793728971405303415079934132710037826936173"
-      OVERFLOW_TURN = OVERFLOW_TURN "778980444968292764750946649017977587207096330286416692887910"
-      OVERFLOW_TURN = OVERFLOW_TURN "946555547851940402630657488671505820681908902000708383676273"
-      OVERFLOW_TURN = OVERFLOW_TURN "854845817711531764475730270069855571366959622842914819860834"
-      OVERFLOW_TURN = OVERFLOW_TURN "936475292719074168444365510704342711559699508093042880177904"
-      OVERFLOW_TURN = OVERFLOW_TURN "174497792"
-      UNDERFLOW_TURN = "247032822920623272088284396434110686182529901307162382212792"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "841250337753635104375932649918180817996189898282347722858865"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "463328355177969898199387398005390939063150356595155702263922"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "908583924491051844359318028499365361525003193704576782492193"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "656236698636584807570015857692699037063119282795585513329278"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "343384093519780155312465972635795746227664652728272200563740"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "064854999770965994704540208281662262378573934507363390079677"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "619305775067401763246736009689513405355374585166611342237666"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "786041621596804619144672918403005300575308490487653917113865"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "916462395249126236538818796362393732804238910186723484976682"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "350898633885879256283027559956575244555072551893136908362547"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "791869486679949683240497058210285131854513962138377228261454"
-      UNDERFLOW_TURN = UNDERFLOW_TURN "37693412532098591327667236328125"
-    }
-    BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0; bad = 0 }
+  ' "$1" 2>/dev/null
+}
+
+# Does this document carry a non-finite number? jq takes NaN and Infinity as
+# extensions and rewrites them — to `null` and to `1.797e308` — so a file
+# carrying one would have this half silently alter a value the run was not asked
+# to touch, while the other half refuses it. Refused on both instead.
+#
+# Matched case-insensitively and on the short form, because jq takes all of nan,
+# NAN, nAn, inf, Inf and INFINITY. Strings are walked, so a value that merely
+# begins with those letters is ordinary text. Exits 0 when one is found.
+# (No apostrophes in this program: it is a single-quoted shell word.)
+_json_has_nonfinite() {
+  LC_ALL=C awk '
+    BEGIN { found = 0 }
     {
       for (i = 1; i <= length($0); i++) {
         c = substr($0, i, 1)
@@ -67,119 +82,16 @@ _json_scan_verdict() {
           else if (c == "\"") { in_string = 0 }
           continue
         }
-        if (c == "/") {
-          n = substr($0, i + 1, 1)
-          if (n == "/" || n == "*") { found = 1; exit }
-        }
-        # A comma survives across lines, because `,\n}` is how a trailing comma
-        # is usually written.
-        # jq takes NaN and Infinity as extensions and rewrites them, to null
-        # and to 1.797e308, so accepting such a document here would have this
-        # half silently alter a value inside a foreign entry while the
-        # PowerShell half refuses the file. Refused on both instead.
-        #
-        # Matched case-insensitively and on the short form, because jq takes
-        # all of nan, NAN, nAn, inf, Inf and INFINITY. The letters are checked
-        # outside strings only, so a value that merely begins with them is
-        # ordinary text.
-        # (No apostrophes in this program: it is a single-quoted shell word.)
+        if (c == "\"") { in_string = 1; continue }
         if (c == "N" || c == "n" || c == "I" || c == "i") {
           rest = tolower(substr($0, i))
-          if (rest ~ /^nan/ || rest ~ /^inf/) { bad = 1 }
+          if (rest ~ /^nan/ || rest ~ /^inf/) { found = 1; exit }
         }
-        # A magnitude no double can hold, which jq rewrites and the two
-        # PowerShell versions disagree about. The exponent is compared rather
-        # than counted: 1e308 is representable and 1e309 is not.
-        if (c ~ /[0-9]/ && (i == 1 || substr($0, i - 1, 1) !~ /[0-9.eE]/)) {
-          num = substr($0, i)
-          sub(/[^0-9.eE+-].*$/, "", num)
-          # Significant digits and a decimal exponent, from which the magnitude
-          # follows without arithmetic — awk would saturate rather than compare.
-          # The boundary decade needs the leading digits too, because the range
-          # ends at 1.797…e308 rather than at a power of ten.
-          expn = 0
-          mant = num
-          if (mant ~ /[eE]/) {
-            expn = mant
-            sub(/^[^eE]*[eE][+]?/, "", expn)
-            expn = expn + 0
-            sub(/[eE].*$/, "", mant)
-          }
-          digits = mant
-          gsub(/[.]/, "", digits)
-          sub(/^0+/, "", digits)
-          frac = mant
-          if (frac ~ /[.]/) { sub(/^[^.]*[.]/, "", frac) } else { frac = "" }
-          sub(/[.].*$/, "", mant)
-          sub(/^0+/, "", mant)
-          if (mant == "") {
-            # A mantissa under 1 carries its magnitude in the zeros after the
-            # point, which the integer part cannot show: `0.00…01e0` is small
-            # however many zeros there are, and counting `length("")` would
-            # call every one of them magnitude 0.
-            lead = frac
-            sub(/[^0].*$/, "", lead)
-            magnitude = expn - length(lead)
-          } else {
-            magnitude = length(mant) + expn
-          }
-          # Compared as digit strings rather than as numbers: the boundaries do
-          # not fit in a double, which is the very thing being decided, and awk
-          # has nothing wider.
-          #
-          # The other half asks `[double]::TryParse`, which is correctly
-          # rounded and reads every digit, so the boundary is the value at
-          # which rounding turns — halfway past the largest double, and half
-          # the smallest subnormal — and it is compared in full. Both are
-          # dyadic rationals, so both expansions terminate: 2^1024 - 2^970 and
-          # 2^-1075. A prefix of either would leave the two halves disagreeing
-          # over the literals whose digits run past it, in both directions.
-          #
-          # The tie itself rounds away from the finite range at both ends —
-          # to infinity above and to zero below — so equality refuses.
-          # A significand of zero is zero at any exponent, so no writer can
-          # change its value and none of the range arms apply. `0e400` is a
-          # stated zero, which the other half says the same way.
-          if (digits !~ /[1-9]/) { }
-          else if (magnitude > 309) { bad = 1 }
-          else if (magnitude == 309 && _digitcmp(digits, OVERFLOW_TURN) >= 0) { bad = 1 }
-          # And the other end: at or below half the smallest subnormal a double
-          # rounds to zero, and PowerShell writes that zero back where jq
-          # preserves the literal. Refused on both, as an overflow is.
-          else if (magnitude < -323) { bad = 1 }
-          else if (magnitude == -323 && _digitcmp(digits, UNDERFLOW_TURN) <= 0) { bad = 1 }
-        }
-        if (c == ",") { comma = 1; continue }
-        if (c == " " || c == "\t" || c == "\r") { continue }
-        if (comma && (c == "}" || c == "]")) { found = 1; exit }
-        comma = 0
-        if (c == "\"") { in_string = 1 }
       }
       escaped = 0
     }
-    # `exit` runs END, so the verdict travels in a flag rather than in the exit
-    # status of the rule body, which END would otherwise overwrite.
-    END { print (found ? "jsonc" : (bad ? "invalid" : "ok")) }
-  ' "$1" 2>/dev/null
-}
-
-# Wraps the scan so a tool failure is not read as a verdict. The verdict travels
-# on stdout, which leaves the exit status free to mean "awk produced no verdict
-# at all" — a status-carried verdict could not tell that from "jq would rewrite
-# a value", and the operator was then told their document was malformed for a
-# failure of the tool examining it.
-_json_has_jsonc_syntax() {
-  _jhs_verdict=$(_json_scan_verdict "$1")
-  case $_jhs_verdict in
-    jsonc) return 0 ;;
-    invalid) return 2 ;;
-    ok) return 1 ;;
-    # No verdict at all: awk did not run to completion. The caller asks about
-    # readability first and the scan is byte-oriented, so this is the scanner
-    # failing rather than the file — say so instead of naming a cause in the
-    # operator's content.
-    *) return 3 ;;
-  esac
+    END { exit (found ? 0 : 1) }
+  '
 }
 
 # Copies a document to its backup path. A copy that fails part way leaves a

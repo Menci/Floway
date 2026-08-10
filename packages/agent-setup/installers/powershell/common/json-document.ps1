@@ -36,6 +36,62 @@ function Test-SetupJsonRoot {
   return $Text.TrimStart().StartsWith($Open)
 }
 
+# Rewrites a JSONC document as plain JSON: comments removed, a comma before a
+# closing brace or bracket dropped.
+#
+# Both editors read their managed document leniently, so an operator may well
+# have written either. Neither writer here takes them: `ConvertFrom-Json`
+# refuses the whole document on the Windows PowerShell 5.1 baseline — measured
+# on 5.1.26100.8875 — while 7.x silently drops them, and jq on the other half
+# refuses outright. Stripping first gives both halves the same plain document,
+# at the cost of the comments, which no rewrite of this file preserves anyway.
+#
+# Strings are walked rather than matched by pattern, because a value like a URL
+# contains `//` legitimately. Mirrors `_strip_jsonc` in the Bash half.
+function Remove-SetupJsonComments {
+  param([string]$Text)
+  $out = [System.Text.StringBuilder]::new()
+  $pending = ''
+  $held = ''
+  $inString = $false
+  $escaped = $false
+  for ($i = 0; $i -lt $Text.Length; $i++) {
+    $c = $Text[$i]
+    if ($inString) {
+      [void]$out.Append($c)
+      if ($escaped) { $escaped = $false }
+      elseif ($c -eq '\') { $escaped = $true }
+      elseif ($c -eq '"') { $inString = $false }
+      continue
+    }
+    $next = if ($i + 1 -lt $Text.Length) { $Text[$i + 1] } else { [char]0 }
+    if ($c -eq '/' -and ($next -eq '/' -or $next -eq '*')) {
+      if ($next -eq '/') {
+        while ($i -lt $Text.Length -and $Text[$i] -ne "`n") { $i++ }
+        $held += "`n"
+      } else {
+        $i += 2
+        while ($i + 1 -lt $Text.Length -and -not ($Text[$i] -eq '*' -and $Text[$i + 1] -eq '/')) { $i++ }
+        $i++
+      }
+      continue
+    }
+    if ($pending -ne '') {
+      # A comma is held back until the next structural character says whether
+      # it separated two members or trailed the last one.
+      if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`r" -or $c -eq "`n") { $held += $c; continue }
+      if ($c -ne '}' -and $c -ne ']') { [void]$out.Append($pending) }
+      [void]$out.Append($held)
+      $pending = ''
+      $held = ''
+    }
+    if ($c -eq ',') { $pending = ','; continue }
+    [void]$out.Append($c)
+    if ($c -eq '"') { $inString = $true }
+  }
+  return $out.ToString() + $pending + $held
+}
+
 # Does a `:` follow the value that ends at $End, ignoring JSON whitespace? Then
 # that value was used as a key, which JSON does not allow and both PowerShell
 # decoders do.
@@ -49,43 +105,36 @@ function Test-SetupJsonKeyFollows {
   return $false
 }
 
-# Classifies a JSON text the way the Bash half's toolchain does: 'jsonc' for a
-# construct the editor accepts and jq does not, 'invalid' for anything outside
-# JSON's grammar, 'ok' otherwise.
+# Is this strict JSON — the only thing this installer merges into? The Bash half
+# asks jq the same question by handing it the document. Comments and trailing
+# commas are not judged here: they are stripped before this runs, because both
+# editors accept them and the operator may have meant them.
 #
-# Both are needed because ConvertFrom-Json cannot be the arbiter. jq implements
-# RFC 8259; PowerShell 6+ decodes through Newtonsoft, which takes single-quoted
-# strings, unquoted keys, trailing commas and any Unicode whitespace — so a
-# document jq refuses would be parsed here and written back in canonical form,
-# one half stopping and the other rewriting the operator's file. Windows
-# PowerShell 5.1 is stricter still and refuses some of these itself, which is
-# why the answer cannot be left to whichever decoder the host happens to have.
+# ConvertFrom-Json cannot be the arbiter. jq implements RFC 8259; PowerShell 6+
+# decodes through Newtonsoft, which takes single-quoted strings, unquoted keys
+# and any Unicode whitespace, so a document jq refuses would be parsed here and
+# written back in canonical form — one half stopping, the other rewriting the
+# operator's file. 5.1 is stricter on some of these and looser on others, which
+# is why the answer cannot be left to whichever decoder the host happens to have.
 #
-# Strings are walked rather than stripped by regex, because a value like a model
-# id or a URL contains `//` legitimately. The JSONC arm mirrors
-# _json_has_jsonc_syntax; the strict arm is RFC 8259 minus one leniency jq
-# shares. A leading `+` stays in the number set because jq rewrites it to a
-# plain number — the value survives, so refusing here would make this half
-# stricter for a file the other half repairs. `NaN` and `Infinity` are refused
-# because jq rewrites those too, to `null` and to 1.797e308, which changes a
-# value inside an entry this run was not asked to touch; the awk scanner refuses
-# every spelling jq takes — nan, NAN, inf, Inf, INFINITY — for the same reason,
-# so the two halves still answer alike. A magnitude no double can hold is
-# refused here for the same reason: jq rewrites `1e400` to `1E+400`, 5.1 refuses
-# it, and pwsh 7 decodes it to Infinity and writes it back as the string
-# "Infinity" — a changed type reported as success. The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json
-# rejects on both versions, so the Bash half configures it and this one stops.
-# Both are documents no editor writes; the parity this arm buys is over the
-# constructs an operator can actually type.
-function Get-SetupJsonVerdict {
+# Strings are walked rather than matched by regex, because a value like a model
+# id or a URL contains `//` legitimately.
+#
+# Numbers are not judged. A leading `+` and a magnitude past the double range
+# both survive here: jq rewrites them and this half would refuse them, but a
+# settings file whose numbers are font sizes and token counts cannot hold one,
+# and the machinery to agree about them cost more than it defended. `NaN` and
+# `Infinity` are the exception, refused on both halves, because jq rewrites
+# those to `null` and 1.797e308 — a changed value inside an entry the run was
+# not asked to touch, from a token an operator might actually paste.
+#
+# The reverse case is `{"":1}`, valid JSON that ConvertFrom-Json rejects on both
+# versions, so the Bash half configures it and this one stops. No editor writes
+# one; the parity this buys is over the constructs an operator can type.
+function Test-SetupJsonStrict {
   param([string]$Text)
   $inString = $false
   $escaped = $false
-  $comma = $false
-  # The strict verdict is carried rather than returned at once: a document with
-  # both a comment and a lenient construct would otherwise answer on whichever
-  # came first, while the awk scanner only looks for JSONC and always says
-  # `jsonc`. The two halves have to name one cause for one file.
   $strict = $true
   # Container depth, because a classifier that only looks at characters cannot
   # see a document that stops mid-structure. Newtonsoft parses `[{"a":1}` and
@@ -103,16 +152,10 @@ function Get-SetupJsonVerdict {
       elseif ($ch -eq '"') { $inString = $false }
       continue
     }
-    if ($ch -eq '/' -and $i + 1 -lt $Text.Length) {
-      $next = $Text[$i + 1]
-      if ($next -eq '/' -or $next -eq '*') { return 'jsonc' }
-    }
-    if ($ch -eq ',') { $comma = $true; continue }
+    if ($ch -eq ',') { continue }
     # JSON's whitespace, not .NET's: `[char]::IsWhiteSpace` also skips U+00A0,
     # the vertical tab, the form feed and U+2028, none of which JSON allows.
     if ($ch -eq ' ' -or $ch -eq "`t" -or $ch -eq "`r" -or $ch -eq "`n") { continue }
-    if ($comma -and ($ch -eq '}' -or $ch -eq ']')) { return 'jsonc' }
-    $comma = $false
     if ($ch -eq '"') { $inString = $true; continue }
     # The three literals are matched as whole tokens, not by which letters they
     # are spelled with: a key like `test` or `nu` uses only those letters and
@@ -154,37 +197,10 @@ function Get-SetupJsonVerdict {
       $numberStart = $i
       while ($i + 1 -lt $Text.Length -and '0123456789+-.eE'.IndexOf($Text[$i + 1]) -ge 0) { $i++ }
       if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
-      # A magnitude no double can hold. pwsh 7 decodes `1e400` to Infinity and
-      # then writes it back as the *string* "Infinity" — a changed type reported
-      # as success — while 5.1 refuses it and jq rewrites it to `1E+400`. Three
-      # answers for one file unless this arm refuses it.
-      $token = $Text.Substring($numberStart, $i - $numberStart + 1)
-      $parsed = 0.0
-      if ([double]::TryParse($token, [System.Globalization.NumberStyles]::Float,
-            [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
-        if ([double]::IsInfinity($parsed) -or [double]::IsNaN($parsed)) { $strict = $false }
-        # And the other end: a literal below the smallest subnormal decodes to
-        # 0 here and is written back that way, silently changing a number
-        # inside an entry this run was not asked to touch, while jq preserves
-        # it. Refused as an overflow is.
-        #
-        # The significand decides, not the whole token: `0e5` is a stated zero
-        # whose exponent carries the only non-zero digit, and asking the token
-        # refused a value the other half accepts.
-        elseif ($parsed -eq 0 -and ($token -split '[eE]', 2)[0] -match '[1-9]') { $strict = $false }
-      }
-      # A token no double can hold at all. Windows PowerShell 5.1 reports
-      # overflow by returning False rather than by parsing to Infinity —
-      # measured on 5.1.26100.8875, where `1e400` gives False and `1e-400`
-      # gives True with 0 — so without this arm the overflow refusal above is
-      # inert on the only host that half ever runs on.
-      else { $strict = $false }
     }
   }
   # An unterminated container, or a string that never closed.
-  if ($depth -ne 0 -or $inString) { return 'invalid' }
-  if (-not $strict) { return 'invalid' }
-  return 'ok'
+  return $strict -and $depth -eq 0 -and -not $inString
 }
 
 function Set-SetupProp {
