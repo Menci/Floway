@@ -32,8 +32,6 @@ export const codexQuotaActiveLimitKey = (snapshot: CodexQuotaSnapshot): string =
   return key && !isUnsafeActiveLimitKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
 };
 
-const TTL_FLOOR_MS = 24 * 60 * 60 * 1000;
-
 interface ParseCodexQuotaOptions {
   now: Date;
   isRateLimited: boolean;
@@ -52,6 +50,10 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   const setNumber = (key: keyof CodexQuotaSnapshot, header: string): void => {
     const v = headers.get(header);
     if (v === null) return;
+    // Blank rather than absent is how this backend reports a field that does
+    // not apply -- a plan with no secondary window, an account with no credit
+    // balance -- and `Number('')` is 0, which would render as a confident zero.
+    if (v.trim() === '') return;
     const n = Number(v);
     if (Number.isFinite(n)) assign[key] = n;
   };
@@ -62,51 +64,77 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
     if (lower === 'true') assign[key] = true;
     else if (lower === 'false') assign[key] = false;
   };
-  const setResetAfter = (key: keyof CodexQuotaSnapshot, header: string): void => {
-    const v = headers.get(header);
-    if (v === null) return;
-    const seconds = Number(v);
-    if (!Number.isFinite(seconds)) return;
-    assign[key] = new Date(options.now.getTime() + seconds * 1000).toISOString();
+  // Upstream renamed this reading on 2025-10-17: `-reset-at` states the instant
+  // outright, where `-reset-after-seconds` states the offset from receipt. Both
+  // are still sent, and a capture from 2025-09 carries only the offset, so the
+  // rename added a header rather than replacing one. The instant is preferred
+  // and the offset is the fallback, which is the shape the third-party clients
+  // that read both settled on -- and which keeps this working on the day the
+  // offset stops being sent.
+  // https://github.com/openai/codex/commit/0e08dd605
+  //
+  // Zero and blank both mean "this plan has no such window" rather than "it
+  // resets now": a capture pairs a blank `-reset-at` with a zero
+  // `-reset-after-seconds` on a plan whose secondary window is 0 minutes wide.
+  const resetInstant = (prefix: string): string | undefined => {
+    const at = headers.get(`${prefix}-reset-at`)?.trim();
+    if (at !== undefined && at !== '') {
+      const epochSeconds = Number(at);
+      // Epoch seconds today; RFC 3339 in builds from the three days after the
+      // header landed, which is why clients that read it accept both.
+      const instant = Number.isFinite(epochSeconds) ? epochSeconds * 1000 : Date.parse(at);
+      if (Number.isFinite(instant) && instant > 0) return new Date(instant).toISOString();
+    }
+    const after = headers.get(`${prefix}-reset-after-seconds`)?.trim();
+    if (after === undefined || after === '') return undefined;
+    const seconds = Number(after);
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    return new Date(options.now.getTime() + seconds * 1000).toISOString();
+  };
+
+  const setReset = (key: keyof CodexQuotaSnapshot, prefix: string): void => {
+    const instant = resetInstant(prefix);
+    if (instant !== undefined) assign[key] = instant;
   };
 
   setString('active_limit', 'x-codex-active-limit');
   setString('plan_type', 'x-codex-plan-type');
   setNumber('primary_used_percent', 'x-codex-primary-used-percent');
   setNumber('primary_window_minutes', 'x-codex-primary-window-minutes');
-  setResetAfter('primary_reset_after_at', 'x-codex-primary-reset-after-seconds');
+  setReset('primary_reset_after_at', 'x-codex-primary');
   setNumber('secondary_used_percent', 'x-codex-secondary-used-percent');
   setNumber('secondary_window_minutes', 'x-codex-secondary-window-minutes');
-  setResetAfter('secondary_reset_after_at', 'x-codex-secondary-reset-after-seconds');
+  setReset('secondary_reset_after_at', 'x-codex-secondary');
   setBool('credits_has_credits', 'x-codex-credits-has-credits');
   setNumber('credits_balance', 'x-codex-credits-balance');
 
+  // The furthest window is when the block lifts, read through the same
+  // preference so a response carrying only the new header still dates it.
   if (options.isRateLimited) {
-    const primary = Number(headers.get('x-codex-primary-reset-after-seconds'));
-    const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds'));
-    const seconds = Math.max(Number.isFinite(primary) ? primary : 0, Number.isFinite(secondary) ? secondary : 0);
-    if (seconds > 0) {
-      snapshot.ratelimited_until = new Date(options.now.getTime() + seconds * 1000).toISOString();
+    const horizons = [snapshot.primary_reset_after_at, snapshot.secondary_reset_after_at]
+      .filter((instant): instant is string => instant !== undefined)
+      .map(instant => Date.parse(instant))
+      .filter(Number.isFinite);
+    if (horizons.length > 0) {
+      snapshot.ratelimited_until = new Date(Math.max(...horizons)).toISOString();
     }
   }
 
   return snapshot;
 };
 
-// Bound TTL by the furthest reset horizon to keep a hot account's state
-// alive through its entire window; floor at 24h so dashboard reads survive
-// quiet periods between bursts.
-export const computeCodexQuotaTtlMs = (snapshot: CodexQuotaSnapshot, now: Date): number => {
-  const horizons = [snapshot.primary_reset_after_at, snapshot.secondary_reset_after_at, snapshot.ratelimited_until]
-    .map(s => s ? new Date(s).getTime() - now.getTime() : 0)
-    .filter(ms => ms > 0);
-  return Math.max(TTL_FLOOR_MS, ...horizons);
+export const hasCodexQuotaReading = (snapshot: CodexQuotaSnapshot): boolean => {
+  const { observed_at: _observationTime, ...reading } = snapshot;
+  return Object.keys(reading).length > 0;
 };
 
-// Returns all fresh quota snapshots keyed by active limit. Stale buckets read as
-// absent — the next upstream response for that active limit will overwrite it.
-// state_json is unbounded, so freshness is gated inline by
-// computeCodexQuotaTtlMs.
+// Every quota snapshot this account has observed, keyed by active limit.
+//
+// No TTL, which is the rule the other three providers state at their own slots:
+// a reading rendered with the instant it was taken tells an operator more than
+// an empty card does, and any traffic on the upstream replaces it. Only the
+// dashboard reads this -- the data plane routes without consulting it -- so
+// withholding a reading buys nothing and costs the page the only answer it has.
 export const getCodexQuota = async (
   upstreamId: string,
   accountId: string,
@@ -115,14 +143,9 @@ export const getCodexQuota = async (
   if (!fresh) return null;
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
-  if (!account?.quotaSnapshot) return null;
-  const now = new Date();
-  const freshSnapshots: CodexQuotaSnapshotMap = {};
-  for (const [key, entry] of Object.entries(account.quotaSnapshot)) {
-    const ttlMs = computeCodexQuotaTtlMs(entry.data, now);
-    if (now.getTime() - entry.fetchedAt <= ttlMs) freshSnapshots[key] = entry.data;
-  }
-  return Object.keys(freshSnapshots).length ? freshSnapshots : null;
+  const snapshots = account?.quotaSnapshot;
+  if (!snapshots || Object.keys(snapshots).length === 0) return null;
+  return Object.fromEntries(Object.entries(snapshots).map(([key, entry]) => [key, entry.data]));
 };
 
 export const putCodexQuota = async (

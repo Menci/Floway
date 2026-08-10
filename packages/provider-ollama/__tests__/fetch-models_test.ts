@@ -114,3 +114,35 @@ test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/t
     },
   );
 });
+
+// A tag whose /api/show fails is skipped, which makes this the one path that
+// walks away from a response it asked for. On the direct-connect egress the
+// dialed socket is closed only from the body's read-to-end or cancel path, so
+// skipping without cancelling strands one socket per failing tag — and the
+// catalog refetches on every SWR revalidation.
+const trackedBody = (): { body: ReadableStream<Uint8Array>; cancelled: () => boolean } => {
+  let cancelled = false;
+  return {
+    body: new ReadableStream<Uint8Array>({
+      pull() { /* never yields, so only a cancel can end it */ },
+      cancel() { cancelled = true; },
+    }),
+    cancelled: () => cancelled,
+  };
+};
+
+test('fetchOllamaCatalog cancels the /api/show body of a tag it skips for a non-OK status', async () => {
+  const tracked = trackedBody();
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/api/tags') return jsonResponse({ models: [{ name: 'skipped', modified_at: '' }] });
+      return new Response(tracked.body, { status: 503 });
+    },
+    async () => {
+      const catalog = await fetchOllamaCatalog(config, testFetcher);
+      assertEquals(catalog.data.length, 0);
+    },
+  );
+  assertEquals(tracked.cancelled(), true);
+});

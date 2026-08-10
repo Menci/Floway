@@ -161,7 +161,7 @@ interface LeaseResponse {
   token: string;
   configuration: {
     apiKeyId: string;
-    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean };
+    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean; disableAutoMemory: boolean; disableAgentView: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
     zed: { providerName: string };
     vscode: { providerName: string; apiType: string };
@@ -180,7 +180,7 @@ interface LeaseResponse {
 // (leaseProjection and restore both parse the stored JSON through the schema).
 const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
-  claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true },
+  claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
   vscode: { providerName: 'Floway', apiType: 'messages' },

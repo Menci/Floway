@@ -55,6 +55,10 @@ const WEB_RESTRICTED_IMPORT_PATTERNS = [
     regex: '^@floway-dev/proxy$',
     message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
   },
+  {
+    regex: '^@floway-dev/provider$',
+    message: 'apps/web must reach @floway-dev/provider only via its /flags, /join, /model, /model-config, or /model-prefix subpath exports — the root reaches the outbound fetch contract, and through it @floway-dev/http and userspace TLS.',
+  },
 ];
 
 const projectList = [

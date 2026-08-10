@@ -17,6 +17,8 @@ const fullConfiguration: AgentSetupConfiguration = {
     effortLevel: 'high',
     cleanupPeriodDays: 365,
     optOutAiAttribution: true,
+    disableAutoMemory: true,
+    disableAgentView: true,
     modelDiscovery: true,
   },
   codex: {
@@ -42,7 +44,7 @@ describe('agentSetupConfigurationSchema', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
       zed: { providerName: 'Floway' },
@@ -139,7 +141,7 @@ describe('defaultAgentSetupConfiguration', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
       zed: { providerName: 'Floway' },

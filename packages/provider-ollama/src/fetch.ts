@@ -51,3 +51,11 @@ export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: FetchInit, o
   ollamaFetchInternal(config, '/api/tags', init, options);
 export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/show', init, options);
+// Account-level usage windows. Cloud-only — see usage-probe.ts for the
+// endpoint's provenance and the shape it returns.
+export const ollamaFetchUsage = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/api/usage', init, options);
+// The account behind the API key: identity and the plan it is on. POST-only —
+// the endpoint answers 405 to GET. See account-probe.ts for the body's shape.
+export const ollamaFetchMe = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/api/me', init, options);

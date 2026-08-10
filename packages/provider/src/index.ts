@@ -22,6 +22,7 @@ export type {
 export {
   apiErrorToResponse,
   decodeApiErrorBody,
+  discardUpstreamResponse,
   eventResult,
   internalErrorResult,
   plainResult,
@@ -59,7 +60,7 @@ export type {
 } from './provider.ts';
 export { headersForMessagesCall } from './messages.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsRequest } from './images.ts';
+export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
 export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';

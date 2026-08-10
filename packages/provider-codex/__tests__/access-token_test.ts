@@ -4,12 +4,13 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import {
   ensureCodexAccessToken,
   invalidateCodexAccessToken,
+  mintCodexAccessToken,
   putCodexAccessToken,
   type CodexAccessTokenEntry,
 } from '../src/access-token.ts';
 import { CodexOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
 import type { CodexUpstreamState } from '../src/state.ts';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
@@ -69,6 +70,119 @@ describe('putCodexAccessToken', () => {
     expect(storedState()).toEqual({ accounts: [{ ...baseAccount, accessToken: entry }] });
   });
 
+  test('prefers the current CAS plan over an older fallback when the new token omits it', async () => {
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: { token: 'at_current', expiresAt: farFutureMs, refreshedAt: 'current', planType: 'free' },
+      }],
+    });
+    const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
+    const effective = await putCodexAccessToken(upstreamId, accountId, entry, { planType: 'team' });
+    expect(effective.planType).toBe('free');
+    expect(storedState().accounts[0].accessToken?.planType).toBe('free');
+  });
+
+  test.each([
+    ['team', 'free'],
+    ['free', 'team'],
+  ])('an older explicit %s observation cannot replace newer %s', async (olderPlan, newerPlan) => {
+    const newer: CodexAccessTokenEntry = {
+      token: 'at_newer',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: newerPlan,
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
+    const older: CodexAccessTokenEntry = {
+      token: 'at_older',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: olderPlan,
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, older);
+    const expected = { ...newer, planObservedAt: newer.refreshedAt };
+    expect(effective).toEqual(expected);
+    expect(storedState().accounts[0].accessToken).toEqual(expected);
+  });
+
+  test.each(['free', 'team'])('keeps the newer token while merging an older explicit %s plan', async olderPlan => {
+    const newer: CodexAccessTokenEntry = {
+      token: 'at_newer',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
+    const older: CodexAccessTokenEntry = {
+      token: 'at_older',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: olderPlan,
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, older);
+    const expected = { ...newer, planType: olderPlan, planObservedAt: older.refreshedAt };
+    expect(effective).toEqual(expected);
+    expect(storedState().accounts[0].accessToken).toEqual(expected);
+  });
+
+  test('orders token and explicit plan observations independently', async () => {
+    const tokenOnly: CodexAccessTokenEntry = {
+      token: 'at_t3',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:03.000Z',
+    };
+    await putCodexAccessToken(upstreamId, accountId, tokenOnly);
+    await putCodexAccessToken(upstreamId, accountId, {
+      token: 'at_t1',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:01.000Z',
+      planType: 'free',
+      planObservedAt: '2026-08-10T00:00:01.000Z',
+    });
+    const effective = await putCodexAccessToken(upstreamId, accountId, {
+      token: 'at_t2',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(effective).toEqual({
+      ...tokenOnly,
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(storedState().accounts[0].accessToken).toEqual(effective);
+  });
+
+  test('includes a captured retry plan in LWW ordering after token invalidation', async () => {
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: {
+          token: 'at_stale',
+          expiresAt: farFutureMs,
+          refreshedAt: '2026-08-10T00:00:01.000Z',
+          planType: 'free',
+          planObservedAt: '2026-08-10T00:00:01.000Z',
+        },
+      }],
+    });
+    const incoming: CodexAccessTokenEntry = {
+      token: 'at_new',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:03.000Z',
+    };
+    const effective = await putCodexAccessToken(upstreamId, accountId, incoming, {
+      planType: 'plus',
+      observedAt: '2026-08-10T00:00:02.000Z',
+    });
+    expect(effective).toEqual({
+      ...incoming,
+      planType: 'plus',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    });
+  });
+
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
@@ -105,6 +219,21 @@ describe('invalidateCodexAccessToken', () => {
     await invalidateCodexAccessToken(upstreamId, accountId);
     expect(repo.writes).toEqual([]);
   });
+
+  test('retains a sibling token that replaced the failed token', async () => {
+    const winner: CodexAccessTokenEntry = {
+      token: 'at_winner',
+      expiresAt: farFutureMs,
+      refreshedAt: '2026-08-10T00:00:02.000Z',
+      planType: 'free',
+      planObservedAt: '2026-08-10T00:00:02.000Z',
+    };
+    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: winner }] });
+    const retained = await invalidateCodexAccessToken(upstreamId, accountId, 'at_failed');
+    expect(retained).toEqual(winner);
+    expect(storedState().accounts[0].accessToken).toEqual(winner);
+    expect(repo.writes).toEqual([]);
+  });
 });
 
 describe('ensureCodexAccessToken', () => {
@@ -134,6 +263,20 @@ describe('ensureCodexAccessToken', () => {
     const out = await ensureCodexAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
     expect(mint).toHaveBeenCalledWith('rt_v1');
+  });
+
+  test('preserves the latest known plan when a refreshed token omits it', async () => {
+    const expiresSoon = Date.now() + 60 * 1000;
+    current = makeRecord({
+      accounts: [{
+        ...baseAccount,
+        accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old', planType: 'team' },
+      }],
+    });
+    const minted: CodexAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
+    const out = await ensureCodexAccessToken(upstreamId, accountId, vi.fn().mockResolvedValue(minted));
+    expect(out.planType).toBe('team');
+    expect(storedState().accounts[0].accessToken?.planType).toBe('team');
   });
 
   test('throws when the upstream row is missing', async () => {
@@ -193,5 +336,57 @@ describe('ensureCodexAccessToken', () => {
     await expect(ensureCodexAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(CodexOAuthSessionTerminatedError);
     expect(repo.getById).toHaveBeenCalledTimes(1);
     expect(repo.writes).toEqual([]);
+  });
+});
+
+describe('mintCodexAccessToken', () => {
+  test('stores the current plan from the refreshed id_token', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({
+        email: 'a@b.com',
+        'https://api.openai.com/auth': {
+          chatgpt_account_id: accountId,
+          chatgpt_user_id: 'usr',
+          chatgpt_plan_type: 'team',
+        },
+      })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const persistRotation = vi.fn(async () => {});
+    const entry = await mintCodexAccessToken('rt_v1', directFetcher, persistRotation);
+    expect(entry.planType).toBe('team');
+    expect(entry.planObservedAt).toBe(entry.refreshedAt);
+    expect(persistRotation).toHaveBeenCalledWith('rt_v2');
+  });
+
+  test('accepts refreshed id_tokens without import-only identity or plan claims', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': {} })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const entry = await mintCodexAccessToken('rt_v1', directFetcher, async () => {});
+    expect(entry.planType).toBeUndefined();
+  });
+
+  test('persists a rotated refresh token before surfacing malformed plan metadata', async () => {
+    const idToken = [
+      Buffer.from('{}').toString('base64url'),
+      Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 42 } })).toString('base64url'),
+      Buffer.from('signature').toString('base64url'),
+    ].join('.');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const persistRotation = vi.fn(async () => {});
+    await expect(mintCodexAccessToken('rt_v1', directFetcher, persistRotation)).rejects.toThrow(/chatgpt_plan_type/);
+    expect(persistRotation).toHaveBeenCalledWith('rt_v2');
   });
 });

@@ -2,10 +2,10 @@ import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts'
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
-import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
+import { callCodexAlphaSearch, callCodexImagesEdits, callCodexImagesGenerations, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
+import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
@@ -15,11 +15,14 @@ import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Pro
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/core/src/responses_metadata.rs#L255-L270
 // https://github.com/openai/codex/blob/bd8fc9adb93fa5bc0a69b396bd5ac78a5ec14487/codex-rs/codex-api/src/requests/headers.rs#L5-L16
+// https://github.com/openai/codex/blob/646f7c0a91b8e327d263335da68ae8ef212895ce/codex-rs/ext/image-generation/src/backend.rs#L81-L89
 const INBOUND_HEADER_ALLOWLIST = [
+  'originator',
   'session-id',
   'session_id',
   'thread-id',
   'x-client-request-id',
+  'x-codex-image-turn-id',
   'x-codex-turn-metadata',
   'x-codex-window-id',
 ] as const;
@@ -107,7 +110,9 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // operator's gateway is its own surface — they can dispatch to those
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
-      return raw.map(r => codexRawToProviderModel(r, enabledFlags));
+      const models = raw.map(r => codexRawToProviderModel(r, enabledFlags));
+      if (codexPlanSupportsImages(access.planType ?? accountIdentity.planType)) models.push(codexImageProviderModel(enabledFlags));
+      return models;
     },
 
     callAlphaSearch: async (model, body, signal, opts) => {
@@ -153,18 +158,22 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       );
     },
 
-    // Codex upstream only exposes /responses; getProvidedModels advertises
-    // that single endpoint and no other entry point is reachable. The data
-    // plane never routes these surfaces here in practice, but a stray
-    // dispatch must surface as a 405 carrying a proper JSON error rather
-    // than letting a raw stack trace bubble up the boundary.
+    // Codex exposes Responses and its provider-owned image endpoints. The
+    // remaining surfaces are unreachable through the advertised catalog, but
+    // a stray dispatch must still surface as a structured 405.
     callMessages: () => unsupportedStreamResult(),
     callMessagesCountTokens: () => unsupportedCallResult(),
     callCompletions: () => unsupportedCallResult(),
     callChatCompletions: () => unsupportedStreamResult(),
     callEmbeddings: () => unsupportedCallResult(),
-    callImagesGenerations: () => unsupportedCallResult(),
-    callImagesEdits: () => unsupportedCallResult(),
+    callImagesGenerations: async (model, body, signal, opts) => {
+      const { account } = await readActiveAccount();
+      return await callCodexImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType });
+    },
+    callImagesEdits: async (model, request, signal, opts) => {
+      const { account } = await readActiveAccount();
+      return await callCodexImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType });
+    },
     callAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
   };

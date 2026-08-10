@@ -2,7 +2,7 @@
 // across header and probe sources, because the SDK keeps the windows separate:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
-import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-account-quota';
+import { FIVE_HOUR_WINDOW_MINUTES, HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
 import type {
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaWindow,
@@ -15,6 +15,24 @@ export const subscriptionLabel = (
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
 ): string | null =>
   subscriptionType ? { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType] : null;
+
+// The subscription's own name. `rate_limit_tier` is Anthropic's raw string and
+// the only place the Max multiple appears, but it carries that meaning only
+// under a Max organization: the same `default_claude_max_5x` under a Team
+// organization marks a premium seat, which the CLI reads as exactly that pair
+// rather than off the tier alone. A tier stating no multiple -- and every tier a
+// non-Max subscription carries, from `default_claude_ai` to internal codenames
+// like `default_raven` -- leaves the subscription to name itself.
+// https://claude.com/pricing
+export const planLabel = (
+  account: { rateLimitTier?: string | null; subscriptionType?: 'pro' | 'max' | 'team' | 'enterprise' | null },
+): string | null => {
+  const subscription = subscriptionLabel(account.subscriptionType);
+  if (subscription === null) return null;
+  if (account.subscriptionType !== 'max') return `Claude ${subscription}`;
+  const multiple = account.rateLimitTier?.match(/_(\d+x)$/)?.[1] ?? null;
+  return multiple === null ? 'Claude Max' : `Claude Max ${multiple}`;
+};
 
 export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
@@ -64,6 +82,15 @@ export const readProbeSnapshot = (credential: ClaudeCodeAccountCredentialSummary
 };
 
 export type WindowKey = 'fiveHour' | 'sevenDay' | 'sevenDaySonnet';
+
+// The header field names state the lengths; nothing on the wire carries them as
+// a number, so they are written here for the surfaces that name a window by how
+// long it runs.
+export const WINDOW_MINUTES: Record<WindowKey, number> = {
+  fiveHour: FIVE_HOUR_WINDOW_MINUTES,
+  sevenDay: SEVEN_DAY_WINDOW_MINUTES,
+  sevenDaySonnet: SEVEN_DAY_WINDOW_MINUTES,
+};
 
 export interface WindowRow {
   key: WindowKey;
@@ -119,13 +146,35 @@ export type AccountStatus =
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
-export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): AccountStatus => {
+// When the account stops refusing work, or null if it is not refusing any, on
+// the same terms the data plane uses to decide whether to send it any: a
+// rejection dated in the past has lifted, and one reported without a date at all
+// is not treated as a limit, because the snapshot is only rewritten by a
+// response and an upstream nobody calls would otherwise stay locked out forever.
+// Both surfaces that show this state read it here, so neither can disagree with
+// the router.
+//
+// It answers with the instant rather than a yes, because every caller that wants
+// the answer also wants to say how long the wait has left.
+export const rateLimitedUntil = (
+  quota: ClaudeCodeAccountCredentialSummary['quotaSnapshot'] | null | undefined,
+  now: number,
+): string | null => {
+  const data = quota?.data;
+  if (data?.status !== 'rejected' || !data.reset) return null;
+  return Date.parse(data.reset) > now ? data.reset : null;
+};
+
+export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], now: number): AccountStatus => {
   if (lookup.kind === 'uuid-mismatch') return { tone: 'danger', reason: 'uuid-mismatch' };
   const { credential } = lookup;
   if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
   if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
-  // `rejected` on the primary status means a limit was hit; overage is a separate optional window.
-  if (credential.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
+  // `rejected` on the primary status means a limit was hit; overage is a
+  // separate optional window. The snapshot is held until a response replaces
+  // it, so this asks whether the limit is still running rather than whether one
+  // was ever reported -- the data plane draws the line at the same instant.
+  if (rateLimitedUntil(credential.quotaSnapshot, now) !== null) return { tone: 'danger', reason: 'exhausted' };
   const heaviest = heaviestPercent(windows.map(row => row.percent));
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };

@@ -52,6 +52,12 @@ export const agentSetupConfigurationSchema = z.object({
     // opt-out values; false omits every managed attribution key.
     // Ref: https://code.claude.com/docs/en/settings#attribution-settings
     optOutAiAttribution: z.boolean(),
+    // Claude enables auto memory and the agent view by default, so Floway
+    // models both as opt-outs: true writes the documented disabling value,
+    // false omits the managed key and leaves Claude's default in force.
+    // Ref: https://code.claude.com/docs/en/settings#available-settings
+    disableAutoMemory: z.boolean(),
+    disableAgentView: z.boolean(),
     modelDiscovery: z.boolean(),
   }).strict(),
   codex: z.object({
@@ -97,6 +103,8 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
     effortLevel: null,
     cleanupPeriodDays: null,
     optOutAiAttribution: false,
+    disableAutoMemory: false,
+    disableAgentView: false,
     modelDiscovery: true,
   },
   codex: {

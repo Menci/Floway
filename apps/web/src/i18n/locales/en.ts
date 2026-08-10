@@ -395,7 +395,7 @@ const en = {
               'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
-          title: 'Setup Your Agents',
+          title: 'Set Up Your Agents',
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
@@ -411,7 +411,10 @@ const en = {
           vscodeConfigHint: 'Merge this group into <path>chatLanguageModels.json</path>, beside <path>settings.json</path> in your VS Code profile directory.',
           vscodeAuthHint: 'The key rides in each model\'s request headers, because the group\'s own key field is read as a reference into secret storage. It is stored in this file as plain text, so keep the file readable only by you — the installers do this for you.',
         },
-        agentSetup: { agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', providerName: 'Provider name', zedNoChatModels: 'No chat model this gateway serves can be configured for Zed yet. Add an upstream that serves one.', vscodeNoChatModels: 'No chat model this gateway serves can be configured for VS Code yet. Add an upstream that serves one.', zedProviderNameHint: 'Names this gateway in Zed\'s model picker. Rerun setup after changing it; the previous entry stays until you remove it.', vscodeProviderNameHint: 'Names this gateway\'s group in VS Code\'s provider list. Rerun setup after changing it; the previous group stays until you remove it.', providerNameInvalid: 'Enter a name with no leading or trailing spaces and no control characters.', zedModelSnapshot: 'Zed cannot discover models on its own, so setup writes the current catalog. Rerun it after the catalog changes.', apiType: 'API', apiTypeHint: 'Which API path VS Code addresses. Floway serves all three for every model, so this is a preference rather than a constraint.', vscodeModelSnapshot: 'VS Code cannot discover models on its own, so setup writes the current catalog into every installed build and profile. Rerun it after the catalog changes.' },
+        agentSetup: {
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.',
+          providerName: 'Provider name', zedNoChatModels: 'No chat model this gateway serves can be configured for Zed yet. Add an upstream that serves one.', vscodeNoChatModels: 'No chat model this gateway serves can be configured for VS Code yet. Add an upstream that serves one.', zedProviderNameHint: 'Names this gateway in Zed\'s model picker. Rerun setup after changing it; the previous entry stays until you remove it.', vscodeProviderNameHint: 'Names this gateway\'s group in VS Code\'s provider list. Rerun setup after changing it; the previous group stays until you remove it.', providerNameInvalid: 'Enter a name with no leading or trailing spaces and no control characters.', zedModelSnapshot: 'Zed cannot discover models on its own, so setup writes the current catalog. Rerun it after the catalog changes.', apiType: 'API', apiTypeHint: 'Which API path VS Code addresses. Floway serves all three for every model, so this is a preference rather than a constraint.', vscodeModelSnapshot: 'VS Code cannot discover models on its own, so setup writes the current catalog into every installed build and profile. Rerun it after the catalog changes.',
+        },
         rotate: {
           title: 'Rotate API Key',
           message:
@@ -439,10 +442,28 @@ const en = {
           title: 'Routing priority',
           priority: 'Priority',
           upstream: 'Upstream',
-          provider: 'Provider',
+          details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
           actions: 'Actions',
+        },
+        // Whatever an upstream publishes about itself beyond its identity. Only
+        // the providers whose upstream reports usage contribute any.
+        signals: {
+          plan: '{{plan}}:',
+          percent: '{{percent, number}}%',
+          detailSeparator: ' - ',
+          until: 'until {{date}}',
+          used: '{{label}}: {{percent, number}}% used',
+          resets: 'Resets {{time}}',
+          observed: 'Observed {{time}}',
+          window: { primary: 'Primary', secondary: 'Secondary' },
+          rateLimited: 'Rate limited',
+          rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
+          credits: '{{balance, number}} credits',
+          creditsDetail: 'Credit balance on the ChatGPT account',
+          cost: 'Charged to this account',
+          costLast4Weeks: 'Charged to this account in the last 4 weeks',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -872,6 +893,27 @@ const en = {
             'session-terminated': 'Session terminated - re-import to recover',
             'refresh-failed': 'Refresh failed - re-import to recover',
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
+          },
+        },
+        ollama: {
+          cloudUsage: 'Fetch account usage',
+          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          usage: {
+            title: 'Usage',
+            load: 'Load',
+            refresh: 'Refresh',
+            usedPercent: '{{percent, number}}% used',
+            // Ollama states the session allowance resets every five hours and
+            // the other weekly; the endpoint reports neither the length nor a
+            // reset time. https://ollama.com/pricing
+            window: {
+              session: '5-hour window',
+              weekly: 'Weekly window',
+            },
+            observed: 'Observed {{time}}',
+            empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
+            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
+            backgroundFailed: 'The last background refresh failed: {{message}}',
           },
         },
         oauth: {

@@ -4,8 +4,8 @@ import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstr
 import {
   CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT,
   codexQuotaActiveLimitKey,
-  computeCodexQuotaTtlMs,
   getCodexQuota,
+  hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
   type CodexQuotaSnapshot,
@@ -15,6 +15,11 @@ import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
+
+test('hasCodexQuotaReading ignores an observation timestamp without quota data', () => {
+  expect(hasCodexQuotaReading({ observed_at: '2026-01-01T00:00:00Z' })).toBe(false);
+  expect(hasCodexQuotaReading({ observed_at: '2026-01-01T00:00:00Z', plan_type: 'plus' })).toBe(true);
+});
 
 const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   id: upstreamId,
@@ -88,6 +93,58 @@ describe('parseCodexQuotaHeaders', () => {
     expect(snapshot.ratelimited_until).toBeUndefined();
   });
 
+  // Upstream added `-reset-at` on 2025-10-17 and kept sending the offset it
+  // replaced, so the absolute instant wins and the offset is the fallback.
+  test('prefers the absolute reset instant over the offset it replaced', () => {
+    const headers = new Headers({
+      'x-codex-primary-reset-at': '1780272000',
+      'x-codex-primary-reset-after-seconds': '18000',
+      'x-codex-secondary-reset-after-seconds': '7200',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.primary_reset_after_at).toBe(new Date(1780272000 * 1000).toISOString());
+    // No absolute instant for the secondary, so the offset still dates it.
+    expect(snapshot.secondary_reset_after_at).toBe('2026-06-05T02:00:00.000Z');
+  });
+
+  // Builds from the three days after the header landed sent RFC 3339 instead of
+  // epoch seconds, which is why every client that reads it accepts both.
+  test('reads an absolute reset instant sent as RFC 3339', () => {
+    const headers = new Headers({ 'x-codex-primary-reset-at': '2026-06-05T05:00:00.000Z' });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.primary_reset_after_at).toBe('2026-06-05T05:00:00.000Z');
+  });
+
+  // A plan whose secondary window is zero minutes wide reports a blank instant
+  // beside a zero offset. That is "no such window", not "it resets now".
+  test('reports no reset for a window this plan does not have', () => {
+    const headers = new Headers({
+      'x-codex-secondary-window-minutes': '0',
+      'x-codex-secondary-reset-at': '',
+      'x-codex-secondary-reset-after-seconds': '0',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.secondary_reset_after_at).toBeUndefined();
+  });
+
+  // `Number('')` is 0, so a blank reading would otherwise land as a confident
+  // zero balance rather than as nothing observed.
+  test('reads a blank numeric header as absent rather than as zero', () => {
+    const headers = new Headers({ 'x-codex-credits-balance': '', 'x-codex-secondary-used-percent': '  ' });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.credits_balance).toBeUndefined();
+    expect(snapshot.secondary_used_percent).toBeUndefined();
+  });
+
+  test('dates a 429 from the absolute instant when only that header arrives', () => {
+    const headers = new Headers({
+      'x-codex-primary-reset-at': '1780272000',
+      'x-codex-secondary-reset-at': '1780358400',
+    });
+    const snapshot = parseCodexQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
+    expect(snapshot.ratelimited_until).toBe(new Date(1780358400 * 1000).toISOString());
+  });
+
   test('sets ratelimited_until from max(primary, secondary) reset window on 429', () => {
     const headers = new Headers({
       'x-codex-primary-reset-after-seconds': '3600',
@@ -136,26 +193,27 @@ describe('getCodexQuota', () => {
     expect(await getCodexQuota(upstreamId, accountId)).toEqual({ premium: snap });
   });
 
-  test('returns null when every bucket is past its TTL window', async () => {
-    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z' };
-    const fetchedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt, data: snap } } }] });
-    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
-  });
-
-  test('filters stale buckets independently', async () => {
-    const freshSnap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'fresh' };
-    const staleSnap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'stale' };
+  // An old reading rendered with the instant it was taken tells an operator
+  // more than an empty card, so age withholds nothing -- the dashboard is the
+  // only reader, and traffic on the upstream replaces what it shows.
+  test('returns every bucket however long ago it was observed', async () => {
+    const recent: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'recent' };
+    const ancient: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'ancient' };
     current = makeRecord({
       accounts: [{
         ...baseAccount,
         quotaSnapshot: {
-          fresh: { fetchedAt: Date.now(), data: freshSnap },
-          stale: { fetchedAt: Date.now() - 2 * 24 * 60 * 60 * 1000, data: staleSnap },
+          recent: { fetchedAt: Date.now(), data: recent },
+          ancient: { fetchedAt: Date.now() - 90 * 24 * 60 * 60 * 1000, data: ancient },
         },
       }],
     });
-    expect(await getCodexQuota(upstreamId, accountId)).toEqual({ fresh: freshSnap });
+    expect(await getCodexQuota(upstreamId, accountId)).toEqual({ recent, ancient });
+  });
+
+  test('returns null when the account has an empty snapshot map', async () => {
+    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: {} }] });
+    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
   });
 
   test('returns null when the requested account is not in the pool', async () => {
@@ -208,21 +266,5 @@ describe('putCodexQuota', () => {
   test('throws when the requested account is not in the pool', async () => {
     await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
     expect(repo.writes).toEqual([]);
-  });
-});
-
-describe('computeCodexQuotaTtlMs', () => {
-  test('floors at 24h when no reset horizons are present', () => {
-    const now = new Date('2026-06-05T00:00:00.000Z');
-    expect(computeCodexQuotaTtlMs({ observed_at: now.toISOString() }, now)).toBe(24 * 60 * 60 * 1000);
-  });
-
-  test('extends past floor to the furthest reset horizon', () => {
-    const now = new Date('2026-06-05T00:00:00.000Z');
-    const snap: CodexQuotaSnapshot = {
-      observed_at: now.toISOString(),
-      primary_reset_after_at: '2026-06-08T00:00:00.000Z',
-    };
-    expect(computeCodexQuotaTtlMs(snap, now)).toBe(3 * 24 * 60 * 60 * 1000);
   });
 });

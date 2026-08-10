@@ -206,6 +206,9 @@ const ollamaConfigSchema = z.object({
   // Optional: required against ollama.com, typically absent for a private
   // daemon. PATCH passes `null` to explicitly clear it.
   apiKey: z.string().nullable().optional(),
+  // Whether this upstream is an Ollama Cloud account whose usage windows the
+  // gateway reads; see the provider config for why a base URL cannot answer it.
+  cloudUsage: z.boolean().optional(),
   models: z.array(upstreamModelSchema).optional(),
 }).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
   message: 'rerank models require a custom upstream',
@@ -486,6 +489,10 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 });
 
 export const claudeCodeProbeBody = recordOnlyBody;
+
+// --- ollama ---
+
+export const ollamaUsageBody = recordOnlyBody;
 
 // Unified live-model listing for both create-time preview and edit-time
 // refresh. Custom returns the raw upstream row (dashboard translates

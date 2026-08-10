@@ -629,7 +629,7 @@ const baseConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
   zed: { providerName: 'Floway' },
@@ -1071,10 +1071,10 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   }));
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, disableAutoMemory: true, disableAgentView: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; autoMemoryEnabled: boolean; disableAgentView: boolean; attribution: Record<string, unknown>; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(JSON.stringify(settings.permissions), JSON.stringify({ allow: ['Bash(ls:*)'] }), 'unrelated nested object preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
@@ -1085,6 +1085,8 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'managed sonnet default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'haiku-x', 'managed haiku default written');
   t.equal(settings.cleanupPeriodDays, 365, 'cleanupPeriodDays maps to the top-level numeric setting');
+  t.equal(settings.autoMemoryEnabled, false, 'the auto-memory opt-out maps to autoMemoryEnabled: false');
+  t.equal(settings.disableAgentView, true, 'the agent-view opt-out maps to disableAgentView: true');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes', commit: '', pr: '', sessionUrl: false }), 'attribution opt-out values are written without replacing unrelated keys');
 });
 
@@ -1096,6 +1098,8 @@ test('claude', 'optional keys are removed when unset', async t => {
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
     cleanupPeriodDays: 180,
+    autoMemoryEnabled: false,
+    disableAgentView: true,
     attribution: { commit: 'stale-commit', pr: 'stale-pr', sessionUrl: true, keep: 'yes' },
     env: {
       ANTHROPIC_MODEL: 'stale-model',
@@ -1118,6 +1122,8 @@ test('claude', 'optional keys are removed when unset', async t => {
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
   t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
+  t.ok(!('autoMemoryEnabled' in settings), 'autoMemoryEnabled removed when the opt-out is off');
+  t.ok(!('disableAgentView' in settings), 'disableAgentView removed when the opt-out is off');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes' }), 'managed attribution keys removed while unrelated keys survive');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved through removal');
 });
@@ -1382,12 +1388,12 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'dark', attribution: { keep: 'yes' }, env: { OTHER_TOOL: 'keep-me' } }));
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, disableAutoMemory: true, disableAgentView: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; autoMemoryEnabled: boolean; disableAgentView: boolean; attribution: Record<string, unknown>; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL written');
@@ -1398,6 +1404,8 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'sonnet default written');
   t.equal(settings.effortLevel, 'high', 'effortLevel maps to the top-level key');
   t.equal(settings.cleanupPeriodDays, 180, 'cleanupPeriodDays maps to the top-level numeric setting');
+  t.equal(settings.autoMemoryEnabled, false, 'the auto-memory opt-out maps to autoMemoryEnabled: false');
+  t.equal(settings.disableAgentView, true, 'the agent-view opt-out maps to disableAgentView: true');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes', commit: '', pr: '', sessionUrl: false }), 'attribution opt-out maps to the documented values');
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');
 });
@@ -1411,6 +1419,8 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
     cleanupPeriodDays: 365,
+    autoMemoryEnabled: false,
+    disableAgentView: true,
     attribution: { commit: 'stale', pr: 'stale', sessionUrl: true, keep: 'yes' },
     env: { ANTHROPIC_MODEL: 'stale', CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1', KEEP: 'yes' },
   }));
@@ -1421,6 +1431,8 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
   t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
+  t.ok(!('autoMemoryEnabled' in settings), 'autoMemoryEnabled removed when the opt-out is off');
+  t.ok(!('disableAgentView' in settings), 'disableAgentView removed when the opt-out is off');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes' }), 'managed attribution keys removed while unrelated keys survive');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved');
 });
