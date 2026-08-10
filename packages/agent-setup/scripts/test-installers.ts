@@ -671,6 +671,10 @@ const bothConfig = (
 
 interface RunOptions {
   workspace: Workspace;
+  // The child gets no LANG unless a test asks for one, so a scanner that only
+  // fails under a UTF-8 locale would never fail here — which is how a real
+  // macOS default hid for a round.
+  locale?: string;
   configuration: InstallerTestConfiguration;
   agent?: ScriptAgent;
   // Where the installer runs from, for the cases where a relative override has
@@ -742,6 +746,7 @@ interface RunResult { code: number; stdout: string; stderr: string; combined: st
 // before running the selected agent.
 const codexEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
+    ...(options.locale === undefined ? {} : { LANG: options.locale, LC_ALL: options.locale }),
     FAKE_CODEX_SRC,
     FAKE_CODEX_SENTINEL: SENTINEL_KEY,
     FAKE_CODEX_RECORD: codexRecordPath(options.workspace),
@@ -799,6 +804,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (!options.excludeTimeoutTools && options.includeJq !== false && hostJqPath) pathParts.push(HOST_JQ_BIN);
 
   const env: Record<string, string> = {
+    ...(options.locale === undefined ? {} : { LANG: options.locale, LC_ALL: options.locale }),
     HOME: workspace.home,
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
@@ -2767,6 +2773,30 @@ test('zed', 'a missing configuration directory stops before any write', async t 
 // one — awk exits 2 on a file it cannot open, which the scanner's vocabulary
 // would call a value jq would rewrite, and ReadAllText raises a framework
 // message naming a path the operator already knows.
+// A smart quote or a non-breaking space pasted out of a web page is a non-ASCII
+// byte outside a string, and awk under a UTF-8 locale — the macOS default —
+// dies on those rather than classifying them. The scan runs byte-oriented for
+// that reason; without it the run blames the tool examining the document.
+for (const locale of ['C', 'en_US.UTF-8']) {
+  test('zed', `the scanner classifies a non-ASCII byte under ${locale}`, async t => {
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    const document = '{\u201Ctelemetry\u201D:{"metrics":false}}';
+    writeFileSync(zedSettingsPath(configDir), document);
+
+    const run = await runShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir, locale,
+    });
+
+    t.ok(run.code !== 0, `refuses it under ${locale}`);
+    // The document's own shape is the cause, not the scanner's ability to read
+    // it — that distinction is the whole point of the separate status.
+    t.ok(!run.combined.includes('could not be examined'), `names the document, not the scanner:\n${run.combined}`);
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, 'leaving it byte-identical');
+  });
+}
+
 test('zed', 'both halves name an unreadable settings document as unreadable', async t => {
   if (process.platform === 'win32') skip('POSIX permission bits only');
   for (const which of ['bash', 'powershell'] as const) {
@@ -3081,6 +3111,11 @@ for (const { label, document } of [
   // that way, changing a number this run was not asked to touch, while jq
   // preserves the literal.
   { label: 'a number below the double range', document: '{"telemetry":{"metrics":1e-400}}' },
+  // The boundary decade underneath, where a double rounds to zero below
+  // 2.47e-324 rather than below 1e-323, and a decimal-only literal that carries
+  // its magnitude in the zeros after the point rather than in an exponent.
+  { label: 'a number in the underflow boundary decade', document: '{"telemetry":{"metrics":1e-324}}' },
+  { label: 'a decimal-only number below the double range', document: `{"telemetry":{"metrics":0.${'0'.repeat(396)}1}}` },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3210,7 +3245,7 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // 1e308 is representable and must pass; a `NaN` inside a string is text.
   // 1e-320 is subnormal and representable; 1e-400 is not, and belongs in the
   // refusal table rather than here — PowerShell writes it back as 0.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
@@ -4186,6 +4221,10 @@ for (const { label, document, cause } of [
   { label: 'single-quoted strings', document: "[{'vendor':'other','name':'Keep'}]", cause: 'is not a provider list' },
   { label: 'an unquoted key', document: '[{vendor:"other","name":"Keep"}]', cause: 'is not a provider list' },
   { label: 'a form feed between members', document: '[{"vendor":"other",\f"name":"Keep"}]', cause: 'is not a provider list' },
+  // Non-ASCII outside a string. awk under a UTF-8 locale used to die on these
+  // bytes rather than classify them, which reached the operator as a different
+  // sentence from the one PowerShell gives.
+  { label: 'a non-breaking space between members', document: '[{"vendor":"other",\u00A0"name":"Keep"}]', cause: 'is not a provider list' },
   // An interrupted write or a partial sync leaves one of these. Newtonsoft
   // parses them and would write the document back completed; jq refuses.
   { label: 'an unterminated array', document: '[{"vendor":"other","name":"Keep"}', cause: 'is not a provider list' },

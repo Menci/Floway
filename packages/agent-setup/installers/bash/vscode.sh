@@ -183,8 +183,10 @@ vscode_write_settings() {
         return 1
         ;;
       3)
-        # The scanner could not read the document as text — an awk that dies on
-        # the bytes rather than classifying them. Not a verdict on the content.
+        # No verdict came back at all: the scanner itself failed. Its own
+        # vocabulary cannot describe that, and the document is readable and may
+        # be perfectly valid, so blaming its content would send the operator
+        # after the wrong file.
         out_error "${VSCODE_SETTINGS_PATH} could not be examined; leaving it untouched."
         return 1
         ;;

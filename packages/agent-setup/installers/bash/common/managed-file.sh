@@ -19,12 +19,13 @@
 # decides what is valid JSON for this half, so there is nothing here to mirror
 # the strict verdict PowerShell has to reach by hand.
 _json_scan_verdict() {
-  # The BOM is dropped before the scan: it is not JSON content, jq reads a
-  # document carrying one, the PowerShell reader strips it, and macOS awk dies
-  # on the bytes rather than classifying them. Removed from the text the scanner
-  # sees, not from the operator's file — the merge reads that file itself, and
-  # jq handles the BOM there.
-  sed '1s/^\xef\xbb\xbf//' "$1" 2>/dev/null | awk '
+  # `LC_ALL=C` makes awk byte-oriented. Under a UTF-8 locale — the default on
+  # macOS — it dies with a multibyte conversion error on any non-ASCII byte
+  # outside a string, and a smart quote or a non-breaking space pasted out of a
+  # web page is exactly that. The scan only ever compares against ASCII
+  # structure, so bytes are the right unit for it; the merge still reads the
+  # file itself, where jq handles encoding.
+  LC_ALL=C awk '
     BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0; bad = 0 }
     {
       for (i = 1; i <= length($0); i++) {
@@ -76,16 +77,31 @@ _json_scan_verdict() {
           digits = mant
           gsub(/[.]/, "", digits)
           sub(/^0+/, "", digits)
+          frac = mant
+          if (frac ~ /[.]/) { sub(/^[^.]*[.]/, "", frac) } else { frac = "" }
           sub(/[.].*$/, "", mant)
           sub(/^0+/, "", mant)
-          magnitude = length(mant) + expn
+          if (mant == "") {
+            # A mantissa under 1 carries its magnitude in the zeros after the
+            # point, which the integer part cannot show: `0.00…01e0` is small
+            # however many zeros there are, and counting `length("")` would
+            # call every one of them magnitude 0.
+            lead = frac
+            sub(/[^0].*$/, "", lead)
+            magnitude = expn - length(lead)
+          } else {
+            magnitude = length(mant) + expn
+          }
           if (magnitude > 309) { bad = 1 }
           else if (magnitude == 309 && substr(digits "000", 1, 4) + 0 > 1797) { bad = 1 }
           # And the other end: below the smallest subnormal, PowerShell decodes
           # the value to 0 and writes it back that way, silently changing a
           # number inside an entry this run was not asked to touch, while jq
-          # preserves the literal. Refused on both, as an overflow is.
-          else if (magnitude < -323 && digits != "") { bad = 1 }
+          # preserves the literal. Refused on both, as an overflow is — with
+          # the same boundary-decade comparison, because a double rounds to
+          # zero below 2.47e-324 rather than below 1e-323.
+          else if (magnitude < -323) { bad = 1 }
+          else if (magnitude == -323 && substr(digits "000", 1, 4) + 0 < 2471) { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
@@ -98,7 +114,7 @@ _json_scan_verdict() {
     # `exit` runs END, so the verdict travels in a flag rather than in the exit
     # status of the rule body, which END would otherwise overwrite.
     END { print (found ? "jsonc" : (bad ? "invalid" : "ok")) }
-  ' 2>/dev/null
+  ' "$1" 2>/dev/null
 }
 
 # Wraps the scan so a tool failure is not read as a verdict. The verdict travels
