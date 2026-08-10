@@ -25,13 +25,23 @@ function Get-SetupZedApiUrl { $SetupEndpoint }
 # is `--user-data-dir`, which relocates the configuration wholesale; a Zed
 # started that way is out of scope here, and the override below is how an
 # operator running one points this installer at it.
-# Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
+#
+# The two variables are not read alike. Zed takes `FLATPAK_XDG_CONFIG_HOME`
+# straight from the environment, while `XDG_CONFIG_HOME` reaches it through
+# `dirs::config_dir()`, which discards a relative value and falls back to
+# `$HOME/.config` — so a relative one is not the directory Zed reads, and
+# honoring it here would configure a directory nothing loads.
+# Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
+#       https://github.com/dirs-dev/dirs-rs/blob/00511bdc252f491a72ac89f6d6a2463406266fb2/src/lin.rs#L9
+#       https://github.com/dirs-dev/dirs-sys-rs/blob/8bcd4aa2c35990d57a2cff2953793525fc42709c/src/lib.rs#L8-L15
 function Get-SetupZedConfigDir {
   if ($env:AGENT_SETUP_TEST_ZED_CONFIG_DIR) { return $env:AGENT_SETUP_TEST_ZED_CONFIG_DIR }
   if (Test-SetupIsWindows) { return (Join-Path $env:APPDATA 'Zed') }
   if ((Get-SetupPlatform) -eq 'linux') {
     if ($env:FLATPAK_XDG_CONFIG_HOME) { return (Join-Path $env:FLATPAK_XDG_CONFIG_HOME 'zed') }
-    if ($env:XDG_CONFIG_HOME) { return (Join-Path $env:XDG_CONFIG_HOME 'zed') }
+    if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) {
+      return (Join-Path $env:XDG_CONFIG_HOME 'zed')
+    }
   }
   Join-Path $HOME '.config/zed'
 }

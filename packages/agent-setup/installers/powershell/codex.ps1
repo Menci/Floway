@@ -65,7 +65,8 @@ function Backup-SetupCodexFiles {
       Backup-SetupManagedFile $script:CodexConfigPath $script:CodexConfigBackup
     } catch {
       $script:CodexConfigBackup = $null
-      throw
+      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
+      Stop-Setup "could not back up $($script:CodexConfigPath)"
     }
   }
   if (Test-Path -LiteralPath $script:CodexTokenPath) {
@@ -75,7 +76,8 @@ function Backup-SetupCodexFiles {
       Backup-SetupManagedFile $script:CodexTokenPath $script:CodexTokenBackup -Protect
     } catch {
       $script:CodexTokenBackup = $null
-      throw
+      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
+      Stop-Setup "could not back up $($script:CodexTokenPath)"
     }
   }
 }

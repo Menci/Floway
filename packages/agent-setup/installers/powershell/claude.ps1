@@ -88,7 +88,11 @@ function Write-SetupClaudeSettings {
       Backup-SetupManagedFile $script:ClaudeSettingsPath $script:ClaudeSettingsBackup -Protect
     } catch {
       $script:ClaudeSettingsBackup = $null
-      throw
+      # The same sentence the Bash half gives for the same failure. Without it
+      # the operator gets a raw .NET message from the top-level handler, naming
+      # Copy-Item rather than their settings file.
+      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
+      Stop-Setup "could not back up $($script:ClaudeSettingsPath)"
     }
   } else {
     $document = [PSCustomObject]@{}

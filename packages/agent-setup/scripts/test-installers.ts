@@ -691,6 +691,9 @@ interface RunOptions {
   // Same reason: the child gets no XDG_CONFIG_HOME unless a test asks for one,
   // so the branch that honors it is only reachable when one does.
   xdgConfigHome?: string;
+  // Zed reads this one raw where it filters the other, so the two need
+  // separate knobs to tell those apart.
+  flatpakXdgConfigHome?: string;
   configuration: InstallerTestConfiguration;
   agent?: ScriptAgent;
   // Where the installer runs from, for the cases where a relative override has
@@ -850,6 +853,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.noColor) env.NO_COLOR = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
   if (options.xdgConfigHome) env.XDG_CONFIG_HOME = options.xdgConfigHome;
+  if (options.flatpakXdgConfigHome) env.FLATPAK_XDG_CONFIG_HOME = options.flatpakXdgConfigHome;
   if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   if (options.fakeRestoreFailure) {
@@ -1042,6 +1046,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
   if (options.xdgConfigHome) env.XDG_CONFIG_HOME = options.xdgConfigHome;
+  if (options.flatpakXdgConfigHome) env.FLATPAK_XDG_CONFIG_HOME = options.flatpakXdgConfigHome;
   if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   return new Promise<RunResult>(resolve => {
@@ -1486,6 +1491,72 @@ test('claude', 'PowerShell: existing permissive settings are replaced with mode 
 // — one a rollback would later hand back as their document, and one that
 // outlives a run reporting it changed nothing. The PowerShell half's equivalent
 // is the chmod leg below, which fails after its copy landed.
+// A copy that fails outright, on the half that cannot have its `cp` shimmed.
+// Both halves have to name the document: the PowerShell one caught only to
+// clear its record and rethrow, so the operator read a raw .NET message naming
+// Copy-Item instead of their settings file.
+test('claude', 'both halves name the document when its backup cannot be made', async t => {
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    placeFakeClaude(ws.binDir);
+    const configDir = join(ws.home, `.claude-readonly-${which}`);
+    mkdirSync(configDir, { recursive: true });
+    const original = JSON.stringify({ theme: 'light' });
+    writeFileSync(join(configDir, 'settings.json'), original);
+    // Nothing new can be created beside the document, so the copy fails where
+    // the document itself is still readable.
+    chmodSync(configDir, 0o555);
+    try {
+      const options = { workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, configDir };
+      const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+      t.ok(run.code !== 0, `${which} must fail`);
+      t.includes(run.combined, `could not back up ${join(configDir, 'settings.json')}`, `${which} names the document`);
+      t.equal(readFileSync(join(configDir, 'settings.json'), 'utf8'), original, `${which} leaves it untouched`);
+    } finally {
+      chmodSync(configDir, 0o755);
+    }
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// The same sentence for the other document this run manages. Codex's config is
+// backed up by the same helper, and its caller reported the failure its own way
+// until this case asked.
+// Both documents this agent manages, because they are backed up by separate
+// calls with separate records to clear, and the config is copied first — so a
+// case that only ever has a config never reaches the token's own arm.
+for (const { document, contents } of [
+  { document: 'config.toml', contents: 'model_provider = "old"\n' },
+  { document: 'floway-token', contents: 'old-provider-token' },
+] as const) {
+  test('codex', `both halves name ${document} when its backup cannot be made`, async t => {
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      placeFakeCodex(ws.binDir);
+      const home = join(ws.home, `.codex-readonly-${document}-${which}`);
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, document), contents);
+      // Nothing new can be created beside the document, so the copy fails
+      // where the document itself is still readable.
+      chmodSync(home, 0o555);
+      try {
+        const options = { workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome: home };
+        const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+        t.ok(run.code !== 0, `${which} must fail`);
+        t.includes(run.combined, `could not back up ${join(home, document)}`, `${which} names it`);
+        t.equal(readFileSync(join(home, document), 'utf8'), contents, `${which} leaves it untouched`);
+      } finally {
+        chmodSync(home, 0o755);
+      }
+    };
+
+    await runHalf('bash');
+    if (hostPwsh) await runHalf('powershell');
+  });
+}
+
 test('claude', 'Bash: a backup that fails part way leaves nothing beside the document', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -2742,6 +2813,46 @@ test('zed', 'both halves derive the configuration directory with no override', a
     if (hostPwsh) await runHalf('powershell', xdg);
   }
 });
+
+// Zed takes `FLATPAK_XDG_CONFIG_HOME` ahead of `XDG_CONFIG_HOME` and reads it
+// raw, where the other reaches it through a filter that discards a relative
+// value. Both rules are Zed's, and getting either backwards configures a
+// directory the editor never reads while the key still lands in the credential
+// store.
+for (const { label, flatpak, xdg, expected } of [
+  { label: 'takes the Flatpak variable ahead of the other', flatpak: 'flatpak', xdg: 'xdg', expected: 'flatpak' },
+  { label: 'ignores a relative XDG_CONFIG_HOME as Zed does', flatpak: undefined, xdg: 'relative', expected: 'home' },
+] as const) {
+  test('zed', `both halves ${label}`, async t => {
+    if (process.platform === 'win32') skip('POSIX paths only');
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      placeFakeCredentialTools(ws);
+      placeLinuxUnameShim(ws);
+      const dirs = {
+        home: join(ws.home, '.config', 'zed'),
+        flatpak: join(ws.home, 'flatpak', 'zed'),
+        xdg: join(ws.home, 'xdg', 'zed'),
+        // A relative XDG_CONFIG_HOME resolves against the working directory,
+        // which is the workspace root for this run.
+        relative: join(ws.root, 'relative-xdg', 'zed'),
+      };
+      for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
+      const run = await (which === 'bash' ? runShellInstaller : runPowerShellInstaller)({
+        workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), forceLinuxPlatform: true, cwd: ws.root,
+        xdgConfigHome: xdg === 'relative' ? 'relative-xdg' : join(ws.home, xdg),
+        ...(flatpak === undefined ? {} : { flatpakXdgConfigHome: join(ws.home, flatpak) }),
+      });
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      for (const [name, dir] of Object.entries(dirs)) {
+        t.equal(existsSync(zedSettingsPath(dir)), name === expected, `${which} ${name === expected ? 'writes under' : 'leaves'} ${name}`);
+      }
+    };
+
+    await runHalf('bash');
+    if (hostPwsh) await runHalf('powershell');
+  });
+}
 
 // The same derivation as a Linux host sees it. On macOS the XDG branches are
 // unreachable — `config_dir()` gives that platform an unconditional
@@ -4162,6 +4273,33 @@ test('vscode', 'both halves find the builds under HOME with no override', async 
     for (const dir of dirs) t.ok(existsSync(vscodeGroupsPath(dir)), `${which} configures ${basename(dirname(dir))}`);
     // The third build is absent, and an absent build is not a failure.
     t.ok(!run.combined.includes('Code - Insiders'), `${which} says nothing about the build that is not installed`);
+  };
+
+  await runHalf('bash');
+  if (hostPwsh) await runHalf('powershell');
+});
+
+// The XDG arm of the same derivation, which a macOS runner cannot reach on its
+// own — that platform has its own base — so without forcing the platform the
+// arm ships unexecuted and an operator with XDG_CONFIG_HOME set gets their key
+// written where VS Code never reads it. Taken raw, unlike Zed's: VS Code
+// applies no absolute-path filter.
+test('vscode', 'both halves honor XDG_CONFIG_HOME where VS Code reads it', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    placeLinuxUnameShim(ws);
+    const exported = join(ws.home, 'xdg', 'Code', 'User');
+    const home = join(ws.home, '.config', 'Code', 'User');
+    mkdirSync(exported, { recursive: true });
+    mkdirSync(home, { recursive: true });
+    const run = await (which === 'bash' ? runShellInstaller : runPowerShellInstaller)({
+      workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(),
+      forceLinuxPlatform: true, xdgConfigHome: join(ws.home, 'xdg'),
+    });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(existsSync(vscodeGroupsPath(exported)), `${which} configures the build under the exported directory`);
+    t.ok(!existsSync(vscodeGroupsPath(home)), `${which} leaves the default base alone`);
   };
 
   await runHalf('bash');

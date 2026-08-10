@@ -36,10 +36,18 @@ function Get-SetupVSCodeUserDirs {
     return @($env:AGENT_SETUP_TEST_VSCODE_USER_DIR -split "`n" | Where-Object { $_ } |
       Where-Object { Test-Path -LiteralPath $_ -PathType Container })
   }
-  $base = if (Test-SetupIsWindows) { $env:APPDATA }
-    elseif ($IsMacOS) { Join-Path $HOME 'Library/Application Support' }
-    elseif ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME }
-    else { Join-Path $HOME '.config' }
+  # Through the one platform decider the rest of this installer asks, rather
+  # than `$IsMacOS` directly: a second answer to the same question is a second
+  # thing to keep right, and it is the one the harness cannot reach.
+  $base = switch (Get-SetupPlatform) {
+    'windows' { $env:APPDATA }
+    'macos' { Join-Path $HOME 'Library/Application Support' }
+    # Taken as given, unlike Zed's: VS Code reads this variable raw, with no
+    # absolute-path filter, so a relative value is the operator's own and it is
+    # the directory the editor uses too.
+    # Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/environment/node/userDataPath.ts#L99
+    default { if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' } }
+  }
   @('Code', 'Code - Insiders', 'VSCodium') |
     ForEach-Object { Join-Path (Join-Path $base $_) 'User' } |
     Where-Object { Test-Path -LiteralPath $_ -PathType Container }
