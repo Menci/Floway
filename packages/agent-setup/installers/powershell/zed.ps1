@@ -366,9 +366,10 @@ function Set-SetupZedCredentialSecretService {
 # `-T` grants a bundle access without the authorization prompt a later read
 # would raise, and a path that does not exist fails the whole call — so only
 # bundles found on this host are named, across every channel and both install
-# locations. The key is unavoidably an argv element for the duration of the
-# call: security takes the password only via -w/-X, and bare -w prompts on the
-# tty rather than reading stdin, which a piped installer cannot answer.
+# locations. The key is an argv element for the duration of the call, as it is
+# on the Bash half and for the same reason: bare -w prompts on the tty, and
+# `security -i` reads the key from stdin but exits 0 even when its sub-command
+# failed, which would report a store that never happened as done.
 function Set-SetupZedCredentialMacOS {
   if (-not (Get-Command security -ErrorAction SilentlyContinue)) {
     Stop-Setup 'the `security` command is unavailable; cannot store the API key.'

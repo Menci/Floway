@@ -276,10 +276,14 @@ zed_macos_app_bundles() {
 # and its username the account — exactly what `-s` and `-a` set below.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_macos/src/platform.rs#L1151-L1170
 #
-# `-U` makes a re-run idempotent. The key is unavoidably an argv element for the
-# duration of this call: `security` takes the password only via `-w`/`-X`, and
-# bare `-w` prompts on the tty rather than reading stdin, which a piped
-# installer cannot answer. Verified against security(1) on macOS 15.
+# `-U` makes a re-run idempotent. The key is an argv element for the duration of
+# this call, which `ps` shows to every user on the host. The alternatives are
+# worse: bare `-w` prompts on the tty rather than reading stdin, which a piped
+# installer cannot answer, and `security -i` — which does read the whole command
+# line, key included, from stdin — exits 0 whether its sub-command succeeded or
+# failed, so a store that never happened would be reported as done and Zed would
+# show no models with nothing to say why. Measured on macOS 15: a failing
+# `add-internet-password` through `-i` prints `returned 1` and exits 0.
 zed_store_key_macos() {
   if ! command -v security >/dev/null 2>&1; then
     out_error 'the `security` command is unavailable; cannot store the API key.'

@@ -137,7 +137,11 @@ _json_scan_verdict() {
           #
           # The tie itself rounds away from the finite range at both ends —
           # to infinity above and to zero below — so equality refuses.
-          if (magnitude > 309) { bad = 1 }
+          # A significand of zero is zero at any exponent, so no writer can
+          # change its value and none of the range arms apply. `0e400` is a
+          # stated zero, which the other half says the same way.
+          if (digits !~ /[1-9]/) { }
+          else if (magnitude > 309) { bad = 1 }
           else if (magnitude == 309 && _digitcmp(digits, OVERFLOW_TURN) >= 0) { bad = 1 }
           # And the other end: at or below half the smallest subnormal a double
           # rounds to zero, and PowerShell writes that zero back where jq
