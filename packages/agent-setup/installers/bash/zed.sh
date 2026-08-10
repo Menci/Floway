@@ -115,10 +115,23 @@ zed_write_settings() {
     # Zed reads this file with serde_json_lenient, so a comment or a trailing
     # comma is the operator's content and jq is about to refuse it. Name that
     # cause rather than reporting a malformed object.
-    if _json_has_jsonc_syntax "$ZED_SETTINGS_PATH"; then
-      out_error "$ZED_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
-      return 1
-    fi
+    # Captured with `||` because a clean document exits 1, which `set -e` would
+    # otherwise take as a failure.
+    _zw_verdict=0
+    _json_has_jsonc_syntax "$ZED_SETTINGS_PATH" || _zw_verdict=$?
+    case $_zw_verdict in
+      0)
+        out_error "$ZED_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
+        return 1
+        ;;
+      2)
+        # jq would take NaN or Infinity and rewrite it, changing a value this
+        # run was not asked to touch. The PowerShell half refuses the document
+        # outright, and one file has to get one answer.
+        out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
+        return 1
+        ;;
+    esac
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,
     # so both a truncated file and `{"a":1}{"b":2}` would pass an unslurped

@@ -8,6 +8,9 @@
 # file without it — 5.1 refuses it itself — so refusing is also what keeps the
 # two halves from reaching opposite verdicts on one document, on either host. Strings are walked rather than
 # matched by pattern, because a value like a URL contains `//` legitimately.
+# Exits 0 for a JSONC construct, 2 for a value jq would rewrite rather than
+# refuse, and 1 for a document neither applies to.
+#
 # Mirrors the `jsonc` arm of Get-SetupJsonVerdict, down to the
 # whitespace it skips: space, tab and CR here, plus the newline there, which
 # awk never sees because it splits records on it. Anything wider — a form feed,
@@ -17,7 +20,7 @@
 # the strict verdict PowerShell has to reach by hand.
 _json_has_jsonc_syntax() {
   awk '
-    BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0 }
+    BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0; bad = 0 }
     {
       for (i = 1; i <= length($0); i++) {
         c = substr($0, i, 1)
@@ -33,6 +36,15 @@ _json_has_jsonc_syntax() {
         }
         # A comma survives across lines, because `,\n}` is how a trailing comma
         # is usually written.
+        # jq takes NaN and Infinity as extensions and rewrites them, to null
+        # and to 1.797e308, so accepting such a document here would have this
+        # half silently alter a value inside a foreign entry while the
+        # PowerShell half refuses the file. Refused on both instead.
+        # (No apostrophes in this program: it is a single-quoted shell word.)
+        if (c == "N" || c == "I") {
+          rest = substr($0, i)
+          if (rest ~ /^NaN/ || rest ~ /^Infinity/) { bad = 1 }
+        }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
         if (comma && (c == "}" || c == "]")) { found = 1; exit }
@@ -43,7 +55,7 @@ _json_has_jsonc_syntax() {
     }
     # `exit` runs END, so the verdict travels in a flag rather than in the exit
     # status of the rule body, which END would otherwise overwrite.
-    END { exit (found ? 0 : 1) }
+    END { exit (found ? 0 : (bad ? 2 : 1)) }
   ' "$1" 2>/dev/null
 }
 

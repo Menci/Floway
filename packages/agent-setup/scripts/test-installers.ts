@@ -2929,7 +2929,11 @@ for (const { label, document } of [
   // parses them and would write the document back completed; jq refuses.
   { label: 'an unterminated object', document: '{"telemetry":{"metrics":false}' },
   { label: 'an unterminated string', document: '{"telemetry":{"note":"unclosed}' },
-
+  // jq takes these as extensions and rewrites them — NaN to null, Infinity to
+  // 1.797e308 — so accepting them would have the Bash half alter a value it
+  // was not asked to touch while the PowerShell half refuses the file.
+  { label: 'a NaN value', document: '{"telemetry":{"metrics":NaN}}' },
+  { label: 'an Infinity value', document: '{"telemetry":{"metrics":Infinity}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
