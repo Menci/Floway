@@ -81,6 +81,11 @@ _json_scan_verdict() {
           magnitude = length(mant) + expn
           if (magnitude > 309) { bad = 1 }
           else if (magnitude == 309 && substr(digits "000", 1, 4) + 0 > 1797) { bad = 1 }
+          # And the other end: below the smallest subnormal, PowerShell decodes
+          # the value to 0 and writes it back that way, silently changing a
+          # number inside an entry this run was not asked to touch, while jq
+          # preserves the literal. Refused on both, as an overflow is.
+          else if (magnitude < -323 && digits != "") { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }

@@ -3077,6 +3077,10 @@ for (const { label, document } of [
   // A sign belongs to the number, not to the text before it — treating it as
   // interior hid the whole token from the scan.
   { label: 'a negative number past the double range', document: '{"telemetry":{"metrics":-1e400}}' },
+  // The other end of the range: PowerShell decodes this to 0 and writes it back
+  // that way, changing a number this run was not asked to touch, while jq
+  // preserves the literal.
+  { label: 'a number below the double range', document: '{"telemetry":{"metrics":1e-400}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3204,7 +3208,9 @@ test('zed', 'PowerShell refuses a provider name it cannot keep beside an existin
 // jq both accept.
 test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // 1e308 is representable and must pass; a `NaN` inside a string is text.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-400,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+  // 1e-320 is subnormal and representable; 1e-400 is not, and belongs in the
+  // refusal table rather than here — PowerShell writes it back as 0.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);

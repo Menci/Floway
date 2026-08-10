@@ -163,6 +163,12 @@ function Get-SetupJsonVerdict {
       if ([double]::TryParse($token, [System.Globalization.NumberStyles]::Float,
             [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
         if ([double]::IsInfinity($parsed) -or [double]::IsNaN($parsed)) { $strict = $false }
+        # And the other end: a literal below the smallest subnormal decodes to
+        # 0 here and is written back that way, silently changing a number
+        # inside an entry this run was not asked to touch, while jq preserves
+        # it. Refused as an overflow is — a stated zero is not affected,
+        # because its own token is zero.
+        elseif ($parsed -eq 0 -and $token -match '[1-9]') { $strict = $false }
       }
     }
   }
