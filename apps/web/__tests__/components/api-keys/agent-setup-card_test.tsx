@@ -283,6 +283,25 @@ describe('Zed with an unknown catalog', () => {
   // A listing that failed is not a gateway with nothing to serve. Both panes
   // have to tell those apart; the setup pane learned it first and the snippet
   // pane kept collapsing `null` to an empty array.
+  // Codex and Claude build their snippets from the configuration alone, so a
+  // catalog nobody could list is no reason to blank their pane.
+  // The VS Code branch projects a catalog too, so its guard must sit inside the
+  // branch for the same reason Zed's does.
+  it('blames the catalog on neither VS Code pane', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'VS Code' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+  });
+
+  it('still offers the Codex snippet, which needs no catalog', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'Codex' }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.getAllByText(/model_provider/).length).toBeGreaterThan(0);
+  });
+
   it('blames the catalog on neither pane', () => {
     renderUnknown(apiKey('key-1'));
     act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });

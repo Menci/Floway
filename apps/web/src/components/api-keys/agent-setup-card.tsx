@@ -216,9 +216,6 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
-  // Nothing to project from a catalog that is not known yet; the page's own
-  // listing error is the message that belongs there.
-  if (models === null) return null;
   // Both editor installers refuse a catalog with no chat models rather than
   // write a provider that has none, so neither panel may hand the operator a
   // document to paste that would leave the editor with an unusable entry and no
@@ -232,6 +229,11 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
     <OutcomeMessageBar intent="warning">{t(editor === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}</OutcomeMessageBar>
   </div>;
   if (agent === 'vscode') {
+    // Nothing to project from a catalog that is not known yet; the page's own
+    // listing error is the message that belongs there. The guard sits in each
+    // catalog-projecting branch rather than above them, because Codex and
+    // Claude build their snippets from the configuration alone.
+    if (models === null) return null;
     const vscodeModels = projectVSCodeModels(models, configuration.vscode.apiType);
     if (vscodeModels.length === 0) return noChatModelsFor('vscode');
     const snippet = buildAgentVSCodeSnippet(origin, apiKey, configuration.vscode, vscodeModels);
@@ -244,6 +246,11 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
     </div>;
   }
   if (agent === 'zed') {
+    // Nothing to project from a catalog that is not known yet; the page's own
+    // listing error is the message that belongs there. Only the editors that
+    // embed a catalog are blank here — Codex and Claude build their snippets
+    // from the configuration alone and need no models at all.
+    if (models === null) return null;
     const zedModels = projectZedModels(models);
     if (zedModels.length === 0) return noChatModelsFor('zed');
     const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);

@@ -53,14 +53,29 @@ _json_has_jsonc_syntax() {
         # A magnitude no double can hold, which jq rewrites and the two
         # PowerShell versions disagree about. The exponent is compared rather
         # than counted: 1e308 is representable and 1e309 is not.
-        if (c ~ /[0-9]/) {
+        if (c ~ /[0-9]/ && (i == 1 || substr($0, i - 1, 1) !~ /[0-9.eE+-]/)) {
           num = substr($0, i)
-          if (num ~ /^[0-9]+([.][0-9]+)?[eE][+]?[0-9]+/) {
-            expn = num
-            sub(/^[0-9]+([.][0-9]+)?[eE][+]?/, "", expn)
-            sub(/[^0-9].*$/, "", expn)
-            if (expn + 0 > 308) { bad = 1 }
+          sub(/[^0-9.eE+-].*$/, "", num)
+          # Significant digits and a decimal exponent, from which the magnitude
+          # follows without arithmetic — awk would saturate rather than compare.
+          # The boundary decade needs the leading digits too, because the range
+          # ends at 1.797…e308 rather than at a power of ten.
+          expn = 0
+          mant = num
+          if (mant ~ /[eE]/) {
+            expn = mant
+            sub(/^[^eE]*[eE][+]?/, "", expn)
+            expn = expn + 0
+            sub(/[eE].*$/, "", mant)
           }
+          digits = mant
+          gsub(/[.]/, "", digits)
+          sub(/^0+/, "", digits)
+          sub(/[.].*$/, "", mant)
+          sub(/^0+/, "", mant)
+          magnitude = length(mant) + expn
+          if (magnitude > 309) { bad = 1 }
+          else if (magnitude == 309 && substr(digits "000", 1, 4) + 0 > 1797) { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
