@@ -212,10 +212,15 @@ function Write-SetupVSCodeSettings {
     # Presence, not truth: a `settings` of null or false is the operator's
     # value as much as an object is, and the other half asks `has`.
     #
-    # The search ends at the first group that carries one, not at the first
-    # group under our name: a hand-merged file — which is what the dashboard's
-    # own snippet hint asks the operator to produce — can hold two, and jq takes
-    # the first `settings` among them.
+    # The last group carrying one wins, not the first. A hand-merged file —
+    # which is what the dashboard's own snippet hint asks the operator to
+    # produce — can hold two under our name, and VS Code resolves them last:
+    # it applies each matching group's settings in array order into one map
+    # keyed by model, so the later group is the one whose Thinking Efforts were
+    # in effect. Keeping the first would preserve the settings it was ignoring
+    # and drop the ones it was using.
+    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
+    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
     foreach ($group in $parsed) {
       if (Test-SetupVSCodeOwnGroup $group) {
         $found = $group.PSObject.Properties |
@@ -224,7 +229,6 @@ function Write-SetupVSCodeSettings {
         if ($null -ne $found) {
           $keptSettings = $found.Value
           $hasKeptSettings = $true
-          break
         }
       }
     }

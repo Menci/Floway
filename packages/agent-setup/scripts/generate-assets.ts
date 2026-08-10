@@ -15,9 +15,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
 
-interface SourceSection {
+// A source embedded whole, under one constant.
+interface WholeFileSection {
   name: string;
   file: string;
+}
+
+// A slice of one, tiled with its siblings into a platform's common body.
+interface SourceSection extends WholeFileSection {
   start?: string;
   end?: string;
   append?: string;
@@ -25,12 +30,14 @@ interface SourceSection {
 
 interface PlatformSources {
   common: readonly SourceSection[];
-  agents: readonly SourceSection[];
+  agents: readonly WholeFileSection[];
   // Embedded as a constant but joined into no platform body: a fragment only
   // one agent's script needs, composed into that script by `script-assets.ts`.
   // Putting it in `common` would compile a P/Invoke declaration into every
-  // operator's console for the three agents that never call it.
-  standalone?: readonly SourceSection[];
+  // operator's console for the three agents that never call it. Whole-file,
+  // because nothing tiles these — a cut point here would be accepted and
+  // ignored.
+  standalone?: readonly WholeFileSection[];
 }
 
 // Source files are grouped by responsibility, while these section boundaries

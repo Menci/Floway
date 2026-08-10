@@ -302,7 +302,7 @@ function Write-SetupZedSettings {
 # Windows keeps it as a generic credential whose target name Zed builds as
 # "zed:url=" + api_url. The blob must be UTF-8 — Zed runs `str::from_utf8` over
 # it — which rules out `cmdkey`, whose blob is UTF-16LE. The C# that does the
-# write is in common/zed-credential.ps1, shared with the dashboard's snippet.
+# write is in zed-credential.ps1, shared with the dashboard's snippet.
 # Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/gpui_windows/src/util.rs#L89-L91
 
 function Set-SetupZedCredentialWindows {

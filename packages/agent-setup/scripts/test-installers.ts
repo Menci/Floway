@@ -3702,14 +3702,15 @@ test('vscode', 'both halves keep the per-model settings VS Code wrote into our g
 });
 
 // A hand-merged file can hold two groups under our name — which is what the
-// snippet pane asks the operator to produce — and only one of them carries the
-// settings VS Code wrote. The halves searched differently: jq takes the first
-// `settings` among them, and a search that stopped at the first group under our
-// name instead dropped it.
-test('vscode', 'both halves keep the settings of whichever own group carries them', async t => {
+// snippet pane asks the operator to produce. VS Code applies each matching
+// group's settings in array order into one map keyed by model, so the later
+// group is the one whose Thinking Efforts were in effect; both halves keep that
+// one. Distinct settings on both, because a half that took the first would
+// otherwise pass by keeping the only one there was.
+test('vscode', 'both halves keep the settings of the own group VS Code resolves last', async t => {
   const settings = { 'claude-opus-4-6': { reasoningEffort: 'high' } };
   const existing = JSON.stringify([
-    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [] },
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings: { 'claude-opus-4-6': { reasoningEffort: 'low' } } },
     { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings },
   ]);
   const runHalf = async (which: 'bash' | 'powershell') => {

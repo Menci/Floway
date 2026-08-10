@@ -19,11 +19,17 @@
 # reads it back on every resolve — dropping it reverts every choice to the
 # schema default with nothing on screen, on a re-run they did for an unrelated
 # reason. Foreign groups keep theirs because they are copied whole.
+# A file the operator merged by hand can hold two groups under our name. `last`,
+# not `first`: VS Code applies each matching group's settings in array order
+# into one map keyed by model, so the later group is the one whose Thinking
+# Efforts were in effect, and keeping the first would preserve the settings it
+# was ignoring while dropping the ones it was using.
 # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1551-L1562
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1259
+#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
 VSCODE_MERGE_PROGRAM='
   if type != "array" then error("root is not a JSON array") else . end
-  | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | select(has("settings")) | {settings}] | first) as $kept
+  | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | select(has("settings")) | {settings}] | last) as $kept
   | map(select((.vendor != "customendpoint") or (.name != $providerName)))
   + [({
       "vendor": "customendpoint",
