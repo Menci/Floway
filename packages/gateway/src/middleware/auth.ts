@@ -127,9 +127,14 @@ export const userUpstreamIdsFromContext = (c: AuthedContext): readonly string[] 
 
 // Effective upstream whitelist: intersect the per-user cap with the per-key
 // whitelist. null = unrestricted. A caller with no key resolves to the per-user
-// cap alone. Stated once here because Agent Setup resolves the same scope for a
-// lease's key outside any authenticated request, and a second copy of this rule
-// would let the setup script advertise models the key cannot reach.
+// cap alone. Extracted because Agent Setup resolves the same scope for a
+// lease's key outside any authenticated request, and a copy of this rule that
+// disagreed would let the setup script advertise models the key cannot reach.
+//
+// The browser cannot import this module, so the dashboard states it a second
+// time in `apps/web/src/components/models/reachability.ts`, where the same
+// catalog is narrowed for the Agent Setup preview. The two are equivalent by
+// hand; if a third caller appears, this belongs in a package both can import.
 export const intersectUpstreamIds = (
   userIds: readonly string[] | null,
   keyIds: readonly string[] | null,

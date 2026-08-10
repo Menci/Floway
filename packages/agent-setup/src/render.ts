@@ -8,7 +8,7 @@
 
 import type { AgentSetupConfiguration } from './configuration.ts';
 import type { VSCodeModel, ZedModel } from './models.ts';
-import type { ScriptAgent } from './script-assets.ts';
+import type { ScriptAgent, ScriptLanguage } from './script-assets.ts';
 
 export interface RenderPrefixInput {
   agent: ScriptAgent;
@@ -44,7 +44,7 @@ const editorModelsJson = ({ agent, editorModels }: RenderPrefixInput): string =>
 // with something the operator can read: an opaque 404 would look like a broken
 // setup link, and a 500 like a gateway fault. The detail stays in the server
 // log — this response is unauthenticated apart from the token in its URL.
-export const renderScriptFailure = (language: 'sh' | 'ps1', message: string): string => (language === 'sh'
+export const renderScriptFailure = (language: ScriptLanguage, message: string): string => (language === 'sh'
   // `curl | sh` runs in its own process, so exiting is contained. The
   // PowerShell invocation is `irm … | iex` in the operator's own console, which
   // `exit` would close — taking the message this script exists to show with it.

@@ -2,6 +2,11 @@ import type { CatalogIndex } from './catalog-index';
 import { indexCatalog } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
 
+// The browser's copy of the gateway's `intersectUpstreamIds`
+// (`packages/gateway/src/middleware/auth.ts`), which it cannot import across
+// the browser boundary. The Agent Setup pane previews the catalog this narrows
+// and the gateway projects the served script from its own copy, so the two
+// disagreeing would show the operator models their key cannot reach.
 export const effectiveUpstreamCap = (
   keyUpstreamIds: readonly string[] | null,
   userUpstreamIds: readonly string[] | null,

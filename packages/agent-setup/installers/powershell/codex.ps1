@@ -65,7 +65,6 @@ function Backup-SetupCodexFiles {
       Backup-SetupManagedFile $script:CodexConfigPath $script:CodexConfigBackup
     } catch {
       $script:CodexConfigBackup = $null
-      if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
       Stop-Setup "could not back up $($script:CodexConfigPath)"
     }
   }
@@ -76,6 +75,9 @@ function Backup-SetupCodexFiles {
       Backup-SetupManagedFile $script:CodexTokenPath $script:CodexTokenBackup -Protect
     } catch {
       $script:CodexTokenBackup = $null
+      # This arm restricts the copy's mode, and that failure reports itself
+      # before it raises — the copy-only arm above cannot produce the sentinel
+      # and so does not ask about it.
       if ([string]::Equals($_.Exception.Message, 'setup-handled', [System.StringComparison]::Ordinal)) { throw }
       Stop-Setup "could not back up $($script:CodexTokenPath)"
     }
