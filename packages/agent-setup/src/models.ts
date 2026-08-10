@@ -39,8 +39,12 @@ export interface ZedModel {
 // 80_000 of derived headroom Zed switches auto-compaction off entirely and just
 // warns, so a 216k/128k/64k model sent its prompt limit would leave 64k and
 // lose compaction on a model that has room for it. Zed has nothing to fall back
-// to either — a model without this fails deserialization and takes the whole
-// provider down — so the absent case is ours to state.
+// to either — `max_tokens` is a required `u64`, so a model without it fails
+// deserialization, and the blast radius is wider than this provider: the
+// entry fails its settings struct, and `anthropic_compatible` is an
+// `Option` under `with_fallible_options`, so every anthropic_compatible
+// provider is dropped to nothing while the rest of the file loads. The
+// absent case is ours to state.
 // Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L56-L57
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L4383-L4390
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent/src/thread.rs#L124
@@ -93,7 +97,12 @@ const zedThinkingMode = (
   if (reasoning === undefined) return undefined;
   if (reasoning.adaptive === true) return { type: 'adaptive' };
   const ceiling = maxOutputTokens ?? ZED_FALLBACK_MAX_OUTPUT_TOKENS;
-  const usable = [reasoning.budget_tokens?.min, reasoning.budget_tokens?.max]
+  // Through the same filter as every other number this module puts on Zed's
+  // wire: `budget_tokens` is an `Option<u32>` under the fallible-options macro,
+  // so a fractional one — which reaches the catalog unvalidated from a raw
+  // upstream — is swallowed to `None` and the model arrives in Default mode
+  // with its thinking silently gone.
+  const usable = [usableLimit(reasoning.budget_tokens?.min), usableLimit(reasoning.budget_tokens?.max)]
     .find(budget => budget !== undefined && budget >= ANTHROPIC_MIN_THINKING_BUDGET && budget < ceiling);
   return usable === undefined ? undefined : { type: 'thinking', budget_tokens: usable };
 };
@@ -140,14 +149,22 @@ const chatModels = (models: readonly PublicModel[]): PublicModel[] =>
 //       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/agent_ui/src/conversation_view/thread_view.rs#L11845
 //
 // A stated 0 is a value everywhere else in the catalog and no bound at all
-// here. Zed's fields are required `u64`s it sends verbatim, with no encoding
-// for "unknown": a 0 window is a 0-token context whose callout is suppressed by
-// the ratio guard below — neither compaction nor warning, the band reached from
-// the other side — and a 0 output limit becomes a Messages `max_tokens` of 0,
-// which Anthropic rejects on every request. Negative and fractional values fail
-// Zed's `u64` deserialization and take the whole settings document down with
-// them, so they are refused here as well.
-// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
+// here. Zed sends these verbatim: a 0 window is a 0-token context whose callout
+// is suppressed by the ratio guard below — neither compaction nor warning, the
+// band reached from the other side — and a 0 output limit becomes a Messages
+// `max_tokens` of 0, which Anthropic rejects on every request.
+//
+// Negative and fractional values are refused for a reason that differs by
+// field, and neither one is visible to the operator. `max_tokens` is a
+// required `u64`, so a bad value there fails the model entry, which fails its
+// provider, which — through the fallible `anthropic_compatible` option — drops
+// every anthropic_compatible provider silently. `max_output_tokens` is an
+// `Option<u64>` under the same macro, so a bad value there is swallowed to
+// `None` and Zed applies its own 4096 instead, which is not the reservation the
+// plan below computed.
+// Refs: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/acp_thread/src/acp_thread.rs#L2042-L2043
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_content/src/language_model.rs#L10-L14
+//       https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/settings_macros/src/settings_macros.rs#L107-L139
 const usableLimit = (value: number | undefined): number | undefined =>
   value === undefined || !Number.isInteger(value) || value <= 0 ? undefined : value;
 

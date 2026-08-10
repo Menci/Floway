@@ -38,6 +38,21 @@ describe('Zed available_models projection', () => {
     expect(modes[2]).toBeUndefined();
   });
 
+  // Zed's `budget_tokens` is an `Option<u32>` under the fallible-options macro,
+  // so a fractional one is swallowed to `None` rather than reported: the model
+  // arrives in Default mode with its thinking gone and nothing on screen. The
+  // catalog can carry one — a raw upstream's thinking bounds are copied across
+  // without a numeric check — so the projection filters it the way it filters
+  // every other number it puts on that wire.
+  it('drops a thinking budget Zed would swallow', () => {
+    const modes = projectZedModels([
+      catalogModel('fractional-ceiling', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 }, chat: { reasoning: { budget_tokens: { max: 8000.5 } } } }),
+      catalogModel('fractional-floor-usable-ceiling', { limits: { max_context_window_tokens: 200_000, max_output_tokens: 64_000 }, chat: { reasoning: { budget_tokens: { min: 2048.5, max: 8000 } } } }),
+    ]).map(entry => entry.mode);
+    expect(modes[0]).toBeUndefined();
+    expect(modes[1]).toEqual({ type: 'thinking', budget_tokens: 8000 });
+  });
+
   // Zed sends `max_tokens` as the model's output limit, or 4096 when it states
   // none, and passes the budget through unclamped — so a budget at or above
   // that is one Anthropic rejects on every request.
