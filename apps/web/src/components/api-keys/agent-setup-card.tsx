@@ -14,7 +14,7 @@ import {
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { modelOptions, projectVSCodeModels, projectZedModels, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, projectVSCodeModels, projectZedModels, rankAgentSetupModels, type ClaudePicker, type VSCodeModel, type ZedModel } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -41,6 +41,37 @@ type Platform = AgentSetupPlatform;
 // gateway boundary, so this UI-only value cannot collide with an opaque model
 // id.
 const MODEL_DEFAULT = '\u0000default';
+// What the editor tabs would configure from this catalog, and `null` for the
+// agents that build their configuration without one. Both panes ask through
+// this, so the tab that hands over a command and the tab that hands over a
+// document cannot disagree about whether there is anything to configure.
+type ApiType = AgentSetupConfiguration['vscode']['apiType'];
+function editorCatalog(agent: 'zed', models: ControlPlaneModel[], apiType: ApiType): ZedModel[];
+function editorCatalog(agent: 'vscode', models: ControlPlaneModel[], apiType: ApiType): VSCodeModel[];
+function editorCatalog(agent: Agent, models: ControlPlaneModel[], apiType: ApiType): ZedModel[] | VSCodeModel[] | null;
+function editorCatalog(agent: Agent, models: ControlPlaneModel[], apiType: ApiType) {
+  if (agent === 'zed') return projectZedModels(models);
+  if (agent === 'vscode') return projectVSCodeModels(models, apiType);
+  return null;
+}
+
+// Both editor installers refuse a catalog with no chat models rather than write
+// a provider that has none, so neither pane may hand the operator something
+// that would leave the editor with an unusable entry and no error. VS Code is
+// worse than Zed here: it records a group only `if (models.length)`, and the
+// sibling catch branch that would surface a message only runs when the provider
+// throws — resolving to no models is silent, so an empty group yields no
+// provider and no error at all.
+// Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1236-L1252
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1264-L1273
+function NoChatModels({ editor }: { editor: 'zed' | 'vscode' }) {
+  const { t } = useTranslation();
+  return <div className="border-t border-t-solid border-fui-divider pt-4">
+    <OutcomeMessageBar intent="warning">
+      {t(editor === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}
+    </OutcomeMessageBar>
+  </div>;
+}
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // https://code.claude.com/docs/en/settings#available-settings
@@ -94,10 +125,8 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   // nothing to project, and the pane's own "select a key" hint is the answer.
   // Saying "no chat models" there tells a first-time visitor their upstreams
   // are wrong when they have simply not chosen one.
-  const nothingToConfigure = selectedKey !== null && models !== null && (
-    agent === 'zed' ? projectZedModels(models).length === 0
-      : agent === 'vscode' ? projectVSCodeModels(models, setup.draft.vscode.apiType).length === 0
-        : false);
+  const nothingToConfigure = selectedKey !== null && models !== null
+    && editorCatalog(agent, models, setup.draft.vscode.apiType)?.length === 0;
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
   // Both shells comment with `#`, so an unavailable command says why inside the block it will occupy.
@@ -143,11 +172,7 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : nothingToConfigure
-              ? <div className="border-t border-t-solid border-fui-divider pt-4">
-                  <OutcomeMessageBar intent="warning">
-                    {t(agent === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}
-                  </OutcomeMessageBar>
-                </div>
+              ? <NoChatModels editor={agent === 'zed' ? 'zed' : 'vscode'} />
               : <div className="border-t border-t-solid border-fui-divider pt-4">
                   <CodeBlock
                     code={command}
@@ -217,26 +242,14 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
-  // Both editor installers refuse a catalog with no chat models rather than
-  // write a provider that has none, so neither panel may hand the operator a
-  // document to paste that would leave the editor with an unusable entry and no
-  // error. VS Code is worse than Zed here: it records a group only `if
-  // (models.length)`, and the sibling catch branch that would surface a message
-  // only runs when the provider throws — resolving to no models is silent, so
-  // an empty group yields no provider and no error at all.
-  // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1236-L1252
-  //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1264-L1273
-  const noChatModelsFor = (editor: 'zed' | 'vscode') => <div className="border-t border-t-solid border-fui-divider pt-4">
-    <OutcomeMessageBar intent="warning">{t(editor === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}</OutcomeMessageBar>
-  </div>;
   if (agent === 'vscode') {
     // Nothing to project from a catalog that is not known yet; the page's own
     // listing error is the message that belongs there. The guard sits in each
     // catalog-projecting branch rather than above them, because Codex and
     // Claude build their snippets from the configuration alone.
     if (models === null) return null;
-    const vscodeModels = projectVSCodeModels(models, configuration.vscode.apiType);
-    if (vscodeModels.length === 0) return noChatModelsFor('vscode');
+    const vscodeModels = editorCatalog('vscode', models, configuration.vscode.apiType);
+    if (vscodeModels.length === 0) return <NoChatModels editor="vscode" />;
     const snippet = buildAgentVSCodeSnippet(origin, apiKey, configuration.vscode, vscodeModels);
     return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
       <Text size={200} className="text-fui-fg2">
@@ -252,8 +265,8 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
     // embed a catalog are blank here — Codex and Claude build their snippets
     // from the configuration alone and need no models at all.
     if (models === null) return null;
-    const zedModels = projectZedModels(models);
-    if (zedModels.length === 0) return noChatModelsFor('zed');
+    const zedModels = editorCatalog('zed', models, configuration.vscode.apiType);
+    if (zedModels.length === 0) return <NoChatModels editor="zed" />;
     const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);
     const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
     const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';

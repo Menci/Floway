@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiKey } from '../../../src/api/types';
 import type { AgentSetupConfiguration, AgentSetupLease } from '../../../src/components/api-keys/agent-setup';
 import { AgentSetupCard } from '../../../src/components/api-keys/agent-setup-card';
+import { catalogModel } from '../../api/model-fixture';
 import { renderInApp } from '../../render';
 
 const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
@@ -274,6 +275,47 @@ describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s with no chat models'
 // picked the card has nothing to project, and saying "no chat models" there
 // tells a first-time visitor their upstreams are wrong when they have simply
 // not chosen a key.
+// Every other case here renders an empty catalog, which is the warning path.
+// The panes also have to build something when there is a catalog, and each one
+// projects it — so a projection that answered with nothing for one editor would
+// blank that tab with no test saying so.
+describe('a catalog with chat models', () => {
+  const withModels = () => renderInApp(<AgentSetupCard
+    clipboard={clipboard}
+    initialApiKeyId="key-1"
+    initialError={null}
+    initialLease={lease('key-1')}
+    models={[catalogModel('claude-opus-4-6', { contextWindow: 200_000 })]}
+    selectedKey={apiKey('key-1')}
+  />);
+  const showSnippet = (tab: string) => {
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+  };
+
+  it('offers the VS Code group instead of the warning', () => {
+    withModels();
+    showSnippet('VS Code');
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    expect(screen.getAllByText(/customendpoint/).length).toBeGreaterThan(0);
+  });
+
+  it('offers the Zed provider instead of the warning', () => {
+    withModels();
+    showSnippet('Zed');
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    expect(screen.getAllByText(/anthropic_compatible/).length).toBeGreaterThan(0);
+  });
+
+  it('offers the setup command on both editor tabs', () => {
+    withModels();
+    for (const tab of ['Zed', 'VS Code']) {
+      act(() => { screen.getByRole('tab', { name: tab }).click(); });
+      expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    }
+  });
+});
+
 describe('an unknown catalog', () => {
   const renderUnknown = (selectedKey: ApiKey | null) => renderInApp(<AgentSetupCard
     clipboard={clipboard}

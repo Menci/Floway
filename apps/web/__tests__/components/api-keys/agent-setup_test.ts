@@ -149,9 +149,9 @@ describe('VS Code config snippet', () => {
     expect(snippet[0].apiType).toBe('responses');
     expect(snippet[0].models[0].url).toBe('https://gateway.example/v1');
     expect(snippet[0].models[0].requestHeaders.authorization).toBe('Bearer sk-test');
-    // The key is the group's own field only in the installer's `apiKey`
-    // property, which VS Code reads as a secret-storage reference — the paste
-    // must not put it there either.
+    // A `customendpoint` group has an `apiKey` property of its own, which VS
+    // Code decodes as a `${input:…}` secret-storage reference — a literal
+    // lands on a miss. Neither half puts the key there, and neither does this.
     expect(snippet[0].apiKey).toBeUndefined();
   });
 });
