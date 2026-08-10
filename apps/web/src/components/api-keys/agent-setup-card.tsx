@@ -205,10 +205,12 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, 
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
   const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
-  // Nothing to project from a catalog that is not known yet; the page's own
-  // listing error is the message that belongs there.
-  if (models === null) return null;
   if (agent === 'zed') {
+    // Nothing to project from a catalog that is not known yet; the page's own
+    // listing error is the message that belongs there. Only the editors that
+    // embed a catalog are blank here — Codex and Claude build their snippets
+    // from the configuration alone and need no models at all.
+    if (models === null) return null;
     const zedModels = projectZedModels(models);
     // The installer refuses this catalog rather than write a provider with no
     // models, so the panel must not hand the operator a document to paste that

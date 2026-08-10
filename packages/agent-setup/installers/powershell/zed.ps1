@@ -140,6 +140,20 @@ function Write-SetupZedSettings {
     if ($null -ne $casedKey) {
       Stop-Setup "$($script:ZedSettingsPath) holds a `"$($casedKey.Name)`" key that Zed does not read; rename it to language_models and run this again."
     }
+    # The same question one level down: `anthropic_compatible` is reached by the
+    # same case-insensitive member access, so a `Anthropic_Compatible` would
+    # take the provider into a key Zed never reads while the run reports
+    # success — the staged check cannot see it either, because it reads back
+    # through the same access.
+    if ($document.PSObject.Properties.Name -contains 'language_models' -and
+        $document.language_models -is [System.Management.Automation.PSCustomObject]) {
+      $casedInner = $document.language_models.PSObject.Properties |
+        Where-Object { $_.Name -ieq 'anthropic_compatible' -and -not [string]::Equals($_.Name, 'anthropic_compatible', [System.StringComparison]::Ordinal) } |
+        Select-Object -First 1
+      if ($null -ne $casedInner) {
+        Stop-Setup "$($script:ZedSettingsPath) holds a `"$($casedInner.Name)`" key that Zed does not read; rename it to anthropic_compatible and run this again."
+      }
+    }
     if ($document.PSObject.Properties.Name -contains 'language_models') {
       if ($document.language_models -isnot [System.Management.Automation.PSCustomObject]) {
         Stop-Setup 'existing Zed language_models is not a JSON object.'

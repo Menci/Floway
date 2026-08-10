@@ -2769,22 +2769,29 @@ test('zed', 'both halves name an unreadable settings document as unreadable', as
 // jq does not, so this half would write the provider into a key Zed never reads
 // and report success. Refusing is the answer: a configured provider that does
 // not exist is worse than a stop.
-test('zed', 'PowerShell refuses a case-variant language_models key', async t => {
-  if (!hostPwsh) skip('a PowerShell member-access property');
-  const ws = makeWorkspace();
-  const configDir = makeZedConfigDir(ws);
-  placeFakeCredentialTools(ws);
-  const document = JSON.stringify({ Language_Models: { anthropic_compatible: {} } });
-  writeFileSync(zedSettingsPath(configDir), document);
+// Both keys are reached by the same case-insensitive member access, so both
+// need the same guard: a variant of either takes the provider into a key Zed
+// never reads, and the staged check reads back through that same access.
+for (const { label, document, named } of [
+  { label: 'language_models', document: JSON.stringify({ Language_Models: { anthropic_compatible: {} } }), named: 'Language_Models' },
+  { label: 'anthropic_compatible', document: JSON.stringify({ language_models: { Anthropic_Compatible: {} } }), named: 'Anthropic_Compatible' },
+]) {
+  test('zed', `PowerShell refuses a case-variant ${label} key`, async t => {
+    if (!hostPwsh) skip('a PowerShell member-access property');
+    const ws = makeWorkspace();
+    const configDir = makeZedConfigDir(ws);
+    placeFakeCredentialTools(ws);
+    writeFileSync(zedSettingsPath(configDir), document);
 
-  const run = await runPowerShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
+    const run = await runPowerShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir,
+    });
+
+    t.ok(run.code !== 0, `the run refuses it:\n${run.combined}`);
+    t.ok(run.combined.includes(named), 'and names the key in the way');
+    t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, 'leaving the document byte-identical');
   });
-
-  t.ok(run.code !== 0, `the run refuses it:\n${run.combined}`);
-  t.ok(run.combined.includes('Language_Models'), 'and names the key in the way');
-  t.equal(readFileSync(zedSettingsPath(configDir), 'utf8'), document, 'leaving the document byte-identical');
-});
+}
 
 // With no mode to read, neither half may leave the document wider than the
 // operator had it.
@@ -3039,6 +3046,10 @@ for (const { label, document } of [
   // decodes it to Infinity and writes it back as the string "Infinity" — a
   // changed type reported as success.
   { label: 'a number past the double range', document: '{"telemetry":{"metrics":1e400}}' },
+  // Overflow without an exponent over 308: the range ends mid-decade, at
+  // 1.797…e308, and a long enough integer needs no exponent at all.
+  { label: 'a mantissa past the double range', document: '{"telemetry":{"metrics":9e308}}' },
+  { label: 'an integer past the double range', document: `{"telemetry":{"metrics":1${'0'.repeat(309)}}}` },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {

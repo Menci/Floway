@@ -221,6 +221,15 @@ describe('Zed with an unknown catalog', () => {
   // A listing that failed is not a gateway with nothing to serve. Both panes
   // have to tell those apart; the setup pane learned it first and the snippet
   // pane kept collapsing `null` to an empty array.
+  // Codex and Claude build their snippets from the configuration alone, so a
+  // catalog nobody could list is no reason to blank their pane.
+  it('still offers the Codex snippet, which needs no catalog', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'Codex' }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.getAllByText(/model_provider/).length).toBeGreaterThan(0);
+  });
+
   it('blames the catalog on neither pane', () => {
     renderUnknown(apiKey('key-1'));
     act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
