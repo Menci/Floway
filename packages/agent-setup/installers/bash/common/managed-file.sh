@@ -92,24 +92,31 @@ _json_scan_verdict() {
           } else {
             magnitude = length(mant) + expn
           }
-          # Compared as 17-digit strings rather than as numbers: the boundary
-          # mantissas do not fit in a double, which is the very thing being
-          # decided, and awk has nothing wider. String comparison of two
-          # equal-length digit runs orders them the same way.
+          # Compared as digit strings rather than as numbers: the boundaries do
+          # not fit in a double, which is the very thing being decided, and awk
+          # has nothing wider. Two equal-length digit runs compare as strings
+          # the way they compare as numbers.
           #
-          # The other half asks `[double]::TryParse`, so the boundary has to be
-          # the exact one it uses — a four-digit comparison called `1.7978e308`
-          # representable, and the accepted literal then reached jq, which
-          # rewrites it: a silent change to a number inside an entry this run
-          # was not asked to touch.
+          # The other half asks `[double]::TryParse`, which is correctly
+          # rounded, so the boundary is the value at which rounding reaches
+          # infinity — halfway past the largest double — and not the largest
+          # double itself. `1.7976931348623158e308` is finite and must be
+          # accepted; `1.797693134862315808e308` is not. The first 17 digits
+          # decide everything but the tie, and the 12 after them push the split
+          # past any precision a settings file carries.
           mant17 = substr(digits "00000000000000000", 1, 17)
+          tail12 = substr(substr(digits, 18) "000000000000", 1, 12)
           if (magnitude > 309) { bad = 1 }
-          else if (magnitude == 309 && mant17 > "17976931348623157") { bad = 1 }
+          else if (magnitude == 309 && (mant17 > "17976931348623158" ||
+                   (mant17 == "17976931348623158" && tail12 > "079372897140"))) { bad = 1 }
           # And the other end: at or below half the smallest subnormal a double
           # rounds to zero, and PowerShell writes that zero back where jq
-          # preserves the literal. Refused on both, as an overflow is.
+          # preserves the literal. Refused on both, as an overflow is — with the
+          # tie resolved the same way, since `2.4703282292062327e-324` rounds to
+          # zero while `2.470328229206232721e-324` does not.
           else if (magnitude < -323) { bad = 1 }
-          else if (magnitude == -323 && mant17 <= "24703282292062327") { bad = 1 }
+          else if (magnitude == -323 && (mant17 < "24703282292062327" ||
+                   (mant17 == "24703282292062327" && tail12 <= "208828439643"))) { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }

@@ -3370,6 +3370,10 @@ for (const { label, document } of [
   // boundary mantissa itself. A comparison of the leading four digits called
   // this one representable on the Bash side, and jq then rewrote it.
   { label: 'a number over the double range sharing its leading digits', document: '{"telemetry":{"metrics":1.7978e308}}' },
+  // Past the tie rather than at it: rounding reaches infinity halfway beyond
+  // the largest double, so this one overflows where the digit before it does
+  // not.
+  { label: 'a number just past the rounding boundary', document: '{"telemetry":{"metrics":1.797693134862315808e308}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3500,9 +3504,12 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // 1e-320 is subnormal and representable; 1e-400 is not, and belongs in the
   // refusal table rather than here — PowerShell writes it back as 0.
   // `2.4705e-324` is the other side of the underflow boundary: it rounds to the
-  // smallest subnormal rather than to zero, and a leading-digit comparison
-  // refused it on the Bash side while PowerShell kept it.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+  // smallest subnormal rather than to zero. `1.7976931348623158e308` is the
+  // other side of the overflow one — finite, because rounding reaches infinity
+  // only halfway past the largest double — and `2.470328229206232721e-324` is
+  // the tie decided by digits beyond the seventeenth. `0e5` is a stated zero
+  // whose only non-zero digit is in its exponent.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "edge": 1.7976931348623158e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "tie": 2.470328229206232721e-324,\n  "zero": 0e5,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);

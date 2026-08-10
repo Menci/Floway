@@ -166,9 +166,12 @@ function Get-SetupJsonVerdict {
         # And the other end: a literal below the smallest subnormal decodes to
         # 0 here and is written back that way, silently changing a number
         # inside an entry this run was not asked to touch, while jq preserves
-        # it. Refused as an overflow is — a stated zero is not affected,
-        # because its own token is zero.
-        elseif ($parsed -eq 0 -and $token -match '[1-9]') { $strict = $false }
+        # it. Refused as an overflow is.
+        #
+        # The significand decides, not the whole token: `0e5` is a stated zero
+        # whose exponent carries the only non-zero digit, and asking the token
+        # refused a value the other half accepts.
+        elseif ($parsed -eq 0 -and ($token -split '[eE]', 2)[0] -match '[1-9]') { $strict = $false }
       }
       # A token no double can hold at all. Windows PowerShell 5.1 reports
       # overflow by returning False rather than by parsing to Infinity —
