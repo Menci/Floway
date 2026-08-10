@@ -139,6 +139,12 @@ zed_write_settings() {
         out_error "$ZED_SETTINGS_PATH is not a valid Zed settings document; leaving it untouched."
         return 1
         ;;
+      3)
+        # The scanner could not read the document as text — an awk that dies on
+        # the bytes rather than classifying them. Not a verdict on the content.
+        out_error "${ZED_SETTINGS_PATH} could not be examined; leaving it untouched."
+        return 1
+        ;;
     esac
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and still exits 0, and runs it once per document on a stream,

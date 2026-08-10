@@ -13,10 +13,19 @@
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L390-L417
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L215-L238
+# The group is rebuilt rather than patched, so anything the operator owns inside
+# it has to be carried across by name. `settings` is theirs: VS Code writes the
+# Thinking Effort chosen in the picker into our group, keyed by model id, and
+# reads it back on every resolve — dropping it reverts every choice to the
+# schema default with nothing on screen, on a re-run they did for an unrelated
+# reason. Foreign groups keep theirs because they are copied whole.
+# Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1551-L1562
+#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1259
 VSCODE_MERGE_PROGRAM='
   if type != "array" then error("root is not a JSON array") else . end
+  | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | .settings // empty] | first) as $kept
   | map(select((.vendor != "customendpoint") or (.name != $providerName)))
-  + [{
+  + [({
       "vendor": "customendpoint",
       "name": $providerName,
       "apiType": $apiType,
@@ -24,7 +33,7 @@ VSCODE_MERGE_PROGRAM='
         "url": $apiUrl,
         "requestHeaders": { "authorization": ("Bearer " + env.SETUP_API_KEY) },
       }],
-    }]
+    } | if $kept == null then . else . + { "settings": $kept } end)]
 '
 
 # `customendpoint` appends the API path itself, so the group takes the bare
@@ -171,6 +180,12 @@ vscode_write_settings() {
         # a foreign group. The PowerShell half refuses such a document, and one
         # file has to get one answer.
         out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
+        return 1
+        ;;
+      3)
+        # The scanner could not read the document as text — an awk that dies on
+        # the bytes rather than classifying them. Not a verdict on the content.
+        out_error "${VSCODE_SETTINGS_PATH} could not be examined; leaving it untouched."
         return 1
         ;;
     esac

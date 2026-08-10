@@ -105,7 +105,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'readlink', 'rm', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'readlink', 'rm', 'sed', 'shasum', 'sleep', 'stat', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -3592,6 +3592,36 @@ test('vscode', 'carries the key in requestHeaders rather than the secret apiKey 
   t.ok(!run.combined.includes(SENTINEL_KEY), 'the key never reaches the output');
 });
 
+// VS Code writes the Thinking Effort an operator picks into our own group,
+// keyed by model id, and reads it back on every resolve. The group is rebuilt
+// rather than patched, so without carrying `settings` across a re-run — done
+// for an unrelated reason, like a rotated key — reverts every choice with
+// nothing on screen. A foreign group keeps its own because it is copied whole.
+test('vscode', 'both halves keep the per-model settings VS Code wrote into our group', async t => {
+  const settings = { 'claude-opus-4-6': { reasoningEffort: 'high' } };
+  const existing = JSON.stringify([
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings },
+    { vendor: 'other', name: 'Keep', models: [], settings: { a: { reasoningEffort: 'low' } } },
+  ]);
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-settings-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), existing);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(settings), 'Bash keeps our own per-model settings');
+  t.equal(JSON.stringify(bash.find(group => group.name === 'Keep')!.settings), '{"a":{"reasoningEffort":"low"}}', 'and a foreign group keeps its own');
+  if (!hostPwsh) return;
+  const powershell = await runHalf('powershell');
+  t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
+});
+
 test('vscode', 'replaces only its own group and leaves every other one intact', async t => {
   const ws = makeWorkspace();
   const userDir = makeVSCodeUserDir(ws);
@@ -3727,6 +3757,27 @@ test('vscode', 'the selected API path reaches both the group and the effort form
 // A denied read is not a malformed document, and neither half may report it as
 // one — awk exits 2 on a file it cannot open, and ReadAllText raises a
 // framework message naming a path the operator already knows.
+// A UTF-8 BOM is not JSON content: jq reads a document carrying one and the
+// PowerShell reader strips it. macOS awk dies on those bytes rather than
+// classifying them, and a status-carried verdict could not tell that from a
+// value jq would rewrite — so the operator was told their provider list was
+// malformed on one platform and configured on the other.
+test('vscode', 'both halves configure a provider list carrying a byte-order mark', async t => {
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-bom-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), '\uFEFF[{"vendor":"other","name":"Keep","models":[]}]');
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    const groups = readVSCodeGroups(userDir);
+    t.equal(groups.length, 2, `${which} keeps the foreign group and adds ours`);
+    t.ok(ourGroup(groups).models!.length > 0, `${which} writes the catalog`);
+  }
+});
+
 test('vscode', 'both halves name an unreadable provider list as unreadable', async t => {
   if (process.platform === 'win32') skip('POSIX permission bits only');
   for (const which of ['bash', 'powershell'] as const) {

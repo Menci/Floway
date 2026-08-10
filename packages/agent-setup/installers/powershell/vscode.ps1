@@ -199,6 +199,21 @@ function Write-SetupVSCodeSettings {
         Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
       }
     }
+    # Captured before the filter drops our group: `settings` is the operator's,
+    # written there by VS Code when they pick a Thinking Effort, and the group
+    # is rebuilt rather than patched — so anything of theirs inside it has to be
+    # carried across by name. By exact name, as the identity test reads
+    # vendor/name, because member access would take a `Settings` too.
+    $keptSettings = $null
+    foreach ($group in $parsed) {
+      if (Test-SetupVSCodeOwnGroup $group) {
+        $found = $group.PSObject.Properties |
+          Where-Object { [string]::Equals($_.Name, 'settings', [System.StringComparison]::Ordinal) } |
+          Select-Object -First 1
+        if ($null -ne $found) { $keptSettings = $found.Value }
+        break
+      }
+    }
     $groups = @($parsed | Where-Object { -not (Test-SetupVSCodeOwnGroup $_) })
 
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
@@ -216,12 +231,15 @@ function Write-SetupVSCodeSettings {
     }
   }
 
-  $groups += [PSCustomObject][ordered]@{
+  $own = [ordered]@{
     vendor = 'customendpoint'
     name = $SetupVSCodeProviderName
     apiType = $SetupVSCodeApiType
-    models = $script:VSCodeModels
   }
+  $own['models'] = $script:VSCodeModels
+  # Last, where jq's object addition puts it, so the two halves stay comparable.
+  if ($null -ne $keptSettings) { $own['settings'] = $keptSettings }
+  $groups += [PSCustomObject]$own
 
   $stage = "$($script:VSCodeSettingsPath).floway-stage.$PID"
   try {

@@ -18,8 +18,13 @@
 # two different names. That function has a second arm this one does not: jq
 # decides what is valid JSON for this half, so there is nothing here to mirror
 # the strict verdict PowerShell has to reach by hand.
-_json_has_jsonc_syntax() {
-  awk '
+_json_scan_verdict() {
+  # The BOM is dropped before the scan: it is not JSON content, jq reads a
+  # document carrying one, the PowerShell reader strips it, and macOS awk dies
+  # on the bytes rather than classifying them. Removed from the text the scanner
+  # sees, not from the operator's file — the merge reads that file itself, and
+  # jq handles the BOM there.
+  sed '1s/^\xef\xbb\xbf//' "$1" 2>/dev/null | awk '
     BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0; bad = 0 }
     {
       for (i = 1; i <= length($0); i++) {
@@ -87,8 +92,34 @@ _json_has_jsonc_syntax() {
     }
     # `exit` runs END, so the verdict travels in a flag rather than in the exit
     # status of the rule body, which END would otherwise overwrite.
-    END { exit (found ? 0 : (bad ? 2 : 1)) }
-  ' "$1" 2>/dev/null
+    END { print (found ? "jsonc" : (bad ? "invalid" : "ok")) }
+  ' 2>/dev/null
+}
+
+# Wraps the scan so a tool failure is not read as a verdict. The verdict travels
+# on stdout and the exit status is left to mean "awk could not read this at
+# all": some awks die with a multibyte conversion error on a non-ASCII byte
+# outside a string, and a status-carried verdict could not tell that from "jq
+# would rewrite a value" — the operator was then told their document was
+# malformed for a failure of the tool examining it.
+#
+# The reported case was a leading UTF-8 BOM on a macOS host; the BOM is now
+# stripped before the scan, so that input no longer reaches the failing path,
+# and this arm is what keeps any other such failure from being reported as a
+# verdict. Neither is observed by the suite: the macOS awk on this machine
+# (BWK 20200816) does not die on those bytes under any locale I could set, so
+# the die is host-specific and the harness symlinks whichever awk the host has.
+_json_has_jsonc_syntax() {
+  _jhs_verdict=$(_json_scan_verdict "$1")
+  case $_jhs_verdict in
+    jsonc) return 0 ;;
+    invalid) return 2 ;;
+    ok) return 1 ;;
+    # No verdict at all: awk could not read the document as text. The caller
+    # asks about readability first, so this is the scanner failing rather than
+    # the file — say so instead of naming a cause in the operator's content.
+    *) return 3 ;;
+  esac
 }
 
 # The file a managed path ultimately names. chezmoi and stow both place a
