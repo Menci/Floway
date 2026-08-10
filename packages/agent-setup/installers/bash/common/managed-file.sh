@@ -53,7 +53,7 @@ _json_has_jsonc_syntax() {
         # A magnitude no double can hold, which jq rewrites and the two
         # PowerShell versions disagree about. The exponent is compared rather
         # than counted: 1e308 is representable and 1e309 is not.
-        if (c ~ /[0-9]/ && (i == 1 || substr($0, i - 1, 1) !~ /[0-9.eE+-]/)) {
+        if (c ~ /[0-9]/ && (i == 1 || substr($0, i - 1, 1) !~ /[0-9.eE]/)) {
           num = substr($0, i)
           sub(/[^0-9.eE+-].*$/, "", num)
           # Significant digits and a decimal exponent, from which the magnitude
