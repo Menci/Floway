@@ -647,6 +647,9 @@ interface RunOptions {
   workspace: Workspace;
   configuration: InstallerTestConfiguration;
   agent?: ScriptAgent;
+  // Where the installer runs from, for the cases where a relative override has
+  // to resolve against something the test controls.
+  cwd?: string;
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
@@ -803,7 +806,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
   const signal = options.signalDuringInstall;
   return new Promise<RunResult>(resolve => {
-    const child = spawn('/bin/bash', [scriptPath], { env, detached: signal !== undefined });
+    const child = spawn('/bin/bash', [scriptPath], { cwd: options.cwd, env, detached: signal !== undefined });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -1243,6 +1246,23 @@ test('claude', 'honors an explicit CLAUDE_CONFIG_DIR', async t => {
 // `~/.claude/settings.json` is the one an operator is most likely to have under
 // chezmoi or stow, and Codex's `config.toml` and provider token reach the same
 // rename through backup and rollback even though the CLI writes the config.
+// `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME` all accept a relative
+// path, and the resolver rebuilds from the root — so one that is not anchored
+// first comes back pointing at the filesystem root while the directory the run
+// created stays where the operator meant it.
+test('claude', 'honors a relative CLAUDE_CONFIG_DIR', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    configDir: 'relative-claude-config', cwd: ws.root,
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(existsSync(join(ws.root, 'relative-claude-config', 'settings.json')),
+    'settings land under the relative directory, not at the filesystem root');
+});
+
 test('claude', 'writes through a symlinked settings file rather than replacing it', async t => {
   if (process.platform === 'win32') skip('symlinks only');
   for (const { which, link } of [{ which: 'bash', link: 'absolute' }, { which: 'powershell', link: 'relative' }] as const) {
@@ -2939,6 +2959,10 @@ for (const { label, document } of [
   { label: 'a mixed-case nAn value', document: '{"telemetry":{"metrics":nAn}}' },
   { label: 'a short inf value', document: '{"telemetry":{"metrics":inf}}' },
   { label: 'an INFINITY value', document: '{"telemetry":{"metrics":INFINITY}}' },
+  // A magnitude no double can hold: jq rewrites it, 5.1 refuses it, and pwsh 7
+  // decodes it to Infinity and writes it back as the string "Infinity" — a
+  // changed type reported as success.
+  { label: 'a number past the double range', document: '{"telemetry":{"metrics":1e400}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3064,7 +3088,8 @@ test('zed', 'PowerShell refuses a provider name it cannot keep beside an existin
 // ordinary JSON, and a scanner that flagged them would refuse documents Zed and
 // jq both accept.
 test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,]",\n  "list": ["a", "b"]\n}';
+  // 1e308 is representable and must pass; a `NaN` inside a string is text.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);
@@ -3073,7 +3098,7 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
     const options = { workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), zedConfigDir: configDir };
     const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
     t.equal(run.code, 0, `${which} accepts it:\n${run.combined}`);
-    t.equal((readSettings(zedSettingsPath(configDir)) as ZedSettings).note, 'see https://example.com/a,]', `${which} keeps the value intact`);
+    t.equal((readSettings(zedSettingsPath(configDir)) as ZedSettings).note, 'see https://example.com/a,] NaN Infinity', `${which} keeps the value intact`);
   };
 
   await runHalf('bash');
