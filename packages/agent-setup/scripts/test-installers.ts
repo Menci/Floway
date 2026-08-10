@@ -581,6 +581,19 @@ esac
 `, { mode: 0o755 });
 };
 
+// Makes the workspace look like a Linux host to the Bash half, whose platform
+// question is `uname -s`. Serves every other invocation from the host's own
+// `uname`, so a shim cannot pass by answering nothing.
+const placeLinuxUnameShim = (workspace: Workspace): void => {
+  const realUname = resolveTool('uname')!;
+  writeFileSync(join(workspace.binDir, 'uname'), `#!/bin/bash
+case "$1" in
+  -s) printf 'Linux\n' ;;
+  *) exec ${JSON.stringify(realUname)} "$@" ;;
+esac
+`, { mode: 0o755 });
+};
+
 const placeFakeCredentialTools = (workspace: Workspace): void => {
   const record = zedCredentialRecord(workspace);
   writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
@@ -675,6 +688,9 @@ interface RunOptions {
   // fails under a UTF-8 locale would never fail here — which is how a real
   // macOS default hid for a round.
   locale?: string;
+  // Same reason: the child gets no XDG_CONFIG_HOME unless a test asks for one,
+  // so the branch that honors it is only reachable when one does.
+  xdgConfigHome?: string;
   configuration: InstallerTestConfiguration;
   agent?: ScriptAgent;
   // Where the installer runs from, for the cases where a relative override has
@@ -720,6 +736,12 @@ interface RunOptions {
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
   forcePowerShellWindowsReplacement?: boolean;
+  // A macOS host cannot reach the branches Zed takes only on Linux and FreeBSD,
+  // and those are where XDG is consulted. Bash learns its platform from `uname`,
+  // which the workspace can shim; PowerShell learns it from an automatic
+  // variable, so its own answer is rewritten the way the Windows-replacement
+  // guard is.
+  forceLinuxPlatform?: boolean;
   // Overrides the catalog the gateway would have projected into the script.
   catalog?: readonly unknown[];
   // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
@@ -827,6 +849,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
+  if (options.xdgConfigHome) env.XDG_CONFIG_HOME = options.xdgConfigHome;
   if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   if (options.fakeRestoreFailure) {
@@ -957,6 +980,13 @@ const WINDOWS_REPLACEMENT_GUARDS: Record<ScriptAgent, string> = {
   zed: 'if ($script:ZedSettingsExisted -and (Test-SetupIsWindows))',
 };
 
+const MACOS_PLATFORM_GUARD = "if ($IsMacOS) { return 'macos' }";
+
+const forceLinuxPlatform = (body: string): string => {
+  if (!body.includes(MACOS_PLATFORM_GUARD)) throw new Error(`no macOS platform guard matching ${MACOS_PLATFORM_GUARD}`);
+  return body.replace(MACOS_PLATFORM_GUARD, "if ($false) { return 'macos' }");
+};
+
 const forceWindowsReplacement = (agent: ScriptAgent, body: string): string => {
   const guard = WINDOWS_REPLACEMENT_GUARDS[agent];
   if (!body.includes(guard)) throw new Error(`${agent}: no Windows replacement guard matching ${guard}`);
@@ -973,7 +1003,8 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
   const canonicalBody = powerShellBody(agent);
-  const body = options.forcePowerShellWindowsReplacement ? forceWindowsReplacement(agent, canonicalBody) : canonicalBody;
+  const windowsForced = options.forcePowerShellWindowsReplacement ? forceWindowsReplacement(agent, canonicalBody) : canonicalBody;
+  const body = options.forceLinuxPlatform ? forceLinuxPlatform(windowsForced) : windowsForced;
   const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, editorModels: editorModelsFor(agent, options.catalog, configuration.vscode.apiType) }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
   const invocationPath = join(workspace.root, 'invoke-setup.ps1');
@@ -1010,6 +1041,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.noColor) env.NO_COLOR = '1';
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
   if (options.zedConfigDir) env.AGENT_SETUP_TEST_ZED_CONFIG_DIR = options.zedConfigDir;
+  if (options.xdgConfigHome) env.XDG_CONFIG_HOME = options.xdgConfigHome;
   if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   return new Promise<RunResult>(resolve => {
@@ -2673,6 +2705,75 @@ const runZed = (ws: Workspace, overrides: Partial<RunOptions> = {}) => {
     ...overrides,
   });
 };
+
+// Every other Zed case names its directory through the override, so the
+// derivation an operator actually takes — five branches across the two halves —
+// would ship unexecuted. Each of them is a directory Zed never reads if it is
+// wrong, and the run would still store the key in the credential store.
+//
+// `XDG_CONFIG_HOME` is honored on Linux and FreeBSD only: `config_dir()` gives
+// macOS an unconditional `~/.config`, so the same exported variable has to be
+// ignored there. One case asserts both, keyed on the host it runs on.
+// Ref: https://github.com/zed-industries/zed/blob/cc053a4a6fa2fd0e8793201ed9099466af1be0b1/crates/paths/src/paths.rs#L121-L141
+test('zed', 'both halves derive the configuration directory with no override', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const xdgIsHonored = process.platform !== 'darwin';
+  const runHalf = async (which: 'bash' | 'powershell', xdg: boolean) => {
+    const ws = makeWorkspace();
+    placeFakeCredentialTools(ws);
+    const home = join(ws.home, '.config', 'zed');
+    const exported = join(ws.home, 'xdg', 'zed');
+    mkdirSync(home, { recursive: true });
+    if (xdg) mkdirSync(exported, { recursive: true });
+    const options = {
+      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(),
+      ...(xdg ? { xdgConfigHome: join(ws.home, 'xdg') } : {}),
+    };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    const chosen = xdg && xdgIsHonored ? exported : home;
+    const other = xdg && xdgIsHonored ? home : exported;
+    t.ok(existsSync(zedSettingsPath(chosen)), `${which} writes under ${xdg ? 'the exported' : 'the default'} directory`);
+    t.ok(!existsSync(zedSettingsPath(other)), `${which} writes nowhere else`);
+  };
+
+  for (const xdg of [false, true]) {
+    await runHalf('bash', xdg);
+    if (hostPwsh) await runHalf('powershell', xdg);
+  }
+});
+
+// The same derivation as a Linux host sees it. On macOS the XDG branches are
+// unreachable — `config_dir()` gives that platform an unconditional
+// `~/.config` — so on a macOS runner the branches an operator on Linux takes
+// would ship unexecuted, and the fallback below them with them.
+test('zed', 'both halves honor XDG_CONFIG_HOME where Zed consults it', async t => {
+  if (process.platform === 'win32') skip('POSIX paths only');
+  const runHalf = async (which: 'bash' | 'powershell', xdg: boolean) => {
+    const ws = makeWorkspace();
+    placeFakeCredentialTools(ws);
+    placeLinuxUnameShim(ws);
+    const home = join(ws.home, '.config', 'zed');
+    const exported = join(ws.home, 'xdg', 'zed');
+    mkdirSync(home, { recursive: true });
+    if (xdg) mkdirSync(exported, { recursive: true });
+    const options = {
+      workspace: ws, baseUrl: modelServer.url, configuration: zedConfig(), forceLinuxPlatform: true,
+      ...(xdg ? { xdgConfigHome: join(ws.home, 'xdg') } : {}),
+    };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    const chosen = xdg ? exported : home;
+    const other = xdg ? home : exported;
+    t.ok(existsSync(zedSettingsPath(chosen)), `${which} writes under ${xdg ? 'the exported' : 'the default'} directory`);
+    t.ok(!existsSync(zedSettingsPath(other)), `${which} writes nowhere else`);
+  };
+
+  for (const xdg of [false, true]) {
+    await runHalf('bash', xdg);
+    if (hostPwsh) await runHalf('powershell', xdg);
+  }
+});
 
 test('zed', 'projects the catalog into available_models and keeps unrelated settings', async t => {
   const ws = makeWorkspace();
