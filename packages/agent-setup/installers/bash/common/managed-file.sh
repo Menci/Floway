@@ -92,16 +92,24 @@ _json_scan_verdict() {
           } else {
             magnitude = length(mant) + expn
           }
+          # Compared as 17-digit strings rather than as numbers: the boundary
+          # mantissas do not fit in a double, which is the very thing being
+          # decided, and awk has nothing wider. String comparison of two
+          # equal-length digit runs orders them the same way.
+          #
+          # The other half asks `[double]::TryParse`, so the boundary has to be
+          # the exact one it uses — a four-digit comparison called `1.7978e308`
+          # representable, and the accepted literal then reached jq, which
+          # rewrites it: a silent change to a number inside an entry this run
+          # was not asked to touch.
+          mant17 = substr(digits "00000000000000000", 1, 17)
           if (magnitude > 309) { bad = 1 }
-          else if (magnitude == 309 && substr(digits "000", 1, 4) + 0 > 1797) { bad = 1 }
-          # And the other end: below the smallest subnormal, PowerShell decodes
-          # the value to 0 and writes it back that way, silently changing a
-          # number inside an entry this run was not asked to touch, while jq
-          # preserves the literal. Refused on both, as an overflow is — with
-          # the same boundary-decade comparison, because a double rounds to
-          # zero below 2.47e-324 rather than below 1e-323.
+          else if (magnitude == 309 && mant17 > "17976931348623157") { bad = 1 }
+          # And the other end: at or below half the smallest subnormal a double
+          # rounds to zero, and PowerShell writes that zero back where jq
+          # preserves the literal. Refused on both, as an overflow is.
           else if (magnitude < -323) { bad = 1 }
-          else if (magnitude == -323 && substr(digits "000", 1, 4) + 0 < 2471) { bad = 1 }
+          else if (magnitude == -323 && mant17 <= "24703282292062327") { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }

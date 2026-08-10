@@ -528,17 +528,15 @@ const placeFakeCodex = (dir: string): void => {
 const zedCredentialRecord = (workspace: Workspace): string => join(workspace.root, 'credential-calls.txt');
 const zedCredentialSecret = (workspace: Workspace): string => join(workspace.root, 'credential-secret.bin');
 
-// Stand-ins for the OS credential stores, which no test host can be asked to
-// mutate. Each records its own argument vector, and the secret-tool shim writes
-// what it received on stdin to a sibling file, so the assertions see exactly
-// what the installer asked the real tool to do. `binDir` precedes SHIM_BIN on
-// PATH, and SHIM_BIN carries neither name, so these are what `command -v` and a
-// bare invocation resolve to.
-//
-// The secret goes to its own file rather than into the record: the record is
-// newline-delimited, and `cat` is the only byte-preserving tool on the
-// harness's hermetic PATH — a pipeline through `od` or `xxd` would silently
-// produce nothing there.
+// A `stat` that answers neither dialect. Both halves then leave the mode alone
+// — and "alone" is a different mode on each: the Bash stage comes from a shell
+// redirect under `umask 077`, the PowerShell one from WriteAllText under the
+// inherited umask. Widening the operator's file is what the carry-over exists
+// to prevent, so neither may fall back to its own umask.
+const placeMuteStatShim = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'stat'), '#!/bin/bash\nprintf \'stat: unavailable\\n\' >&2\nexit 1\n', { mode: 0o755 });
+};
+
 // Makes the workspace's `stat` look like stock macOS: no `-c`, only `-f`. On a
 // GNU host the `-c` branch answers and the BSD one — the only mode source macOS
 // has — would ship unexecuted unless the dialect is forced.
@@ -549,15 +547,6 @@ const zedCredentialSecret = (workspace: Workspace): string => join(workspace.roo
 // speaks — a macOS runner without coreutils has only `-f`, and hardcoding `-c`
 // there would fail this test as a mode regression on the very platform the leg
 // exists to model.
-// A `stat` that answers neither dialect. Both halves then leave the mode alone
-// — and "alone" is a different mode on each: the Bash stage comes from a shell
-// redirect under `umask 077`, the PowerShell one from WriteAllText under the
-// inherited umask. Widening the operator's file is what the carry-over exists
-// to prevent, so neither may fall back to its own umask.
-const placeMuteStatShim = (workspace: Workspace): void => {
-  writeFileSync(join(workspace.binDir, 'stat'), '#!/bin/bash\nprintf \'stat: unavailable\\n\' >&2\nexit 1\n', { mode: 0o755 });
-};
-
 const placeBsdStatShim = (workspace: Workspace): void => {
   const realStat = resolveTool('stat')!;
   writeFileSync(join(workspace.binDir, 'stat'), `#!/bin/bash
@@ -594,6 +583,17 @@ esac
 `, { mode: 0o755 });
 };
 
+// Stand-ins for the OS credential stores, which no test host can be asked to
+// mutate. Each records its own argument vector, and the secret-tool shim writes
+// what it received on stdin to a sibling file, so the assertions see exactly
+// what the installer asked the real tool to do. `binDir` precedes SHIM_BIN on
+// PATH, and SHIM_BIN carries neither name, so these are what `command -v` and a
+// bare invocation resolve to.
+//
+// The secret goes to its own file rather than into the record: the record is
+// newline-delimited, and `cat` is the only byte-preserving tool on the
+// harness's hermetic PATH — a pipeline through `od` or `xxd` would silently
+// produce nothing there.
 const placeFakeCredentialTools = (workspace: Workspace): void => {
   const record = zedCredentialRecord(workspace);
   writeFileSync(join(workspace.binDir, 'security'), `#!/bin/bash
@@ -808,8 +808,6 @@ const injectedBaseUrlEnv = (options: RunOptions): Record<string, string> =>
 const powerShellBaseUrlPrelude = (options: RunOptions): string =>
   options.omitBaseUrl ? '' : `$SetupEndpoint = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
 
-// Runs asynchronously via `spawn` (not `spawnSync`) so local installer downloads
-// can be served by this process's event loop without deadlocking.
 // What the gateway would embed for this run. A test that wants an empty
 // provider list passes its own catalog rather than driving an HTTP fixture.
 const editorModelsFor = (agent: ScriptAgent, catalog: readonly unknown[] = EDITOR_CATALOG.data, apiType: VSCodeApiType = 'messages') => {
@@ -818,6 +816,8 @@ const editorModelsFor = (agent: ScriptAgent, catalog: readonly unknown[] = EDITO
   return undefined;
 };
 
+// Runs asynchronously via `spawn` (not `spawnSync`) so local installer downloads
+// can be served by this process's event loop without deadlocking.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
   const agent = targetAgent(configuration, options.agent);
@@ -3366,6 +3366,10 @@ for (const { label, document } of [
   // its magnitude in the zeros after the point rather than in an exponent.
   { label: 'a number in the underflow boundary decade', document: '{"telemetry":{"metrics":1e-324}}' },
   { label: 'a decimal-only number below the double range', document: `{"telemetry":{"metrics":0.${'0'.repeat(396)}1}}` },
+  // Inside the boundary decade rather than past it, so the verdict turns on the
+  // boundary mantissa itself. A comparison of the leading four digits called
+  // this one representable on the Bash side, and jq then rewrote it.
+  { label: 'a number over the double range sharing its leading digits', document: '{"telemetry":{"metrics":1.7978e308}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3495,7 +3499,10 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // 1e308 is representable and must pass; a `NaN` inside a string is text.
   // 1e-320 is subnormal and representable; 1e-400 is not, and belongs in the
   // refusal table rather than here — PowerShell writes it back as 0.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+  // `2.4705e-324` is the other side of the underflow boundary: it rounds to the
+  // smallest subnormal rather than to zero, and a leading-digit comparison
+  // refused it on the Bash side while PowerShell kept it.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);

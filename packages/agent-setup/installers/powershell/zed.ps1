@@ -270,18 +270,14 @@ function Write-SetupZedSettings {
     # would abort the run after the credential had already been stored, leaving
     # an orphan keychain entry and no provider. Every other permission change in
     # this installer set goes through chmod for the same reason.
-    if (-not (Test-SetupIsWindows)) {
-      if ($script:ZedSettingsExisted) {
-        # GNU stat takes -c, BSD takes -f. Neither answering leaves the mode
-        # alone rather than guessing one, as _stat_mode does.
-        $mode = & stat -c '%a' $script:ZedSettingsPath 2>$null
-        if (-not $mode) { $mode = & stat -f '%Lp' $script:ZedSettingsPath 2>$null }
-        if ($mode) { & chmod $mode $stage }
-      } else {
-        # A file we create is ours to set: owner-only, matching the Bash half,
-        # which writes it under the installer's own `umask 077`.
-        & chmod 600 $stage
-      }
+    # Only for a document that already existed: a new one keeps the owner-only
+    # mode set above, which is what the Bash half's `umask 077` gives it.
+    if ((-not (Test-SetupIsWindows)) -and $script:ZedSettingsExisted) {
+      # GNU stat takes -c, BSD takes -f. Neither answering leaves the mode
+      # alone rather than guessing one, as _stat_mode does.
+      $mode = & stat -c '%a' $script:ZedSettingsPath 2>$null
+      if (-not $mode) { $mode = & stat -f '%Lp' $script:ZedSettingsPath 2>$null }
+      if ($mode) { & chmod $mode $stage }
     }
     # Move-Item -Force is delete-then-create on Windows, which would briefly
     # unlink a settings file Zed is watching; File.Replace is atomic.

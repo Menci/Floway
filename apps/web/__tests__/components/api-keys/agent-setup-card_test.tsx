@@ -307,11 +307,14 @@ describe('a catalog with chat models', () => {
     expect(screen.getAllByText(/anthropic_compatible/).length).toBeGreaterThan(0);
   });
 
+  // The command, not merely the absence of the warning: a pane that rendered
+  // nothing at all would satisfy that on its own.
   it('offers the setup command on both editor tabs', () => {
     withModels();
-    for (const tab of ['Zed', 'VS Code']) {
+    for (const { tab, script } of [{ tab: 'Zed', script: '/zed.sh' }, { tab: 'VS Code', script: '/vscode.sh' }]) {
       act(() => { screen.getByRole('tab', { name: tab }).click(); });
       expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+      expect(screen.getAllByText(new RegExp(script)).length).toBeGreaterThan(0);
     }
   });
 });
