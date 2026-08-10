@@ -248,8 +248,10 @@ export const projectZedModels = (models: readonly PublicModel[]): ZedModel[] =>
   });
 
 // The three API paths `customendpoint` resolves a bare base URL to. Floway
-// serves all of them for every model, so this is one group-wide preference
-// rather than something derived per model.
+// serves all of them for every model, so the choice is one group-wide setting
+// rather than something derived per model — but it is not cosmetic: the
+// reasoning effort the picker records reaches the wire on `chat-completions`
+// and `responses` and is dropped on `messages`.
 // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
 export type VSCodeApiType = 'chat-completions' | 'responses' | 'messages';
 

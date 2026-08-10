@@ -77,8 +77,12 @@ export const agentSetupConfigurationSchema = z.object({
   vscode: z.object({
     providerName: editorProviderName,
     // `customendpoint` resolves a bare base URL to one of three API paths.
-    // Floway serves all three for every model, so this is one group-wide
-    // choice rather than a per-model derivation.
+    // Floway serves all three for every model, so nothing about reachability
+    // narrows the choice — but the paths do not carry the same request. The
+    // reasoning effort an operator picks in VS Code rides the wire on
+    // `chat-completions` and `responses`, and is dropped on `messages`, where
+    // it is emitted only inside a thinking config built from budget
+    // capabilities this vendor never forwards.
     // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
     apiType: z.enum(['chat-completions', 'responses', 'messages']),
   }).strict(),
@@ -117,10 +121,17 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   vscode: {
     providerName: DEFAULT_EDITOR_PROVIDER_NAME,
     // Anthropic Messages, because `customendpoint` reaches it without the
-    // experiment flag the Copilot-hosted models need. Not for thinking budgets:
-    // the Messages path builds a thinking config only from capabilities
-    // `customendpoint` never forwards, so no apiType here can carry one.
-    // Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L156-L171
+    // experiment flag the Copilot-hosted models need. It carries no thinking
+    // budget — that config is built from capabilities `customendpoint` never
+    // forwards — and, because the effort level is emitted only inside that
+    // same config, no reasoning effort either: the picker VS Code renders from
+    // `supportsReasoningEffort` still records a choice, and this path does not
+    // send it. `chat-completions` sends it whenever the model declares the
+    // levels, with no thinking gate at all.
+    // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L156-L171
+    //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/platform/endpoint/node/messagesApi.ts#L204-L246
+    //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/platform/endpoint/node/chatEndpoint.ts#L225-L228
+    //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/common/byokProvider.ts#L146-L176
     apiType: 'messages',
   },
 });

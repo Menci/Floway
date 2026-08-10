@@ -201,8 +201,10 @@ function Write-SetupVSCodeSettings {
     # every one of them carries the same instruction.
     try { $parsed = [object[]](ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched." }
     # Every element must be an object, matching the Bash gate: jq's merge
-    # indexes `.vendor` on each one and aborts on a scalar, so without this the
-    # same document would be rewritten here and refused there.
+    # indexes `.vendor` on each one, which aborts on every scalar but `null` —
+    # that one it would carry through the rewrite — so without this the same
+    # document would be rewritten here and refused, or silently rewritten,
+    # there.
     #
     # Indexed rather than piped. What actually keeps the nesting visible is the
     # reader's `-NoEnumerate`; this loop is the same question asked without a

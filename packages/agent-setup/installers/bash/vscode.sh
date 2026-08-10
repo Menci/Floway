@@ -202,9 +202,10 @@ vscode_write_settings() {
     # empty input and once per document on a stream, so an empty file and a
     # multi-document file would both pass an unslurped gate and fail later as a
     # staging error naming the wrong cause. Elements are checked too: the merge
-    # indexes `.vendor` on each one, which aborts on a scalar, and the
-    # PowerShell filter would instead keep it and rewrite the file — the same
-    # document accepted on one platform, refused on the other.
+    # indexes `.vendor` on each one, which aborts on every scalar but `null` —
+    # that one indexes to `null` and would be carried through the rewrite — and
+    # the PowerShell filter would keep either and rewrite the file, so the same
+    # document would be accepted on one platform and refused on the other.
     if ! "$JQ" -s -e 'length == 1 and (.[0] | type == "array") and (.[0] | all(.[]; type == "object"))' \
         "$VSCODE_SETTINGS_PATH" >/dev/null 2>&1; then
       out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
