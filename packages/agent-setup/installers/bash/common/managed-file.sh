@@ -75,6 +75,14 @@ _resolve_managed_path() {
       *) _rmp_path=${_rmp_path%/*}/$_rmp_target ;;
     esac
   done
+  # Canonicalized when the shell can, so the path this run reports is the one
+  # the operator would type — the PowerShell half canonicalizes through
+  # GetFullPath and would otherwise name a different file for the same link.
+  # `cd -P` resolves the directory without needing readlink -f or realpath,
+  # neither of which BSD had before macOS 12.3; a directory that cannot be
+  # entered leaves the walked path, which is still correct to write to.
+  _rmp_dir=$(CDPATH= cd -P -- "${_rmp_path%/*}" 2>/dev/null && pwd -P) || _rmp_dir=''
+  [ -n "$_rmp_dir" ] && _rmp_path="$_rmp_dir/${_rmp_path##*/}"
   printf '%s' "$_rmp_path"
 }
 

@@ -59,10 +59,6 @@ function Restore-SetupZedSettings {
   Restore-SetupManagedFile $script:ZedSettingsExisted $script:ZedSettingsBackup $script:ZedSettingsPath 'file' 'Zed global settings'
 }
 
-# Merge the managed provider entry into Zed's global settings: validate the
-# existing document, back it up, build and validate the replacement beside it,
-# then rename it into place. Only the one provider key is touched; every other
-# setting in the file survives.
 # Folds A-Z and nothing else, which is what jq's ascii_downcase does. `-ieq`
 # folds Unicode case as well and would call FLOWÄY and flowäy the same name
 # where jq calls them different ones — one half then leaves two entries in the
@@ -78,6 +74,10 @@ function Test-SetupAsciiCaseEquals {
   return [string]::Equals((& $fold $Left), (& $fold $Right), [System.StringComparison]::Ordinal)
 }
 
+# Merge the managed provider entry into Zed's global settings: validate the
+# existing document, back it up, build and validate the replacement beside it,
+# then rename it into place. Only the one provider key is touched; every other
+# setting in the file survives.
 function Write-SetupZedSettings {
   $script:ZedSettingsPath = Resolve-SetupManagedPath (Join-Path $script:ZedConfigDir 'global_settings.json')
   $script:ZedSettingsBackup = $null

@@ -209,9 +209,14 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
     // first — a snippet that differed by so much as where it zeroes the freed
     // blob would disable the installer's scrubbing with nothing to show for it.
     `if (-not ('FlowayZedCredential' -as [type])) {`,
-    'Add-Type -TypeDefinition @"',
+    // A literal here-string, as the installer uses: `@"` interpolates, so a `$`
+    // or a backtick reaching the shared C# would expand here and not there,
+    // leaving one type name with two different bodies — the outcome the sharing
+    // above exists to prevent. The body carries neither today, which is why
+    // this is the difference between the two that matters.
+    "Add-Type -TypeDefinition @'",
     ZED_CREDENTIAL_CSHARP.trimEnd(),
-    '"@',
+    "'@",
     '}',
     `[FlowayZedCredential]::Write(${quotedTarget}, 'Bearer', [Text.Encoding]::UTF8.GetBytes(${quotedKey}))`,
   ].join('\n');

@@ -3166,6 +3166,11 @@ test('zed', 'writes through a symlinked settings file rather than replacing it',
       t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
       t.ok(lstatSync(zedSettingsPath(configDir)).isSymbolicLink(), `${which}/${dialect}/${link} leaves the link in place`);
       t.ok(readFileSync(target, 'utf8').includes('anthropic_compatible'), `${which}/${dialect}/${link} writes the provider into the linked-to file`);
+      // The reported path is the canonical one on both halves: a `..` segment
+      // carried through would name a different file than the other half does
+      // for the same link, which is the first thing an operator compares.
+      t.ok(run.combined.includes(target) && !run.combined.includes('/dotfiles/..'),
+        `${which}/${dialect}/${link} reports the canonical path:\n${run.combined}`);
       t.equal(statSync(target).mode & 0o777, 0o640, `${which}/${dialect}/${link} keeps the mode the operator chose`);
       // The backup and the staged write follow the resolved file, so an
       // operator restoring by hand finds the backup next to their dotfile
