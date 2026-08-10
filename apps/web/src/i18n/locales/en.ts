@@ -408,7 +408,7 @@ const en = {
           zedConfigHint: 'Save as <path>~/.config/zed/global_settings.json</path> — or under <path>$XDG_CONFIG_HOME</path> on Linux, if you set one — a settings layer Zed reads below your own settings file. Merge it by hand if that file already holds other providers.',
           zedConfigHintWindows: 'Save as <path>%APPDATA%\\Zed\\global_settings.json</path>, a settings layer Zed reads below your own settings file. Merge it by hand if that file already holds other providers.',
           zedAuthHint: 'Zed reads the key from your operating system credential store, not from a settings file.',
-          vscodeConfigHint: 'Merge this group into <path>chatLanguageModels.json</path>, beside <path>settings.json</path> in your VS Code profile directory.',
+          vscodeConfigHint: 'Add this group to <path>chatLanguageModels.json</path>, beside <path>settings.json</path> in your VS Code profile directory. Replace any group already using this name — VS Code keeps only the first of two.',
           vscodeAuthHint: 'The key rides in each model\'s request headers, because the group\'s own key field is read as a reference into secret storage. It is stored in this file as plain text, so keep the file readable only by you — the installers do this for you.',
         },
         agentSetup: {

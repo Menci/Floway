@@ -230,11 +230,20 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
 
 // VS Code's provider list is a top-level array of groups, so the array wrapper
 // here is the file's own shape: pasted into an empty file it is the whole
-// document, and into an existing one the single entry is what merges in beside
-// whatever other gateways the operator configured. Groups are keyed by
-// `${vendor}:${name}`, so a second entry under this name silently collapses
-// onto the last rather than adding a provider.
-// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
+// document, and into an existing one the single entry is what goes in beside
+// whatever other gateways the operator configured.
+//
+// Beside the others, but not beside another group of this name. A model is
+// identified as `${vendor}/${group}/${id}`, so two groups sharing a name
+// produce the same identifiers and the second registration is skipped with a
+// log line — its models, endpoint and key never take effect. Per-model
+// `settings` are the one part read the other way round, from every matching
+// group in order, so the later group's win. An operator who pastes this beside
+// an entry they already have therefore gets nothing, which is why the hint
+// beside it says to replace that entry rather than add to it.
+// Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/api/common/extHostLanguageModels.ts#L173-L174
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1281-L1289
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
 // A pasted snippet has no merge to attach the endpoint and the credential, so
 // it carries them — through the same rule the installers implement, stated once
 // in the shared module rather than a second time here.
