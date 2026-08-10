@@ -149,10 +149,23 @@ vscode_write_settings() {
     # syntax is not the operator's to keep — VS Code rewrites this file whole on
     # its own next edit — so the refusal is about the two halves agreeing, not
     # about preserving anything.
-    if _json_has_jsonc_syntax "$VSCODE_SETTINGS_PATH"; then
-      out_error "$VSCODE_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
-      return 1
-    fi
+    # Captured with `||` because a clean document exits 1, which `set -e` would
+    # otherwise take as a failure.
+    _vw_verdict=0
+    _json_has_jsonc_syntax "$VSCODE_SETTINGS_PATH" || _vw_verdict=$?
+    case $_vw_verdict in
+      0)
+        out_error "$VSCODE_SETTINGS_PATH carries JSONC syntax this installer cannot preserve; leaving it untouched."
+        return 1
+        ;;
+      2)
+        # jq would take NaN or Infinity and rewrite it, changing a value inside
+        # a foreign group. The PowerShell half refuses such a document, and one
+        # file has to get one answer.
+        out_error "$VSCODE_SETTINGS_PATH is not a provider list; leaving it untouched."
+        return 1
+        ;;
+    esac
     # `-s -e` rather than a filter that raises: jq runs a filter zero times on
     # empty input and once per document on a stream, so an empty file and a
     # multi-document file would both pass an unslurped gate and fail later as a

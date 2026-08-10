@@ -2953,7 +2953,11 @@ for (const { label, document } of [
   // parses them and would write the document back completed; jq refuses.
   { label: 'an unterminated object', document: '{"telemetry":{"metrics":false}' },
   { label: 'an unterminated string', document: '{"telemetry":{"note":"unclosed}' },
-
+  // jq takes these as extensions and rewrites them — NaN to null, Infinity to
+  // 1.797e308 — so accepting them would have the Bash half alter a value it
+  // was not asked to touch while the PowerShell half refuses the file.
+  { label: 'a NaN value', document: '{"telemetry":{"metrics":NaN}}' },
+  { label: 'an Infinity value', document: '{"telemetry":{"metrics":Infinity}}' },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3984,6 +3988,10 @@ for (const { label, document, cause } of [
   // parses them and would write the document back completed; jq refuses.
   { label: 'an unterminated array', document: '[{"vendor":"other","name":"Keep"}', cause: 'is not a provider list' },
   { label: 'an unterminated array after a comma', document: '[{"vendor":"other","name":"Keep"},', cause: 'is not a provider list' },
+  // jq takes these as extensions and rewrites them, changing a value inside a
+  // foreign group; the PowerShell half refuses them outright.
+  { label: 'a NaN value in a foreign group', document: '[{"vendor":"other","name":"Keep","x":NaN}]', cause: 'is not a provider list' },
+  { label: 'an Infinity value in a foreign group', document: '[{"vendor":"other","name":"Keep","x":Infinity}]', cause: 'is not a provider list' },
 ]) {
   test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
