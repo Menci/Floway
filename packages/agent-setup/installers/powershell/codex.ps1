@@ -61,18 +61,19 @@ function Backup-SetupCodexFiles {
   if (Test-Path -LiteralPath $script:CodexConfigPath) {
     $script:CodexConfigExisted = $true
     $script:CodexConfigBackup = "$($script:CodexConfigPath).floway-backup.$stamp.$PID"
-    Copy-Item -LiteralPath $script:CodexConfigPath -Destination $script:CodexConfigBackup
+    try {
+      Backup-SetupManagedFile $script:CodexConfigPath $script:CodexConfigBackup
+    } catch {
+      $script:CodexConfigBackup = $null
+      throw
+    }
   }
   if (Test-Path -LiteralPath $script:CodexTokenPath) {
     $script:CodexTokenExisted = $true
     $script:CodexTokenBackup = "$($script:CodexTokenPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:CodexTokenPath -Destination $script:CodexTokenBackup
-      Protect-SetupFile $script:CodexTokenBackup
+      Backup-SetupManagedFile $script:CodexTokenPath $script:CodexTokenBackup -Protect
     } catch {
-      if (Test-Path -LiteralPath $script:CodexTokenBackup) {
-        Remove-Item -LiteralPath $script:CodexTokenBackup -Force
-      }
       $script:CodexTokenBackup = $null
       throw
     }

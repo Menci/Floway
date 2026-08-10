@@ -135,8 +135,8 @@ claude_write_settings() {
     # carries the key, so the copy is owner-only under the installer's
     # `umask 077` rather than inheriting a mode the operator set before there
     # was a credential in it.
-    if ! cp "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
-      out_error "could not back up $CLAUDE_SETTINGS_PATH"
+    if ! _back_up_managed_file "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP" own-mode; then
+      CLAUDE_SETTINGS_BACKUP=""
       return 1
     fi
   else

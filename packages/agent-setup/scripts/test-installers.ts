@@ -1013,7 +1013,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.vscodeUserDir) env.AGENT_SETUP_TEST_VSCODE_USER_DIR = options.vscodeUserDir;
 
   return new Promise<RunResult>(resolve => {
-    const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
+    const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { cwd: options.cwd, env });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -1291,15 +1291,19 @@ test('claude', 'honors an explicit CLAUDE_CONFIG_DIR', async t => {
 // created stays where the operator meant it.
 test('claude', 'honors a relative CLAUDE_CONFIG_DIR', async t => {
   if (process.platform === 'win32') skip('POSIX paths only');
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const run = await runShellInstaller({
-    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    configDir: 'relative-claude-config', cwd: ws.root,
-  });
-  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.ok(existsSync(join(ws.root, 'relative-claude-config', 'settings.json')),
-    'settings land under the relative directory, not at the filesystem root');
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    placeFakeClaude(ws.binDir);
+    const options = {
+      workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+      configDir: 'relative-claude-config', cwd: ws.root,
+    };
+    const run = which === 'bash' ? await runShellInstaller(options) : await runPowerShellInstaller(options);
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(existsSync(join(ws.root, 'relative-claude-config', 'settings.json')),
+      `${which} lands the settings under the relative directory, not at the filesystem root`);
+  }
 });
 
 test('claude', 'writes through a symlinked settings file rather than replacing it', async t => {
@@ -1432,6 +1436,28 @@ test('claude', 'PowerShell: existing permissive settings are replaced with mode 
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.equal(statSync(settingsPathFor(ws)).mode & 0o777, 0o600, 'replacement settings must be mode 0600');
+});
+
+// A copy that fails part way leaves a truncated file beside the operator's own
+// — one a rollback would later hand back as their document, and one that
+// outlives a run reporting it changed nothing. The PowerShell half's equivalent
+// is the chmod leg below, which fails after its copy landed.
+test('claude', 'Bash: a backup that fails part way leaves nothing beside the document', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light', env: { KEEP: '1' } });
+  writeFileSync(settingsPathFor(ws), original);
+  // Writes the destination it was asked for, then fails: `cp` truncating on a
+  // full filesystem is the same shape.
+  writeFileSync(join(ws.binDir, 'cp'), '#!/bin/bash\nprintf \'{"the\' > "${@: -1}"\nexit 1\n', { mode: 0o755 });
+
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+  t.ok(run.code !== 0, 'a failed backup must fail the agent');
+  t.includes(run.combined, 'could not back up', 'and say so');
+  t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'original settings must remain untouched');
+  t.equal(backupFiles(configDir).length, 0, 'the partial backup must be removed');
 });
 
 test('claude', 'PowerShell: chmod failure leaves original untouched and no secret stage', async t => {
@@ -3662,6 +3688,31 @@ test('vscode', 'both halves keep the per-model settings VS Code wrote into our g
   const powershell = await runHalf('powershell');
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');
 });
+
+// `settings` is the operator's whatever its value: jq's `//` and a PowerShell
+// null test both read a stored `null` or `false` as absent and would drop the
+// key on one half while the other kept it — one document, two answers.
+for (const kept of [null, false] as const) {
+  test('vscode', `both halves keep a stored settings of ${JSON.stringify(kept)}`, async t => {
+    const existing = JSON.stringify([{ vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings: kept }]);
+    const runHalf = async (which: 'bash' | 'powershell') => {
+      const ws = makeWorkspace();
+      const userDir = makeVSCodeUserDir(ws, `vscode-settings-${which}`);
+      writeFileSync(vscodeGroupsPath(userDir), existing);
+      const run = which === 'bash'
+        ? await runVSCode(ws, { vscodeUserDir: userDir })
+        : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+      t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+      return readVSCodeGroups(userDir);
+    };
+
+    const bash = await runHalf('bash');
+    t.ok('settings' in ourGroup(bash), 'Bash keeps the key');
+    t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(kept), 'with the operator\'s value');
+    if (!hostPwsh) return;
+    t.equal(JSON.stringify(await runHalf('powershell')), JSON.stringify(bash), 'and PowerShell writes the same document');
+  });
+}
 
 test('vscode', 'replaces only its own group and leaves every other one intact', async t => {
   const ws = makeWorkspace();

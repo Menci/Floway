@@ -204,13 +204,19 @@ function Write-SetupVSCodeSettings {
     # is rebuilt rather than patched — so anything of theirs inside it has to be
     # carried across by name. By exact name, as the identity test reads
     # vendor/name, because member access would take a `Settings` too.
+    # Presence, not truth: a `settings` of null or false is the operator's
+    # value as much as an object is, and the other half asks `has`.
     $keptSettings = $null
+    $hasKeptSettings = $false
     foreach ($group in $parsed) {
       if (Test-SetupVSCodeOwnGroup $group) {
         $found = $group.PSObject.Properties |
           Where-Object { [string]::Equals($_.Name, 'settings', [System.StringComparison]::Ordinal) } |
           Select-Object -First 1
-        if ($null -ne $found) { $keptSettings = $found.Value }
+        if ($null -ne $found) {
+          $keptSettings = $found.Value
+          $hasKeptSettings = $true
+        }
         break
       }
     }
@@ -219,10 +225,8 @@ function Write-SetupVSCodeSettings {
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:VSCodeSettingsBackup = "$($script:VSCodeSettingsPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:VSCodeSettingsPath -Destination $script:VSCodeSettingsBackup
-      Protect-SetupFile $script:VSCodeSettingsBackup
+      Backup-SetupManagedFile $script:VSCodeSettingsPath $script:VSCodeSettingsBackup -Protect
     } catch {
-      if (Test-Path -LiteralPath $script:VSCodeSettingsBackup) { Remove-Item -LiteralPath $script:VSCodeSettingsBackup -Force }
       $script:VSCodeSettingsBackup = $null
       # Named here so the per-profile catch counts it rather than describing a
       # raw .NET message, matching the Bash half's "could not back up".
@@ -238,7 +242,7 @@ function Write-SetupVSCodeSettings {
   }
   $own['models'] = $script:VSCodeModels
   # Last, where jq's object addition puts it, so the two halves stay comparable.
-  if ($null -ne $keptSettings) { $own['settings'] = $keptSettings }
+  if ($hasKeptSettings) { $own['settings'] = $keptSettings }
   $groups += [PSCustomObject]$own
 
   $stage = "$($script:VSCodeSettingsPath).floway-stage.$PID"

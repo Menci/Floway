@@ -23,7 +23,7 @@
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1259
 VSCODE_MERGE_PROGRAM='
   if type != "array" then error("root is not a JSON array") else . end
-  | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | .settings // empty] | first) as $kept
+  | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | select(has("settings")) | {settings}] | first) as $kept
   | map(select((.vendor != "customendpoint") or (.name != $providerName)))
   + [({
       "vendor": "customendpoint",
@@ -33,7 +33,7 @@ VSCODE_MERGE_PROGRAM='
         "url": $apiUrl,
         "requestHeaders": { "authorization": ("Bearer " + env.SETUP_API_KEY) },
       }],
-    } | if $kept == null then . else . + { "settings": $kept } end)]
+    } + ($kept // {}))]
 '
 
 # `customendpoint` appends the API path itself, so the group takes the bare
@@ -161,9 +161,9 @@ vscode_write_settings() {
     # about preserving anything.
     # Captured with `||` because a clean document exits 1, which `set -e` would
     # otherwise take as a failure.
-    # Readability is asked first: awk exits 2 on a file it cannot open, which
-    # the scanner's own vocabulary would report as a value jq would rewrite —
-    # blaming the operator's content for a permission problem.
+    # Readability is asked first: awk prints no verdict for a file it cannot
+    # open, and that is indistinguishable from the scanner failing — the
+    # operator would be sent after the scanner for a permission problem.
     if [ ! -r "$VSCODE_SETTINGS_PATH" ]; then
       out_error "$VSCODE_SETTINGS_PATH could not be read; leaving it untouched."
       return 1
@@ -205,15 +205,15 @@ vscode_write_settings() {
     fi
     _vw_base=$(cat "$VSCODE_SETTINGS_PATH")
     VSCODE_SETTINGS_BACKUP="$VSCODE_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
-    if ! cp "$VSCODE_SETTINGS_PATH" "$VSCODE_SETTINGS_BACKUP"; then
-      out_error "could not back up $VSCODE_SETTINGS_PATH"
+    if ! _back_up_managed_file "$VSCODE_SETTINGS_PATH" "$VSCODE_SETTINGS_BACKUP" own-mode; then
+      VSCODE_SETTINGS_BACKUP=""
       return 1
     fi
     # A re-run copies a document that already holds the key, so the backup is
     # restricted explicitly rather than left to the umask — the PowerShell half
-    # states it the same way. `cp` without `-p` is what puts the copy under the
-    # umask in the first place; here that is wanted, since the mode being
-    # dropped is the wide one an operator may have had before the first run.
+    # states it the same way. `own-mode` is what puts the copy under the umask
+    # in the first place; here that is wanted, since the mode being dropped is
+    # the wide one an operator may have had before the first run.
     if ! chmod 600 "$VSCODE_SETTINGS_BACKUP"; then
       rm -f "$VSCODE_SETTINGS_BACKUP"
       VSCODE_SETTINGS_BACKUP=""

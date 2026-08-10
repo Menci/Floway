@@ -85,12 +85,8 @@ function Write-SetupClaudeSettings {
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:ClaudeSettingsBackup = "$($script:ClaudeSettingsPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:ClaudeSettingsPath -Destination $script:ClaudeSettingsBackup
-      Protect-SetupFile $script:ClaudeSettingsBackup
+      Backup-SetupManagedFile $script:ClaudeSettingsPath $script:ClaudeSettingsBackup -Protect
     } catch {
-      if (Test-Path -LiteralPath $script:ClaudeSettingsBackup) {
-        Remove-Item -LiteralPath $script:ClaudeSettingsBackup -Force
-      }
       $script:ClaudeSettingsBackup = $null
       throw
     }

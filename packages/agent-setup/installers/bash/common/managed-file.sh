@@ -118,29 +118,41 @@ _json_scan_verdict() {
 }
 
 # Wraps the scan so a tool failure is not read as a verdict. The verdict travels
-# on stdout and the exit status is left to mean "awk could not read this at
-# all": some awks die with a multibyte conversion error on a non-ASCII byte
-# outside a string, and a status-carried verdict could not tell that from "jq
-# would rewrite a value" — the operator was then told their document was
-# malformed for a failure of the tool examining it.
-#
-# The reported case was a leading UTF-8 BOM on a macOS host; the BOM is now
-# stripped before the scan, so that input no longer reaches the failing path,
-# and this arm is what keeps any other such failure from being reported as a
-# verdict. Neither is observed by the suite: the macOS awk on this machine
-# (BWK 20200816) does not die on those bytes under any locale I could set, so
-# the die is host-specific and the harness symlinks whichever awk the host has.
+# on stdout, which leaves the exit status free to mean "awk produced no verdict
+# at all" — a status-carried verdict could not tell that from "jq would rewrite
+# a value", and the operator was then told their document was malformed for a
+# failure of the tool examining it.
 _json_has_jsonc_syntax() {
   _jhs_verdict=$(_json_scan_verdict "$1")
   case $_jhs_verdict in
     jsonc) return 0 ;;
     invalid) return 2 ;;
     ok) return 1 ;;
-    # No verdict at all: awk could not read the document as text. The caller
-    # asks about readability first, so this is the scanner failing rather than
-    # the file — say so instead of naming a cause in the operator's content.
+    # No verdict at all: awk did not run to completion. The caller asks about
+    # readability first and the scan is byte-oriented, so this is the scanner
+    # failing rather than the file — say so instead of naming a cause in the
+    # operator's content.
     *) return 3 ;;
   esac
+}
+
+# Copies a document to its backup path. A copy that fails part way leaves a
+# truncated file beside the operator's own, which outlives a run that reported
+# changing nothing and which a later rollback would hand back as their
+# document — so the remains go before the failure is reported.
+#
+# `$3` selects mode preservation: the backup of a document that carries a
+# credential is left owner-only under the installer's `umask 077`, while every
+# other one is returned with the mode the operator gave it.
+_back_up_managed_file() {
+  if [ "$3" = "keep-mode" ]; then
+    cp -p "$1" "$2" && return 0
+  else
+    cp "$1" "$2" && return 0
+  fi
+  rm -f "$2"
+  out_error "could not back up $1"
+  return 1
 }
 
 # The file a managed path ultimately names. chezmoi and stow both place a

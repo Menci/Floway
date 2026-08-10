@@ -10,6 +10,13 @@
 # bounds a link cycle, which the framework call would raise on.
 function Resolve-SetupManagedPath {
   param([string]$Path)
+  # Every path leaves here canonical, not only one that went through a link:
+  # the prune compares against Get-ChildItem's own FullName, and the resolved
+  # path is what the run reports. `Get-Location` rather than GetFullPath's own
+  # anchor, which is the process directory PowerShell does not move with
+  # `Set-Location`.
+  if (-not [System.IO.Path]::IsPathRooted($Path)) { $Path = Join-Path (Get-Location).ProviderPath $Path }
+  $Path = [System.IO.Path]::GetFullPath($Path)
   for ($hops = 0; $hops -lt 40; $hops++) {
     # LinkType, not merely a non-empty Target: on the Windows PowerShell 5.1
     # build Target also enumerates a file's hard-link names. Measured there
@@ -66,6 +73,22 @@ function Protect-SetupFile {
     [System.IO.File]::SetAccessControl($Path, $acl)
   } else {
     [System.IO.FileSystemAclExtensions]::SetAccessControl([System.IO.FileInfo]::new($Path), $acl)
+  }
+}
+
+# Copies a document to its backup path, leaving nothing behind when either the
+# copy or the mode restriction fails: a partial file beside the operator's own
+# outlives a run that reported changing nothing, and a rollback would later hand
+# it back as their document. The original failure is rethrown, so each caller
+# still says what it wants said about its own file.
+function Backup-SetupManagedFile {
+  param([string]$Path, [string]$Destination, [switch]$Protect)
+  try {
+    Copy-Item -LiteralPath $Path -Destination $Destination
+    if ($Protect) { Protect-SetupFile $Destination }
+  } catch {
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+    throw
   }
 }
 

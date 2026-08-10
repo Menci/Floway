@@ -69,8 +69,8 @@ codex_backup_files() {
     # installer's `umask 077` it would return narrower than the operator's own
     # file, so a run reporting that it changed nothing would still have changed
     # its mode. The PowerShell half's Copy-Item preserves the mode already.
-    if ! cp -p "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
-      out_error "could not back up $CODEX_CONFIG_PATH"
+    if ! _back_up_managed_file "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP" keep-mode; then
+      CODEX_CONFIG_BACKUP=""
       return 1
     fi
   fi
@@ -79,8 +79,8 @@ codex_backup_files() {
     CODEX_TOKEN_BACKUP="$CODEX_TOKEN_PATH.floway-backup.$_cbf_stamp"
     # No `-p`: the provider token is the credential, so its backup is
     # owner-only, which the chmod below states outright.
-    if ! cp "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP"; then
-      out_error "could not back up $CODEX_TOKEN_PATH"
+    if ! _back_up_managed_file "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP" own-mode; then
+      CODEX_TOKEN_BACKUP=""
       return 1
     fi
     if ! chmod 600 "$CODEX_TOKEN_BACKUP"; then

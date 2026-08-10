@@ -170,6 +170,12 @@ function Get-SetupJsonVerdict {
         # because its own token is zero.
         elseif ($parsed -eq 0 -and $token -match '[1-9]') { $strict = $false }
       }
+      # A token no double can hold at all. Windows PowerShell 5.1 reports
+      # overflow by returning False rather than by parsing to Infinity —
+      # measured on 5.1.26100.8875, where `1e400` gives False and `1e-400`
+      # gives True with 0 — so without this arm the overflow refusal above is
+      # inert on the only host that half ever runs on.
+      else { $strict = $false }
     }
   }
   # An unterminated container, or a string that never closed.

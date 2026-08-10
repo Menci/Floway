@@ -123,12 +123,6 @@ function Write-SetupZedSettings {
     # the operator's existing document cannot leave an orphan beside it. The
     # mutation that follows the backup runs inside the staging transaction,
     # which removes the backup on any failure.
-    # `-contains` and dotted member access are both case-insensitive, while
-    # jq's `has` is not, so a document with a differently-cased `Language_Models`
-    # would have this half write into the operator's key — which Zed's own
-    # deserializer will not read — while the Bash half creates the correct one
-    # beside it. Zed writes this file never and reads it with serde, so no
-    # document it produced can have one; noted rather than worked around.
     # `-contains` and dotted member access are both case-insensitive, while jq's
     # `has` is not — so a differently-cased `Language_Models` would have this
     # half write the provider into the operator's key, which Zed's deserializer
@@ -166,9 +160,8 @@ function Write-SetupZedSettings {
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:ZedSettingsBackup = "$($script:ZedSettingsPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:ZedSettingsPath -Destination $script:ZedSettingsBackup
+      Backup-SetupManagedFile $script:ZedSettingsPath $script:ZedSettingsBackup
     } catch {
-      if (Test-Path -LiteralPath $script:ZedSettingsBackup) { Remove-Item -LiteralPath $script:ZedSettingsBackup -Force }
       $script:ZedSettingsBackup = $null
       Stop-Setup "could not back up $($script:ZedSettingsPath)"
     }

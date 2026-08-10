@@ -118,9 +118,9 @@ zed_write_settings() {
     # The status is captured rather than branched on directly, because the
     # scanner answers with three of them and `$?` would be clobbered by the
     # `case` itself.
-    # Readability is asked first: awk exits 2 on a file it cannot open, which
-    # the scanner's own vocabulary would report as a value jq would rewrite —
-    # blaming the operator's content for a permission problem.
+    # Readability is asked first: awk prints no verdict for a file it cannot
+    # open, and that is indistinguishable from the scanner failing — the
+    # operator would be sent after the scanner for a permission problem.
     if [ ! -r "$ZED_SETTINGS_PATH" ]; then
       out_error "$ZED_SETTINGS_PATH could not be read; leaving it untouched."
       return 1
@@ -181,13 +181,8 @@ zed_write_settings() {
     # under `umask 077` it would come back narrower than the operator's own
     # file, so a run that reports leaving the settings untouched would still
     # have changed their mode.
-    if ! cp -p "$ZED_SETTINGS_PATH" "$ZED_SETTINGS_BACKUP"; then
-      # A partial copy is removed and the record cleared, as the PowerShell
-      # half does, so a refusal before the first mutation leaves nothing beside
-      # the operator's document.
-      rm -f "$ZED_SETTINGS_BACKUP"
+    if ! _back_up_managed_file "$ZED_SETTINGS_PATH" "$ZED_SETTINGS_BACKUP" keep-mode; then
       ZED_SETTINGS_BACKUP=""
-      out_error "could not back up $ZED_SETTINGS_PATH"
       return 1
     fi
   else
