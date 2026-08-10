@@ -243,7 +243,8 @@ export const zedWindowsCredentialSnippet = (origin: string, apiKey: string) => {
 // beside it says to replace that entry rather than add to it.
 // Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/api/common/extHostLanguageModels.ts#L173-L174
 //       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1281-L1289
-//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1211-L1214
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1262
 // A pasted snippet has no merge to attach the endpoint and the credential, so
 // it carries them — through the same rule the installers implement, stated once
 // in the shared module rather than a second time here.

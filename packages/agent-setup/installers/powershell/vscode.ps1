@@ -8,10 +8,11 @@
 # the profile directory and holds a top-level array of provider groups; VS Code
 # rewrites the whole file whenever the Manage Models UI changes anything, so
 # comments in it are already volatile and a whole-document rewrite costs
-# nothing. Groups are keyed by `${vendor}:${name}`, so ours replaces only its own.
+# nothing. Nothing upstream keeps the list unique, so the rewrite is what
+# collapses ours: it selects every group of our vendor and name and replaces
+# them with one.
 # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L204
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L390-L417
-#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L215-L238
 
 # `customendpoint` appends the API path itself, so the group takes the bare
@@ -219,8 +220,8 @@ function Write-SetupVSCodeSettings {
     # keyed by model, so the later group is the one whose Thinking Efforts were
     # in effect. Keeping the first would preserve the settings it was ignoring
     # and drop the ones it was using.
-    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
-    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
+    # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1211-L1214
+    #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1262
     foreach ($group in $parsed) {
       if (Test-SetupVSCodeOwnGroup $group) {
         $found = $group.PSObject.Properties |

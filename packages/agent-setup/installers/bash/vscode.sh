@@ -7,11 +7,11 @@
 # extension's `customendpoint` vendor reads. It sits beside `settings.json` in
 # the profile directory and holds a top-level array of provider groups; VS Code
 # rewrites the whole file whenever the Manage Models UI changes anything, so
-# comments in it are already volatile and a jq merge costs nothing. Groups are
-# keyed by `${vendor}:${name}`, so ours replaces only its own.
+# comments in it are already volatile and a jq merge costs nothing. Nothing
+# upstream keeps the list unique, so the merge is what collapses ours: it
+# selects every group of our vendor and name and replaces them with one.
 # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L204
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L390-L417
-#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L73-L76
 #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/browser/languageModelsConfigurationService.ts#L215-L238
 # The group is rebuilt rather than patched, so anything the operator owns inside
 # it has to be carried across by name. `settings` is theirs: VS Code writes the
@@ -25,8 +25,8 @@
 # Efforts were in effect, and keeping the first would preserve the settings it
 # was ignoring while dropping the ones it was using.
 # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1551-L1562
-#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1259
-#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1209-L1233
+#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1211-L1214
+#       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1252-L1262
 VSCODE_MERGE_PROGRAM='
   if type != "array" then error("root is not a JSON array") else . end
   | ([.[] | select(.vendor == "customendpoint" and .name == $providerName) | select(has("settings")) | {settings}] | last) as $kept

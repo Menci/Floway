@@ -3726,7 +3726,35 @@ test('vscode', 'both halves keep the settings of the own group VS Code resolves 
 
   const bash = await runHalf('bash');
   t.equal(bash.length, 1, 'Bash collapses the duplicates into one group');
-  t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(settings), 'and keeps the settings the second one carried');
+  t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(settings), 'and keeps the settings of the group VS Code resolved last');
+  if (!hostPwsh) return;
+  t.equal(JSON.stringify(await runHalf('powershell')), JSON.stringify(bash), 'and PowerShell writes the same document');
+});
+
+// The other half of the same rule: last among the groups that *carry* settings,
+// not last among the groups under our name. jq says so by filtering before it
+// takes one, and the PowerShell loop by assigning only inside its found-guard —
+// a version that cleared the value on a later group without settings would drop
+// the operator's choices while every other fixture stayed green.
+test('vscode', 'both halves keep settings a later own group does not carry', async t => {
+  const settings = { 'claude-opus-4-6': { reasoningEffort: 'high' } };
+  const existing = JSON.stringify([
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [], settings },
+    { vendor: 'customendpoint', name: 'Floway', apiType: 'messages', models: [] },
+  ]);
+  const runHalf = async (which: 'bash' | 'powershell') => {
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-carrier-${which}`);
+    writeFileSync(vscodeGroupsPath(userDir), existing);
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    return readVSCodeGroups(userDir);
+  };
+
+  const bash = await runHalf('bash');
+  t.equal(JSON.stringify(ourGroup(bash).settings), JSON.stringify(settings), 'Bash keeps the only settings there were');
   if (!hostPwsh) return;
   t.equal(JSON.stringify(await runHalf('powershell')), JSON.stringify(bash), 'and PowerShell writes the same document');
 });
