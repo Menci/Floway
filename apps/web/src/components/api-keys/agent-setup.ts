@@ -24,6 +24,8 @@ export const blankAgentSetupDraft = (): AgentSetupConfiguration => ({
     effortLevel: null,
     cleanupPeriodDays: null,
     optOutAiAttribution: false,
+    disableAutoMemory: false,
+    disableAgentView: false,
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
@@ -100,6 +102,8 @@ export const buildAgentClaudeSnippet = (
   ...(settings.effortLevel ? { effortLevel: settings.effortLevel } : {}),
   ...(settings.cleanupPeriodDays === null ? {} : { cleanupPeriodDays: settings.cleanupPeriodDays }),
   ...(settings.optOutAiAttribution ? { attribution: claudeAttributionOptOut } : {}),
+  ...(settings.disableAutoMemory ? { autoMemoryEnabled: false } : {}),
+  ...(settings.disableAgentView ? { disableAgentView: true } : {}),
 }, null, 2);
 
 // JSON string literals are valid TOML basic strings, so JSON.stringify keeps

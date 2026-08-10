@@ -14,6 +14,8 @@ const fullConfiguration: AgentSetupConfiguration = {
     effortLevel: 'high',
     cleanupPeriodDays: 365,
     optOutAiAttribution: true,
+    disableAutoMemory: true,
+    disableAgentView: true,
     modelDiscovery: true,
   },
   codex: {
@@ -42,6 +44,8 @@ describe('renderShellPrefix', () => {
       "SETUP_CLAUDE_EFFORT_LEVEL='high'",
       "SETUP_CLAUDE_CLEANUP_PERIOD_DAYS='365'",
       "SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION='1'",
+      "SETUP_CLAUDE_DISABLE_AUTO_MEMORY='1'",
+      "SETUP_CLAUDE_DISABLE_AGENT_VIEW='1'",
       "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
       '',
     ].join('\n'));
@@ -77,7 +81,7 @@ describe('renderShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
       },
@@ -86,6 +90,8 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_CLAUDE_EFFORT_LEVEL=''");
     expect(prefix).toContain("SETUP_CLAUDE_CLEANUP_PERIOD_DAYS=''");
     expect(prefix).toContain("SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION=''");
+    expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AUTO_MEMORY=''");
+    expect(prefix).toContain("SETUP_CLAUDE_DISABLE_AGENT_VIEW=''");
     expect(prefix).not.toContain('SETUP_CODEX_');
   });
 
@@ -146,7 +152,7 @@ describe('renderPowerShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
       },
@@ -155,6 +161,8 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeModel = $null');
     expect(prefix).toContain('$SetupClaudeCleanupPeriodDays = $null');
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $false');
+    expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $false');
+    expect(prefix).toContain('$SetupClaudeDisableAgentView = $false');
     expect(prefix).not.toContain('$SetupCodex');
   });
 
@@ -167,5 +175,7 @@ describe('renderPowerShellPrefix', () => {
     });
     expect(prefix).toContain('$SetupClaudeCleanupPeriodDays = 365');
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
+    expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $true');
+    expect(prefix).toContain('$SetupClaudeDisableAgentView = $true');
   });
 });

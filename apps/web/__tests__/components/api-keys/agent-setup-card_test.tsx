@@ -18,6 +18,8 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     effortLevel: 'high',
     cleanupPeriodDays: null,
     optOutAiAttribution: true,
+    disableAutoMemory: true,
+    disableAgentView: true,
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },

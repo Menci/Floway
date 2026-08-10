@@ -236,6 +236,18 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
         label={t('dashboard.apiKeys.agentSetup.optOutAiAttribution')}
         onChange={checked => patchClaude({ optOutAiAttribution: checked })}
       />
+      <SwitchSetting
+        checked={configuration.claudeCode.disableAutoMemory}
+        description={t('dashboard.apiKeys.agentSetup.disableAutoMemoryHint')}
+        label={t('dashboard.apiKeys.agentSetup.disableAutoMemory')}
+        onChange={checked => patchClaude({ disableAutoMemory: checked })}
+      />
+      <SwitchSetting
+        checked={configuration.claudeCode.disableAgentView}
+        description={t('dashboard.apiKeys.agentSetup.disableAgentViewHint')}
+        label={t('dashboard.apiKeys.agentSetup.disableAgentView')}
+        onChange={checked => patchClaude({ disableAgentView: checked })}
+      />
       <div className={FIELD_GRID_CLASS}>
         <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
           <Dropdown

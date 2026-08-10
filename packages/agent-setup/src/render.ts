@@ -61,6 +61,8 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
       ['SETUP_CLAUDE_CLEANUP_PERIOD_DAYS', shellOptionalNumber(claudeCode.cleanupPeriodDays)],
       ['SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION', shellFlag(claudeCode.optOutAiAttribution)],
+      ['SETUP_CLAUDE_DISABLE_AUTO_MEMORY', shellFlag(claudeCode.disableAutoMemory)],
+      ['SETUP_CLAUDE_DISABLE_AGENT_VIEW', shellFlag(claudeCode.disableAgentView)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
   } else {
@@ -105,6 +107,8 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
       ['$SetupClaudeCleanupPeriodDays', powerShellOptionalNumber(claudeCode.cleanupPeriodDays)],
       ['$SetupClaudeOptOutAiAttribution', powerShellBool(claudeCode.optOutAiAttribution)],
+      ['$SetupClaudeDisableAutoMemory', powerShellBool(claudeCode.disableAutoMemory)],
+      ['$SetupClaudeDisableAgentView', powerShellBool(claudeCode.disableAgentView)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
   } else {

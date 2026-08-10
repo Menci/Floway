@@ -14,6 +14,8 @@ const fullConfiguration: AgentSetupConfiguration = {
     effortLevel: 'high',
     cleanupPeriodDays: 365,
     optOutAiAttribution: true,
+    disableAutoMemory: true,
+    disableAgentView: true,
     modelDiscovery: true,
   },
   codex: {
