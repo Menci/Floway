@@ -203,3 +203,23 @@ describe('Zed with no chat models', () => {
     expect(screen.queryByText(/curl |irm /)).toBeNull();
   });
 });
+
+// A catalog that is not known yet is not an empty catalog. Before a key is
+// picked the card has nothing to project, and saying "no chat models" there
+// tells a first-time visitor their upstreams are wrong when they have simply
+// not chosen a key.
+describe('Zed with no key selected', () => {
+  it('asks for a key rather than blaming the catalog', () => {
+    renderInApp(<AgentSetupCard
+      clipboard={clipboard}
+      initialApiKeyId={null}
+      initialError={null}
+      initialLease={null}
+      models={null}
+      selectedKey={null}
+    />);
+    act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
+    expect(screen.getByText(/Select an API key above/)).toBeTruthy();
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+  });
+});

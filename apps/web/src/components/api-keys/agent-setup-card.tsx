@@ -67,7 +67,9 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   initialApiKeyId: string | null;
   initialError: string | null;
   initialLease: AgentSetupLease | null;
-  models: ControlPlaneModel[];
+  // `null` while the catalog is unknown: no key selected, or the listing
+  // failed. An empty array is a catalog that really serves nothing.
+  models: ControlPlaneModel[] | null;
   clipboard: ClipboardCopy;
   selectedKey: ApiKey | null;
 }) {
@@ -81,7 +83,12 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   // that before the operator runs anything — so the setup pane says it rather
   // than handing over a command that will fail. The snippet pane says the same
   // thing in its own place.
-  const nothingToConfigure = agent === 'zed' && models !== undefined && projectZedModels(models).length === 0;
+  // Gated on the key as well as the catalog: with no key selected there is
+  // nothing to project, and the pane's own "select a key" hint is the answer.
+  // Saying "no chat models" there tells a first-time visitor their upstreams
+  // are wrong when they have simply not chosen one.
+  const nothingToConfigure = selectedKey !== null && models !== null
+    && agent === 'zed' && projectZedModels(models).length === 0;
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
   // Both shells comment with `#`, so an unavailable command says why inside the block it will occupy.
@@ -118,11 +125,11 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
-          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
+          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models ?? []} onChange={setup.updateDraft} />
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models ?? []} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : nothingToConfigure

@@ -2925,6 +2925,10 @@ for (const { label, document } of [
   // is not enough — what follows it decides whether it was a value or a key.
   { label: 'a literal used as an unquoted key', document: '{true:1}' },
   { label: 'a number used as an unquoted key', document: '{123:1}' },
+  // An interrupted write or a partial sync leaves one of these. Newtonsoft
+  // parses them and would write the document back completed; jq refuses.
+  { label: 'an unterminated object', document: '{"telemetry":{"metrics":false}' },
+  { label: 'an unterminated string', document: '{"telemetry":{"note":"unclosed}' },
 
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
