@@ -3486,6 +3486,32 @@ test('vscode', 'replaces only its own group and leaves every other one intact', 
   t.ok(!ourGroup(groups).models!.some(entry => entry.id === 'stale'), 'our previous models are gone');
 });
 
+// VS Code stores the agents window's own profile under `profiles/builtin` and
+// excludes that directory from its own scan by name. A document written there
+// carries the key into a file the editor never reads; the agents window shares
+// the default profile's language models, so nothing is lost by skipping it.
+test('vscode', 'neither half writes into the builtin profile directory', async t => {
+  for (const which of ['bash', 'powershell'] as const) {
+    if (which === 'powershell' && !hostPwsh) continue;
+    const ws = makeWorkspace();
+    const userDir = makeVSCodeUserDir(ws, `vscode-builtin-${which}`);
+    const builtin = join(userDir, 'profiles', 'builtin', 'a1b2c3');
+    mkdirSync(builtin, { recursive: true });
+    const named = join(userDir, 'profiles', 'd4e5f6');
+    mkdirSync(named, { recursive: true });
+
+    const run = which === 'bash'
+      ? await runVSCode(ws, { vscodeUserDir: userDir })
+      : await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: vscodeConfig(), vscodeUserDir: userDir });
+
+    t.equal(run.code, 0, `${which} should succeed:\n${run.combined}`);
+    t.ok(existsSync(vscodeGroupsPath(userDir)), `${which} configures the default profile`);
+    t.ok(existsSync(vscodeGroupsPath(named)), `${which} configures a named profile`);
+    t.ok(!existsSync(vscodeGroupsPath(join(userDir, 'profiles', 'builtin'))), `${which} writes nothing into builtin`);
+    t.ok(!existsSync(vscodeGroupsPath(builtin)), `${which} writes nothing below builtin`);
+  }
+});
+
 test('vscode', 'writes every profile of the user directory', async t => {
   const ws = makeWorkspace();
   const userDir = makeVSCodeUserDir(ws);
@@ -4028,7 +4054,13 @@ test('vscode', 'neither half claims a group whose name only collates as ours', a
     { label: 'zero-width space', name: 'Floway\u200B' },
     { label: 'NFD accent', name: 'Flowa\u0301y' },
   ];
-  const foreign = JSON.stringify(lookalikes.map(({ name }) => ({ vendor: 'customendpoint', name, apiType: 'responses', models: [] })));
+  const foreign = JSON.stringify([
+    ...lookalikes.map(({ name }) => ({ vendor: 'customendpoint', name, apiType: 'responses', models: [] })),
+    // Mis-cased keys: PowerShell member access resolves `.vendor` against
+    // `Vendor` where jq's does not, so this group would be claimed by one half
+    // and left by the other. VS Code cannot read it either way.
+    { Vendor: 'customendpoint', Name: 'Floway', models: [] },
+  ]);
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const userDir = makeVSCodeUserDir(ws, `vscode-collate-${which}`);
@@ -4041,7 +4073,7 @@ test('vscode', 'neither half claims a group whose name only collates as ours', a
   };
 
   const bash = await runHalf('bash');
-  t.equal(bash.length, lookalikes.length + 1, 'Bash keeps every look-alike and adds ours');
+  t.equal(bash.length, lookalikes.length + 2, 'Bash keeps every look-alike and the mis-cased group, and adds ours');
   if (!hostPwsh) return;
   const powershell = await runHalf('powershell');
   t.equal(JSON.stringify(powershell), JSON.stringify(bash), 'and PowerShell writes the same document');

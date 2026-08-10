@@ -54,7 +54,15 @@ function Get-SetupVSCodeProfileDirs {
   $profiles = Join-Path $UserDir 'profiles'
   if (Test-Path -LiteralPath $profiles -PathType Container) {
     try {
-      $dirs += Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction Stop | ForEach-Object { $_.FullName }
+      # `builtin` holds the agents window's own profile, and VS Code's scan
+      # excludes that directory by name — a document written there is a
+      # key-bearing file the editor never reads. The agents window shares the
+      # default profile's language models, so nothing is missed by skipping it.
+      # Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L232
+      #       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/platform/userDataProfile/common/userDataProfile.ts#L565
+      $dirs += Get-ChildItem -LiteralPath $profiles -Directory -ErrorAction Stop |
+        Where-Object { -not [string]::Equals($_.Name, 'builtin', [System.StringComparison]::Ordinal) } |
+        ForEach-Object { $_.FullName }
     } catch {
       # The named profiles are lost, not the build: the default profile sits
       # beside this directory and is configured either way, which is what the
@@ -111,9 +119,16 @@ function Get-SetupVSCodeModels {
 # by being a filter whose non-empty result is truthy.
 function Test-SetupVSCodeOwnGroup {
   param($Group)
-  return ($Group.vendor -is [string]) -and ($Group.name -is [string]) -and
-         [string]::Equals($Group.vendor, 'customendpoint', [System.StringComparison]::Ordinal) -and
-         [string]::Equals($Group.name, $SetupVSCodeProviderName, [System.StringComparison]::Ordinal)
+  # Read by exact property name, not through member access: PowerShell resolves
+  # `.vendor` against a `Vendor` key and jq's `.vendor` does not, so a group with
+  # mis-cased keys would be claimed here and left alone there. VS Code cannot
+  # read such a group either, which is why the answer is to leave it be.
+  $vendor = $Group.PSObject.Properties | Where-Object { [string]::Equals($_.Name, 'vendor', [System.StringComparison]::Ordinal) } | Select-Object -First 1
+  $name = $Group.PSObject.Properties | Where-Object { [string]::Equals($_.Name, 'name', [System.StringComparison]::Ordinal) } | Select-Object -First 1
+  return ($null -ne $vendor) -and ($null -ne $name) -and
+         ($vendor.Value -is [string]) -and ($name.Value -is [string]) -and
+         [string]::Equals($vendor.Value, 'customendpoint', [System.StringComparison]::Ordinal) -and
+         [string]::Equals($name.Value, $SetupVSCodeProviderName, [System.StringComparison]::Ordinal)
 }
 
 function Restore-SetupVSCodeSettings {
@@ -162,7 +177,10 @@ function Write-SetupVSCodeSettings {
     if (-not (Test-SetupJsonRoot $raw '[')) {
       Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched."
     }
-    try { $parsed = [object[]](ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not valid JSON; leaving it untouched." }
+    # One sentence for every way the parse can fail, as the Zed half does: the
+    # Bash gate cannot report which conjunct refused either, and to the operator
+    # every one of them carries the same instruction.
+    try { $parsed = [object[]](ConvertFrom-SetupJsonArray $raw) } catch { Stop-Setup "$($script:VSCodeSettingsPath) is not a provider list; leaving it untouched." }
     # Every element must be an object, matching the Bash gate: jq's merge
     # indexes `.vendor` on each one and aborts on a scalar, so without this the
     # same document would be rewritten here and refused there.
