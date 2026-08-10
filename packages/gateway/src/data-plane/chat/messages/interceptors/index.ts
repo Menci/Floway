@@ -1,6 +1,7 @@
 import { answerClaudeCodeProbe } from './answer-claude-code-probe.ts';
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withBillableUsageMetered } from './meter-billable-usage.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesPayloadInterceptor } from './types.ts';
 import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from './web-search-shim.ts';
@@ -24,6 +25,11 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 //     carry Anthropic server tools); gated by `messages-web-search-shim` for
 //     native Messages targets. count_tokens runs the same request preparation
 //     without the stream-response wrapper.
+//   - withBillableUsageMetered: unconditional on a Messages target. Reads what
+//     each turn cost, below the probe so a turn that never dialed stays
+//     unbilled and below the web-search shim so each of its turns is metered
+//     separately — which is also what keeps the reader's cross-event merge
+//     scoped to one turn; see `shared/billable-usage-meter.ts`.
 //   - stripBillingAttribution: gated by `strip-billing-attribution` (default
 //     on for copilot/azure/custom, off for claude-code). On candidates
 //     where it runs, it scrubs Claude Code's `x-anthropic-billing-header` /
@@ -50,6 +56,7 @@ const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
 export const messagesInterceptors: readonly MessagesInterceptor[] = [
   answerClaudeCodeProbe,
   withMessagesWebSearchShim,
+  withBillableUsageMetered,
   ...messagesPayloadInterceptors,
 ];
 

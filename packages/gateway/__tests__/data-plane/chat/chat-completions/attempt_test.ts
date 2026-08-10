@@ -316,3 +316,58 @@ test('generate propagates upstream response headers onto the EventResult so resp
   assertEquals(result.headers?.get('cf-ray'), 'cf_ray_cc');
   await collectEvents(result.events);
 });
+
+const makeUsageChunk = (usage: Record<string, unknown>): ChatCompletionsStreamEvent => ({
+  id: 'chatcmpl_test', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+  choices: [],
+  usage: usage as unknown as ChatCompletionsStreamEvent['usage'],
+});
+
+const generateWithUsage = async (usage: Record<string, unknown>, enabledFlags: readonly FlagId[]) => {
+  installRepo();
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true,
+    events: makeProtocolFrames([...makeChatCompletionsEvents(), makeUsageChunk(usage)]),
+    modelKey: 'k',
+    headers: new Headers(),
+  }));
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callChatCompletions, endpoints: { chatCompletions: {} }, enabledFlags: new Set(enabledFlags) }),
+    headers: new Headers(),
+  });
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  return await result.finalMetadata;
+};
+
+test('generate bills a declared exclusive-cache upstream from its folded usage', async () => {
+  const metadata = await generateWithUsage({
+    prompt_tokens: 50,
+    completion_tokens: 7,
+    prompt_tokens_details: { cached_tokens: 5450 },
+  }, ['usage-exclusive-cached-tokens']);
+  assertEquals(metadata?.billableUsage, { input: 50, cacheRead: 5450, cacheWrite: 0, cacheWrite1h: 0, output: 7 });
+});
+
+test('generate bills from the folded usage when total_tokens witnesses the exclusive convention', async () => {
+  const metadata = await generateWithUsage({
+    prompt_tokens: 479,
+    completion_tokens: 373,
+    total_tokens: 14164,
+    prompt_tokens_details: { cached_tokens: 13312 },
+  }, []);
+  assertEquals(metadata?.billableUsage, { input: 479, cacheRead: 13312, cacheWrite: 0, cacheWrite1h: 0, output: 373 });
+});
+
+test('generate bills a vendor cache-hit count as a cache read rather than as input', async () => {
+  const metadata = await generateWithUsage({
+    prompt_tokens: 100,
+    completion_tokens: 5,
+    total_tokens: 105,
+    prompt_cache_hit_tokens: 60,
+    prompt_cache_miss_tokens: 40,
+  }, ['vendor-deepseek']);
+  assertEquals(metadata?.billableUsage, { input: 40, cacheRead: 60, cacheWrite: 0, cacheWrite1h: 0, output: 5 });
+});

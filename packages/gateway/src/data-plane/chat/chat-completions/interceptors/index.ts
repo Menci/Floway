@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
+import { withBillableUsageMetered } from './meter-billable-usage.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
@@ -17,9 +18,13 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 // compatibility entry therefore acts only when Chat Completions is the final
 // target, after pairwise translation has finished.
 //
-//   - withUsageStreamOptionsIncluded, withUsageNormalized: unconditional.
-//     Both gate the gateway's usage-tracking pipeline. Turning either off
-//     would silently break per-key telemetry, so neither is surfaced as a flag.
+//   - withUsageStreamOptionsIncluded, withUsageNormalized, withBillableUsageMetered:
+//     unconditional. All three gate the gateway's usage-tracking pipeline.
+//     Turning any off would silently break per-key telemetry, so none is
+//     surfaced as a flag. The meter is registered FIRST so that on the inbound
+//     path it runs last, reading usage that every entry below it has already
+//     normalized; see `shared/billable-usage-meter.ts` for why that position
+//     is the billing figure's correctness condition rather than a preference.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`. Emits the gateway's canonical
 //     "no reasoning" sentinel only; vendor wire form is the vendor's job.
@@ -47,6 +52,7 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //     are independent and run in declared order if more than one is somehow
 //     enabled.
 export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] = [
+  withBillableUsageMetered,
   withUsageStreamOptionsIncluded,
   withUsageNormalized,
   withReasoningDisabledOnForcedToolChoice,

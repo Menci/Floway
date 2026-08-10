@@ -1,6 +1,5 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
-import { createMessagesBillableUsageReader } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -66,7 +65,7 @@ export const messagesAttempt = {
           undefined,
           buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
+        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx);
       }
       if (targetApi === 'responses') {
         return await traverseTranslation(

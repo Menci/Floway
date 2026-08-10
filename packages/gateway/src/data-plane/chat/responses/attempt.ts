@@ -4,7 +4,7 @@ import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromCompaction } from './items/output.ts';
-import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
+import { billableUsageFromResponsesResult } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -225,7 +225,6 @@ const providerResponsesResultToExecuteResult = async (
       candidate,
       targetApi,
       ctx,
-      billableUsageFromResponsesEvent,
     );
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');

@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withBillableUsageMetered } from './meter-billable-usage.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
@@ -26,6 +27,11 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     items so the upstream sees the summarized history.
 //   - withResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
+//   - withBillableUsageMetered: unconditional on a Responses target. Reads
+//     what each turn cost, below the two shims so every turn they compose is
+//     metered separately and above every entry that rewrites usage; see
+//     `shared/billable-usage-meter.ts` for why that position is the billing
+//     figure's correctness condition rather than a preference.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
@@ -51,6 +57,7 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
     webSearchServerTool,
     imageGenerationServerTool,
   ]),
+  withBillableUsageMetered,
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,

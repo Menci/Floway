@@ -662,3 +662,44 @@ test('generate propagates upstream response headers onto the EventResult so resp
   assertEquals(result.headers?.get('request-id'), 'req_resp_xyz');
   await collectEvents(result.events);
 });
+
+// An upstream that reports the cache buckets alongside `input_tokens` rather
+// than inside it is repaired on the inbound path; billing reads that repaired
+// figure rather than the wire the upstream sent. The total below sums neither
+// convention, which is exactly the case where the flag is what settles it.
+test('generate bills a declared exclusive-cache upstream from its folded usage', async () => {
+  installRepo();
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate',
+    ok: true,
+    events: makeProviderEvents([{
+      type: 'response.completed',
+      sequence_number: 0,
+      response: {
+        ...makeResponsesResult(),
+        usage: {
+          input_tokens: 50,
+          output_tokens: 7,
+          total_tokens: 5500,
+          input_tokens_details: { cached_tokens: 5450 },
+        },
+      },
+    }]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate(callResponses, new Set<FlagId>(['usage-exclusive-cached-tokens'])),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals((await result.finalMetadata)?.billableUsage, {
+    input: 50, cacheRead: 5450, cacheWrite: 0, cacheWrite1h: 0, output: 7,
+  });
+});

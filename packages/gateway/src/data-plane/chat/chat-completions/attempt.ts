@@ -1,6 +1,5 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
-import { billableUsageFromChatCompletionsEvent } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -49,7 +48,7 @@ export const chatCompletionsAttempt = {
           undefined,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx, billableUsageFromChatCompletionsEvent);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx);
       }
       if (targetApi === 'messages') {
         return await traverseTranslation(
