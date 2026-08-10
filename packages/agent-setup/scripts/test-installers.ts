@@ -3374,6 +3374,17 @@ for (const { label, document } of [
   // the largest double, so this one overflows where the digit before it does
   // not.
   { label: 'a number just past the rounding boundary', document: '{"telemetry":{"metrics":1.797693134862315808e308}}' },
+  // A digit past each turn, far enough out that a comparison holding a prefix
+  // of the boundary would have ordered them the wrong way.
+  { label: 'a number over the turn in its sixtieth digit', document: '{"telemetry":{"metrics":1.79769313486231580793728971405303415079934132710037826936174e308}}' },
+  { label: 'a number under the turn in its twenty-ninth digit', document: '{"telemetry":{"metrics":2.4703282292062327208828439643e-324}}' },
+  // The turns themselves, written out in full. Both are dyadic rationals, so
+  // both expansions terminate, and both round away from the finite range —
+  // to infinity above and to zero below — so both are refused. Written by the
+  // same arithmetic that produced the installer's constants rather than pasted,
+  // which would only restate them.
+  { label: 'the overflow turn itself', document: `{"telemetry":{"metrics":${(2n ** 1024n - 2n ** 970n).toString()}}}` },
+  { label: 'the underflow turn itself', document: `{"telemetry":{"metrics":0.${'0'.repeat(1075 - (5n ** 1075n).toString().length)}${(5n ** 1075n).toString()}}}` },
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
@@ -3508,8 +3519,10 @@ test('zed', 'neither half mistakes ordinary JSON for JSONC', async t => {
   // other side of the overflow one — finite, because rounding reaches infinity
   // only halfway past the largest double — and `2.470328229206232721e-324` is
   // the tie decided by digits beyond the seventeenth. `0e5` is a stated zero
-  // whose only non-zero digit is in its exponent.
-  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "edge": 1.7976931348623158e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "tie": 2.470328229206232721e-324,\n  "zero": 0e5,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
+  // whose only non-zero digit is in its exponent. The two long literals sit one
+  // digit inside each turn, where a truncated boundary would have ordered them
+  // the wrong way.
+  const plain = '{\n  "telemetry": { "metrics": false },\n  "note": "see https://example.com/a,] NaN Infinity",\n  "big": 1e308,\n  "edge": 1.7976931348623158e308,\n  "small": 1e-320,\n  "subnormal": 5e-324,\n  "tiny": 2.4705e-324,\n  "tie": 2.470328229206232721e-324,\n  "inside": 1.7976931348623158079372897140530341507993413271003782693617e308,\n  "inside_low": 2.4703282292062327208828439643999e-324,\n  "zero": 0e5,\n  "signed": -1e308,\n  "list": ["a", "b"]\n}';
   const runHalf = async (which: 'bash' | 'powershell') => {
     const ws = makeWorkspace();
     const configDir = makeZedConfigDir(ws);

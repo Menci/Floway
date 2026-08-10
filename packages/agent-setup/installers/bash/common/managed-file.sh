@@ -26,6 +26,37 @@ _json_scan_verdict() {
   # structure, so bytes are the right unit for it; the merge still reads the
   # file itself, where jq handles encoding.
   LC_ALL=C awk '
+    # Orders two significand digit runs by value: zero-pad the shorter, then
+    # compare as strings, which for equal-length digit runs is the same order.
+    function _digitcmp(a, b,   n) {
+      n = length(a) > length(b) ? length(a) : length(b)
+      while (length(a) < n) a = a "0"
+      while (length(b) < n) b = b "0"
+      return a < b ? -1 : (a > b ? 1 : 0)
+    }
+    BEGIN {
+      # 2^1024 - 2^970, the value at which rounding reaches infinity, and
+      # 2^-1075, half the smallest subnormal. Both expansions are exact.
+      OVERFLOW_TURN = "179769313486231580793728971405303415079934132710037826936173"
+      OVERFLOW_TURN = OVERFLOW_TURN "778980444968292764750946649017977587207096330286416692887910"
+      OVERFLOW_TURN = OVERFLOW_TURN "946555547851940402630657488671505820681908902000708383676273"
+      OVERFLOW_TURN = OVERFLOW_TURN "854845817711531764475730270069855571366959622842914819860834"
+      OVERFLOW_TURN = OVERFLOW_TURN "936475292719074168444365510704342711559699508093042880177904"
+      OVERFLOW_TURN = OVERFLOW_TURN "174497792"
+      UNDERFLOW_TURN = "247032822920623272088284396434110686182529901307162382212792"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "841250337753635104375932649918180817996189898282347722858865"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "463328355177969898199387398005390939063150356595155702263922"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "908583924491051844359318028499365361525003193704576782492193"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "656236698636584807570015857692699037063119282795585513329278"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "343384093519780155312465972635795746227664652728272200563740"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "064854999770965994704540208281662262378573934507363390079677"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "619305775067401763246736009689513405355374585166611342237666"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "786041621596804619144672918403005300575308490487653917113865"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "916462395249126236538818796362393732804238910186723484976682"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "350898633885879256283027559956575244555072551893136908362547"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "791869486679949683240497058210285131854513962138377228261454"
+      UNDERFLOW_TURN = UNDERFLOW_TURN "37693412532098591327667236328125"
+    }
     BEGIN { in_string = 0; escaped = 0; found = 0; comma = 0; bad = 0 }
     {
       for (i = 1; i <= length($0); i++) {
@@ -94,29 +125,25 @@ _json_scan_verdict() {
           }
           # Compared as digit strings rather than as numbers: the boundaries do
           # not fit in a double, which is the very thing being decided, and awk
-          # has nothing wider. Two equal-length digit runs compare as strings
-          # the way they compare as numbers.
+          # has nothing wider.
           #
           # The other half asks `[double]::TryParse`, which is correctly
-          # rounded, so the boundary is the value at which rounding reaches
-          # infinity — halfway past the largest double — and not the largest
-          # double itself. `1.7976931348623158e308` is finite and must be
-          # accepted; `1.797693134862315808e308` is not. The first 17 digits
-          # decide everything but the tie, and the 12 after them push the split
-          # past any precision a settings file carries.
-          mant17 = substr(digits "00000000000000000", 1, 17)
-          tail12 = substr(substr(digits, 18) "000000000000", 1, 12)
+          # rounded and reads every digit, so the boundary is the value at
+          # which rounding turns — halfway past the largest double, and half
+          # the smallest subnormal — and it is compared in full. Both are
+          # dyadic rationals, so both expansions terminate: 2^1024 - 2^970 and
+          # 2^-1075. A prefix of either would leave the two halves disagreeing
+          # over the literals whose digits run past it, in both directions.
+          #
+          # The tie itself rounds away from the finite range at both ends —
+          # to infinity above and to zero below — so equality refuses.
           if (magnitude > 309) { bad = 1 }
-          else if (magnitude == 309 && (mant17 > "17976931348623158" ||
-                   (mant17 == "17976931348623158" && tail12 > "079372897140"))) { bad = 1 }
+          else if (magnitude == 309 && _digitcmp(digits, OVERFLOW_TURN) >= 0) { bad = 1 }
           # And the other end: at or below half the smallest subnormal a double
           # rounds to zero, and PowerShell writes that zero back where jq
-          # preserves the literal. Refused on both, as an overflow is — with the
-          # tie resolved the same way, since `2.4703282292062327e-324` rounds to
-          # zero while `2.470328229206232721e-324` does not.
+          # preserves the literal. Refused on both, as an overflow is.
           else if (magnitude < -323) { bad = 1 }
-          else if (magnitude == -323 && (mant17 < "24703282292062327" ||
-                   (mant17 == "24703282292062327" && tail12 <= "208828439643"))) { bad = 1 }
+          else if (magnitude == -323 && _digitcmp(digits, UNDERFLOW_TURN) <= 0) { bad = 1 }
         }
         if (c == ",") { comma = 1; continue }
         if (c == " " || c == "\t" || c == "\r") { continue }
