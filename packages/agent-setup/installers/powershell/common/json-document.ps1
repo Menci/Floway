@@ -81,6 +81,11 @@ function Get-SetupJsonVerdict {
   # came first, while the awk scanner only looks for JSONC and always says
   # `jsonc`. The two halves have to name one cause for one file.
   $strict = $true
+  # Container depth, because a classifier that only looks at characters cannot
+  # see a document that stops mid-structure. Newtonsoft parses `[{"a":1}` and
+  # would write the file back completed, where jq refuses it — an interrupted
+  # write or a partial sync is a realistic way to get one.
+  $depth = 0
   for ($i = 0; $i -lt $Text.Length; $i++) {
     $ch = $Text[$i]
     if ($inString) {
@@ -132,6 +137,11 @@ function Get-SetupJsonVerdict {
     # such a file and repairs it. Refusing here would make this half the stricter
     # one for a document the other half fixes — the decoders already disagree
     # (pwsh 7 refuses, 5.1 accepts and canonicalizes) and that is theirs to own.
+    if ($ch -eq '{' -or $ch -eq '[') { $depth++ }
+    elseif ($ch -eq '}' -or $ch -eq ']') {
+      $depth--
+      if ($depth -lt 0) { $strict = $false }
+    }
     if ('{}[]:'.IndexOf($ch) -lt 0 -and '0123456789+-.eE'.IndexOf($ch) -lt 0) { $strict = $false }
     elseif ('0123456789+-'.IndexOf($ch) -ge 0) {
       # Walk the number to its end and ask the same question of what follows.
@@ -139,6 +149,8 @@ function Get-SetupJsonVerdict {
       if (Test-SetupJsonKeyFollows $Text $i) { $strict = $false }
     }
   }
+  # An unterminated container, or a string that never closed.
+  if ($depth -ne 0 -or $inString) { return 'invalid' }
   if (-not $strict) { return 'invalid' }
   return 'ok'
 }

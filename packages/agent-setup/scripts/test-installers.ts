@@ -2949,6 +2949,10 @@ for (const { label, document } of [
   // is not enough — what follows it decides whether it was a value or a key.
   { label: 'a literal used as an unquoted key', document: '{true:1}' },
   { label: 'a number used as an unquoted key', document: '{123:1}' },
+  // An interrupted write or a partial sync leaves one of these. Newtonsoft
+  // parses them and would write the document back completed; jq refuses.
+  { label: 'an unterminated object', document: '{"telemetry":{"metrics":false}' },
+  { label: 'an unterminated string', document: '{"telemetry":{"note":"unclosed}' },
 
 ]) {
   test('zed', `both halves refuse ${label}`, async t => {
@@ -3950,6 +3954,10 @@ for (const { label, document, cause } of [
   { label: 'single-quoted strings', document: "[{'vendor':'other','name':'Keep'}]", cause: 'is not a provider list' },
   { label: 'an unquoted key', document: '[{vendor:"other","name":"Keep"}]', cause: 'is not a provider list' },
   { label: 'a form feed between members', document: '[{"vendor":"other",\f"name":"Keep"}]', cause: 'is not a provider list' },
+  // An interrupted write or a partial sync leaves one of these. Newtonsoft
+  // parses them and would write the document back completed; jq refuses.
+  { label: 'an unterminated array', document: '[{"vendor":"other","name":"Keep"}', cause: 'is not a provider list' },
+  { label: 'an unterminated array after a comma', document: '[{"vendor":"other","name":"Keep"},', cause: 'is not a provider list' },
 ]) {
   test('vscode', `both halves refuse a provider list carrying ${label}`, async t => {
     const runHalf = async (which: 'bash' | 'powershell') => {
