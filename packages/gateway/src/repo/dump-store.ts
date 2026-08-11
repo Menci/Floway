@@ -276,9 +276,11 @@ export class FileDumpStore implements DumpStore {
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
-    // D1 derives meta.changes from total_changes(), so dump retirement triggers
-    // inflate it with spilled_files writes. RETURNING counts only dump rows.
-    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L115
+    // D1 derives meta.changes from total_changes(), so the dump retirement trigger
+    // can add spilled_files writes. RETURNING counts only dump rows.
+    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L131
+    // https://www.sqlite.org/c3ref/total_changes.html
+    // https://www.sqlite.org/lang_returning.html
     const active = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (

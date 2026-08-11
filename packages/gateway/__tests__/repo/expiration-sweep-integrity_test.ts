@@ -110,6 +110,7 @@ test('queue rows cannot be removed before their domain rows', async () => {
   const { raw } = await createPreIntegrityDatabase();
   try {
     insertApiKey(raw, 'both');
+    insertApiKey(raw, 'empty');
     insertApiKey(raw, 'identity');
     insertDump(raw, 'both', 'dump-a');
     insertDump(raw, 'identity', 'dump-identity');
@@ -123,15 +124,20 @@ test('queue rows cannot be removed before their domain rows', async () => {
        VALUES ('snapshot-a', 'both', '[]', 0)`,
     );
     raw.run(integrityMigration());
+    raw.run("INSERT INTO expiration_sweeps (domain, key_id, due_at) VALUES ('dumps', 'empty', 0)");
 
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'both'"))
       .toThrow('expiration sweep cannot be removed while stored rows remain');
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'"))
       .toThrow('expiration sweep cannot be removed while stored rows remain');
     expect(() => raw.run("UPDATE expiration_sweeps SET key_id = 'moved' WHERE domain = 'dumps' AND key_id = 'identity'"))
-      .toThrow('expiration sweep cannot be reassigned while stored rows remain');
+      .toThrow('expiration sweep identity is immutable');
     expect(() => raw.run("UPDATE expiration_sweeps SET domain = 'responses' WHERE domain = 'dumps' AND key_id = 'identity'"))
-      .toThrow('expiration sweep cannot be reassigned while stored rows remain');
+      .toThrow('expiration sweep identity is immutable');
+    expect(() => raw.run("UPDATE expiration_sweeps SET key_id = 'moved-empty' WHERE domain = 'dumps' AND key_id = 'empty'"))
+      .toThrow('expiration sweep identity is immutable');
+    expect(() => raw.run("UPDATE expiration_sweeps SET domain = 'responses' WHERE domain = 'dumps' AND key_id = 'empty'"))
+      .toThrow('expiration sweep identity is immutable');
 
     raw.run("DELETE FROM dump_records WHERE key_id = 'both'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'both'");

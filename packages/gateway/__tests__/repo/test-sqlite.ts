@@ -46,9 +46,8 @@ export const mapRunChangeCount = (db: SqlDatabase, mapper: (changes: number) => 
       async run() {
         const result = await statement.run();
         const changes = result.meta.changes;
-        return changes === undefined
-          ? result
-          : { ...result, meta: { ...result.meta, changes: mapper(changes) } };
+        if (changes === undefined) throw new Error('SQL run result omitted its change count');
+        return { ...result, meta: { ...result.meta, changes: mapper(changes) } };
       },
     });
     return wrap(db.prepare(query));
