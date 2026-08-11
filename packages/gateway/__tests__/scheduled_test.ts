@@ -153,6 +153,27 @@ test('scheduled maintenance lease keeps overlapping ticks within one budget', as
   expect(collect).toHaveBeenCalledTimes(1);
 });
 
+test('scheduled maintenance reclaims an abandoned lease after five minutes', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const { repo } = await setupAppTest();
+  initFileStore(new MemoryFileStore());
+  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
+  expect(await repo.scheduledMaintenance.tryClaim('abandoned', now, 0)).toBe(true);
+  const claim = vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
+  const collect = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+
+  vi.setSystemTime(now + 5 * 60_000);
+  await runScheduledMaintenance();
+  expect(claim).not.toHaveBeenCalled();
+
+  vi.setSystemTime(now + 5 * 60_000 + 1);
+  await runScheduledMaintenance();
+  expect(claim).toHaveBeenCalledOnce();
+  expect(collect).toHaveBeenCalledOnce();
+});
+
 test('a failed maintenance heartbeat stops later phases and releases the tick', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
