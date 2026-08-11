@@ -1,20 +1,13 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, vi } from 'vitest';
 
-import { scheduleMaintenance } from '../src/scheduled-maintenance.ts';
-
-test('the Node entry registers scheduled maintenance with the process timers', () => {
-  const entry = readFileSync(new URL('../entry.ts', import.meta.url), 'utf8');
-  expect(entry).toContain('scheduleMaintenance(runScheduledMaintenance, { setTimeout, setInterval });');
-});
+import { startScheduledMaintenance } from '../src/scheduled-maintenance.ts';
 
 test('maintenance starts after 30 seconds and repeats every minute', async () => {
   const startup = { callback: null as (() => void) | null, unref: vi.fn() };
   const interval = { callback: null as (() => void) | null, unref: vi.fn() };
   const runMaintenance = vi.fn<() => Promise<void>>().mockResolvedValue();
 
-  scheduleMaintenance(runMaintenance, {
+  startScheduledMaintenance(runMaintenance, {
     setTimeout(callback, delayMs) {
       expect(delayMs).toBe(30_000);
       startup.callback = callback;

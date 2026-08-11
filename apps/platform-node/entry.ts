@@ -25,13 +25,12 @@ setGlobalDispatcher(new Agent({
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
-import { scheduleMaintenance } from './src/scheduled-maintenance.ts';
+import { startScheduledMaintenance } from './src/scheduled-maintenance.ts';
 import {
   app,
   initBackgroundSchedulerResolver,
   initRepo,
   initResponsesWebSocketUpgradeResolver,
-  runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
@@ -63,7 +62,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-scheduleMaintenance(runScheduledMaintenance, { setTimeout, setInterval });
+startScheduledMaintenance();
 
 serve({
   fetch: app.fetch,

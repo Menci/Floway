@@ -11,7 +11,10 @@ import { createSqliteTestDb } from './repo/test-sqlite.ts';
 import { setupAppTest } from './test-utils/app.ts';
 import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   id,
@@ -182,4 +185,60 @@ test('a failed maintenance heartbeat stops later phases and releases the tick', 
 
   await runScheduledMaintenance();
   expect(collect).toHaveBeenCalledOnce();
+});
+
+test('scheduled maintenance unreferences and clears its Node heartbeat timer', async () => {
+  const { repo } = await setupAppTest();
+  initFileStore(new MemoryFileStore());
+  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
+  vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
+  vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+  const timer = setInterval(() => {}, 60_000);
+  clearInterval(timer);
+  const unref = vi.spyOn(timer, 'unref');
+  const clear = vi.spyOn(globalThis, 'clearInterval');
+  vi.spyOn(globalThis, 'setInterval').mockReturnValue(timer);
+
+  await runScheduledMaintenance();
+
+  expect(unref).toHaveBeenCalledOnce();
+  expect(clear).toHaveBeenCalledWith(timer);
+});
+
+test('final heartbeat and release failures are both preserved', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const { repo } = await setupAppTest();
+  initFileStore(new MemoryFileStore());
+  let enterImageSweep!: () => void;
+  let finishImageSweep!: () => void;
+  const imageSweepEntered = new Promise<void>(resolve => { enterImageSweep = resolve; });
+  const imageSweepFinished = new Promise<void>(resolve => { finishImageSweep = resolve; });
+  initImageCacheStore({
+    async get() { return null; },
+    async put() {},
+    async sweepExpired() {
+      enterImageSweep();
+      await imageSweepFinished;
+    },
+  });
+  vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
+  vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([]);
+  const renewalError = new Error('final heartbeat failed');
+  vi.spyOn(repo.scheduledMaintenance, 'renew')
+    .mockResolvedValueOnce()
+    .mockResolvedValueOnce()
+    .mockRejectedValueOnce(renewalError);
+  const releaseError = new Error('release failed');
+  vi.spyOn(repo.scheduledMaintenance, 'release').mockRejectedValueOnce(releaseError);
+
+  const maintenance = runScheduledMaintenance();
+  await imageSweepEntered;
+  await vi.advanceTimersByTimeAsync(60_000);
+  finishImageSweep();
+  const error = await maintenance.catch((caught: unknown) => caught);
+
+  expect(error).toBeInstanceOf(AggregateError);
+  expect((error as AggregateError).errors).toEqual([renewalError, releaseError]);
 });

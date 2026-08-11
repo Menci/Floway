@@ -7,6 +7,12 @@ import { getImageCacheStore } from '@floway-dev/platform';
 const MAINTENANCE_CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
 const MAINTENANCE_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
+const unrefTimer = (timer: ReturnType<typeof setInterval>): void => {
+  if (typeof timer !== 'object' || timer === null || !('unref' in timer)) return;
+  const unref = timer.unref;
+  if (typeof unref === 'function') unref.call(timer);
+};
+
 const startMaintenanceHeartbeat = (maintenance: ScheduledMaintenanceRepo, token: string): {
   assertOwned(): Promise<void>;
   stop(): Promise<void>;
@@ -24,6 +30,7 @@ const startMaintenanceHeartbeat = (maintenance: ScheduledMaintenanceRepo, token:
     });
   };
   const timer = setInterval(renew, MAINTENANCE_HEARTBEAT_INTERVAL_MS);
+  unrefTimer(timer);
   return {
     async assertOwned() {
       renew();
@@ -33,6 +40,7 @@ const startMaintenanceHeartbeat = (maintenance: ScheduledMaintenanceRepo, token:
     async stop() {
       clearInterval(timer);
       await renewal;
+      if (failure !== null) throw failure.error;
     },
   };
 };
@@ -53,14 +61,29 @@ export const runScheduledMaintenance = async (): Promise<void> => {
   const maintenance = getRepo().scheduledMaintenance;
   if (!await maintenance.tryClaim(token, nowMs, nowMs - MAINTENANCE_CLAIM_TIMEOUT_MS)) return;
   const heartbeat = startMaintenanceHeartbeat(maintenance, token);
+  const failures: unknown[] = [];
+  const capture = (error: unknown): void => {
+    if (!failures.includes(error)) failures.push(error);
+  };
   try {
     await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
     await heartbeat.assertOwned();
     await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
     await heartbeat.assertOwned();
     await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
-  } finally {
-    await heartbeat.stop();
-    await maintenance.release(token);
+  } catch (error) {
+    capture(error);
   }
+  try {
+    await heartbeat.stop();
+  } catch (error) {
+    capture(error);
+  }
+  try {
+    await maintenance.release(token);
+  } catch (error) {
+    capture(error);
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Scheduled maintenance failed');
 };
