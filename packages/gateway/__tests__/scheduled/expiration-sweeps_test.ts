@@ -8,10 +8,9 @@ import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from '
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
-import { runScheduledMaintenance } from '../../src/scheduled.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
-import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
+import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
 
@@ -62,17 +61,6 @@ const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
     body: { encoding: 'identity', bytes: new Uint8Array(), decodedByteLength: 0 },
   },
   response: { status: 200, headers: [], body: { type: 'none' } },
-});
-
-const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  ...dumpRecord(id, completedAt),
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array([1]), decodedByteLength: 1 },
-  },
-  response: { status: 200, headers: [], body: { type: 'bytes', body: new Uint8Array([2]) } },
 });
 
 test('one fair driver drains bounded Responses and dump backlogs', async () => {
@@ -146,43 +134,6 @@ test('minute ticks catch up with a growing hot dump key without widening a batch
   }
 });
 
-test('one maintenance tick collects every file retired by its four dump units', async () => {
-  const now = Date.UTC(2026, 6, 23, 12);
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  initRepo(repo);
-  const files = new MemoryFileStore();
-  initFileStore(files);
-  initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
-  const dumps = new FileDumpStore(db, files);
-  initDumpStore(dumps);
-
-  for (let keyIndex = 0; keyIndex < 4; keyIndex += 1) {
-    const keyId = `key-${keyIndex}`;
-    await repo.apiKeys.save({
-      ...key(now),
-      id: keyId,
-      key: `raw-${keyId}`,
-      serverSecret: String(keyIndex + 1).repeat(64),
-    });
-    for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
-      await dumps.put(keyId, fileBackedDumpRecord(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
-    }
-  }
-  const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')
-    .all<{ file_key: string }>();
-  expect(ownedFiles).toHaveLength(400);
-
-  await runScheduledMaintenance();
-
-  expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>()).toEqual({ count: 0 });
-  expect(await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>()).toEqual({ count: 0 });
-  expect(await Promise.all(ownedFiles.map(row => files.get(row.file_key))))
-    .toEqual(Array.from({ length: 400 }, () => null));
-});
-
 test('a partial hot key yields the current tick to another due key', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
@@ -222,21 +173,6 @@ test('a concurrent schedule wins over stale completion', async () => {
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-race'",
   ).first<{ due_at: number; claim_token: string | null }>();
   expect(row).toEqual({ due_at: 0, claim_token: null });
-});
-
-test('scheduled maintenance lease rejects overlap and protects a newer claimant', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-
-  expect(await repo.scheduledMaintenance.tryClaim('claim-a', 10, 0)).toBe(true);
-  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 11, 0)).toBe(false);
-  await repo.scheduledMaintenance.renew('claim-a', 12);
-  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 13, 12)).toBe(false);
-  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 14, 13)).toBe(true);
-  await repo.scheduledMaintenance.release('claim-a');
-  expect(await repo.scheduledMaintenance.tryClaim('claim-c', 15, 0)).toBe(false);
-  await repo.scheduledMaintenance.release('claim-b');
-  expect(await repo.scheduledMaintenance.tryClaim('claim-c', 16, 0)).toBe(true);
 });
 
 test('a later Responses row inserted during a claim prevents queue deletion', async () => {

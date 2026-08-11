@@ -7,10 +7,10 @@ interface MaintenanceTimers {
   setInterval(callback: () => void, delayMs: number): TimerHandle;
 }
 
-// A startup tick prevents frequent restarts from starving maintenance. After
-// that, minute cadence lets each bounded retention batch outpace sustained dump
-// ingestion without concentrating writes into an hourly burst. Both timers are
-// unreferenced so maintenance never keeps the Node process alive by itself.
+// The startup tick avoids waiting the full interval when a process stays alive
+// for at least 30 seconds. Minute cadence increases bounded cleanup throughput
+// and spreads its writes across the hour. Both timers are unreferenced so
+// maintenance never keeps the Node process alive by itself.
 const STARTUP_DELAY_MS = 30 * 1000;
 const MAINTENANCE_INTERVAL_MS = 60 * 1000;
 
