@@ -37,6 +37,25 @@ export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
   return wrapSqlJsDatabase(db);
 };
 
+export const mapRunChangeCount = (db: SqlDatabase, mapper: (changes: number) => number): SqlDatabase => ({
+  prepare(query) {
+    const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+      bind: (...values) => wrap(statement.bind(...values)),
+      first: async <T>() => await statement.first<T>(),
+      all: async <T>() => await statement.all<T>(),
+      async run() {
+        const result = await statement.run();
+        const changes = result.meta.changes;
+        return changes === undefined
+          ? result
+          : { ...result, meta: { ...result.meta, changes: mapper(changes) } };
+      },
+    });
+    return wrap(db.prepare(query));
+  },
+  exec: async sql => await db.exec(sql),
+});
+
 // sql.js binds through JavaScript and happily takes values neither deployment
 // target accepts, so it would pass a statement that fails in production. Reject
 // anything outside the contract's own union here instead.

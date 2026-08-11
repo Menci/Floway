@@ -357,7 +357,7 @@ test('expiration claims and expired-row deletions use their bounded range indexe
          AND stored.api_key_id = api_keys.id
          AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
        ORDER BY stored.refreshed_at, stored.rowid LIMIT ?
-     )`,
+     ) RETURNING rowid`,
     'key-a', 1, 100,
   );
   expect(responsesPlan).toContain('idx_responses_items_key_refresh');
@@ -370,7 +370,7 @@ test('expiration claims and expired-row deletions use their bounded range indexe
          AND records.key_id = api_keys.id
          AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
        ORDER BY records.created_at, records.rowid LIMIT ?
-     )`,
+     ) RETURNING rowid`,
     'key-a', 1, 100,
   );
   expect(dumpsPlan).toContain('idx_dump_records_key_created');
@@ -378,31 +378,40 @@ test('expiration claims and expired-row deletions use their bounded range indexe
 
 test('bounded cleanup backfill tracks rows whose API key was hard-deleted', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  await repo.apiKeys.save(key(now));
-  const recordId = '01K00000000000000000ORPH';
-  const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
-  await db.prepare(
-    `INSERT INTO dump_records
-     (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-  ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
-  await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
-  await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
-  await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
+  const raw = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0082_expiration_sweep_integrity.sql') break;
+      raw.run(sql);
+    }
+    const db = wrapSqlJsDatabase(raw);
+    const repo = new SqlRepo(db);
+    await repo.apiKeys.save(key(now));
+    const recordId = '01K00000000000000000ORPH';
+    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
+    await db.prepare(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
+    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
+    await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
+    await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
+    await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  await repo.expirationSweeps.backfillCleanupTracking(500);
-  expect(await db.prepare(
-    "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
-  ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
-  expect(await db.prepare(
-    'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
-  ).bind(fileKey).first()).toEqual({
-    owner_kind: 'dump-request',
-    owner_key: JSON.stringify(['key-a', recordId]),
-    state: 'owned',
-  });
+    await repo.expirationSweeps.backfillCleanupTracking(500);
+    expect(await db.prepare(
+      "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
+    ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
+    expect(await db.prepare(
+      'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
+    ).bind(fileKey).first()).toEqual({
+      owner_kind: 'dump-request',
+      owner_key: JSON.stringify(['key-a', recordId]),
+      state: 'owned',
+    });
+  } finally {
+    raw.close();
+  }
 });
 
 test('bounded cleanup backfill skips API keys without stored state', async () => {

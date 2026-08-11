@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
 import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
@@ -318,6 +318,20 @@ test('FileDumpStore retires every dump record when retention is disabled and col
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?').bind('key_x').first<{ count: number }>())?.count, 0);
   await collectSpilledFiles(Date.now());
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>())?.count, 0);
+});
+
+test('FileDumpStore counts returned dump rows instead of trigger-amplified changes', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
+
+  const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
+  expect(await d1LikeStore.deleteExpiredBatch('key_x', Date.now(), 1)).toBe(1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
 });
 
 test('a record-ID race leaves only the losing write\'s uniquely keyed files collectible', async () => {

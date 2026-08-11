@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, mapRunChangeCount, migrationSqlByFilename } from './test-sqlite.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { hashResponsesJson } from '../../src/repo/responses-hash.ts';
 import { prepareStoredResponsesPayload } from '../../src/repo/responses-payload.ts';
@@ -314,6 +314,22 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   await collectSpilledFiles(now);
   expect(await files.get(owned.file_key)).toBeNull();
   expect(await db.prepare('SELECT file_key FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first()).toBeNull();
+});
+
+test('SQL counts returned Responses rows instead of trigger-amplified changes', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initFileStore(new MemoryFileStore());
+  const now = atDay(10, DAY_MS / 2);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  await repo.apiKeys.save(apiKey());
+  await repo.responsesItems.insertMany([storedItem('msg-counted', now, largeContent())], 0);
+  await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
+
+  const d1LikeRepo = new SqlRepo(mapRunChangeCount(db, changes => changes * 2));
+  expect(await d1LikeRepo.responsesItems.deleteExpiredBatch('key-a', now, 1)).toBe(1);
+  expect(await db.prepare('SELECT id FROM responses_items').first()).toBeNull();
 });
 
 test('SQL performs no item or snapshot mutation after an earlier refresh in the same UTC day', async () => {

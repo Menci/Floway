@@ -276,6 +276,9 @@ export class FileDumpStore implements DumpStore {
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
+    // D1 derives meta.changes from total_changes(), so dump retirement triggers
+    // inflate it with spilled_files writes. RETURNING counts only dump rows.
+    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L115
     const active = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
@@ -289,11 +292,12 @@ export class FileDumpStore implements DumpStore {
              AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, now, limit)
-      .run();
-    const activeDeleted = active.meta.changes ?? 0;
+      .all<{ rowid: number }>();
+    const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
     const inactive = await this.db
       .prepare(
@@ -308,11 +312,12 @@ export class FileDumpStore implements DumpStore {
              )
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, limit - activeDeleted)
-      .run();
-    return activeDeleted + (inactive.meta.changes ?? 0);
+      .all<{ rowid: number }>();
+    return activeDeleted + inactive.results.length;
   }
 
   async findOldestCreatedAt(keyId: string): Promise<number | null> {
