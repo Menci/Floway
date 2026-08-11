@@ -524,12 +524,16 @@ export type ExpirationSweepCompletion =
   | { kind: 'partial'; retryAt: number };
 
 export interface ExpirationSweepsRepo {
-  tryClaimMaintenance(token: string, now: number, staleClaimedBefore: number): Promise<boolean>;
-  releaseMaintenance(token: string): Promise<void>;
   backfillCleanupTracking(limit: number): Promise<void>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
   complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;
+}
+
+export interface ScheduledMaintenanceRepo {
+  tryClaim(token: string, now: number, staleClaimedBefore: number): Promise<boolean>;
+  renew(token: string, now: number): Promise<void>;
+  release(token: string): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -553,5 +557,6 @@ export interface Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
+  scheduledMaintenance: ScheduledMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 }

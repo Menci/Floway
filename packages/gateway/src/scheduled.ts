@@ -3,7 +3,7 @@ import { sweepExpirations } from './scheduled/expiration-sweeps.ts';
 import { collectSpilledFiles } from './scheduled/spilled-files.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
-const MAINTENANCE_CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
+const MAINTENANCE_CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
   try {
@@ -18,13 +18,15 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
   const token = crypto.randomUUID();
-  const expirationSweeps = getRepo().expirationSweeps;
-  if (!await expirationSweeps.tryClaimMaintenance(token, nowMs, nowMs - MAINTENANCE_CLAIM_TIMEOUT_MS)) return;
+  const maintenance = getRepo().scheduledMaintenance;
+  if (!await maintenance.tryClaim(token, nowMs, nowMs - MAINTENANCE_CLAIM_TIMEOUT_MS)) return;
   try {
     await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
+    await maintenance.renew(token, Date.now());
     await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
+    await maintenance.renew(token, Date.now());
     await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
   } finally {
-    await expirationSweeps.releaseMaintenance(token);
+    await maintenance.release(token);
   }
 };

@@ -40,38 +40,8 @@ type CleanupBackfillSource = keyof typeof CLEANUP_BACKFILL_SOURCES;
 
 const isCleanupBackfillSource = (source: string): source is CleanupBackfillSource => source in CLEANUP_BACKFILL_SOURCES;
 
-const requireSingleRowChangeCount = (changes: number | undefined, action: string): 0 | 1 => {
-  if (changes !== 0 && changes !== 1) throw new Error(`${action} reported an invalid change count: ${String(changes)}`);
-  return changes;
-};
-
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
-
-  async tryClaimMaintenance(token: string, now: number, staleClaimedBefore: number): Promise<boolean> {
-    const result = await this.db
-      .prepare(
-        `UPDATE scheduled_maintenance
-         SET claim_token = ?, claimed_at = ?
-         WHERE singleton = 1
-           AND (claim_token IS NULL OR claimed_at < ?)`,
-      )
-      .bind(token, now, staleClaimedBefore)
-      .run();
-    return requireSingleRowChangeCount(result.meta.changes, 'Scheduled maintenance claim') === 1;
-  }
-
-  async releaseMaintenance(token: string): Promise<void> {
-    const result = await this.db
-      .prepare(
-        `UPDATE scheduled_maintenance
-         SET claim_token = NULL, claimed_at = NULL
-         WHERE singleton = 1 AND claim_token = ?`,
-      )
-      .bind(token)
-      .run();
-    requireSingleRowChangeCount(result.meta.changes, 'Scheduled maintenance release');
-  }
 
   async backfillCleanupTracking(limit: number): Promise<void> {
     if (!Number.isInteger(limit) || limit <= 0) throw new Error(`Retention cleanup backfill limit must be positive: ${limit}`);

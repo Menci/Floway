@@ -228,13 +228,15 @@ test('scheduled maintenance lease rejects overlap and protects a newer claimant'
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
 
-  expect(await repo.expirationSweeps.tryClaimMaintenance('claim-a', 10, 0)).toBe(true);
-  expect(await repo.expirationSweeps.tryClaimMaintenance('claim-b', 11, 0)).toBe(false);
-  expect(await repo.expirationSweeps.tryClaimMaintenance('claim-b', 12, 11)).toBe(true);
-  await repo.expirationSweeps.releaseMaintenance('claim-a');
-  expect(await repo.expirationSweeps.tryClaimMaintenance('claim-c', 13, 0)).toBe(false);
-  await repo.expirationSweeps.releaseMaintenance('claim-b');
-  expect(await repo.expirationSweeps.tryClaimMaintenance('claim-c', 14, 0)).toBe(true);
+  expect(await repo.scheduledMaintenance.tryClaim('claim-a', 10, 0)).toBe(true);
+  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 11, 0)).toBe(false);
+  await repo.scheduledMaintenance.renew('claim-a', 12);
+  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 13, 12)).toBe(false);
+  expect(await repo.scheduledMaintenance.tryClaim('claim-b', 14, 13)).toBe(true);
+  await repo.scheduledMaintenance.release('claim-a');
+  expect(await repo.scheduledMaintenance.tryClaim('claim-c', 15, 0)).toBe(false);
+  await repo.scheduledMaintenance.release('claim-b');
+  expect(await repo.scheduledMaintenance.tryClaim('claim-c', 16, 0)).toBe(true);
 });
 
 test('a later Responses row inserted during a claim prevents queue deletion', async () => {
