@@ -332,6 +332,23 @@ test('SQL counts returned Responses rows instead of trigger-amplified changes', 
   expect(await db.prepare('SELECT id FROM responses_items').first()).toBeNull();
 });
 
+test('SQL counts returned active Responses rows instead of trigger-amplified changes', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initFileStore(new MemoryFileStore());
+  const now = atDay(10, DAY_MS / 2);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  await repo.apiKeys.save(apiKey());
+  await repo.responsesItems.insertMany([
+    storedItem('msg-counted-active', responsesStateCutoff(now, RETENTION_SECONDS) - 1, largeContent()),
+  ], 0);
+
+  const d1LikeRepo = new SqlRepo(mapRunChangeCount(db, changes => changes * 2));
+  expect(await d1LikeRepo.responsesItems.deleteExpiredBatch('key-a', now, 1)).toBe(1);
+  expect(await db.prepare('SELECT id FROM responses_items').first()).toBeNull();
+});
+
 test('SQL performs no item or snapshot mutation after an earlier refresh in the same UTC day', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(atDay(10, DAY_MS / 4));

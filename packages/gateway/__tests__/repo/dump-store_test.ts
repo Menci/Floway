@@ -334,6 +334,21 @@ test('FileDumpStore counts returned dump rows instead of trigger-amplified chang
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
 });
 
+test('FileDumpStore counts returned active dump rows instead of trigger-amplified changes', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const now = Date.UTC(2026, 5, 1, 12);
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C3', Date.UTC(2026, 5, 1, 9)));
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C4', Date.UTC(2026, 5, 1, 10)));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 3600 });
+
+  const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
+  expect(await d1LikeStore.deleteExpiredBatch('key_x', now, 1)).toBe(1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
+});
+
 test('a record-ID race leaves only the losing write\'s uniquely keyed files collectible', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);

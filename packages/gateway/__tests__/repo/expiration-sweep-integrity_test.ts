@@ -6,7 +6,7 @@ import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
-import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
+import { MemoryFileStore } from '@floway-dev/platform';
 
 const integrityMigration = (): string => {
   const migration = migrationSqlByFilename.find(([filename]) => filename === '0082_expiration_sweep_integrity.sql');
@@ -16,11 +16,16 @@ const integrityMigration = (): string => {
 
 const createPreIntegrityDatabase = async () => {
   const raw = await createSqlJsDatabase();
-  for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename === '0082_expiration_sweep_integrity.sql') break;
-    raw.run(sql);
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0082_expiration_sweep_integrity.sql') break;
+      raw.run(sql);
+    }
+    return { raw, db: wrapSqlJsDatabase(raw) };
+  } catch (error) {
+    raw.close();
+    throw error;
   }
-  return { raw, db: wrapSqlJsDatabase(raw) };
 };
 
 const insertApiKey = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, id: string): void => {
@@ -51,24 +56,38 @@ const insertDump = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, keyId:
 test('migration repairs missing coverage without disturbing existing sweeps', async () => {
   const { raw } = await createPreIntegrityDatabase();
   try {
-    for (const id of ['dump-missing', 'responses-missing', 'existing', 'empty']) insertApiKey(raw, id);
+    for (const id of [
+      'dump-missing',
+      'item-missing',
+      'snapshot-missing',
+      'existing-dump',
+      'existing-responses',
+      'empty',
+    ]) insertApiKey(raw, id);
     insertDump(raw, 'dump-missing', 'dump-a');
     raw.run(
       `INSERT INTO responses_items
        (id, api_key_id, payload_json, item_hash, payload_hash, payload_file_key, refreshed_at)
-       VALUES ('item-a', 'responses-missing', '{}', 'item-hash', 'payload-hash', NULL, 0)`,
+       VALUES
+         ('item-a', 'item-missing', '{}', 'item-hash', 'payload-hash', NULL, 0),
+         ('item-existing', 'existing-responses', '{}', 'existing-item-hash', 'existing-payload-hash', NULL, 0)`,
     );
     raw.run(
       `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at)
-       VALUES ('snapshot-a', 'responses-missing', '[]', 0)`,
+       VALUES ('snapshot-a', 'snapshot-missing', '[]', 0)`,
     );
-    insertDump(raw, 'existing', 'dump-existing');
+    insertDump(raw, 'existing-dump', 'dump-existing');
     raw.run(
       `UPDATE expiration_sweeps
        SET due_at = 999, revision = 7, claim_token = 'held', claimed_at = 123
-       WHERE domain = 'dumps' AND key_id = 'existing'`,
+       WHERE domain = 'dumps' AND key_id = 'existing-dump'`,
     );
-    raw.run("DELETE FROM expiration_sweeps WHERE key_id IN ('dump-missing', 'responses-missing')");
+    raw.run(
+      `UPDATE expiration_sweeps
+       SET due_at = 777, revision = 5, claim_token = 'responses-held', claimed_at = 456
+       WHERE domain = 'responses' AND key_id = 'existing-responses'`,
+    );
+    raw.run("DELETE FROM expiration_sweeps WHERE key_id IN ('dump-missing', 'item-missing', 'snapshot-missing')");
 
     raw.run(integrityMigration());
 
@@ -77,8 +96,10 @@ test('migration repairs missing coverage without disturbing existing sweeps', as
        FROM expiration_sweeps ORDER BY domain, key_id`,
     )[0].values).toEqual([
       ['dumps', 'dump-missing', 0, 0, null, null],
-      ['dumps', 'existing', 999, 7, 'held', 123],
-      ['responses', 'responses-missing', 0, 0, null, null],
+      ['dumps', 'existing-dump', 999, 7, 'held', 123],
+      ['responses', 'existing-responses', 777, 5, 'responses-held', 456],
+      ['responses', 'item-missing', 0, 0, null, null],
+      ['responses', 'snapshot-missing', 0, 0, null, null],
     ]);
   } finally {
     raw.close();
@@ -89,11 +110,17 @@ test('queue rows cannot be removed before their domain rows', async () => {
   const { raw } = await createPreIntegrityDatabase();
   try {
     insertApiKey(raw, 'both');
+    insertApiKey(raw, 'identity');
     insertDump(raw, 'both', 'dump-a');
+    insertDump(raw, 'identity', 'dump-identity');
     raw.run(
       `INSERT INTO responses_items
        (id, api_key_id, payload_json, item_hash, payload_hash, payload_file_key, refreshed_at)
        VALUES ('item-a', 'both', '{}', 'item-hash', 'payload-hash', NULL, 0)`,
+    );
+    raw.run(
+      `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at)
+       VALUES ('snapshot-a', 'both', '[]', 0)`,
     );
     raw.run(integrityMigration());
 
@@ -101,6 +128,10 @@ test('queue rows cannot be removed before their domain rows', async () => {
       .toThrow('expiration sweep cannot be removed while stored rows remain');
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'"))
       .toThrow('expiration sweep cannot be removed while stored rows remain');
+    expect(() => raw.run("UPDATE expiration_sweeps SET key_id = 'moved' WHERE domain = 'dumps' AND key_id = 'identity'"))
+      .toThrow('expiration sweep cannot be reassigned while stored rows remain');
+    expect(() => raw.run("UPDATE expiration_sweeps SET domain = 'responses' WHERE domain = 'dumps' AND key_id = 'identity'"))
+      .toThrow('expiration sweep cannot be reassigned while stored rows remain');
 
     raw.run("DELETE FROM dump_records WHERE key_id = 'both'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'both'");
@@ -108,6 +139,9 @@ test('queue rows cannot be removed before their domain rows', async () => {
       .toEqual([['responses']]);
 
     raw.run("DELETE FROM responses_items WHERE api_key_id = 'both'");
+    expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'"))
+      .toThrow('expiration sweep cannot be removed while stored rows remain');
+    raw.run("DELETE FROM responses_snapshots WHERE api_key_id = 'both'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'");
     expect(raw.exec("SELECT domain FROM expiration_sweeps WHERE key_id = 'both'")).toEqual([]);
   } finally {
@@ -171,11 +205,21 @@ test('repaired inactive dump queues drain in bounded ticks', async () => {
     const repo = new SqlRepo(db);
     initRepo(repo);
     const files = new MemoryFileStore();
-    initFileStore(files);
     initDumpStore(new FileDumpStore(db, files));
 
     await sweepExpirations(Date.UTC(2026, 0, 3));
-    expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(50);
+    expect((await db.prepare(
+      'SELECT key_id, COUNT(*) AS count FROM dump_records GROUP BY key_id ORDER BY key_id',
+    ).all<{ key_id: string; count: number }>()).results).toEqual([
+      { key_id: 'deleted', count: 25 },
+      { key_id: 'disabled', count: 25 },
+    ]);
+    expect((await db.prepare(
+      "SELECT key_id FROM expiration_sweeps WHERE domain = 'dumps' ORDER BY key_id",
+    ).all<{ key_id: string }>()).results).toEqual([
+      { key_id: 'deleted' },
+      { key_id: 'disabled' },
+    ]);
     await sweepExpirations(Date.UTC(2026, 0, 3, 0, 1));
     expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(0);
     expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE domain = 'dumps'").first()).toBeNull();
