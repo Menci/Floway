@@ -524,6 +524,8 @@ export type ExpirationSweepCompletion =
   | { kind: 'partial'; retryAt: number };
 
 export interface ExpirationSweepsRepo {
+  tryClaimMaintenance(token: string, now: number, staleClaimedBefore: number): Promise<boolean>;
+  releaseMaintenance(token: string): Promise<void>;
   backfillCleanupTracking(limit: number): Promise<void>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;

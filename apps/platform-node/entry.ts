@@ -31,7 +31,6 @@ import {
   initRepo,
   initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
-  SCHEDULED_MAINTENANCE_INTERVAL_MS,
   SqlRepo,
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
@@ -59,6 +58,8 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
   console.error('FATAL: NODE_ENV=production requires ADMIN_KEY. Passwordless admin login is only allowed on dev instances.');
   process.exit(1);
 }
+
+const SCHEDULED_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));

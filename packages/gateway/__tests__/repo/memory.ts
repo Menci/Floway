@@ -1066,9 +1066,23 @@ interface MemoryExpirationSweepRow extends ExpirationSweepClaim {
 
 class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
   private readonly rows = new Map<string, MemoryExpirationSweepRow>();
+  private maintenanceClaim: { token: string; claimedAt: number } | null = null;
 
   private key(domain: ExpirationDomain, keyId: string): string {
     return `${domain}\0${keyId}`;
+  }
+
+  tryClaimMaintenance(token: string, now: number, staleClaimedBefore: number): Promise<boolean> {
+    if (this.maintenanceClaim !== null && this.maintenanceClaim.claimedAt >= staleClaimedBefore) {
+      return Promise.resolve(false);
+    }
+    this.maintenanceClaim = { token, claimedAt: now };
+    return Promise.resolve(true);
+  }
+
+  releaseMaintenance(token: string): Promise<void> {
+    if (this.maintenanceClaim?.token === token) this.maintenanceClaim = null;
+    return Promise.resolve();
   }
 
   backfillCleanupTracking(): Promise<void> {
