@@ -2,6 +2,8 @@ import { sweepExpirations } from './scheduled/expiration-sweeps.ts';
 import { collectSpilledFiles } from './scheduled/spilled-files.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
+export const SCHEDULED_MAINTENANCE_INTERVAL_MS = 60 * 1000;
+
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
   try {
     await fn();

@@ -31,6 +31,7 @@ import {
   initRepo,
   initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
+  SCHEDULED_MAINTENANCE_INTERVAL_MS,
   SqlRepo,
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
@@ -59,14 +60,15 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
   process.exit(1);
 }
 
-const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
-
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
 // Run the scheduled maintenance job once after a short startup delay and
-// then every hour. Without the startup run, a process that restarts more
-// often than the interval (crash loop, frequent deploys) would never run
+// then every minute. The retention driver bounds every statement and yields a
+// partial hot key for the rest of its tick; minute cadence gives the next
+// bounded batch enough throughput to catch up without an hourly write burst.
+// Without the startup run, a process that restarts more often than the interval
+// (crash loop, frequent deploys) would never run
 // maintenance and the responses-items expiry sweep would silently lag. The
 // 30s delay keeps the very first request after boot from racing the sweep.
 // unref() on both timers lets the process exit cleanly on SIGINT.
@@ -77,7 +79,7 @@ const sweep = (): void => {
   });
 };
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
-setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
+setInterval(sweep, SCHEDULED_MAINTENANCE_INTERVAL_MS).unref();
 
 serve({
   fetch: app.fetch,

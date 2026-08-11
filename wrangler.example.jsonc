@@ -34,7 +34,10 @@
   // cannot resolve those modules at cold start without the Node compat flag.
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": ["17 * * * *"]
+    // Retention work is deliberately small and bounded per invocation. Running
+    // it every minute lets a hot dump key catch up while spreading D1 writes
+    // across the hour instead of concentrating them at minute 17.
+    "crons": ["* * * * *"]
   },
   "assets": {
     "directory": "apps/web/dist/client",

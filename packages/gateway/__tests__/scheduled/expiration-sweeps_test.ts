@@ -92,13 +92,46 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
   await sweepExpirations(now);
 
   expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(50);
-  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
-  await sweepExpirations(now + 1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(100);
+  await sweepExpirations(now + 60_000);
 
   expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(0);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
+  await sweepExpirations(now + 120_000);
+
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(0);
   expect(await repo.responsesItems.lookupMany('key-a', ['msg-current'], 0)).toHaveLength(1);
   expect((await dumps.list('key-a', { limit: 10 })).map(row => row.id)).toEqual(['01K00000000000000000LIVE']);
+});
+
+test('minute ticks catch up with a growing hot dump key without widening a batch', async () => {
+  const start = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(start);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const dumps = new FileDumpStore(db, files);
+  initDumpStore(dumps);
+  await repo.apiKeys.save(key(start));
+
+  for (let index = 0; index < 150; index += 1) {
+    await dumps.put('key-a', dumpRecord(`01K00000000000000001${String(index).padStart(4, '0')}`, start - 3600_001));
+  }
+
+  for (let tick = 0; tick < 4; tick += 1) {
+    const now = start + tick * 60_000;
+    vi.setSystemTime(now);
+    for (let index = 0; index < 11; index += 1) {
+      await dumps.put('key-a', dumpRecord(`01K00000000000000002${tick}${String(index).padStart(3, '0')}`, now - 3600_001));
+    }
+    await sweepExpirations(now);
+    const expected = Math.max(0, 150 + 11 * (tick + 1) - 50 * (tick + 1));
+    expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count)
+      .toBe(expected);
+  }
 });
 
 test('a partial hot key yields the current tick to another due key', async () => {

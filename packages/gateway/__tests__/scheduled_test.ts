@@ -1,8 +1,12 @@
 import { expect, test, vi } from 'vitest';
 
-import { runScheduledMaintenance } from '../src/scheduled.ts';
+import { runScheduledMaintenance, SCHEDULED_MAINTENANCE_INTERVAL_MS } from '../src/scheduled.ts';
 import { setupAppTest } from './test-utils/app.ts';
 import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
+
+test('scheduled maintenance cadence is one bounded tick per minute', () => {
+  expect(SCHEDULED_MAINTENANCE_INTERVAL_MS).toBe(60_000);
+});
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
@@ -33,10 +37,11 @@ test('scheduled maintenance collects exact spilled files after expiration work',
   vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
   const key = 'spilled/retired.gz';
   await files.put(key, new Uint8Array([1]));
-  vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
+  const claimCollectible = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
   vi.spyOn(repo.spilledFiles, 'acknowledge').mockResolvedValue(1);
 
   await runScheduledMaintenance();
 
+  expect(claimCollectible).toHaveBeenCalledWith(expect.any(String), expect.any(Number), expect.any(Number), 400);
   expect(await files.get(key)).toBeNull();
 });
