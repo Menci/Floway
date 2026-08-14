@@ -81,11 +81,11 @@ export const switchCss = `
 }
 
 /* The indicator paints nothing and animates nothing: the two capsules below
-   carry the fill and stroke, and the knob paints its own. */
+   carry the fill and stroke, and the knob paints its own. It lays nothing out
+   either -- every part it holds is positioned against it. */
 .fui-Switch__indicator.fui-Switch__indicator {
-  align-items: center;
   align-self: center;
-  display: flex;
+  display: block;
   /* Fluent's own eight-pixel inline ring is dropped for the twelve the
      template's gap column states, declared on the root because that is the only
      form which survives the label moving to either side; WinUI's 40px block
@@ -101,6 +101,11 @@ export const switchCss = `
 .fui-Switch.fui-Switch {
   align-items: center;
   gap: 12px;
+  /* The control draws no text of its own, so it has nothing to seat on a line
+     box's baseline and takes its centre against the surrounding text instead.
+     Without this it borrows a baseline from the first thing inside it, which is
+     the knob -- and the knob changes size with the pointer. */
+  vertical-align: middle;
 }
 
 /* Fluent's label padding is the last thing holding the root taller than the
@@ -212,9 +217,22 @@ export const switchCss = `
   border-radius: 999px;
   height: calc(12 * var(--winui-switch-unit));
   margin-inline-start: calc(2.5 * var(--winui-switch-unit));
-  /* Above both capsules. Positioned children paint in tree order against a
-     positioned sibling, which would put the accent one over the knob. */
-  position: relative;
+  /* XAML hangs the resizing knob inside SwitchKnob, a fixed 20x20 cell that
+     carries the travel transform, so the swell below is drawn inside a box the
+     control's layout never sees. One element cannot be both, and an in-flow
+     knob is the only thing the indicator contains, which makes it the whole
+     control's baseline: growing it moved every switch seated in a line box.
+     Out of flow, the indicator's own box is all the control offers, and the
+     block insets with auto margins hold the knob centred in it at whatever size
+     the state asks for -- the same centring the flex box gave it.
+
+     Above both capsules, which are positioned siblings that would otherwise
+     paint over it in tree order.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L509-L523 */
+  inset-block: 0;
+  inset-inline-start: 0;
+  margin-block: auto;
+  position: absolute;
   z-index: 1;
   /* Three animations, not one: size and margin on the template's own keyframes,
      travel on the RepositionThemeAnimation timing the OS supplies (transcribed

@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { type MessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -128,9 +128,9 @@ const makeCandidate = (overrides: {
   endpoints?: ModelEndpoints;
   kind?: ModelCandidate['provider']['kind'];
   enabledFlags?: ReadonlySet<FlagId>;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: MessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const modelId = overrides.modelId ?? 'test-model';
@@ -142,7 +142,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstreamId: upstream, kind, name: upstream,
+      upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
     },
     model: stubInternalModel({
@@ -186,23 +186,29 @@ function assertIsArray<T>(value: unknown): asserts value is readonly T[] {
 
 test('generate routes a native Messages candidate end to end', async () => {
   installRepo();
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true,
-    events: makeProtocolFrames(makeMessagesResultEvents()),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
+  let callOptions: MessagesUpstreamCallOptions | undefined;
+  const callMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    callOptions = opts;
+    return {
+      ok: true,
+      events: makeProtocolFrames(makeMessagesResultEvents()),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
   queueResolution([makeCandidate({ upstream: 'up_a', callMessages })]);
 
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07, advanced-tool-use-2025-11-20' }),
   });
 
   const events = await collectEvents(assertResultType(result, 'events').events);
   assert(events.length >= 1);
   assertEquals(callMessages.mock.calls.length, 1);
+  assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
+  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
 });
 
 test('generate translates through the Responses target when only that endpoint is exposed', async () => {
@@ -338,8 +344,10 @@ test('generate filters out candidates whose endpoints do not satisfy the message
 test('countTokens proxies the upstream measurement response as a plain result', async () => {
   installRepo();
   const observedModelIds: string[] = [];
-  const callMessagesCountTokens = vi.fn(async (model: unknown): Promise<ProviderCallResult> => {
+  let callOptions: MessagesUpstreamCallOptions | undefined;
+  const callMessagesCountTokens = vi.fn(async (model: unknown, _body, _signal, opts): Promise<ProviderCallResult> => {
     observedModelIds.push((model as { id: string }).id);
+    callOptions = opts;
     return {
       response: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
@@ -355,7 +363,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const result = await messagesServe.countTokens({
     payload,
     ctx: makeGatewayCtx(),
-    headers: new Headers(),
+    headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07, advanced-tool-use-2025-11-20' }),
   });
 
   const plain = assertResultType(result, 'plain');
@@ -363,6 +371,8 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
+  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
   assertEquals(observedModelIds, ['claude-target']);
   assertEquals(payload.model, 'claude-alias');
 });

@@ -4,10 +4,16 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
-import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols/messages';
+import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
+
+type WireMessagesPayload = MessagesPayload & {
+  system: MessagesTextBlock[];
+  metadata: { user_id: string };
+};
 
 // Canned `/v1/models` payload the fetcher mock returns; mirrors the live
 // June-2026 catalog shape (mixed dated and alias-shape ids).
@@ -84,14 +90,14 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
-const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
-  ...noopUpstreamCallOptions(),
+const cliClientCallOpts = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+  ...noopMessagesUpstreamCallOptions(),
   headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
-    'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
   }),
+  anthropicBeta: ['oauth-2025-04-20'],
   ...overrides,
 });
 
@@ -107,6 +113,25 @@ const stubModelsListFetch = (): ReturnType<typeof vi.spyOn> => vi.spyOn(globalTh
 );
 
 describe('createClaudeCodeProvider — factory surface', () => {
+  test('owns the Claude Code client header fingerprint on the instance', () => {
+    const provider = createClaudeCodeProvider(currentRecord);
+
+    expect(provider.inboundHeaderAllowlist).toEqual([
+      'accept',
+      /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+      'anthropic-dangerous-direct-browser-access',
+      'anthropic-version',
+      'x-app',
+      'accept-language',
+      'sec-fetch-mode',
+      'user-agent',
+      'content-type',
+      'accept-encoding',
+      'x-claude-code-session-id',
+      'x-client-request-id',
+    ]);
+  });
+
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
@@ -159,7 +184,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      noopUpstreamCallOptions(),
+      noopMessagesUpstreamCallOptions(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -167,7 +192,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(wireHeaders.get('user-agent')).toMatch(/^claude-cli\//);
     expect(wireHeaders.get('anthropic-beta')).toBeTruthy();
 
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     expect(Array.isArray(body.system)).toBe(true);
     expect(body.system).toHaveLength(3);
     expect(body.system[0].text).toMatch(/^x-anthropic-billing-header:/);
@@ -195,7 +220,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     // System stays as the operator sent it — the chain did NOT mutate to
     // the 3-block re-mimicry shape.
     expect(body.system).toHaveLength(1);
@@ -221,11 +246,11 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      { ...noopMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = JSON.parse(init.body as string);
+    const body = await readJsonRequest(init) as WireMessagesPayload;
     // Re-mimicry ran: system was rebuilt into the 3-block shape.
     expect(body.system).toHaveLength(3);
   });

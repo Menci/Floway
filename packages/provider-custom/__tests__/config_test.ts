@@ -17,6 +17,7 @@ const baseRecord: UpstreamRecord = {
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
   },
   state: null,
   flagOverrides: {},
@@ -43,6 +44,139 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
   assertEquals(config.models.length, 1);
   assertEquals(config.models[0].upstreamModelId, 'pinned');
   assertEquals(config.models[0].display_name, 'Pinned');
+});
+
+test('assertCustomUpstreamRecord canonicalizes ingress header rules without collapsing empty values', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: ' X-Request-ID ', value: null },
+        { key: 'X-Empty', value: '' },
+        { key: 'X-Route', value: ' configured ' },
+        { key: 'API-Key', value: 'resource-key' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-request-id', value: null },
+    { key: 'x-empty', value: '' },
+    { key: 'x-route', value: 'configured' },
+    { key: 'api-key', value: 'resource-key' },
+  ]);
+});
+
+test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rules', () => {
+  for (const [rules, message] of [
+    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: 'other' }], 'duplicate key x-route'],
+    [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
+    [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'control\u0001byte' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'delete\u007fbyte' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: 'non-byte-\u0100' }], 'value is not a valid HTTP header value'],
+    [[{ key: 'x-route', value: null, extra: true }], 'must contain only key and value'],
+    ['not-an-array', 'ingressHeadersRules must be an array'],
+    [[null], 'must contain only key and value'],
+    [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
+    [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
+    [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
+    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
+    [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
+    [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
+    [[{ key: 'X-Forwarded-Port', value: null }], 'x-forwarded-port is owned by the HTTP transport'],
+    [[{ key: 'Sec-WebSocket-Key', value: null }], 'sec-websocket-key is owned by the HTTP transport'],
+    [[{ key: 'Proxy-Authenticate', value: null }], 'proxy-authenticate is owned by the HTTP transport'],
+    [[{ key: 'Proxy-Authentication-Info', value: null }], 'proxy-authentication-info is owned by the HTTP transport'],
+  ] as const) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: { ...(baseRecord.config as Record<string, unknown>), ingressHeadersRules: rules },
+      }),
+      Error,
+      message,
+    );
+  }
+});
+
+test('assertCustomUpstreamRecord reserves every transport-owned header name and family', () => {
+  const exactNames = [
+    'accept-encoding',
+    'authorization',
+    'cdn-loop',
+    'connection',
+    'content-encoding',
+    'content-length',
+    'content-type',
+    'cookie',
+    'expect',
+    'forwarded',
+    'host',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authentication-info',
+    'proxy-authorization',
+    'proxy-connection',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'true-client-ip',
+    'upgrade',
+    'x-api-key',
+    'x-client-ip',
+    'x-floway-session',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+    'x-goog-api-key',
+    'x-openai-actor-authorization',
+    'x-real-ip',
+  ];
+  const familyMembers = ['cf-future-field', 'sec-websocket-future-field', 'x-forwarded-future-field'];
+
+  for (const key of [...exactNames, ...familyMembers]) {
+    assertThrows(
+      () => assertCustomUpstreamRecord({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          ingressHeadersRules: [{ key: key.toUpperCase(), value: null }],
+        },
+      }),
+      Error,
+      `${key} is owned by the HTTP transport`,
+    );
+  }
+});
+
+test('assertCustomUpstreamRecord preserves valid HTAB and obs-text field-value bytes', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: 'x-tab', value: 'left\tright' },
+        { key: 'x-obs-text', value: '\u0080\u00ff' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-tab', value: 'left\tright' },
+    { key: 'x-obs-text', value: '\u0080\u00ff' },
+  ]);
+});
+
+test('assertCustomUpstreamRecord requires ingressHeadersRules on persisted config', () => {
+  const config = { ...(baseRecord.config as Record<string, unknown>) };
+  delete config.ingressHeadersRules;
+  assertThrows(
+    () => assertCustomUpstreamRecord({ ...baseRecord, config }),
+    Error,
+    'ingressHeadersRules must be an array',
+  );
 });
 
 test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {
@@ -134,6 +268,7 @@ test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () =>
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
       endpoints: { chatCompletions: {} },
+      ingressHeadersRules: [],
     },
   });
   assertEquals(config.authStyle, 'none');
@@ -167,6 +302,7 @@ test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () 
           baseUrl: 'https://custom.example.com',
           authStyle: 'bearer',
           endpoints: { chatCompletions: {} },
+          ingressHeadersRules: [],
         },
       }),
     Error,

@@ -14,14 +14,15 @@
 // or an actually absent Codex at every known global location. The harness never
 // touches the user's real config or credentials.
 //
-// Run the whole suite with `pnpm run test:agent-setup-installers`, or scope it
-// with `--agent claude` / `--agent codex`.
+// Run the whole suite with `pnpm run test:installers`, or scope it with
+// `--agent claude` / `--agent codex`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
@@ -474,7 +475,7 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false, ...overrides,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...overrides,
   },
   codex: { model: null, reasoningEffort: null },
 });
@@ -484,7 +485,7 @@ const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}):
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null, ...overrides },
 });
@@ -497,7 +498,7 @@ const bothConfig = (
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false, ...claude,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false, ...claude,
   },
   codex: { model: null, reasoningEffort: null, ...codex },
 });
@@ -861,10 +862,10 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   }));
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, disableAutoMemory: true, disableAgentView: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; autoMemoryEnabled: boolean; disableAgentView: boolean; attribution: Record<string, unknown>; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(JSON.stringify(settings.permissions), JSON.stringify({ allow: ['Bash(ls:*)'] }), 'unrelated nested object preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
@@ -875,6 +876,8 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'managed sonnet default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'haiku-x', 'managed haiku default written');
   t.equal(settings.cleanupPeriodDays, 365, 'cleanupPeriodDays maps to the top-level numeric setting');
+  t.equal(settings.autoMemoryEnabled, false, 'the auto-memory opt-out maps to autoMemoryEnabled: false');
+  t.equal(settings.disableAgentView, true, 'the agent-view opt-out maps to disableAgentView: true');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes', commit: '', pr: '', sessionUrl: false }), 'attribution opt-out values are written without replacing unrelated keys');
 });
 
@@ -886,6 +889,8 @@ test('claude', 'optional keys are removed when unset', async t => {
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
     cleanupPeriodDays: 180,
+    autoMemoryEnabled: false,
+    disableAgentView: true,
     attribution: { commit: 'stale-commit', pr: 'stale-pr', sessionUrl: true, keep: 'yes' },
     env: {
       ANTHROPIC_MODEL: 'stale-model',
@@ -908,6 +913,8 @@ test('claude', 'optional keys are removed when unset', async t => {
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
   t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
+  t.ok(!('autoMemoryEnabled' in settings), 'autoMemoryEnabled removed when the opt-out is off');
+  t.ok(!('disableAgentView' in settings), 'disableAgentView removed when the opt-out is off');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes' }), 'managed attribution keys removed while unrelated keys survive');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved through removal');
 });
@@ -1126,12 +1133,12 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'dark', attribution: { keep: 'yes' }, env: { OTHER_TOOL: 'keep-me' } }));
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, disableAutoMemory: true, disableAgentView: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; autoMemoryEnabled: boolean; disableAgentView: boolean; attribution: Record<string, unknown>; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL written');
@@ -1142,6 +1149,8 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'sonnet default written');
   t.equal(settings.effortLevel, 'high', 'effortLevel maps to the top-level key');
   t.equal(settings.cleanupPeriodDays, 180, 'cleanupPeriodDays maps to the top-level numeric setting');
+  t.equal(settings.autoMemoryEnabled, false, 'the auto-memory opt-out maps to autoMemoryEnabled: false');
+  t.equal(settings.disableAgentView, true, 'the agent-view opt-out maps to disableAgentView: true');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes', commit: '', pr: '', sessionUrl: false }), 'attribution opt-out maps to the documented values');
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');
 });
@@ -1155,6 +1164,8 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
     cleanupPeriodDays: 365,
+    autoMemoryEnabled: false,
+    disableAgentView: true,
     attribution: { commit: 'stale', pr: 'stale', sessionUrl: true, keep: 'yes' },
     env: { ANTHROPIC_MODEL: 'stale', CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1', KEEP: 'yes' },
   }));
@@ -1165,6 +1176,8 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
   t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
+  t.ok(!('autoMemoryEnabled' in settings), 'autoMemoryEnabled removed when the opt-out is off');
+  t.ok(!('disableAgentView' in settings), 'disableAgentView removed when the opt-out is off');
   t.equal(JSON.stringify(settings.attribution), JSON.stringify({ keep: 'yes' }), 'managed attribution keys removed while unrelated keys survive');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved');
 });
@@ -2325,16 +2338,28 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server write
 
 // --- output contract --------------------------------------------------------
 
-// Escape sequences are stripped and CRLF normalized; each line is right-trimmed
+// VT control sequences are stripped and CRLF normalized; each line is right-trimmed
 // and trailing blank lines dropped. Interior blank lines remain part of the
 // heading/status output contract.
-const ANSI_PATTERN = /\[[0-9;]*m/g;
-const stripAnsi = (text: string): string => text.replace(ANSI_PATTERN, '');
 const normalizeLines = (text: string): string =>
-  stripAnsi(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+  stripVTControlCharacters(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
 const normalizeWorkspace = (text: string, workspace: Workspace): string =>
   normalizeLines(text).replaceAll(workspace.root, '<workspace>');
-const hasAnsi = (text: string): boolean => new RegExp('\\x1b\\[[0-9;]*m').test(text);
+const hasVTControlCharacters = (text: string): boolean => stripVTControlCharacters(text) !== text;
+
+test('claude', 'output normalization strips VT controls and preserves control-like text', t => {
+  const decorated = [
+    '\u001B[31mred\u001B[0m',
+    '\u001B[2A\u001B[3Ccursor',
+    '\u001B]8;;https://floway.dev\u0007link\u001B]8;;\u0007',
+  ].join(' ');
+  t.equal(normalizeLines(decorated), 'red cursor link', 'SGR, cursor CSI, and OSC hyperlink sequences are stripped');
+  t.ok(hasVTControlCharacters(decorated), 'VT detection agrees with native stripping');
+
+  const plain = 'literal [31m, [2A, and ]8;;https://floway.dev text';
+  t.equal(normalizeLines(plain), plain, 'control-like ordinary text is unchanged');
+  t.ok(!hasVTControlCharacters(plain), 'control-like ordinary text is not reported as VT control data');
+});
 
 // A hermetic single-agent run needs the harness to fully control discovery. The
 // Codex CLI is discovered at absolute paths the sandbox cannot hide, so a host
@@ -2379,7 +2404,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
   t.equal(bash.stderr.trim(), '', 'a clean Bash run writes nothing to stderr');
-  t.ok(!hasAnsi(bash.combined), 'captured Bash output carries no escape sequences');
+  t.ok(!hasVTControlCharacters(bash.combined), 'captured Bash output carries no VT control sequences');
 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   modelServer.reset();
@@ -2388,7 +2413,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
   t.equal(ps.stderr.trim(), '', 'a clean PowerShell run writes nothing to stderr');
-  t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
+  t.ok(!hasVTControlCharacters(ps.combined), 'captured PowerShell output carries no VT control sequences');
 });
 
 test('claude', 'Bash styles agent notices while leaving metadata plain', async t => {
@@ -2405,13 +2430,13 @@ test('claude', 'Bash styles agent notices while leaving metadata plain', async t
   t.includes(forced.stdout, '[34m==>[0m [1mConfiguring: Claude Code[0m', 'the configuration section uses the notice style');
   t.includes(forced.stdout, '[34m==>[0m [1mCompleted Agent Setup: Claude Code[0m', 'the successful result uses the notice style');
   t.excludes(forced.stdout, '[92m', 'success does not use green ANSI styling');
-  t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
+  t.ok(!hasVTControlCharacters(forced.stderr), 'a successful run leaves stderr free of VT controls even under forced color');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);
   const noColor = await runShellInstaller({ workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true, noColor: true });
   t.equal(noColor.code, 0, `NO_COLOR run should succeed:\n${noColor.combined}`);
-  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on both streams');
+  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on both streams');
   t.includes(noColor.stdout, 'Claude Code', 'the plain heading is still present without color');
 });
 
@@ -2443,7 +2468,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
     forceColor: true,
   });
   t.ok(forced.code !== 0, 'invalid settings must fail the agent');
-  t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
+  t.ok(!hasVTControlCharacters(forced.stdout), 'host-colored stdout never carries VT controls even under forced color');
   t.includes(forced.stderr, '[91mError:[0m ', 'stderr colors the primary error label');
 
   const suppressed = makeWorkspace();
@@ -2455,7 +2480,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
     forceColor: true, noColor: true,
   });
   t.ok(noColor.code !== 0, 'the failure still occurs');
-  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
+  t.ok(!hasVTControlCharacters(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
   t.includes(noColor.stderr, 'Error: ', 'the plain error is still on stderr');
 });
 

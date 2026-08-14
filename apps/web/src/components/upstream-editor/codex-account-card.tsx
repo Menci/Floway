@@ -1,16 +1,15 @@
-import { useTranslation } from 'react-i18next';
-
-import { shortAccountId } from './account-id';
-import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, quotaEntries } from './codex-account';
-import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
+import { shortAccountId } from '../upstreams/account-id';
+import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, quotaEntries } from '../upstreams/codex-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
+import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const { Badge, ProgressBar, Text } = fluentComponents;
 

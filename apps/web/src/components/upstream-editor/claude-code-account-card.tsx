@@ -1,7 +1,14 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
-import { useTranslation } from 'react-i18next';
 
-import { shortAccountId } from './account-id';
+import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
+import { dateTime, relativeTime } from '../../lib/format-time';
+import { clampPercent, percentText } from '../../lib/percent';
+import { useLocale } from '../../lib/use-locale';
+import { useNow } from '../../lib/use-now';
+import { StatusBadge } from '../ui/status-badge';
+import { TruncationTooltip } from '../ui/truncation-tooltip';
+import { shortAccountId } from '../upstreams/account-id';
 import {
   accountStatus,
   actionableDisabledReason,
@@ -11,16 +18,9 @@ import {
   rawEntries,
   readProbeSnapshot,
   subscriptionLabel,
-} from './claude-code-account';
-import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
-import { fluentComponents } from '../../fluent';
-import { dateTime, relativeTime } from '../../lib/format-time';
-import { clampPercent, percentText } from '../../lib/percent';
-import { useLocale } from '../../lib/use-locale';
-import { useNow } from '../../lib/use-now';
-import { StatusBadge } from '../ui/status-badge';
-import { TruncationTooltip } from '../ui/truncation-tooltip';
+} from '../upstreams/claude-code-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
+import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
@@ -41,7 +41,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   const quota = credential?.quotaSnapshot?.data ?? null;
   const probe = readProbeSnapshot(credential);
   const windows = quotaWindows(credential);
-  const status = accountStatus(lookup, windows);
+  const status = accountStatus(lookup, windows, now);
   const disabledReason = actionableDisabledReason(credential);
 
   const accountUuidShort = shortAccountId(account.accountUuid);

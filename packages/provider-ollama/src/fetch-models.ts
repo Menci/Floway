@@ -20,7 +20,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { discardUpstreamResponse, fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -117,14 +117,20 @@ const fetchShowForTag = async (
 ): Promise<OllamaRawModel | null> => {
   const response = await ollamaFetchShow(
     config,
-    { method: 'POST', body: JSON.stringify({ name: tag.name }) },
+    { method: 'POST', body: jsonRequestBody({ name: tag.name }) },
     { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
-  if (!response.ok) return null;
+  // A tag whose /api/show fails is skipped rather than failing the catalog, so
+  // this is the one path that walks away from a response it asked for.
+  if (!response.ok) {
+    await discardUpstreamResponse(response);
+    return null;
+  }
   let parsed: unknown;
   try {
     parsed = await response.json();
   } catch {
+    await discardUpstreamResponse(response);
     return null;
   }
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);

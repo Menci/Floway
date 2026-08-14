@@ -10,7 +10,7 @@ import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
+import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
 
@@ -54,6 +54,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
         authStyle: config.authStyle,
         endpoints: clone(config.endpoints),
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
+        ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
         models: clone(config.models),
         apiKeySet: config.authStyle !== 'none' && hasSecret(config.apiKey),
@@ -77,6 +78,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
       assertCopilotUpstreamState(upstream.state);
       state = {
         copilotToken: upstream.state.copilotToken === null ? null : { baseUrl: upstream.state.copilotToken.baseUrl },
+        seat: upstream.state.seat ?? null,
         // The whole snapshot is upstream-owned numbers with no secret in it, so
         // it round-trips verbatim. Rows written before the slot existed carry
         // no key at all -- the same absent-is-null boundary the state reader
@@ -87,7 +89,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'copilot',
-      config: { user: clone(config.user), githubTokenSet: hasSecret(config.githubToken) },
+      config: { githubHost: config.githubHost, user: clone(config.user), githubTokenSet: hasSecret(config.githubToken) },
       state,
     };
   }
@@ -136,8 +138,10 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'ollama',
-      config: { baseUrl: config.baseUrl, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
-      state: stateless(upstream),
+      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      // The usage probe holds upstream-owned windows and counters with no
+      // secret in them, so the slot crosses whole.
+      state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state),
     };
   }
   }
@@ -171,7 +175,7 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
   }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
-    return { ...base, kind: 'ollama', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
   }
   }
 };
@@ -194,13 +198,13 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
   const base = blueprintBase(kind);
   switch (kind) {
   case 'copilot':
-    return { ...base, kind, config: { githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
+    return { ...base, kind, config: { githubHost: 'github.com', githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
   case 'custom':
     // A custom upstream starts on the shape most of them have: an
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself
     // publishes. The blueprint is the create form's opening record, so this is
     // the only place a new upstream's starting values are decided.
-    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { chatCompletions: {} }, modelsFetch: { enabled: true }, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { chatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true }, models: [] }, state: null };
   case 'azure':
     return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
   case 'codex':
@@ -208,6 +212,6 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
   case 'claude-code':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'ollama':
-    return { ...base, kind, config: { baseUrl: '', apiKey: '', models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false, models: [] }, state: null };
   }
 };

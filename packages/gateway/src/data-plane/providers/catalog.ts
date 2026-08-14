@@ -1,5 +1,6 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
+import type { GatewayProvider } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type InternalModel, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
@@ -82,7 +83,7 @@ const mergeIntoCatalog = (
 };
 
 const collectProviderModels = async (
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
@@ -97,7 +98,7 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: Provider) =>
+  const fetchOne = (instance: GatewayProvider) =>
     fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstreamId),
@@ -219,7 +220,7 @@ export const compareModelIds = (a: string, b: string): number => {
 // walk — pass providers through to avoid the duplicate upstreams.list()
 // DB query.
 export const getModelsFromProviders = async (
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {

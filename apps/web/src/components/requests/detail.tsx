@@ -4,7 +4,6 @@ import {
 } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
 import { errorLabel, requestSeverity } from './format';
@@ -16,6 +15,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
@@ -36,7 +36,8 @@ const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 // The band is the one surface here that fills: it holds still while the region
 // below it scrolls, so it has to occlude. WinUI's counterpart is ContentDialog's
 // fixed band over its scrolling content, `ContentDialogTopOverlay` =
-// LayerFillColorAlt, which is #FFFFFF in light and #0DFFFFFF over the dialog's
+// LayerFillColorAlt, which is #FFFFFF in light and #0DFFFFFF (WinUI ARGB) over
+// the dialog's
 // #202020 in dark -- the flat #FFFFFF/#2C2C2C that `colorNeutralBackground1`
 // already carries. WinUI seams that band with CardStrokeColorDefault; the
 // divider stands in because the card stroke is black-alpha and disappears into a

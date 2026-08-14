@@ -1,11 +1,12 @@
 import {
   CODEX_BACKEND_BASE,
   CODEX_CLI_VERSION,
+  CODEX_IMAGE_MODEL_ID,
   CODEX_MODELS_PATH,
   CODEX_ORIGINATOR,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { pricingForCodexModelKey } from './pricing.ts';
+import { GPT_IMAGE_2_PRICING, pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
@@ -96,9 +97,11 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   return raw;
 };
 
-// Codex exposes only the Responses endpoint. Pricing is looked up from the
-// per-slug table in pricing.ts so the dashboard can report a notional
-// API-rate pricing even though Codex itself bills as a flat-fee subscription.
+// Every entry returned by the remote Codex catalog is a Responses chat model.
+// Pricing is looked up from the per-slug table in pricing.ts so the dashboard
+// can report a notional API-rate price even though Codex itself bills as a
+// flat-fee subscription. Provider-owned models such as gpt-image-2 are added
+// separately and never pass through this mapper.
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
@@ -135,3 +138,23 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
     ...(Object.keys(chat).length > 0 ? { chat } : {}),
   };
 };
+
+// CLIProxyAPI exposes Codex's built-in image models for every plan, then
+// rejects image dispatch only when the JWT plan is explicitly `free`; missing
+// and future plan values fail open. Mirror that account-eligibility rule here
+// while keeping the image model outside the remote chat-model catalog.
+// https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/internal/runtime/executor/codex_executor_request.go#L381-L449
+// https://github.com/router-for-me/CLIProxyAPI/blob/2e6b1d83f6c304a102aa33c1faf0a4f94d0d331e/sdk/cliproxy/auth/conductor_execution.go#L1036-L1066
+export const codexPlanSupportsImages = (planType: string | undefined): boolean =>
+  planType?.trim().toLowerCase() !== 'free';
+
+export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): ProviderModel => ({
+  id: CODEX_IMAGE_MODEL_ID,
+  display_name: 'GPT-Image-2',
+  owned_by: 'openai',
+  kind: 'image',
+  limits: {},
+  endpoints: { imagesGenerations: {}, imagesEdits: {} },
+  enabledFlags,
+  pricing: GPT_IMAGE_2_PRICING,
+});

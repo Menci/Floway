@@ -9,7 +9,7 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/sh
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -65,7 +65,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
+const connectResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
@@ -76,6 +76,7 @@ const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebS
     headers: {
       upgrade: 'websocket',
       'x-api-key': apiKey,
+      ...upgradeHeaders,
     },
   }), {}, executionCtx);
   assertEquals(response.status, 101);
@@ -842,9 +843,12 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
       if (url.pathname === '/responses') {
         responseCalls += 1;
         if (responseCalls === 2) {
-          return jsonResponse({
+          return new Response(JSON.stringify({
             error: { message: 'simulated upstream rejection', type: 'invalid_request_error', code: 'bad_request' },
-          }, 400);
+          }), {
+            status: 400,
+            headers: { 'content-type': 'Application/Problem+JSON; charset=utf-8' },
+          });
         }
         return sseResponsesResponse({
           id: `resp_ws_evict_${responseCalls}`,
@@ -1306,16 +1310,17 @@ test('Responses WebSocket session-level store: second message resolves prior ite
   );
 });
 
-test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
-  const { apiKey } = await setupAppTest();
-  let resolveResponsesStarted: (() => void) | undefined;
-  const responsesStarted = new Promise<void>(resolve => {
-    resolveResponsesStarted = resolve;
-  });
-  let resolveUpstreamAborted: (() => void) | undefined;
-  const upstreamAborted = new Promise<void>(resolve => {
-    resolveUpstreamAborted = resolve;
-  });
+test('Responses WebSocket drains terminal usage without aborting upstream after the client closes', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+  let requestSignal!: AbortSignal;
+  let upstreamCanceled = false;
+  let resolveUpstreamRead!: () => void;
+  const upstreamRead = new Promise<void>(resolve => { resolveUpstreamRead = resolve; });
+  const encoder = new TextEncoder();
+  const enqueueEvent = (event: string, data: unknown): void => {
+    upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  };
 
   await withMockedFetch(
     async request => {
@@ -1328,20 +1333,29 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        resolveResponsesStarted?.();
-        return await new Promise<Response>(resolve => {
-          request.signal.addEventListener('abort', () => {
-            resolveUpstreamAborted?.();
-            resolve(sseResponsesResponse({
-              id: 'resp_ws_abort',
-              object: 'response',
-              model: 'gpt-direct-responses',
-              status: 'completed',
-              output: [],
-              output_text: '',
-            }));
-          }, { once: true });
-        });
+        requestSignal = request.signal;
+        const response = {
+          id: 'resp_ws_disconnect',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        };
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            upstreamController = controller;
+            enqueueEvent('response.created', { type: 'response.created', response, sequence_number: 0 });
+          },
+          pull() {
+            resolveUpstreamRead();
+          },
+          cancel() {
+            upstreamCanceled = true;
+          },
+        }), { headers: { 'content-type': 'text/event-stream' } });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -1355,9 +1369,29 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         },
       }));
 
-      await responsesStarted;
+      await upstreamRead;
       client.close();
-      await upstreamAborted;
+      await waitForMicrotasks();
+      assertEquals(requestSignal.aborted, false);
+      assertEquals(upstreamCanceled, false);
+
+      const completed = {
+        id: 'resp_ws_disconnect',
+        object: 'response',
+        model: 'gpt-direct-responses',
+        status: 'completed',
+        output: [],
+        output_text: 'done',
+        error: null,
+        incomplete_details: null,
+        usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+      };
+      enqueueEvent('response.completed', { type: 'response.completed', response: completed, sequence_number: 1 });
+      upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
+      upstreamController.close();
+      await flushAsyncWork();
+      await vi.waitFor(async () => assertEquals((await repo.usage.listAll()).length, 1));
+      assertEquals(upstreamCanceled, false);
     }),
   );
 });
@@ -1434,4 +1468,124 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
   } finally {
     generateSpy.mockRestore();
   }
+});
+
+test('Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCodexUpstreamRecord());
+  const upstreamBodies: Record<string, unknown>[] = [];
+
+  // The handshake carries the connection's first turn, exactly as the Codex
+  // client sends it. Every later turn arrives on the frame body alone, so a
+  // dispatch that re-reads these headers announces turn 1 forever.
+  const handshakeTurnMetadata = {
+    session_id: 'codex-session',
+    thread_id: 'codex-thread',
+    window_id: 'codex-thread:0',
+    turn_id: 'handshake-turn',
+    request_kind: 'turn',
+    turn_started_at_unix_ms: 1700000000000,
+  };
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/backend-api/codex/models') return jsonResponse(codexModels([{ slug: 'gpt-5.4' }]));
+      if (url.pathname === '/backend-api/codex/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
+        const turn = upstreamBodies.length;
+        return sseResponsesResponse({
+          id: `resp_codex_ws_${turn}`,
+          object: 'response',
+          model: 'gpt-5.4',
+          status: 'completed',
+          output_text: `answer ${turn}`,
+          output: [{
+            id: `assistant_codex_ws_${turn}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const socket = await connectResponsesWebSocket(apiKey.key, {
+        'session-id': 'codex-session',
+        'thread-id': 'codex-thread',
+        'x-codex-window-id': 'codex-thread:0',
+        'x-codex-turn-metadata': JSON.stringify(handshakeTurnMetadata),
+      });
+
+      const firstTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-5.4',
+          input: 'turn one input',
+          client_metadata: {
+            session_id: 'codex-session',
+            thread_id: 'codex-thread',
+            'x-codex-window-id': 'codex-thread:0',
+            turn_id: 'turn-1',
+            'x-codex-turn-metadata': JSON.stringify(handshakeTurnMetadata),
+          },
+        },
+      }));
+      await firstTerminal;
+
+      const secondTerminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
+      socket.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-5.4',
+          input: [
+            { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'turn two input' }] },
+            { type: 'compaction_trigger' },
+          ],
+          client_metadata: {
+            session_id: 'codex-session',
+            thread_id: 'codex-thread',
+            // Codex advances the window on auto-compaction and the advanced
+            // value never reaches the handshake.
+            'x-codex-window-id': 'codex-thread:1',
+            turn_id: 'turn-2',
+            'x-codex-turn-metadata': JSON.stringify({
+              session_id: 'codex-session',
+              thread_id: 'codex-thread',
+              window_id: 'codex-thread:1',
+              turn_id: 'turn-2',
+              request_kind: 'compaction',
+              compaction: { trigger: 'auto', reason: 'context_limit', implementation: 'responses_compaction_v2', phase: 'standalone_turn', strategy: 'memento' },
+              turn_started_at_unix_ms: 1700000000002,
+            }),
+          },
+        },
+      }));
+      await secondTerminal;
+
+      assertEquals(upstreamBodies.length, 2);
+      const turnMetadataOf = (body: Record<string, unknown>): Record<string, unknown> =>
+        JSON.parse((body.client_metadata as Record<string, string>)['x-codex-turn-metadata']) as Record<string, unknown>;
+
+      const first = turnMetadataOf(upstreamBodies[0]);
+      assertEquals(first.request_kind, 'turn');
+      assertEquals(first.window_id, 'codex-thread:0');
+      assertEquals(first.turn_started_at_unix_ms, 1700000000000);
+
+      const second = turnMetadataOf(upstreamBodies[1]);
+      assertEquals(second.request_kind, 'compaction');
+      assertEquals(second.window_id, 'codex-thread:1');
+      assertEquals(second.turn_id, 'turn-2');
+      assertEquals(second.turn_started_at_unix_ms, 1700000000002);
+      assertEquals((upstreamBodies[1].client_metadata as Record<string, string>)['x-codex-window-id'], 'codex-thread:1');
+    }),
+  );
 });

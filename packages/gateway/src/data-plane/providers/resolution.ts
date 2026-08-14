@@ -1,14 +1,15 @@
-import { isEqual } from 'es-toolkit';
+import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
-import { listModelProviders } from './registry.ts';
+import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import { retainUpstreamFetcher } from '../shared/retained-response.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type ModelCandidate, type Provider } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -25,7 +26,7 @@ import { isAbortError, type Fetcher, type ModelCandidate, type Provider } from '
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
 const enumerateOneUpstreamCandidates = async (
-  provider: Provider,
+  provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
   fetcher: Fetcher,
@@ -61,9 +62,9 @@ const enumerateOneUpstreamCandidates = async (
 // Walk every visible upstream, in configured order, and collect every
 // (provider, model, fetcher) candidate the inbound id resolves against
 // at the requested kind. Per-upstream catalog fetches fan out concurrently
-// so a slow upstream cannot stall the rest. Cancellation (`AbortError`)
-// propagates so the per-request abort signal cannot be masked by a slow
-// upstream's rejection.
+// so a slow upstream cannot stall the rest. Provider `AbortError` values still
+// propagate. Client disconnect prevents a catalog request that has not yet
+// dispatched, while a retained request already in flight runs to completion.
 //
 // `sawAnyId` aggregates the per-upstream signal: true when at least one
 // upstream's catalog carried the inbound id under any kind. The caller
@@ -73,16 +74,19 @@ const enumerateOneUpstreamCandidates = async (
 export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const settled = await Promise.allSettled(providers.map(provider =>
-    enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler)));
+  const settled = await Promise.allSettled(providers.map(provider => {
+    clientDisconnectSignal?.throwIfAborted();
+    return enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstreamId), scheduler);
+  }));
 
   const failedUpstreams: string[] = [];
   const candidates: ModelCandidate[] = [];
@@ -90,6 +94,7 @@ export const enumerateRealModelCandidates = async (
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
       const error = result.reason;
+      clientDisconnectSignal?.throwIfAborted();
       if (isAbortError(error)) throw error;
       failedUpstreams.push(providers[index].name);
       continue;
@@ -115,20 +120,21 @@ const DATED_SUFFIX = /-\d{8}$/;
 const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly Provider[],
+  providers: readonly GatewayProvider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  clientDisconnectSignal?: AbortSignal,
 ): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler);
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
     return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
   }
   const stripped = modelId.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler);
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   return {
     candidates: second.candidates,
     sawModel: second.sawAnyId,
@@ -186,7 +192,7 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, runtimeLocation,
+  upstreamIds, model, kind, scheduler, runtimeLocation, clientDisconnectSignal,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
@@ -200,17 +206,24 @@ export const enumerateModelCandidates = async ({
   // Threaded into the per-request fetcher so colo-scoped fallback entries
   // can be honoured at dial time.
   runtimeLocation: string;
+  clientDisconnectSignal?: AbortSignal;
 }): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
+  const createFetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
+  const fetcherForUpstream = (upstreamId: string): Fetcher => {
+    const fetcher = createFetcherForUpstream(upstreamId);
+    return clientDisconnectSignal === undefined
+      ? fetcher
+      : retainUpstreamFetcher(fetcher, clientDisconnectSignal, scheduler);
+  };
   const providers = await listModelProviders(upstreamIds);
 
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
+    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -222,21 +235,17 @@ export const enumerateModelCandidates = async ({
   let sawAny = false;
   const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler, clientDisconnectSignal);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawAny = true;
     for (const candidate of result.candidates) {
       flat.push({ ...candidate, rules: target.rules });
     }
   }
-  const deduped: ModelCandidate[] = [];
-  for (const candidate of flat) {
-    const duplicate = deduped.some(existing =>
-      existing.model.id === candidate.model.id
-      && existing.provider.upstreamId === candidate.provider.upstreamId
-      && isEqual(existing.rules, candidate.rules));
-    if (!duplicate) deduped.push(candidate);
-  }
+  const deduped = uniqWith(flat, (candidate, existing) =>
+    candidate.model.id === existing.model.id
+    && candidate.provider.upstreamId === existing.provider.upstreamId
+    && isEqual(candidate.rules, existing.rules));
   return {
     candidates: deduped,
     sawModel: sawAny,

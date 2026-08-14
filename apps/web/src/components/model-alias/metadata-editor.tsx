@@ -1,7 +1,8 @@
-import { useTranslation } from 'react-i18next';
+import { useState } from 'react';
 
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
@@ -10,6 +11,9 @@ import type { AnnouncedMetadata, ModelKind } from '@floway-dev/protocols/common'
 const { Field, Option } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
+const commaSeparatedValues = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
+const sameOrderedValues = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((item, index) => item === right[index]);
 
 export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, value }: {
   disabled: boolean;
@@ -70,7 +74,14 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
             <Switch checked={value.chat?.reasoning?.mandatory === true} disabled={disabled || effort !== undefined || budget !== undefined || value.chat?.reasoning?.adaptive === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.mandatory')} onChange={(_, data) => patchReasoning({ mandatory: data.checked ? true : undefined })} />
           </div>
           {effort && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-            <Field hint={t('dashboard.modelAliases.metadata.effortsHint')} label={t('dashboard.modelAliases.metadata.efforts')}><Input disabled={disabled} readOnly={readOnly} value={effort.supported.join(', ')} onChange={(_, data) => { const supported = data.value.split(',').map(item => item.trim()).filter(Boolean); patchReasoning({ effort: { supported, default: supported.includes(effort.default) ? effort.default : supported[0] ?? '' } }); }} /></Field>
+            <CommaSeparatedEffortsInput
+              disabled={disabled}
+              label={t('dashboard.modelAliases.metadata.efforts')}
+              hint={t('dashboard.modelAliases.metadata.effortsHint')}
+              onChange={supported => patchReasoning({ effort: { supported, default: supported.includes(effort.default) ? effort.default : supported[0] ?? '' } })}
+              readOnly={readOnly}
+              value={effort.supported}
+            />
             <Field label={t('dashboard.modelAliases.metadata.defaultEffort')}><Dropdown disabled={disabled || effort.supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
           </div>}
           {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
@@ -81,4 +92,33 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
       </>}
     </div>
   );
+}
+
+function CommaSeparatedEffortsInput({ disabled, hint, label, onChange, readOnly, value }: {
+  disabled: boolean;
+  hint: string;
+  label: string;
+  onChange: (value: string[]) => void;
+  readOnly: boolean;
+  value: readonly string[];
+}) {
+  const [draft, setDraft] = useState(() => ({ projected: [...value], text: value.join(', ') }));
+  const currentDraft = sameOrderedValues(draft.projected, value)
+    ? draft
+    : { projected: [...value], text: value.join(', ') };
+  if (currentDraft !== draft) setDraft(currentDraft);
+
+  return <Field hint={hint} label={label}>
+    <Input
+      disabled={disabled}
+      readOnly={readOnly}
+      value={currentDraft.text}
+      onBlur={() => setDraft({ projected: [...value], text: value.join(', ') })}
+      onChange={(_, data) => {
+        const projected = commaSeparatedValues(data.value);
+        setDraft({ projected, text: data.value });
+        onChange(projected);
+      }}
+    />
+  </Field>;
 }

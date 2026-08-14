@@ -30,6 +30,7 @@ const registerAudioModel = async (
     config: {
       baseUrl: 'https://audio.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules: [],
       apiKey: 'sk-audio',
       endpoints: {},
       modelsFetch: { enabled: false },
@@ -85,7 +86,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
         text: 'hello world',
         usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 10 }, output_tokens: 45, total_tokens: 59 },
       }), {
-        headers: { 'content-type': 'application/json', 'x-provider-trace': 'trace-a' },
+        headers: { 'content-type': 'Application/Vnd.OpenAI+JSON; charset=utf-8', 'x-provider-trace': 'trace-a' },
       });
     },
     async () => {
@@ -339,7 +340,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
       '',
       'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":1,"total_tokens":4}}',
       '',
-    ].join('\n'), { headers: { 'content-type': 'text/event-stream', 'x-stream-trace': 'trace-sse' } }),
+    ].join('\n'), { headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
     async () => {
       const response = await requestApp('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
@@ -393,14 +394,16 @@ test('/v1/audio/transcriptions preserves a terminal stream event with malformed 
   assertEquals(performance.errorsNoOutput, 0);
 });
 
-test('/v1/audio/transcriptions completes and cancels an upstream kept open after transcript.text.done', async () => {
+test('/v1/audio/transcriptions completes and drains an upstream kept open after transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   let upstreamCancelled = false;
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   const encoder = new TextEncoder();
   await withMockedFetch(
     () => new Response(new ReadableStream<Uint8Array>({
       start(controller) {
+        upstreamController = controller;
         controller.enqueue(encoder.encode('data: {"type":"transcript.text.delta","delta":"hel"}\n\n'));
         controller.enqueue(encoder.encode('data: {"type":"transcript.text.done","text":"hello"}\n\n'));
       },
@@ -415,9 +418,10 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
       const text = await response.text();
       assertEquals(text.includes('transcript.text.done'), true);
       assertEquals(text.includes('[DONE]'), false);
+      upstreamController.close();
     },
   );
-  assertEquals(upstreamCancelled, true);
+  assertEquals(upstreamCancelled, false);
 });
 
 test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {

@@ -1,9 +1,15 @@
 import { ChevronDownRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useId, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
-import { computeModelWarning, computeRuleWarnings } from './warnings';
+import {
+  computeModelWarning,
+  computeRuleWarnings,
+  modelAliasWarningText,
+  type RuleWarning,
+  type RuleWarningField,
+} from './warnings';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
@@ -53,7 +59,9 @@ export function AliasTargetRow({
     for (const [key, value] of Object.entries(reasoning)) if (value === undefined || value === '') delete (reasoning as Record<string, unknown>)[key];
     patchRules({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
-  const warningFor = (field: string) => ruleWarnings.find(warning => warning.field === field);
+  const warningFor = (field: RuleWarningField) => ruleWarnings.find(warning => warning.field === field);
+  const budgetWarning = warningFor('reasoning.budget_tokens');
+  const adaptiveWarning = warningFor('reasoning.adaptive');
   const adaptive = target.rules.reasoning?.adaptive === true ? 'on' : target.rules.reasoning?.adaptive === false ? 'off' : 'auto';
   const adaptiveLabel = t(`dashboard.modelAliases.rules.${adaptive === 'auto' ? 'adaptiveAuto' : adaptive === 'on' ? 'adaptiveOn' : 'adaptiveOff'}`);
   const toggleLabel = t('dashboard.modelAliases.target.toggle');
@@ -88,7 +96,7 @@ export function AliasTargetRow({
         </Combobox>
         <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
           {modelWarning
-            ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="winui-focus-rect grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
+            ? <Tooltip content={modelAliasWarningText(modelWarning, t)} relationship="description"><span className="winui-focus-rect grid h-8 w-8 place-items-center" tabIndex={0}><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
           <ReorderButtons disabled={disabled} downLabel={t('dashboard.modelAliases.target.moveDown')} isFirst={isFirst} isLast={isLast} onMove={onMove} upLabel={t('dashboard.modelAliases.target.moveUp')} />
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
@@ -98,10 +106,10 @@ export function AliasTargetRow({
       {expanded && kind === 'chat' && (
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
-          <Field label={t('dashboard.modelAliases.rules.budget')} validationMessage={warningFor('reasoning.budget_tokens') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.budget_tokens')!.key}`, warningFor('reasoning.budget_tokens')!.values) : undefined} validationState={warningFor('reasoning.budget_tokens') ? 'warning' : undefined}>
+          <Field label={t('dashboard.modelAliases.rules.budget')} validationMessage={budgetWarning ? modelAliasWarningText(budgetWarning, t) : undefined} validationState={budgetWarning ? 'warning' : undefined}>
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />
           </Field>
-          <Field label={t('dashboard.modelAliases.rules.adaptive')} validationMessage={warningFor('reasoning.adaptive') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.adaptive')!.key}`) : undefined} validationState={warningFor('reasoning.adaptive') ? 'warning' : undefined}>
+          <Field label={t('dashboard.modelAliases.rules.adaptive')} validationMessage={adaptiveWarning ? modelAliasWarningText(adaptiveWarning, t) : undefined} validationState={adaptiveWarning ? 'warning' : undefined}>
             <Dropdown
               disabled={disabled}
               selectedOptions={[adaptive]}
@@ -121,7 +129,7 @@ export function AliasTargetRow({
   );
 }
 
-function RuleCombobox({ disabled, items, label, onChange, value, warning }: { disabled: boolean; items: readonly string[]; label: string; onChange: (value: string) => void; value: string; warning?: { key: string; values?: Record<string, string | number> } }) {
+function RuleCombobox({ disabled, items, label, onChange, value, warning }: { disabled: boolean; items: readonly string[]; label: string; onChange: (value: string) => void; value: string; warning?: RuleWarning }) {
   const { t } = useTranslation();
-  return <Field label={label} validationMessage={warning ? t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values) : undefined} validationState={warning ? 'warning' : undefined}><Combobox disabled={disabled} freeform value={value} onChange={event => onChange(event.target.value)} onOptionSelect={(_, data) => onChange(data.optionText ?? '')}>{items.map(item => <Option key={item}>{item}</Option>)}</Combobox></Field>;
+  return <Field label={label} validationMessage={warning ? modelAliasWarningText(warning, t) : undefined} validationState={warning ? 'warning' : undefined}><Combobox disabled={disabled} freeform value={value} onChange={event => onChange(event.target.value)} onOptionSelect={(_, data) => onChange(data.optionText ?? '')}>{items.map(item => <Option key={item}>{item}</Option>)}</Combobox></Field>;
 }

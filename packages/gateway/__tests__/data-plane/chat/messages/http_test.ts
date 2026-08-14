@@ -5,6 +5,7 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -113,7 +114,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstreamId: upstream, kind: 'custom', name: upstream,
+      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
@@ -159,6 +160,43 @@ test('POST /v1/messages returns a single JSON body when stream is omitted', asyn
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as { role: string; content: unknown };
   assertEquals(body.role, 'assistant');
+});
+
+test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
+  const repo = installRepo();
+  const callMessages = vi.fn((): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    throw new Error('the probe reached the upstream');
+  });
+  queueCandidates([makeCandidate({ callMessages })]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json', 'user-agent': 'claude-cli/2.1.226 (external, cli)' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      max_tokens: 1,
+      system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+      metadata: { user_id: 'user_0_account__session_0' },
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as { model: string; stop_reason: string; usage: { input_tokens: number; output_tokens: number } };
+  assertEquals(body.model, 'test-model');
+  assertEquals(body.stop_reason, 'max_tokens');
+  assertEquals(body.usage.input_tokens, 0);
+  assertEquals(body.usage.output_tokens, 0);
+  assertEquals(callMessages.mock.calls.length, 0);
+
+  // The turn is recorded as served, at zero cost, and contributes no latency
+  // sample — there was no upstream call to measure.
+  await flushBackground();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.requests, 1);
+  assertEquals(usage[0]?.metrics, []);
+  assertEquals(await repo.performance.listAll(), []);
 });
 
 test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', async () => {

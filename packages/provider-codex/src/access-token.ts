@@ -1,3 +1,4 @@
+import { parseCodexIdTokenPlanType } from './auth/jwt.ts';
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexAccessTokenEntry } from './state.ts';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
@@ -31,6 +32,54 @@ const isAccessTokenUsable = (entry: CodexAccessTokenEntry, renewable: boolean): 
   return entry.expiresAt > Date.now() + (renewable ? REFRESH_SKEW_MS : 0);
 };
 
+export interface CodexPlanObservation {
+  planType: string;
+  observedAt?: string;
+}
+
+const planObservation = (entry: CodexAccessTokenEntry | null | undefined): CodexPlanObservation | null =>
+  entry?.planType === undefined
+    ? null
+    : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
+
+const observationTime = (observation: CodexPlanObservation): number => {
+  const parsed = observation.observedAt === undefined ? Number.NaN : Date.parse(observation.observedAt);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+};
+
+const latestPlanObservation = (
+  first: CodexPlanObservation | null,
+  second: CodexPlanObservation | null,
+  fallback: CodexPlanObservation | undefined,
+): CodexPlanObservation | null => {
+  const observations = [first, second, fallback ?? null]
+    .filter((value): value is CodexPlanObservation => value !== null);
+  if (observations.length === 0) return null;
+  return observations.reduce((latest, candidate) =>
+    observationTime(candidate) > observationTime(latest) ? candidate : latest);
+};
+
+const mergeCodexAccessTokenEntry = (
+  incoming: CodexAccessTokenEntry,
+  current: CodexAccessTokenEntry | null | undefined,
+  fallbackPlan: CodexPlanObservation | undefined,
+): CodexAccessTokenEntry => {
+  const incomingTime = Date.parse(incoming.refreshedAt);
+  const currentTime = current === null || current === undefined ? Number.NEGATIVE_INFINITY : Date.parse(current.refreshedAt);
+  const token = Number.isFinite(currentTime) && (!Number.isFinite(incomingTime) || currentTime >= incomingTime)
+    ? current!
+    : incoming;
+  const plan = latestPlanObservation(planObservation(incoming), planObservation(current), fallbackPlan);
+  const { planType: _planType, planObservedAt: _planObservedAt, ...tokenFields } = token;
+  return plan === null
+    ? tokenFields
+    : {
+        ...tokenFields,
+        planType: plan.planType,
+        ...(plan.observedAt === undefined ? {} : { planObservedAt: plan.observedAt }),
+      };
+};
+
 // The whole change is expressed against the state the repo hands us, so a
 // write that loses its race is simply replayed against the winner's document
 // and both changes survive. Storage failures propagate so the request path
@@ -40,10 +89,12 @@ const persistAccessToken = async (
   accountId: string | null,
   entry: CodexAccessTokenEntry | null,
   where: string,
-): Promise<void> => {
+  fallbackPlan?: CodexPlanObservation,
+): Promise<CodexAccessTokenEntry | null> => {
   // The mutator is replayed on a lost race, so the diagnostic is recorded and
   // emitted once afterwards rather than logged from inside it.
   let accountMissing = false;
+  let effectiveEntry = entry;
   try {
     await getProviderRepo().upstreams.saveState(upstreamId, current => {
       const state = readCodexUpstreamState(current);
@@ -56,7 +107,11 @@ const persistAccessToken = async (
       // Invalidating an already-null slot has nothing to write — the case where
       // a 401 retry races a concurrent refresh that already cleared the token.
       if (entry === null && state.accounts[idx].accessToken === null) return current;
-      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: entry }));
+      effectiveEntry = entry === null
+        ? null
+        : mergeCodexAccessTokenEntry(entry, state.accounts[idx].accessToken, fallbackPlan);
+      if (JSON.stringify(effectiveEntry) === JSON.stringify(state.accounts[idx].accessToken)) return current;
+      return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: effectiveEntry }));
     });
   } catch (err) {
     // A minted access token is bookkeeping the next request re-derives, so an
@@ -64,23 +119,45 @@ const persistAccessToken = async (
     // request over. Every other storage failure still propagates.
     if (!(err instanceof UpstreamGoneError)) throw err;
     console.warn(`${where}: Codex upstream ${upstreamId} disappeared mid-request`);
-    return;
+    return effectiveEntry;
   }
   if (accountMissing) {
     console.warn(`${where}: Codex account ${accountId} not found in upstream ${upstreamId}`);
   }
+  return effectiveEntry;
 };
 
 export const putCodexAccessToken = async (
   upstreamId: string,
   accountId: string | null,
   entry: CodexAccessTokenEntry,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken'); };
+  fallbackPlan?: CodexPlanObservation,
+): Promise<CodexAccessTokenEntry> =>
+  (await persistAccessToken(upstreamId, accountId, entry, 'putCodexAccessToken', fallbackPlan)) ?? entry;
 
 export const invalidateCodexAccessToken = async (
   upstreamId: string,
   accountId: string | null,
-): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
+  expectedToken?: string,
+): Promise<CodexAccessTokenEntry | null> => {
+  if (expectedToken === undefined) {
+    return await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken');
+  }
+  let retained: CodexAccessTokenEntry | null = null;
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) throw new Error(`invalidateCodexAccessToken: Codex account ${accountId} not found in upstream ${upstreamId}`);
+    const entry = state.accounts[idx].accessToken;
+    if (entry !== null && entry.token !== expectedToken) {
+      retained = entry;
+      return current;
+    }
+    if (entry === null) return current;
+    return replaceCodexAccount(state, idx, account => ({ ...account, accessToken: null }));
+  });
+  return retained;
+};
 
 // Reads, mints, and persists. The mint callback is responsible for routing
 // the rotated refresh_token through the upstream's persistence hook;
@@ -176,8 +253,13 @@ const ensureCodexAccessTokenInner = async (
     }
     throw err;
   }
-  await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
-  return minted;
+  return (await persistAccessToken(
+    upstreamId,
+    accountId,
+    minted,
+    'ensureCodexAccessToken',
+    planObservation(account.accessToken) ?? undefined,
+  )) ?? minted;
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
@@ -230,9 +312,12 @@ export const mintCodexAccessToken = async (
 ): Promise<CodexAccessTokenEntry> => {
   const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
   await persistRefreshTokenRotation(tokens.refresh_token);
+  const planType = tokens.id_token === undefined ? undefined : parseCodexIdTokenPlanType(tokens.id_token);
+  const refreshedAt = new Date().toISOString();
   return {
     token: tokens.access_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,
-    refreshedAt: new Date().toISOString(),
+    refreshedAt,
+    ...(planType === undefined ? {} : { planType, planObservedAt: refreshedAt }),
   };
 };

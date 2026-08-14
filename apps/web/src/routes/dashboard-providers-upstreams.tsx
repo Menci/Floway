@@ -7,9 +7,9 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
+import { type TFunction, useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-upstreams';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
@@ -22,22 +22,22 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ReorderButtons } from '../components/ui/reorder-buttons';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { RouteMenuItem } from '../components/ui/route-menu-item';
-import { rowTitleClass } from '../components/ui/row-title';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TABLE_ACTIONS_WIDTH, TableActions, TableCentredCell, TableCentredHeader, TableTrailingHeader } from '../components/ui/table-actions';
 import { TableColumns } from '../components/ui/table-columns';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
-import { TruncationTooltip, useTruncation } from '../components/ui/truncation-tooltip';
+import { TruncationTooltip } from '../components/ui/truncation-tooltip';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
-import { shortAccountId } from '../components/upstream-editor/account-id';
+import { shortAccountId } from '../components/upstreams/account-id';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
+import { UpstreamSignals } from '../components/upstreams/signals';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
-import { pageNavigation, useEntryRewrite } from '../lib/page-navigation';
+import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
-import type { UpstreamProviderKind } from '@floway-dev/provider/model';
+import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider/model';
 
 const {
   Menu,
@@ -65,12 +65,10 @@ interface LoaderData {
   modelsError: string | null;
 }
 
-// The record name travels with the mutation so the pending toast keeps naming
-// the same subject while the list underneath it is optimistically rewritten.
 type Mutation =
-  | { kind: 'toggle'; id: string; name: string }
-  | { kind: 'reorder'; id: string; name: string }
-  | { kind: 'delete'; id: string; name: string };
+  | { kind: 'toggle'; id: string }
+  | { kind: 'reorder'; id: string }
+  | { kind: 'delete'; id: string };
 
 const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'custom',
@@ -126,7 +124,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // Seeded from the loader, then owned by the page: every refresh and every
   // optimistic mutation writes here, so the loader payload is only first paint.
   const [data, setData] = useState(loaderData);
-  const [pageError, setPageError] = useState(loaderData.loadError);
+  // What an operator's own action reported, kept apart from what the fetch
+  // reports: they are retired by different events, and a refresh that shares
+  // the slot silently takes the other one with it.
+  const [pageError, setPageError] = useState<string | null>(null);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   // The switch answers the pointer at once; the models column does not follow
   // it. That column reads the catalog listing, which still describes the
@@ -136,6 +137,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const [pendingEnabled, setPendingEnabled] = useState<{ id: string; enabled: boolean } | null>(null);
   const deleteDialog = useDialogInvocation<UpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // `move` words its own failure differently when the resync behind it also
+  // failed, and it has to read that outcome after awaiting rather than out of a
+  // state it just wrote.
+  const lastLoadError = useRef<string | null>(null);
 
   const openDeleteDialog = (record: UpstreamRecord) => {
     setDeleteError(null);
@@ -157,19 +162,31 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   // Delete is excluded because it owns its handle: it has a success line to
   // announce, and that has to update the toast the pending line already holds.
   const mutationKind = mutation?.kind ?? null;
-  const mutationName = mutation?.name ?? null;
   useEffect(() => {
     if (!mutationKind || mutationKind === 'delete') return;
-    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`, { name: mutationName }));
+    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`));
     return () => handle.settle();
-  }, [mutationKind, mutationName, t, toasts]);
+  }, [mutationKind, t, toasts]);
 
-  const { refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
+  const { poll, refresh: reload, refreshing } = useRefresh(useCallback(async (signal: AbortSignal) => {
     const next = await loadPageData(signal);
     if (signal.aborted) return;
-    setData(next);
-    setPageError(next.loadError);
+    // A failed fetch is not an empty list. Each half keeps what it last had and
+    // the message bars carry the reason, so a blip on an unattended poll cannot
+    // empty a table nobody is watching -- the two other polling pages hold their
+    // data the same way.
+    setData(current => ({
+      upstreams: next.upstreams ?? current.upstreams,
+      models: next.models ?? current.models,
+      loadError: next.loadError,
+      modelsError: next.modelsError,
+    }));
+    lastLoadError.current = next.loadError;
   }, []));
+
+  // The rows carry live readings -- quota windows, model-cache freshness -- that
+  // the data plane refreshes without anyone here asking.
+  usePollWhileVisible(poll);
 
   // Row controls stay locked through the resync a mutation ends with, and
   // through a refresh the operator asked for on its own.
@@ -184,7 +201,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
     if (data.upstreams === null) return;
-    setMutation({ kind: 'toggle', id: record.id, name: record.name });
+    setMutation({ kind: 'toggle', id: record.id });
     setPageError(null);
     setPendingEnabled({ id: record.id, enabled });
 
@@ -212,7 +229,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const next = [...snapshot];
     next[index] = target;
     next[targetIndex] = record;
-    setMutation({ kind: 'reorder', id: record.id, name: record.name });
+    setMutation({ kind: 'reorder', id: record.id });
     setPageError(null);
     setData(current => ({ ...current, upstreams: next }));
 
@@ -224,13 +241,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     if (error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
-      // The resync has already written its own outcome into the page error, so
-      // the updater reads it to decide whether the list on screen is trustworthy.
-      setPageError(syncError =>
-        t('dashboard.upstreams.errors.reorder', {
-          message: error.message,
-          sync: syncError ? t('dashboard.upstreams.errors.syncFailed') : '',
-        }));
+      setPageError(t('dashboard.upstreams.errors.reorder', {
+        message: error.message,
+        sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
+      }));
       setMutation(null);
       return;
     }
@@ -240,7 +254,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   };
 
   const deleteUpstream = async (record: UpstreamRecord) => {
-    setMutation({ kind: 'delete', id: record.id, name: record.name });
+    setMutation({ kind: 'delete', id: record.id });
     setDeleteError(null);
     const handle = toasts.start(t('dashboard.upstreams.toast.delete.pending', { name: record.name }));
     const result = await callApi(() =>
@@ -298,6 +312,12 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
       )}
 
+      {data.loadError && (
+        <OutcomeMessageBar onDismiss={() => setData(current => ({ ...current, loadError: null }))}>
+          {data.loadError}
+        </OutcomeMessageBar>
+      )}
+
       {data.modelsError && (
         <OutcomeMessageBar intent="warning" onDismiss={() => setData(current => ({ ...current, modelsError: null }))}>
           {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
@@ -332,29 +352,30 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   );
 }
 
-// The name is clipped by the layout's `main` slot rather than by the link
-// inside it, so that slot is what the tooltip has to measure.
-function UpstreamNameCell({ record }: { record: UpstreamRecord }) {
+// The row's two lines are what the upstream says about itself: who it connects
+// as, and whatever live readings its provider publishes. The name is not among
+// them -- it names the badge, which is also what opens the record.
+function UpstreamDetailsCell({ record }: { record: UpstreamRecord }) {
   const { t } = useTranslation();
-  const name = useTruncation(record.name, 'label');
+  const summary = upstreamSummary(record, t);
 
+  // No width of its own: the column is what states it, and a cap here would
+  // ellipsise a line the column had room for.
   return <TableCellLayout
-    className="max-w-[520px]"
-    description={<TruncationTooltip content={upstreamSummary(record, t)} relationship="label">
-      {measureRef => <Text block className="winui-focus-rect" ref={measureRef} tabIndex={0} truncate wrap={false}>{upstreamSummary(record, t)}</Text>}
-    </TruncationTooltip>}
-    main={{ ref: name.measureRef }}
+    // Fluent stacks the two lines with no gap at all, which leaves the second
+    // reading as a wrapped continuation of the first rather than as its own
+    // line. One step of the vertical ramp separates them.
+    //
+    // The same step below, because `truncate` has Fluent clip the layout's
+    // content box, and each ring on that line is set on the cap height of the
+    // text beside it -- which carries the ring under the baseline by more than
+    // the font's own descent, and into the clip.
+    description={{ children: <UpstreamSignals record={record} />, className: 'py-[var(--spacingVerticalXXS)]' }}
     truncate
   >
-    <Tooltip {...name.tooltipProps}>
-      <Link
-        {...pageNavigation}
-        className={rowTitleClass}
-        to={upstreamEditorPath(record)}
-      >
-        {record.name}
-      </Link>
-    </Tooltip>
+    <TruncationTooltip content={summary} relationship="label">
+      {measureRef => <Text block className="winui-focus-rect" ref={measureRef} tabIndex={0} truncate wrap={false}>{summary}</Text>}
+    </TruncationTooltip>
   </TableCellLayout>;
 }
 
@@ -388,12 +409,12 @@ function UpstreamsTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
-        <TableColumns widths={['120px', '140px', '300px', '140px', '90px', TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={['120px', '200px', null, '140px', '90px', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
             <TableTrailingHeader>{t('dashboard.upstreams.table.actions')}</TableTrailingHeader>
@@ -416,8 +437,14 @@ function UpstreamsTable({
                   />
                 </div>
               </TableCell>
-              <TableCell><ProviderBadge upstream={record} /></TableCell>
-              <TableCell className="overflow-hidden"><UpstreamNameCell record={record} /></TableCell>
+              <TableCell className="overflow-hidden">
+                <ProviderBadge
+                  label={record.name}
+                  to={upstreamEditorPath(record)}
+                  upstream={record}
+                />
+              </TableCell>
+              <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
               <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} record={record} />
               </TableCell>
@@ -531,12 +558,18 @@ const buildModelCounts = (
   return new Map(upstreams.map(record => [record.id, countFor(record)]));
 };
 
-const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTranslation>['t']): string => {
+// Who the upstream connects as. A subscription names an account; an endpoint
+// the operator configured names itself. The plan is not part of it -- the line
+// below states that for every provider that has one.
+const upstreamSummary = (record: UpstreamRecord, t: TFunction): string => {
   switch (record.kind) {
   case 'custom': return record.config.baseUrl;
   case 'azure': return record.config.endpoint;
-  case 'ollama': return record.config.baseUrl || t('dashboard.upstreams.summary.ollama');
-  case 'copilot': return record.config.user.login ? `@${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
+  // A cloud key belongs to an account, and that account says more than the one
+  // endpoint every cloud upstream shares. A self-hosted daemon has no account,
+  // so its address is the whole identity.
+  case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('dashboard.upstreams.summary.ollama'));
+  case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
   case 'codex': {
     const account = record.config.accounts[0];
     if (!account) return t('dashboard.upstreams.summary.noAccount');
@@ -548,7 +581,7 @@ const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTransla
   case 'claude-code': {
     const account = record.config.accounts[0];
     if (!account) return t('dashboard.upstreams.summary.noAccount');
-    return account.email ?? account.accountUuid.slice(0, 8);
+    return account.email ?? shortAccountId(account.accountUuid);
   }
   }
 };

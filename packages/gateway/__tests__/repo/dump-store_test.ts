@@ -4,7 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
+import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
@@ -168,6 +169,74 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   assertEquals(fetched.response.body.events[0]!.frame.type, 'event');
 });
 
+test('FileDumpStore rejects malformed metadata with its row identity', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADM', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET meta_json = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify({ ...record.meta, upstream: undefined, status: '200' }), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.list('key_x', { limit: 10 }))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADM metadata.*status/su);
+});
+
+test('FileDumpStore rejects malformed header pairs with their record and side', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADH', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET request_headers_json = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify([['x-bad', 1]]), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.get('key_x', record.meta.id))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADH request headers/u);
+});
+
+test('FileDumpStore rejects malformed body descriptors before file access', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const record = baseRecord('01HZZ000000000000000000BADD', Date.UTC(2026, 5, 1, 12));
+  await store.put('key_x', record);
+  await db.prepare('UPDATE dump_records SET request_body_descriptor = ? WHERE key_id = ? AND id = ?')
+    .bind(JSON.stringify({ key: 'dumps/v1/key_x/request.gz', type: 'chunks' }), 'key_x', record.meta.id)
+    .run();
+
+  await expect(store.get('key_x', record.meta.id))
+    .rejects.toThrow(/Invalid dump record 01HZZ000000000000000000BADD request body descriptor.*type/su);
+});
+
+test('FileDumpStore rejects malformed stream events with record and file context', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record: DumpWriteRecord = {
+    ...baseRecord('01HZZ000000000000000000BADE', Date.UTC(2026, 5, 1, 12)),
+    response: {
+      status: 200,
+      headers: [['content-type', 'text/event-stream']],
+      body: { type: 'stream', events: [{ frame: { type: 'done' }, ts: 1 }] },
+    },
+  };
+  await store.put('key_x', record);
+  const row = await db.prepare('SELECT response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?')
+    .bind('key_x', record.meta.id)
+    .first<{ response_body_descriptor: string }>();
+  if (row === null) throw new Error('expected stored dump row');
+  const descriptor = decodeDumpBodyDescriptor(row.response_body_descriptor, 'test response descriptor');
+  const malformedEvents = utf8(JSON.stringify([{ frame: { type: 'done' }, ts: 'late' }]));
+  const compressed = new Uint8Array(await new Response(
+    new Blob([malformedEvents as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')),
+  ).arrayBuffer());
+  await files.put(descriptor.key, compressed);
+
+  await expect(store.get('key_x', record.meta.id)).rejects.toThrow(
+    new RegExp(`Invalid dump record ${record.meta.id} response events at key=${descriptor.key}.*ts`, 'su'),
+  );
+});
+
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();
@@ -249,6 +318,35 @@ test('FileDumpStore retires every dump record when retention is disabled and col
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?').bind('key_x').first<{ count: number }>())?.count, 0);
   await collectSpilledFiles(Date.now());
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>())?.count, 0);
+});
+
+test('FileDumpStore counts returned dump rows instead of trigger-amplified changes', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
+
+  const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
+  expect(await d1LikeStore.deleteExpiredBatch('key_x', Date.now(), 1)).toBe(1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
+});
+
+test('FileDumpStore counts returned active dump rows instead of trigger-amplified changes', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const now = Date.UTC(2026, 5, 1, 12);
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C3', Date.UTC(2026, 5, 1, 9)));
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000C4', Date.UTC(2026, 5, 1, 10)));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 3600 });
+
+  const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
+  expect(await d1LikeStore.deleteExpiredBatch('key_x', now, 1)).toBe(1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
 });
 
 test('a record-ID race leaves only the losing write\'s uniquely keyed files collectible', async () => {

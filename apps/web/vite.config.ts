@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { isBuiltin } from 'node:module';
 import { resolve } from 'node:path';
 
 import { reactRouter } from '@react-router/dev/vite';
+import MagicString from 'magic-string';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
 import { wranglerProxiedPaths } from './gateway-paths';
@@ -103,70 +104,14 @@ const prismComponentsEsm = (): Plugin => ({
   transform(code, id) {
     const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
     if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
-    return `import Prism from "prismjs";\n${code}`;
+    const transformed = new MagicString(code);
+    transformed.prepend('import Prism from "prismjs";\n');
+    return {
+      code: transformed.toString(),
+      map: transformed.generateMap({ hires: true, includeContent: true, source: id }),
+    };
   },
 });
-
-// Fontsource writes every static face with a WOFF source behind the WOFF2 one,
-// so importing one of its stylesheets pulls a second, larger copy of each face
-// into the bundle:
-// https://github.com/fontsource/fontsource/blob/e50a906d3026beac81ebc47b5436c9d7c2e3a070/packages/core/src/css/face-rule.ts#L26-L44
-// No browser this app is built for can ask for it. `build.target` is left at
-// Vite's default `baseline-widely-available`, which at this version resolves to
-// chrome111, edge111, firefox114, safari16.4 and ios16.4
-// (https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/constants.ts#L90-L96),
-// while WOFF2 has been answered since Chrome 36, Firefox 39, Safari 10 and iOS
-// 10 (https://caniuse.com/woff2).
-//
-// Dropping the source before `vite:css` resolves it, rather than transcribing
-// the rules by hand, leaves the family, weights, subset, style and
-// `font-display` upstream's to state, so no copy of them can drift from the
-// installed package.
-const fontsourceWoff2Only = (): Plugin => ({
-  name: 'fontsource-woff2-only',
-  enforce: 'pre',
-  transform(code, id) {
-    const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
-    if (!/\/@fontsource(?:-variable)?\/[^/]+\/[^/]+\.css$/.test(path)) return;
-    const woff2Only = code.replaceAll(/,\s*url\([^()]+\.woff\)\s*format\(['"]?woff['"]?\)/g, '');
-    // A rewrite of the rule upstream would otherwise put the fallback back
-    // silently, since the strip that no longer matches anything looks the same
-    // from here as a sheet that never carried one.
-    if (/\.woff\b/.test(woff2Only)) throw new Error(`${path} still declares a WOFF source`);
-    return woff2Only;
-  },
-});
-
-// Workers Static Assets uploads every file under the configured `directory`,
-// which for this app is the client build output, so the source maps below
-// would ride along -- 42.4 MiB across 172 files, the largest of them within a
-// factor of 1.4 of Cloudflare's 25 MiB per-file ceiling.
-//
-// `.assetsignore` is wrangler's exclusion list for that directory: it is read
-// from the directory root, takes `.gitignore` syntax, and is itself left out
-// of the upload along with the other metafiles
-// (https://developers.cloudflare.com/workers/static-assets/binding/#ignoring-assets,
-// implemented at
-// https://github.com/cloudflare/workers-sdk/blob/wrangler%404.81.0/packages/workers-shared/utils/helpers.ts#L61-L86).
-// The whole output tree is gitignored, so the file is emitted by the build
-// rather than checked in.
-const excludeSourceMapsFromUpload = (): Plugin => {
-  let assetsIgnorePath: string;
-  return {
-    name: 'floway-assetsignore',
-    apply: 'build',
-    applyToEnvironment: environment => environment.name === 'client',
-    configResolved(config) {
-      // `build.outDir` is kept as authored, so it is the top-level root every
-      // other consumer resolves it against.
-      assetsIgnorePath = resolve(config.root, config.environments.client!.build.outDir, '.assetsignore');
-    },
-    closeBundle: {
-      order: 'post',
-      handler: () => writeFile(assetsIgnorePath, '*.js.map\n'),
-    },
-  };
-};
 
 // The Worker runs at 8788 in `wrangler dev`. Vite proxies every path the Worker
 // owns so the SPA can call relative URLs in both dev and prod. Anything not
@@ -178,7 +123,62 @@ const excludeSourceMapsFromUpload = (): Plugin => {
 const wranglerOrigin = process.env.FLOWAY_DEV_GATEWAY_ORIGIN ?? 'http://127.0.0.1:8788';
 const webPort = Number(process.env.FLOWAY_DEV_WEB_PORT ?? '5174');
 
+// Restoring a position needs `mappings`, `sources` and `names`;
+// `sourcesContent` is the original text, which nothing here reads. Measured
+// over one build of this app: 42.53 MiB of maps, of which 34.16 MiB is
+// `sourcesContent`, and the largest single map falls from 18.1 MiB to 1.3 MiB
+// -- Workers Static Assets uploads every file under the client output
+// directory and rejects any file over 25 MiB, so carrying the text is also
+// what would eventually break the deploy. The cost is that devtools resolves a
+// frame to a file and line it cannot then display.
+// https://github.com/cloudflare/cloudflare-docs/blob/96f2d1edbca7d722c47e0f633f56a970750c48a0/src/content/docs/workers/platform/limits.mdx#L32-L35
+const sourceMapOutput = {
+  // The same id is written into the chunk and into its map, which is what lets
+  // the runtime restore refuse a map built for a different revision of a chunk
+  // whose content hash did not change -- a comment-only edit produces exactly
+  // that pair.
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L206-L215
+  sourcemapDebugIds: true,
+  // https://github.com/rolldown/rolldown/blob/872b98ac7476eb7d5892a2913e4ba010d124c6ac/packages/rolldown/src/options/output-options.ts#L266-L277
+  sourcemapExcludeSources: true,
+} as const;
+
+// React Router's Environment API resolves the shared CSS pipeline from the
+// root build and the client minifier from the client environment. Both must
+// carry the same pre-Color-Level-4 policy: Chrome 61 predates alpha hex, and
+// esbuild uses that target to serialize alpha with legacy rgba().
+// https://vite.dev/config/build-options.html#build-csstarget
+const legacyCssBuild = {
+  cssMinify: 'esbuild',
+  cssTarget: 'chrome61',
+} as const;
+
+// A Node builtin reaching the browser graph resolves, by default, to a stub
+// that throws on first property access, behind a warning a passing build
+// scrolls away. What it costs is not one broken import: a route module that
+// throws while it evaluates is a route module React Router could not load, and
+// the answer to that is `window.location.reload()` — so the page reloads, fails
+// the same way, and reloads again, with nothing on screen to read.
+// https://github.com/remix-run/react-router/blob/2edaca7a4f12a50cad002d55d84f73b0cdd462b6/packages/react-router/lib/dom/ssr/routeModules.ts#L280-L308
+// The edge is almost never written in this app: it arrives through a workspace
+// barrel that re-exports server-side transport, and the module graph is the
+// only place it is visible. So the client environment refuses to resolve a
+// builtin at all, and names the importer that pulled it in.
+const browserSafeGraph = (): Plugin => ({
+  name: 'floway-browser-safe-graph',
+  enforce: 'pre',
+  applyToEnvironment: environment => environment.name === 'client',
+  resolveId(source, importer) {
+    if (!isBuiltin(source)) return;
+    throw new Error(
+      `${importer ?? '<entry>'} imports the Node builtin "${source}", which cannot run in a browser. `
+      + 'Reach the module you need through a browser-safe export instead.',
+    );
+  },
+});
+
 export default defineConfig({
+  build: legacyCssBuild,
   // React Router discovers route modules lazily. Pre-bundle their browser
   // dependencies at startup so the first visit to a route never makes Vite
   // re-optimize and reload the already-mounted dashboard.
@@ -225,8 +225,7 @@ export default defineConfig({
     ],
   },
   plugins: [
-    excludeSourceMapsFromUpload(),
-    fontsourceWoff2Only(),
+    browserSafeGraph(),
     prismComponentsEsm(),
     typescriptStylesheets(),
     reactRouter(),
@@ -272,25 +271,28 @@ export default defineConfig({
   preview: {
     host: '127.0.0.1',
   },
+  // A `?worker` import is bundled by its own rolldown pass, which the client
+  // environment's output options do not reach.
+  // https://github.com/vitejs/vite/blob/v8.1.5/packages/vite/src/node/plugins/worker.ts#L162-L232
+  worker: {
+    rolldownOptions: { output: sourceMapOutput },
+  },
   environments: {
     client: {
       build: {
-        // The maps are built for the three build checks that read them --
-        // scripts/check-web-monaco-lazy.ts,
-        // scripts/check-web-gallery-dev-only.ts and
-        // scripts/check-web-locales-split.ts derive chunk membership from
-        // each map's module list, and fall back to a far weaker scan of the
-        // emitted text without one. Both find a map by chunk filename, so
-        // `hidden` serves them while leaving the chunks without the trailing
-        // `sourceMappingURL` comment -- the maps are not deployed (see the
-        // `.assetsignore` plugin above), and a comment naming a file the
-        // upload does not carry is a 404 in anyone's devtools. Nothing in the
-        // browser would consume them anyway: the ErrorBoundary in
-        // src/root.tsx renders `error.stack` as text, and a source map never
-        // reaches that string.
-        sourcemap: 'hidden',
+        ...legacyCssBuild,
+        // The maps ship, and the chunks keep the trailing `sourceMappingURL`
+        // comment that names them: the ErrorBoundary in src/root.tsx restores
+        // its trace through src/lib/source-mapped-stack.ts, and the same
+        // comment is what lets devtools resolve a frame on a live instance.
+        // Three build checks -- scripts/check-monaco-lazy.ts,
+        // scripts/check-gallery-dev-only.ts and
+        // scripts/check-locales-split.ts -- read the same files to derive
+        // chunk membership from each map's module list.
+        sourcemap: true,
         rolldownOptions: {
           output: {
+            ...sourceMapOutput,
             codeSplitting: {
               groups: [
                 // The charts are excluded because they are the one part of

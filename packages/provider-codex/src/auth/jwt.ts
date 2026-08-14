@@ -6,6 +6,7 @@
 // access token may not be a JWT at all.
 
 import { isObject } from './parse-helpers.ts';
+import { decodeCanonicalBase64url } from '@floway-dev/protocols/common';
 
 export interface CodexTokenClaims {
   email: string | null;
@@ -46,6 +47,22 @@ export const tryParseCodexAccessTokenClaims = (accessToken: string): CodexTokenC
   }
 };
 
+// Refresh responses need only update the capability-relevant plan claim. The
+// account identity was validated at import, and OpenAI may omit unrelated
+// profile claims from a later id_token. Missing plan returns `undefined` so
+// callers can preserve the latest observation or use the import-time identity;
+// malformed present claims still surface.
+export const parseCodexIdTokenPlanType = (idToken: string): string | undefined => {
+  const payload = decodeJwtPayload(idToken, 'id_token');
+  const auth = payload['https://api.openai.com/auth'];
+  if (auth === undefined) return undefined;
+  if (!isObject(auth)) throw new Error('id_token https://api.openai.com/auth claim is not an object');
+  const planType = auth.chatgpt_plan_type;
+  if (planType === undefined) return undefined;
+  if (typeof planType !== 'string' || planType === '') throw new Error('id_token has malformed chatgpt_plan_type claim');
+  return planType;
+};
+
 const decodeJwtPayload = (token: string, label: string): Record<string, unknown> => {
   const segments = token.split('.');
   if (segments.length !== 3) throw new Error(`${label} must have 3 segments, got ${segments.length}`);
@@ -60,13 +77,11 @@ const decodeJwtPayload = (token: string, label: string): Record<string, unknown>
   return payload;
 };
 
-// atob rejects unpadded base64; OpenAI tokens arrive unpadded, so we pad.
 const decodeBase64UrlToUtf8 = (value: string): string => {
-  const standard = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = standard + '='.repeat((4 - (standard.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  // JOSE compact serialization uses canonical unpadded Base64URL.
+  // https://www.rfc-editor.org/rfc/rfc7515.html#section-2
+  const bytes = decodeCanonicalBase64url(value);
+  if (bytes === null) throw new TypeError('Invalid canonical Base64URL JWT segment');
   return new TextDecoder().decode(bytes);
 };
 

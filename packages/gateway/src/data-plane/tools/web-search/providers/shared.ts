@@ -1,6 +1,7 @@
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { sleep } from '../../../../shared/sleep.ts';
 import type { WebSearchProviderErrorCode, WebSearchProviderResult } from '../types.ts';
+import { discardUpstreamResponse } from '@floway-dev/provider';
 
 const MAX_WEB_SEARCH_QUERY_LENGTH = 1000;
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
@@ -15,6 +16,7 @@ export const fetchWithRetry = async (
     const response = await doFetch();
     if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
     if (attempt >= RETRY_DELAYS_MS.length) return response;
+    await discardUpstreamResponse(response);
     await sleep(RETRY_DELAYS_MS[attempt], signal);
     attempt += 1;
   }

@@ -57,6 +57,7 @@ export const MOCKED_FETCH_EGRESS: ProxyFallbackEntry[] = [{ id: 'direct_fetch' }
 
 export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture, overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
+    githubHost: 'github.com',
     githubToken: githubAccount.token,
     user: githubAccount.user,
   };
@@ -82,10 +83,60 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
   };
 };
 
+export const buildCodexUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+  const config = {
+    accounts: [{ email: 'codex@example.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }],
+  };
+  const { config: overrideConfig, ...rest } = overrides;
+
+  return {
+    id: 'up_codex',
+    kind: 'codex',
+    name: 'Codex',
+    enabled: true,
+    sortOrder: 200,
+    createdAt: TEST_UPSTREAM_TIMESTAMP,
+    updatedAt: TEST_UPSTREAM_TIMESTAMP,
+    // A seeded access token keeps the OAuth refresh off the fetch mock's path.
+    state: {
+      accounts: [{
+        chatgptAccountId: 'acc',
+        refresh_token: 'rt_v1',
+        state: 'active',
+        state_updated_at: TEST_UPSTREAM_TIMESTAMP,
+        openaiDeviceId: '11111111-2222-4333-8444-555555555555',
+        accessToken: { token: 'codex-access-token', expiresAt: Date.parse('2100-01-01T00:00:00.000Z'), refreshedAt: TEST_UPSTREAM_TIMESTAMP },
+        quotaSnapshot: null,
+      }],
+    },
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: MOCKED_FETCH_EGRESS,
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+    ...rest,
+    config: overrideConfig ?? config,
+  };
+};
+
+export function codexModels(models: Array<{ slug: string; display_name?: string }>) {
+  return {
+    models: models.map(model => ({
+      slug: model.slug,
+      display_name: model.display_name ?? model.slug,
+      visibility: 'list',
+      context_window: 272000,
+      max_context_window: 1000000,
+    })),
+  };
+}
+
 export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
+    ingressHeadersRules: [],
     apiKey: 'sk-custom',
     endpoints: { chatCompletions: {} },
   };

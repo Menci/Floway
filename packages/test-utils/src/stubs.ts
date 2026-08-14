@@ -1,4 +1,5 @@
-import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { testFetcher } from './mock-fetch.ts';
+import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type MessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
@@ -6,10 +7,16 @@ import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemet
 // in production). The Headers bag is per-call so tests that mutate it do not
 // bleed state across cases.
 export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
-  fetcher: directFetcher,
+  fetcher: testFetcher,
   waitUntil: () => {},
   headers: new Headers(),
   wrapUpstreamCall: identityWrapUpstreamCall,
+  ...overrides,
+});
+
+export const noopMessagesUpstreamCallOptions = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+  ...noopUpstreamCallOptions(overrides),
+  anthropicBeta: [],
   ...overrides,
 });
 
@@ -100,6 +107,7 @@ export const stubModelCandidate = (overrides: {
     upstreamId: 'test-upstream',
     kind: 'custom',
     name: 'Test Upstream',
+    inboundHeaderAllowlist: [],
     disabledPublicModelIds: [],
     modelPrefix: null,
     modelsCache: null,
@@ -127,6 +135,6 @@ export const stubModelCandidate = (overrides: {
       ...modelOverrides,
       providerModels: modelOverrides.providerModels ?? { [provider.upstreamId]: providerModel },
     }),
-    fetcher: directFetcher,
+    fetcher: testFetcher,
   };
 };

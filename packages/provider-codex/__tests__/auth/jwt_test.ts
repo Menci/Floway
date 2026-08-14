@@ -82,4 +82,17 @@ describe('tryParseCodexAccessTokenClaims', () => {
     const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_from_access' } });
     expect(tryParseCodexAccessTokenClaims(token)?.chatgptAccountId).toBe('acc_from_access');
   });
+
+  test('rejects noncanonical JWT payload encodings', () => {
+    const token = makeJwt({
+      'https://api.openai.com/auth': { chatgpt_account_id: 'a', chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
+      'https://api.openai.com/profile': { email: 'a@b' },
+      x: '',
+    });
+    const [header, payload, signature] = token.split('.');
+    expect(payload?.endsWith('Q')).toBe(true);
+    expect(() => parseCodexTokenClaims(`${header}.${payload}=.${signature}`, 'access_token')).toThrow();
+    expect(() => parseCodexTokenClaims(`${header}.${payload}\n.${signature}`, 'access_token')).toThrow();
+    expect(() => parseCodexTokenClaims(`${header}.${payload!.slice(0, -1)}R.${signature}`, 'access_token')).toThrow();
+  });
 });

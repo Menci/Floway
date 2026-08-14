@@ -63,6 +63,45 @@ export interface UsageRecord {
   metrics: UsageMetricRecord[];
 }
 
+export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
+export type UsageOverviewAxis = UsageOverviewGroupBy | 'none' | 'series';
+
+export interface UsageOverviewRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
+  cost: DecimalString | null;
+}
+
+export interface UsageOverviewFilters {
+  keyIds: readonly string[];
+  userIds: readonly number[];
+  models: readonly string[];
+  upstreams: readonly string[];
+}
+
+export interface UsageOverviewQueryOptions {
+  actorUserId: number;
+  isAdmin: boolean;
+  start: string;
+  end: string;
+  groupBy: UsageOverviewGroupBy;
+  filters: UsageOverviewFilters;
+  bucketForHour: (hour: string) => string;
+}
+
+export interface UsageOverviewResult {
+  series: UsageOverviewRecord[];
+  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
+  dimensionValues: {
+    keyIds: string[];
+    userIds: number[];
+    models: string[];
+    upstreams: string[];
+  };
+}
+
 export interface UsageMetricRecord {
   metric: BillingMetric;
   quantity: DecimalString;
@@ -150,6 +189,58 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
   buckets: readonly PerformanceBucketRow[];
 }
 
+export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
+export type PerformanceOverviewGroupBy = Exclude<PerformanceGroupBy, 'none'>;
+export type PerformanceOverviewAxis = PerformanceGroupBy | 'series';
+
+export interface PerformanceDisplayRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  errors: number;
+  ttftSamples: number;
+  tpotSamples: number;
+  neutral: number;
+  ttftMsP50: number | null;
+  ttftMsP95: number | null;
+  ttftMsP99: number | null;
+  tpotUsP50: number | null;
+  tpotUsP95: number | null;
+  tpotUsP99: number | null;
+}
+
+export interface PerformanceOverviewFilters {
+  keyIds: readonly string[];
+  userIds: readonly number[];
+  models: readonly string[];
+  upstreams: readonly string[];
+  operations: readonly string[];
+  runtimeLocations: readonly string[];
+}
+
+export interface PerformanceOverviewQueryOptions {
+  actorUserId: number;
+  isAdmin: boolean;
+  start: string;
+  end: string;
+  groupBy: PerformanceOverviewGroupBy;
+  filters: PerformanceOverviewFilters;
+  bucketForHour: (hour: string) => string;
+}
+
+export interface PerformanceOverviewResult {
+  series: PerformanceDisplayRecord[];
+  axes: Record<PerformanceGroupBy, PerformanceDisplayRecord[]>;
+  dimensionValues: {
+    models: string[];
+    upstreams: string[];
+    operations: string[];
+    runtimeLocations: string[];
+    userIds: number[];
+    keyIds: string[];
+  };
+}
+
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
@@ -204,7 +295,8 @@ export interface UsageRepo {
   // first write establishes the unit-price snapshot, including an unpriced
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
-  query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
+  query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;
@@ -236,7 +328,7 @@ export interface PerformanceRepo {
   // calls and chat successes that never got a first output token or a real
   // upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
-  query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
+  queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;
@@ -252,6 +344,7 @@ export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
+  saveClearingModelsCache(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
   // Upstream state write with optimistic concurrency, used both by the
@@ -261,11 +354,16 @@ export interface UpstreamRepo {
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
-  // Catalog-cache writes. They touch only the cache column, so a refresh and a
-  // credential write to the same row do not contend — `saveState`'s CAS
-  // predicate reads `state_json` alone.
-  saveModelsCache(id: string, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<void>;
-  saveModelsCacheError(id: string, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<void>;
+  // Catalog-cache writes are conditional on the row generation that started
+  // the fetch. A superseded provider can finish serving its own request, but
+  // cannot publish models or errors under newer credentials/configuration.
+  saveModelsCache(id: string, generation: ModelsCacheGeneration, cache: Omit<UpstreamModelsCache, 'lastError'>): Promise<boolean>;
+  saveModelsCacheError(id: string, generation: ModelsCacheGeneration, error: NonNullable<UpstreamModelsCache['lastError']>): Promise<boolean>;
+}
+
+export interface ModelsCacheGeneration {
+  updatedAt: string;
+  config: unknown;
 }
 
 export interface ProxyRecord {
@@ -432,6 +530,12 @@ export interface ExpirationSweepsRepo {
   complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;
 }
 
+export interface ScheduledMaintenanceRepo {
+  tryClaim(token: string, now: number, staleClaimedBefore: number): Promise<boolean>;
+  renew(token: string, now: number): Promise<void>;
+  release(token: string): Promise<void>;
+}
+
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
 // are owned by @floway-dev/agent-setup; the SQL and in-memory implementations
 // here satisfy that contract. Re-exported so the repo layer imports one source.
@@ -453,5 +557,6 @@ export interface Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
+  scheduledMaintenance: ScheduledMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 }

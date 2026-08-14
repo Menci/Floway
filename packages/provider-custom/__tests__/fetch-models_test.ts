@@ -23,6 +23,7 @@ const upstreamRecord = () => ({
     authStyle: 'bearer',
     apiKey: 'token',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: [],
   },
   state: null,
 });

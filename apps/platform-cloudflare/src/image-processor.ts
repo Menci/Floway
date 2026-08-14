@@ -3,9 +3,8 @@ import { WEBP_QUALITY, getImageCacheStore, sha256Hex } from '@floway-dev/platfor
 
 // Minimal shapes of the Cloudflare bindings we depend on, hand-typed so the
 // runtime contract does not pull in the full @cloudflare/workers-types
-// surface. We use only the transform/output path of the Images binding;
-// `info()` is intentionally not modelled because it is billed per call — we
-// read dimensions locally via image-size in the platform helper instead.
+// surface. Production uses only the transform/output path; dimensions are
+// read locally via image-size in the platform helper.
 // Reference: https://developers.cloudflare.com/images/transform-images/bindings/
 export interface ImagesBinding {
   input(stream: ReadableStream): ImageTransformer;

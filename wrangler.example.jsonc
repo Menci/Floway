@@ -1,14 +1,14 @@
 // Copy this file to wrangler.jsonc and fill in the <YOUR_*> placeholders.
 // wrangler.jsonc is gitignored so that each contributor's own Cloudflare
 // account id, D1 database id, and Worker name stay local. Every concrete
-// value here is load-bearing — `scripts/check-wrangler.ts` gates dev and
-// deploy on real wrangler.jsonc mirroring this example exactly in both
-// directions, except that <YOUR_*> placeholders may (and must) be
-// replaced with your own values, and `account_id` may additionally
-// appear only in wrangler.jsonc since it is per-contributor. Anything
-// else the real config needs (extra bindings, extra compat flags, `vars`
-// blocks) belongs in this example first so every contributor and the
-// deploy gate agree on the Worker's shape.
+// value here is load-bearing — `scripts/require-wrangler-config.ts`
+// gates dev and deploy on real wrangler.jsonc mirroring this example
+// exactly in both directions, except that <YOUR_*> placeholders may
+// (and must) be replaced with your own values, and `account_id` may
+// additionally appear only in wrangler.jsonc since it is
+// per-contributor. Anything else the real config needs (extra bindings,
+// extra compat flags, `vars` blocks) belongs in this example first so
+// every contributor and the deploy gate agree on the Worker's shape.
 //
 // 1. Optionally set CLOUDFLARE_ACCOUNT_ID in the environment, or run
 //    `pnpm wrangler login`. If neither is in place, add an `account_id`
@@ -34,7 +34,9 @@
   // cannot resolve those modules at cold start without the Node compat flag.
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": ["17 * * * *"]
+    // Minute scheduling provides catch-up throughput while bounded deletion
+    // and collection batches keep each tick's D1 write load predictable.
+    "crons": ["* * * * *"]
   },
   "assets": {
     "directory": "apps/web/dist/client",

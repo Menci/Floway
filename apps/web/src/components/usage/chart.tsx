@@ -1,10 +1,10 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useLayoutEffect, useMemo, type ComponentProps } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { UsageChartCallout } from './callout';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useChartFrame } from '../charts/frame-styles';
@@ -47,7 +47,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
   ), [chart, labelByTime, valueFormatter]);
 
-  // The chart keeps its own hover state across a range or view switch, so it
+  // The chart keeps its own hover state across a query switch, so it
   // can ask for a callout carrying legends from the dataset it just replaced.
   // Such a row is dropped rather than substituted -- a table describing the
   // data must not name a series the data does not have.

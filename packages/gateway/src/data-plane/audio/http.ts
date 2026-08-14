@@ -11,6 +11,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedTranscription =
@@ -23,7 +24,7 @@ type PreparedTranscription =
   | { readonly type: 'invalid'; readonly message: string };
 
 const prepareTranscription = async (bytes: Uint8Array, contentType: string | undefined): Promise<PreparedTranscription> => {
-  if (contentType === undefined || contentType.replace(/;.*$/u, '').trim().toLowerCase() !== 'multipart/form-data') {
+  if (!isMultipartFormDataMediaType(contentType)) {
     return { type: 'invalid', message: 'Audio transcription request body must use multipart/form-data.' };
   }
 
@@ -77,7 +78,7 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
     model: request.model,
     kind: 'transcription',
     modelServesEndpoint: model => model.endpoints.audioTranscriptions !== undefined,
-    call: (provider, model, opts) => provider.instance.callAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
+    call: (provider, model, opts) => provider.instance.callAudioTranscriptions(model, { entries: request.entries }, undefined, opts),
     response: { format: 'strategy', respond: respondAudioTranscription },
   });
   return finalizeGatewayResponse(ctx, response);

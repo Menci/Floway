@@ -21,6 +21,7 @@ interface SocketDialOptions {
 }
 
 export interface DialedSocket {
+  /** Reaches EOF when the peer sends FIN, independently of the writable side. */
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
   /** Idempotent close. */

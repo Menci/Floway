@@ -9,7 +9,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const mergeClaudeVariantsControl = vi.hoisted<{
   override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
@@ -43,11 +43,27 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     hue: 210,
     ...rest,
     config: overrideConfig ?? {
+      githubHost: 'github.com',
       githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,
       user: { id: 1, login: 'tester', name: 'Test User', avatar_url: 'https://example.com/avatar.png' },
     },
   };
 };
+
+test('createCopilotProvider reports an invalid host through the config contract', () => {
+  const record = buildCopilotUpstream({
+    config: {
+      githubHost: 'https://github.com',
+      githubToken: 'ghu_test',
+      user: { id: 1, login: 'tester', name: null, avatar_url: '' },
+    },
+  });
+  assertThrows(
+    () => createCopilotProvider(record),
+    Error,
+    'Malformed copilot upstream config: githubHost must be github.com or a tenant hostname ending in .ghe.com',
+  );
+});
 
 interface CopilotTestRepo {
   copilotUpstream: UpstreamRecord;
@@ -257,7 +273,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
       await provider.callMessages(providerModel, {
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hello' }],
-      }, undefined, noopUpstreamCallOptions());
+      }, undefined, noopMessagesUpstreamCallOptions());
     },
   );
 
@@ -311,13 +327,26 @@ test('Copilot provider selects raw variants that support the target endpoint', a
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
       await provider.callResponses(providerModel, {
-        input: [],
+        input: [{
+          type: 'additional_tools',
+          role: 'developer',
+          tools: [{
+            type: 'namespace',
+            name: 'functions',
+            description: '',
+            tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+          }],
+        }],
         reasoning: { effort: 'xhigh' },
       }, 'generate', undefined, noopUpstreamCallOptions());
     },
   );
 
   assertEquals(responsesBody?.model, 'claude-opus-4.7');
+  assertEquals(
+    (responsesBody?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description,
+    'Tools in the functions namespace.',
+  );
 });
 
 test('Copilot provider runs the Responses boundary chain on the compact path', async () => {
@@ -371,6 +400,16 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
       const result = await provider.callResponses(providerModel, {
         input: [
           {
+            type: 'additional_tools',
+            role: 'developer',
+            tools: [{
+              type: 'namespace',
+              name: 'functions',
+              description: '',
+              tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
+            }],
+          },
+          {
             type: 'message',
             role: 'user',
             content: [
@@ -392,7 +431,11 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
   if (!responsesBody) throw new Error('expected /responses to be hit');
   assertEquals('service_tier' in responsesBody, false);
   const wireInput = responsesBody?.input as Array<{ type: string }>;
-  assertEquals(wireInput[0]?.type, 'message');
+  assertEquals(wireInput[0]?.type, 'additional_tools');
+  assertEquals(
+    (responsesBody.input as Array<{ tools?: Array<{ description: string }> }>)[0]?.tools?.[0]?.description,
+    'Tools in the functions namespace.',
+  );
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
   assertEquals(visionHeader, 'true');
   assertEquals(initiatorHeader, 'user');
@@ -542,11 +585,12 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const models = await provider.getProvidedModels(directFetcher);
       const byId = new Map(models.map(model => [model.id, model]));
       const opts = noopUpstreamCallOptions();
+      const messagesOpts = noopMessagesUpstreamCallOptions();
 
       await provider.callChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
-      await provider.callMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
+      await provider.callMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
       await provider.callEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
@@ -567,7 +611,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   // The vision-detection interceptor runs inside `provider.callMessages`, so
   // it must walk into nested `tool_result.content` to find the image.
   const driveMessages = async (providerModel: Awaited<ReturnType<typeof instance.instance.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
-    await provider.callMessages(providerModel, body, undefined, noopUpstreamCallOptions());
+    await provider.callMessages(providerModel, body, undefined, noopMessagesUpstreamCallOptions());
   };
 
   await withMockedFetch(
@@ -901,6 +945,7 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
     ),
     copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
     quotaSnapshot: null,
+    seat: null,
   };
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken?.token, 'tok');
@@ -956,6 +1001,89 @@ const fastModelCatalog = () =>
     },
   ]);
 
+const betaModelCatalog = () => copilotModels([
+  { id: 'claude-opus-4.6', supported_endpoints: ['/v1/messages'], maxContextWindowTokens: 200_000 },
+  { id: 'claude-opus-4.6-1m', supported_endpoints: ['/v1/messages'], maxContextWindowTokens: 1_000_000 },
+]);
+
+const betaIntent = ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20', 'unknown-beta'];
+
+test('Copilot consumes Messages beta intent before serializing its supported wire subset', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  let upstreamModel: unknown;
+  let upstreamBeta: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(betaModelCatalog());
+      }
+      if (url.pathname === '/v1/messages') {
+        upstreamModel = ((await request.json()) as Record<string, unknown>).model;
+        upstreamBeta = request.headers.get('anthropic-beta');
+        return sseResponse(messagesSseBody());
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callMessages(
+        providerModel,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+        undefined,
+        noopMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
+      );
+      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+    },
+  );
+
+  assertEquals(upstreamModel, 'claude-opus-4.6-1m');
+  assertEquals(upstreamBeta, 'advanced-tool-use-2025-11-20');
+});
+
+test('Copilot count_tokens consumes and serializes the same Messages beta intent', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+  let upstreamModel: unknown;
+  let upstreamBeta: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(betaModelCatalog());
+      if (url.pathname === '/v1/messages/count_tokens') {
+        upstreamModel = ((await request.json()) as Record<string, unknown>).model;
+        upstreamBeta = request.headers.get('anthropic-beta');
+        return jsonResponse({ input_tokens: 1 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callMessagesCountTokens(
+        providerModel,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+        undefined,
+        noopMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
+      );
+      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+    },
+  );
+
+  assertEquals(upstreamModel, 'claude-opus-4.6-1m');
+  assertEquals(upstreamBeta, 'advanced-tool-use-2025-11-20');
+});
+
 test('Copilot provider routes speed=fast to the -fast raw variant and stamps usage.speed on the way out', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
@@ -984,7 +1112,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
         undefined,
-        noopUpstreamCallOptions(),
+        noopMessagesUpstreamCallOptions(),
       );
 
       if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
@@ -1042,7 +1170,7 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
         undefined,
-        noopUpstreamCallOptions(),
+        noopMessagesUpstreamCallOptions(),
       );
 
       if (result.ok) throw new Error('expected 400 error, got ok stream');
@@ -1091,7 +1219,7 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
         providerModel,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue },
         undefined,
-        noopUpstreamCallOptions(),
+        noopMessagesUpstreamCallOptions(),
       );
     },
   );

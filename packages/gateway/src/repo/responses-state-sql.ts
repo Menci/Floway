@@ -7,6 +7,7 @@ import {
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
+import { decodeResponsesSnapshotItemIds, encodeResponsesSnapshotItemIds } from './responses-snapshot-codec.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
@@ -274,6 +275,11 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
+    // D1 derives meta.changes from total_changes(), so payload retirement
+    // triggers can inflate it. RETURNING counts only Responses item rows.
+    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L131
+    // https://www.sqlite.org/c3ref/total_changes.html
+    // https://www.sqlite.org/lang_returning.html
     const active = await this.db
       .prepare(
         `DELETE FROM responses_items WHERE rowid IN (
@@ -287,11 +293,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
              AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
-      .run();
-    const activeDeleted = active.meta.changes ?? 0;
+      .all<{ rowid: number }>();
+    const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
     const inactive = await this.db
       .prepare(
@@ -306,11 +313,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
              )
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(apiKeyId, limit - activeDeleted)
-      .run();
-    return activeDeleted + (inactive.meta.changes ?? 0);
+      .all<{ rowid: number }>();
+    return activeDeleted + inactive.results.length;
   }
 
   async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
@@ -334,14 +342,10 @@ interface ResponsesSnapshotRow {
 }
 
 const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSnapshot => {
-  const parsed: unknown = JSON.parse(row.item_ids_json);
-  if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
-    throw new Error(`Invalid responses_snapshots.item_ids_json for id=${row.id}`);
-  }
   return {
     id: row.id,
     apiKeyId: row.api_key_id,
-    itemIds: parsed,
+    itemIds: decodeResponsesSnapshotItemIds(row.item_ids_json, row.id, row.api_key_id),
     refreshedAt: row.refreshed_at,
   };
 };
@@ -377,7 +381,7 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .bind(
         quantized.id,
         quantized.apiKeyId,
-        JSON.stringify(quantized.itemIds),
+        encodeResponsesSnapshotItemIds(quantized.itemIds),
         quantized.refreshedAt,
       )
       .run();
@@ -397,11 +401,12 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
              AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
-      .run();
-    const activeDeleted = active.meta.changes ?? 0;
+      .all<{ rowid: number }>();
+    const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
     const inactive = await this.db
       .prepare(
@@ -416,11 +421,12 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
              )
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(apiKeyId, limit - activeDeleted)
-      .run();
-    return activeDeleted + (inactive.meta.changes ?? 0);
+      .all<{ rowid: number }>();
+    return activeDeleted + inactive.results.length;
   }
 
   async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {

@@ -10,12 +10,29 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
+  headersForMessagesCall,
   resolveEffectiveFlags,
   type ProviderInstance,
   type Provider,
   type ProviderStreamResult,
   type UpstreamRecord,
 } from '@floway-dev/provider';
+
+// https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L421-L444
+const INBOUND_HEADER_ALLOWLIST = [
+  'accept',
+  /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+  'anthropic-dangerous-direct-browser-access',
+  'anthropic-version',
+  'x-app',
+  'accept-language',
+  'sec-fetch-mode',
+  'user-agent',
+  'content-type',
+  'accept-encoding',
+  'x-claude-code-session-id',
+  'x-client-request-id',
+] as const;
 
 export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   assertClaudeCodeUpstreamRecord(record);
@@ -47,17 +64,18 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
         upstreamId: record.id,
       };
 
-      // Detection runs on the inbound, unmodified payload + client headers.
+      // Detection runs on the unmodified payload plus the Claude Code
+      // fingerprint admitted by the provider module and Messages boundaries.
       // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the
       // shaped path skips straight to the terminal call, which preserves the
       // caller's own system blocks, metadata and tool shape rather than
-      // re-deriving them. The call still rebuilds the header surface through
-      // the allowlist in `fetch.ts`, swaps Authorization for our cached OAuth
-      // token, and restamps the resolved model id.
+      // re-deriving them. The call preserves that filtered fingerprint,
+      // supplies the provider-owned OAuth auth, and restamps the resolved model
+      // id.
       const looksShaped = isClaudeCodeShapedRequest({
-        headers: opts.headers,
+        headers: headersForMessagesCall(opts.headers, opts.anthropicBeta),
         body: ctx.payload,
       });
 
@@ -104,6 +122,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'claude-code',
     name: record.name,
+    inboundHeaderAllowlist: INBOUND_HEADER_ALLOWLIST,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,

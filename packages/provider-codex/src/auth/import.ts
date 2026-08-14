@@ -53,6 +53,11 @@ const buildCodexImportResult = (credential: NormalizedCodexCredential, now: stri
         token: credential.accessToken,
         expiresAt: credential.expiresAt,
         refreshedAt: now,
+        // Seed the entry with the import-time plan observation so refresh
+        // flows whose id_token omits the claim still have one to preserve.
+        // An unknown plan (null identity) stays absent rather than `null`,
+        // because the entry's plan slot is a present-or-absent observation.
+        ...(credential.identity.planType === null ? {} : { planType: credential.identity.planType, planObservedAt: now }),
       },
       quotaSnapshot: null,
     }],

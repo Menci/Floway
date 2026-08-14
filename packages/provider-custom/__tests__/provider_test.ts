@@ -4,10 +4,11 @@ import { createCustomProvider } from '../src/provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { directFetcher } from '@floway-dev/provider';
+import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
+  ingressHeadersRules?: { key: string; value: string | null }[];
   modelsFetchEnabled?: boolean;
   models?: UpstreamModelConfig[];
 }
@@ -32,9 +33,50 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { chatCompletions: {} },
+    ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
   },
+});
+
+test('Custom applies empty and override rules after admitted headers reach the provider', async () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    ingressHeadersRules: [
+      { key: 'x-passthrough', value: null },
+      { key: 'x-empty', value: '' },
+      { key: 'x-override', value: 'configured' },
+      { key: 'x-absent', value: 'not-synthesized' },
+    ],
+    modelsFetchEnabled: false,
+    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }],
+  }));
+  let observed: Headers | undefined;
+
+  await withMockedFetch(
+    request => {
+      observed = request.headers;
+      return sseResponse();
+    },
+    async () => {
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const opts = noopUpstreamCallOptions({
+        headers: new Headers({
+          'x-admitted-by-gateway': 'gateway-value',
+          'x-passthrough': 'client-pass',
+          'x-empty': 'client-empty',
+          'x-override': 'client-override',
+        }),
+      });
+      await provider.instance.callChatCompletions(model, { messages: [] }, undefined, opts);
+    },
+  );
+
+  assertExists(observed);
+  assertEquals(observed.get('x-admitted-by-gateway'), 'gateway-value');
+  assertEquals(observed.get('x-passthrough'), 'client-pass');
+  assertEquals(observed.get('x-empty'), '');
+  assertEquals(observed.get('x-override'), 'configured');
+  assertEquals(observed.has('x-absent'), false);
 });
 
 test('getProvidedModels returns only manual models and never fetches when modelsFetch is disabled', async () => {
@@ -233,7 +275,7 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
         model,
         parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
         undefined,
-        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+        noopUpstreamCallOptions(),
       );
       assertEquals(result.target, { protocol: 'cohere-v2' });
       assertEquals(result.modelKey, 'raw-reranker');
@@ -266,7 +308,7 @@ test('callRerank honors the per-model path without adding an upstream path overr
         model,
         parseRerankRequest('jina-v1', { model: 'raw-reranker', query: 'query', documents: ['one'] }).request,
         undefined,
-        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+        noopUpstreamCallOptions(),
       );
     },
   );
@@ -276,6 +318,7 @@ test('callRerank honors the per-model path without adding an upstream path overr
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
   const provider = createCustomProvider(buildCustomUpstream()).instance;
   const bodies: Record<string, Record<string, unknown>> = {};
+  const betas: Record<string, string | null> = {};
 
   await withMockedFetch(
     async request => {
@@ -285,6 +328,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       }
 
       bodies[path] = (await request.json()) as Record<string, unknown>;
+      betas[path] = request.headers.get('anthropic-beta');
       if (path === '/v1/chat/completions' || path === '/v1/responses' || path === '/v1/messages') {
         return sseResponse();
       }
@@ -296,10 +340,11 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       const [model] = await provider.getProvidedModels(directFetcher);
       assertExists(model);
       const opts = noopUpstreamCallOptions();
+      const messagesOpts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
       await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );
@@ -309,6 +354,11 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   assertEquals(bodies['/v1/messages'].stream, true);
   assertEquals('stream' in bodies['/v1/messages/count_tokens'], false);
   assertEquals('stream' in bodies['/v1/embeddings'], false);
+  assertEquals(betas['/v1/messages'], 'context-1m,advanced-tool-use');
+  assertEquals(betas['/v1/messages/count_tokens'], 'context-1m,advanced-tool-use');
+  assertEquals(betas['/v1/chat/completions'], null);
+  assertEquals(betas['/v1/responses'], null);
+  assertEquals(betas['/v1/embeddings'], null);
 });
 
 test('Custom provider uses configured endpoints regardless of per-model hints in the /models response', async () => {
@@ -483,30 +533,4 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
     },
   );
-});
-
-test('Custom provider forwards inbound anthropic-beta header through opts.headers', async () => {
-  const provider = createCustomProvider(buildCustomUpstream()).instance;
-  const seen: Array<string | null> = [];
-
-  await withMockedFetch(
-    request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'echo', object: 'model' }] });
-      seen.push(request.headers.get('anthropic-beta'));
-      if (path === '/v1/messages') return sseResponse();
-      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const opts = noopUpstreamCallOptions();
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20,interleaved-thinking-2025-05-14' }) });
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20' }) });
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-    },
-  );
-
-  assertEquals(seen, ['oauth-2025-04-20,interleaved-thinking-2025-05-14', 'oauth-2025-04-20', null, null]);
 });

@@ -102,7 +102,7 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.wantsStream, false);
   });
 
-  test('wantsStream=true: downstreamAbortController is defined and abortSignal matches its signal', async () => {
+  test('wantsStream=true creates a matching client-disconnect controller and signal', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -111,11 +111,11 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertExists(ctx.downstreamAbortController);
-    assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
+    assertExists(ctx.clientDisconnectController);
+    assertEquals(ctx.clientDisconnectSignal, ctx.clientDisconnectController.signal);
   });
 
-  test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
+  test('wantsStream=false still creates a client-disconnect lifecycle', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -124,25 +124,41 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertEquals(ctx.downstreamAbortController, undefined);
-    assertEquals(ctx.abortSignal, undefined);
+    assertExists(ctx.clientDisconnectController);
+    assertEquals(ctx.clientDisconnectSignal, ctx.clientDisconnectController.signal);
   });
 
-  test('caller-supplied downstreamAbortController overrides the factory-minted one (websocket path)', async () => {
+  test('caller-supplied clientDisconnectController overrides the factory-minted one (websocket path)', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, clientDisconnectController: controller, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
       return c.text('ok');
     });
     await app.request('/test');
     assertExists(ctx);
     assertExists(controller);
-    assertEquals(ctx.downstreamAbortController, controller);
-    assertEquals(ctx.abortSignal, controller.signal);
+    assertEquals(ctx.clientDisconnectController, controller);
+    assertEquals(ctx.clientDisconnectSignal, controller.signal);
     assertEquals(ctx.wantsStream, true);
+  });
+
+  test('mirrors an aborted HTTP request signal into the client-disconnect lifecycle', async () => {
+    const app = makeApp();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    app.get('/test', c => {
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
+      return c.text('ok');
+    });
+    const controller = new AbortController();
+    const reason = new DOMException('client disconnected', 'AbortError');
+    controller.abort(reason);
+    await app.request(new Request('http://localhost/test', { signal: controller.signal }));
+    assertExists(ctx);
+    assertEquals(ctx.clientDisconnectSignal.aborted, true);
+    assertEquals(ctx.clientDisconnectSignal.reason, reason);
   });
 
   test('exposes the caller-supplied backgroundScheduler on ctx', async () => {
@@ -215,6 +231,42 @@ describe('stampUpstreamCallStart', () => {
     assertExists(stampedAtDispatchEntry);
     assert(stampedAtDispatchEntry >= before && stampedAtDispatchEntry <= after,
       `stamp ${stampedAtDispatchEntry} outside [${before}, ${after}]`);
+  });
+
+  test('rejects a disconnected client immediately before dispatch', async () => {
+    const attempt = freshAttempt();
+    const controller = new AbortController();
+    const reason = new Error('client disconnected');
+    controller.abort(reason);
+    let dispatched = false;
+    let caught: unknown;
+
+    try {
+      await stampUpstreamCallStart(attempt, controller.signal)(() => {
+        dispatched = true;
+        return Promise.resolve();
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    assertEquals(caught, reason);
+    assertEquals(dispatched, false);
+    assertEquals(attempt.upstreamCallStartedAt, null);
+  });
+
+  test('does not affect a dispatch after it has started', async () => {
+    const attempt = freshAttempt();
+    const controller = new AbortController();
+    let finish!: () => void;
+    const finished = new Promise<void>(resolve => { finish = resolve; });
+    const dispatched = stampUpstreamCallStart(attempt, controller.signal)(async () => await finished);
+
+    controller.abort(new Error('client disconnected'));
+    finish();
+
+    await dispatched;
+    assertExists(attempt.upstreamCallStartedAt);
   });
 
   test('resolves to the dispatched value', async () => {

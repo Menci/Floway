@@ -1,4 +1,6 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
+import { jsonRequestBody } from './json-request.ts';
+import type { ReplayableBody } from './options.ts';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 
 // Each source stores one authoritative representation. Multipart requires
@@ -57,6 +59,11 @@ const jsonBody = async (request: ImagesEditsRequest): Promise<Record<string, unk
   };
 };
 
+export const serializeOpenAIImagesEditsJsonPayload = async (
+  request: ImagesEditsRequest,
+  model: string,
+): Promise<Record<string, unknown>> => ({ ...await jsonBody(request), model });
+
 const multipartBody = (request: ImagesEditsRequest, model: string): FormData | null => {
   const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
   const compatibleSources = sources.every(source =>
@@ -84,8 +91,8 @@ const multipartBody = (request: ImagesEditsRequest, model: string): FormData | n
   return form;
 };
 
-export const serializeOpenAIImagesEditsRequest = async (request: ImagesEditsRequest, model: string): Promise<BodyInit> => {
+export const serializeOpenAIImagesEditsRequest = async (request: ImagesEditsRequest, model: string): Promise<FormData | ReplayableBody> => {
   const multipart = multipartBody(request, model);
   if (multipart !== null) return multipart;
-  return JSON.stringify({ ...await jsonBody(request), model });
+  return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
 };

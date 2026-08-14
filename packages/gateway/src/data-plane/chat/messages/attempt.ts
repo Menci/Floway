@@ -13,7 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ModelCandidate, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult, MessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 
@@ -30,13 +30,25 @@ export interface MessagesAttemptArgs {
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
+  readonly anthropicBeta: readonly string[];
 }
+
+const buildMessagesUpstreamCallOptions = (
+  candidate: ModelCandidate,
+  ctx: ChatGatewayCtx,
+  headers: Headers,
+  anthropicBeta: readonly string[],
+): MessagesUpstreamCallOptions => ({
+  ...buildUpstreamCallOptions(candidate, ctx, headers),
+  anthropicBeta,
+});
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
+    headers.delete('anthropic-beta');
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
     const invocation: MessagesInvocation = {
       payload,
@@ -51,8 +63,8 @@ export const messagesAttempt = {
         const providerResult = await candidate.provider.instance.callMessages(
           providerModelOf(candidate),
           body,
-          ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+          undefined,
+          buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
       }
@@ -79,9 +91,10 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
-    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
+    headers.delete('anthropic-beta');
     // `pick` here is contractually total — serve filtered with
     // `messagesCountTokensTarget.canServe`, so a non-messages candidate is
     // a contract breach.
@@ -98,8 +111,8 @@ export const messagesAttempt = {
       const { response } = await candidate.provider.instance.callMessagesCountTokens(
         providerModelOf(candidate),
         body,
-        ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+        undefined,
+        buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
       );
       return response;
     });

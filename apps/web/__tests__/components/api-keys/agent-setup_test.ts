@@ -32,6 +32,8 @@ describe('Agent Setup snippets', () => {
       effortLevel: null,
       cleanupPeriodDays: null,
       optOutAiAttribution: false,
+      disableAutoMemory: false,
+      disableAgentView: false,
       modelDiscovery: false,
     })) as { env: Record<string, string> };
 
@@ -54,6 +56,8 @@ describe('Agent Setup snippets', () => {
       effortLevel: null,
       cleanupPeriodDays: null,
       optOutAiAttribution: false,
+      disableAutoMemory: false,
+      disableAgentView: false,
       modelDiscovery: false,
     })) as { env: Record<string, string> };
 
@@ -71,6 +75,8 @@ describe('Agent Setup snippets', () => {
       effortLevel: null,
       cleanupPeriodDays: null,
       optOutAiAttribution: false,
+      disableAutoMemory: false,
+      disableAgentView: false,
       modelDiscovery: true,
     } as const;
 
@@ -83,6 +89,8 @@ describe('Agent Setup snippets', () => {
       ...base,
       cleanupPeriodDays: 365,
       optOutAiAttribution: true,
+      disableAutoMemory: false,
+      disableAgentView: false,
     }))).toMatchObject({
       cleanupPeriodDays: 365,
       attribution: { commit: '', pr: '', sessionUrl: false },

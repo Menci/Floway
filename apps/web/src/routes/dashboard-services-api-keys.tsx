@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
+import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-services-api-keys';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardSession } from './guards';

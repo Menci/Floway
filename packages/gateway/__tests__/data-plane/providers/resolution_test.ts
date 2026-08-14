@@ -16,6 +16,48 @@ const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 
+test('enumerateModelCandidates blocks a cold catalog fetch after client disconnect', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'sk-custom',
+      endpoints: { messages: {} },
+    },
+  }));
+  const controller = new AbortController();
+  const reason = new Error('client disconnected');
+  controller.abort(reason);
+  let fetches = 0;
+
+  await withMockedFetch(
+    () => {
+      fetches += 1;
+      return jsonResponse({ object: 'list', data: [] });
+    },
+    async () => {
+      let caught: unknown;
+      try {
+        await enumerateModelCandidates({
+          upstreamIds: null,
+          model: 'gpt-test',
+          kind: 'chat',
+          scheduler: testScheduler,
+          runtimeLocation: 'TEST',
+          clientDisconnectSignal: controller.signal,
+        });
+      } catch (error) {
+        caught = error;
+      }
+      assertEquals(caught, reason);
+      assertEquals(fetches, 0);
+    },
+  );
+});
+
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 
@@ -24,6 +66,7 @@ test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched a
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -78,6 +121,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -112,6 +156,7 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
       config: {
         baseUrl: 'https://custom.example.com',
         authStyle: 'bearer',
+        ingressHeadersRules: [],
         apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
@@ -147,13 +192,13 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} }, ingressHeadersRules: [] },
   }));
 
   const providers = await listModelProviders(null);
@@ -233,13 +278,13 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
-    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -284,7 +329,7 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
     id: 'up_chat_only',
     name: 'ChatOnly',
     sortOrder: 1,
-    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -325,7 +370,7 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -367,7 +412,7 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
     id: 'up_aborting',
     name: 'Aborting',
     sortOrder: 1,
-    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -460,11 +505,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_a', name: 'A', sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_b', name: 'B', sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
     }));
   };
 
@@ -552,6 +597,38 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
         assertEquals(resolved.candidates.length, 1);
         assertEquals(resolved.candidates[0]!.model.id, 'gpt-5');
         assertEquals(resolved.candidates[0]!.provider.upstreamId, 'up_a');
+      },
+    );
+  });
+
+  test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_interleaved-duplicates',
+      name: 'interleaved-duplicates', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+        });
+        expect(resolved.candidates.map(candidate => ({
+          binding: `${candidate.model.id}@${candidate.provider.upstreamId}`,
+          effort: candidate.rules?.reasoning?.effort,
+        }))).toEqual([
+          { binding: 'gpt-5@up_a', effort: 'low' },
+          { binding: 'claude@up_b', effort: 'high' },
+        ]);
       },
     );
   });

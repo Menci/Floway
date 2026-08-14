@@ -21,7 +21,7 @@ export const responsesServe = {
     const { payload, ctx, headers } = args;
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
-    // Iterate the narrowed candidates: success (SSE stream opened) is the
+    // Iterate the affinity-selected candidates: success (SSE stream opened) is the
     // final answer; per-candidate failures fall through so a transient
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
@@ -34,7 +34,7 @@ export const responsesServe = {
       'chat',
       async candidate => {
         const result = await responsesAttempt.generate({
-          payload: plan.affinity.payloadForCandidate(candidate),
+          payload: plan.affinitySelection.payloadFor(candidate),
           sourceState: {
             privatePayloads: plan.privatePayloads,
           },
@@ -68,7 +68,7 @@ export const responsesServe = {
       'chat',
       async candidate => {
         const result = await responsesAttempt.invoke({
-          payload: plan.affinity.payloadForCandidate(candidate),
+          payload: plan.affinitySelection.payloadFor(candidate),
           sourceState: {
             privatePayloads: plan.privatePayloads,
           },

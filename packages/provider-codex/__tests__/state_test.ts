@@ -82,7 +82,7 @@ describe('assertCodexUpstreamState', () => {
     expect(() => assertCodexUpstreamState({ accounts: [goodAccount, { ...goodAccount, chatgptAccountId: 'acc_y' }] })).toThrow(/exactly one/);
   });
 
-  test('accepts accessToken absent, null, unknown-expiry, or populated', () => {
+  test('accepts accessToken absent, null, unknown-expiry, populated, or plan-observed', () => {
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({
@@ -90,6 +90,9 @@ describe('assertCodexUpstreamState', () => {
     })).not.toThrow();
     expect(() => assertCodexUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' } }],
+    })).not.toThrow();
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z', planType: 'plus' } }],
     })).not.toThrow();
   });
   test('rejects malformed accessToken', () => {
@@ -102,6 +105,12 @@ describe('assertCodexUpstreamState', () => {
     expect(() => assertCodexUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', extra: 1 } }],
     })).toThrow(/extra/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planType: '' } }],
+    })).toThrow(/planType/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planObservedAt: 'x' } }],
+    })).toThrow(/requires planType/);
   });
 
   test('accepts quotaSnapshot absent / null / populated', () => {

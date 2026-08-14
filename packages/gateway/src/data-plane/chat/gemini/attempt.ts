@@ -55,7 +55,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaMessages(p, transCtx),
           translated => messagesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
           }),
         );
       }
@@ -107,7 +107,7 @@ export const geminiAttempt = {
       const trip = await translateGeminiViaMessages(cleaned, transCtx);
       const { stream: _stream, ...target } = trip.target;
       const messagesResult = await messagesAttempt.countTokens({
-        payload: target, ctx, candidate, headers: invocation.headers,
+        payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       });
       return reshapeMessagesCountAsGemini(messagesResult);
     });

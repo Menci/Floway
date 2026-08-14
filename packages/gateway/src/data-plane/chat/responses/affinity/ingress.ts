@@ -1,5 +1,16 @@
-import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import {
+  type AffinityCodec,
+  type AffinityRequestAnalysis,
+  type AffinityTarget,
+  candidateSatisfiesAffinityTarget,
+  type DecodedAffinityBlob,
+  defineAffinityRequest,
+  type OptionalAffinityBlobProjection,
+  projectOptionalAffinityBlob,
+  projectRequiredAffinityBlob,
+} from '../../shared/affinity/index.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ModelCandidate } from '@floway-dev/provider';
 
 interface ResponsesBlobLocation {
   readonly itemIndex: number;
@@ -8,47 +19,40 @@ interface ResponsesBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
+interface ResponsesBlobAnalysis extends ResponsesBlobLocation {
+  readonly required: boolean;
+}
+
+interface ResponsesItemAnalysis {
+  readonly itemIndex: number;
+  readonly synthetic: boolean;
+  readonly blobs: readonly ResponsesBlobAnalysis[];
+  readonly inheritedRequiredTarget?: AffinityTarget;
+}
+
+interface ResponsesRequestAnalysis {
+  readonly requiredTargets: readonly AffinityTarget[];
+  readonly items: readonly ResponsesItemAnalysis[];
+}
+
+interface ResponsesBlobCandidateProjection {
+  readonly location: ResponsesBlobLocation;
+  readonly projection: OptionalAffinityBlobProjection;
+}
+
 const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
   `responses.${canonicalItemType(itemType)}.${slot}`;
 
-const isOwnedLocation = (
-  location: ResponsesBlobLocation,
-): location is ResponsesBlobLocation & { readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }> } =>
-  location.decoded.kind === 'owned';
-
-const itemInheritsForce = (item: ResponsesInputItem): boolean =>
+const itemInheritsRequiredTarget = (item: ResponsesInputItem): boolean =>
   ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
 
-const blobRequiresForce = (item: ResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
+const blobRequiresOriginalTarget = (item: ResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
   item.type === 'context_compaction'
     ? decoded.kind === 'owned' && decoded.value !== undefined
-    : itemInheritsForce(item);
-
-const narrowingEvidenceFrom = (
-  items: readonly ResponsesInputItem[],
-  locations: readonly ResponsesBlobLocation[],
-): AffinityEvidence[] => {
-  const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
-  const evidence: AffinityEvidence[] = [];
-  let latestTarget: AffinityTarget | undefined;
-
-  for (const [itemIndex, item] of items.entries()) {
-    const itemLocations = locationsByItem.get(itemIndex) ?? [];
-    for (const location of itemLocations.filter(isOwnedLocation)) {
-      latestTarget = location.decoded.affinity;
-      evidence.push({ target: latestTarget, mode: 'prefer' });
-      if (blobRequiresForce(item, location.decoded)) evidence.push({ target: latestTarget, mode: 'force' });
-    }
-    if (itemInheritsForce(item) && itemLocations.length === 0 && latestTarget !== undefined) {
-      evidence.push({ target: latestTarget, mode: 'force' });
-    }
-  }
-
-  return evidence;
-};
+    : itemInheritsRequiredTarget(item);
 
 const opaqueBlobLocations = async (
   items: readonly ResponsesInputItem[],
@@ -88,55 +92,130 @@ const opaqueBlobLocations = async (
   return locations;
 };
 
-const isSyntheticItem = (locations: readonly ResponsesBlobLocation[]): boolean =>
-  locations.some(location => location.decoded.kind === 'owned' && location.decoded.syntheticItem === true);
+const analyzeResponsesRequest = (
+  items: readonly ResponsesInputItem[],
+  locations: readonly ResponsesBlobLocation[],
+): ResponsesRequestAnalysis => {
+  const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
+  const requiredTargets: AffinityTarget[] = [];
+  const itemAnalyses: ResponsesItemAnalysis[] = [];
+  let latestOwnedTarget: AffinityTarget | undefined;
 
-export const prepareResponsesAffinity = async (
+  for (const [itemIndex, item] of items.entries()) {
+    const itemLocations = locationsByItem.get(itemIndex) ?? [];
+    const blobs = itemLocations.map(location => {
+      const required = blobRequiresOriginalTarget(item, location.decoded);
+      if (location.decoded.kind === 'owned') {
+        latestOwnedTarget = location.decoded.affinity;
+        if (required) requiredTargets.push(latestOwnedTarget);
+      }
+      return { ...location, required };
+    });
+    const inheritedRequiredTarget = itemInheritsRequiredTarget(item)
+      && itemLocations.length === 0
+      ? latestOwnedTarget
+      : undefined;
+    if (inheritedRequiredTarget !== undefined) requiredTargets.push(inheritedRequiredTarget);
+    if (blobs.length === 0 && inheritedRequiredTarget === undefined) continue;
+
+    itemAnalyses.push({
+      itemIndex,
+      synthetic: blobs.some(blob => blob.decoded.kind === 'owned' && blob.decoded.syntheticItem === true),
+      blobs,
+      ...(inheritedRequiredTarget !== undefined ? { inheritedRequiredTarget } : {}),
+    });
+  }
+
+  return { requiredTargets, items: itemAnalyses };
+};
+
+const materializeResponsesPayload = (
+  payload: CanonicalResponsesPayload,
+  projectionsByItem: ReadonlyMap<number, readonly ResponsesBlobCandidateProjection[] | null>,
+): CanonicalResponsesPayload => {
+  if (projectionsByItem.size === 0) return payload;
+  const input = payload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
+    const projections = projectionsByItem.get(itemIndex);
+    if (projections === undefined) return [item];
+    if (projections === null) return [];
+
+    const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
+    for (const { location, projection } of projections) {
+      if (location.contentIndex !== undefined) continue;
+      if (projection.kind === 'preserve') replacement[location.slot] = projection.value;
+      else delete replacement[location.slot];
+    }
+
+    if (item.type === 'agent_message') {
+      const nested = new Map(projections.flatMap(projection =>
+        projection.location.contentIndex === undefined ? [] : [[projection.location.contentIndex, projection] as const]));
+      if (nested.size > 0) {
+        const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
+        agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
+          const projected = nested.get(contentIndex);
+          if (projected === undefined) return [content];
+          return projected.projection.kind === 'preserve'
+            ? [{ ...content, encrypted_content: projected.projection.value }]
+            : [];
+        });
+      }
+    }
+
+    return [replacement];
+  });
+  return { ...payload, input };
+};
+
+const evaluateResponsesCandidate = (
+  payload: CanonicalResponsesPayload,
+  analysis: ResponsesRequestAnalysis,
+  candidate: ModelCandidate,
+) => {
+  const unsatisfiedTargets: AffinityTarget[] = [];
+  const projectionsByItem = new Map<number, readonly ResponsesBlobCandidateProjection[] | null>();
+  let degrades = false;
+
+  for (const item of analysis.items) {
+    if (
+      item.inheritedRequiredTarget !== undefined
+      && !candidateSatisfiesAffinityTarget(candidate, item.inheritedRequiredTarget)
+    ) unsatisfiedTargets.push(item.inheritedRequiredTarget);
+
+    const projections: ResponsesBlobCandidateProjection[] = [];
+    for (const blob of item.blobs) {
+      const projection = blob.required
+        ? projectRequiredAffinityBlob(blob.decoded, candidate)
+        : projectOptionalAffinityBlob(blob.decoded, candidate);
+      if (projection.kind === 'reject') {
+        unsatisfiedTargets.push(projection.requiredTarget);
+        continue;
+      }
+      if (!item.synthetic && projection.kind === 'remove') degrades ||= projection.degrades;
+      projections.push({ location: blob, projection });
+    }
+    if (item.synthetic) {
+      projectionsByItem.set(item.itemIndex, null);
+      continue;
+    }
+    if (projections.length > 0) projectionsByItem.set(item.itemIndex, projections);
+  }
+
+  if (unsatisfiedTargets.length > 0) return { kind: 'rejected' as const };
+  return {
+    kind: 'accepted' as const,
+    degrades,
+    materialize: () => materializeResponsesPayload(payload, projectionsByItem),
+  };
+};
+
+export const analyzeResponsesAffinity = async (
   payload: CanonicalResponsesPayload,
   codec: AffinityCodec,
-): Promise<PreparedAffinityPayload<CanonicalResponsesPayload>> => {
+): Promise<AffinityRequestAnalysis<CanonicalResponsesPayload>> => {
   const locations = await opaqueBlobLocations(payload.input, codec);
-
-  return {
-    narrowingEvidence: narrowingEvidenceFrom(payload.input, locations),
-    payloadForCandidate: candidate => {
-      const candidatePayload = structuredClone(payload);
-      const byItem = Map.groupBy(locations, location => location.itemIndex);
-      candidatePayload.input = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
-        const itemLocations = byItem.get(itemIndex);
-        if (itemLocations === undefined) return [item];
-        if (isSyntheticItem(itemLocations)) return [];
-
-        const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
-        const decisions = itemLocations.map(location => ({
-          location,
-          selected: blobRequiresForce(item, location.decoded)
-            ? blobForForcedCandidate(location.decoded, candidate)
-            : blobForExactCandidate(location.decoded, candidate),
-        }));
-
-        for (const { location, selected } of decisions) {
-          if (location.contentIndex !== undefined) continue;
-          if (selected.present) replacement[location.slot] = selected.value;
-          else delete replacement[location.slot];
-        }
-
-        if (item.type === 'agent_message') {
-          const nested = new Map(decisions.flatMap(decision =>
-            decision.location.contentIndex === undefined ? [] : [[decision.location.contentIndex, decision] as const]));
-          const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
-          agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
-            const decision = nested.get(contentIndex);
-            if (decision === undefined) return [content];
-            return decision.selected.present
-              ? [{ ...content, encrypted_content: decision.selected.value }]
-              : [];
-          });
-        }
-
-        return [replacement];
-      });
-      return candidatePayload;
-    },
-  };
+  const analysis = analyzeResponsesRequest(payload.input, locations);
+  return defineAffinityRequest(
+    analysis.requiredTargets,
+    candidate => evaluateResponsesCandidate(payload, analysis, candidate),
+  );
 };

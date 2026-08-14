@@ -60,7 +60,9 @@ describe('Codex JSON import', () => {
     expect(result.state.accounts[0].refresh_token).toBe('refresh-token');
     expect(result.state.accounts[0].accessToken).toMatchObject({
       expiresAt: 2_000_000_000_000,
+      planType: 'plus',
     });
+    expect(result.state.accounts[0].accessToken?.planObservedAt).toBe(result.state.accounts[0].accessToken?.refreshedAt);
     expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
@@ -214,6 +216,11 @@ describe('importCodexFromCallback', () => {
     const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher });
     expect(result.config.accounts[0].email).toBe('person@example.test');
     expect(result.state.accounts[0].refresh_token).toBe('refresh-token');
+    expect(result.state.accounts[0].accessToken?.token).toBe('opaque-access');
+    // The imported token entry is seeded with the import-time plan observation.
+    expect(result.state.accounts[0].accessToken?.planType).toBe('plus');
+    expect(result.state.accounts[0].accessToken?.planObservedAt).toBe(result.state.accounts[0].accessToken?.refreshedAt);
+    expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   test('accepts an id token without identity claims', async () => {

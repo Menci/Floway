@@ -9,7 +9,7 @@ import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from '../repo/test-sqlite.ts';
+import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
@@ -92,13 +92,46 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
   await sweepExpirations(now);
 
   expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(50);
-  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
-  await sweepExpirations(now + 1);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(100);
+  await sweepExpirations(now + 60_000);
 
   expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(0);
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
+  await sweepExpirations(now + 120_000);
+
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(0);
   expect(await repo.responsesItems.lookupMany('key-a', ['msg-current'], 0)).toHaveLength(1);
   expect((await dumps.list('key-a', { limit: 10 })).map(row => row.id)).toEqual(['01K00000000000000000LIVE']);
+});
+
+test('minute ticks catch up with a growing hot dump key without widening a batch', async () => {
+  const start = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(start);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const dumps = new FileDumpStore(db, files);
+  initDumpStore(dumps);
+  await repo.apiKeys.save(key(start));
+
+  for (let index = 0; index < 150; index += 1) {
+    await dumps.put('key-a', dumpRecord(`01K00000000000000001${String(index).padStart(4, '0')}`, start - 3600_001));
+  }
+
+  for (let tick = 0; tick < 4; tick += 1) {
+    const now = start + tick * 60_000;
+    vi.setSystemTime(now);
+    for (let index = 0; index < 11; index += 1) {
+      await dumps.put('key-a', dumpRecord(`01K00000000000000002${tick}${String(index).padStart(3, '0')}`, now - 3600_001));
+    }
+    await sweepExpirations(now);
+    const expected = Math.max(0, 150 + 11 * (tick + 1) - 50 * (tick + 1));
+    expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count)
+      .toBe(expected);
+  }
 });
 
 test('a partial hot key yields the current tick to another due key', async () => {
@@ -253,6 +286,39 @@ test('migration 0066 bounds existing-row discovery and tracks older dump files o
   }
 });
 
+test('expiration backfill rejects malformed legacy dump descriptors with row context', async () => {
+  const db = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0066_expiration_sweeps.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO api_keys
+       (id, user_id, name, key, created_at, upstream_ids, deleted_at, dump_retention_seconds, server_secret, responses_retention_seconds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['key-legacy', 1, 'Legacy', 'raw-legacy', '2026-01-01T00:00:00Z', null, null, 3600, '66'.repeat(32), 0],
+    );
+    const recordId = '01K00000000000000000BAD0';
+    db.run(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES (?, ?, ?, NULL, '{}', '[]', NULL, ?, NULL)`,
+      ['key-legacy', recordId, 1_000, JSON.stringify({ key: 'dumps/v1/key-legacy/old.req.gz', type: 'chunks' })],
+    );
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0066_expiration_sweeps.sql');
+    if (migration === undefined) throw new Error('missing migration 0066_expiration_sweeps.sql');
+    db.run(migration[1]);
+
+    const repo = new SqlRepo(wrapSqlJsDatabase(db));
+    await expect(repo.expirationSweeps.backfillCleanupTracking(500)).rejects.toThrow(
+      new RegExp(`Invalid dump record key-legacy/${recordId} request body descriptor during expiration backfill.*type`, 'su'),
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('expiration claims and expired-row deletions use their bounded range indexes', async () => {
   const db = await createSqliteTestDb();
   const explain = async (sql: string, ...values: Array<string | number>): Promise<string> => {
@@ -291,7 +357,7 @@ test('expiration claims and expired-row deletions use their bounded range indexe
          AND stored.api_key_id = api_keys.id
          AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
        ORDER BY stored.refreshed_at, stored.rowid LIMIT ?
-     )`,
+     ) RETURNING rowid`,
     'key-a', 1, 100,
   );
   expect(responsesPlan).toContain('idx_responses_items_key_refresh');
@@ -304,7 +370,7 @@ test('expiration claims and expired-row deletions use their bounded range indexe
          AND records.key_id = api_keys.id
          AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
        ORDER BY records.created_at, records.rowid LIMIT ?
-     )`,
+     ) RETURNING rowid`,
     'key-a', 1, 100,
   );
   expect(dumpsPlan).toContain('idx_dump_records_key_created');
@@ -312,31 +378,40 @@ test('expiration claims and expired-row deletions use their bounded range indexe
 
 test('bounded cleanup backfill tracks rows whose API key was hard-deleted', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  await repo.apiKeys.save(key(now));
-  const recordId = '01K00000000000000000ORPH';
-  const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
-  await db.prepare(
-    `INSERT INTO dump_records
-     (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-  ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
-  await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
-  await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
-  await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
+  const raw = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0082_expiration_sweep_integrity.sql') break;
+      raw.run(sql);
+    }
+    const db = wrapSqlJsDatabase(raw);
+    const repo = new SqlRepo(db);
+    await repo.apiKeys.save(key(now));
+    const recordId = '01K00000000000000000ORPH';
+    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
+    await db.prepare(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
+    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
+    await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
+    await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
+    await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  await repo.expirationSweeps.backfillCleanupTracking(500);
-  expect(await db.prepare(
-    "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
-  ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
-  expect(await db.prepare(
-    'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
-  ).bind(fileKey).first()).toEqual({
-    owner_kind: 'dump-request',
-    owner_key: JSON.stringify(['key-a', recordId]),
-    state: 'owned',
-  });
+    await repo.expirationSweeps.backfillCleanupTracking(500);
+    expect(await db.prepare(
+      "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
+    ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
+    expect(await db.prepare(
+      'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
+    ).bind(fileKey).first()).toEqual({
+      owner_kind: 'dump-request',
+      owner_key: JSON.stringify(['key-a', recordId]),
+      state: 'owned',
+    });
+  } finally {
+    raw.close();
+  }
 });
 
 test('bounded cleanup backfill skips API keys without stored state', async () => {

@@ -1,5 +1,7 @@
-import { oneOf } from '../../lib/search-params';
+import { oneOf, repeatedValues } from '../../lib/search-params';
 import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
+import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
+import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type PerformanceRange = DashboardRange;
@@ -24,12 +26,12 @@ export interface PerformanceDisplayRecord {
 }
 
 export interface PerformanceFilters {
-  model: string;
-  upstream: string;
-  operation: string;
-  runtimeLocation: string;
-  userId: string;
-  keyId: string;
+  model: string[];
+  upstream: string[];
+  operation: string[];
+  runtimeLocation: string[];
+  userId: string[];
+  keyId: string[];
 }
 
 export interface PerformanceUrlState {
@@ -56,30 +58,27 @@ export interface PerformanceOverviewResponse {
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
 
+// The Hono client appends one occurrence per array entry and nothing at all for
+// an empty array, so an unset filter leaves the query string untouched.
 export const buildPerformanceQuery = (
-  view: PerformanceView,
   range: PerformanceRange,
   groupBy: PerformanceGroupBy,
   filters: PerformanceFilters,
   nowMs: number,
-): URLSearchParams => {
-  const window = dashboardRangeQuery(range, nowMs);
-  const search = new URLSearchParams({
-    ...window,
-    view,
+): Record<string, string | string[]> => {
+  const utcHours = range === 'today';
+  return {
+    ...dashboardRangeQuery(range, nowMs),
     group_by: groupBy,
-    timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
-  });
-  const values: Array<[string, string]> = [
-    ['filter_model', filters.model],
-    ['filter_upstream', filters.upstream],
-    ['filter_operation', filters.operation],
-    ['filter_runtime_location', filters.runtimeLocation],
-    ['filter_user_id', filters.userId],
-    ['filter_key_id', filters.keyId],
-  ];
-  for (const [key, value] of values) if (value) search.set(key, value);
-  return search;
+    timezone: utcHours ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timezone_offset_minutes: utcHours ? '0' : String(new Date(nowMs).getTimezoneOffset()),
+    filter_model: filters.model,
+    filter_upstream: filters.upstream,
+    filter_operation: filters.operation,
+    filter_runtime_location: filters.runtimeLocation,
+    filter_user_id: filters.userId,
+    filter_key_id: filters.keyId,
+  };
 };
 
 export const performanceValue = (
@@ -98,15 +97,17 @@ export const performanceValue = (
 // chart series, once per table row and twice per sort comparison.
 export interface PerformanceLabels {
   upstreams: ReadonlyMap<string, string>;
+  upstreamHues: ReadonlyMap<string, number>;
   users: ReadonlyMap<string, string>;
   keys: ReadonlyMap<string, string>;
 }
 
 export const performanceLabels = (
   overview: PerformanceOverviewResponse,
-  upstreamNames: ReadonlyMap<string, string>,
+  upstreams: readonly { id: string; name: string; hue: number }[],
 ): PerformanceLabels => ({
-  upstreams: upstreamNames,
+  upstreams: new Map(upstreams.map(upstream => [upstream.id, upstream.name])),
+  upstreamHues: new Map(upstreams.map(upstream => [upstream.id, upstream.hue])),
   users: new Map(overview.users.map(user => [String(user.id), user.username])),
   keys: new Map(overview.keys.map(key => [key.id, key.name])),
 });
@@ -122,17 +123,21 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => ({
-  metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
-  percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
-  groupBy: oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model'),
-  range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
-  filters: {
-    model: search.get('fm') ?? '', upstream: search.get('fu') ?? '', operation: search.get('fo') ?? '',
-    runtimeLocation: search.get('fr') ?? '', userId: search.get('fusr') ?? '', keyId: search.get('fk') ?? '',
-  },
-  hidden: (search.get('hide') ?? '').split(',').map(decodeURIComponent).filter(Boolean),
-});
+export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
+  const groupBy = oneOf(search.get('g'), ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'], 'model');
+  const filters = clearGroupedTelemetryFilters({
+    model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
+    runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
+  }, groupBy);
+  return {
+    metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
+    percentile: oneOf(search.get('pct'), ['p50', 'p95', 'p99'], 'p95'),
+    groupBy,
+    range: oneOf(search.get('r'), ['today', '7d', '30d'], 'today'),
+    filters,
+    hidden: parseHiddenSeries(search, 'hide'),
+  };
+};
 
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
   const search = new URLSearchParams();
@@ -140,17 +145,35 @@ export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSea
   if (state.percentile !== 'p95') search.set('pct', state.percentile);
   if (state.groupBy !== 'model') search.set('g', state.groupBy);
   if (state.range !== 'today') search.set('r', state.range);
-  const filters: Array<[string, string]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
-  for (const [key, value] of filters) if (value) search.set(key, value);
-  if (state.hidden.length) search.set('hide', state.hidden.map(encodeURIComponent).join(','));
+  const filters: Array<[string, readonly string[]]> = [['fm', state.filters.model], ['fu', state.filters.upstream], ['fo', state.filters.operation], ['fr', state.filters.runtimeLocation], ['fusr', state.filters.userId], ['fk', state.filters.keyId]];
+  for (const [key, values] of filters) for (const value of values) search.append(key, value);
+  serializeHiddenSeries(search, 'hide', state.hidden);
   return search;
 };
 
-export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: PerformanceGroupBy): PerformanceFilters => ({
-  ...filters,
-  ...(groupBy === 'model' ? { model: '' } : {}),
-  ...(groupBy === 'upstream' ? { upstream: '' } : {}),
-  ...(groupBy === 'operation' ? { operation: '' } : {}),
-  ...(groupBy === 'runtimeLocation' ? { runtimeLocation: '' } : {}),
-  ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: '', keyId: '' } : {}),
-});
+type PerformanceDimensionState = Pick<PerformanceUrlState, 'groupBy' | 'filters' | 'hidden'>;
+type NormalizedPerformanceDimensions<State extends PerformanceDimensionState> = {
+  changed: boolean;
+  state: Omit<State, keyof PerformanceDimensionState> & PerformanceDimensionState;
+};
+
+export const normalizePerformanceDimensionsForRuntime = <State extends PerformanceDimensionState>(
+  state: State,
+  cloudflare: boolean,
+): NormalizedPerformanceDimensions<State> => {
+  if (cloudflare || (state.groupBy !== 'runtimeLocation' && state.filters.runtimeLocation.length === 0)) {
+    return { changed: false, state };
+  }
+  const groupedByRegion = state.groupBy === 'runtimeLocation';
+  const groupBy = groupedByRegion ? 'model' : state.groupBy;
+  const filtersWithoutRegion = { ...state.filters, runtimeLocation: [] };
+  return {
+    changed: true,
+    state: {
+      ...state,
+      groupBy,
+      filters: groupedByRegion ? clearGroupedTelemetryFilters(filtersWithoutRegion, groupBy) : filtersWithoutRegion,
+      hidden: groupedByRegion ? [] : state.hidden,
+    },
+  };
+};

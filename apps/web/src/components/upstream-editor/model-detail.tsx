@@ -1,24 +1,24 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useId } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useEffect, useId, useRef } from 'react';
 
 import type { ModelRow } from './data';
 import { publicModelId } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
+import { type ModelValidationField, modelValidationIssues } from './model-validation';
 import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
-import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
-import { TagCombobox } from '../ui/tag-combobox';
-import { modelsField, type UpstreamChatModelConfig, type UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const {
   Button,
@@ -35,8 +35,10 @@ export function ModelDetail({
   onChange,
   onDelete,
   onSourceChange,
+  onUpstreamModelIdCommit,
   readOnly,
   record,
+  revealValidation,
   row,
   section,
   upstreamFlags,
@@ -44,8 +46,10 @@ export function ModelDetail({
   onChange: (value: UpstreamModelConfig) => void;
   onDelete: () => void;
   onSourceChange: (source: 'auto' | 'manual') => void;
+  onUpstreamModelIdCommit: (upstreamModelId: string) => void;
   readOnly: boolean;
   record: UpstreamRecord;
+  revealValidation: boolean;
   row: ModelRow;
   section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
@@ -53,6 +57,7 @@ export function ModelDetail({
   const { t } = useTranslation();
   const monoLabel = useMonoLabelClass();
   const reasoningLabelId = useId();
+  const upstreamIdRef = useRef<HTMLInputElement>(null);
   const fieldsReadOnly = readOnly || row.source !== 'manual';
   const patch = (next: Partial<UpstreamModelConfig>) => {
     if (fieldsReadOnly) return;
@@ -83,11 +88,21 @@ export function ModelDetail({
     patch({ chat });
   };
 
-  const validationError = modelValidationError(row.config, t);
+  const validationIssues = revealValidation ? modelValidationIssues(row.config) : [];
+  const validationMessage = (field: ModelValidationField) => {
+    const issue = validationIssues.find(candidate => candidate.field === field);
+    return issue ? t(issue.message) : undefined;
+  };
+  const upstreamIdError = validationMessage('upstreamModelId');
+  const summaryError = validationIssues.find(issue => issue.field === 'configuration' || issue.field === 'pricing' || issue.field === 'reasoning');
   const effort = row.config.chat?.reasoning?.effort;
   const budget = row.config.chat?.reasoning?.budget_tokens;
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
+
+  useEffect(() => {
+    if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
+  }, [revealValidation, upstreamIdError]);
 
   return (
     <div className="grid gap-3 min-w-0">
@@ -110,7 +125,7 @@ export function ModelDetail({
         value={row.config.flagOverrides ?? {}}
         onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}
       /> : <>
-        {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
+        {summaryError && <MessageBar intent="error"><MessageBarBody>{t(summaryError.message)}</MessageBarBody></MessageBar>}
 
         <EditorSection level={3} title={t('dashboard.upstreamEditor.models.identity')}>
           {/* This sits beside a 380px sidebar, so the available width and the
@@ -126,8 +141,8 @@ export function ModelDetail({
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
               </Dropdown>
             </Field>
-            <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
-              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} value={row.config.upstreamModelId} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
+            <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
+              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} ref={upstreamIdRef} value={row.config.upstreamModelId} onBlur={() => onUpstreamModelIdCommit(row.config.upstreamModelId)} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
               <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
@@ -135,7 +150,7 @@ export function ModelDetail({
           </div>
         </EditorSection>
 
-        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
@@ -151,7 +166,7 @@ export function ModelDetail({
           </div>
         </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
@@ -206,7 +221,7 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
-function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
+function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: TFunction }) {
   const supported = effort.supported;
   const setSupported = (values: readonly string[]) => onChange({
     supported: [...values],
@@ -214,12 +229,12 @@ function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; ef
   });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
-      <TagCombobox
+      <MultiselectCombobox
         closedLabel={supported.join(', ')}
         freeform
         normalizeValue={level => level.trim()}
         onChange={setSupported}
-        options={[...new Set([...reasoningPresets, ...supported])]}
+        options={valuesAsOptions([...new Set([...reasoningPresets, ...supported])])}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
         readOnly={readOnly}
         value={supported}
@@ -240,36 +255,6 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   case 'image': return 'Image';
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
-  }
-};
-
-const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
-  const effort = model.chat?.reasoning?.effort;
-  if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return 'dashboard.upstreamEditor.models.invalidEffort';
-  const budget = model.chat?.reasoning?.budget_tokens;
-  if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return 'dashboard.upstreamEditor.models.invalidBudget';
-  if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return 'dashboard.upstreamEditor.models.invalidPricing';
-  return null;
-};
-
-const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
-  const issue = editorFieldIssue(model);
-  if (issue) return t(issue);
-  try {
-    modelsField([model], 'model');
-  } catch {
-    return t('dashboard.upstreamEditor.models.invalidContract');
-  }
-  return null;
-};
-
-export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
-  if (models.some(model => editorFieldIssue(model) !== null)) return false;
-  try {
-    modelsField([...models], 'models');
-    return true;
-  } catch {
-    return false;
   }
 };
 

@@ -1,4 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
+import type { ModelsCacheGeneration } from '../../repo/types.ts';
+import { serializeStoredConfig } from '../../repo/upstream-json.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
@@ -16,8 +18,27 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProviderModule,
 };
 
-export const createProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
+export type GatewayProvider = Provider & {
+  readonly modelsCacheGeneration: ModelsCacheGeneration;
+  readonly modelsFetchIdentity: string;
+};
+
+export const createProvider = (
+  record: UpstreamRecord,
+  cacheGeneration: ModelsCacheGeneration = { updatedAt: record.updatedAt, config: record.config },
+): GatewayProvider => {
+  const provider = providersByKind[record.kind].create(record);
+  return {
+    ...provider,
+    modelsCacheGeneration: cacheGeneration,
+    modelsFetchIdentity: serializeStoredConfig({
+      kind: record.kind,
+      config: record.config,
+      state: record.state,
+      proxyFallbackList: record.proxyFallbackList,
+    }),
+  };
+};
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
@@ -33,7 +54,7 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
-): Promise<Provider[]> => {
+): Promise<GatewayProvider[]> => {
   const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   for (const upstream of upstreams) {
@@ -51,5 +72,5 @@ export const listModelProviders = async (
     ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is UpstreamRecord => u !== undefined)
     : [...enabledById.values()];
 
-  return selection.map(createProvider);
+  return selection.map(record => createProvider(record));
 };

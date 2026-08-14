@@ -1,7 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 import { keySourceFields, keyWriteBody, refineKeySource, type KeySourceValues } from './source';
@@ -9,6 +8,7 @@ import { KeySourceControl } from './source-field';
 import { api, callApi } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';

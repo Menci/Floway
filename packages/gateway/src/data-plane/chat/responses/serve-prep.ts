@@ -1,10 +1,11 @@
-import { prepareResponsesAffinity } from './affinity/ingress.ts';
+import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
-import { type PreparedAffinityPayload, narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
+import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
+import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -62,7 +63,7 @@ export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
   | {
     readonly kind: 'ready';
-    readonly affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+    readonly affinitySelection: AffinityCandidateSelection<CanonicalResponsesPayload>;
     readonly privatePayloads: ReadonlyMap<string, unknown>;
     readonly candidates: readonly ModelCandidate[];
   };
@@ -70,7 +71,7 @@ export type ResponsesServePlan =
 // Runs the native source preparation both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
 // expand any `previous_response_id`, load and hydrate stored items, prepare
-// affinity, stage the user input, and return the narrowed candidate list.
+// affinity, stage the user input, and return the selected candidate list.
 // Returns a rendered failure result when no candidate is viable so the
 // caller can surface it directly without re-deriving the model-error
 // branch. The caller iterates the candidates — a successful attempt is the
@@ -88,6 +89,7 @@ export const prepareResponsesServePlan = async (args: {
     kind: 'chat',
     scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
+    clientDisconnectSignal: ctx.clientDisconnectSignal,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   await store.loadInputItems(prepared.input, payload.input);
@@ -99,9 +101,9 @@ export const prepareResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
-  const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const narrowed = narrowCandidatesByAffinity(viable, affinity.narrowingEvidence);
-  if ('kind' in narrowed) return { kind: 'failure', result: renderResponsesFailure(narrowed) };
+  const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const selection = selectAffinityCandidates(viable, affinity);
+  if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
   // up the new user items in addition to the prior snapshot history.
@@ -109,11 +111,11 @@ export const prepareResponsesServePlan = async (args: {
   // input has its target row loaded.
   await store.stageInputItems(payload.input);
 
-  if (narrowed.length === 0) {
+  if (selection.candidates.length === 0) {
     return {
       kind: 'failure',
       result: renderResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
-  return { kind: 'ready', affinity, privatePayloads: hydrated.privatePayloads, candidates: narrowed };
+  return { kind: 'ready', affinitySelection: selection, privatePayloads: hydrated.privatePayloads, candidates: selection.candidates };
 };

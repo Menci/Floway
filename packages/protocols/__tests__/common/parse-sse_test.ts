@@ -53,6 +53,54 @@ test('parseSSEStream flushes a final data line without a trailing newline', asyn
   ]);
 });
 
+test('parseSSEStream accepts fields without the optional space after the colon', async () => {
+  assertEquals(await collect([
+    'event:message_start',
+    'data:{"type":"message_start"}',
+    '',
+    'event:message_stop',
+    'data:{"type":"message_stop"}',
+    '',
+  ].join('\n')), [
+    {
+      type: 'sse',
+      event: 'message_start',
+      data: '{"type":"message_start"}',
+    },
+    {
+      type: 'sse',
+      event: 'message_stop',
+      data: '{"type":"message_stop"}',
+    },
+  ]);
+});
+
+test('parseSSEStream joins data fields and resets event state at blank-line boundaries', async () => {
+  assertEquals(await collect([
+    ': ignored comment',
+    'event:update',
+    'data:first',
+    'data:  second',
+    'data:third ',
+    '',
+    'event:orphaned',
+    '',
+    'data:tail',
+    '',
+  ].join('\n')), [
+    {
+      type: 'sse',
+      event: 'update',
+      data: 'first\n second\nthird ',
+    },
+    {
+      type: 'sse',
+      event: undefined,
+      data: 'tail',
+    },
+  ]);
+});
+
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {
   const upstreamCanceled = deferred<void>();
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;

@@ -49,6 +49,38 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
   ]);
 });
 
+test('/api/performance/overview ORs repeated values within a filter and ANDs dimensions', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const sample = {
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    operation: 'chat' as const,
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+    success: true,
+  };
+  await repo.performance.recordSample({ ...sample, model: 'gpt-5', upstream: 'copilot:1' });
+  await repo.performance.recordSample({ ...sample, model: 'claude-opus-4-7', upstream: 'copilot:1' });
+  await repo.performance.recordSample({ ...sample, model: 'gpt-5', upstream: 'custom:1' });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_model=&filter_model=gpt-5&filter_model=claude-opus-4-7&filter_upstream=copilot%3A1', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.axes.none.map((record: { requests: number }) => record.requests), [2]);
+  assertEquals(body.axes.model.map((record: { group: string }) => record.group).sort(), ['claude-opus-4-7', 'gpt-5']);
+  assertEquals(body.dimensionValues.upstreams, ['copilot:1', 'custom:1']);
+});
+
+test('/api/performance/overview treats empty filter occurrences as unset', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_model=&filter_key_id=&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+});
+
 test('/api/performance/overview narrows the whole aggregate to the actor under group_by=keyId', async () => {
   const { repo, apiKey } = await setupAppTest();
   // A key owned by user 1 with traffic in the same window. By API Key asks
@@ -421,14 +453,14 @@ test('/api/performance/overview leaves dimensionValues.userIds empty for a non-a
   assertEquals(body.dimensionValues.userIds, []);
 });
 
-test('/api/performance/overview returns dashboard aggregates from one repo query', async () => {
+test('/api/performance/overview delegates every dashboard axis to one overview read', async () => {
   const { repo, apiKey } = await setupAppTest();
   let queryCount = 0;
-  const originalQuery = repo.performance.query.bind(repo.performance);
-  repo.performance.query = (opts => {
+  const originalQuery = repo.performance.queryOverview.bind(repo.performance);
+  repo.performance.queryOverview = opts => {
     queryCount++;
     return originalQuery(opts);
-  }) as typeof repo.performance.query;
+  };
 
   await repo.performance.recordSample({
     hour: '2026-04-30T10',

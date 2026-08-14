@@ -12,12 +12,17 @@ export {
   exchangeCopilotToken,
 } from './auth.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
+export { normalizeGitHubHost } from './github-host.ts';
+export { pricingForCopilotPublicModelId } from './pricing.ts';
 export {
   fetchCopilotUsage,
+  projectCopilotSeat,
   projectCopilotUsageResponse,
   putCopilotQuota,
+  putCopilotSeat,
   type CopilotQuotaDetail,
   type CopilotQuotaSnapshot,
+  type CopilotSeat,
   type CopilotUsageResponse,
 } from './quota.ts';
 export {
@@ -31,6 +36,7 @@ export {
   emptyCopilotUpstreamState,
   readCopilotUpstreamState,
   type CopilotQuotaSnapshotEntry,
+  type CopilotSeatEntry,
   type CopilotTokenEntry,
   type CopilotUpstreamState,
 } from './state.ts';

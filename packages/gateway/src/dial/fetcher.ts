@@ -3,7 +3,7 @@ import { createReplayableRequest, type ReplayableRequest } from './replayable-re
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
+import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
@@ -24,7 +24,7 @@ interface CreateFetcherInput {
     options: RunProxiedRequestOptions,
   ) => Promise<Response>;
   // Per-request indirection for the runtime-native fetch sentinel.
-  runDirectFetch: (url: string, init: RequestInit) => Promise<Response>;
+  runDirectFetch: Fetcher;
   // Runtime-agnostic raw TCP + userspace-TLS request runner.
   runDirectConnect: (
     target: ProxyRequestTarget,
@@ -77,28 +77,29 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_CONNECT_ID];
-  // If direct-fetch precedes any materialized transport, runtime fetch may take
-  // ownership of `init.body` and consume its underlying stream/Blob.
-  // Buffer the body up-front so a runtime that re-streams a Blob can't
-  // strand a later proxy attempt with empty bytes. The fast path
+  // If direct-fetch precedes any dial transport, runtime fetch may take
+  // ownership of a native `init.body` and consume its underlying stream/Blob.
+  // Materialize native bodies up-front so a later proxy attempt cannot receive
+  // empty bytes. Replayable bodies remain factories and open afresh per attempt.
+  // The fast path
   // (direct-fetch-only list) keeps the runtime's native body handling intact —
   // FormData, Blob, etc. don't need to be buffered.
-  const hasMaterializedTransport = list.some(id => id !== DIRECT_FETCH_ID);
+  const hasDialTransport = list.some(id => id !== DIRECT_FETCH_ID);
   const hasDirectFetch = list.includes(DIRECT_FETCH_ID);
-  const directFetchBeforeMaterialized = hasMaterializedTransport
+  const directFetchBeforeDialTransport = hasDialTransport
     && hasDirectFetch
     && list.indexOf(DIRECT_FETCH_ID) < list.length - 1;
-  return (url, init) => {
-    // Reject streaming bodies upfront whenever any materialized entry is in
+  return (url, init: FetchInit) => {
+    // Reject streaming bodies upfront whenever any dial transport is in
     // play. The two-pass dial can replay a request and a stream is
     // single-shot; for a list like ['a','direct_fetch'] where 'a' is in active
     // backoff, pass 1 would consume the stream via the runtime fetch and
     // strand pass 2 with empty bytes.
-    if (hasMaterializedTransport && init.body instanceof ReadableStream) {
+    if (hasDialTransport && init.body instanceof ReadableStream) {
       return Promise.reject(new Error('streaming request bodies are not replayable through direct-connect or proxy transports'));
     }
 
-    return runFallbacks(input, list, url, createReplayableRequest(url, init), directFetchBeforeMaterialized);
+    return runFallbacks(input, list, url, createReplayableRequest(url, init), directFetchBeforeDialTransport);
   };
 };
 
@@ -107,12 +108,12 @@ const runFallbacks = async (
   list: readonly string[],
   url: string,
   request: ReplayableRequest,
-  directFetchBeforeMaterialized: boolean,
+  directFetchBeforeDialTransport: boolean,
 ): Promise<Response> => {
-  // A direct-fetch attempt before a materialized transport can consume
-  // Blob/FormData bodies. Build the replayable byte form first so every later
-  // attempt observes one body.
-  if (directFetchBeforeMaterialized) await request.materialized();
+  // A direct-fetch attempt before a dial transport can consume native
+  // Blob/FormData bodies. Prepare the dial request first so those bodies are
+  // buffered while replayable factories remain reusable by every attempt.
+  if (directFetchBeforeDialTransport) await request.prepared();
   const errors: unknown[] = [];
 
   // Backoff rows only ever exist for operator-managed proxies, so a list made
@@ -166,10 +167,10 @@ const tryOne = async (
       return await input.runDirectFetch(url, request.fetchInit());
     }
     if (id === DIRECT_CONNECT_ID) {
-      const materialized = await request.materialized();
+      const prepared = await request.prepared();
       return await input.runDirectConnect(
-        materialized.target,
-        materialized.request,
+        prepared.target,
+        prepared.request,
         { socketDial: input.socketDial(), signal: request.signal },
       );
     }
@@ -184,10 +185,9 @@ const tryOne = async (
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));
       return null;
     }
-    const materialized = await request.materialized();
-    // Caller cancellation flows through init.signal into the dialer's
-    // combined controller so a disconnected client tears down any
-    // in-flight handshake instead of waiting for the per-proxy deadline.
+    const prepared = await request.prepared();
+    // An explicit request signal joins the dialer's timeout controller so its
+    // caller can stop an in-flight handshake before the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
       socketDial: input.socketDial(),
       signal: request.signal,
@@ -195,8 +195,8 @@ const tryOne = async (
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
     const response = await input.runProxied(
       config.config,
-      materialized.target,
-      materialized.request,
+      prepared.target,
+      prepared.request,
       options,
     );
     // A successful dial after a previous failure must clear the backoff so
@@ -212,9 +212,8 @@ const tryOne = async (
     }
     return response;
   } catch (err) {
-    // Caller-driven cancellation must propagate up immediately. Without
-    // this, a client disconnect would let the dial chain continue burning
-    // the deadline budget against every other entry in the list.
+    // Explicit request cancellation propagates immediately so the dial chain
+    // does not continue against later fallback entries.
     if (isAbortError(err)) {
       throw err;
     }

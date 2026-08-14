@@ -109,7 +109,7 @@ subset for a model.
    threshold edges, Base fallback, and the per-base-unit result through
    `priceRequest`.
 7. Run all affected provider tests, typecheck, lint, and the full test suite.
-8. If an existing rate changed, use `backfill-model-pricing` for the intended
+8. If an existing rate changed, use `$backfill-usage-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
    does not rewrite recorded `unit_price` values.
 

@@ -21,7 +21,10 @@ import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } f
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+const registerEmbeddingsUpstream = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  ingressHeadersRules: { key: string; value: string | null }[] = [],
+): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -31,6 +34,7 @@ const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupA
     config: {
       baseUrl: 'https://passthrough.example.com',
       authStyle: 'bearer',
+      ingressHeadersRules,
       apiKey: 'sk-passthrough',
       endpoints: {},
     },
@@ -52,6 +56,9 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
           return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
         }
         if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
+          assertEquals(request.headers.get('anthropic-beta'), null);
+          assertEquals(request.headers.get('x-client-request-id'), null);
+          assertEquals(request.headers.get('x-debug'), null);
           return jsonResponse({
             object: 'list',
             model: 'custom-embed-model',
@@ -64,7 +71,13 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
       async () => {
         const response = await requestApp('/v1/embeddings', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': apiKey.key,
+            'anthropic-beta': 'context-1m-2025-08-07',
+            'x-client-request-id': 'request-1',
+            'x-debug': 'discard',
+          },
           body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
         });
 
@@ -79,6 +92,48 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
   } finally {
     errorSpy.mockRestore();
   }
+});
+
+test('passthrough-serve: Custom resolves configured ingress header rules before provider dispatch', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerEmbeddingsUpstream(repo, [
+    { key: 'x-passthrough', value: null },
+    { key: 'x-overwrite', value: 'configured' },
+    { key: 'x-empty', value: '' },
+  ]);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      }
+      if (url.pathname === '/v1/embeddings') {
+        assertEquals(request.headers.get('x-passthrough'), 'client');
+        assertEquals(request.headers.get('x-overwrite'), 'configured');
+        assertEquals(request.headers.get('x-empty'), '');
+        assertEquals(request.headers.get('authorization'), 'Bearer sk-passthrough');
+        assertEquals(request.headers.get('x-unlisted'), null);
+        return jsonResponse({ object: 'list', data: [], model: 'custom-embed-model' });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+          'x-empty': 'client',
+          'x-overwrite': 'client',
+          'x-passthrough': 'client',
+          'x-unlisted': 'discard',
+        },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
 });
 
 test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
@@ -243,11 +298,11 @@ const registerTwoEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof se
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_a', name: 'Upstream A', sortOrder: 100,
-    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {} },
+    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_b', name: 'Upstream B', sortOrder: 200,
-    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {} },
+    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
   }));
 };
 

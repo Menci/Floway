@@ -66,23 +66,23 @@ export const winuiTokenCss = `
 /* Control fills — the body of a button, combo box, or check box.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L219-L225 */
 :root {
-  --winui-control-fill-default: #ffffffb3;
-  --winui-control-fill-secondary: #f9f9f980;
-  --winui-control-fill-tertiary: #f9f9f94d;
-  --winui-control-fill-disabled: #f9f9f94d;
-  --winui-control-fill-transparent: #ffffff00;
+  --winui-control-fill-default: rgba(255, 255, 255, 0.701961);
+  --winui-control-fill-secondary: rgba(249, 249, 249, 0.501961);
+  --winui-control-fill-tertiary: rgba(249, 249, 249, 0.301961);
+  --winui-control-fill-disabled: rgba(249, 249, 249, 0.301961);
+  --winui-control-fill-transparent: rgba(255, 255, 255, 0);
   --winui-control-fill-input-active: #ffffff;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L15-L21 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-control-fill-default: #ffffff0f;
-    --winui-control-fill-secondary: #ffffff15;
-    --winui-control-fill-tertiary: #ffffff08;
-    --winui-control-fill-disabled: #ffffff0b;
-    --winui-control-fill-transparent: #ffffff00;
-    --winui-control-fill-input-active: #1e1e1eb3;
+    --winui-control-fill-default: rgba(255, 255, 255, 0.058824);
+    --winui-control-fill-secondary: rgba(255, 255, 255, 0.082353);
+    --winui-control-fill-tertiary: rgba(255, 255, 255, 0.031373);
+    --winui-control-fill-disabled: rgba(255, 255, 255, 0.043137);
+    --winui-control-fill-transparent: rgba(255, 255, 255, 0);
+    --winui-control-fill-input-active: rgba(30, 30, 30, 0.701961);
   }
 }
 
@@ -90,25 +90,25 @@ export const winuiTokenCss = `
    the text-control bottom edge is painted with.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243-L253 */
 :root {
-  --winui-control-stroke-default: #0000000f;
-  --winui-control-stroke-secondary: #00000029;
-  --winui-control-stroke-on-accent-default: #ffffff14;
-  --winui-control-stroke-on-accent-secondary: #00000066;
-  --winui-control-stroke-on-accent-tertiary: #00000037;
-  --winui-control-strong-stroke-default: #00000072;
-  --winui-control-strong-stroke-disabled: #00000037;
+  --winui-control-stroke-default: rgba(0, 0, 0, 0.058824);
+  --winui-control-stroke-secondary: rgba(0, 0, 0, 0.160784);
+  --winui-control-stroke-on-accent-default: rgba(255, 255, 255, 0.078431);
+  --winui-control-stroke-on-accent-secondary: rgba(0, 0, 0, 0.4);
+  --winui-control-stroke-on-accent-tertiary: rgba(0, 0, 0, 0.215686);
+  --winui-control-strong-stroke-default: rgba(0, 0, 0, 0.447059);
+  --winui-control-strong-stroke-disabled: rgba(0, 0, 0, 0.215686);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L39-L49 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-control-stroke-default: #ffffff12;
-    --winui-control-stroke-secondary: #ffffff18;
-    --winui-control-stroke-on-accent-default: #ffffff14;
-    --winui-control-stroke-on-accent-secondary: #00000023;
-    --winui-control-stroke-on-accent-tertiary: #00000037;
-    --winui-control-strong-stroke-default: #ffffff8b;
-    --winui-control-strong-stroke-disabled: #ffffff28;
+    --winui-control-stroke-default: rgba(255, 255, 255, 0.070588);
+    --winui-control-stroke-secondary: rgba(255, 255, 255, 0.094118);
+    --winui-control-stroke-on-accent-default: rgba(255, 255, 255, 0.078431);
+    --winui-control-stroke-on-accent-secondary: rgba(0, 0, 0, 0.137255);
+    --winui-control-stroke-on-accent-tertiary: rgba(0, 0, 0, 0.215686);
+    --winui-control-strong-stroke-default: rgba(255, 255, 255, 0.545098);
+    --winui-control-strong-stroke-disabled: rgba(255, 255, 255, 0.156863);
   }
 }
 
@@ -119,7 +119,7 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L226
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L228 */
 :root {
-  --winui-control-strong-fill-default: #00000072;
+  --winui-control-strong-fill-default: rgba(0, 0, 0, 0.447059);
   --winui-control-solid-fill-default: #ffffff;
 }
 
@@ -127,44 +127,44 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L24 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-control-strong-fill-default: #ffffff8b;
+    --winui-control-strong-fill-default: rgba(255, 255, 255, 0.545098);
     --winui-control-solid-fill-default: #454545;
   }
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L229-L231 */
 :root {
-  --winui-subtle-fill-transparent: #ffffff00;
-  --winui-subtle-fill-secondary: #00000009;
-  --winui-subtle-fill-tertiary: #00000006;
+  --winui-subtle-fill-transparent: rgba(255, 255, 255, 0);
+  --winui-subtle-fill-secondary: rgba(0, 0, 0, 0.035294);
+  --winui-subtle-fill-tertiary: rgba(0, 0, 0, 0.023529);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L25-L27 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-subtle-fill-transparent: #ffffff00;
-    --winui-subtle-fill-secondary: #ffffff0f;
-    --winui-subtle-fill-tertiary: #ffffff0a;
+    --winui-subtle-fill-transparent: rgba(255, 255, 255, 0);
+    --winui-subtle-fill-secondary: rgba(255, 255, 255, 0.058824);
+    --winui-subtle-fill-tertiary: rgba(255, 255, 255, 0.039216);
   }
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L265 */
 :root {
-  --winui-card-background-fill-default: #ffffffb3;
-  --winui-card-background-fill-secondary: #f6f6f680;
-  --winui-card-stroke-default: #0000000f;
-  --winui-layer-fill-default: #ffffff80;
+  --winui-card-background-fill-default: rgba(255, 255, 255, 0.701961);
+  --winui-card-background-fill-secondary: rgba(246, 246, 246, 0.501961);
+  --winui-card-stroke-default: rgba(0, 0, 0, 0.058824);
+  --winui-layer-fill-default: rgba(255, 255, 255, 0.501961);
   --winui-layer-fill-alt: #ffffff;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46-L61 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-card-background-fill-default: #ffffff0d;
-    --winui-card-background-fill-secondary: #ffffff08;
-    --winui-card-stroke-default: #00000019;
-    --winui-layer-fill-default: #3a3a3a4c;
-    --winui-layer-fill-alt: #ffffff0d;
+    --winui-card-background-fill-default: rgba(255, 255, 255, 0.05098);
+    --winui-card-background-fill-secondary: rgba(255, 255, 255, 0.031373);
+    --winui-card-stroke-default: rgba(0, 0, 0, 0.098039);
+    --winui-layer-fill-default: rgba(58, 58, 58, 0.298039);
+    --winui-layer-fill-alt: rgba(255, 255, 255, 0.05098);
   }
 }
 
@@ -173,7 +173,7 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L59
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L263 */
 :root {
-  --winui-smoke-fill-default: #0000004d;
+  --winui-smoke-fill-default: rgba(0, 0, 0, 0.301961);
 }
 
 /* The in-app acrylic material, taken as the flat FallbackColor the brush
@@ -206,12 +206,12 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1608-L1675 */
 :root {
-  --winui-tooltip-shadow-color: #00000023;
+  --winui-tooltip-shadow-color: rgba(0, 0, 0, 0.137255);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-tooltip-shadow-color: #00000042;
+    --winui-tooltip-shadow-color: rgba(0, 0, 0, 0.258824);
   }
 }
 
@@ -239,17 +239,17 @@ export const winuiTokenCss = `
    hairline between list sections.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L254-L257 */
 :root {
-  --winui-surface-stroke-default: #75757566;
-  --winui-surface-stroke-flyout: #0000000f;
-  --winui-divider-stroke-default: #0000000f;
+  --winui-surface-stroke-default: rgba(117, 117, 117, 0.4);
+  --winui-surface-stroke-flyout: rgba(0, 0, 0, 0.058824);
+  --winui-divider-stroke-default: rgba(0, 0, 0, 0.058824);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L50-L53 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-surface-stroke-default: #75757566;
-    --winui-surface-stroke-flyout: #00000033;
-    --winui-divider-stroke-default: #ffffff15;
+    --winui-surface-stroke-default: rgba(117, 117, 117, 0.4);
+    --winui-surface-stroke-flyout: rgba(0, 0, 0, 0.2);
+    --winui-divider-stroke-default: rgba(255, 255, 255, 0.082353);
   }
 }
 
@@ -258,10 +258,10 @@ export const winuiTokenCss = `
    primary.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L213 */
 :root {
-  --winui-text-fill-primary: #000000e4;
-  --winui-text-fill-secondary: #0000009e;
-  --winui-text-fill-tertiary: #00000072;
-  --winui-text-fill-disabled: #0000005c;
+  --winui-text-fill-primary: rgba(0, 0, 0, 0.894118);
+  --winui-text-fill-secondary: rgba(0, 0, 0, 0.619608);
+  --winui-text-fill-tertiary: rgba(0, 0, 0, 0.447059);
+  --winui-text-fill-disabled: rgba(0, 0, 0, 0.360784);
   --winui-text-fill-inverse: #ffffff;
 }
 
@@ -269,10 +269,10 @@ export const winuiTokenCss = `
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-text-fill-primary: #ffffff;
-    --winui-text-fill-secondary: #ffffffc5;
-    --winui-text-fill-tertiary: #ffffff87;
-    --winui-text-fill-disabled: #ffffff5d;
-    --winui-text-fill-inverse: #000000e4;
+    --winui-text-fill-secondary: rgba(255, 255, 255, 0.772549);
+    --winui-text-fill-tertiary: rgba(255, 255, 255, 0.529412);
+    --winui-text-fill-disabled: rgba(255, 255, 255, 0.364706);
+    --winui-text-fill-inverse: rgba(0, 0, 0, 0.894118);
   }
 }
 
@@ -285,13 +285,13 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L321-L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L4134 */
 :root {
-  --winui-text-base-medium: #00000099;
+  --winui-text-base-medium: rgba(0, 0, 0, 0.6);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L209 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-text-base-medium: #ffffff99;
+    --winui-text-base-medium: rgba(255, 255, 255, 0.6);
   }
 }
 
@@ -363,7 +363,7 @@ export const winuiTokenCss = `
     /* --winui-accent-base over --winui-solid-background-fill-quarternary at
        14%, 21%, 28% and 52.5%. */
     --winui-accent-tint-fill-default: #30414a;
-    --winui-accent-tint-fill-secondary: #334c58;
+    --winui-accent-tint-fill-secondary: #334b58;
     --winui-accent-tint-fill-tertiary: #355667;
     --winui-accent-tint-stroke: #3d7b9b;
   }
@@ -382,13 +382,13 @@ export const winuiTokenCss = `
 /* The disabled accent fill is a literal rather than a step of that ramp.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L242 */
 :root {
-  --winui-accent-fill-disabled: #00000037;
+  --winui-accent-fill-disabled: rgba(0, 0, 0, 0.215686);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L38 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-accent-fill-disabled: #ffffff28;
+    --winui-accent-fill-disabled: rgba(255, 255, 255, 0.156863);
   }
 }
 
@@ -397,13 +397,14 @@ export const winuiTokenCss = `
    at about 1.7:1 there against AccentFillColorDisabled. That is WinUI's own
    result -- measured off Microsoft's screenshots on the issue below, which
    they closed as not planned -- so it is transcribed, not corrected; raising it
-   would be a departure of ours to own. Dark's #87ffffff reaches about 3.7:1.
+   would be a departure of ours to own. Dark's WinUI ARGB value uses alpha 87
+   over white and reaches about 3.7:1.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214-L218
    https://github.com/microsoft/microsoft-ui-xaml/issues/6500 */
 :root {
-  --winui-accent-text-fill-disabled: #0000005c;
+  --winui-accent-text-fill-disabled: rgba(0, 0, 0, 0.360784);
   --winui-text-on-accent-fill-primary: #ffffff;
-  --winui-text-on-accent-fill-secondary: #ffffffb3;
+  --winui-text-on-accent-fill-secondary: rgba(255, 255, 255, 0.701961);
   --winui-text-on-accent-fill-disabled: #ffffff;
   --winui-text-on-accent-fill-selected-text: #ffffff;
 }
@@ -411,10 +412,10 @@ export const winuiTokenCss = `
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L10-L14 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-accent-text-fill-disabled: #ffffff5d;
+    --winui-accent-text-fill-disabled: rgba(255, 255, 255, 0.364706);
     --winui-text-on-accent-fill-primary: #000000;
-    --winui-text-on-accent-fill-secondary: #00000080;
-    --winui-text-on-accent-fill-disabled: #ffffff87;
+    --winui-text-on-accent-fill-secondary: rgba(0, 0, 0, 0.501961);
+    --winui-text-on-accent-fill-disabled: rgba(255, 255, 255, 0.529412);
     --winui-text-on-accent-fill-selected-text: #ffffff;
   }
 }
@@ -460,19 +461,19 @@ export const winuiTokenCss = `
    transparent in both dictionaries rather than a faint wash.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L233-L237 */
 :root {
-  --winui-control-alt-fill-secondary: #00000006;
-  --winui-control-alt-fill-tertiary: #0000000f;
-  --winui-control-alt-fill-quarternary: #00000018;
-  --winui-control-alt-fill-disabled: #ffffff00;
+  --winui-control-alt-fill-secondary: rgba(0, 0, 0, 0.023529);
+  --winui-control-alt-fill-tertiary: rgba(0, 0, 0, 0.058824);
+  --winui-control-alt-fill-quarternary: rgba(0, 0, 0, 0.094118);
+  --winui-control-alt-fill-disabled: rgba(255, 255, 255, 0);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L29-L33 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-control-alt-fill-secondary: #00000019;
-    --winui-control-alt-fill-tertiary: #ffffff0b;
-    --winui-control-alt-fill-quarternary: #ffffff12;
-    --winui-control-alt-fill-disabled: #ffffff00;
+    --winui-control-alt-fill-secondary: rgba(0, 0, 0, 0.098039);
+    --winui-control-alt-fill-tertiary: rgba(255, 255, 255, 0.043137);
+    --winui-control-alt-fill-quarternary: rgba(255, 255, 255, 0.070588);
+    --winui-control-alt-fill-disabled: rgba(255, 255, 255, 0);
   }
 }
 
@@ -480,15 +481,15 @@ export const winuiTokenCss = `
    surface color, so the ring stays visible on any fill including accent.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 :root {
-  --winui-focus-stroke-outer: #000000e4;
-  --winui-focus-stroke-inner: #ffffffb3;
+  --winui-focus-stroke-outer: rgba(0, 0, 0, 0.894118);
+  --winui-focus-stroke-inner: rgba(255, 255, 255, 0.701961);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-focus-stroke-outer: #ffffff;
-    --winui-focus-stroke-inner: #000000b3;
+    --winui-focus-stroke-inner: rgba(0, 0, 0, 0.701961);
   }
 }
 
@@ -498,13 +499,13 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L129
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141 */
 :root {
-  --winui-temporary-text-fill-disabled: #0101015c;
+  --winui-temporary-text-fill-disabled: rgba(1, 1, 1, 0.360784);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L22 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --winui-temporary-text-fill-disabled: #fefefe5d;
+    --winui-temporary-text-fill-disabled: rgba(254, 254, 254, 0.364706);
   }
 }
 
@@ -520,7 +521,7 @@ export const winuiTokenCss = `
   --winui-system-fill-success-background: #dff6dd;
   --winui-system-fill-caution-background: #fff4ce;
   --winui-system-fill-critical-background: #fde7e9;
-  --winui-system-fill-attention-background: #f6f6f680;
+  --winui-system-fill-attention-background: rgba(246, 246, 246, 0.501961);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L76-L87
@@ -534,7 +535,7 @@ export const winuiTokenCss = `
     --winui-system-fill-success-background: #393d1b;
     --winui-system-fill-caution-background: #433519;
     --winui-system-fill-critical-background: #442726;
-    --winui-system-fill-attention-background: #ffffff08;
+    --winui-system-fill-attention-background: rgba(255, 255, 255, 0.031373);
   }
 }
 

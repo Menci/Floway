@@ -433,7 +433,7 @@ test('buildTargetRequest resolves remote input images through the shared loader'
     },
     {
       loadRemoteImage: stubRemoteImageLoader({
-        mediaType: 'image/png',
+        mediaType: 'IMAGE/PNG; charset=binary',
         data: new Uint8Array([1, 2, 3]),
       }),
     },
@@ -596,6 +596,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   const namespaceTool: ResponsesTool = {
     type: 'namespace',
     name: 'web',
+    description: 'Web tools.',
     tools: [{
       type: 'function',
       name: 'run',

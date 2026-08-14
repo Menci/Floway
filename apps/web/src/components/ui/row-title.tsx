@@ -13,9 +13,8 @@ const { mergeClasses } = fluentComponents;
 // The name therefore keeps the body foreground and takes its underline only
 // under the pointer, over the app's focus rect.
 //
-// Paint only. The box is the cell's business: one site truncates through its
-// `TableCellLayout`, the other through the element itself.
-export const rowTitleClass = 'winui-focus-rect text-fui-fg1 no-underline hover:underline';
+// Paint only. The box is the button's own business, below.
+const rowTitleClass = 'winui-focus-rect text-fui-fg1 no-underline hover:underline';
 
 // A `button` rather than an anchor. The row it opens does have an address --
 // the upstream editor names the selected model in its search params -- but that

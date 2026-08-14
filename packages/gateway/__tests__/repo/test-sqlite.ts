@@ -37,6 +37,24 @@ export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
   return wrapSqlJsDatabase(db);
 };
 
+export const mapRunChangeCount = (db: SqlDatabase, mapper: (changes: number) => number): SqlDatabase => ({
+  prepare(query) {
+    const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+      bind: (...values) => wrap(statement.bind(...values)),
+      first: async <T>() => await statement.first<T>(),
+      all: async <T>() => await statement.all<T>(),
+      async run() {
+        const result = await statement.run();
+        const changes = result.meta.changes;
+        if (changes === undefined) throw new Error('SQL run result omitted its change count');
+        return { ...result, meta: { ...result.meta, changes: mapper(changes) } };
+      },
+    });
+    return wrap(db.prepare(query));
+  },
+  exec: async sql => await db.exec(sql),
+});
+
 // sql.js binds through JavaScript and happily takes values neither deployment
 // target accepts, so it would pass a statement that fails in production. Reject
 // anything outside the contract's own union here instead.
@@ -46,6 +64,83 @@ const assertBindable = (values: readonly SqlBindValue[]): readonly SqlBindValue[
     throw new TypeError(`SQL parameter ${index + 1} is a ${typeof value}, which no deployment target can bind`);
   });
   return values;
+};
+
+// D1 lowers SQLite's compound-select ceiling from the upstream default of 500
+// to 5. Deployment-bound query tests use this verifier because sql.js would
+// otherwise accept SQL that D1 rejects while preparing it.
+// https://github.com/cloudflare/workerd/blob/243fd41f8944c2446c46e415373b107ecb9bc789/src/workerd/util/sqlite.c%2B%2B#L1380-L1385
+export const assertD1CompoundSelectLimit = (query: string) => {
+  const compoundTerms = [1];
+  let quote: "'" | '"' | '`' | ']' | null = null;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let index = 0; index < query.length;) {
+    const current = query[index]!;
+    const next = query[index + 1];
+    if (lineComment) {
+      if (current === '\n') lineComment = false;
+      index++;
+      continue;
+    }
+    if (blockComment) {
+      if (current === '*' && next === '/') {
+        blockComment = false;
+        index += 2;
+      } else index++;
+      continue;
+    }
+    if (quote !== null) {
+      const closingQuote = quote === ']' ? ']' : quote;
+      if (current === closingQuote) {
+        if (next === closingQuote && quote !== ']') index += 2;
+        else {
+          quote = null;
+          index++;
+        }
+      } else index++;
+      continue;
+    }
+    if (current === '-' && next === '-') {
+      lineComment = true;
+      index += 2;
+      continue;
+    }
+    if (current === '/' && next === '*') {
+      blockComment = true;
+      index += 2;
+      continue;
+    }
+    if (current === "'" || current === '"' || current === '`' || current === '[') {
+      quote = current === '[' ? ']' : current;
+      index++;
+      continue;
+    }
+    if (current === '(') {
+      compoundTerms.push(1);
+      index++;
+      continue;
+    }
+    if (current === ')') {
+      compoundTerms.pop();
+      index++;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(current)) {
+      let end = index + 1;
+      while (end < query.length && /[A-Za-z0-9_]/.test(query[end]!)) end++;
+      const keyword = query.slice(index, end).toUpperCase();
+      if (keyword === 'UNION' || keyword === 'INTERSECT' || keyword === 'EXCEPT') {
+        const depth = compoundTerms.length - 1;
+        compoundTerms[depth]!++;
+        if (compoundTerms[depth]! > 5) throw new Error('SQL query exceeds D1 compound SELECT limit of 5 terms');
+      }
+      index = end;
+      continue;
+    }
+    index++;
+  }
 };
 
 class SqlJsPreparedStatement implements SqlPreparedStatement {

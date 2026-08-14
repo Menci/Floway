@@ -32,6 +32,8 @@ const en = {
         unexpectedTitle: 'Something went wrong',
         unexpectedDescription: 'An unexpected error occurred',
         notFound: 'The requested page could not be found',
+        sourceMapLoading: 'Loading source maps…',
+        sourceMapFailed: 'Source maps could not be loaded',
       },
     },
     auth: {
@@ -134,6 +136,8 @@ const en = {
         errors: {
           imageUnsupported: 'This model does not support image input.',
           imageUrl: 'Enter a valid absolute image URL.',
+          customInvalid: 'Enter valid JSON.',
+          customObject: 'Enter a JSON object.',
           customReserved: 'Remove reserved fields: {{fields}}.',
         },
       },
@@ -262,8 +266,8 @@ const en = {
           administrator: 'Administrator',
           administratorDescription:
               'Can manage users, upstreams, search configuration, and data transfer',
-          userOneLocked: 'The seed administrator cannot be demoted.',
-          selfLocked: 'You cannot demote your own account.',
+          userOneLocked: 'The seed administrator cannot be demoted',
+          selfLocked: 'You cannot demote your own account',
         },
         validation: {
           username: 'Use 1-64 letters, numbers, underscores, dots, or hyphens.',
@@ -280,7 +284,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope.',
+        description: 'When off, access inherits every upstream from its parent scope',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -358,7 +362,7 @@ const en = {
           responsesRetention: 'Stateful Responses retention',
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
-              'When enabled, model-invoking requests through this key are captured for the configured window.',
+              'When enabled, model-invoking requests through this key are captured for the configured window',
         },
         validation: {
           nameRequired: 'Name is required.',
@@ -371,11 +375,15 @@ const en = {
           inheritsTitle: 'Inherits the global upstream order',
         },
         retention: {
-          presets: { oneHour: '1 hour', sixHours: '6 hours', oneDay: '1 day', sevenDays: '7 days', thirtyDays: '30 days' },
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',
-          durationPlaceholder: 'e.g. 30m, 2h, 3d',
-          daysPlaceholder: 'e.g. 14',
+          durationPlaceholder: 'e.g. 2, 30m, 3d',
+          units: {
+            second_one: 'second', second_other: 'seconds',
+            minute_one: 'minute', minute_other: 'minutes',
+            hour_one: 'hour', hour_other: 'hours',
+            day_one: 'day', day_other: 'days',
+          },
           invalid: 'Enter a valid retention window.',
           warningDisable:
               'Saving will delete this key\'s captured requests.',
@@ -387,7 +395,7 @@ const en = {
               'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
-          title: 'Setup Your Agents',
+          title: 'Set Up Your Agents',
           usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
@@ -397,7 +405,7 @@ const en = {
           codexAuthHint: 'Store the Floway provider token beside that config, leaving the official account login alone.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', timedOut: 'The gateway did not answer in time.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count, number}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', disableAutoMemory: 'Disable auto memory', disableAutoMemoryHint: 'Stop Claude Code from reading or writing its auto memory directory.', disableAgentView: 'Disable agent view', disableAgentViewHint: 'Turn off background agents and agent view, including `claude agents`, `--bg`, and `/background`.',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -426,10 +434,28 @@ const en = {
           title: 'Routing priority',
           priority: 'Priority',
           upstream: 'Upstream',
-          provider: 'Provider',
+          details: 'Details',
           models: 'Models',
           enabled: 'Enabled',
           actions: 'Actions',
+        },
+        // Whatever an upstream publishes about itself beyond its identity. Only
+        // the providers whose upstream reports usage contribute any.
+        signals: {
+          plan: '{{plan}}:',
+          percent: '{{percent, number}}%',
+          detailSeparator: ' - ',
+          until: 'until {{date}}',
+          used: '{{label}}: {{percent, number}}% used',
+          resets: 'Resets {{time}}',
+          observed: 'Observed {{time}}',
+          window: { primary: 'Primary', secondary: 'Secondary' },
+          rateLimited: 'Rate limited',
+          rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
+          credits: '{{balance, number}} credits',
+          creditsDetail: 'Credit balance on the ChatGPT account',
+          cost: 'Charged to this account',
+          costLast4Weeks: 'Charged to this account in the last 4 weeks',
         },
         providers: {
           custom: 'OpenAI- or Anthropic-compatible endpoint',
@@ -535,6 +561,25 @@ const en = {
           pathOverrides: 'Path overrides',
         },
         auth: { none: 'None' },
+        headers: {
+          title: 'Client request headers',
+          description: 'Only client headers with a matching rule are sent to this upstream. Keep the client value, replace it with an empty value, or type a replacement.',
+          key: 'Header name',
+          value: 'Behavior or value',
+          row: 'Header rule {{number, number}}',
+          keyForRow: 'Header name for rule {{number, number}}',
+          valueForRow: 'Behavior or value for rule {{number, number}}',
+          remove: 'Remove header rule {{number, number}}',
+          passthrough: '(passthrough)',
+          empty: '(empty)',
+          validation: {
+            invalidName: 'Enter a valid HTTP header name.',
+            duplicateName: 'Each header name can appear only once.',
+            messagesOwned: 'The Messages protocol manages this header.',
+            transportOwned: 'Floway’s HTTP transport manages this header.',
+            invalidValue: 'Enter a valid HTTP header value without control characters.',
+          },
+        },
         proxy: {
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
@@ -758,7 +803,12 @@ const en = {
               'Reasoning effort must include at least one supported level, and its default must be one of those levels.',
           invalidBudget:
               'Maximum reasoning budget must be greater than or equal to the minimum.',
-          invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
+          upstreamIdRequired: 'Enter an upstream model ID.',
+          endpointsRequired: 'Select at least one supported endpoint.',
+          rerankTargetRequired: 'Select a Rerank target for this endpoint.',
+          rerankTargetUnexpected: 'Remove the Rerank target from a model that does not use the Rerank endpoint.',
+          rerankPathInvalid: 'The Rerank path override must start with / and cannot contain //, /./, or /../.',
+          invalidConfiguration: 'This model contains a configuration that cannot be saved.',
           delete: 'Delete manual model',
           deleteNamed: 'Delete manual model {{name}}',
           deleteTitle: 'Delete model',
@@ -778,8 +828,8 @@ const en = {
             observed: 'Observed {{time}}',
             empty: 'No quota observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
           },
-          description:
-              'Connect a GitHub Copilot subscription using GitHub device authorization.',
+          githubHost: 'GitHub host',
+          githubHostHint: 'For a GHE.com account, enter your hostname, such as octocorp.ghe.com.',
           connect: 'Connect GitHub',
           deviceCode: 'Device code',
           waiting: 'Waiting for authorization…',
@@ -871,6 +921,27 @@ const en = {
             'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
+        ollama: {
+          cloudUsage: 'Fetch account usage',
+          cloudUsageHint: "Read this Ollama Cloud account's usage windows after the calls this upstream serves. A self-hosted Ollama serves no such endpoint.",
+          usage: {
+            title: 'Usage',
+            load: 'Load',
+            refresh: 'Refresh',
+            usedPercent: '{{percent, number}}% used',
+            // Ollama states the session allowance resets every five hours and
+            // the other weekly; the endpoint reports neither the length nor a
+            // reset time. https://ollama.com/pricing
+            window: {
+              session: '5-hour window',
+              weekly: 'Weekly window',
+            },
+            observed: 'Observed {{time}}',
+            empty: 'No usage observed yet. One arrives with the first request this upstream serves, or refresh to fetch one now.',
+            unreadable: 'Ollama reported no usage windows in a shape this dashboard understands.',
+            backgroundFailed: 'The last background refresh failed: {{message}}',
+          },
+        },
         oauth: {
           refresh: 'Refresh credential',
           reimport: 'Re-import credential',
@@ -946,13 +1017,23 @@ const en = {
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
       },
+      telemetry: { currentUserOnly: 'Only me' },
       usage: {
         empty: 'No usage records in this range',
-        callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
-        view: {
-          label: 'Usage view',
-          allByUser: 'All by user',
-          myKeys: 'My keys',
+        callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output' },
+        apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
+        apiKeyScopeLabel: 'About API key telemetry scope',
+        groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', userId: 'By User', keyId: 'By API Key' },
+        filters: {
+          model: 'Model',
+          upstream: 'Upstream',
+          userId: 'User',
+          keyId: 'API Key',
+          all: { model: 'All models', upstream: 'All upstreams', userId: 'All users', keyId: 'All API keys' },
+          unknownUpstream: 'Unknown upstream',
+          unknownUser: 'Unknown user',
+          selected_one: '{{count, number}} selected',
+          selected_other: '{{count, number}} selected',
         },
         range: {
           label: 'Usage range',
@@ -960,15 +1041,8 @@ const en = {
           sevenDays: '7 Days',
           thirtyDays: '30 Days',
         },
-        actions: {
-          refresh: 'Refresh usage',
-          redactUsers: 'Redact usernames',
-          redactKeys: 'Redact key names',
-        },
+        actions: { refresh: 'Refresh usage' },
         charts: {
-          byUser: 'By User',
-          byKey: 'By API Key',
-          byModel: 'By Model',
           search: 'Search Usage',
           searchWithProvider: 'Search Usage ({{provider}})',
         },
@@ -982,18 +1056,28 @@ const en = {
           cached: 'Cached Input',
           cachedRate: 'Cached Rate',
           cacheCreation: 'Cache Write',
-          cacheHitRate: 'Cache Hit Rate',
         },
       },
       performance: {
         empty: 'No performance records in this range',
         actions: { refresh: 'Refresh performance' },
-        apiKeyScopeInfo: 'API key dimensions always include only API keys owned by your account, even when you have global telemetry access. Other dimensions remain global.',
+        apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',
         breakdown: 'Performance breakdown dimension',
         metric: { label: 'Performance metric', ttft: 'TTFT', outputSpeed: 'Output speed' },
         groupBy: { label: 'Group by', model: 'By Model', upstream: 'By Upstream', operation: 'By Operation', runtimeLocation: 'By Region', userId: 'By User', keyId: 'By API Key' },
-        filters: { label: 'Filters', all: { model: 'All models', upstream: 'All upstreams', operation: 'All operations', runtimeLocation: 'All regions', userId: 'All users', keyId: 'All API keys' }, model: 'Model', upstream: 'Upstream', operation: 'Operation', runtimeLocation: 'Region', userId: 'User', keyId: 'API Key' },
+        filters: {
+          label: 'Filters',
+          all: { model: 'All models', upstream: 'All upstreams', operation: 'All operations', runtimeLocation: 'All regions', userId: 'All users', keyId: 'All API keys' },
+          selected_one: '{{count, number}} selected',
+          selected_other: '{{count, number}} selected',
+          model: 'Model',
+          upstream: 'Upstream',
+          operation: 'Operation',
+          runtimeLocation: 'Region',
+          userId: 'User',
+          keyId: 'API Key',
+        },
         range: {
           label: 'Performance range',
           today: 'Last Day',
@@ -1099,7 +1183,7 @@ const en = {
         },
         passthrough: {
           title: 'Passthrough OpenAI search',
-          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream.',
+          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream',
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
@@ -1126,7 +1210,7 @@ const en = {
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', delete: 'Delete', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}' },
-        form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name.' },
+        form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },
@@ -1189,7 +1273,7 @@ const en = {
           shortId: 'Short ID (optional)',
           shortIdPlaceholder: 'hex, up to 16 chars',
           timeout: 'Dial timeout',
-          timeoutPlaceholder: '{{seconds}} (default)',
+          timeoutPlaceholder: '{{seconds, number}} (default)',
           timeoutHint: 'Seconds. Leave empty for default 10s timeout.',
         },
         validation: {

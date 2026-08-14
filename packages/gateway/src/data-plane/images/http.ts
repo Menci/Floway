@@ -15,6 +15,7 @@ import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
+import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';
 
@@ -128,8 +129,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   if (contentType === undefined) {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
-  const mediaType = contentType.replace(/;.*$/u, '').trim().toLowerCase();
-  if (mediaType === 'application/json') {
+  if (isJsonMediaType(contentType)) {
     const body = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
     if (body.type === 'invalid') return invalid(body.message);
     const request = prepareJsonImagesEdit(body.body);
@@ -137,7 +137,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     return await serveImagesEditRequest(c, requestBody, body.model, request.request);
   }
 
-  if (mediaType !== 'multipart/form-data') {
+  if (!isMultipartFormDataMediaType(contentType)) {
     return invalid('Image edits request body must use application/json or multipart/form-data.');
   }
   let form: FormData;

@@ -1,7 +1,6 @@
 import { CheckmarkCircleRegular, ScanTypeRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 
 import type { UpstreamEditorValues } from './data';
 import { previewRecord } from './data';
@@ -9,6 +8,7 @@ import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } fr
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { dateTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';

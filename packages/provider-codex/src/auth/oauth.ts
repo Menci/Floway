@@ -14,6 +14,10 @@ export interface CodexOAuthRefreshTokens {
   refresh_token: string;
   // Lifetime in seconds, relative to the server's clock at issue time.
   expires_in: number;
+  // Present only when the upstream supplies it. Refresh re-mints the bearer
+  // only — identity was settled at import — but the id_token does carry the
+  // account's latest plan, which refresh-side plan observation reads.
+  id_token?: string;
 }
 
 export interface CodexOAuthTokens extends CodexOAuthRefreshTokens {
@@ -200,10 +204,12 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
   // upstream state; the other codes here always mean credential death.
   const tokens = await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
   // A refresh only re-mints the bearer. Whatever identity the account has was
-  // settled at import, so an id_token here would be re-litigating it.
+  // settled at import, so the id_token here (when present) is used for the
+  // account's latest plan observation, never to re-litigate identity.
   return {
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
     expires_in: tokens.expires_in,
+    ...(tokens.id_token === undefined ? {} : { id_token: tokens.id_token }),
   };
 };

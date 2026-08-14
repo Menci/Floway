@@ -1,9 +1,9 @@
 import { ArrowClockwiseRegular, DeleteRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import type { ApiKey, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { type TFunction, useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';
@@ -257,7 +257,7 @@ export function KeysTable({
 const upstreamsText = (
   key: ApiKey,
   upstreamById: Map<string, UpstreamOption>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ) => {
   if (!key.upstream_ids) return t('dashboard.apiKeys.upstreams.all');
   if (key.upstream_ids.length === 0) return t('dashboard.apiKeys.upstreams.none');
@@ -273,7 +273,7 @@ const upstreamsText = (
 const upstreamsTitle = (
   key: ApiKey,
   upstreamById: Map<string, UpstreamOption>,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ) => {
   if (!key.upstream_ids) return t('dashboard.apiKeys.upstreams.inheritsTitle');
   if (key.upstream_ids.length === 0) return t('dashboard.apiKeys.upstreams.none');

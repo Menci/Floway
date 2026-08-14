@@ -81,10 +81,10 @@ responses retain their upstream wire shape.
 
 | Provider | Connection | Model catalog |
 | --- | --- | --- |
-| GitHub Copilot | GitHub device OAuth | Fetched live from Copilot |
-| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend |
+| GitHub Copilot | GitHub device OAuth on `github.com` or a `*.ghe.com` tenant | Fetched live from Copilot |
+| Codex | ChatGPT subscription: the Codex CLI OAuth client, a pasted credential JSON, or typed token fields | Fetched live from the Codex backend, plus the account's built-in GPT Image capability |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
-| Custom | Configurable multi-protocol HTTP endpoint and credential | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
+| Custom | Configurable multi-protocol HTTP endpoint, credential, and per-header ingress passthrough/overwrite rules | Live `/models` (OpenAI, Anthropic, or superset shapes), manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 
@@ -105,8 +105,14 @@ pnpm run db:migrate
 pnpm run dev
 ```
 
-The local dashboard runs at <http://localhost:5174>. For production, configure
-the admin secret, apply the remote migrations, and deploy:
+The local dashboard runs at <http://localhost:5174>. For an agent-assisted
+production deployment, invoke `$deploy-to-cloudflare`. It uses the established
+update and rollback flow by default. A deployment named as new first runs an
+isolated binding-probe bootstrap and requires its `Hello World` response before
+publishing Floway.
+
+For a manual production update, configure the admin secret, apply the remote
+migrations, and deploy:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
@@ -137,13 +143,20 @@ Podman users can instead follow the
 ```bash
 pnpm install
 pnpm run dev
-pnpm run test
-pnpm run lint
-pnpm run typecheck
+pnpm run verify
 ```
 
-More detail lives in [AGENTS.md](./AGENTS.md) — architecture, workspace layout,
-verification, and contributor rules.
+`verify` chains every check `.github/workflows/verify.yaml` runs, so a green run
+locally is a green run on a pull request. Each link is also a script of its own,
+in the order the chain runs them: `typegen`, `lint`, `typecheck`, `test`,
+`test:installers`, `check:agents-md`, `check:generated-assets`,
+`check:verify-parity`, and `build:web`, which carries the assertions about the
+emitted bundle. `typegen` comes first because the generated route types are not
+checked in and the lint configuration is type-aware, so a fresh clone has to
+produce them before anything else can read the dashboard's sources.
+
+[AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
+indexes its CI workflows, skills, workspace packages, and their responsibilities.
 
 ## License
 

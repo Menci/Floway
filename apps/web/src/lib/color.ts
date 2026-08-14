@@ -1,75 +1,47 @@
-// Uppercase-or-lowercase #RRGGBB only; shorthand and 8-digit alpha are not
-// forms anything here writes.
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+import {
+  blend,
+  convertHsvToRgb,
+  convertRgbToHsv,
+  convertRgbToLrgb,
+  formatHex,
+  modeRgb,
+  parseHex,
+  serializeRgb,
+  useMode as registerMode,
+  wcagContrast,
+} from 'culori/fn';
 
-export const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
-  const c = v * s;
-  const hp = h / 60;
-  const x = c * (1 - Math.abs((hp % 2) - 1));
-  let r = 0, g = 0, b = 0;
-  if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0];
-  else if (hp < 2) [r, g, b] = [x, c, 0];
-  else if (hp < 3) [r, g, b] = [0, c, x];
-  else if (hp < 4) [r, g, b] = [0, x, c];
-  else if (hp < 5) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const m = v - c;
-  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+registerMode(modeRgb);
+
+const parseHexColor = (hex: string) => {
+  const rgb = parseHex(hex);
+  if (!rgb) throw new TypeError(`Not a hex colour: ${hex}`);
+  return rgb;
 };
 
-export const rgbToHex = (r: number, g: number, b: number): string =>
-  `#${  [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+const linearRgb = (rgb: ReturnType<typeof parseHexColor>) => convertRgbToLrgb(rgb);
 
-// Everything that composites holds a colour this module or the schema already
-// produced, so an unparseable value is a fault rather than a shade to invent.
-export const hexToRgb = (hex: string): [number, number, number] => {
-  if (!HEX_RE.test(hex)) throw new TypeError(`Not a #RRGGBB colour: ${hex}`);
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
-};
-
-export const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
-  const rf = r / 255, gf = g / 255, bf = b / 255;
-  const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
-  const d = max - min;
-  const v = max;
-  const s = max === 0 ? 0 : d / max;
-  let h = 0;
-  if (d !== 0) {
-    if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) * 60;
-    else if (max === gf) h = ((bf - rf) / d + 2) * 60;
-    else h = ((rf - gf) / d + 4) * 60;
-  }
-  return [h, s, v];
-};
-
-// https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
-const relativeLuminance = ([r, g, b]: [number, number, number]): number => {
-  const channel = (value: number) => {
-    const s = value / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-};
-
-const contrastRatio = (a: [number, number, number], b: [number, number, number]): number => {
-  const [x, y] = [relativeLuminance(a) + 0.05, relativeLuminance(b) + 0.05];
-  return x > y ? x / y : y / x;
+export const alphaColor = (hex: string, opacity: number): string => {
+  const rgb = parseHexColor(hex);
+  const serialized = serializeRgb({ ...rgb, alpha: (rgb.alpha ?? 1) * opacity });
+  if (serialized === undefined) throw new TypeError(`Could not serialize hex colour: ${hex}`);
+  return serialized;
 };
 
 export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
-  const top = hexToRgb(hex);
-  const bottom = hexToRgb(backdrop);
-  return rgbToHex(...(top.map((channel, index) =>
-    Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as [number, number, number]));
+  const parsed = parseHexColor(hex);
+  const foreground = { ...parsed, alpha: (parsed.alpha ?? 1) * alpha };
+  const mixed = blend([parseHexColor(backdrop), foreground], 'normal', 'rgb');
+  if (mixed.alpha === undefined) throw new TypeError('Culori blend returned no alpha');
+  if (mixed.alpha < 1) throw new TypeError('Hex blending requires an opaque backdrop');
+  return formatHex(mixed).toUpperCase();
 };
 
+// WCAG 2.2 requires at least 4.5:1 contrast for normal text.
+// https://www.w3.org/TR/WCAG22/#contrast-minimum
 const TEXT_CONTRAST_FLOOR = 4.5;
-const BLACK: [number, number, number] = [0, 0, 0];
-const WHITE: [number, number, number] = [255, 255, 255];
+const BLACK = parseHexColor('#000000');
+const WHITE = parseHexColor('#FFFFFF');
 
 /**
  * The nearest tone of `hex` that reads as text on `surface`. Hue is held fixed
@@ -78,26 +50,47 @@ const WHITE: [number, number, number] = [255, 255, 255];
  * reach the floor.
  */
 export const readableTone = (hex: string, surface: string): string => {
-  const rgb = hexToRgb(hex);
-  const surfaceRgb = hexToRgb(surface);
-  if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
+  const rgb = parseHexColor(hex);
+  const surfaceRgb = parseHexColor(surface);
+  if (surfaceRgb.alpha !== undefined && surfaceRgb.alpha < 1) {
+    throw new TypeError('Readable tone requires an opaque surface');
+  }
+  const surfaceLinear = linearRgb(surfaceRgb);
+  const paintedRgb = blend([surfaceRgb, rgb], 'normal', 'rgb') as ReturnType<typeof parseHexColor>;
+  if (wcagContrast(linearRgb(paintedRgb), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return hex;
 
-  const [h, s, v] = rgbToHsv(...rgb);
+  const opaqueHex = formatHex(rgb).toUpperCase();
+  if (wcagContrast(linearRgb(parseHexColor(opaqueHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return opaqueHex;
+
+  const { h, s, v } = convertRgbToHsv(rgb);
   // Which extreme actually clears the floor, not whether the surface is light:
   // between luminance 0.183 and 0.5 white misses the floor while black clears
   // it, so a lightness test would search the direction that cannot arrive.
-  const darken = contrastRatio(BLACK, surfaceRgb) > contrastRatio(WHITE, surfaceRgb);
+  const darken = wcagContrast(linearRgb(BLACK), surfaceLinear) > wcagContrast(linearRgb(WHITE), surfaceLinear);
   const STEPS = 100;
 
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
-    for (let step = 1; step <= STEPS; step += 1) {
+    // Luminance is monotonic along the chosen HSV value direction, so this
+    // finds the same first rung as a linear walk of all 100.
+    let first = 1;
+    let last = STEPS;
+    let readable: string | undefined;
+    while (first <= last) {
+      const step = Math.floor((first + last) / 2);
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
-      const candidate = hsvToRgb(h, saturation, value);
-      if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
+      const candidate = convertHsvToRgb({ h, s: saturation, v: value });
+      const candidateHex = formatHex(candidate).toUpperCase();
+      if (wcagContrast(linearRgb(parseHexColor(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
+        readable = candidateHex;
+        last = step - 1;
+      } else {
+        first = step + 1;
+      }
     }
+    if (readable) return readable;
   }
   // Reachable: the saturation ladder stops short of zero unless the saturation is
   // a multiple of a tenth. The extreme always clears -- a surface's ratios against
   // black and white multiply to exactly 21, so the larger is never below 4.58.
-  return rgbToHex(...(darken ? BLACK : WHITE));
+  return formatHex(darken ? BLACK : WHITE).toUpperCase();
 };

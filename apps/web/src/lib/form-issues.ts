@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+
+import { useTranslation } from '../i18n/translation';
 
 // A domain validator is keyed by its own field vocabulary, which is not always a
 // path in the form values, so react-hook-form nests the schema's issues under
@@ -23,8 +24,11 @@ export const issuesFromErrors = <Field extends string>(
 export const useIssueText = () => {
   const { i18n, t } = useTranslation();
   return useCallback(
-    (message: string | undefined) =>
-      message === undefined ? undefined : i18n.exists(message) ? t(message) : message,
+    (message: string | undefined) => {
+      if (message === undefined || !i18n.exists(message)) return message;
+      const key: string = message;
+      return t(key);
+    },
     [i18n, t],
   );
 };

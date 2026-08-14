@@ -4,7 +4,8 @@ import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
 import type { DumpStore } from '../src/dump/store-contract.ts';
 import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from '../src/dump/types.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
-import { initEnv, initRuntimeKind } from '@floway-dev/platform';
+import { isReplayableBody } from '@floway-dev/http';
+import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual } from '@floway-dev/platform';
 
 // Production always initializes the environment getter at boot. Mirror that
 // here with a neutral default; tests needing real values (RUNTIME_LOCATION,
@@ -13,6 +14,15 @@ initEnv(() => '');
 // Tests run as 'node' by default. The few tests that exercise CF-specific
 // runtime behaviour re-init this with 'cloudflare'.
 initRuntimeKind('node');
+initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
+initFetch((url, init) => {
+  const body = init.body;
+  if (!isReplayableBody(body)) return fetch(url, { ...init, body });
+  const headers = new Headers(init.headers);
+  headers.set('content-length', String(body.contentLength));
+  const request: RequestInit & { duplex: 'half' } = { ...init, body: body.open(), headers, duplex: 'half' };
+  return fetch(url, request);
+});
 
 initBackgroundSchedulerResolver(_c => trackBackground);
 

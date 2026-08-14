@@ -1,9 +1,9 @@
-import { prepareGeminiAffinity } from './affinity/ingress.ts';
+import { analyzeGeminiAffinity } from './affinity/ingress.ts';
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
+import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,28 +30,29 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, model, headers } = args;
-    const prepared = await prepareGeminiAffinity(payload, ctx.affinity.codec);
+    const affinity = await analyzeGeminiAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
-    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
-    if ('kind' in narrowed) return renderGeminiFailure(narrowed, 'generate');
-    if (narrowed.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
+    const selection = selectAffinityCandidates(viable, affinity);
+    if ('kind' in selection) return renderGeminiFailure(selection, 'generate');
+    if (selection.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
     // Gemini carries the requested model in its URL, so affinity preparation
     // owns each candidate payload while dispatch uses the candidate's canonical model.
     return await iterateCandidates(
-      narrowed,
+      selection.candidates,
       'geminiServe.generate',
       ctx,
       'chat',
       async candidate => {
-        const result = await geminiAttempt.generate({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers });
+        const result = await geminiAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
@@ -60,25 +61,26 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, model, headers } = args;
-    const prepared = await prepareGeminiAffinity(payload, ctx.affinity.codec);
+    const affinity = await analyzeGeminiAffinity(payload, ctx.affinity.codec);
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
+      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
-    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
-    if ('kind' in narrowed) return renderGeminiFailure(narrowed, 'countTokens');
-    if (narrowed.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
+    const selection = selectAffinityCandidates(viable, affinity);
+    if ('kind' in selection) return renderGeminiFailure(selection, 'countTokens');
+    if (selection.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
 
     return await iterateCandidates(
-      narrowed,
+      selection.candidates,
       'geminiServe.countTokens',
       ctx,
       'chat',
-      candidate => geminiAttempt.countTokens({ payload: prepared.payloadForCandidate(candidate), ctx, candidate, headers }),
+      candidate => geminiAttempt.countTokens({ payload: selection.payloadFor(candidate), ctx, candidate, headers }),
     );
   },
 };

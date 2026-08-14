@@ -1,9 +1,9 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { Switch } from './fluent-form-controls';
 import { fluentComponents } from '../../fluent';
+import { useTranslation } from '../../i18n/translation';
 
 const { Text, makeStyles, mergeClasses, shorthands } = fluentComponents;
 
@@ -312,6 +312,8 @@ const useStyles = makeStyles({
     flexBasis: 'auto',
     height: '32px',
     justifyContent: 'center',
+    // The stretched disclosure beneath this decorative box owns the click.
+    pointerEvents: 'none',
     width: '32px',
   },
   // The chevron's turn is the AnimatedIcon's own, not the region's: ten frames

@@ -1,17 +1,18 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
 import { metricConfig, summaryFieldForMetric } from './metrics';
-import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
-import type { ControlPlaneModel } from '../../api/types';
+import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange } from './types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
+import { hueForSeriesSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
+import type { MultiselectOption } from '../ui/multiselect-combobox';
 import type { BillingMetric, DecimalString } from '@floway-dev/protocols/common';
 
 const shortMonthDay = (date: Date, locale: string): string =>
@@ -44,33 +45,33 @@ export const dashboardBuckets = (
 
 export const buildTokenChart = ({
   records,
-  metadata,
-  models,
-  groupKey,
-  hiddenOther,
-  redactKeys,
+  dimensionOptions,
   metric,
   range,
   buckets,
+  seriesHues,
 }: {
   records: DisplayUsageRecord[];
-  metadata: UsageResponse['keys'];
-  models: ControlPlaneModel[];
-  groupKey: 'keyId' | 'model';
-  hiddenOther: Set<string>;
-  redactKeys: boolean;
+  dimensionOptions: readonly MultiselectOption[];
   metric: UsageMetric;
   range: UsageRange;
   buckets: ChartBucket[];
+  seriesHues?: ReadonlyMap<string, number>;
 }): TokenChartModel => {
-  const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
-  const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
-  const { values, details } = aggregateTokenRecords(valueRecords, groupKey, metric, range, buckets);
-  const presentGroups = new Set(records.map(record => record[groupKey]));
-  const entries =
-    groupKey === 'keyId'
-      ? keyChartEntries([...presentGroups], metadata, records, redactKeys)
-      : modelChartEntries([...presentGroups], models);
+  const { values, details } = aggregateTokenRecords(records, metric, range, buckets);
+  const presentGroups = new Set(records.map(record => record.group));
+  const knownGroups = new Set(dimensionOptions.map(option => option.value));
+  const missingGroup = [...presentGroups].find(group => !knownGroups.has(group));
+  if (missingGroup !== undefined) {
+    throw new TypeError(`Usage overview series group is missing from dimension values: ${missingGroup}`);
+  }
+  const entries = withUniqueSeriesLegends(dimensionOptions
+    .filter(option => presentGroups.has(option.value))
+    .map((option, slot) => ({
+      id: option.value,
+      label: option.label,
+      hue: seriesHues?.get(option.value) ?? hueForSeriesSlot(slot),
+    })));
 
   const isPercent = metricConfig[metric].kind === 'percent';
   const series = entries
@@ -127,12 +128,10 @@ const areaChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProp
 
 export const buildSearchChart = ({
   search,
-  redactKeys,
   range,
   buckets,
 }: {
   search: SearchUsageResponse;
-  redactKeys: boolean;
   range: UsageRange;
   buckets: ChartBucket[];
 }): SearchChartModel => {
@@ -162,17 +161,7 @@ export const buildSearchChart = ({
   const entries = keyChartEntries(
     [...presentGroups],
     search.keys,
-    search.records.map(record => ({
-      keyId: record.keyId,
-      keyName: record.keyName,
-      keyCreatedAt: record.keyCreatedAt,
-      model: '',
-      hour: record.hour,
-      requests: record.requests,
-      metrics: {},
-      cost: null,
-    })),
-    redactKeys,
+    search.records,
   );
   return {
     entries,
@@ -192,7 +181,6 @@ export const buildSearchChart = ({
 
 const aggregateTokenRecords = (
   records: DisplayUsageRecord[],
-  groupKey: 'keyId' | 'model',
   metric: UsageMetric,
   range: UsageRange,
   buckets: ChartBucket[],
@@ -205,10 +193,10 @@ const aggregateTokenRecords = (
   }
 
   for (const record of records) {
-    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
+    const bucket = dashboardBucketKeyForUtcHour(range, record.bucket);
     if (!values.has(bucket)) continue;
 
-    const group = record[groupKey];
+    const group = record.group;
     const bucketDetails = details.get(bucket)!;
     const detail = bucketDetails.get(group) ?? emptyCounters();
     addRecordToCounters(detail, record);
@@ -240,9 +228,8 @@ const aggregateTokenRecords = (
 
 const keyChartEntries = (
   presentKeyIds: string[],
-  metadata: UsageResponse['keys'],
-  records: DisplayUsageRecord[],
-  redactKeys: boolean,
+  metadata: SearchUsageResponse['keys'],
+  records: SearchUsageResponse['records'],
 ): ChartSeries[] => {
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of metadata) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
@@ -263,25 +250,16 @@ const keyChartEntries = (
 
   return withUniqueSeriesLegends([...new Set(presentKeyIds)]
     .map(id => {
-      const colorSlot = slotById.get(id)!;
+      const slot = slotById.get(id)!;
       return {
         id,
-        label: redactKeys ? `${id.startsWith('user-') ? 'user' : 'key'}-${colorSlot + 1}` : meta.get(id)?.name ?? id.slice(0, 8),
-        colorSlot,
+        label: meta.get(id)?.name ?? id.slice(0, 8),
+        hue: hueForSeriesSlot(slot),
+        slot,
       };
     })
-    .sort((a, b) => a.colorSlot - b.colorSlot));
-};
-
-const modelChartEntries = (
-  presentModelIds: string[],
-  models: ControlPlaneModel[],
-): ChartSeries[] => {
-  const present = new Set(presentModelIds);
-  return withUniqueSeriesLegends([...new Set([...models.map(model => model.id), ...presentModelIds])]
-    .sort()
-    .map((id, colorSlot) => ({ id, label: id, colorSlot }))
-    .filter(entry => present.has(entry.id)));
+    .sort((a, b) => a.slot - b.slot)
+    .map(({ slot: _, ...entry }) => entry));
 };
 
 export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
@@ -302,7 +280,6 @@ export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
     total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
     prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
     cachedRate: percentOf(counters.cacheRead, prompt),
-    cacheHitRate: percentOf(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation)),
   };
 };
 

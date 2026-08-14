@@ -116,6 +116,10 @@ function Write-SetupClaudeSettings {
   else { Remove-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' }
   Set-SetupOptionalProp $document 'effortLevel' $SetupClaudeEffortLevel
   Set-SetupOptionalProp $document 'cleanupPeriodDays' $SetupClaudeCleanupPeriodDays
+  if ($SetupClaudeDisableAutoMemory) { Set-SetupProp $document 'autoMemoryEnabled' $false }
+  else { Remove-SetupProp $document 'autoMemoryEnabled' }
+  if ($SetupClaudeDisableAgentView) { Set-SetupProp $document 'disableAgentView' $true }
+  else { Remove-SetupProp $document 'disableAgentView' }
   if ($SetupClaudeOptOutAiAttribution) {
     if ($document.PSObject.Properties.Name -notcontains 'attribution') {
       $document | Add-Member -NotePropertyName attribution -NotePropertyValue ([PSCustomObject]@{})

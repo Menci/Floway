@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildDisabledModelOptions } from '../../../src/components/upstream-editor/config-sidebar';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig } from '@floway-dev/provider/model-config';
 
 const model = (upstreamModelId: string, publicModelId?: string): UpstreamModelConfig => ({
   upstreamModelId,

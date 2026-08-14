@@ -1,10 +1,20 @@
 import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
+import {
+  decodeDumpBodyDescriptor,
+  decodeDumpHeaders,
+  decodeDumpStreamEvents,
+  decodePersistedDumpMetadata,
+  encodeDumpBodyDescriptor,
+  encodeDumpHeaders,
+  encodeDumpStreamEvents,
+  encodePersistedDumpMetadata,
+} from '../dump/storage-codec.ts';
+import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
   DumpRecordId,
-  DumpStreamEvent,
   DumpUpstreamRef,
   DumpWriteRecord,
   PreparedDumpRequestBody,
@@ -13,6 +23,7 @@ import type {
   StoredDumpResponse,
   StoredDumpResponseBody,
 } from '../dump/types.ts';
+import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
@@ -21,12 +32,8 @@ import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 const HOUR_MS = 60 * 60 * 1000;
 
-interface BodyDescriptor {
-  key: string;
-  type: 'bytes' | 'events';
-}
-
 interface DumpRow {
+  id: string;
   upstream_id: string | null;
   upstream_name: string | null;
   upstream_kind: string | null;
@@ -68,23 +75,13 @@ const hourBucket = (ms: number): string => {
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
-const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
-const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')));
-  return new Uint8Array(await stream.arrayBuffer());
-};
-
 const putRawBody = async (
   files: FileStore,
   key: string,
   rawBytes: Uint8Array,
   type: 'bytes' | 'events',
-): Promise<BodyDescriptor> => {
-  const gz = await gzip(rawBytes);
+): Promise<DumpBodyDescriptor> => {
+  const gz = await gzipBytes(rawBytes);
   await files.put(key, gz);
   return { key, type };
 };
@@ -93,16 +90,16 @@ const putPreparedBody = async (
   files: FileStore,
   key: string,
   prepared: PreparedDumpRequestBody,
-): Promise<BodyDescriptor> => {
-  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzip(prepared.bytes);
+): Promise<DumpBodyDescriptor> => {
+  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzipBytes(prepared.bytes);
   await files.put(key, gz);
   return { key, type: 'bytes' };
 };
 
-const fetchBody = async (files: FileStore, descriptor: BodyDescriptor): Promise<Uint8Array> => {
+const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
-  return await gunzip(gz);
+  return await gunzipBytes(gz);
 };
 
 export class FileDumpStore implements DumpStore {
@@ -111,7 +108,7 @@ export class FileDumpStore implements DumpStore {
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {
       encoding: 'gzip',
-      bytes: await gzip(body),
+      bytes: await gzipBytes(body),
       decodedByteLength: body.byteLength,
     };
   }
@@ -149,18 +146,19 @@ export class FileDumpStore implements DumpStore {
       ? null
       : await putPreparedBody(this.files, requestFileKey!, record.request.body);
 
-    let responseDescriptor: BodyDescriptor | null = null;
+    let responseDescriptor: DumpBodyDescriptor | null = null;
     if (record.response.body.type === 'bytes') {
       if (record.response.body.body.byteLength > 0) {
         responseDescriptor = await putRawBody(this.files, responseFileKey!, record.response.body.body, 'bytes');
       }
     } else if (record.response.body.type === 'stream') {
-      responseDescriptor = await putRawBody(this.files, responseFileKey!, new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
+      responseDescriptor = await putRawBody(
+        this.files,
+        responseFileKey!,
+        new TextEncoder().encode(encodeDumpStreamEvents(record.response.body.events, `dump record ${record.meta.id} response events`)),
+        'events',
+      );
     }
-
-    // Strip the in-memory `upstream` field; the ref is rebuilt from the join
-    // at read time so renames and deletes are honored on historical rows.
-    const { upstream: _upstream, ...metaToStore } = record.meta;
 
     // Files before row — a partial failure leaves orphan files the sweep
     // collects, never an orphan row whose detail fetch would 404.
@@ -173,11 +171,17 @@ export class FileDumpStore implements DumpStore {
       record.meta.id,
       record.meta.completedAt,
       record.meta.upstream?.id ?? null,
-      JSON.stringify(metaToStore),
-      JSON.stringify(record.request.headers),
-      record.response.body.type === 'none' ? null : JSON.stringify(record.response.headers),
-      requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
-      responseDescriptor === null ? null : JSON.stringify(responseDescriptor),
+      encodePersistedDumpMetadata(record.meta, `dump record ${record.meta.id} metadata`),
+      encodeDumpHeaders(record.request.headers, `dump record ${record.meta.id} request headers`),
+      record.response.body.type === 'none'
+        ? null
+        : encodeDumpHeaders(record.response.headers, `dump record ${record.meta.id} response headers`),
+      requestDescriptor === null
+        ? null
+        : encodeDumpBodyDescriptor(requestDescriptor, `dump record ${record.meta.id} request body descriptor`),
+      responseDescriptor === null
+        ? null
+        : encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
     ).run();
   }
 
@@ -195,7 +199,7 @@ export class FileDumpStore implements DumpStore {
     // millisecond still page deterministically — ULID lex order matches
     // creation order within the ms.
     const select
-      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
+      = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
     const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000';
@@ -206,16 +210,16 @@ export class FileDumpStore implements DumpStore {
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, now, opts.limit)
       : this.db.prepare(sql).bind(keyId, now, beforeTs, beforeTs, beforeId, opts.limit);
-    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
+    const { results } = await stmt.all<Pick<DumpRow, 'id' | 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
     return results.map(row => ({
-      ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
+      ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),
       upstream: hydrateUpstream(row),
     }));
   }
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
+      'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
@@ -224,13 +228,19 @@ export class FileDumpStore implements DumpStore {
     if (!row) return null;
 
     const meta: DumpMetadata = {
-      ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
+      ...decodePersistedDumpMetadata(row.meta_json, `dump record ${recordId} metadata`),
       upstream: hydrateUpstream(row),
     };
-    const requestHeaders = JSON.parse(row.request_headers_json) as Array<[string, string]>;
-    const requestDescriptor = row.request_body_descriptor ? JSON.parse(row.request_body_descriptor) as BodyDescriptor : null;
-    const responseHeaders = row.response_headers_json ? JSON.parse(row.response_headers_json) as Array<[string, string]> : null;
-    const responseDescriptor = row.response_body_descriptor ? JSON.parse(row.response_body_descriptor) as BodyDescriptor : null;
+    const requestHeaders = decodeDumpHeaders(row.request_headers_json, `dump record ${recordId} request headers`);
+    const requestDescriptor = row.request_body_descriptor === null
+      ? null
+      : decodeDumpBodyDescriptor(row.request_body_descriptor, `dump record ${recordId} request body descriptor`);
+    const responseHeaders = row.response_headers_json === null
+      ? null
+      : decodeDumpHeaders(row.response_headers_json, `dump record ${recordId} response headers`);
+    const responseDescriptor = row.response_body_descriptor === null
+      ? null
+      : decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} response body descriptor`);
 
     const request: StoredDumpRequest = {
       method: meta.method,
@@ -248,9 +258,11 @@ export class FileDumpStore implements DumpStore {
     } else if (responseDescriptor === null) {
       responseBody = { type: 'bytes', body: new Uint8Array() };
     } else if (responseDescriptor.type === 'events') {
-      const parsed = JSON.parse(new TextDecoder().decode(await fetchBody(this.files, responseDescriptor))) as unknown;
-      if (!Array.isArray(parsed)) throw new Error(`dump events payload not an array at key=${responseDescriptor.key}`);
-      responseBody = { type: 'stream', events: parsed as DumpStreamEvent[] };
+      const text = new TextDecoder().decode(await fetchBody(this.files, responseDescriptor));
+      responseBody = {
+        type: 'stream',
+        events: decodeDumpStreamEvents(text, `dump record ${recordId} response events at key=${responseDescriptor.key}`),
+      };
     } else {
       responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
     }
@@ -264,6 +276,11 @@ export class FileDumpStore implements DumpStore {
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
+    // D1 derives meta.changes from total_changes(), so the dump retirement trigger
+    // can add spilled_files writes. RETURNING counts only dump rows.
+    // https://github.com/cloudflare/workerd/blob/0c0f9656d3f78c75a7dc011e0c17dd85e438b44c/src/cloudflare/internal/test/d1/d1-mock.js#L83-L131
+    // https://www.sqlite.org/c3ref/total_changes.html
+    // https://www.sqlite.org/lang_returning.html
     const active = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
@@ -277,11 +294,12 @@ export class FileDumpStore implements DumpStore {
              AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, now, limit)
-      .run();
-    const activeDeleted = active.meta.changes ?? 0;
+      .all<{ rowid: number }>();
+    const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
     const inactive = await this.db
       .prepare(
@@ -296,11 +314,12 @@ export class FileDumpStore implements DumpStore {
              )
            ORDER BY records.created_at, records.rowid
            LIMIT ?
-         )`,
+         )
+         RETURNING rowid`,
       )
       .bind(keyId, limit - activeDeleted)
-      .run();
-    return activeDeleted + (inactive.meta.changes ?? 0);
+      .all<{ rowid: number }>();
+    return activeDeleted + inactive.results.length;
   }
 
   async findOldestCreatedAt(keyId: string): Promise<number | null> {

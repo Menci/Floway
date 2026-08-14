@@ -78,6 +78,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
   // active-only would have hidden it.
   const matched = body.records.find((r: { keyId: string }) => r.keyId === apiKey.id);
   assertEquals(matched?.keyName, apiKey.name);
+  assertEquals('upstream' in matched, false);
 });
 
 test('/api/token-usage scopes to the actor\'s keys when called with an API key', async () => {
@@ -125,6 +126,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
   assertEquals(body.length, 1);
   assertEquals(body[0].keyId, apiKey.id);
   assertEquals(body[0].keyName, 'Primary key');
+  assertEquals('upstream' in body[0], false);
   assertEquals(displayQuantity(body[0], 'input_cache_read'), '4');
   assertEquals(displayQuantity(body[0], 'input_cache_write'), '1');
 });

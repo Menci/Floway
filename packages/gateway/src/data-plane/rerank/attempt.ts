@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { inboundHeadersForUpstream } from '../shared/inbound-headers.ts';
+import { inboundHeaders } from '../shared/inbound-headers.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import type { RerankTarget } from '@floway-dev/protocols/common';
@@ -28,8 +28,8 @@ export const rerankAttempt = async (
   const result: ProviderRerankCallResult = await candidate.provider.instance.callRerank(
     model,
     request,
-    ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, inboundHeadersForUpstream(c)),
+    undefined,
+    buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {
     type: 'plain',
