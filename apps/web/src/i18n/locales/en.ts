@@ -562,8 +562,8 @@ const en = {
         },
         auth: { none: 'None' },
         headers: {
-          title: 'Client request headers',
-          description: 'Only client headers with a matching rule are sent to this upstream. Keep the client value, replace it with an empty value, or type a replacement.',
+          title: 'Upstream request headers',
+          description: 'Each rule decides what one header carries to this upstream. Passthrough forwards the client’s value and is the only behavior that needs the client to send the header; an empty or typed value is written on every request.',
           key: 'Header name',
           value: 'Behavior or value',
           row: 'Header rule {{number, number}}',

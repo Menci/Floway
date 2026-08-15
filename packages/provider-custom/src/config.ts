@@ -53,6 +53,11 @@ export interface CustomModelsFetch {
   endpoint?: string;
 }
 
+// One rule per header name the operator wants this upstream to receive.
+// `value: null` passes the client's own value through, so the header reaches
+// the upstream only when the client sent it. Any other value — the empty
+// string included — is this upstream's own value and is written on every
+// request, whether or not the client sent that header.
 export interface CustomIngressHeaderRule {
   key: string;
   value: string | null;

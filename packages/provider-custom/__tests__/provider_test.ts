@@ -39,13 +39,13 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   },
 });
 
-test('Custom applies empty and override rules after admitted headers reach the provider', async () => {
+test('Custom writes every configured header value and passes admitted client values through', async () => {
   const provider = createCustomProvider(buildCustomUpstream({
     ingressHeadersRules: [
       { key: 'x-passthrough', value: null },
       { key: 'x-empty', value: '' },
       { key: 'x-override', value: 'configured' },
-      { key: 'x-absent', value: 'not-synthesized' },
+      { key: 'x-client-never-sends', value: 'configured-anyway' },
     ],
     modelsFetchEnabled: false,
     models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }],
@@ -76,7 +76,19 @@ test('Custom applies empty and override rules after admitted headers reach the p
   assertEquals(observed.get('x-passthrough'), 'client-pass');
   assertEquals(observed.get('x-empty'), '');
   assertEquals(observed.get('x-override'), 'configured');
-  assertEquals(observed.has('x-absent'), false);
+  assertEquals(observed.get('x-client-never-sends'), 'configured-anyway');
+});
+
+test('Custom admits only the header names whose value comes from the client', () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    ingressHeadersRules: [
+      { key: 'x-passthrough', value: null },
+      { key: 'x-empty', value: '' },
+      { key: 'x-override', value: 'configured' },
+    ],
+  }));
+
+  assertEquals([...provider.inboundHeaderAllowlist], ['x-passthrough']);
 });
 
 test('getProvidedModels returns only manual models and never fetches when modelsFetch is disabled', async () => {
