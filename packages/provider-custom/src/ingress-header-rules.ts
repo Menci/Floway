@@ -7,8 +7,8 @@ const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const MESSAGES_OWNED_HEADER_NAMES = new Set(['anthropic-beta']);
 
 // These names belong to the gateway/provider transport boundary, not the
-// upstream application protocol. Forwarding body metadata after Floway has
-// reserialized JSON/FormData misframes the new body; forwarding gateway auth,
+// upstream application protocol. Sending body metadata after Floway has
+// reserialized JSON/FormData misframes the new body; sending gateway auth,
 // cookies, proxy/IP signals, or hop-by-hop fields leaks credentials/topology or
 // is rejected by runtime fetch.
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-7.6.1

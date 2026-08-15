@@ -119,10 +119,13 @@ export const projectCustomModels = (
 export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
+  // A configured value is this upstream's own header, so it is written on
+  // every call regardless of what the client sent. Only passthrough rules
+  // depend on the client, and they are already satisfied by admission.
   const headersForCall = (headers: Headers): Headers => {
     const resolved = new Headers(headers);
     for (const rule of config.ingressHeadersRules) {
-      if (rule.value !== null && resolved.has(rule.key)) resolved.set(rule.key, rule.value);
+      if (rule.value !== null) resolved.set(rule.key, rule.value);
     }
     return resolved;
   };
@@ -232,7 +235,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'custom',
     name: record.name,
-    inboundHeaderAllowlist: config.ingressHeadersRules.map(rule => rule.key),
+    // Admission only has to carry the headers whose value comes from the
+    // client. A rule with a configured value supplies its own value inside
+    // this provider, so the client's copy is neither needed nor forwarded.
+    inboundHeaderAllowlist: config.ingressHeadersRules.flatMap(rule => rule.value === null ? [rule.key] : []),
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
