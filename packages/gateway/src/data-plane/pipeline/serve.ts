@@ -15,7 +15,7 @@ import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
@@ -66,14 +66,25 @@ export const openPrologue = (
   c: Context,
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
-): Prologue => {
-  const gateway = createGatewayCtxFromHono(c, {
-    wantsStream: options.wantsStream,
-    ...(options.model === undefined ? {} : { model: options.model }),
-    requestBody: takeRequestBody(ingress.body),
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-  });
+): Prologue => prologueFor(createGatewayCtxFromHono(c, gatewayCtxOptions(c, ingress, options)), ingress);
 
+/** What a run's request context is built from. Exported because a family whose context is a
+ *  richer one builds that instead, and both have to be built from the same read of the body:
+ *  `takeRequestBody` empties what it is given, so calling this twice would hand the dump an
+ *  empty buffer the second time. */
+export const gatewayCtxOptions = (
+  c: Context,
+  ingress: Ingress,
+  options: { readonly wantsStream: boolean; readonly model?: string },
+): CreateGatewayCtxOptions => ({
+  wantsStream: options.wantsStream,
+  ...(options.model === undefined ? {} : { model: options.model }),
+  requestBody: takeRequestBody(ingress.body),
+  backgroundScheduler: backgroundSchedulerFromContext(c),
+});
+
+/** The services every run is given, over whichever context it was opened with. */
+export const prologueFor = (gateway: GatewayCtx, ingress: Ingress): Prologue => {
   const live = new Map<string, ModelCandidate>();
 
   return {
