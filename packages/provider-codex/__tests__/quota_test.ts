@@ -8,9 +8,8 @@ import {
   hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
-  type CodexQuotaSnapshot,
 } from '../src/quota.ts';
-import type { CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
+import type { CodexQuotaSnapshot, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from '../src/state.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';

@@ -2,7 +2,6 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import type { CodexQuotaSnapshot } from './quota.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
@@ -26,6 +25,30 @@ export interface CodexAccessTokenEntry {
   // so out-of-order token writes cannot promote an older plan observation.
   planObservedAt?: string;
 }
+
+// Parsed Codex quota reading derived from upstream response headers by the
+// parser in quota.ts, embedded into persisted state by CodexQuotaSnapshotEntry.
+export interface CodexQuotaSnapshot {
+  observed_at: string;
+  active_limit?: string;
+  plan_type?: string;
+
+  primary_used_percent?: number;
+  primary_window_minutes?: number;
+  primary_reset_after_at?: string;
+
+  secondary_used_percent?: number;
+  secondary_window_minutes?: number;
+  secondary_reset_after_at?: string;
+
+  credits_has_credits?: boolean;
+  credits_balance?: number;
+
+  // Present only when this snapshot was written as a result of a 429.
+  ratelimited_until?: string;
+}
+
+export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
 // Most recent quota observation derived from upstream response headers.
 // `fetchedAt` is unix ms; `data` is the parsed snapshot, validated by quota.ts
