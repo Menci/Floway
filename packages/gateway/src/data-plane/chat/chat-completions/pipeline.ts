@@ -126,7 +126,7 @@ const emitChatCompletions = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.chatCompletions.rendered': renderSSE(frames, back['ingress.chat.chatCompletions.wantsUsageChunk']),
+      'response.chat.chatCompletions.rendered': move(renderSSE(frames, back['ingress.chat.chatCompletions.wantsUsageChunk'])),
       'response.http.status': 200,
     };
   },
