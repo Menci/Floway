@@ -1,6 +1,5 @@
-// The one thing `16-architecture.md` §1.4 left open: what a handoff must satisfy when the
-// target pipeline lives in another package. It turns out to need nothing, and this is the
-// proof — the provider is a separate module with its own fact space, its own key that
+// What a handoff must satisfy when the target pipeline lives in another package. It turns
+// out to need nothing, and this is the proof — the provider is a separate module with its own fact space, its own key that
 // travels through the record, and an export whose type mentions only the core space.
 
 import { describe, expect, it } from 'vitest';

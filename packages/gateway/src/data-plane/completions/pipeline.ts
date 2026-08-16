@@ -25,7 +25,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
-import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { isOpenAIUsageOnlyEventShape, renderErrorEnvelope, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   completionsProtocolFrameToSSEFrame,
   parseCompletionsResult,
@@ -143,7 +143,7 @@ const rendered = (
   answer: CompletionsFacts['response.completions.payload'],
   wantsUsageChunk: boolean,
 ): CompletionsFacts['response.completions.rendered'] =>
-  isFailure(answer) ? { error: { message: answer.message, type: 'api_error' } }
+  isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
     : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
       : answer;
 

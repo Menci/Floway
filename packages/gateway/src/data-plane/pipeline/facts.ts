@@ -51,12 +51,9 @@ export const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
 
 export interface GatewayFacts {
-  /** What the client sent, before anything read it. Recorded on every request, so the
-   *  dump can always show it. */
-  'ingress.http.method': string;
-  'ingress.http.path': string;
+  /** What the client sent, before anything read it. Every family hands these over, because
+   *  every ending forwards what a provider is allowed to forward of them. */
   'ingress.http.headers': readonly (readonly [string, string])[];
-  'ingress.http.body': Uint8Array;
 
   /** The public model id the client asked for, and the candidates it resolves to. Nothing
    *  consumes these: they outlive an attempt. */

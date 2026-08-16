@@ -307,9 +307,10 @@ describe('the completions pipeline', () => {
 
     expect(tried).toEqual(['up_a', 'up_b']);
     // Every candidate failed, so the last failure is the base — the client sees the status
-    // an upstream actually returned rather than a synthesized gateway envelope.
+    // an upstream actually returned, and the words that upstream used, rather than a
+    // synthesized envelope quoting its serialized body back as a message.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.completions.rendered']).toEqual({ error: { message: JSON.stringify({ error: { message: 'no' } }), type: 'api_error' } });
+    expect(facts['response.completions.rendered']).toEqual({ error: { message: 'no' } });
     await drain();
   });
 

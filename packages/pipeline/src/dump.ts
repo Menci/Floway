@@ -1,5 +1,4 @@
-// What a run emits, and how it is written down. The specification is
-// `plans/26-dump-format.md`; this is that format.
+// What a run emits, and how it is written down.
 //
 // A run emits a sequence of events. What a live observer is given and what is stored are
 // the same sequence, so there is one encoding and one thing to implement.

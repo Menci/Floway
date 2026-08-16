@@ -36,7 +36,7 @@ import {
   type AudioTranscriptionUsage,
   type CanonicalAudioTranscription,
 } from '@floway-dev/protocols/audio';
-import { isEventStreamMediaType, parseDecimalString, parseSSEStream, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, parseDecimalString, parseSSEStream, renderErrorEnvelope, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type AudioTranscriptionFormEntry, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** The answer while it is still the upstream's, one event at a time. It is a view and not a
@@ -138,7 +138,7 @@ const emitAudioTranscription = defineStage<
         'response.http.headers': forClient,
         'response.http.status': answer.status,
         'response.audioTranscription.mediaType': 'application/json',
-        'response.audioTranscription.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
+        'response.audioTranscription.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
       };
     }
     // Everything that reaches here answered. The same key carried the upstream's own status
