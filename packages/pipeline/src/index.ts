@@ -1,0 +1,41 @@
+// The pipeline core: one immutable record of facts, and a list of stages that each
+// declare which facts they touch.
+//
+// Nothing here knows what a model is. The gateway and the provider packages compose these
+// pieces; this package is what they compose.
+
+export { assertHandedOver, move } from './facts.ts';
+export type { Facts, Handed, Slice } from './facts.ts';
+
+export { defineStage, transform } from './stage.ts';
+export type {
+  Descend,
+  ErasedPass,
+  ErasedSide,
+  IntoNext,
+  Open,
+  PassDecl,
+  Pipeline,
+  ReturnDecl,
+  Stage,
+  ThroughNext,
+} from './stage.ts';
+
+export { compose } from './compose.ts';
+
+export { isDisposable, run } from './run.ts';
+export type { Disposable } from './run.ts';
+
+export {
+  createEncoder,
+  decodeKey,
+  encodeKey,
+  encodeRun,
+  isSecret,
+  isStreamFact,
+  secret,
+  storedSecret,
+  streamFact,
+  toNdjson,
+} from './dump.ts';
+export type { DumpEvent, Event, Ref, Secret, Stored, StoredSecret, StreamFact } from './dump.ts';
