@@ -17,6 +17,7 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
+import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
@@ -73,7 +74,7 @@ export interface CompletionsFacts extends GatewayFacts {
    *  after this run has answered — so the numbers cannot be in `response.usage.billable`,
    *  which says what had been reported when the ending stage handed up: the entity, and no
    *  quantities. Settling billing from this is the prologue's job, after the drain. */
-  'response.completions.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  'response.completions.streamedUsage': Promise<StreamOutcome> | null;
   /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows what the client received rather than
    *  the gateway's own reading of it. */
@@ -288,7 +289,7 @@ const readUpstream = async (
   const metered = meterFrames(parseCompletionsStream(response.body, { signal }), identity, candidate, record);
   return {
     payload: metered.frames,
-    streamedUsage: metered.billable,
+    streamedUsage: metered.outcome,
     billable: called,
     // Releasing this body is draining those frames: they are one reader over one connection,
     // and a second reader is not something a `ReadableStream` allows.
@@ -326,7 +327,7 @@ const readResult = async (response: Response): Promise<{ readonly value: Complet
 
 interface MeteredFrames {
   readonly frames: CompletionsFrames;
-  readonly billable: Promise<readonly BillableEntity[]>;
+  readonly outcome: Promise<StreamOutcome>;
 }
 
 const meterFrames = (
@@ -335,8 +336,11 @@ const meterFrames = (
   candidate: ModelCandidate,
   record: (frame: ProtocolFrame<CompletionsStreamEvent>) => void,
 ): MeteredFrames => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  let settle!: (outcome: StreamOutcome) => void;
+  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Running out without the terminal frame is what "it did not finish" means, and it is known
+  // at the same moment the usage is.
+  let sawTerminal = false;
   const frames = view((async function* () {
     let usage: unknown;
     let tier: string | null | undefined;
@@ -351,6 +355,8 @@ const meterFrames = (
         }
         // What the upstream sent, before the edge decides what the client sees — a dump
         // reader is owed the frames that arrived, including the one metering asked for.
+        // The transport's own terminator is this protocol's end-of-turn.
+        if (frame.type === 'done') sawTerminal = true;
         record(frame);
         yield frame;
       }
@@ -358,10 +364,10 @@ const meterFrames = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([{ identity, quantities: billed(usage, tier, candidate) }]);
+      settle({ billable: [{ identity, quantities: billed(usage, tier, candidate) }], failed: !sawTerminal });
     }
   })());
-  return { frames, billable };
+  return { frames, outcome };
 };
 
 const billed = (usage: unknown, tier: string | null | undefined, candidate: ModelCandidate): UsageQuantities => {

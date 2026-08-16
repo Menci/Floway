@@ -103,8 +103,10 @@ export type Rendered =
   | {
     readonly body: BodyInit;
     /** Owned by whichever stage serialized the body, never by the upstream — a media type
-     *  describing bytes the gateway wrote itself is the one thing an upstream cannot say. */
-    readonly contentType: string;
+     *  describing bytes the gateway wrote itself is the one thing an upstream cannot say.
+     *  `null` where a family carries an upstream's own body and the upstream declared none:
+     *  inventing one would describe bytes nobody described. */
+    readonly contentType: string | null;
   }
   | {
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
@@ -117,10 +119,18 @@ export type Rendered =
 export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseFrame> =>
   typeof rendered === 'object' && rendered !== null && Symbol.asyncIterator in rendered;
 
-/** What a streaming family will have been billed once its frames run out. A stream's usage
+/** How a streaming turn ended, once its frames ran out. Both halves arrive together because
+ *  both are known at the same moment — the last chunk states the usage, and running out
+ *  without a terminal event is what "it did not finish" means. */
+export interface StreamOutcome {
+  readonly billable: readonly BillableEntity[];
+  readonly failed: boolean;
+}
+
+/** What a streaming family will have been billed, and whether it got there. A stream's usage
  *  arrives with its last chunk, which is after the run has answered — so the run hands up a
  *  promise and settlement of it belongs here, after the answer is on its way. */
-export type DeferredUsage<Exit> = (facts: Exit) => Promise<readonly BillableEntity[]> | null;
+export type DeferredUsage<Exit> = (facts: Exit) => Promise<StreamOutcome> | null;
 
 /**
  * Runs a family's pipeline and turns what it answered with into a response.
@@ -145,16 +155,13 @@ export const serveThrough = async <
   const answer = render(facts);
 
   const pending = deferredUsage?.(facts) ?? null;
-  // OPEN DECISION, deliberately taken the simple way for now. `failed` is false here even
-  // for a stream that stopped short, so a truncated turn still writes a neutral performance
-  // row and a dump success. Settling it correctly needs the write registered while the
-  // request is still live *and* the outcome known only when the stream ends, and the two
-  // pull against each other — three shapes were tried and each lost the row entirely.
-  // The honest fix is for the family's meter to report how its stream ended, since that is
-  // the one place that knows; that is a change across all four streaming families.
+  // Registered while the request is still live, so the platform binds the write to it — and
+  // resolved only when the stream ends, which is the one moment both what it billed and
+  // whether it finished are known. A turn that stopped short is not recorded as one that
+  // produced what it said it would.
   if (pending !== null) {
-    prologue.services.background(pending.then(billable => {
-      settleBillable({ ...prologue.services, log: consoleLogSink }, billable, false);
+    prologue.services.background(pending.then(outcome => {
+      settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
     }));
   }
 
@@ -188,6 +195,9 @@ export const serveThrough = async <
   // already held, so releasing can start at once.
   prologue.services.background(drain());
   const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
-  headers.set('content-type', answer.contentType);
+  // An upstream that declared no media type is answered without one, rather than having one
+  // invented for bytes nobody described.
+  if (answer.contentType !== null) headers.set('content-type', answer.contentType);
+  else headers.delete('content-type');
   return finalizeGatewayResponse(prologue.gateway, new Response(answer.body, { status, headers }));
 };

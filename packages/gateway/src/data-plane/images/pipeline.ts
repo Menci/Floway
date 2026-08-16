@@ -14,6 +14,7 @@
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
+import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
@@ -83,7 +84,7 @@ export interface ImagesFacts extends GatewayFacts {
    *  `response.usage.billable`, which says what had been reported when the ending stage handed
    *  up: the entity, and no quantities. Settling from this is the epilogue's job, after the
    *  drain. */
-  'response.images.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  'response.images.streamedUsage': Promise<StreamOutcome> | null;
   /** What the client is actually sent, in the images protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows the body the client received rather
    *  than the gateway's canonical form. */
@@ -266,7 +267,7 @@ const callImagesUpstream = defineStage<
       return move({
         ...facts,
         'response.images.canonical': metered.frames,
-        'response.images.streamedUsage': metered.billable,
+        'response.images.streamedUsage': metered.outcome,
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over one
         // connection, and a second reader is not something a `ReadableStream` allows.
@@ -308,7 +309,7 @@ const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint
 
 interface MeteredFrames {
   readonly frames: ImagesFrames;
-  readonly billable: Promise<readonly BillableEntity[]>;
+  readonly outcome: Promise<StreamOutcome>;
 }
 
 const meterFrames = (
@@ -317,8 +318,11 @@ const meterFrames = (
   signal: AbortSignal | undefined,
   record: (event: ImagesStreamEvent) => void,
 ): MeteredFrames => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  let settle!: (outcome: StreamOutcome) => void;
+  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Running out without the completed event is what "it did not finish" means, and it is known
+  // at the same moment the usage is.
+  let sawTerminal = false;
   const frames = view((async function* () {
     let usage: CanonicalImagesUsage | undefined;
     try {
@@ -328,6 +332,7 @@ const meterFrames = (
         record(event);
         if (isImagesTerminalEvent(event)) {
           usage = parseImagesUsage(event);
+          sawTerminal = true;
           yield event;
           // The image is complete, so there is nothing further to read. An upstream that holds
           // the connection open past this point would otherwise keep the client's own stream
@@ -340,14 +345,14 @@ const meterFrames = (
       // Reached however the events ended — the completed one, a client that stopped reading,
       // or a broken upstream — because what the upstream already metered is billable whatever
       // happened to the downstream half.
-      settle([{ identity, quantities: billed(usage) }]);
+      settle({ billable: [{ identity, quantities: billed(usage) }], failed: !sawTerminal });
     }
     // Only an upstream that ended its body without ever completing the image reaches here: the
     // arm above returns on the terminal event. A client has been sent partial images and no
     // image, which is a failed answer however far it got.
     throw new Error(IMAGES_MISSING_TERMINAL_MESSAGE);
   })());
-  return { frames, billable };
+  return { frames, outcome };
 };
 
 /** An image is billed by the tokens its upstream reports: `BILLING_METRICS` names no per-image

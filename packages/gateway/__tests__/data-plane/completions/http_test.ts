@@ -322,6 +322,35 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(dump.response.body.type, 'bytes');
 });
 
+// A stream that stops before its terminator did not produce what it said it would, and the
+// performance row has to say so — a neutral row would report a turn that never finished as
+// one that did.
+test('/v1/completions a stream that never terminated is recorded as a failed request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerCompletionsUpstream(repo);
+
+  await withMockedFetch(
+    () => Promise.resolve(new Response('data: {"id":"c","object":"text_completion","created":1,"model":"davinci-002","choices":[{"index":0,"text":"hi"}]}\n\n', {
+      status: 200, headers: { 'content-type': 'text/event-stream' },
+    })),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    },
+  );
+
+  await flushAsyncWork();
+
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
+});
+
 test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
