@@ -85,10 +85,10 @@ export interface RunScope {
   /** A no-op when the prologue resolved no dump sink, which is what makes recording
    *  conditional rather than a mode flag. */
   readonly emit: (event: import('./dump.ts').Event) => void;
-  /** Every releasable the run has accepted and nobody has released. Tracked where it is
+  /** Every owned value the run has accepted and nobody has released. Tracked where it is
    *  created rather than where it lands, so a body opened below a throw is already known
    *  before the stack unwinds past it. */
-  readonly outstanding: Set<AsyncDisposable>;
+  readonly outstanding: Set<import('./run.ts').Owned>;
   parentStageId: number | null;
   nextStageId: number;
 }

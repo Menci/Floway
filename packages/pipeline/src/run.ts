@@ -16,13 +16,34 @@ import type { Facts } from './facts.ts';
 import { assertHandedOver } from './facts.ts';
 import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
 
-/** A value that owns a resource. `consumes` on the response side is what claims one.
- *  Draining to end-of-stream is inherently async, so `Symbol.dispose` cannot express it
- *  and `await using` is the only form consistent with release-is-not-cancel. */
-export const isReleasable = (value: unknown): value is AsyncDisposable =>
-  typeof value === 'object' && value !== null
-  && Symbol.asyncDispose in value
-  && typeof (value as AsyncDisposable)[Symbol.asyncDispose] === 'function';
+/** Ownership is claimed, never sniffed.
+ *
+ *  `Symbol.asyncDispose` is a release *mechanism* and the language hands it out on its own
+ *  terms, which do not match ours in either direction. Measured on Node 24:
+ *
+ *    Symbol.asyncDispose in (async function*(){})()   true   — every async generator
+ *    Symbol.asyncDispose in new ReadableStream()      false  — the thing a body actually is
+ *
+ *  So a structural predicate adopts every generator-shaped fact as a run resource — a
+ *  transducer's own iterator gets `.return()`ed the moment its stage hands up, and a fork
+ *  throws on receiving one at a key nobody declared consuming, which is every failed-over
+ *  streaming request — while missing the upstream body it exists for.
+ *
+ *  `own()` is what says "the run is answerable for this". Which is also what the
+ *  architecture already says: `consumes` on the response side *declares* the keys whose
+ *  values a stage takes ownership of. Declaration was always the mechanism; this makes the
+ *  runner read it instead of guessing. */
+const OWNED = Symbol('floway.owned');
+
+export type Owned = AsyncDisposable & { readonly [OWNED]: true };
+
+/** Marks a value the run must release, and gives it the release the runner will call.
+ *  A value that owns nothing is never marked, so it rides through untouched. */
+export const own = <T extends object>(value: T, release: () => Promise<void>): T & Owned =>
+  Object.assign(value, { [OWNED]: true as const, [Symbol.asyncDispose]: release });
+
+export const isOwned = (value: unknown): value is Owned =>
+  typeof value === 'object' && value !== null && OWNED in value;
 
 /**
  * Frozen in place, never copied. A stage that hands on what it received hands on the
@@ -37,7 +58,7 @@ export const isReleasable = (value: unknown): value is AsyncDisposable =>
 const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'up', scope: RunScope): Facts => {
   for (const [key, value] of Object.entries(record)) {
     assertHandedOver(`${stage} handing ${way} ${key}`, value);
-    if (isReleasable(value)) scope.outstanding.add(value);
+    if (isOwned(value)) scope.outstanding.add(value);
   }
   for (const key of decl.provides) {
     if (!(key in record)) throw new Error(`${stage}: declared providing ${key} but did not`);
@@ -115,7 +136,7 @@ export const walk = async (
   if (branches.length > 1) {
     const received = new Set<string>();
     for (const branch of branches) {
-      for (const [key, value] of Object.entries(branch)) if (isReleasable(value)) received.add(key);
+      for (const [key, value] of Object.entries(branch)) if (isOwned(value)) received.add(key);
     }
     const undeclared = [...received].filter(key => !pass!.response.consumes.includes(key));
     if (undeclared.length > 0) {
@@ -133,11 +154,11 @@ export const walk = async (
   // released now — whether it descended once or many times, since ownership is a
   // declaration and not an arity. The test is over *values*, not keys, so a releasable that
   // came back under one key and rides up under another survives.
-  const kept = new Set(Object.values(handedUp).filter(isReleasable));
+  const kept = new Set(Object.values(handedUp).filter(isOwned));
   for (const branch of branches) {
     for (const key of pass!.response.consumes) {
       const value = branch[key];
-      if (isReleasable(value) && !kept.has(value)) await release(value, scope);
+      if (isOwned(value) && !kept.has(value)) await release(value, scope);
     }
   }
 
@@ -148,7 +169,7 @@ export const walk = async (
 /** Released once, by whoever gets there first. A stage may release in its own body with
  *  `await using`, and the runner is the backstop — so it must not drain the same body a
  *  second time. */
-const release = async (value: AsyncDisposable, scope: RunScope): Promise<void> => {
+const release = async (value: Owned, scope: RunScope): Promise<void> => {
   if (!scope.outstanding.delete(value)) return;
   await value[Symbol.asyncDispose]();
 };
@@ -212,7 +233,7 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   const events: Event[] = [];
   const scope: RunScope = {
     emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
-    outstanding: new Set<AsyncDisposable>(),
+    outstanding: new Set<Owned>(),
     parentStageId: null,
     nextStageId: 1,
   };

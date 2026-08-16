@@ -2,8 +2,8 @@
 // beside the tests because it is what the tests are about: the core has to work for a
 // space it has never heard of.
 
-import { compose, defineStage, move, transform } from '../src/index.ts';
-import type { Pipeline, Slice } from '../src/index.ts';
+import { compose, defineStage, move, own, transform } from '../src/index.ts';
+import type { Owned, Pipeline, Slice } from '../src/index.ts';
 
 export interface CoreFacts {
   'in.text': string;
@@ -12,7 +12,7 @@ export interface CoreFacts {
   /** Failure is a value. The declaration names this key; which arm is in it is a property
    *  of the value, not something a stage declares. */
   'out.result': { readonly ok: string } | { readonly failed: string };
-  'out.body': AsyncDisposable & { readonly label: string };
+  'out.body': Owned & { readonly label: string };
 }
 
 /** A provider extends the space with its own keys; it never merges into the core. */
@@ -41,7 +41,7 @@ export const makeProvider = (token: string, released: string[]): SealedHandle =>
         'out.result': candidate === 'flaky'
           ? { failed: `${candidate} refused` }
           : { ok: `${inside['provider.token']}:${facts['in.words'].join('-')}` },
-        'out.body': { label: candidate, [Symbol.asyncDispose]: async () => { released.push(`body@${candidate}`); } },
+        'out.body': own({ label: candidate }, async () => { released.push(`body@${candidate}`); }),
       });
     },
   };

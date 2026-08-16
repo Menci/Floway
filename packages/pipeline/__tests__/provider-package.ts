@@ -9,7 +9,7 @@
 // import.
 
 import type { CoreFacts } from './fixtures.ts';
-import { compose, defineStage, move, transform } from '../src/index.ts';
+import { compose, defineStage, move, own, transform } from '../src/index.ts';
 import type { Pipeline, Slice } from '../src/index.ts';
 
 /** Defined here and never exported. A stage written against the core space cannot name it,
@@ -54,7 +54,7 @@ const callWithToken = defineStage<
       'out.result': candidate === 'flaky'
         ? { failed: `${candidate} refused` }
         : { ok: `${token}:${facts['in.words'].join('-')}` },
-      'out.body': { label: candidate, [Symbol.asyncDispose]: async () => {} },
+      'out.body': own({ label: candidate }, async () => {}),
     });
   },
 });
