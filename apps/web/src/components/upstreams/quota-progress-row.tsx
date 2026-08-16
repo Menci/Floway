@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 
+import { quotaBarColor } from './subscription-quota';
 import { fluentComponents } from '../../fluent';
 import { clampPercent, percentText } from '../../lib/percent';
-import { quotaBarColor } from './subscription-quota';
 
 const { ProgressBar, Text } = fluentComponents;
 
