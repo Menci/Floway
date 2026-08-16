@@ -1,13 +1,26 @@
-import { translatorInputErrorResult } from './errors.ts';
+// `/v1beta/models/:modelAction`, whose `:generateContent` and `:streamGenerateContent`
+// actions are served through the pipeline. `:countTokens` is a second operation over this
+// protocol rather than another wire under its chain, so it still goes through
+// `geminiServe.countTokens`.
+//
+// The generate entry is a prologue and an epilogue around `geminiServePipeline`: read what
+// the client sent, hand it over, and turn what the run answered with into a response.
+// Everything between is stages.
+
+import { renderGeminiError, translatorInputErrorResult } from './errors.ts';
+import { geminiServePipeline } from './pipeline.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini } from './respond.ts';
 import { geminiServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { isFrames, openPrologue, readIngress, serveThrough } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { openChatPrologue } from '../prologue.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { move } from '@floway-dev/pipeline';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -99,19 +112,68 @@ export const geminiHttp = async (c: AuthedContext): Promise<Response> => {
   return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
 };
 
-const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
-  if (payload instanceof Response) return payload;
-
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
+/** A body the gateway could not read is reported in the words this protocol's own clients
+ *  parse, rather than as a fault of the gateway's. */
+const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: GeminiPayload } | { type: 'invalid'; message: string } => {
   try {
-    const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeaders(c) });
-    const response = await respondGemini(c, result, wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
+    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as GeminiPayload };
   } catch (error) {
-    return await respondWithGeminiError(c, error, ctx, wantsStream);
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
+};
+
+const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
+  const ingress = await readIngress(c);
+  const request = readRequest(ingress.body.bytes);
+  if (request.type === 'invalid') {
+    // A request the gateway could not read never reaches a pipeline: there is no model to
+    // resolve and no attempt to make, so there is nothing for a run to record.
+    const refused = openPrologue(c, ingress, { wantsStream: false });
+    refused.gateway.dump?.error('gateway');
+    return finalizeGatewayResponse(
+      refused.gateway,
+      Response.json(renderGeminiError(400, request.message), { status: 400 }),
+    );
+  }
+
+  const { payload } = request;
+  const prologue = openChatPrologue(c, ingress, {
+    wantsStream,
+    model,
+    storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+  });
+
+  return await serveThrough(
+    c,
+    prologue,
+    geminiServePipeline(payload),
+    move({
+      'ingress.http.headers': prologue.headers,
+      'ingress.chat.sourceProtocol': 'gemini',
+      'ingress.chat.gemini.wantsStream': wantsStream,
+      'request.chat.gemini': payload,
+      // Gemini carries the model in the path rather than the body, so the id the run
+      // resolves against is the one the route split off.
+      'serve.model': model,
+    }) as never,
+    facts => {
+      const rendered = facts['response.chat.gemini.rendered'];
+      if (isFrames(rendered)) return { frames: rendered };
+      return { body: JSON.stringify(rendered), contentType: 'application/json' };
+    },
+    facts => {
+      const streamed = facts['response.chat.gemini.streamedUsage'];
+      // Two readings this chain does not hand up. A refusal that never reached an upstream
+      // leaves the key unwritten rather than null, and the meter that does write it resolves
+      // what was billed without saying whether the frames reached their terminator — so a
+      // stream that stopped short settles here as one that finished. Both belong to the
+      // chain: a family whose meter reports the outcome hands up a `StreamOutcome`, and this
+      // adapter goes with it.
+      return streamed === null || streamed === undefined
+        ? null
+        : streamed.then(billable => ({ billable, failed: false }));
+    },
+  );
 };
 
 const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
