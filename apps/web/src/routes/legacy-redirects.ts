@@ -1,57 +1,17 @@
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/legacy-redirects';
+import { legacyRedirectTarget } from '../lib/legacy-redirects';
 
-// Paths that existed before the dashboard was rebuilt as a React SPA. The
-// current route table keeps the same surfaces under new addresses; these
-// redirects keep old bookmarks and shared links working instead of falling
-// through to the framework 404 page.
-const LEGACY_PATHS: Record<string, string> = {
-  '/login': '/',
-  '/dashboard/keys': '/dashboard/services/api-keys',
-  '/dashboard/models': '/dashboard/playground',
-  '/dashboard/performance': '/dashboard/monitor/performance',
-  '/dashboard/requests': '/dashboard/monitor/requests',
-  '/dashboard/upstreams': '/dashboard/providers/upstreams',
-  '/dashboard/upstreams/new': '/dashboard/providers/upstreams',
-  '/dashboard/usage': '/dashboard/monitor/usage',
-  '/dashboard/users': '/dashboard/admin/users',
-};
-
-export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
   const url = new URL(request.url);
-  const pathname = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
   // React Router builds the loader Request from the URL with the hash
   // stripped, so a legacy record deep link would otherwise lose its record
   // id. Read the hash from the browser location, where it still is while the
   // redirect is being resolved.
   const hash = typeof window !== 'undefined' ? window.location.hash : url.hash;
 
-  const staticRedirect = LEGACY_PATHS[pathname];
-
-  let redirectTo: string | null = null;
-  if (staticRedirect !== undefined) {
-    redirectTo = staticRedirect;
-  } else if (params.keyId !== undefined) {
-    const recordId = hash.length > 1 ? hash.slice(1) : null;
-    let record = '';
-    if (recordId !== null) {
-      let decodedRecordId = recordId;
-      try {
-        decodedRecordId = decodeURIComponent(recordId);
-      } catch {
-        // Legacy hashes were written URL-encoded; an undecodable hash is
-        // still passed through so the redirect keeps the original value.
-      }
-      record = `&record=${encodeURIComponent(decodedRecordId)}`;
-    }
-    redirectTo = `/dashboard/monitor/requests?key=${encodeURIComponent(params.keyId)}${record}`;
-  } else if (params.provider !== undefined) {
-    redirectTo = `/dashboard/providers/upstreams/new/${encodeURIComponent(params.provider)}`;
-  } else if (params.id !== undefined) {
-    redirectTo = `/dashboard/providers/upstreams/${encodeURIComponent(params.id)}`;
-  }
-
+  const redirectTo = legacyRedirectTarget(url.pathname, hash);
   if (redirectTo) throw redirect(redirectTo);
   throw new Response('Not Found', { status: 404 });
 }
