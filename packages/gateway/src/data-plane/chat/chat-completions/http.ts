@@ -1,66 +1,85 @@
-import { translatorInputErrorResult } from './errors.ts';
-import { respondChatCompletions } from './respond.ts';
-import { chatCompletionsServe } from './serve.ts';
+// POST /v1/chat/completions, served through the pipeline.
+//
+// The handler is a prologue and an epilogue around `chatCompletionsServePipeline`: read what
+// the client sent, hand it over, and turn what the run answered with into a response.
+// Everything between is stages.
+//
+// Two things are decided here because only the entry knows them, and both are read before any
+// stage can rewrite the payload they are read from: whether the client asked to stream, which
+// the run has to be opened knowing, and whether it asked to be shown the usage chunk that
+// metering asks the upstream for on every streaming turn.
+
+import { chatCompletionsServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
-import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { isFrames, openPrologue, readIngress, serveThrough } from '../../pipeline/serve.ts';
+import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
+import { openChatPrologue } from '../prologue.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
+import { move } from '@floway-dev/pipeline';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
-// Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as a Chat Completions-shaped 502 with the same internal-error
-// envelope the in-flow `internal-error` ExecuteResult produces. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
-// caller passes its outer `ctx` when one was already constructed (so the
-// dump row preserves the model attribution the request-time
-// `requestedModel` stamped, and the throwing-candidate telemetry stamped
-// in serve.ts survives onto the error row); a fresh ctx is minted only
-// for pre-parse failures where no payload was available to read model from.
-const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const response = await respondChatCompletions(c, result, false, false, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
-};
-
-// Pre-stream caller-input failure raised by a translator → Chat
-// Completions-shaped 400 invalid_request_error envelope. Anything else
-// falls through to the internal-error 502 path.
-const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const response = await respondChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, false, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
+/** A body the gateway could not read is reported in the words the protocol's own clients
+ *  parse, rather than as a fault of the gateway's. */
+const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: ChatCompletionsPayload } | { type: 'invalid'; message: string } => {
+  try {
+    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as ChatCompletionsPayload };
+  } catch (error) {
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
+  }
 };
 
 export const chatCompletionsHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ChatCompletionsPayload;
-      const wantsStream = payload.stream === true;
-      // Read the caller's intent BEFORE any interceptor mutates
-      // `payload.stream_options.include_usage`. Capturing it here means the
-      // downstream renderer never needs to consult per-request Hono context
-      // slots — the value lives in this http-entry closure for the duration of
-      // the request.
-      const includeUsageChunk = payload.stream_options?.include_usage === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
-      const result = await chatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
+    const ingress = await readIngress(c);
+    const request = readRequest(ingress.body.bytes);
+    if (request.type === 'invalid') {
+      // A request the gateway could not read never reaches a pipeline: there is no model to
+      // resolve and no attempt to make, so there is nothing for a run to record.
+      const refused = openPrologue(c, ingress, { wantsStream: false });
+      refused.gateway.dump?.error('gateway');
+      return finalizeGatewayResponse(
+        refused.gateway,
+        Response.json({ error: { message: request.message, type: 'invalid_request_error' } }, { status: 400 }),
+      );
     }
+
+    const { payload } = request;
+    const wantsStream = payload.stream === true;
+    const prologue = openChatPrologue(c, ingress, {
+      wantsStream,
+      model: payload.model,
+      storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+    });
+
+    return await serveThrough(
+      c,
+      prologue,
+      chatCompletionsServePipeline(payload),
+      move({
+        'ingress.http.headers': prologue.headers,
+        'ingress.chat.sourceProtocol': 'chatCompletions',
+        'ingress.chat.chatCompletions.wantsStream': wantsStream,
+        'ingress.chat.chatCompletions.wantsUsageChunk': payload.stream_options?.include_usage === true,
+        'request.chat.chatCompletions': payload,
+        'serve.model': payload.model,
+      }) as never,
+      facts => {
+        const rendered = facts['response.chat.chatCompletions.rendered'];
+        if (isFrames(rendered)) return { frames: rendered };
+        return { body: JSON.stringify(rendered), contentType: 'application/json' };
+      },
+      facts => {
+        const streamed = facts['response.chat.chatCompletions.streamedUsage'];
+        // Two readings this chain does not hand up. A refusal that never reached an upstream
+        // leaves the key unwritten rather than null, and the meter that does write it resolves
+        // what was billed without saying whether the frames reached their terminator — so a
+        // stream that stopped short settles here as one that finished. Both belong to the
+        // chain: a family whose meter reports the outcome hands up a `StreamOutcome`, and this
+        // adapter goes with it.
+        return streamed === null || streamed === undefined
+          ? null
+          : streamed.then(billable => ({ billable, failed: false }));
+      },
+    );
   },
 };
