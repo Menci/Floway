@@ -515,11 +515,9 @@ const persistCodexQuotaObservation = (
 
 const dispatchCodexImageCall = async (
   opts: CodexBackendCallBase,
-  accessToken: string,
-  path: string,
-  body: Record<string, unknown>,
-  turnId: string,
+  request: CodexImageCallDispatchRequest,
 ): Promise<Response> => {
+  const { accessToken, path, body, turnId } = request;
   const headers = new Headers({
     originator: trimHeader(opts.headers, 'originator') ?? CODEX_ORIGINATOR,
     'user-agent': CODEX_USER_AGENT,
@@ -732,6 +730,12 @@ interface CodexImageCallRequest {
   turnId: string;
 }
 
+// The image-call bundle plus the resolved bearer, mirroring CodexHttpCallRequest
+// for the HTTP call path. The entry sites bundle the stable path/body/turnId
+// once; retries re-pass the same bundle with a fresh access token rather than
+// threading four positional arguments on every recursion.
+type CodexImageCallDispatchRequest = CodexImageCallRequest & { accessToken: string };
+
 const performImageCall = async (
   opts: CodexBackendCallBase & { fallbackPlanType: string | undefined },
   request: CodexImageCallRequest,
@@ -739,8 +743,7 @@ const performImageCall = async (
   effectivePlan: CodexPlanObservation,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
-  const { path, body, turnId } = request;
-  const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
+  const response = await dispatchCodexImageCall(opts, { accessToken: accessToken.token, ...request });
   const attempt = await retryCodexAccess401(
     opts,
     {
