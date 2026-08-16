@@ -27,6 +27,12 @@ export interface CodexOAuthTokens extends CodexOAuthRefreshTokens {
   id_token: string;
 }
 
+// OAuth `expires_in` is a lifetime in seconds measured from issue; callers
+// store an absolute unix-ms expiry, so convert it anchored at the current
+// wall clock. The gap between that anchor and the server's issue time sits
+// inside the refresh window the access-token module already tolerates.
+export const codexTokenExpiresAt = (expiresInSeconds: number): number => Date.now() + expiresInSeconds * 1000;
+
 export const buildCodexAuthorizeUrl = (input: { state: string; codeChallenge: string }): string => {
   const url = new URL(CODEX_AUTHORIZE_URL);
   url.searchParams.set('response_type', 'code');

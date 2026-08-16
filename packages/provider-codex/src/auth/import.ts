@@ -1,7 +1,7 @@
 import type { CodexUpstreamConfig } from '../config.ts';
 import type { CodexUpstreamState } from '../state.ts';
 import { normalizeCodexCredential, type CodexCredentialInput, type NormalizedCodexCredential } from './credential.ts';
-import { exchangeCodexAuthorizationCode } from './oauth.ts';
+import { codexTokenExpiresAt, exchangeCodexAuthorizationCode } from './oauth.ts';
 import { isObject, optionalString, requireObject, requireString } from './parse-helpers.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -92,7 +92,7 @@ export const importCodexFromCallback = async (opts: { code: string; codeVerifier
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
+    expiresAt: codexTokenExpiresAt(tokens.expires_in),
   });
   return buildCodexImportResult(credential, new Date().toISOString());
 };
