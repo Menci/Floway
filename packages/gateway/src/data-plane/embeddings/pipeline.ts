@@ -91,7 +91,7 @@ const emitEmbeddings = defineStage<
  * fails over, and even a 400 can be, because the next candidate's path and flags may differ.
  */
 const callEmbeddingsUpstream = defineStage<
-  E<'request.embeddings.canonical' | 'route.candidate' | 'ingress.http.headers'>,
+  E<'request.embeddings.canonical' | 'route.attempt' | 'ingress.http.headers'>,
   E<'response.embeddings.canonical' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -100,7 +100,7 @@ const callEmbeddingsUpstream = defineStage<
     provides: ['response.embeddings.canonical', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     const result = await candidate.provider.instance.callEmbeddings(
       providerModelOf(candidate),
       serializeEmbeddingsRequest(facts['request.embeddings.canonical']),

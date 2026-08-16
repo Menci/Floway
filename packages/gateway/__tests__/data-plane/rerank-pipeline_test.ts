@@ -60,6 +60,27 @@ describe('the rerank pipeline', () => {
     expect(streaming.through?.response.provides).toEqual(['response.http.body']);
   });
 
+  // A live handle is never a fact, and the test for that is whether it can be rendered into
+  // the dump. A `ModelCandidate` cannot: it carries the provider's instance, its fetcher and
+  // its models cache. Putting one in the record deep-freezes all three, and the SWR cache
+  // refresh the provider does on its own schedule then breaks — throwing under a module,
+  // which every file here is, and failing silently anywhere that is not strict.
+  it('carries a selector, so freezing the record cannot reach a live handle', () => {
+    const instance = { cache: null as unknown };
+    const candidate = { provider: { upstreamId: 'u', instance, modelsCache: { at: 1 } } };
+
+    // What the record actually holds: data, and nothing that answers to a call.
+    move({ 'route.attempt': { upstreamId: 'u', modelId: 'm', flags: [] } });
+    expect(Object.isFrozen(instance)).toBe(false);
+    expect(Object.isFrozen(candidate.provider.modelsCache)).toBe(false);
+
+    // And what putting the candidate itself there would have done, so the difference is not
+    // hypothetical — this is the shape the six families carried until the selector split.
+    move({ 'route.candidate': candidate } as never);
+    expect(Object.isFrozen(instance)).toBe(true);
+    expect(() => { instance.cache = { refreshed: true }; }).toThrow(TypeError);
+  });
+
   it('names the entry key a caller did not bring, before any stage runs', async () => {
     await expect(run(rerankServePipeline(request), move({ 'serve.model': 'rerank-v3' }) as never, {}))
       .rejects.toThrow('run(rerankServe): rerankServe needs');

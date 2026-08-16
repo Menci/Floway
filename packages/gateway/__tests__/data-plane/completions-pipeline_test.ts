@@ -19,8 +19,20 @@ vi.mock('../../src/data-plane/providers/resolution.ts', async importOriginal => 
   enumerateModelCandidates: vi.fn(),
 }));
 
+/** The live candidates the resolver hands back. They never enter the record: a candidate
+ *  carries the provider's instance, its fetcher and its models cache, and freezing those is
+ *  what putting one in the record would do. What travels is the selector. */
+let live: readonly ModelCandidate[] = [];
+
 const resolves = (candidates: readonly ModelCandidate[]): void => {
+  live = candidates;
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] });
+};
+
+const resolveAttempt = (selector: { readonly upstreamId: string }): ModelCandidate => {
+  const found = live.find(candidate => candidate.provider.upstreamId === selector.upstreamId);
+  if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
+  return found;
 };
 
 const candidate = (
@@ -53,7 +65,11 @@ const usageChunk = JSON.stringify({
 const serve = async (facts: Record<string, unknown>) => await run(
   completionsServePipeline,
   move(facts) as never,
-  { gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }), background: () => {} } as never,
+  {
+    gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }),
+    background: () => {},
+    resolveAttempt,
+  } as never,
 );
 
 const entryFacts = (overrides: Record<string, unknown> = {}) => ({

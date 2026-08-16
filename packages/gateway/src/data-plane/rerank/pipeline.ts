@@ -96,7 +96,7 @@ const emitRerank = defineStage<
  * fails over, and even a 400 can be, because the next candidate's path and flags may differ.
  */
 const callRerankUpstream = defineStage<
-  R<'request.rerank.canonical' | 'route.candidate' | 'ingress.http.headers'>,
+  R<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers'>,
   R<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -105,7 +105,7 @@ const callRerankUpstream = defineStage<
     provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.rerank.canonical'];
     const result = await candidate.provider.instance.callRerank(
       providerModelOf(candidate),

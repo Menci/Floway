@@ -110,7 +110,7 @@ const emitImages = defineStage<
  * run.
  */
 const callImagesUpstream = defineStage<
-  I<'request.images.canonical' | 'route.candidate' | 'ingress.http.headers'>,
+  I<'request.images.canonical' | 'route.attempt' | 'ingress.http.headers'>,
   I<'response.images.canonical' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -119,7 +119,7 @@ const callImagesUpstream = defineStage<
     provides: ['response.images.canonical', 'response.http.headers', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.images.canonical'];
     const options = buildUpstreamCallOptions(
       candidate,

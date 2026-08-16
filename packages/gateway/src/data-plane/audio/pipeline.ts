@@ -156,7 +156,7 @@ const renderSSE = (events: AudioTranscriptionEvents): AsyncIterable<SseFrame> =>
  * that can.
  */
 const callAudioTranscriptionUpstream = defineStage<
-  A<'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'route.candidate' | 'ingress.http.headers'>,
+  A<'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'route.attempt' | 'ingress.http.headers'>,
   A<'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
     & { 'response.usage.billable': readonly BillableEntity[]; 'response.http.status': number;
       'response.http.headers': readonly (readonly [string, string])[];
@@ -176,7 +176,7 @@ const callAudioTranscriptionUpstream = defineStage<
     ],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     const result = await candidate.provider.instance.callAudioTranscriptions(
       providerModelOf(candidate),
       { entries: facts['request.audioTranscription.form'] },

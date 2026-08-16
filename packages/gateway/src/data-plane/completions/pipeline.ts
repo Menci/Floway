@@ -153,7 +153,7 @@ const renderSSE = (frames: CompletionsFrames, wantsUsageChunk: boolean): AsyncIt
  * body this protocol cannot read, because the next candidate's path and flags may differ.
  */
 const callCompletionsUpstream = defineStage<
-  C<'ingress.completions.wantsStream' | 'request.completions.payload' | 'route.candidate' | 'ingress.http.headers'>,
+  C<'ingress.completions.wantsStream' | 'request.completions.payload' | 'route.attempt' | 'ingress.http.headers'>,
   C<'response.completions.payload' | 'response.completions.streamedUsage' | 'response.usage.billable'
     | 'response.http.status' | 'response.http.headers' | 'response.http.body'>,
   GatewayServices
@@ -170,7 +170,7 @@ const callCompletionsUpstream = defineStage<
     ],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     // The provider re-stamps whatever id it resolved upstream, so the id the client
     // addressed does not travel with the body.
     const { model: _addressed, ...body } = facts['request.completions.payload'];
