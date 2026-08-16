@@ -46,21 +46,13 @@ export const patchCodexIdentityMetadata = (
   current: CodexUpstreamConfig,
   patch: Record<string, unknown>,
 ): CodexUpstreamConfig => {
-  for (const key of Object.keys(patch)) {
-    if (key !== 'accounts') throw new TypeError(`Codex config metadata patch has unexpected key '${key}'`);
-  }
+  assertAllowedObjectKeys(patch, 'Codex config metadata patch', CONFIG_KEYS_SET);
   if (patch.accounts === undefined) return current;
   if (!Array.isArray(patch.accounts) || patch.accounts.length !== 1) {
     throw new TypeError('Codex config metadata patch accounts must hold exactly one account');
   }
   const rawAccount = patch.accounts[0];
-  if (typeof rawAccount !== 'object' || rawAccount === null || Array.isArray(rawAccount)) {
-    throw new TypeError('Codex config metadata patch account must be a plain object');
-  }
-  const accountPatch = rawAccount as Record<string, unknown>;
-  for (const key of Object.keys(accountPatch)) {
-    if (!IDENTITY_KEYS_SET.has(key)) throw new TypeError(`Codex config metadata patch account has unexpected key '${key}'`);
-  }
+  const accountPatch = assertAllowedObjectKeys(rawAccount, 'Codex config metadata patch account', IDENTITY_KEYS_SET);
   if (accountPatch.chatgptAccountId !== undefined) {
     assertStringOrNull(accountPatch.chatgptAccountId, 'Codex config metadata patch chatgptAccountId');
     if (accountPatch.chatgptAccountId !== current.accounts[0].chatgptAccountId) {
