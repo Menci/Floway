@@ -72,7 +72,9 @@ const payload = { model: 'chat-model', messages: [{ role: 'user', content: 'hi' 
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
 let affinityPayload: ChatCompletionsPayload = payload;
 
-const serve = async (wantsStream: boolean) => await run(
+const serve = async (wantsStream: boolean) => await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream);
+
+const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsStream: boolean) => await run(
   chatCompletionsServePipeline(payload),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
@@ -83,7 +85,7 @@ const serve = async (wantsStream: boolean) => await run(
     'serve.model': 'chat-model',
   }) as never,
   {
-    gateway: mockChatGatewayCtx({ wantsStream }),
+    gateway,
     background: () => {},
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
@@ -209,6 +211,22 @@ describe('the chat completions chain', () => {
     const billable = await facts['response.chat.chatCompletions.streamedUsage']!;
 
     expect(billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
+    // A rate can depend on the tier and on how much input there was; both are selector
+    // coordinates, so they travel as pricing facts rather than as quantities.
+    expect(billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
+  });
+
+  // Time to first token is measured where the token is — an envelope frame is not one, and a
+  // run that never stamps it is recorded as having produced nothing to time.
+  it('stamps the first frame that carried a generated token', async () => {
+    resolves([candidate(async () => stream(chunk('hi')))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts } = await serveWith(gateway, true);
+    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
+
+    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
   });
 
   // A refusal the gateway made itself has no upstream body to forward, and that is the one

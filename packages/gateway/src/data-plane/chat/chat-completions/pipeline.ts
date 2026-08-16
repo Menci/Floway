@@ -14,14 +14,12 @@
 
 import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromChatCompletionsEvent } from './usage.ts';
-import type { UsageQuantities } from '../../../repo/types.ts';
-import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
-import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
@@ -31,6 +29,7 @@ import {
   stripPromptCacheKeyForChatCompletions,
 } from '../interceptors.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
+import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
@@ -235,7 +234,7 @@ const callChatCompletionsUpstream = defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterChatCompletions(result.events, identity);
+    const metered = meterChatCompletions(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.chatCompletions': { kind: 'stream' as const, frames: metered.frames },
@@ -252,6 +251,7 @@ const callChatCompletionsUpstream = defineStage<
 const meterChatCompletions = (
   source: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
+  attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
   let settle!: (billable: readonly BillableEntity[]) => void;
   const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
@@ -259,6 +259,13 @@ const meterChatCompletions = (
     let reported: BillableUsage | undefined;
     try {
       for await (const frame of source) {
+        // Time to first token is measured where the token is, which is the only place that
+        // knows a frame carries generated content rather than the envelope around it.
+        // Time to first token is measured where the token is, which is the only place that
+        // knows a frame carries generated content rather than the envelope around it.
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'chat-completions')) {
+          attempt.firstOutputTokenAt = performance.now();
+        }
         if (frame.type === 'event') {
           const usage = billableUsageFromChatCompletionsEvent(frame.event);
           if (usage !== null) reported = usage;
@@ -269,18 +276,21 @@ const meterChatCompletions = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([{ identity, quantities: billed(reported) }]);
+      settle([billedEntity(reported, identity)]);
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
 };
 
-/** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero. The two shapes are not interchangeable: what the upstream
- *  reported is per token category, and what is billed is per metric name. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+/** What one attempt is billable for. An upstream that reported nothing leaves no quantities
+ *  at all, which is a different statement from reporting zero — and a rate can depend on the
+ *  service tier and on how much input there was, so both travel as pricing facts rather than
+ *  being folded into the quantities. */
+const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModelIdentity): BillableEntity => {
   const tokens = tokenUsageFromBillableUsage(usage);
-  return tokens === null ? {} : tokenUsageQuantities(tokens);
+  if (tokens === null) return { identity, quantities: {} };
+  const measurement = tokenUsageMeasurement(tokens);
+  return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
