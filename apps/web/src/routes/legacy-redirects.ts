@@ -33,7 +33,18 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   if (staticRedirect !== undefined) {
     redirectTo = staticRedirect;
   } else if (params.keyId !== undefined) {
-    const record = hash.length > 1 ? `&record=${encodeURIComponent(hash.slice(1))}` : '';
+    const recordId = hash.length > 1 ? hash.slice(1) : null;
+    let record = '';
+    if (recordId !== null) {
+      let decodedRecordId = recordId;
+      try {
+        decodedRecordId = decodeURIComponent(recordId);
+      } catch {
+        // Legacy hashes were written URL-encoded; an undecodable hash is
+        // still passed through so the redirect keeps the original value.
+      }
+      record = `&record=${encodeURIComponent(decodedRecordId)}`;
+    }
     redirectTo = `/dashboard/monitor/requests?key=${encodeURIComponent(params.keyId)}${record}`;
   } else if (params.provider !== undefined) {
     redirectTo = `/dashboard/providers/upstreams/new/${encodeURIComponent(params.provider)}`;

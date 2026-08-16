@@ -37,6 +37,8 @@ describe('legacy dashboard route redirects', () => {
   it('preserves a legacy request record hash as the record search param', async () => {
     await expect(redirectTarget('/dashboard/requests/key-123', { keyId: 'key-123' }, '#record-9')).resolves
       .toBe('/dashboard/monitor/requests?key=key-123&record=record-9');
+    await expect(redirectTarget('/dashboard/requests/key-123', { keyId: 'key-123' }, '#record%209')).resolves
+      .toBe('/dashboard/monitor/requests?key=key-123&record=record%209');
   });
 
   it('redirects legacy upstream routes to the provider upstream routes', async () => {
