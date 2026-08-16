@@ -115,6 +115,11 @@ export type Rendered =
     readonly frames: AsyncIterable<SseFrame>;
   };
 
+/** Which of the two an answer turned out to be. A family's rendered fact carries whichever
+ *  shape its run produced, and only the family knows the key it is under. */
+export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseFrame> =>
+  typeof rendered === 'object' && rendered !== null && Symbol.asyncIterator in rendered;
+
 /** What a streaming family will have been billed once its frames run out. A stream's usage
  *  arrives with its last chunk, which is after the run has answered — so the run hands up a
  *  promise and settlement of it belongs here, after the answer is on its way. */
@@ -140,7 +145,6 @@ export const serveThrough = async <
   deferredUsage?: DeferredUsage<Exit>,
 ): Promise<Response> => {
   const { facts, drain } = await run(pipeline, entry, prologue.services as never);
-  prologue.services.background(drain());
   const answer = render(facts);
 
   const pending = deferredUsage?.(facts) ?? null;
@@ -157,15 +161,26 @@ export const serveThrough = async <
     for (const [name, value] of facts['response.http.headers']) c.header(name, value);
     c.status(status);
     return streamSSE(c, async stream => {
-      await writeSSEFrames(stream, answer.frames, {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
-        ...(prologue.gateway.downstreamAbortController === undefined
-          ? {}
-          : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
-      });
+      try {
+        await writeSSEFrames(stream, answer.frames, {
+          keepAlive: { frame: sseCommentFrame('keepalive') },
+          ...(prologue.gateway.downstreamAbortController === undefined
+            ? {}
+            : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
+        });
+      } finally {
+        // Reading the frames to the client *is* releasing the body they came from, so the
+        // drain waits for that to finish. Draining alongside it would take frames out of the
+        // client's own stream — one connection has one reader. A client that stopped reading
+        // still gets here, which is what leaves nothing open behind it.
+        await drain();
+      }
     });
   }
 
+  // Nothing is left to read: what the client is sent was serialized from facts the run
+  // already held, so releasing can start at once.
+  prologue.services.background(drain());
   const headers = new Headers(facts['response.http.headers'].map(([name, value]) => [name, value]));
   headers.set('content-type', answer.contentType);
   return finalizeGatewayResponse(prologue.gateway, new Response(answer.body, { status, headers }));
