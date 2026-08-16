@@ -7,7 +7,7 @@ import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
-import { installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { edgeRecordOf, installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
@@ -226,9 +226,10 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
       const stored = dumps.stored[0];
       assertExists(stored);
       assertEquals(stored.keyId, apiKey.id);
-      assertEquals(stored.record.request.method, 'WS');
-      assertEquals(stored.record.request.path, '/v1/responses');
-      assertEquals(JSON.parse(new TextDecoder().decode(stored.record.request.body)), {
+      const request = edgeRecordOf(stored.record).request;
+      assertEquals(request.method, 'WS');
+      assertEquals(request.path, '/v1/responses');
+      assertEquals(JSON.parse(new TextDecoder().decode(request.body)), {
         type: 'response.create',
         event_id: 'capture-after-enable',
         response: {

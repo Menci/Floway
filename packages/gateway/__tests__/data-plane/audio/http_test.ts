@@ -150,6 +150,44 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
   assertEquals(usage.metrics, []);
 });
 
+// A subtitle document is carried, so every convention the upstream did not follow survives:
+// the ordinal it started at, the line ending it chose, and the fraction digits it wrote.
+// Reading the cues and writing them back would have normalized all three.
+test('/v1/audio/transcriptions forwards SubRip with the numbering and line endings the upstream chose', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const document = '7\r\n00:00:00,0 --> 00:00:01,5\r\nhello\r\n';
+  await withMockedFetch(
+    () => new Response(document, { headers: { 'content-type': 'application/x-subrip' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'srt']]),
+      });
+      assertEquals(response.headers.get('content-type'), 'application/x-subrip');
+      assertEquals(await response.text(), document);
+    },
+  );
+});
+
+// The document never becomes a string on the way through, so an upstream that answered under
+// a charset nobody here asked about is forwarded rather than mangled: decoding these bytes as
+// UTF-8 and encoding them again would replace both of them with U+FFFD.
+test('/v1/audio/transcriptions forwards a document the gateway never decoded', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const latin1 = new Uint8Array([0x63, 0x61, 0x66, 0xE9, 0x20, 0xE0, 0x20, 0x31]);
+  await withMockedFetch(
+    () => new Response(latin1, { headers: { 'content-type': 'text/plain; charset=iso-8859-1' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
+      });
+      assertEquals(response.headers.get('content-type'), 'text/plain; charset=iso-8859-1');
+      assertEquals(new Uint8Array(await response.arrayBuffer()), latin1);
+    },
+  );
+});
+
 test('/v1/audio/transcriptions skips JSON parsing for text responses without warning', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);

@@ -163,12 +163,15 @@ describe('the completions pipeline', () => {
       { identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null }, quantities: {} },
     ]);
     await collect(facts['response.completions.rendered']);
-    expect(await facts['response.completions.streamedUsage']).toEqual([
-      {
-        identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null },
-        quantities: { input_tokens: '5', output_tokens: '7' },
-      },
-    ]);
+    expect(await facts['response.completions.streamedUsage']).toMatchObject({
+      failed: false,
+      billable: [
+        {
+          identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null },
+          quantities: { input_tokens: '5', output_tokens: '7' },
+        },
+      ],
+    });
     await drain();
   });
 
@@ -271,9 +274,11 @@ describe('the completions pipeline', () => {
     expect(recorded.usage).toHaveLength(0);
     const streamed = facts['response.completions.streamedUsage'];
     expect(streamed).not.toBeNull();
-    const billable = await streamed!;
-    expect(billable).toHaveLength(1);
-    expect(billable[0]!.quantities).toMatchObject({ input_tokens: '5', output_tokens: '7' });
+    const outcome = await streamed!;
+    expect(outcome.billable).toHaveLength(1);
+    expect(outcome.billable[0]!.quantities).toMatchObject({ input_tokens: '5', output_tokens: '7' });
+    // The stream reached its terminator, so the turn produced what it said it would.
+    expect(outcome.failed).toBe(false);
   });
 
   // A run that reached no upstream bills nothing and samples nothing, which is what the

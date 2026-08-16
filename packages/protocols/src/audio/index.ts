@@ -4,7 +4,7 @@
 // of events instead of any of them.
 
 export type { AudioTranscriptionCue, SubtitleDialect } from './subtitles.ts';
-export { parseSubtitleDocument, renderSubtitleDocument } from './subtitles.ts';
+export { parseSubtitleDocument } from './subtitles.ts';
 
 export type {
   AudioTranscriptionObjectFormat,

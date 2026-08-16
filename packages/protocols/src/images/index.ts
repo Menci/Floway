@@ -104,5 +104,29 @@ export interface CanonicalImagesResponse {
   usage?: CanonicalImagesUsage;
 }
 
-export { parseImagesEditsRequest, parseImagesGenerationsRequest } from './request.ts';
+/** One event on a streamed answer. A stream carries partial images and then the completed one,
+ *  and the completed one carries the `usage` block the non-streamed body carries — so what a
+ *  call is billed by is stated the same way whichever shape it came back in.
+ *  https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51337-L51424
+ *  https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51158-L51246
+ *
+ *  `type` is an open string rather than the four names the specification lists: an event type
+ *  is the upstream's own word, and a shape added later has to reach the client whether or not
+ *  this gateway has heard of it. The index signature carries everything not named here. */
+export interface ImagesStreamEvent {
+  type: string;
+  b64_json?: string;
+  created_at?: number;
+  size?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  partial_image_index?: number;
+  usage?: unknown;
+  [key: string]: unknown;
+}
+
+export { imagesRequestWantsStream, parseImagesEditsRequest, parseImagesGenerationsRequest } from './request.ts';
 export { parseImagesResponse, parseImagesUsage, renderImagesResponse } from './response.ts';
+export { IMAGES_MISSING_TERMINAL_MESSAGE, isImagesTerminalEvent, parseImagesStream, type ParseImagesStreamOptions } from './stream.ts';
+export { imagesStreamEventToSSEFrame } from './to-sse.ts';

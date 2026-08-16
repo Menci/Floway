@@ -2,11 +2,23 @@
 // bodies — generations is JSON, edits is JSON or a multipart form — and each message here is
 // what the client is told, so they name the endpoint and the field they are about.
 
-import type { ImageEditReference, ImagesEditImage, ImagesUploadedFile, ParsedImagesRequest } from './index.ts';
+import type { CanonicalImagesRequest, ImageEditReference, ImagesEditImage, ImagesUploadedFile, ParsedImagesRequest } from './index.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '../common/media-type.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Whether the client asked for the answer as a stream.
+ *
+ * The flag rides on to the upstream inside `parameters` exactly as it arrived, and this is the
+ * gateway's own reading of it. It is two values rather than one because an edit may be sent as
+ * a multipart form, where every field arrives as the text the client typed, while generations
+ * and a JSON edit carry the boolean the specification names.
+ * https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L47542-L47673
+ */
+export const imagesRequestWantsStream = (request: CanonicalImagesRequest): boolean =>
+  request.parameters.stream === true || request.parameters.stream === 'true';
 
 const jsonObject = (body: Uint8Array, endpoint: string): Record<string, unknown> => {
   let parsed: unknown;

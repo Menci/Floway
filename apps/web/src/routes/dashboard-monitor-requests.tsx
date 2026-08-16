@@ -66,7 +66,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   ]);
   const record = recordResult?.data ?? null;
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
+  // Only an edge-shaped record carries a captured frame log to collect; a run
+  // records its stream inside its own events and the detail panel reads it there.
+  const streamEvents = record?.shape === 'edge' && record.response.body.type === 'stream' ? record.response.body.events : [];
   const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
   return {
     collected,

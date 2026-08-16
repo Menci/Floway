@@ -13,6 +13,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
+import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
+import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -63,28 +65,48 @@ export interface Prologue {
  * live ones here, and the stage that dials asks for one back by selector.
  */
 export const openPrologue = (
-  c: Context,
+  c: AuthedContext,
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
-): Prologue => prologueFor(createGatewayCtxFromHono(c, gatewayCtxOptions(c, ingress, options)), ingress);
+): Prologue => {
+  const options_ = gatewayCtxOptions(c, ingress, options);
+  return prologueFor(createGatewayCtxFromHono(c, options_), ingress, runDumpOf(options_));
+};
 
 /** What a run's request context is built from. Exported because a family whose context is a
  *  richer one builds that instead, and both have to be built from the same read of the body:
  *  `takeRequestBody` empties what it is given, so calling this twice would hand the dump an
  *  empty buffer the second time. */
 export const gatewayCtxOptions = (
-  c: Context,
+  c: AuthedContext,
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
-): CreateGatewayCtxOptions => ({
-  wantsStream: options.wantsStream,
-  ...(options.model === undefined ? {} : { model: options.model }),
-  requestBody: takeRequestBody(ingress.body),
-  backgroundScheduler: backgroundSchedulerFromContext(c),
-});
+): CreateGatewayCtxOptions => {
+  const backgroundScheduler = backgroundSchedulerFromContext(c);
+  // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
+  // stage, both directions — so it opens that recording here instead of the edge one, and
+  // no turn is ever written twice.
+  const dump = openRunDump(
+    apiKeyFromContext(c),
+    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
+    backgroundScheduler,
+  );
+  return {
+    wantsStream: options.wantsStream,
+    ...(options.model === undefined ? {} : { model: options.model }),
+    requestBody: takeRequestBody(ingress.body),
+    backgroundScheduler,
+    dump,
+  };
+};
+
+/** The run recording those options opened, for the caller that has to hand its sink to
+ *  `run`. A context carries the recording; only the prologue needs the sink. */
+export const runDumpOf = (options: CreateGatewayCtxOptions): RunDump | null =>
+  (options.dump ?? null) as RunDump | null;
 
 /** The services every run is given, over whichever context it was opened with. */
-export const prologueFor = (gateway: GatewayCtx, ingress: Ingress): Prologue => {
+export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunDump | null = null): Prologue => {
   const live = new Map<string, ModelCandidate>();
 
   return {
@@ -97,6 +119,9 @@ export const prologueFor = (gateway: GatewayCtx, ingress: Ingress): Prologue => 
       rememberCandidates: candidates => {
         for (const candidate of candidates) live.set(candidate.provider.upstreamId, candidate);
       },
+      // Absent when this key has no retention configured, which is what keeps recording
+      // conditional: the runner does none of it rather than doing it and discarding.
+      ...(runDump === null ? {} : { dump: runDump.sink }),
       resolveAttempt: (selector: AttemptSelector) => {
         const candidate = live.get(selector.upstreamId);
         if (candidate === undefined) {
@@ -114,8 +139,10 @@ export type Rendered =
   | {
     readonly body: BodyInit;
     /** Owned by whichever stage serialized the body, never by the upstream — a media type
-     *  describing bytes the gateway wrote itself is the one thing an upstream cannot say. */
-    readonly contentType: string;
+     *  describing bytes the gateway wrote itself is the one thing an upstream cannot say.
+     *  `null` where a family carries an upstream's own body and the upstream declared none:
+     *  inventing one would describe bytes nobody described. */
+    readonly contentType: string | null;
   }
   | {
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
@@ -132,10 +159,18 @@ export type Rendered =
 export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseFrame> =>
   typeof rendered === 'object' && rendered !== null && Symbol.asyncIterator in rendered;
 
-/** What a streaming family will have been billed once its frames run out. A stream's usage
+/** How a streaming turn ended, once its frames ran out. Both halves arrive together because
+ *  both are known at the same moment — the last chunk states the usage, and running out
+ *  without a terminal event is what "it did not finish" means. */
+export interface StreamOutcome {
+  readonly billable: readonly BillableEntity[];
+  readonly failed: boolean;
+}
+
+/** What a streaming family will have been billed, and whether it got there. A stream's usage
  *  arrives with its last chunk, which is after the run has answered — so the run hands up a
  *  promise and settlement of it belongs here, after the answer is on its way. */
-export type DeferredUsage<Exit> = (facts: Exit) => Promise<readonly BillableEntity[]> | null;
+export type DeferredUsage<Exit> = (facts: Exit) => Promise<StreamOutcome> | null;
 
 /**
  * Runs a family's pipeline and turns what it answered with into a response.
@@ -160,9 +195,13 @@ export const serveThrough = async <
   const answer = render(facts);
 
   const pending = deferredUsage?.(facts) ?? null;
+  // Registered while the request is still live, so the platform binds the write to it — and
+  // resolved only when the stream ends, which is the one moment both what it billed and
+  // whether it finished are known. A turn that stopped short is not recorded as one that
+  // produced what it said it would.
   if (pending !== null) {
-    prologue.services.background(pending.then(billable => {
-      settleBillable({ ...prologue.services, log: consoleLogSink }, billable, false);
+    prologue.services.background(pending.then(outcome => {
+      settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
     }));
   }
 
@@ -192,10 +231,13 @@ export const serveThrough = async <
     }));
   }
 
-  // Nothing is left to read: what the client is sent was serialized from facts the run
+  // Nothing is left to read either: what the client is sent was serialized from facts the run
   // already held, so releasing can start at once.
   prologue.services.background(drain());
   const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
-  headers.set('content-type', answer.contentType);
+  // An upstream that declared no media type is answered without one, rather than having one
+  // invented for bytes nobody described.
+  if (answer.contentType !== null) headers.set('content-type', answer.contentType);
+  else headers.delete('content-type');
   return finalizeGatewayResponse(prologue.gateway, new Response(answer.body, { status, headers }));
 };
