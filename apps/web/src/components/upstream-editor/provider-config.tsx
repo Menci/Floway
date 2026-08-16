@@ -5,7 +5,7 @@ import {
   EyeRegular,
   PlugConnectedRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
@@ -17,8 +17,9 @@ import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
 import { useMonoLabelClass } from './mono-label';
+import { OAuthCallbackImport } from './oauth-callback-import';
 import { OllamaUsageCard } from './ollama-usage-card';
-import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
+import { clearPkce } from './pkce';
 import { EditorSection } from './section';
 import { api, callApi } from '../../api/client';
 import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
@@ -28,12 +29,10 @@ import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
-import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { SwitchSetting } from '../ui/switch-setting';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { isOllamaCloudBaseUrl } from '../upstreams/ollama-usage';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 import type { UpstreamProviderKind } from '@floway-dev/provider/model';
@@ -451,69 +450,30 @@ function OAuthConfig({ record, onPatch }: {
   };
   const [tab, setTab] = useState('oauth');
   const [json, setJson] = useState('');
-  const [callback, setCallback] = useState('');
-  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
-  const { copy, outcomeFor } = useCopyToClipboard();
-  const copyLabel = useCopyLabel();
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
-  // Two authorize-url requests can be outstanding at once — a tab switch
-  // supersedes one, and the effect below re-fires on every `record` identity
-  // change. `stashPkce` writes one sessionStorage slot per (kind, flow kind),
-  // so the verifier must belong to the URL the operator actually opened: the
-  // generation is taken before the stash as well as before the URL, because a
-  // round trip separates them and an older call could otherwise stash last.
-  const generation = useRef(0);
-  const prepare = useCallback(async () => {
-    const mine = ++generation.current;
-    setBusy(true); setError(null);
-    const pkce = await generatePkce();
-    if (generation.current !== mine) return;
-    stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
-    const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
-    const result = tab === 'setup'
-      ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
-      : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
-    if (generation.current !== mine) return;
-    setBusy(false);
-    if (result.error) { setError(result.error.message); return; }
-    setAuthorizeUrl(result.data.authorize_url);
-  }, [flowKind, getValues, record, tab]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
-  useEffect(() => { if (open && record.kind !== 'codex' && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, record.kind, tab]);
-
-  const submit = async () => {
+  // The credentials.json tab keeps its own submit: it posts the pasted
+  // document verbatim to the claude-code oauth exchange, so the only local
+  // validation is that the document parses as JSON.
+  const submitJson = async () => {
     setBusy(true); setError(null);
     const editorRecord = previewRecord(record, values);
     let result;
     try {
-      if (tab === 'json') {
-        JSON.parse(json);
-        result = await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
-          json: { record: editorRecord, credentials_json: json },
-        }));
-      } else {
-        const parsed = parseCallbackPaste(callback);
-        const recalled = recallPkce(record.kind, flowKind, parsed.state);
-        if (!recalled) throw new Error(t('dashboard.upstreamEditor.oauth.unrecognized'));
-        result = tab === 'setup'
-          ? await callApi(() => api.api.upstreams['claude-code']['setup-token'].exchange.$post({
-              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
-            }))
-          : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
-              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
-            }));
-      }
-    } catch (error) {
-      setBusy(false); setError(errorMessage(error)); return;
+      JSON.parse(json);
+      result = await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
+        json: { record: editorRecord, credentials_json: json },
+      }));
+    } catch (err) {
+      setBusy(false); setError(errorMessage(err)); return;
     }
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     clearPkce(record.kind, flowKind);
     onPatch(result.data.patch, isPersisted(record));
-    setOpen(false); setJson(''); setCallback(''); setAuthorizeUrl(null);
+    setOpen(false); setJson('');
   };
 
   return <div className="grid gap-4">
@@ -539,14 +499,24 @@ function OAuthConfig({ record, onPatch }: {
           record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }}
         />
       : <>
-          <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
+          <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => setTab(String(data.value))}>
             <Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab>
           </TabList>
-          {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field> : <div className="grid gap-3">
-            {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link><TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} /></div>}
-            <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea className="font-mono" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} /></Field>
-          </div>}
-          <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>
+          {tab === 'json'
+            ? <div className="grid gap-3">
+                <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field>
+                <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submitJson()}>
+                  {hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}
+                </Button>
+              </div>
+            : <OAuthCallbackImport
+                kind="claude-code"
+                flowKind={flowKind}
+                hasAccount={hasAccount}
+                record={record}
+                getValues={getValues}
+                onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}
+              />}
         </>)}
   </div>;
 }

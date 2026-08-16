@@ -1,10 +1,10 @@
 import { CheckmarkCircleRegular, ScanTypeRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { UpstreamEditorValues } from './data';
 import { previewRecord } from './data';
-import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
+import { OAuthCallbackImport } from './oauth-callback-import';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -13,14 +13,11 @@ import { errorMessage } from '../../lib/error-message';
 import { dateTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
 import { Input, Textarea } from '../ui/fluent-form-controls';
-import { OpenLinkLabel } from '../ui/open-link-label';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { StatusBadge } from '../ui/status-badge';
-import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
-const { Button, Field, Link, Radio, RadioGroup, Spinner, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, Radio, RadioGroup, Spinner, Tab, TabList, Text } = fluentComponents;
 
 type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 type PreviewCandidate = Awaited<ReturnType<typeof previewJson>>['candidates'][number];
@@ -59,8 +56,6 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
   const locale = useLocale();
   const { getValues } = useFormContext<UpstreamEditorValues>();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
-  const { copy, outcomeFor } = useCopyToClipboard();
-  const copyLabel = useCopyLabel();
 
   const [tab, setTab] = useState('json');
   const [json, setJson] = useState('');
@@ -68,9 +63,7 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
   const [candidates, setCandidates] = useState<PreviewCandidate[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [callback, setCallback] = useState('');
   const [manual, setManual] = useState(EMPTY_MANUAL);
-  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,29 +76,6 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
     setSelected(null);
     setError(null);
   };
-
-  // Two authorize-url requests can be outstanding at once — a tab switch
-  // supersedes one, and the effect below re-fires on every `record` identity
-  // change. The generation is taken before the stash as well as before the URL,
-  // because a round trip separates them and an older call could otherwise stash
-  // last, leaving a verifier that does not belong to the URL that was opened.
-  const generation = useRef(0);
-  const prepare = useCallback(async () => {
-    const mine = ++generation.current;
-    setBusy(true); setError(null);
-    const pkce = await generatePkce();
-    if (generation.current !== mine) return;
-    stashPkce('codex', 'oauth', { verifier: pkce.verifier, state: pkce.state });
-    const result = await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({
-      json: { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state },
-    }));
-    if (generation.current !== mine) return;
-    setBusy(false);
-    if (result.error) { setError(result.error.message); return; }
-    setAuthorizeUrl(result.data.authorize_url);
-  }, [getValues, record]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the tab starts an authorize-url request; the pending flag is the start of that work.
-  useEffect(() => { if (tab === 'oauth' && !authorizeUrl) void prepare(); }, [authorizeUrl, prepare, tab]);
 
   const runPreview = async () => {
     const text = json.trim();
@@ -138,25 +108,19 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
       if (!candidate || candidate.issues.length > 0) throw new Error(t('dashboard.upstreamEditor.codex.import.selectAccount'));
       return { json: { raw_json: text, source_index: candidate.sourceIndex } };
     }
-    if (tab === 'manual') {
-      const accessToken = manual.accessToken.trim();
-      if (accessToken.length === 0) throw new Error(t('dashboard.upstreamEditor.codex.import.accessTokenRequired'));
-      return {
-        manual: {
-          access_token: accessToken,
-          refresh_token: trimmed(manual.refreshToken),
-          id_token: trimmed(manual.idToken),
-          account_id: trimmed(manual.accountId),
-          email: trimmed(manual.email),
-          plan_type: trimmed(manual.planType),
-          expires_at: trimmed(manual.expiresAt),
-        },
-      };
-    }
-    const parsed = parseCallbackPaste(callback);
-    const recalled = recallPkce('codex', 'oauth', parsed.state);
-    if (!recalled) throw new Error(t('dashboard.upstreamEditor.oauth.unrecognized'));
-    return { callback: { code: parsed.code, verifier: recalled.verifier } };
+    const accessToken = manual.accessToken.trim();
+    if (accessToken.length === 0) throw new Error(t('dashboard.upstreamEditor.codex.import.accessTokenRequired'));
+    return {
+      manual: {
+        access_token: accessToken,
+        refresh_token: trimmed(manual.refreshToken),
+        id_token: trimmed(manual.idToken),
+        account_id: trimmed(manual.accountId),
+        email: trimmed(manual.email),
+        plan_type: trimmed(manual.planType),
+        expires_at: trimmed(manual.expiresAt),
+      },
+    };
   };
 
   const submit = async () => {
@@ -172,9 +136,8 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
     }));
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
-    if (tab === 'oauth') clearPkce('codex', 'oauth');
     onImported(result.data.patch);
-    setJson(''); setCallback(''); setManual(EMPTY_MANUAL); setAuthorizeUrl(null);
+    setJson(''); setManual(EMPTY_MANUAL);
     setPreviewedJson(null); setCandidates([]); setSelected(null);
   };
 
@@ -232,18 +195,17 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
       </Field>}
     </div>}
 
-    {tab === 'oauth' && <div className="grid gap-3">
-      <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.codex.import.oauthHint')}</Text>
-      {busy && !authorizeUrl
-        ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} />
-        : authorizeUrl && <div className="flex items-center gap-2 min-w-0">
-          <Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link>
-          <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} />
-        </div>}
-      <Field label={t('dashboard.upstreamEditor.oauth.callback')}>
-        <Textarea className="font-mono" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} />
-      </Field>
-    </div>}
+    {tab === 'oauth' && <OAuthCallbackImport
+      kind="codex"
+      flowKind="oauth"
+      hasAccount={hasAccount}
+      record={record}
+      getValues={getValues}
+      onImported={patch => {
+        onImported(patch);
+        setJson(''); setManual(EMPTY_MANUAL); setPreviewedJson(null); setCandidates([]); setSelected(null);
+      }}
+    />}
 
     {tab === 'manual' && <div className="grid gap-3">
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.codex.import.manualHint')}</Text>
@@ -272,8 +234,8 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
 
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
 
-    <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>
+    {tab !== 'oauth' && <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>
       {hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}
-    </Button>
+    </Button>}
   </>;
 }
