@@ -15,6 +15,7 @@ import type { ModelCandidate } from '@floway-dev/provider';
 import type { AttemptSelector, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 
@@ -64,6 +65,7 @@ export const openPrologue = async (
     headers: [...c.req.raw.headers],
     services: {
       gateway,
+      log: consoleLogSink,
       background: work => { gateway.backgroundScheduler(work); },
       rememberCandidates: candidates => {
         for (const candidate of candidates) live.set(candidate.provider.upstreamId, candidate);
