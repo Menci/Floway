@@ -6,14 +6,14 @@
 // handler carries it into the record as an ingress fact. Everything after the parse is
 // stages.
 
-import { move } from '@floway-dev/pipeline';
-import type { RerankSourceProtocol } from '@floway-dev/protocols/common';
-import { parseRerankRequest, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import type { Context } from 'hono';
 
 import { rerankServePipeline } from './pipeline.ts';
 import { openPrologue, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { move } from '@floway-dev/pipeline';
+import type { RerankSourceProtocol } from '@floway-dev/protocols/common';
+import { parseRerankRequest, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 
 // The contract reports a malformed request by throwing; what the client is owed is a 400
 // carrying the reason. `JSON.parse`'s own wording names a byte offset in a body the client
