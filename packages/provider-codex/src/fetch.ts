@@ -576,14 +576,6 @@ const refreshAccessTokenForRetry = async (
   }
 };
 
-// The 401 retry gate every call dispatcher shares: on a renewable credential
-// that has not already been retried, rotate the failed access token and re-run
-// the operation once; if the refresh fails, relay the dispatcher's own failure
-// result. The gate — a 401 on a credential with a refresh token, not already
-// retried — is folded in here, so callers pass the response they saw and only
-// branch on the retried outcome. An access-only credential's 401 is already
-// classified terminal in `classifyCodexHttpResponse`, and the verbatim upstream
-// response reaches the client.
 // The 401-retry gate's per-call inputs. The dispatchers bundle their access
 // token, the response they saw, the recursion switch, and the retry / failure
 // callbacks in one object rather than threading six positional arguments.
@@ -596,6 +588,14 @@ interface RetryCodexAccess401Options<T> {
   fallbackPlan?: CodexPlanObservation;
 }
 
+// The 401 retry gate every call dispatcher shares: on a renewable credential
+// that has not already been retried, rotate the failed access token and re-run
+// the operation once; if the refresh fails, relay the dispatcher's own failure
+// result. The gate — a 401 on a credential with a refresh token, not already
+// retried — is folded in here, so callers pass the response they saw and only
+// branch on the retried outcome. An access-only credential's 401 is already
+// classified terminal in `classifyCodexHttpResponse`, and the verbatim upstream
+// response reaches the client.
 const retryCodexAccess401 = async <T>(
   opts: CodexBackendCallBase,
   options: RetryCodexAccess401Options<T>,
