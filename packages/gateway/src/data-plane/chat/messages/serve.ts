@@ -33,7 +33,6 @@ export const messagesServe = {
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
-      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
@@ -69,7 +68,6 @@ export const messagesServe = {
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
-      clientDisconnectSignal: ctx.clientDisconnectSignal,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);

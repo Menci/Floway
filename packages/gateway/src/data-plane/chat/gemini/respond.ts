@@ -70,7 +70,7 @@ export const respondGemini = async (
     try {
       completion = await writeSSEFrames(stream, geminiSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
-        clientDisconnectController: ctx.clientDisconnectController,
+        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
     } finally {
       const metadata = await eventResultMetadata(result);

@@ -112,7 +112,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
   let closed = false;
-  let activeClientDisconnectController: AbortController | undefined;
+  let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
 
   // ── Session-scoped BackgroundScheduler ──────────────────────────────────
@@ -156,25 +156,25 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
     }
   })());
 
-  const recordClientDisconnect = (): void => {
+  const closeActiveRequest = (): void => {
     closed = true;
-    activeClientDisconnectController?.abort();
+    activeAbortController?.abort();
     sessionClosedResolve?.();
   };
 
   return {
-    onClose: recordClientDisconnect,
-    onError: recordClientDisconnect,
+    onClose: closeActiveRequest,
+    onError: closeActiveRequest,
     onMessage: (event, socket) => {
       queue = queue
         .then(async () => {
           if (closed) return;
-          const clientDisconnectController = new AbortController();
-          activeClientDisconnectController = clientDisconnectController;
+          const abortController = new AbortController();
+          activeAbortController = abortController;
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, clientDisconnectController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
           } finally {
-            if (activeClientDisconnectController === clientDisconnectController) activeClientDisconnectController = undefined;
+            if (activeAbortController === abortController) activeAbortController = undefined;
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
@@ -183,7 +183,6 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
-      sessionScheduler(queue);
     },
   };
 };
@@ -199,11 +198,11 @@ const handleClientMessage = async (
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
   authenticatedRawKey: string,
-  clientDisconnectController: AbortController,
+  downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
-  const signal = clientDisconnectController.signal;
+  const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
   let previousResponseId: string | undefined;
@@ -273,7 +272,7 @@ const handleClientMessage = async (
     previousResponseId = payload.previous_response_id ?? undefined;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
-      clientDisconnectController,
+      downstreamAbortController,
       // The WS upgrade has no HTTP body; the dump's request body is the
       // per-turn JSON frame bytes so an operator reading the dashboard
       // sees the exact `response.create` payload the client sent.
@@ -287,7 +286,7 @@ const handleClientMessage = async (
     try {
       result = await responsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
     } catch (error) {
-      if (signal.aborted && error === signal.reason) return;
+      if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
       // same body nested under the spec's WebSocket error envelope so clients
       // can still compare error.message byte-for-byte against upstream.
@@ -307,7 +306,7 @@ const handleClientMessage = async (
 
     await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
   } catch (error) {
-    if (signal.aborted && error === signal.reason) return;
+    if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
       turnFailure.fail(400, {
         type: 'invalid_request_error',
@@ -395,24 +394,23 @@ const respondResponsesWebSocket = async (input: {
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
-    let clientDisconnected = false;
+    let stoppedByDownstream = false;
     let streamed = false;
     const sequence = createDownstreamSequence();
 
-    const recordClientDisconnect = (): void => {
-      clientDisconnected = true;
+    const stopForDownstream = (): void => {
+      stoppedByDownstream = true;
       completion = 'cancel';
     };
 
     try {
       while (true) {
         if (signal.aborted || isClosed()) {
-          recordClientDisconnect();
+          stopForDownstream();
+          return;
         }
 
-        const next = clientDisconnected
-          ? await pendingNext
-          : await nextFrameOrKeepAlive(pendingNext);
+        const next = await nextFrameOrKeepAlive(pendingNext);
 
         if (next.type === 'keep-alive') {
           // Extended reasoning turns go completely silent: upstream sends SSE
@@ -478,9 +476,10 @@ const respondResponsesWebSocket = async (input: {
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L369-L370
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
           // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
-          if (clientDisconnected || !streamed) continue;
+          if (!streamed) continue;
           if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
-            recordClientDisconnect();
+            stopForDownstream();
+            return;
           }
           continue;
         }
@@ -518,13 +517,18 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!clientDisconnected && !sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
-          recordClientDisconnect();
+        if (!sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
+          stopForDownstream();
+          return;
         }
         streamed = true;
       }
     } finally {
-      if (!completed) await iterator.return?.(undefined);
+      if (!completed) {
+        const stopped = iterator.return?.(undefined);
+        if (stoppedByDownstream) stopped?.catch(() => {});
+        else await stopped;
+      }
     }
 
     if (terminalEvent === undefined) {
@@ -533,16 +537,18 @@ const respondResponsesWebSocket = async (input: {
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (clientDisconnected) {
+    if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
       completion = 'cancel';
-    } else if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
-      recordClientDisconnect();
-    } else {
-      completion = 'eof';
+      return;
     }
+    completion = 'eof';
   } catch (error) {
+    if (signal.aborted || isClosed()) {
+      completion = 'cancel';
+      return;
+    }
     state.failed = true;
-    if (!signal.aborted && !isClosed()) turnFailure.fail(500, serverErrorEnvelope(error));
+    turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);

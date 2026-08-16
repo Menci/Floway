@@ -1,7 +1,6 @@
 import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { dispatchRetainedResponse } from '../../../shared/retained-response.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -10,7 +9,6 @@ import {
   type WebSearchFetchPageResult,
   type WebSearchProvider,
   type WebSearchProviderErrorCode,
-  type WebSearchProviderLifecycle,
   type WebSearchProviderRequest,
   type WebSearchProviderResult,
 } from '../types.ts';
@@ -66,9 +64,9 @@ type BrowseOutcome =
   | { kind: 'cold'; url: string }
   | { kind: 'fail'; url: string; httpStatus: number; message: string };
 
-const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal, lifecycle?: WebSearchProviderLifecycle): Promise<BrowseOutcome> => {
+const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal): Promise<BrowseOutcome> => {
   try {
-    const response = await fetchWithRetry(() => dispatchRetainedResponse(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
+    const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -82,7 +80,7 @@ const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string
         renderDynamicPages: true,
       }),
       ...(signal !== undefined ? { signal } : {}),
-    }), lifecycle), signal);
+    }), signal);
 
     // Microsoft Web IQ returns 202 with `retryAfter` when the page isn't
     // cached and a live crawl was kicked off. Don't poll — Workers
@@ -138,7 +136,7 @@ export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { f
     }
 
     try {
-      const response = await fetchWithRetry(() => dispatchRetainedResponse(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
+      const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -146,7 +144,7 @@ export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { f
         },
         body: JSON.stringify(body),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      }), request.lifecycle), request.signal);
+      }), request.signal);
 
       if (response.ok) {
         const payload = await response.json();
@@ -212,7 +210,7 @@ export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { f
       return { type: 'ok', pages: [], failures: [] };
     }
 
-    const outcomes = await Promise.all(request.urls.map(url => browseOneUrl(httpFetch, apiKey, url, request.signal, request.lifecycle)));
+    const outcomes = await Promise.all(request.urls.map(url => browseOneUrl(httpFetch, apiKey, url, request.signal)));
 
     // Whole-batch failure (every URL transport-failed or 5xx) collapses
     // into one {type:'error'} envelope; 4xx/202 stay per-URL so one bad

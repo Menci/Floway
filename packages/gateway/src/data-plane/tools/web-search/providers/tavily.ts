@@ -1,7 +1,6 @@
 import { extractWebSearchProviderErrorMessage, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { dispatchRetainedResponse } from '../../../shared/retained-response.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -79,7 +78,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
     }
 
     try {
-      const response = await dispatchRetainedResponse(() => httpFetch(TAVILY_SEARCH_URL, {
+      const response = await httpFetch(TAVILY_SEARCH_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -87,7 +86,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
         },
         body: JSON.stringify(body),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      }), request.lifecycle);
+      });
 
       if (!response.ok) {
         const message = await extractWebSearchProviderErrorMessage(response);
@@ -150,7 +149,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
 
   const fetchPage = async (request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult> => {
     try {
-      const response = await dispatchRetainedResponse(() => httpFetch(TAVILY_EXTRACT_URL, {
+      const response = await httpFetch(TAVILY_EXTRACT_URL, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -162,7 +161,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
           format: 'markdown',
         }),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      }), request.lifecycle);
+      });
 
       if (!response.ok) {
         const message = await extractWebSearchProviderErrorMessage(response);

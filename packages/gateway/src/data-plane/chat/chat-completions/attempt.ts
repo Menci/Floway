@@ -46,7 +46,7 @@ export const chatCompletionsAttempt = {
         const providerResult = await candidate.provider.instance.callChatCompletions(
           providerModelOf(candidate),
           body,
-          undefined,
+          ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx, billableUsageFromChatCompletionsEvent);
@@ -57,10 +57,7 @@ export const chatCompletionsAttempt = {
           p => translateChatCompletionsViaMessages(p, {
             model: candidate.model.id,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-            loadRemoteImage: createExternalImageLoader({
-              clientDisconnectSignal: ctx.clientDisconnectSignal,
-              backgroundScheduler: ctx.backgroundScheduler,
-            }),
+            loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
           translated => messagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],

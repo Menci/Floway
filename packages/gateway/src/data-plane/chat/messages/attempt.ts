@@ -63,7 +63,7 @@ export const messagesAttempt = {
         const providerResult = await candidate.provider.instance.callMessages(
           providerModelOf(candidate),
           body,
-          undefined,
+          ctx.abortSignal,
           buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createMessagesBillableUsageReader());
@@ -111,7 +111,7 @@ export const messagesAttempt = {
       const { response } = await candidate.provider.instance.callMessagesCountTokens(
         providerModelOf(candidate),
         body,
-        undefined,
+        ctx.abortSignal,
         buildMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, anthropicBeta),
       );
       return response;
