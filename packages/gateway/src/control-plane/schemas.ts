@@ -414,6 +414,10 @@ export const upstreamRecordEnvelope = z.object({
 // beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
+// Shared authorize-url contract for the codex and claude-code authorize-url
+// endpoints: the draft record plus the SPA-held PKCE challenge/state pair.
+const oauthAuthorizeUrlBody = z.object({ record: upstreamRecordEnvelope, challenge: z.string().min(1), state: z.string().min(1) });
+
 export const copilotOAuthDeviceLoginStartBody = recordOnlyBody;
 
 export const copilotOAuthDeviceLoginPollBody = z.object({
@@ -431,11 +435,7 @@ export const copilotQuotaBody = recordOnlyBody;
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const codexOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 // Preview takes no record: it reads a pasted document and reports what is in
 // it, without touching any upstream.
@@ -481,11 +481,7 @@ const oauthCallbackSchema = z.object({
   state: z.string().min(1),
 });
 
-export const claudeCodeOAuthAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
@@ -498,11 +494,7 @@ export const claudeCodeOAuthExchangeBody = z.object({
 
 export const claudeCodeOAuthRefreshBody = recordOnlyBody;
 
-export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
-  record: upstreamRecordEnvelope,
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
+export const claudeCodeSetupTokenAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeSetupTokenExchangeBody = z.object({
   record: upstreamRecordEnvelope,
