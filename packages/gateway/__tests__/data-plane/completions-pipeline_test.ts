@@ -244,12 +244,36 @@ describe('the completions pipeline', () => {
   it('writes exactly one usage row per run, however many candidates it tried', async () => {
     resolves([
       candidate('up_a', async () => ({ response: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
-      candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' })),
+      candidate('up_b', async () => ({
+        response: Response.json({ id: 'c', choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+        modelKey: 'k',
+      })),
     ]);
-    const { drain } = await serve(entryFacts());
+    const { drain } = await serve(entryFacts({
+      'ingress.completions.wantsStream': false,
+      'request.completions.payload': { model: 'text-model', prompt: 'hello' },
+    }));
     await drain();
     expect(recorded.usage).toHaveLength(1);
     expect(recorded.performance).toHaveLength(1);
+  });
+
+  // A stream states its usage in the chunk that ends it, which is after the run has answered.
+  // Settling in the stage as well would write the row twice — once for the entity that had
+  // reported nothing, once for what the stream turned out to say — so the pipeline hands the
+  // numbers up as a promise and the epilogue is what writes them.
+  it('defers a stream-s settlement to the promise it hands up', async () => {
+    resolves([candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
+
+    const { facts, drain } = await serve(entryFacts());
+    await drain();
+
+    expect(recorded.usage).toHaveLength(0);
+    const streamed = facts['response.completions.streamedUsage'];
+    expect(streamed).not.toBeNull();
+    const billable = await streamed!;
+    expect(billable).toHaveLength(1);
+    expect(billable[0]!.quantities).toMatchObject({ input_tokens: '5', output_tokens: '7' });
   });
 
   // A run that reached no upstream bills nothing and samples nothing, which is what the

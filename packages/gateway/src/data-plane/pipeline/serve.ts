@@ -18,7 +18,7 @@ import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
-import type { Event, Pipeline } from '@floway-dev/pipeline';
+import type { Pipeline } from '@floway-dev/pipeline';
 import { run } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -93,9 +93,6 @@ export const openPrologue = (
         }
         return candidate;
       },
-      // Absent when this key has no retention configured, which is what keeps recording
-      // conditional: the runner does none of it rather than doing it and discarding.
-      ...(gateway.dump === null ? {} : { dump: (_event: Event) => {} }),
     },
   };
 };
@@ -160,7 +157,9 @@ export const serveThrough = async <
     // staged on the context before it is called rather than passed to a constructor.
     for (const [name, value] of facts['response.http.headers']) c.header(name, value);
     c.status(status);
-    return streamSSE(c, async stream => {
+    // The dump is closed the same way on both paths. Hono builds the streaming response
+    // itself, so what is finalized is what it returned rather than one constructed here.
+    return finalizeGatewayResponse(prologue.gateway, streamSSE(c, async stream => {
       try {
         await writeSSEFrames(stream, answer.frames, {
           keepAlive: { frame: sseCommentFrame('keepalive') },
@@ -175,7 +174,7 @@ export const serveThrough = async <
         // still gets here, which is what leaves nothing open behind it.
         await drain();
       }
-    });
+    }));
   }
 
   // Nothing is left to read: what the client is sent was serialized from facts the run

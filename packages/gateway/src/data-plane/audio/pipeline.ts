@@ -19,6 +19,7 @@ import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
+import { dialFailure } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
@@ -188,16 +189,36 @@ const callAudioTranscriptionUpstream = defineStage<
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    const result = await candidate.provider.instance.callAudioTranscriptions(
-      providerModelOf(candidate),
-      { entries: facts['request.audioTranscription.form'] },
-      use.gateway.abortSignal,
-      // The client's own headers reach the upstream from the record, not from a live request
-      // object: what a provider is allowed to forward is filtered per provider, and the dump
-      // shows what was there to filter.
-      buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
-    );
+    // Attribution is set before the dial, so an attempt that never completes still names the
+    // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'audio_transcription');
+
+    let result;
+    try {
+      result = await candidate.provider.instance.callAudioTranscriptions(
+        providerModelOf(candidate),
+        { entries: facts['request.audioTranscription.form'] },
+        use.gateway.abortSignal,
+        // The client's own headers reach the upstream from the record, not from a live request
+        // object: what a provider is allowed to forward is filtered per provider, and the dump
+        // shows what was there to filter.
+        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
+      );
+    } catch (error) {
+      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
+      // A dial that never completed reached no upstream, so nothing was billed and there are
+      // no headers to carry. What it leaves behind is the performance row settlement writes.
+      return move({
+        ...facts,
+        'response.audioTranscription.canonical': dialFailure(error),
+        'response.audioTranscription.mediaType': null,
+        'response.audioTranscription.streamedUsage': null,
+        'response.usage.billable': [],
+        'response.http.status': 502,
+        'response.http.headers': [],
+        'response.http.body': spentBody(null),
+      });
+    }
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     const format = facts['ingress.audioTranscription.responseFormat'];
     const status = result.response.status;
@@ -382,10 +403,13 @@ export const audioTranscriptionServePipeline: Pipeline<
   A<'ingress.http.headers' | 'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'serve.model'>,
   A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
   & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[];
-    'response.http.headers': readonly (readonly [string, string])[] }
+    'response.http.headers': readonly (readonly [string, string])[]; }
 > = compose('audioTranscriptionServe', [
   emitAudioTranscription,
-  writeSettlement(handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical'])),
+  writeSettlement(
+    handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical']),
+    handedUp => (handedUp as { 'response.audioTranscription.streamedUsage'?: unknown })['response.audioTranscription.streamedUsage'] !== null,
+  ),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical']),
