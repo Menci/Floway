@@ -102,8 +102,7 @@ const emitResponses = defineStage<
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream' | 'response.chat.responses' | 'response.http.headers'>,
-  R<'response.chat.responses.rendered' | 'response.http.status' | 'response.http.headers'>
-  ,
+  R<'response.chat.responses.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'emitResponses',
