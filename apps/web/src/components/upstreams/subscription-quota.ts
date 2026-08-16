@@ -1,7 +1,7 @@
 // The thresholds are stated once for every subscription upstream, so a reading
 // that colours a bar in the editor colours the ring beside it in the list the
 // same way.
-export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
+const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 const CRITICAL_USAGE_THRESHOLD_PERCENT = 90;
 
 export type QuotaSeverity = 'normal' | 'heavy' | 'critical';
@@ -29,7 +29,7 @@ export const WALL_CLOCK_REFRESH_MS = 60_000;
 // No windows means nothing is known, which is not the same reading as zero.
 export const heaviestPercent = (percents: number[]): number | null => percents.length ? Math.max(...percents) : null;
 
-export type UsageHeavyOrActive =
+type UsageHeavyOrActive =
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
