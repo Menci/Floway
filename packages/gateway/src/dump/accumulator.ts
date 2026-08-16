@@ -10,10 +10,9 @@
 
 import type { Context } from 'hono';
 
-import { DumpAttribution, oneLineError } from './attribution.ts';
+import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
-  DumpErrorMeta,
   DumpMetadata,
   DumpStreamEvent,
   DumpWriteRecord,
@@ -210,12 +209,9 @@ export class DumpAccumulator {
       status: response.status,
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
-      // Precedence: an explicit error stamp from the respond path wins (the
-      // assembler applies this only when there is none); otherwise a
-      // request-body read failure (operator-side payload didn't arrive intact)
-      // outranks a response-body read failure. Both stream-read failures
-      // surface as `kind: 'failed'`.
-      fallbackError: this.streamReadError(response),
+      // Precedence: an explicit error stamp from the respond path wins — the
+      // assembler applies this only when there is none.
+      fallbackError: streamReadError(this.requestSnapshot.streamError, response.streamError),
     });
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
@@ -240,12 +236,6 @@ export class DumpAccumulator {
     } catch (err) {
       console.error(`[dump] write failed for key=${this.apiKey.id} record=${recordId}`, oneLineError(err));
     }
-  }
-
-  private streamReadError(response: ResponseSnapshot): DumpErrorMeta | null {
-    if (this.requestSnapshot.streamError !== null) return { kind: 'failed', reason: this.requestSnapshot.streamError };
-    if (response.streamError !== null) return { kind: 'failed', reason: response.streamError };
-    return null;
   }
 }
 

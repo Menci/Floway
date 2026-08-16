@@ -13,9 +13,9 @@
 // runner does none of the recording — not a no-op that accumulates and throws
 // the result away.
 
-import { DumpAttribution, oneLineError } from './attribution.ts';
+import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
-import type { DumpErrorMeta, DumpMetadata } from './types.ts';
+import type { DumpMetadata } from './types.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -135,8 +135,6 @@ export class RunDump {
       status,
       requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes,
-      // A request-body read failure — the operator-side payload did not arrive
-      // intact — outranks a failure reading back what was answered.
       fallbackError: streamReadError(this.requestSnapshot.streamError, responseStreamError),
     });
 
@@ -153,12 +151,6 @@ export class RunDump {
     }
   }
 }
-
-const streamReadError = (request: string | null, response: string | null): DumpErrorMeta | null => {
-  if (request !== null) return { kind: 'failed', reason: request };
-  if (response !== null) return { kind: 'failed', reason: response };
-  return null;
-};
 
 /**
  * Returns null when the api key opts out of dumps, and the absence is the

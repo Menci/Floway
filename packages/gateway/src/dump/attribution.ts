@@ -74,6 +74,15 @@ export interface DumpTurnOutcome {
   readonly fallbackError: DumpErrorMeta | null;
 }
 
+// A request-body read failure — the operator-side payload did not arrive intact
+// — outranks a failure reading back what was answered. Both surface as
+// `kind: 'failed'`.
+export const streamReadError = (request: string | null, response: string | null): DumpErrorMeta | null => {
+  if (request !== null) return { kind: 'failed', reason: request };
+  if (response !== null) return { kind: 'failed', reason: response };
+  return null;
+};
+
 export class DumpAttribution {
   private model: string | null = null;
   private upstreamId: string | null = null;
