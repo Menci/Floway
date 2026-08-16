@@ -4,6 +4,7 @@
 //   writeSettlement                  above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates            narrows to what can serve, in the order affinity asks for
 //   failover                         runs what follows once per candidate
+//   materializeAttempt               puts the payload this candidate is owed into the record
 //   callGeminiViaChatCompletions     the ending: translates, dials, and meters what came back
 //
 // Gemini is source-only. Nothing translates *into* it, so it contributes one pipeline rather
@@ -24,9 +25,10 @@
 //     this one: no stream, no billable turn, and a `{ totalTokens }` envelope of its own.
 //   - the Gemini interceptors and the affinity egress. The four `interceptors/` entries and
 //     the thought-signature rewrite on the way out are still only in the interceptor form.
-//   - a stream that ends without a terminal event. `collectGeminiProtocolEventsToResult`
-//     throws it, and here it leaves the run as a throw rather than as the 502 Google-RPC
-//     envelope `respond.ts` renders.
+//   - the Google-RPC envelope `respond.ts` wrote into a client's own stream for a turn that
+//     ended without a terminal event. The chain detects one — the ending stops reading at
+//     the terminal frame and throws when the frames run out before one — but it leaves the
+//     run as a throw rather than as that 502 envelope.
 //
 // One deliberate difference from `respond.ts`, shared with every other family on the
 // pipeline: an upstream that refused is answered in its own words. A Chat Completions wire
@@ -36,21 +38,20 @@
 // that envelope maps to `INTERNAL`.
 
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';
-import type { UsageQuantities } from '../../../repo/types.ts';
-import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
-import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { billableUsageFromChatCompletionsEvent } from '../chat-completions/usage.ts';
 import type { ChatFacts } from '../facts.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
+import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
+import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { renderGeminiError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -58,6 +59,8 @@ import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFr
 import {
   collectGeminiProtocolEventsToResult,
   geminiProtocolFrameToSSEFrame,
+  GEMINI_MISSING_TERMINAL_MESSAGE,
+  isGeminiTerminalEvent,
   type GeminiPayload,
   type GeminiStreamEvent,
 } from '@floway-dev/protocols/gemini';
@@ -176,7 +179,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): Asy
  * that come out of it, so a figure the upstream stated is billed as stated.
  */
 const callGeminiViaChatCompletions = defineStage<
-  C<'route.attempt' | 'ingress.http.headers'>,
+  C<'request.chat.gemini' | 'route.attempt' | 'ingress.http.headers'>,
   C<'response.chat.gemini' | 'response.chat.gemini.streamedUsage'
   | 'response.usage.billable' | 'response.http.headers'>,
   ChatServices
@@ -198,14 +201,14 @@ const callGeminiViaChatCompletions = defineStage<
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
     // The trip owns both directions: it builds the payload that goes out and hands back the
-    // closure that turns the upstream's frames into Gemini's. What it translates is what
-    // affinity materialized for this candidate — client-carried state rewritten for the
-    // upstream that will see it, which is the whole reason a turn can be pinned at all. The
-    // id the client addressed does not travel: Gemini carries it in the URL, the trip stamps
-    // the candidate's own, and the wire is handed the body without it. An alias' own rules
-    // apply to the translated body, which is the only shape the wire will see.
-    const asked = use.chatPayloadFor(facts['route.attempt']) as GeminiPayload;
-    const trip = await translateGeminiViaChatCompletions(asked, { model: candidate.model.id });
+    // closure that turns the upstream's frames into Gemini's. What it translates is what the
+    // record holds by now — the turn affinity materialized for this candidate, as every stage
+    // between the fork and here has rewritten it, with client-carried state rewritten for the
+    // upstream that will see it. The id the client addressed does not travel: Gemini carries
+    // it in the URL, the trip stamps the candidate's own, and the wire is handed the body
+    // without it. An alias' own rules apply to the translated body, which is the only shape
+    // the wire will see.
+    const trip = await translateGeminiViaChatCompletions(facts['request.chat.gemini'], { model: candidate.model.id });
     if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(trip.target, candidate.rules);
     const { model: _addressed, ...body } = trip.target;
 
@@ -259,10 +262,10 @@ const callGeminiViaChatCompletions = defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state must
     // come back to.
     use.selectAffinity(candidate);
-    const metered = meterChatCompletions(result.events, identity);
+    const metered = meterChatCompletions(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
-      'response.chat.gemini': { kind: 'stream' as const, frames: trip.events(metered.frames) },
+      'response.chat.gemini': { kind: 'stream' as const, frames: geminiFramesUntilTerminal(trip.events(metered.frames)) },
       'response.chat.gemini.streamedUsage': metered.billable,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
@@ -276,6 +279,7 @@ const callGeminiViaChatCompletions = defineStage<
 const meterChatCompletions = (
   source: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
+  attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
   let settle!: (billable: readonly BillableEntity[]) => void;
   const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
@@ -283,6 +287,12 @@ const meterChatCompletions = (
     let reported: BillableUsage | undefined;
     try {
       for await (const frame of source) {
+        // Time to first token is measured where the token is, which is the only place that
+        // knows a frame carries generated content rather than the envelope around it — and
+        // it is read on the dialect the upstream spoke, like the usage beside it.
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'chat-completions')) {
+          attempt.firstOutputTokenAt = performance.now();
+        }
         if (frame.type === 'event') {
           const usage = billableUsageFromChatCompletionsEvent(frame.event);
           if (usage !== null) reported = usage;
@@ -293,29 +303,43 @@ const meterChatCompletions = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([{ identity, quantities: billed(reported) }]);
+      settle([billedEntity(reported, identity)]);
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
 };
 
-/** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero.
- *
- *  A billed entity is keyed by billing metric, which is not the shape a protocol reports in,
- *  so the reading is converted rather than cast. The service tier survives as far as
- *  `TokenUsage.tier` and no further: a billed entity is an identity and a bag of quantities,
- *  and the pricing selector the tier feeds has no seat there. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+/** Where a Gemini turn ends, stated on the frames the client is handed rather than on the
+ *  wire below: a Chat Completions stream that closed cleanly without ever reporting a finish
+ *  reason translates into candidates that never finish, and serving those would report a
+ *  truncated answer as a whole one. */
+const geminiFramesUntilTerminal = (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): AsyncIterable<ProtocolFrame<GeminiStreamEvent>> => ({
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) {
+      yield frame;
+      // The turn is over, so there is nothing further to read; returning here closes the
+      // translation and the wire under it.
+      if (frame.type === 'done' || isGeminiTerminalEvent(frame.event)) return;
+    }
+    throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
+  })(),
+});
+
+/** What one attempt is billable for. An upstream that reported nothing leaves no quantities
+ *  at all, which is a different statement from reporting zero — and a rate can depend on the
+ *  service tier and on how much input there was, so both travel as pricing facts rather than
+ *  being folded into the quantities. */
+const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModelIdentity): BillableEntity => {
   const tokens = tokenUsageFromBillableUsage(usage);
-  return tokens === null ? {} : tokenUsageQuantities(tokens);
+  if (tokens === null) return { identity, quantities: {} };
+  const measurement = tokenUsageMeasurement(tokens);
+  return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
 const narrowing = (payload: GeminiPayload): ChatNarrowing<C<'response.chat.gemini'>> => ({
-  source: 'gemini',
   canServe: candidate => geminiTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeGeminiAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the Gemini generateContent endpoint.`,
@@ -345,5 +369,6 @@ export const geminiServePipeline = (payload: GeminiPayload): Pipeline<GeminiServ
       failed: handedUp => isFailure((handedUp as { 'response.chat.gemini'?: unknown })['response.chat.gemini']),
       owns: [],
     }),
+    materializeAttempt('request.chat.gemini'),
     callGeminiViaChatCompletions,
   ]);

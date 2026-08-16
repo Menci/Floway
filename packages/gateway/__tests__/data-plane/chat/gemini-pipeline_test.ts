@@ -12,7 +12,7 @@ import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
+import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiPayload } from '@floway-dev/protocols/gemini';
 import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -80,6 +80,15 @@ const turn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
   })(),
 });
 
+/** The wire below closed cleanly and never finished the turn: no choice ever carried a
+ *  finish reason, so nothing that comes out of the translation is a Gemini terminal event. */
+const unfinishedTurn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
+  [Symbol.asyncIterator]: () => (async function* () {
+    yield chunk({ content: 'he' });
+    yield doneFrame();
+  })(),
+});
+
 const streamed = (
   events: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   headers?: Headers,
@@ -92,6 +101,10 @@ const payload = { contents: [{ role: 'user' as const, parts: [{ text: 'hello' }]
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  turn the client sent, which is the point: carried state is rewritten per candidate. */
 let affinityPayload: GeminiPayload = payload;
+
+/** How many times the chain asked the resolver for that turn. One stage owns the reading;
+ *  anything below it reads the record. */
+let asked = 0;
 
 /** Which candidates the run said a follow-up turn must come back to. */
 const selected: ModelCandidate[] = [];
@@ -106,6 +119,7 @@ beforeEach(() => {
   recorded.performance = [];
   selected.length = 0;
   affinityPayload = payload;
+  asked = 0;
   initRepo({
     usage: { record: async (row: unknown) => { recorded.usage.push(row); } },
     performance: {
@@ -115,15 +129,18 @@ beforeEach(() => {
   } as never);
 });
 
-const serve = async (facts: Record<string, unknown>) => await run(
+const serve = async (facts: Record<string, unknown>) =>
+  await serveWith(mockChatGatewayCtx({ wantsStream: facts['ingress.chat.gemini.wantsStream'] === true }), facts);
+
+const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: Record<string, unknown>) => await run(
   geminiServePipeline(payload),
   move(facts) as never,
   {
-    gateway: mockChatGatewayCtx({ wantsStream: facts['ingress.chat.gemini.wantsStream'] === true }),
+    gateway,
     background: () => {},
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
-    chatPayloadFor: () => affinityPayload,
+    chatPayloadFor: () => { asked += 1; return affinityPayload; },
     selectAffinity: (candidate: ModelCandidate) => { selected.push(candidate); },
     resolveAttempt,
   } as never,
@@ -145,11 +162,9 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
 };
 
 describe('the gemini pipeline', () => {
-  // The whole entry contract, and it does not mention `request.chat.gemini` — the stage that
-  // reads the turn is the ending, a stage whose only trait is `return` declares no request
-  // side at all, and so assembly cannot see what it reads. A caller who omits the payload
-  // gets a runtime failure at the deepest stage rather than the assembly error the entry
-  // contract exists to give it.
+  // The whole entry contract, and it does not mention `request.chat.gemini`: the turn the
+  // ending translates is not the one the caller handed in but the one materializeAttempt put
+  // into the record below the fork, which is where a per-candidate payload can exist at all.
   it('assembles, and asks its caller only for what the descending stages need', () => {
     expect([...geminiServePipeline(payload).entryNeeds].sort()).toEqual([
       'ingress.chat.gemini.wantsStream',
@@ -184,8 +199,11 @@ describe('the gemini pipeline', () => {
 
   // Gemini carries its state in `thoughtSignature` parts, which only mean anything to the
   // upstream that issued them — so the turn that is translated is the one affinity rewrote
-  // for this candidate, and the candidate that answered is marked for the next turn.
-  it('translates what affinity materialized, and marks the candidate that answered', async () => {
+  // for this candidate, and the candidate that answered is marked for the next turn. That
+  // turn enters the record below the fork because everything between there and the dial
+  // rewrites the request as a fact, and one stage owns the reading: an ending that asked the
+  // resolver again would translate a turn no stage in the chain had touched.
+  it('translates what the record holds, and marks the candidate that answered', async () => {
     let sent: Record<string, unknown> | undefined;
     affinityPayload = { contents: [{ role: 'user', parts: [{ text: 'rewritten' }] }] };
     const dialled = candidate('up_a', async (_model, body) => {
@@ -197,6 +215,10 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
     await collect(facts['response.chat.gemini.rendered']);
 
+    // The exit contract names what the run answers with, and the turn the chain translated is
+    // not that — but the record carries every key in flight, so it is still there to read.
+    expect((facts as Record<string, unknown>)['request.chat.gemini']).toBe(affinityPayload);
+    expect(asked).toBe(1);
     expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
     expect(selected).toEqual([dialled]);
     await drain();
@@ -286,11 +308,40 @@ describe('the gemini pipeline', () => {
     expect(recorded.usage).toHaveLength(0);
     const usage = facts['response.chat.gemini.streamedUsage'];
     expect(usage).not.toBeNull();
-    expect(await usage!).toEqual([
-      {
-        identity: { model: 'gemini-2.5-pro', upstream: 'up_a', modelKey: 'gemini-2.5-pro-key', pricing: null },
-        quantities: { input_tokens: '5', output_tokens: '7' },
-      },
-    ]);
+    const billable = await usage!;
+    expect(billable[0]).toMatchObject({
+      identity: { model: 'gemini-2.5-pro', upstream: 'up_a', modelKey: 'gemini-2.5-pro-key', pricing: null },
+      quantities: { input_tokens: '5', output_tokens: '7' },
+    });
+    // A rate can depend on the tier and on how much input there was; both are selector
+    // coordinates, so they travel as pricing facts rather than as quantities.
+    expect(billable[0]!.pricingFacts).toMatchObject({ inputTokens: 5 });
+  });
+
+  // Time to first token is measured where the token is, and on the dialect the upstream
+  // actually spoke rather than the one the client did. A run that never stamps it is recorded
+  // as having produced nothing to time.
+  it('stamps the first frame that carried a generated token', async () => {
+    resolves([candidate('up_a', async () => streamed(turn()))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts, drain } = await serveWith(gateway, entryFacts());
+    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    await collect(facts['response.chat.gemini.rendered']);
+
+    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+    await drain();
+  });
+
+  // A wire that closes cleanly has not thereby finished the turn: with no finish reason on
+  // any choice, nothing that comes out of the translation says the answer is over. Serving
+  // those frames would report a truncated answer as a whole one.
+  it('fails a stream that ended without its terminal frame', async () => {
+    resolves([candidate('up_a', async () => streamed(unfinishedTurn()))]);
+
+    const { facts, drain } = await serve(entryFacts());
+
+    await expect(collect(facts['response.chat.gemini.rendered'])).rejects.toThrow(GEMINI_MISSING_TERMINAL_MESSAGE);
+    await drain();
   });
 });
