@@ -16,6 +16,7 @@
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { createMessagesBillableUsageReader } from './usage.ts';
 import type { UsageQuantities } from '../../../repo/types.ts';
+import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -120,7 +121,7 @@ const emitMessages = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.messages.rendered': renderSSE(frames),
+      'response.chat.messages.rendered': move(renderSSE(frames)),
       'response.http.status': 200,
     };
   },
@@ -165,9 +166,13 @@ const callMessagesUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // The id the client addressed does not travel: the provider re-stamps whatever it
-    // resolved upstream, and an alias' own rules are applied to the body that is sent.
-    const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
+    // Affinity materializes the payload this candidate is owed: a thinking signature is
+    // rewritten for the upstream that will see it, and one that no upstream but the issuer
+    // can read is dropped rather than sent on. The id the client addressed does not travel —
+    // the provider re-stamps whatever it resolved upstream — and an alias' own rules apply to
+    // the body that is sent.
+    const asked = use.chatPayloadFor(facts['route.attempt']) as MessagesPayload;
+    const payload = { ...asked, model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
 
@@ -224,6 +229,9 @@ const callMessagesUpstream = defineStage<
       });
     }
 
+    // This candidate answered, so it is the one a follow-up turn carrying our own state
+    // must come back to.
+    use.selectAffinity(candidate);
     const metered = meterMessages(result.events, identity);
     return move({
       ...facts,
@@ -267,9 +275,16 @@ const meterMessages = (
 };
 
 /** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities =>
-  usage === undefined ? {} : tokenUsageFromBillableUsage(usage) as unknown as UsageQuantities;
+ *  statement from reporting zero.
+ *
+ *  A billed entity is keyed by billing metric, which is not the shape a protocol reports
+ *  in — so the reading is converted here rather than cast. The service tier survives as far
+ *  as `TokenUsage.tier` and no further: a billed entity is an identity and a bag of
+ *  quantities, and the pricing selector the tier feeds has no seat there. */
+const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+  const tokens = tokenUsageFromBillableUsage(usage);
+  return tokens === null ? {} : tokenUsageQuantities(tokens);
+};
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
