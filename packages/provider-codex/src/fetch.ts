@@ -113,14 +113,16 @@ export const callCodexImagesGenerations = async (opts: CallCodexImagesGeneration
   const prepared = await prepareCodexImageCall(opts);
   if (!prepared.ok) return { modelKey: opts.model.id, response: prepared.response };
   const body = { ...opts.body, model: opts.model.id };
-  return await performImageCall(opts, prepared.accessToken, CODEX_IMAGES_GENERATIONS_PATH, body, prepared.turnId, prepared.effectivePlan, false);
+  const request: CodexImageCallRequest = { path: CODEX_IMAGES_GENERATIONS_PATH, body, turnId: prepared.turnId };
+  return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
 };
 
 export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
   const prepared = await prepareCodexImageCall(opts);
   if (!prepared.ok) return { modelKey: opts.model.id, response: prepared.response };
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
-  return await performImageCall(opts, prepared.accessToken, CODEX_IMAGES_EDITS_PATH, body, prepared.turnId, prepared.effectivePlan, false);
+  const request: CodexImageCallRequest = { path: CODEX_IMAGES_EDITS_PATH, body, turnId: prepared.turnId };
+  return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
@@ -715,15 +717,24 @@ const performAlphaSearchCall = async (
   return { modelKey: opts.model.id, response };
 };
 
+// The fixed per-request inputs for one Codex image call. The path, body, and
+// turn id are stable for the whole call, so the entry sites bundle them once
+// and retries re-pass the same bundle rather than threading three positional
+// arguments on every recursion.
+interface CodexImageCallRequest {
+  path: string;
+  body: Record<string, unknown>;
+  turnId: string;
+}
+
 const performImageCall = async (
   opts: CodexBackendCallBase & { fallbackPlanType: string | undefined },
+  request: CodexImageCallRequest,
   accessToken: CodexAccessTokenEntry,
-  path: string,
-  body: Record<string, unknown>,
-  turnId: string,
   effectivePlan: CodexPlanObservation,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
+  const { path, body, turnId } = request;
   const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
   const attempt = await retryCodexAccess401(
     opts,
@@ -733,7 +744,7 @@ const performImageCall = async (
     async entry => {
       const refreshedPlan = codexPlanObservation(entry) ?? effectivePlan;
       if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
-      return await performImageCall(opts, entry, path, body, turnId, refreshedPlan, true);
+      return await performImageCall(opts, request, entry, refreshedPlan, true);
     },
     resp => ({ modelKey: opts.model.id, response: resp }),
     effectivePlan,
