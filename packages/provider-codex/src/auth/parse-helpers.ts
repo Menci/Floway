@@ -10,6 +10,17 @@ export const requireObject = (value: unknown, where: string): Record<string, unk
   return value;
 };
 
+// The shared plain-object + allowlist scaffold used by the state and config
+// asserters: reject non-plain-objects first, then any key not in the set.
+export const assertAllowedObjectKeys = (value: unknown, where: string, allowed: ReadonlySet<string>): Record<string, unknown> => {
+  if (!isObject(value)) throw new TypeError(`${where} must be a plain object`);
+  const obj = value;
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) throw new TypeError(`${where} has unexpected key '${key}'`);
+  }
+  return obj;
+};
+
 export const requireString = (value: unknown, where: string): string => {
   if (typeof value !== 'string' || value === '') throw new TypeError(`${where} must be a non-empty string`);
   return value;

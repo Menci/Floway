@@ -2,7 +2,7 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import { isUnsafeObjectKey } from './auth/parse-helpers.ts';
+import { assertAllowedObjectKeys, isUnsafeObjectKey } from './auth/parse-helpers.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
@@ -121,9 +121,13 @@ const ALLOWED_CREDENTIAL_KEYS_MAP: Record<keyof CodexAccountCredential, true> = 
   quotaSnapshot: true,
 };
 
+const CREDENTIAL_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_CREDENTIAL_KEYS_MAP));
+
 const ALLOWED_STATE_KEYS_MAP: Record<keyof CodexUpstreamState, true> = {
   accounts: true,
 };
+
+const STATE_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_STATE_KEYS_MAP));
 
 const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> = {
   token: true,
@@ -133,21 +137,17 @@ const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof CodexAccessTokenEntry, true> =
   planObservedAt: true,
 };
 
+const ACCESS_TOKEN_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_ACCESS_TOKEN_KEYS_MAP));
+
 const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof CodexQuotaSnapshotEntry, true> = {
   fetchedAt: true,
   data: true,
 };
 
+const QUOTA_SNAPSHOT_ALLOWED_KEYS: ReadonlySet<string> = new Set(Object.keys(ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP));
+
 const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_ACCESS_TOKEN_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, where, ACCESS_TOKEN_ALLOWED_KEYS);
   if (typeof obj.token !== 'string' || obj.token === '') {
     throw new TypeError(`${where}.token must be a non-empty string`);
   }
@@ -173,15 +173,7 @@ const assertCodexAccessTokenEntry = (value: unknown, where: string): void => {
 // only confirm the wrapper is a plain object so an unrelated key (array,
 // scalar) doesn't slip past.
 const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, where, QUOTA_SNAPSHOT_ALLOWED_KEYS);
   if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
@@ -204,15 +196,7 @@ const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void =
 };
 
 const assertCodexAccountCredential = (value: unknown, where: string): void => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`${where} must be a plain object`);
-  }
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_CREDENTIAL_KEYS_MAP, key)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, where, CREDENTIAL_ALLOWED_KEYS);
   if (obj.chatgptAccountId !== null && (typeof obj.chatgptAccountId !== 'string' || obj.chatgptAccountId === '')) {
     throw new TypeError(`${where}.chatgptAccountId must be a non-empty string or null`);
   }
@@ -245,17 +229,9 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
 };
 
 export function assertCodexUpstreamState(value: unknown): asserts value is CodexUpstreamState {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('CodexUpstreamState must be a plain object');
-  }
-  const obj = value as Record<string, unknown>;
   // state_json round-trips through canonical serialization, so any surviving
   // key is persisted. Reject unknown keys to keep the on-disk shape closed.
-  for (const key of Object.keys(obj)) {
-    if (!Object.hasOwn(ALLOWED_STATE_KEYS_MAP, key)) {
-      throw new TypeError(`CodexUpstreamState has unexpected key '${key}'`);
-    }
-  }
+  const obj = assertAllowedObjectKeys(value, 'CodexUpstreamState', STATE_ALLOWED_KEYS);
   if (!Array.isArray(obj.accounts)) {
     throw new TypeError('CodexUpstreamState.accounts must be an array');
   }
