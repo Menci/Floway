@@ -97,14 +97,14 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
-const prepareCodexImageCall = async (opts: CodexBackendCallBase & { fallbackPlanType: string | undefined }): Promise<{ ok: true; accessToken: CodexAccessTokenEntry; effectivePlan: CodexPlanObservation; turnId: string } | { ok: false; modelKey: string; response: Response }> => {
+const prepareCodexImageCall = async (opts: CodexBackendCallBase & { fallbackPlanType: string | undefined }): Promise<{ ok: true; accessToken: CodexAccessTokenEntry; effectivePlan: CodexPlanObservation; turnId: string } | { ok: false; response: Response }> => {
   const ready = await prepareCodexCall(opts);
-  if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
+  if (!ready.ok) return { ok: false, response: ready.response };
   // An account whose plan is unknown falls back to a fail-open sentinel: the
   // upstream gate only withholds images from an explicitly `free` plan.
   const effectivePlan = codexPlanObservation(ready.accessToken)
     ?? (opts.fallbackPlanType === undefined ? { planType: '' } : { planType: opts.fallbackPlanType });
-  if (!codexPlanSupportsImages(effectivePlan.planType)) return { ok: false, modelKey: opts.model.id, response: imageUnavailableResult(opts.model.id).response };
+  if (!codexPlanSupportsImages(effectivePlan.planType)) return { ok: false, response: imageUnavailableResult(opts.model.id).response };
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
   return { ok: true, accessToken: ready.accessToken, effectivePlan, turnId };
 };
