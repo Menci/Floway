@@ -85,11 +85,17 @@ const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
  * The epilogue: what the run answered with, as a response.
  *
  * This family writes its own rather than going through `serveThrough`, on two counts that
- * belong to the seam rather than to it. A carried document goes out under the upstream's own
- * media type — including the upstream that declared none, which `Rendered.contentType` has no
- * value for — and a transcription's stream states its own outcome in its last event, which is
- * what settlement has to be told and what `DeferredUsage` cannot carry. Fold both into the
- * seam and this handler is `serveThrough` again.
+ * belong to the seam rather than to it.
+ *
+ * A carried document goes out under the upstream's own media type, and that includes the
+ * upstream which declared none — a value `Rendered.contentType` cannot hold.
+ *
+ * And a transcription's stream states its own outcome in its last event, which is exactly the
+ * shape `serveThrough`'s open decision on truncated streams names as the fix: the family's
+ * meter reports how the stream ended, because it is the one place that knows. `DeferredUsage`
+ * carries only what was billed, so this family settles its own — the write still registered
+ * while the request is live, on a promise that resolves with both. Give the seam these two
+ * and this handler is `serveThrough` again.
  */
 export const audioTranscriptions = async (c: Context): Promise<Response> => {
   const ingress = await readIngress(c);
