@@ -2,6 +2,7 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
+import { isUnsafeObjectKey } from './auth/parse-helpers.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
@@ -189,15 +190,13 @@ const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
   }
 };
 
-const isUnsafeMapKey = (key: string): boolean => key === '' || key === '__proto__' || key === 'constructor' || key === 'prototype';
-
 const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    if (isUnsafeMapKey(key)) {
+    if (key === '' || isUnsafeObjectKey(key)) {
       throw new TypeError(`${where} has invalid active limit key '${key}'`);
     }
     assertCodexQuotaSnapshotEntry(obj[key], `${where}.${key}`);

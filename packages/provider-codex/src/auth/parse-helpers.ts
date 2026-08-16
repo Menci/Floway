@@ -23,3 +23,6 @@ export const optionalString = (value: unknown, where: string): string | null => 
   if (typeof value !== 'string') throw new TypeError(`${where} must be a string when present`);
   return value;
 };
+
+// Guards prototype-pollution keys on objects used as maps.
+export const isUnsafeObjectKey = (key: string): boolean => key === '__proto__' || key === 'constructor' || key === 'prototype';

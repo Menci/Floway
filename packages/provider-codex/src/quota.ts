@@ -1,13 +1,12 @@
+import { isUnsafeObjectKey } from './auth/parse-helpers.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexQuotaSnapshot, type CodexQuotaSnapshotMap } from './state.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export const CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT = 'unknown';
 
-const isUnsafeActiveLimitKey = (key: string): boolean => key === '__proto__' || key === 'constructor' || key === 'prototype';
-
 export const codexQuotaActiveLimitKey = (snapshot: CodexQuotaSnapshot): string => {
   const key = snapshot.active_limit?.trim();
-  return key && !isUnsafeActiveLimitKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
+  return key && !isUnsafeObjectKey(key) ? key : CODEX_QUOTA_UNKNOWN_ACTIVE_LIMIT;
 };
 
 interface ParseCodexQuotaOptions {
