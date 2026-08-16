@@ -20,11 +20,13 @@ const { Button, Field, Link, Spinner, Text } = fluentComponents;
 
 type OAuthFlow = 'oauth' | 'setup-token';
 
+type OAuthImportRecord = Extract<UpstreamRecord, { kind: 'codex' | 'claude-code' }>;
+
 type OAuthCallbackImportProps =
   | {
       kind: 'codex';
       hasAccount: boolean;
-      record: UpstreamRecord;
+      record: OAuthImportRecord;
       getValues: () => UpstreamEditorValues;
       onImported: (patch: { config?: unknown; state?: unknown }) => void;
     }
@@ -32,7 +34,7 @@ type OAuthCallbackImportProps =
       kind: 'claude-code';
       flowKind: OAuthFlow;
       hasAccount: boolean;
-      record: UpstreamRecord;
+      record: OAuthImportRecord;
       getValues: () => UpstreamEditorValues;
       onImported: (patch: { config?: unknown; state?: unknown }) => void;
     };
