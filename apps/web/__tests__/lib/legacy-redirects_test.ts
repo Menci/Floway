@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { legacyRedirectTarget } from '../src/lib/legacy-redirects';
+import { legacyRedirectTarget } from '../../src/lib/legacy-redirects';
 
 describe('legacy dashboard route redirects', () => {
   it.each([
