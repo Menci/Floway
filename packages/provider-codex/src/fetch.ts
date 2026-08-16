@@ -125,7 +125,6 @@ export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): P
   return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
 };
 
-// Pre-fetch gates + initial access-token mint.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
   if (opts.account.state !== 'active') {
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
