@@ -1,0 +1,26 @@
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+
+import { LanguageSelector } from '../../src/components/language-selector';
+import { i18n, setLanguage } from '../../src/i18n';
+import { stubLocalStorage } from '../local-storage-stub';
+import { renderInApp } from '../render';
+
+describe('LanguageSelector', () => {
+  const storage = stubLocalStorage();
+
+  it('switches the dashboard language and remembers the choice', async () => {
+    await setLanguage('en');
+
+    renderInApp(<LanguageSelector />);
+    const button = screen.getByRole('combobox', { name: 'Language' });
+    expect(button.textContent).toContain('English');
+
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByRole('option', { name: '简体中文' }));
+
+    await waitFor(() => expect(i18n.language).toBe('zh-Hans'));
+    expect(button.textContent).toContain('简体中文');
+    await waitFor(() => expect(storage.get('floway-language')).toBe('zh-Hans'));
+  });
+});

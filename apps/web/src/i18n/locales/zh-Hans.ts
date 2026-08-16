@@ -5,6 +5,7 @@ const zhHansCN = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      language: '语言',
       loading: '加载中…',
       on: '开',
       off: '关',

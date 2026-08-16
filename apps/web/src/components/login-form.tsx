@@ -5,6 +5,7 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { fluentComponents } from '../fluent';
+import { LanguageSelector } from './language-selector';
 import { FlowayLogo } from './logo';
 import { Trans, useTranslation } from '../i18n/translation';
 import { Input } from './ui/fluent-form-controls';
@@ -87,7 +88,10 @@ export function LoginForm() {
   const passwordMessage = errors.password?.message ?? credentialError ?? null;
 
   return (
-    <Panel className="w-[min(440px,100%)]">
+    <Panel className="relative w-[min(440px,100%)]">
+      <div className="absolute right-[var(--floway-panel-inset)] top-[var(--floway-panel-inset)]">
+        <LanguageSelector />
+      </div>
       <header className="grid justify-items-center">
         <FlowayLogo />
       </header>

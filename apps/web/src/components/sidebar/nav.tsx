@@ -12,6 +12,7 @@ import { NavSelectionIndicator } from './nav-selection-indicator';
 import { accountPage, dashboardPages, navGroups } from './pages';
 import { useTranslation } from '../../i18n/translation';
 import { useAuthStore } from '../../stores/auth-store';
+import { LanguageSelector } from '../language-selector';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { ScrollArea } from '../ui/scroll-area';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
@@ -165,6 +166,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.xaml#L375
           https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L1585-L1626 */}
       <NavDrawerFooter className="!bg-transparent !gap-y-1 !px-[10px] !py-3">
+        <LanguageSelector className="w-full [&_button]:w-full" />
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
           <SidebarLink
