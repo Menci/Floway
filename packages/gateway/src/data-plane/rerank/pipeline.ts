@@ -22,7 +22,7 @@ import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { defineStage, move, compose } from '@floway-dev/pipeline';
-import { parseDecimalString, type RerankProtocol, type RerankSourceProtocol } from '@floway-dev/protocols/common';
+import { parseDecimalString, renderErrorEnvelope, upstreamErrorMessage, type RerankProtocol, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import {
   parseRerankResponse,
   parseRerankUsage,
@@ -88,23 +88,38 @@ const emitRerank = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.rerank.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
+        'response.rerank.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
         // happened, and a 429 arriving as a 200 is not that.
         'response.http.status': answer.status,
       };
     }
-    return {
-      ...rest,
-      'response.http.headers': forClient,
-      'response.http.status': 200,
-      'response.rerank.rendered': move(renderRerankResponse(
+    // Translating can fail on an answer that parsed: a result may index a document the
+    // request never sent. The upstream answered and the gateway cannot put that answer in the
+    // protocol the client speaks, which is the gateway failing to serve rather than anything
+    // the client can fix — so it is 502, and a value like every other failure here.
+    let rendered: Record<string, unknown>;
+    try {
+      rendered = renderRerankResponse(
         back['ingress.rerank.sourceProtocol'],
         target,
         answer,
         back['request.rerank.canonical'],
-      )),
+      );
+    } catch (error) {
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.rerank.rendered': move(renderErrorEnvelope(error instanceof Error ? error.message : String(error))),
+        'response.http.status': 502,
+      };
+    }
+    return {
+      ...rest,
+      'response.http.headers': forClient,
+      'response.http.status': 200,
+      'response.rerank.rendered': move(rendered),
     };
   },
 });
@@ -115,7 +130,7 @@ const emitRerank = defineStage<
  * fails over, and even a 400 can be, because the next candidate's path and flags may differ.
  */
 const callRerankUpstream = defineStage<
-  R<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers'>,
+  R<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers' | 'ingress.rerank.sourceProtocol'>,
   R<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -173,7 +188,7 @@ const callRerankUpstream = defineStage<
         ...facts,
         'response.rerank.canonical': {
           status: result.response.status,
-          message: body.text,
+          message: upstreamErrorMessage(body.json) ?? body.text,
           ...('json' in body ? { body: body.json } : {}),
         },
         'response.rerank.targetProtocol': result.target.protocol,
@@ -194,22 +209,54 @@ const callRerankUpstream = defineStage<
       });
     }
 
-    // Every protocol the gateway carries is one it fully understands: the body is parsed
-    // here and re-serialized at the edge, whether or not the two protocols match.
-    const canonical = parseRerankResponse(result.target.protocol, body.json);
-    const usage = parseRerankUsage(result.target.protocol, body.json);
+    // A usage block the reader cannot make sense of is a report we cannot parse, which from
+    // here is no report. It is read before the results, so an answer this gateway could not
+    // model still bills for what the upstream did meter — the two readings are independent
+    // and one of them failing is not a reason to discard the other.
+    let usage: Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'>;
+    try {
+      usage = parseRerankUsage(result.target.protocol, body.json);
+    } catch (error) {
+      use.log.warn('upstream reported usage the rerank protocol cannot read', { error: String(error) });
+      usage = {};
+    }
+    const metered: readonly BillableEntity[] = [{
+      identity,
+      quantities: billed(usage),
+      // A rerank rate can depend on how large the input was and not only on how much of it
+      // there was, so the token total is a pricing input as well as a quantity.
+      ...(usage.totalTokens === undefined ? {} : { pricingFacts: { inputTokens: usage.totalTokens } }),
+    }];
+
+    // An answer the client's own protocol produced is what that client already reads, so the
+    // edge renders it back out unchanged and nothing here has to model it. Reading the results
+    // is what a *translation* needs, and only a cross-protocol run does one — so a result item
+    // this gateway cannot model is a failure there and a field it simply carries here.
+    const translating = facts['ingress.rerank.sourceProtocol'] !== result.target.protocol;
+    let canonical: CanonicalRerankResponse;
+    try {
+      canonical = parseRerankResponse(result.target.protocol, body.json);
+    } catch (error) {
+      if (translating) {
+        use.log.warn('upstream answered with results the rerank protocol cannot read', { error: String(error) });
+        return move({
+          ...facts,
+          'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
+          'response.rerank.targetProtocol': result.target.protocol,
+          'response.http.headers': headers,
+          'response.usage.billable': metered,
+        });
+      }
+      use.log.debug('same-protocol answer carries results this gateway does not model', { error: String(error) });
+      canonical = { raw: body.json as Record<string, unknown>, results: [] };
+    }
+
     return move({
       ...facts,
       'response.rerank.canonical': canonical,
       'response.rerank.targetProtocol': result.target.protocol,
       'response.http.headers': headers,
-      'response.usage.billable': [{
-        identity,
-        quantities: billed(usage),
-        // A rerank rate can depend on how large the input was and not only on how much of
-        // it there was, so the token total is a pricing input as well as a quantity.
-        ...(usage?.totalTokens === undefined ? {} : { pricingFacts: { inputTokens: usage.totalTokens } }),
-      }],
+      'response.usage.billable': metered,
     });
   },
 });

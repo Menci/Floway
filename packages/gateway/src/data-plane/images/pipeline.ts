@@ -19,11 +19,9 @@ import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { compose, defineStage, move } from '@floway-dev/pipeline';
-import { mediaTypeEssence, parseDecimalString, type ModelEndpointKey } from '@floway-dev/protocols/common';
+import { mediaTypeEssence, parseDecimalString, renderErrorEnvelope, upstreamErrorMessage, type ModelEndpointKey } from '@floway-dev/protocols/common';
 import {
-  imagesErrorMessage,
   parseImagesResponse,
-  renderImagesError,
   renderImagesResponse,
   type CanonicalImagesEditsRequest,
   type CanonicalImagesRequest,
@@ -91,7 +89,7 @@ const emitImages = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.images.rendered': move(renderImagesError(answer.message, answer.body)),
+        'response.images.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
         'response.http.status': answer.status,
       };
     }
@@ -174,7 +172,7 @@ const callImagesUpstream = defineStage<
       use.log.warn('upstream refused', { status: result.response.status });
       return answered({
         status: result.response.status,
-        message: imagesErrorMessage(body.json) ?? body.text,
+        message: upstreamErrorMessage(body.json) ?? body.text,
         ...('json' in body ? { body: body.json } : {}),
       }, reportedNothing);
     }

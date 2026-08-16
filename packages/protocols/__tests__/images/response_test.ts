@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { imagesErrorMessage, parseImagesResponse, parseImagesUsage, renderImagesError, renderImagesResponse } from '../../src/images/response.ts';
+import { renderErrorEnvelope, upstreamErrorMessage } from '../../src/common/error-envelope.ts';
+import { parseImagesResponse, parseImagesUsage, renderImagesResponse } from '../../src/images/response.ts';
 
 describe('images response ingress', () => {
   test('the answer is parsed and rendered back whole, fields the gateway does not model included', () => {
@@ -65,11 +66,11 @@ describe('images failures', () => {
   test('an upstream error object is what the client is sent, and anything else becomes the gateway envelope', () => {
     const upstream = { error: { message: 'Your request was rejected', type: 'image_generation_user_error', code: 'moderation_blocked' } };
 
-    expect(imagesErrorMessage(upstream)).toBe('Your request was rejected');
-    expect(renderImagesError('Your request was rejected', upstream)).toBe(upstream);
+    expect(upstreamErrorMessage(upstream)).toBe('Your request was rejected');
+    expect(renderErrorEnvelope('Your request was rejected', upstream)).toBe(upstream);
 
-    expect(imagesErrorMessage('upstream is down')).toBeUndefined();
-    expect(renderImagesError('Model gpt-image-1 is not available on any configured upstream.', undefined))
+    expect(upstreamErrorMessage('upstream is down')).toBeUndefined();
+    expect(renderErrorEnvelope('Model gpt-image-1 is not available on any configured upstream.', undefined))
       .toEqual({ error: { message: 'Model gpt-image-1 is not available on any configured upstream.', type: 'api_error' } });
   });
 });

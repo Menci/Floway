@@ -22,7 +22,7 @@ import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { compose, defineStage, move } from '@floway-dev/pipeline';
-import { parseDecimalString } from '@floway-dev/protocols/common';
+import { parseDecimalString, renderErrorEnvelope, upstreamErrorMessage } from '@floway-dev/protocols/common';
 import {
   parseEmbeddingsResponse,
   renderEmbeddingsResponse,
@@ -87,7 +87,7 @@ const emitEmbeddings = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.embeddings.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
+        'response.embeddings.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
         // happened, and a 429 arriving as a 200 is not that.
@@ -164,7 +164,7 @@ const callEmbeddingsUpstream = defineStage<
       use.log.warn('upstream refused', { status: result.response.status });
       return answered({
         status: result.response.status,
-        message: body.text,
+        message: upstreamErrorMessage(body.json) ?? body.text,
         ...('json' in body ? { body: body.json } : {}),
       }, reportedNothing);
     }

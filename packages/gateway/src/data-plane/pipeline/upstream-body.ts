@@ -35,7 +35,6 @@ export const readUpstreamBody = async (response: Response): Promise<UpstreamBody
 export const unreadableBody = (response: Response, body: UpstreamBody, protocolName: string): Failure => ({
   status: 502,
   message: `The upstream answered ${response.status} with a body ${protocolName} cannot read: ${body.text.slice(0, 200)}`,
-  body: 'json' in body ? body.json : body.text,
 });
 
 /**
