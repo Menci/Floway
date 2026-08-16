@@ -119,13 +119,26 @@ export const projectCustomModels = (
 export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
-  // A configured value is this upstream's own header, so it is written on
-  // every call regardless of what the client sent. Only passthrough rules
-  // depend on the client, and they are already satisfied by admission.
+  // Each name is resolved as a whole: the admitted client values are dropped
+  // and its rules rebuild the name's value list in rule order, so a
+  // passthrough rule reinstates what the client sent and every configured
+  // rule contributes its own value beside it.
+  const valuesByKey = config.ingressHeadersRules.reduce<Map<string, (string | null)[]>>((byKey, rule) => {
+    const values = byKey.get(rule.key);
+    if (values) values.push(rule.value);
+    else byKey.set(rule.key, [rule.value]);
+    return byKey;
+  }, new Map());
+
   const headersForCall = (headers: Headers): Headers => {
     const resolved = new Headers(headers);
-    for (const rule of config.ingressHeadersRules) {
-      if (rule.value !== null) resolved.set(rule.key, rule.value);
+    for (const [key, values] of valuesByKey) {
+      const admitted = resolved.get(key);
+      resolved.delete(key);
+      for (const value of values) {
+        if (value !== null) resolved.append(key, value);
+        else if (admitted !== null) resolved.append(key, admitted);
+      }
     }
     return resolved;
   };

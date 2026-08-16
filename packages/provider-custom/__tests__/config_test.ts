@@ -68,9 +68,29 @@ test('assertCustomUpstreamRecord canonicalizes ingress header rules without coll
   ]);
 });
 
-test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rules', () => {
+test('assertCustomUpstreamRecord keeps several rules under one name', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: 'X-Route', value: null },
+        { key: 'x-route', value: 'appended' },
+        { key: 'x-route', value: '' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-route', value: null },
+    { key: 'x-route', value: 'appended' },
+    { key: 'x-route', value: '' },
+  ]);
+});
+
+test('assertCustomUpstreamRecord rejects invalid ingress header rules', () => {
   for (const [rules, message] of [
-    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: 'other' }], 'duplicate key x-route'],
+    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: null }], 'passes x-route through more than once'],
     [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: 'control\u0001byte' }], 'value is not a valid HTTP header value'],

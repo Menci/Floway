@@ -17,7 +17,7 @@ export const refineCustomIngressHeaderRules = (
   rules: readonly CustomIngressHeaderRuleDraft[],
   context: RefinementCtx,
 ) => {
-  const seen = new Set<string>();
+  const passthroughKeys = new Set<string>();
   for (let index = 0; index < rules.length; index++) {
     const rule = rules[index]!;
     const key = rule.key.trim().toLowerCase();
@@ -26,10 +26,14 @@ export const refineCustomIngressHeaderRules = (
     const nameIssue = customIngressHeaderNameIssue(key);
     if (nameIssue !== null) {
       context.addIssue({ code: 'custom', message: nameMessages[nameIssue], path: ['config', 'ingressHeadersRules', index, 'key'] });
-    } else if (seen.has(key)) {
-      context.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.headers.validation.duplicateName', path: ['config', 'ingressHeadersRules', index, 'key'] });
-    } else {
-      seen.add(key);
+    } else if (rule.value === null) {
+      // Several rules may share a name to send several values, but the
+      // client's own values enter the request once.
+      if (passthroughKeys.has(key)) {
+        context.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.headers.validation.duplicatePassthrough', path: ['config', 'ingressHeadersRules', index, 'value'] });
+      } else {
+        passthroughKeys.add(key);
+      }
     }
 
     if (rule.value !== null && !isCustomIngressHeaderValue(rule.value)) {
