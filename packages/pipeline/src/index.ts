@@ -13,21 +13,27 @@ export type {
   ErasedPass,
   ErasedSide,
   IntoNext,
+  Logger,
+  LogLevel,
   Open,
   PassDecl,
   Pipeline,
   ReturnDecl,
+  RunScope,
+  RunServices,
   Stage,
   ThroughNext,
+  Use,
 } from './stage.ts';
 
 export { compose } from './compose.ts';
 
-export { isDisposable, run } from './run.ts';
-export type { Disposable } from './run.ts';
+export { isReleasable, run } from './run.ts';
+export type { RunResult } from './run.ts';
 
 export {
   createEncoder,
+  createRunEncoder,
   decodeKey,
   encodeKey,
   encodeRun,

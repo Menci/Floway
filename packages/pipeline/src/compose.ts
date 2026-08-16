@@ -9,7 +9,7 @@
 
 import type { Facts } from './facts.ts';
 import { walk } from './run.ts';
-import type { Pipeline, Recorder, Stage } from './stage.ts';
+import type { Pipeline, Stage } from './stage.ts';
 
 export const compose = <Entry extends object, Exit extends object>(
   name: string,
@@ -22,12 +22,17 @@ export const compose = <Entry extends object, Exit extends object>(
 
   stages.forEach((stage, index) => {
     const pass = stage.through ?? stage.into;
+    const terminal = pass === undefined;
 
     if (stage.into !== undefined && index !== stages.length - 1) {
       throw new Error(`compose(${name}): ${stage.name} declares 'into' but is not last`);
     }
-    if (pass === undefined && stage.return === undefined) {
+    if (terminal && stage.return === undefined) {
       throw new Error(`compose(${name}): ${stage.name} declares neither a way down nor a way to answer`);
+    }
+    // A stage that can only answer is where the array ends, whatever is written after it.
+    if (terminal && index !== stages.length - 1) {
+      throw new Error(`compose(${name}): ${stage.name} can only answer, so the stages after it never run`);
     }
     // A stage that may answer must cover what the stages above it declared needing, or
     // short-circuiting leaves them without a fact they said they need.
@@ -65,9 +70,16 @@ export const compose = <Entry extends object, Exit extends object>(
     for (const key of pass.response.needs) neededAbove.add(key);
   });
 
+  // A pipeline has to be able to end. A last stage that only declares `through` must go
+  // down, and there is nothing below it, so the array is unsatisfiable however it runs.
+  const last = stages[stages.length - 1];
+  if (last !== undefined && last.return === undefined && last.into === undefined) {
+    throw new Error(`compose(${name}): ${last.name} is last but can neither answer nor hand off`);
+  }
+
   return {
     name,
     entryNeeds: [...entry] as unknown as readonly (keyof Entry)[],
-    enter: async (facts, services, into?: Recorder) => (await walk(name, stages, 0, facts as Facts, services, into)) as unknown as Exit,
+    enter: async (facts, services, scope) => (await walk(name, stages, 0, facts as Facts, services, scope)) as unknown as Exit,
   };
 };

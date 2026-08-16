@@ -3,7 +3,7 @@
 // space it has never heard of.
 
 import { compose, defineStage, move, transform } from '../src/index.ts';
-import type { Disposable, Pipeline, Slice } from '../src/index.ts';
+import type { Pipeline, Slice } from '../src/index.ts';
 
 export interface CoreFacts {
   'in.text': string;
@@ -12,7 +12,7 @@ export interface CoreFacts {
   /** Failure is a value. The declaration names this key; which arm is in it is a property
    *  of the value, not something a stage declares. */
   'out.result': { readonly ok: string } | { readonly failed: string };
-  'out.body': Disposable & { readonly label: string };
+  'out.body': AsyncDisposable & { readonly label: string };
 }
 
 /** A provider extends the space with its own keys; it never merges into the core. */

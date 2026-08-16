@@ -1,5 +1,6 @@
-// The runner. Three jobs beyond calling stages in order: it holds each stage to its own
-// declaration, it records what happened, and it sweeps what nobody released.
+// The runner. Four jobs beyond calling stages in order: it holds each stage to its own
+// declaration, it records what happened, it tracks what the run owns, and it drains that
+// when the caller says so.
 //
 // **Declarations are checked, never applied.** After a stage hands on — in either
 // direction, and on the answering path too — every key it declared `provides` is there
@@ -8,33 +9,36 @@
 // checked, and checking is the whole of what a declaration is for. A key in both
 // `consumes` and `provides` is a modify: going down, a translation taking the source and
 // putting the target at another key; coming up, a fork taking ownership of every branch's
-// disposable and handing one of them onward.
+// releasable and handing one of them onward.
 
 import type { Event } from './dump.ts';
 import type { Facts } from './facts.ts';
 import { assertHandedOver } from './facts.ts';
-import type { Descend, ErasedSide, Logger, Pipeline, Recorder, Stage } from './stage.ts';
+import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServices, Stage } from './stage.ts';
 
-/** A value that owns a resource. `consumes` on the response side is what claims it.
+/** A value that owns a resource. `consumes` on the response side is what claims one.
  *  Draining to end-of-stream is inherently async, so `Symbol.dispose` cannot express it
  *  and `await using` is the only form consistent with release-is-not-cancel. */
-export interface Disposable {
-  [Symbol.asyncDispose](): Promise<void>;
-}
-
-export const isDisposable = (value: unknown): value is Disposable =>
+export const isReleasable = (value: unknown): value is AsyncDisposable =>
   typeof value === 'object' && value !== null
   && Symbol.asyncDispose in value
-  && typeof (value as Disposable)[Symbol.asyncDispose] === 'function';
+  && typeof (value as AsyncDisposable)[Symbol.asyncDispose] === 'function';
 
 /**
  * Frozen in place, never copied. A stage that hands on what it received hands on the
  * same object, so the record has an identity of its own and "this side changed nothing"
  * is the same test as everywhere else in the design — which is what the dump's folding
  * reads. Freezing is what makes the copy unnecessary: nobody can write to it afterwards.
+ *
+ * Ownership is per key, which is what `consumes` declares, so this is also where the run
+ * learns about a resource: every releasable at a top-level key of a record the runner
+ * accepts is one the run is answerable for until somebody releases it.
  */
-const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'up'): Facts => {
-  for (const [key, value] of Object.entries(record)) assertHandedOver(`${stage} handing ${way} ${key}`, value);
+const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'up', scope: RunScope): Facts => {
+  for (const [key, value] of Object.entries(record)) {
+    assertHandedOver(`${stage} handing ${way} ${key}`, value);
+    if (isReleasable(value)) scope.outstanding.add(value);
+  }
   for (const key of decl.provides) {
     if (!(key in record)) throw new Error(`${stage}: declared providing ${key} but did not`);
   }
@@ -45,7 +49,7 @@ const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'u
   return Object.freeze(record);
 };
 
-const NO_CONSUMES: readonly string[] = [];
+const NONE: readonly string[] = [];
 
 export const walk = async (
   pipeline: string,
@@ -53,39 +57,39 @@ export const walk = async (
   index: number,
   facts: Facts,
   services: object,
-  into: Recorder | undefined,
+  scope: RunScope,
 ): Promise<Facts> => {
   const stage = stages[index];
   if (stage === undefined) throw new Error(`${pipeline}: ran off the end without answering`);
-  const stageId = into === undefined ? 0 : into.nextStageId++;
-  const parentStageId = into?.parentStageId ?? null;
+  const stageId = scope.nextStageId++;
+  const parentStageId = scope.parentStageId;
   const pass = stage.through ?? stage.into;
   const branches: Facts[] = [];
 
   // Once, on the way in: what this stage initially saw. A fork is not this event
   // repeating — it is several *children* naming this stage as their parent, each entered
   // by its own descent, so the shape of a run is in the ids.
-  into?.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
+  scope.emit({ type: 'stage.entered', stageId, name: stage.name, parentStageId, facts });
 
   const descend: Descend = async (produced, target) => {
-    const handed = handOn(produced, pass!.request, stage.name, 'down');
-    const outerParent = into?.parentStageId ?? null;
-    if (into !== undefined) into.parentStageId = stageId;
+    const handed = handOn(produced, pass!.request, stage.name, 'down', scope);
+    const outerParent = scope.parentStageId;
+    scope.parentStageId = stageId;
     try {
-      if (target !== undefined) requireEntry(target, handed);
+      if (target !== undefined) requireEntry(target, handed, `${stage.name} handing off`);
       const out = target === undefined
-        ? await walk(pipeline, stages, index + 1, handed, services, into)
-        : (await target.enter(handed as object, services, into)) as Facts;
+        ? await walk(pipeline, stages, index + 1, handed, services, scope)
+        : (await target.enter(handed as object, services, scope)) as Facts;
       branches.push(out);
       return out;
     } finally {
-      if (into !== undefined) into.parentStageId = outerParent;
+      scope.parentStageId = outerParent;
     }
   };
 
   // A stage that declared no way down is handed no continuation at all, which is the
   // whole of what shape 1 means, so it is called with one fewer argument.
-  const use = { ...services, log: loggerFor(services, stage.name, stageId, into) };
+  const use = { ...services, log: loggerFor(services, stage.name, stageId, scope) };
   const call = stage.execute as unknown as (...args: readonly unknown[]) => Promise<Facts>;
   const produced = pass === undefined
     ? await call(facts, use)
@@ -95,62 +99,99 @@ export const walk = async (
   // closed set it declared it would answer with. Answering is the same rule as handing
   // down: the stage returns the whole record, and nothing is merged on its behalf.
   if (branches.length === 0) {
-    if (stage.return === undefined) throw new Error(`${stage.name}: answered without declaring 'return'`);
-    const answer = handOn(produced, { needs: NO_CONSUMES, consumes: NO_CONSUMES, provides: stage.return.provides }, stage.name, 'up');
-    into?.emit({ type: 'stage.leaved', stageId, facts: answer });
+    if (stage.return === undefined) {
+      throw new Error(pass === undefined
+        ? `${stage.name}: answered without declaring 'return'`
+        : `${stage.name}: returned without calling next, and declares no 'return'`);
+    }
+    const answer = handOn(produced, { needs: NONE, consumes: NONE, provides: stage.return.provides }, stage.name, 'up', scope);
+    scope.emit({ type: 'stage.leaved', stageId, facts: answer });
     return answer;
   }
 
-  // It forked: every disposable it received must have been declared, and the branches it
-  // did not adopt are its own to release. This is checked at runtime because that is the
-  // level the property lives at — whether a stage branches is invisible in its signature.
+  // It forked: every releasable it received must have been declared, because the branches
+  // it did not adopt are its own. This is checked at runtime because that is the level the
+  // property lives at — whether a stage branches is invisible in its signature.
   if (branches.length > 1) {
     const received = new Set<string>();
     for (const branch of branches) {
-      for (const [key, value] of Object.entries(branch)) if (isDisposable(value)) received.add(key);
+      for (const [key, value] of Object.entries(branch)) if (isReleasable(value)) received.add(key);
     }
     const undeclared = [...received].filter(key => !pass!.response.consumes.includes(key));
     if (undeclared.length > 0) {
       throw new Error(
-        `${stage.name}: called next ${branches.length} times and received disposables `
+        `${stage.name}: called next ${branches.length} times and received releasables `
         + `it did not declare consuming: ${undeclared.join(', ')}`,
       );
     }
-    for (const branch of branches) {
-      if (branch === produced) continue;
-      for (const [key, value] of Object.entries(branch)) {
-        // Releasing is resource management, not content: the record already holds what
-        // this branch did, and whether its body was drained is not a fact about the run.
-        if (isDisposable(value) && produced[key] !== value) await value[Symbol.asyncDispose]();
-      }
+  }
+
+  const handedUp = handOn(produced, pass!.response, stage.name, 'up', scope);
+
+  // 「对 consumes 的都 dispose，对没 consumes 的就透传」. A key this stage declared it
+  // consumes is one it took ownership of, so what it received there and did not hand on is
+  // released now — whether it descended once or many times, since ownership is a
+  // declaration and not an arity. The test is over *values*, not keys, so a releasable that
+  // came back under one key and rides up under another survives.
+  const kept = new Set(Object.values(handedUp).filter(isReleasable));
+  for (const branch of branches) {
+    for (const key of pass!.response.consumes) {
+      const value = branch[key];
+      if (isReleasable(value) && !kept.has(value)) await release(value, scope);
     }
   }
 
-  const handedUp = handOn(produced, pass!.response, stage.name, 'up');
-  into?.emit({ type: 'stage.leaved', stageId, facts: handedUp });
+  scope.emit({ type: 'stage.leaved', stageId, facts: handedUp });
   return handedUp;
 };
 
-const requireEntry = (target: Pipeline<object, object>, handed: Facts): void => {
+/** Released once, by whoever gets there first. A stage may release in its own body with
+ *  `await using`, and the runner is the backstop — so it must not drain the same body a
+ *  second time. */
+const release = async (value: AsyncDisposable, scope: RunScope): Promise<void> => {
+  if (!scope.outstanding.delete(value)) return;
+  await value[Symbol.asyncDispose]();
+};
+
+const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: string): void => {
   for (const key of target.entryNeeds) {
     if (!(String(key) in handed)) {
-      throw new Error(`${target.name}: entry needs ${String(key)}, which the caller did not bring`);
+      throw new Error(`${who}: ${target.name} needs ${String(key)}, which it was not given`);
     }
   }
 };
 
 /** Each stage gets its own logger — the one capability the framework specializes by
  *  position. With a dump open its lines land in that stage's record as well as going to
- *  the global sink, which is why `stage.log` is one of the dump's events. */
-const loggerFor = (services: object, name: string, stageId: number, into: Recorder | undefined): Logger => {
-  const sink = (services as { readonly log?: Logger }).log;
-  const line = (level: 'debug' | 'info' | 'warn' | 'error') =>
+ *  the global sink, which is why `stage.log` is one of the dump's events.
+ *
+ *  The fields are snapshotted where the line is written, because a stored line must be a
+ *  state that existed: the caller keeps its own object and the record must not drift with
+ *  it. This is the same reason the record itself is frozen at handover. */
+const loggerFor = (services: object, name: string, stageId: number, scope: RunScope): Logger => {
+  const sink = (services as RunServices).log;
+  const line = (level: LogLevel) =>
     (message: string, fields?: Readonly<Record<string, unknown>>): void => {
-      sink?.[level](message, { stage: name, ...fields });
-      into?.emit({ type: 'stage.log', stageId, level, message, fields });
+      const stamped = { stage: name, ...fields };
+      sink?.[level](message, stamped);
+      scope.emit({ type: 'stage.log', stageId, level, message, fields: Object.freeze({ ...fields }) });
     };
   return { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 };
+
+export interface RunResult<Exit> {
+  readonly facts: Exit;
+  /** Empty unless the prologue resolved a dump sink. Recording is conditional, and this
+   *  is the same list the sink was given, event by event, as they happened. */
+  readonly events: readonly Event[];
+  /**
+   * What the run still owns. Release is not cancel — this drains to end-of-stream, because
+   * an aborted connection cannot be reused and leaves its billing unsettled — so the
+   * caller decides *when*, after the response is on its way. Awaiting it before handing
+   * the answer back would eat a streaming family's frames.
+   */
+  readonly drain: () => Promise<void>;
+}
 
 /**
  * The entry to the pipeline system. An HTTP handler, a WebSocket handler and a stage
@@ -158,31 +199,39 @@ const loggerFor = (services: object, name: string, stageId: number, into: Record
  * ordinary position of a caller — which is what "requires no capability" means. The
  * services are the prologue's own wiring, built per run and fixed for it.
  */
-export const run = async <Entry extends object, Exit extends object, S extends object>(
+export const run = async <Entry extends object, Exit extends object, S extends RunServices>(
   pipeline: Pipeline<Entry, Exit>,
   initial: Entry,
   services: S,
-): Promise<{ readonly facts: Exit; readonly events: readonly Event[] }> => {
+): Promise<RunResult<Exit>> => {
   for (const [key, value] of Object.entries(initial)) assertHandedOver(`prologue ${key}`, value);
-  for (const key of pipeline.entryNeeds) {
-    if (!(String(key) in initial)) {
-      throw new Error(`run(${pipeline.name}): entry needs ${String(key)}, which the caller did not bring`);
-    }
-  }
+  requireEntry(pipeline as unknown as Pipeline<object, object>, initial as Facts, `run(${pipeline.name})`);
 
+  // With no dump sink resolved in the prologue, none of the recording happens.
+  const sink = services.dump;
   const events: Event[] = [];
-  const recorder: Recorder = { emit: event => { events.push(event); }, parentStageId: null, nextStageId: 1 };
-  let facts: Facts = {};
+  const scope: RunScope = {
+    emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
+    outstanding: new Set<AsyncDisposable>(),
+    parentStageId: null,
+    nextStageId: 1,
+  };
+  // The first state the record is in is the one the prologue built, and it is frozen here
+  // so it cannot be rewritten after the run has recorded it.
+  Object.freeze(initial);
+
+  const drain = async (): Promise<void> => {
+    for (const value of [...scope.outstanding]) await release(value, scope);
+  };
+
   try {
-    facts = (await pipeline.enter(initial, services, recorder)) as unknown as Facts;
-    return { facts: facts as unknown as Exit, events };
-  } finally {
-    // Whatever is still outstanding belongs to the run, including a disposable that was
-    // declared by nobody and rode all the way up. No stage-level rule carries this
-    // guarantee, and it holds whether the run answered or threw — a stage that throws
-    // must not abandon an open upstream body. Release is not cancel: a real body is
-    // drained to end-of-stream, because an aborted connection cannot be reused and leaves
-    // its billing unsettled.
-    for (const value of Object.values(facts)) if (isDisposable(value)) await value[Symbol.asyncDispose]();
+    const facts = (await pipeline.enter(initial, services, scope)) as unknown as Exit;
+    return { facts, events, drain };
+  } catch (error) {
+    // A run that threw has nothing left to hand back, so there is nothing to defer for:
+    // draining here is what stops a bug from abandoning every body opened below it. The
+    // events are already with the sink, so the dump of the run that 500'd survives.
+    await drain();
+    throw error;
   }
 };

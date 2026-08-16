@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { attemptPipeline, makeProvider, servePipeline } from './fixtures.ts';
-import { encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
+import { createRunEncoder, encodeRun, isSecret, move, run, secret, storedSecret, streamFact, toNdjson } from '../src/index.ts';
 import type { DumpEvent, Event, Stored } from '../src/index.ts';
 
-const NO_SERVICES = {};
+/** The dump only records when the prologue resolved a sink, so these runs bring one. */
+const RECORDING = { dump: () => {} };
 
 const refsIn = (value: Stored, out: number[] = []): number[] => {
   if (typeof value !== 'object' || value === null) return out;
@@ -47,7 +48,7 @@ describe('the dump encoding', () => {
   // that has not arrived. That is what makes the stream emittable as it happens.
   it('never refers forward past the event it is in', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b c' }), NO_SERVICES);
+    const { events } = await run(serve, move({ 'in.text': 'a b c' }), RECORDING);
     let highest = 0;
     for (const event of encodeRun(events)) {
       if (event.type === 'object') {
@@ -96,10 +97,14 @@ describe('the dump encoding', () => {
     expect(written).toContain('"$secret"');
   });
 
+  // Two separately constructed wrappers around the same secret, which is what a diff
+  // across two events actually compares.
   it('gives the same secret the same hash at two events, so a diff reports no change', () => {
-    const token = secret('a-token-that-is-quite-long-indeed');
-    expect(storedSecret(token).hash).toBe(storedSecret(token).hash);
-    expect(storedSecret(secret('another-token-entirely-different')).hash).not.toBe(storedSecret(token).hash);
+    const first = secret('a-token-that-is-quite-long-indeed');
+    const second = secret('a-token-that-is-quite-long-indeed');
+    expect(first).not.toBe(second);
+    expect(storedSecret(first).hash).toBe(storedSecret(second).hash);
+    expect(storedSecret(secret('another-token-entirely-different')).hash).not.toBe(storedSecret(first).hash);
   });
 
   it('masks a short secret entirely rather than showing most of it', () => {
@@ -117,7 +122,7 @@ describe('the dump encoding', () => {
   // `parentStageId` — but it carries `facts` only when they differ from its parent's.
   it('folds an entry that carries nothing of its own, and drops an exit that does', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['steady']));
-    const { events } = await run(serve, move({ 'in.text': 'a b' }), NO_SERVICES);
+    const { events } = await run(serve, move({ 'in.text': 'a b' }), RECORDING);
     const encoded = encodeRun(events);
     const entries = encoded.filter(e => e.type === 'stage.entered');
     const rawEntries = events.filter(e => e.type === 'stage.entered');
@@ -133,6 +138,57 @@ describe('the dump encoding', () => {
     expect(encoded).toMatchObject({ stageId: 4, level: 'warn', message: 'slow' });
   });
 
+  // A buffer is atomic and records its full content, the way a string does. Walking it by
+  // index would turn one image into a JSON object with a key per byte — an expansion of
+  // exactly the value most likely to be large, and enough to break the single-`put` sizing.
+  it('records a buffer as bytes rather than as an object keyed by index', () => {
+    const events = encodeFacts(move({ 'request.http.body': new Uint8Array([1, 2, 3, 4, 5]) }));
+    const nodes = events.filter(e => e.type === 'object').flatMap(e => e.nodes);
+    expect(nodes).toEqual([{ $bytes: 'AQIDBAU=' }]);
+  });
+
+  it('keeps a large buffer close to its own size instead of multiplying it', () => {
+    const image = move({ 'request.http.body': new Uint8Array(400 * 1024) });
+    const written = toNdjson(encodeFacts(image)).length;
+    expect(written).toBeLessThan(600 * 1024);
+  });
+
+  // The design's own reason for refusing `undefined` as a removal is that `JSON.stringify`
+  // drops it, so the record and the dump would disagree in the direction that looks
+  // correct. Every value JSON cannot carry therefore gets a tag.
+  it('carries the values JSON cannot', () => {
+    const events = encodeFacts(move({ payload: { missing: undefined, nan: NaN, up: Infinity, down: -Infinity, big: 10n } }));
+    const [node] = events.filter(e => e.type === 'object').flatMap(e => e.nodes);
+    expect(node).toEqual({
+      missing: { $undefined: true },
+      nan: { $number: 'NaN' },
+      up: { $number: 'Infinity' },
+      down: { $number: '-Infinity' },
+      big: { $bigint: '10' },
+    });
+    expect(() => JSON.stringify(events)).not.toThrow();
+  });
+
+  it('keeps a key whose value is undefined, because the record kept it too', () => {
+    const payload = move({ payload: { a: 1, b: undefined } });
+    expect('b' in (payload.payload as object)).toBe(true);
+    const written = toNdjson(encodeFacts(payload));
+    expect(written).toContain('$undefined');
+  });
+
+  // One event in, its encoding out — so a run can be written down as it happens rather
+  // than only once it is over, which is what a live observer and an appended file need.
+  it('encodes one event at a time, with ids carried across calls', () => {
+    const shared = move({ n: 1 });
+    const encode = createRunEncoder();
+    const first = encode({ type: 'stage.entered', stageId: 1, name: 'a', parentStageId: null, facts: move({ x: shared }) as never });
+    const second = encode({ type: 'stage.entered', stageId: 2, name: 'b', parentStageId: 1, facts: move({ y: shared }) as never });
+    expect(first.filter(e => e.type === 'object')).toHaveLength(1);
+    expect(second.filter(e => e.type === 'object')).toHaveLength(0);   // already has an id
+    const entered = second.find(e => e.type === 'stage.entered')!;
+    expect((entered.facts as Record<string, Stored>)['y']).toEqual({ $: 1 });
+  });
+
   it('writes one event per line', () => {
     const ndjson = toNdjson(encodeFacts(move({ a: { n: 1 } })));
     expect(ndjson.endsWith('\n')).toBe(true);
@@ -146,7 +202,7 @@ describe('the dump encoding', () => {
   it('costs a fraction of writing every state independently', async () => {
     const serve = servePipeline(attemptPipeline(makeProvider('tok', []), ['flaky', 'steady']));
     const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
-    const { events } = await run(serve, move({ 'in.text': words }), NO_SERVICES);
+    const { events } = await run(serve, move({ 'in.text': words }), RECORDING);
     const independent = events.reduce((n, e) => n + ('facts' in e ? JSON.stringify(e.facts).length : 0), 0);
     const deduplicated = toNdjson(encodeRun(events)).length;
     expect(deduplicated).toBeLessThan(independent / 2);

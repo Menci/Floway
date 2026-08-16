@@ -62,6 +62,19 @@ describe('compose', () => {
       .toThrow('compose(swallowed): swallows consumes out.result on the way up, which a stage above it needs');
   });
 
+  // A last stage that only declares `through` must go down, and there is nothing below it.
+  it('refuses a pipeline whose last stage can only descend', () => {
+    expect(() => compose('endless', [splitWords]))
+      .toThrow('compose(endless): splitWords is last but can neither answer nor hand off');
+  });
+
+  // A stage that can only answer is where the array ends: anything after it never runs,
+  // and deriving an entry contract from stages that never run would be worse than useless.
+  it('refuses a stage that can only answer with stages written after it', () => {
+    expect(() => compose('unreachable', [callUpstream(provider()), splitWords]))
+      .toThrow('compose(unreachable): callUpstream can only answer, so the stages after it never run');
+  });
+
   // Assembly reasons over declarations, which are strings, so a stage written against a
   // provider's larger space composes beside stages written against the core space with no
   // variance question to lose. This is the composition the architecture exists to make work.

@@ -11,7 +11,6 @@
 // — and `defineStage`'s overloads admit exactly those.
 
 import type { Facts, Handed } from './facts.ts';
-import { assertHandedOver } from './facts.ts';
 
 /** Trait one: answer here. Only `provides`, because nothing came back to need or
  *  consume — the facts below never existed. */
@@ -39,6 +38,8 @@ export type PassDecl<Rq extends object, Down extends object, Up extends object, 
   };
 };
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
 /** Structured, to fit a logger like `@guiiai/logg`. The pipeline defines the shape it
  *  needs and never the implementation, so a foundation package stays runtime-independent. */
 export interface Logger {
@@ -55,6 +56,18 @@ export interface Logger {
  *  gets its own, and with a dump open its lines land in that stage's record. */
 export type Use<S extends object> = S & { readonly log: Logger };
 
+/** What the prologue may put in the container that the runner itself reads. Everything
+ *  else in `S` is the composition's own and the runner never looks at it. */
+export interface RunServices {
+  /** The global sink. A stage's lines always reach it. */
+  readonly log?: Logger;
+  /** Resolved by the prologue when this request is being dumped, and absent otherwise —
+   *  which is how recording stays conditional without a mode flag. */
+  readonly dump?: (event: import('./dump.ts').Event) => void;
+  /** Whatever else the composition wires. The runner reads only the two above. */
+  readonly [key: string]: unknown;
+}
+
 export type ThroughNext<Down extends object, Up extends object> =
   (handed: Handed<Down>) => Promise<Up>;
 
@@ -64,11 +77,18 @@ export type ThroughNext<Down extends object, Up extends object> =
 export type IntoNext<Entry extends object, Up extends object> =
   (handed: Handed<Entry>, target: Pipeline<Entry, Up>) => Promise<Up>;
 
-/** Threaded rather than ambient. A module-level run context saved and restored around an
- *  `await` interleaves two concurrent runs — one dump lost, the other holding both, with
- *  one `stageId` issued twice — and a gateway serves concurrent requests by definition. */
-export interface Recorder {
+/** What one run holds, threaded rather than ambient. A module-level context saved and
+ *  restored around an `await` interleaves two concurrent runs — one dump lost, the other
+ *  holding both, one `stageId` issued twice — and a gateway serves concurrent requests by
+ *  definition. */
+export interface RunScope {
+  /** A no-op when the prologue resolved no dump sink, which is what makes recording
+   *  conditional rather than a mode flag. */
   readonly emit: (event: import('./dump.ts').Event) => void;
+  /** Every releasable the run has accepted and nobody has released. Tracked where it is
+   *  created rather than where it lands, so a body opened below a throw is already known
+   *  before the stack unwinds past it. */
+  readonly outstanding: Set<AsyncDisposable>;
   parentStageId: number | null;
   nextStageId: number;
 }
@@ -77,7 +97,7 @@ export interface Pipeline<Entry extends object, Exit extends object> {
   readonly name: string;
   /** Derived by `compose` from the stages: what nobody below provides, the caller brings. */
   readonly entryNeeds: readonly (keyof Entry)[];
-  readonly enter: (facts: Entry, services: object, into?: Recorder) => Promise<Exit>;
+  readonly enter: (facts: Entry, services: object, scope: RunScope) => Promise<Exit>;
 }
 
 /** What assembly and the runner hold: the same declarations with the key names as
@@ -181,7 +201,7 @@ export const transform = <Rq extends object, Down extends object, Up extends obj
   const { request, response } = open(use);
   const back = await next(request === undefined ? (facts as unknown as Handed<Down>) : await request(facts));
   if (response === undefined) return back as unknown as Handed<Rs>;
-  const up = await response(back);
-  for (const [key, value] of Object.entries(up)) assertHandedOver(`${'response'} handing up ${key}`, value);
-  return up;
+  // The record it hands up goes to the runner, which is where the handover gate lives —
+  // there are two call sites and this is not a third.
+  return await response(back);
 };

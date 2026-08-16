@@ -19,8 +19,10 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { base64 } from '@scure/base';
 
 import type { Facts } from './facts.ts';
+import type { LogLevel } from './stage.ts';
 
 /** What the runner produces, with facts still as live objects. */
 export type Event =
@@ -33,11 +35,10 @@ export type Event =
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly unknown[] }
   | { readonly type: 'stream.end'; readonly streamId: number };
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
 // --- Value kinds the space cannot hold as plain data -------------------------------
 
 const SECRET = Symbol('floway.secret');
+const RENDERED = Symbol('floway.secret.rendered');
 const STREAM = Symbol('floway.stream');
 
 /**
@@ -48,18 +49,23 @@ const STREAM = Symbol('floway.stream');
  */
 export interface Secret<T> {
   readonly [SECRET]: true;
+  readonly [RENDERED]: string;
   /** Reading it is deliberate and greppable. The dump never calls this. */
   readonly reveal: () => T;
 }
 
-export const secret = <T>(value: T, render: (value: T) => string = String): Secret<T> => ({
-  [SECRET]: true,
-  reveal: () => value,
-  // Held for the stored form, so revealing is never what a dump does.
-  ...{ [RENDERED]: render(value) },
-} as Secret<T>);
-
-const RENDERED = Symbol('floway.secret.rendered');
+/** A renderer is required exactly when the value is not already a string, because
+ *  `{length, redacted, hash}` is a statement about a rendering and `String(bytes)` is not
+ *  one anybody would recognise. */
+export function secret(value: string): Secret<string>;
+export function secret<T>(value: T, render: (value: T) => string): Secret<T>;
+export function secret<T>(value: T, render?: (value: T) => string): Secret<T> {
+  return {
+    [SECRET]: true,
+    [RENDERED]: render === undefined ? (value as unknown as string) : render(value),
+    reveal: () => value,
+  };
+}
 
 export const isSecret = (value: unknown): value is Secret<unknown> =>
   typeof value === 'object' && value !== null && SECRET in value;
@@ -78,13 +84,14 @@ export const isStreamFact = (value: unknown): value is StreamFact =>
 /**
  * `{length, redacted, hash}`. `hash` is what lets a reader see that the same secret sat at
  * the same key across two events, so a diff reports no change where none happened;
- * `length` and `redacted` are what it renders.
+ * `length` and `redacted` are what it renders. All three are produced here, because a
+ * reader has nothing to compute them from — that is the point.
  *
  * How much of a secret the redacted form shows at each length is deliberately one
  * function, because the policy is not settled.
  */
 export const storedSecret = (value: Secret<unknown>): StoredSecret => {
-  const rendered = (value as unknown as Record<symbol, string>)[RENDERED];
+  const rendered = value[RENDERED];
   return {
     length: rendered.length,
     redacted: redact(rendered),
@@ -114,6 +121,10 @@ export type Stored =
   | Ref
   | { readonly $stream: number }
   | { readonly $secret: StoredSecret }
+  | { readonly $bytes: string }
+  | { readonly $undefined: true }
+  | { readonly $number: 'NaN' | 'Infinity' | '-Infinity' }
+  | { readonly $bigint: string }
   | Stored[]
   | { readonly [key: string]: Stored };
 
@@ -136,6 +147,19 @@ export const decodeKey = (key: string): string => (key.startsWith('$$') ? key.sl
 const isNode = (value: unknown): value is object => typeof value === 'object' && value !== null;
 
 /**
+ * Every value JSON cannot carry gets its own tag, because a record and a dump that
+ * disagree in the direction that looks correct is the worst way for them to disagree —
+ * which is the same reason `undefined` is not a removal. `JSON.stringify` drops
+ * `undefined`, turns `NaN` and the infinities into `null`, and throws on a `bigint`.
+ */
+const tagged = (value: unknown): Stored | undefined => {
+  if (value === undefined) return { $undefined: true };
+  if (typeof value === 'bigint') return { $bigint: value.toString() };
+  if (typeof value !== 'number' || Number.isFinite(value)) return undefined;
+  return { $number: Number.isNaN(value) ? 'NaN' : value > 0 ? 'Infinity' : '-Infinity' };
+};
+
+/**
  * Ids come from one counter and are taken at first sight, so the ids minted while encoding
  * one event are a contiguous range and only the first needs stating. An id is taken
  * **before** recursing into the object, which is what makes a cycle terminate on its
@@ -145,9 +169,9 @@ const isNode = (value: unknown): value is object => typeof value === 'object' &&
  * earlier event or at one inside this event, never forward into an event that has not
  * arrived. That is what makes the stream emittable as it happens.
  *
- * Large strings are shared by value as well, which is the only handle left when a stage
+ * Bytes and large strings are shared by value, which is the only handle left when a stage
  * deep-clones a payload: every object below the clone is new, and an embedded image is
- * still the same string.
+ * still the same bytes.
  */
 export const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => {
   const shareStringsFrom = options.shareStringsFrom ?? 1024;
@@ -155,11 +179,13 @@ export const createEncoder = (options: { readonly shareStringsFrom?: number } = 
   const stringIds = new Map<string, number>();
   let nextObjectId = 1;
 
-  const encodeFacts = (facts: Facts, emit: (event: DumpEvent) => void): Record<string, Stored> => {
+  const encodeFacts = (facts: Readonly<Record<string, unknown>>, emit: (event: DumpEvent) => void): Record<string, Stored> => {
     const fromObjectId = nextObjectId;
     const nodes: Stored[] = [];
 
     const write = (value: unknown): Stored => {
+      const tag = tagged(value);
+      if (tag !== undefined) return tag;
       if (typeof value === 'string' && value.length >= shareStringsFrom) {
         const known = stringIds.get(value);
         if (known !== undefined) return { $: known };
@@ -178,62 +204,95 @@ export const createEncoder = (options: { readonly shareStringsFrom?: number } = 
       return { $: id };
     };
 
+    // A buffer is atomic and records its full content, the way a string does — walking it
+    // by index would turn one image into a JSON object with a key per byte.
     const body = (value: object): Stored =>
       isSecret(value) ? { $secret: storedSecret(value) }
-        : Array.isArray(value) ? value.map(write)
-          : Object.fromEntries(Object.entries(value).map(([key, child]) => [encodeKey(key), write(child)]));
+        : ArrayBuffer.isView(value) ? { $bytes: base64.encode(bytesOf(value)) }
+          : Array.isArray(value) ? value.map(write)
+            : Object.fromEntries(Object.entries(value).map(([key, child]) => [encodeKey(key), write(child)]));
 
     const encoded = Object.fromEntries(Object.entries(facts).map(([key, value]) => [encodeKey(key), write(value)]));
     if (nodes.length > 0) emit({ type: 'object', fromObjectId, nodes });
     return encoded;
   };
 
-  return { encodeFacts, write: (value: unknown, emit: (event: DumpEvent) => void) => encodeFacts({ value }, emit)['value']! };
+  return { encodeFacts };
 };
 
+const bytesOf = (view: ArrayBufferView): Uint8Array =>
+  new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+
 /**
- * A run's events, encoded. Folding is by identity, which is the convention structural
- * sharing already rests on: a `stage.entered` always appears — it is what puts the stage in
- * the tree, so dropping it would strand its children's `parentStageId` — but it carries
- * `facts` only when they differ from its parent's, and a `stage.leaved` that hands up
- * exactly what its last child handed up carries nothing at all and goes.
+ * One event in, its encoding out — so a run can be written down as it happens rather than
+ * only once it is over, which is what a live observer and an appended file both need.
+ *
+ * Folding is by identity, the convention structural sharing already rests on: a
+ * `stage.entered` always appears — it is what puts the stage in the tree, so dropping it
+ * would strand its children's `parentStageId` — but it carries `facts` only when they
+ * differ from its parent's, and a `stage.leaved` that hands up exactly what its last child
+ * handed up carries nothing at all and goes.
  */
-export const encodeRun = (events: readonly Event[], options?: { readonly shareStringsFrom?: number }): DumpEvent[] => {
+export const createRunEncoder = (options?: { readonly shareStringsFrom?: number }) => {
   const encoder = createEncoder(options);
-  const out: DumpEvent[] = [];
-  const emit = (event: DumpEvent): void => { out.push(event); };
   const entered = new Map<number, { readonly parent: number | null; readonly facts: Facts }>();
   const lastChildLeft = new Map<number, Facts>();
 
-  for (const event of events) {
+  return (event: Event): DumpEvent[] => {
+    const out: DumpEvent[] = [];
+    const emit = (encoded: DumpEvent): void => { out.push(encoded); };
+
     if (event.type === 'stage.entered') {
       const parent = event.parentStageId === null ? undefined : entered.get(event.parentStageId);
       const unchanged = parent !== undefined && parent.facts === event.facts;
       const facts = unchanged ? undefined : encoder.encodeFacts(event.facts, emit);
-      emit({ type: 'stage.entered', stageId: event.stageId, name: event.name, parentStageId: event.parentStageId, ...(facts === undefined ? {} : { facts }) });
+      emit({
+        type: 'stage.entered',
+        stageId: event.stageId,
+        name: event.name,
+        parentStageId: event.parentStageId,
+        ...(facts === undefined ? {} : { facts }),
+      });
       entered.set(event.stageId, { parent: event.parentStageId, facts: event.facts });
-      continue;
+      return out;
     }
+
     if (event.type === 'stage.leaved') {
       const seen = entered.get(event.stageId);
       if (lastChildLeft.get(event.stageId) !== event.facts) {
         emit({ type: 'stage.leaved', stageId: event.stageId, facts: encoder.encodeFacts(event.facts, emit) });
       }
       if (seen?.parent != null) lastChildLeft.set(seen.parent, event.facts);
-      continue;
+      return out;
     }
+
     if (event.type === 'stage.log') {
       const fields = event.fields === undefined ? undefined : encoder.encodeFacts(event.fields, emit);
-      emit({ type: 'stage.log', stageId: event.stageId, level: event.level, message: event.message, ...(fields === undefined ? {} : { fields }) });
-      continue;
+      emit({
+        type: 'stage.log',
+        stageId: event.stageId,
+        level: event.level,
+        message: event.message,
+        ...(fields === undefined ? {} : { fields }),
+      });
+      return out;
     }
+
     if (event.type === 'stream.frame') {
-      emit({ type: 'stream.frame', streamId: event.streamId, frames: event.frames.map(frame => encoder.write(frame, emit)) });
-      continue;
+      const frames = event.frames.map(frame => encoder.encodeFacts({ frame }, emit)['frame']!);
+      emit({ type: 'stream.frame', streamId: event.streamId, frames });
+      return out;
     }
+
     emit(event);
-  }
-  return out;
+    return out;
+  };
+};
+
+/** A whole run at once, for a caller that already has every event. */
+export const encodeRun = (events: readonly Event[], options?: { readonly shareStringsFrom?: number }): DumpEvent[] => {
+  const encode = createRunEncoder(options);
+  return events.flatMap(encode);
 };
 
 /** NDJSON, one event per line, appended in order. A line maps to one SSE `data:` payload,

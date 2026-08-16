@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { CoreFacts, ProviderFacts } from './fixtures.ts';
-import { defineStage } from '../src/index.ts';
+import type { CoreFacts } from './fixtures.ts';
+import { decodeKey, defineStage, encodeKey } from '../src/index.ts';
 import type { Pipeline, Slice } from '../src/index.ts';
 
 type Core<K extends keyof CoreFacts> = Slice<CoreFacts, K>;
@@ -39,12 +39,15 @@ const leakCheck = (): void => gatewayOnly({
 });
 void leakCheck;
 
-// Named so the intent survives a reader who never runs `tsc` — and so the file is a test
-// file by the repository's own convention rather than a stray module.
+// The two `@ts-expect-error` markers above are the assertions: each fails the build if the
+// error it names stops occurring. What is left for runtime is the reader's half of the key
+// escaping, which has no compile-time form.
 describe('what the type layer holds', () => {
-  it('is checked by compiling, and the two @ts-expect-error markers above are the checks', () => {
-    const providerKey: keyof ProviderFacts = 'provider.token';
-    const coreKeys: readonly (keyof CoreFacts)[] = ['in.text', 'in.words', 'route.candidate', 'out.result', 'out.body'];
-    expect(coreKeys).not.toContain(providerKey);
+  it('round-trips a key that begins with a dollar', () => {
+    for (const key of ['$ref', '$defs', '$schema', 'model', '$$literal']) {
+      expect(decodeKey(encodeKey(key))).toBe(key);
+    }
+    expect(encodeKey('$ref')).toBe('$$ref');
+    expect(decodeKey('$$ref')).toBe('$ref');
   });
 });

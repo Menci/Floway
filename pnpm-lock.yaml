@@ -424,10 +424,9 @@ importers:
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
 
   packages/platform:
     dependencies:

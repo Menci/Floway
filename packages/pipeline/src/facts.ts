@@ -53,9 +53,12 @@ export const assertHandedOver = (where: string, value: unknown): void => {
   }
 };
 
-/** A stage sees exactly the keys it declared. `needs` is an assertion, so the projection
- *  is total over them. Facts are not marked `readonly` here: freezing and the gate are
- *  runtime properties, and restating them in the types costs friction and buys nothing. */
+/** The keys a stage's author names, so `needs`, `consumes` and `provides` are checked
+ *  against a closed set and a key from another package's space is unreachable. It is what
+ *  the author sees, not what arrives: the record a stage is handed carries every key in
+ *  flight, and the ones this stage never heard of are the assembly's business. Facts are
+ *  not marked `readonly` here — freezing and the gate are runtime properties, and
+ *  restating them in the types costs friction and buys nothing. */
 export type Slice<F, K extends keyof F> = { [P in K]: F[P] };
 
 /** What a stage hands on: the whole record the next segment runs on, never a delta. The
