@@ -21,7 +21,7 @@ import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import {
   isAudioTranscriptionDoneEvent,
   isAudioTranscriptionObjectFormat,
@@ -161,7 +161,7 @@ const callAudioTranscriptionUpstream = defineStage<
   A<'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
     & { 'response.usage.billable': readonly BillableEntity[]; 'response.http.status': number;
       'response.http.headers': readonly (readonly [string, string])[];
-      'response.http.body': ReadableStream<Uint8Array> & AsyncDisposable; },
+      'response.http.body': ReadableStream<Uint8Array> & Owned; },
   GatewayServices
 >({
   name: 'callAudioTranscriptionUpstream',
@@ -244,9 +244,7 @@ const callAudioTranscriptionUpstream = defineStage<
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over
         // one connection, and a second reader is not something a `ReadableStream` allows.
-        'response.http.body': Object.assign(result.response.body, {
-          [Symbol.asyncDispose]: async (): Promise<void> => { for await (const _event of metered.events) { /* to end of stream */ } },
-        }),
+        'response.http.body': own(result.response.body, async (): Promise<void> => { for await (const _event of metered.events) { /* to end of stream */ } }),
       });
     }
 
@@ -267,10 +265,8 @@ const callAudioTranscriptionUpstream = defineStage<
 /** A body this stage has already read to the end, or one the upstream never sent. The record
  *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
  *  one up; what says an answer was unusable is the failure at the canonical key, not this. */
-const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & AsyncDisposable =>
-  Object.assign(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), {
-    [Symbol.asyncDispose]: (): Promise<void> => Promise.resolve(),
-  });
+const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & Owned =>
+  own(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), (): Promise<void> => Promise.resolve());
 
 const refusal = async (status: number, response: Response): Promise<Failure> => {
   const text = await response.text();

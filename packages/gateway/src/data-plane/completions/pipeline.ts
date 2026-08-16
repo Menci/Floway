@@ -22,7 +22,7 @@ import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   completionsProtocolFrameToSSEFrame,
@@ -212,7 +212,7 @@ interface UpstreamAnswer {
   readonly billable: readonly BillableEntity[];
   /** Every arm hands one up, this stage's own reading included: the record holds a body as a
    *  stream, and `failover` releases the losing attempts' by consuming that key. */
-  readonly body: ReadableStream<Uint8Array> & AsyncDisposable;
+  readonly body: ReadableStream<Uint8Array> & Owned;
 }
 
 /** What the upstream said, on the shape the request asked for. Which of the four this is is
@@ -264,19 +264,15 @@ const readUpstream = async (
     billable: called,
     // Releasing this body is draining those frames: they are one reader over one connection,
     // and a second reader is not something a `ReadableStream` allows.
-    body: Object.assign(response.body, {
-      [Symbol.asyncDispose]: async (): Promise<void> => { for await (const _frame of metered.frames) { /* to end of stream */ } },
-    }),
+    body: own(response.body, async (): Promise<void> => { for await (const _frame of metered.frames) { /* to end of stream */ } }),
   };
 };
 
 /** A body this stage has already read to the end, or one the upstream never sent. The record
  *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
  *  one up; what says an answer was unusable is the failure at the payload key, not this. */
-const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & AsyncDisposable =>
-  Object.assign(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), {
-    [Symbol.asyncDispose]: (): Promise<void> => Promise.resolve(),
-  });
+const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & Owned =>
+  own(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), (): Promise<void> => Promise.resolve());
 
 const refusal = async (response: Response): Promise<Failure> => {
   const text = await response.text();

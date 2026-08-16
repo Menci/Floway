@@ -9,7 +9,7 @@
 // key for key and semantically disjoint.
 
 import type { UsageQuantities } from '../../repo/types.ts';
-import type { Secret } from '@floway-dev/pipeline';
+import type { Secret, Owned } from '@floway-dev/pipeline';
 import type { PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -83,8 +83,11 @@ export interface GatewayFacts {
 
   'response.http.status': number;
   'response.http.headers': readonly (readonly [string, string])[];
-  /** The upstream's body, still open. Whoever declares it consumed owns draining it. */
-  'response.http.body': ReadableStream<Uint8Array> & AsyncDisposable;
+  /** The upstream's body, still open, and marked as something the run answers for. `Owned`
+   *  rather than `AsyncDisposable`: the language puts `Symbol.asyncDispose` on every async
+   *  generator and on no `ReadableStream`, so a structural type would admit an iterator that
+   *  is not a resource and reject the body that is. */
+  'response.http.body': ReadableStream<Uint8Array> & Owned;
 
   /** The authoritative reading, provided closest to the upstream on the dialect it
    *  actually spoke. Every step that changes usage re-provides it. */

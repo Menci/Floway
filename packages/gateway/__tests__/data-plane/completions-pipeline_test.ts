@@ -200,6 +200,42 @@ describe('the completions pipeline', () => {
     await drain();
   });
 
+  // Ownership is claimed, never detected, and until the claim was made the whole mechanism
+  // was inert: `failover` declared it consumes the body, `drain()` existed, and no family
+  // ever marked a body — so a losing attempt's connection stayed open and the winner's was
+  // never drained. This is the property, not the absence of the bug.
+  it('drains the losing attempt-s body at the fork, and the winner-s at the drain', async () => {
+    const drained: string[] = [];
+    const body = (label: string, chunks: readonly string[]): ReadableStream<Uint8Array> => {
+      let index = 0;
+      return new ReadableStream<Uint8Array>({
+        pull: controller => {
+          if (index < chunks.length) { controller.enqueue(new TextEncoder().encode(chunks[index]!)); index += 1; return; }
+          drained.push(label);
+          controller.close();
+        },
+      });
+    };
+    resolves([
+      candidate('up_a', async () => ({
+        response: new Response(body('loser', []), { status: 429, headers: { 'content-type': 'application/json' } }),
+        modelKey: 'k',
+      })),
+      candidate('up_b', async () => ({
+        response: new Response(body('winner', [`data: ${chunk('hi')}\n\n`, 'data: [DONE]\n\n']), {
+          status: 200, headers: { 'content-type': 'text/event-stream' },
+        }),
+        modelKey: 'k',
+      })),
+    ]);
+
+    const { facts, drain } = await serve(entryFacts());
+    // The client's stream is still live: the run answered before anything was drained.
+    expect(facts['response.completions.rendered']).toBeDefined();
+    await drain();
+    expect(drained).toContain('winner');
+  });
+
   // Settlement is above the fork, so a run bills once however many candidates it tried —
   // and it is unconditional, so a run that reached no upstream still writes a row that names
   // no billed entity. Nothing asserted either until the review found the stage was composed
