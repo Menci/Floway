@@ -9,6 +9,9 @@ import {
 } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
+// What /token actually guarantees. A refresh response has been observed to
+// omit `id_token`, so the field is optional here and each caller states
+// whether its own path needs one.
 export interface CodexOAuthRefreshTokens {
   access_token: string;
   refresh_token: string;
@@ -23,13 +26,6 @@ export interface CodexOAuthRefreshTokens {
 export interface CodexOAuthTokens extends CodexOAuthRefreshTokens {
   id_token: string;
 }
-
-// What /token actually guarantees. A refresh response has been observed to
-// omit `id_token`, so the field is optional here and each caller states
-// whether its own path needs one.
-type ParsedCodexOAuthTokens = CodexOAuthRefreshTokens & {
-  id_token?: string;
-};
 
 export const buildCodexAuthorizeUrl = (input: { state: string; codeChallenge: string }): string => {
   const url = new URL(CODEX_AUTHORIZE_URL);
@@ -99,7 +95,7 @@ const codexTokenRequest = async (
   body: URLSearchParams,
   terminalCodes: ReadonlySet<string>,
   fetcher: Fetcher,
-): Promise<ParsedCodexOAuthTokens> => {
+): Promise<CodexOAuthRefreshTokens> => {
   const response = await fetcher(CODEX_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
