@@ -38,31 +38,58 @@ import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from 
 const attemptWith = (...flags: string[]): AttemptSelector => ({ upstreamId: 'u', modelId: 'm', flags });
 
 /**
- * Runs one stage and hands back both directions: the record it passed down, and the record
- * that came back up.
+ * Runs a family's whole interceptor array, in the order its chain runs it, between stages
+ * that declare what its real neighbours declare: an edge that needs the answer, the headers
+ * and the billed set on the way up, and an ending that answers with all three.
  *
- * The sink has to answer at the key the stage above declared it needs, or `compose` refuses
- * the array — that refusal is the assembly check doing its job, and is why the harness is
- * told which key a protocol answers at rather than guessing one.
+ * `compose` refuses an array whose declarations do not line up, so an array that runs here is
+ * one that family's `pipeline.ts` can hold — which is the whole of what these harnesses check
+ * beyond the rewrites themselves.
  */
+const runChain = async (
+  responseKey: string,
+  stages: readonly unknown[],
+  facts: Record<string, unknown>,
+  answer: unknown = { kind: 'value' as const, body: null },
+): Promise<{ readonly down: Record<string, unknown>; readonly up: Record<string, unknown> }> => {
+  let down: Record<string, unknown> = {};
+  const edge = defineStage<
+    Record<string, unknown>,
+    Record<string, unknown>,
+    Record<string, unknown>,
+    Record<string, unknown>
+  >({
+    name: 'edge',
+    through: {
+      request: { needs: [], consumes: [], provides: [] },
+      response: {
+        needs: [responseKey, 'response.http.headers', 'response.usage.billable'],
+        consumes: [],
+        provides: [],
+      },
+    },
+    execute: async (received, next) => await next(received),
+  });
+  const ending = defineStage<Record<string, unknown>, Record<string, unknown>>({
+    name: 'ending',
+    return: { provides: [responseKey, 'response.http.headers', 'response.usage.billable'] },
+    execute: async received => {
+      down = received;
+      return move({ ...received, [responseKey]: answer, 'response.http.headers': [], 'response.usage.billable': [] });
+    },
+  });
+  const { facts: up } = await run(compose('chain', [edge, ...(stages as never[]), ending]), move(facts) as never, {});
+  return { down, up: up as Record<string, unknown> };
+};
+
+/** One stage is the same harness with an array of one. */
 const runStage = async (
   stage: unknown,
   responseKey: string,
   facts: Record<string, unknown>,
   answer: unknown = { kind: 'value' as const, body: null },
-): Promise<{ readonly down: Record<string, unknown>; readonly up: Record<string, unknown> }> => {
-  let down: Record<string, unknown> = {};
-  const sink = defineStage<Record<string, unknown>, Record<string, unknown>>({
-    name: 'sink',
-    return: { provides: [responseKey] },
-    execute: async received => {
-      down = received;
-      return move({ ...received, [responseKey]: answer });
-    },
-  });
-  const { facts: up } = await run(compose('one', [stage as never, sink]), move(facts) as never, {});
-  return { down, up: up as Record<string, unknown> };
-};
+): Promise<{ readonly down: Record<string, unknown>; readonly up: Record<string, unknown> }> =>
+  await runChain(responseKey, [stage], facts, answer);
 
 /** An answer in the shape a wire hands up: frames, read once. */
 const streamOf = <TEvent>(frames: readonly ProtocolFrame<TEvent>[]) => ({
@@ -549,3 +576,94 @@ const usageEvent = (usage: Record<string, unknown>): ProtocolFrame<ResponsesStre
 
 const usageOf = (frame: ProtocolFrame<ResponsesStreamEvent>): Record<string, unknown> =>
   (frame as { event: { response: { usage: Record<string, unknown> } } }).event.response.usage;
+
+// Each array below is the order that family's chain runs, and running it is what says the
+// order is a property of the array rather than of any one stage: assembly refuses
+// declarations that do not line up, and a rewrite that had to see another rewrite's output
+// only sees it from where it sits.
+describe('a family\'s interceptor array, in the order its chain runs it', () => {
+  it('assembles and runs the Messages array', async () => {
+    const { down } = await runChain('response.chat.messages', [
+      stripBillingAttributionFromMessages,
+      disableReasoningOnForcedToolChoiceForMessages,
+      applyRoleCompatibilityToMessages,
+    ], {
+      'request.chat.messages': messagesPayload([{ role: 'system', content: 'inline' }], {
+        system: 'x-anthropic-billing-header: cch=abcdef12\nreal instructions',
+        tool_choice: { type: 'any' },
+      }),
+      'route.attempt': attemptWith(
+        'strip-billing-attribution',
+        'disable-reasoning-on-forced-tool-choice',
+        'rewrite-mid-conv-system-to-user',
+      ),
+    });
+    const after = down['request.chat.messages'] as MessagesPayload;
+    expect(after.system).toBe('real instructions');
+    expect(after.thinking).toEqual({ type: 'disabled' });
+    expect(after.messages.map(message => message.role)).toEqual(['user']);
+  });
+
+  it('assembles and runs the Gemini array', async () => {
+    const answer = streamOf<GeminiStreamEvent>([
+      eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'pondering', thought: true }, { text: 'the answer' }] }, finishReason: 'STOP' }] }),
+    ]);
+    const { down, up } = await runChain('response.chat.gemini', [
+      stripUnsupportedPartFieldsFromGemini,
+      stripUnsupportedToolsFromGemini,
+      stripSafetySettingsFromGemini,
+      suppressThoughtPartsFromGemini,
+    ], {
+      'request.chat.gemini': {
+        contents: [{ role: 'user', parts: [{ text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } }] }],
+        tools: [{ googleSearch: {} }],
+        safetySettings: [{ category: 'c', threshold: 't' }],
+      } satisfies GeminiPayload,
+    }, answer);
+    const after = down['request.chat.gemini'] as GeminiPayload;
+    expect(after.contents?.[0]?.parts).toEqual([{ text: 'hi' }]);
+    expect('tools' in after).toBe(false);
+    expect('safetySettings' in after).toBe(false);
+    const frames = await drain<GeminiStreamEvent>(up['response.chat.gemini']);
+    const event = (frames[0] as { event: Extract<GeminiStreamEvent, { candidates?: unknown }> }).event;
+    expect(event.candidates?.[0]?.content.parts).toEqual([{ text: 'the answer' }]);
+  });
+
+  // The one ordering between stages rather than inside one: the sentinel is the gateway's
+  // canonical form, and a vendor normalizer can only put it on the wire in the vendor's shape
+  // because it runs after the stage that wrote it.
+  it('assembles and runs the Responses array, the vendor normalizers last', async () => {
+    const answer = streamOf<ResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
+    const { down, up } = await runChain('response.chat.responses', [
+      disableReasoningOnForcedToolChoiceForResponses,
+      applyRoleCompatibilityToResponses,
+      stripPromptCacheKeyForResponses,
+      normalizeExclusiveCachedTokensForResponses,
+      vendorDeepSeekNormalizeForResponses,
+      vendorQwenNormalizeForResponses,
+    ], {
+      'request.chat.responses': responsesPayload([
+        { type: 'message', role: 'system', content: 'lead' },
+        { type: 'message', role: 'user', content: 'hi' },
+        { type: 'message', role: 'system', content: 'mid' },
+      ], { tool_choice: 'required', prompt_cache_key: 'k' }),
+      'route.attempt': attemptWith(
+        'disable-reasoning-on-forced-tool-choice',
+        'rewrite-mid-conv-system-to-user',
+        'strip-prompt-cache-key',
+        'vendor-deepseek',
+      ),
+    }, answer);
+    const after = down['request.chat.responses'] as Record<string, unknown>;
+    expect(rolesOfPayload(after)).toEqual(['system', 'user', 'user']);
+    expect('prompt_cache_key' in after).toBe(false);
+    // The sentinel this chain wrote reached DeepSeek's normalizer and left in DeepSeek's shape.
+    expect('reasoning' in after).toBe(false);
+    expect(after.thinking).toEqual({ type: 'disabled' });
+    const frames = await drain<ResponsesStreamEvent>(up['response.chat.responses']);
+    expect(usageOf(frames[0]!)).toMatchObject({ input_tokens: 150 });
+  });
+});
+
+const rolesOfPayload = (payload: Record<string, unknown>): unknown[] =>
+  (payload.input as ResponsesInputItem[]).map(item => (item as { role?: unknown }).role);
