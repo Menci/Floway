@@ -74,7 +74,7 @@ const soleUserPromptOf = (payload: MessagesPayload): string | null => {
   return block.type === 'text' ? block.text : null;
 };
 
-const isClaudeCodeProbe = (payload: MessagesPayload, headers: Headers): boolean => {
+export const isClaudeCodeProbe = (payload: MessagesPayload, headers: Headers): boolean => {
   if (payload.max_tokens !== 1) return false;
   // Every real Claude Code turn ships the session's tools; the one-token
   // probes never do.
@@ -90,7 +90,7 @@ const isClaudeCodeProbe = (payload: MessagesPayload, headers: Headers): boolean 
 // usage block is load-bearing — the validation path dereferences
 // `usage.input_tokens` / `usage.output_tokens` unconditionally, and a missing
 // `usage` throws inside the CLI and reads as a failed probe.
-const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+export const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   yield eventFrame({
     type: 'message_start',
     message: {
