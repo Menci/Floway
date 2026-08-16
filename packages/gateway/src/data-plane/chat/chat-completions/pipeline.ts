@@ -8,9 +8,10 @@
 //   dialChatWire               the ending: picks this candidate's wire and hands into it
 //
 // The wire a candidate is dialled on is chosen per candidate rather than at assembly, and
-// because failover re-runs the whole suffix the next candidate re-picks its own. Only its own
-// wire is built here; the translated ones will hand up `response.chat.chatCompletions` too,
-// which is what will make them interchangeable with it.
+// because failover re-runs the whole suffix the next candidate re-picks its own. Its own
+// wire is a bare ending; the two translated ones are a handoff and then that protocol's own
+// wire, and all three hand up `response.chat.chatCompletions` — so the stage above cannot
+// tell which ran.
 //
 // What sits *in* a wire rather than above the fork is the other half of the arrangement. A
 // rule that speaks about an upstream's Chat Completions endpoint — the role rewrite does,
@@ -32,18 +33,21 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
-import { dialChatWire, type ChatWire } from '../handoff.ts';
+import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToChatCompletions,
   disableReasoningOnForcedToolChoiceForChatCompletions,
   stripPromptCacheKeyForChatCompletions,
 } from '../interceptors.ts';
+import { messagesWire } from '../messages/pipeline.ts';
+import { responsesWire } from '../responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
+import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
+import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import {
   CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
   chatCompletionsErrorPayloadMessage,
@@ -53,7 +57,8 @@ import {
   type ChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/chat-completions';
 import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 
 /** `/v1/chat/completions` prefers its own wire, then the translated Messages path, then the
  *  translated Responses path. */
@@ -288,10 +293,36 @@ export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => 
 /** This family's own reading, which every wire under it hands up. */
 const STREAMED_USAGE = 'response.chat.chatCompletions.streamedUsage';
 
-/** The wires `/v1/chat/completions` can be served on. Only its own is built; the two
- *  translated ones are each a handoff and then that protocol's own wire, and until they exist
- *  a candidate the picker admitted on one of them is dialled here anyway. */
-const chatCompletionsWireFor = (): ChatWire => compose('chatCompletionsNative', chatCompletionsWire(STREAMED_USAGE));
+/** The three wires `/v1/chat/completions` can be served on. Its own is the bare wire; each
+ *  translated one is a handoff and then the target protocol's own wire. */
+const chatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+  switch (target) {
+  case 'chat-completions':
+    return compose('chatCompletionsNative', chatCompletionsWire(STREAMED_USAGE));
+  case 'messages':
+    return compose('chatCompletionsViaMessages', [
+      handOff({
+        from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+        to: { request: 'request.chat.messages', response: 'response.chat.messages' },
+        trip: async payload => await translateChatCompletionsViaMessages(payload, {
+          model: candidate.model.id,
+          fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+          loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
+        }),
+      }),
+      ...messagesWire(STREAMED_USAGE),
+    ]);
+  case 'responses':
+    return compose('chatCompletionsViaResponses', [
+      handOff({
+        from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+        to: { request: 'request.chat.responses', response: 'response.chat.responses' },
+        trip: async payload => await translateChatCompletionsViaResponses(payload, { model: candidate.model.id }),
+      }),
+      ...responsesWire(STREAMED_USAGE),
+    ]);
+  }
+};
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Only a report carrying real counts

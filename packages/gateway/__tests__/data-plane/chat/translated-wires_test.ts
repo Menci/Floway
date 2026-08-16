@@ -6,16 +6,19 @@
 // client's own protocol. The candidates here carry exactly one endpoint each, so a chain that
 // picked any other wire would call a provider method that throws.
 //
-// Gemini's three rows are here; the other families' fill in beside them.
+// Gemini's three rows are here, and Chat Completions' two; the remaining families' fill in
+// beside them. Beside the matrix, one thing that is about the fork rather than about a pair:
+// that failover moves from a native candidate onto a translated one.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
 import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run, type Pipeline } from '@floway-dev/pipeline';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsResult, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiResult } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -165,7 +168,18 @@ const serve = async <Entry extends object, Exit extends object>(
   } as never);
 };
 
+const chatCompletionsPayload = { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
 const geminiPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiPayload;
+
+const serveChatCompletions = async (payload: ChatCompletionsPayload = chatCompletionsPayload) =>
+  await serve(chatCompletionsServePipeline(payload), {
+    'ingress.http.headers': [],
+    'ingress.chat.sourceProtocol': 'chatCompletions',
+    'ingress.chat.chatCompletions.wantsStream': false,
+    'ingress.chat.chatCompletions.wantsUsageChunk': false,
+    'request.chat.chatCompletions': payload,
+    'serve.model': MODEL,
+  }, payload);
 
 const serveGemini = async (payload: GeminiPayload = geminiPayload) =>
   await serve(geminiServePipeline(payload), {
@@ -177,6 +191,9 @@ const serveGemini = async (payload: GeminiPayload = geminiPayload) =>
   }, payload);
 
 // ── What the client was answered with, per protocol ───────────────────────────────────────
+
+const chatCompletionsText = (rendered: unknown): string | null | undefined =>
+  (rendered as ChatCompletionsResult).choices[0]?.message.content as string | null | undefined;
 
 const geminiText = (rendered: unknown): string | undefined =>
   (rendered as GeminiResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
@@ -190,6 +207,29 @@ beforeEach(() => {
 });
 
 describe('a chat family reaching a candidate over another protocol', () => {
+  it('serves /v1/chat/completions on a Messages-only candidate', async () => {
+    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    resolves([candidate('up_a', { messages: {} }, { callMessages })]);
+
+    const { facts, drain } = await serveChatCompletions();
+
+    expect(callMessages).toHaveBeenCalledTimes(1);
+    expect(facts['response.http.status']).toBe(200);
+    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves /v1/chat/completions on a Responses-only candidate', async () => {
+    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    resolves([candidate('up_a', { responses: {} }, { callResponses })]);
+
+    const { facts, drain } = await serveChatCompletions();
+
+    expect(callResponses).toHaveBeenCalledTimes(1);
+    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('hello');
+    await drain();
+  });
+
   it('serves :generateContent on a Chat Completions-only candidate', async () => {
     const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
     resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
@@ -220,6 +260,31 @@ describe('a chat family reaching a candidate over another protocol', () => {
 
     expect(callResponses).toHaveBeenCalledTimes(1);
     expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    await drain();
+  });
+});
+
+describe('the fork over wires', () => {
+  // Failover is an ordinary middle stage: what it re-runs is the whole suffix including the
+  // stage that picks the wire, so the next candidate re-picks. Nothing here is a mechanism of
+  // failover's own — the first candidate goes native and the second goes translated because
+  // that is what each one's own endpoints say.
+  it('moves from a refused native wire onto a translated one', async () => {
+    const callChatCompletions = vi.fn(async () => ({
+      ok: false as const, modelKey: 'k', response: Response.json({ error: { message: 'slow down' } }, { status: 429 }),
+    }));
+    const callMessages = vi.fn(async () => messagesTurn('second'));
+    resolves([
+      candidate('up_a', { chatCompletions: {} }, { callChatCompletions }),
+      candidate('up_b', { messages: {} }, { callMessages }),
+    ]);
+
+    const { facts, drain } = await serveChatCompletions();
+
+    expect(callChatCompletions).toHaveBeenCalledTimes(1);
+    expect(callMessages).toHaveBeenCalledTimes(1);
+    expect(facts['response.http.status']).toBe(200);
+    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('second');
     await drain();
   });
 });
