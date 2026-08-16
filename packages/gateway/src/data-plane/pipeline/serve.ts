@@ -145,6 +145,13 @@ export const serveThrough = async <
   const answer = render(facts);
 
   const pending = deferredUsage?.(facts) ?? null;
+  // OPEN DECISION, deliberately taken the simple way for now. `failed` is false here even
+  // for a stream that stopped short, so a truncated turn still writes a neutral performance
+  // row and a dump success. Settling it correctly needs the write registered while the
+  // request is still live *and* the outcome known only when the stream ends, and the two
+  // pull against each other — three shapes were tried and each lost the row entirely.
+  // The honest fix is for the family's meter to report how its stream ended, since that is
+  // the one place that knows; that is a change across all four streaming families.
   if (pending !== null) {
     prologue.services.background(pending.then(billable => {
       settleBillable({ ...prologue.services, log: consoleLogSink }, billable, false);
@@ -177,7 +184,7 @@ export const serveThrough = async <
     }));
   }
 
-  // Nothing is left to read: what the client is sent was serialized from facts the run
+  // Nothing is left to read either: what the client is sent was serialized from facts the run
   // already held, so releasing can start at once.
   prologue.services.background(drain());
   const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
