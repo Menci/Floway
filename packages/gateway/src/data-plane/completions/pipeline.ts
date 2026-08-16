@@ -1,0 +1,377 @@
+// Text completions as a pipeline. One protocol, no translation, and an answer that is a
+// stream whenever the client asked for one — the same request field decides both what the
+// upstream is asked for and what shape comes back.
+//
+// The shape:
+//
+//   emitCompletions           the edge: asks the upstream for the usage chunk on the way
+//                             down, and renders the answer into the client's protocol on the
+//                             way back, SSE framing included
+//   resolveCandidates         narrows to the upstreams that expose the endpoint
+//   failover                  runs what follows once per candidate
+//   callCompletionsUpstream   the ending: dials, parses what came back, and provides the
+//                             answer plus what is billable
+
+import { tokenUsageFromCompletionsUsage } from './usage.ts';
+import type { UsageQuantities } from '../../repo/types.ts';
+import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
+import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
+import { isFailure } from '../pipeline/facts.ts';
+import type { GatewayServices } from '../pipeline/services.ts';
+import { failover, resolveCandidates } from '../pipeline/stages.ts';
+import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
+import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
+import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import {
+  completionsProtocolFrameToSSEFrame,
+  parseCompletionsResult,
+  parseCompletionsStream,
+  type CompletionsPayload,
+  type CompletionsResult,
+  type CompletionsStreamEvent,
+} from '@floway-dev/protocols/completions';
+import { providerModelOf } from '@floway-dev/provider';
+import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provider';
+
+/** The answer while it is still the upstream's, one frame at a time. */
+export type CompletionsFrames = AsyncIterable<ProtocolFrame<CompletionsStreamEvent>>;
+
+/**
+ * A stream as a value the record can hold, and the one thing here that does not follow from
+ * the rules as written: an async generator is itself an `AsyncDisposable` — V8 gives every
+ * generator a `Symbol.asyncDispose` that returns it — so handing one over makes a frame view
+ * a *resource* as far as the run is concerned. Two rules then bite, both correctly and both
+ * fatally: a stage that consumes a view while providing a derived one has its source closed
+ * the moment it returns, and `failover` refuses a fork that received a releasable at a key it
+ * did not declare, which is every key but `response.http.body`.
+ *
+ * There is exactly one resource in a completions run — the upstream's body — and this is what
+ * keeps it that way. What comes back is single-shot on purpose: a stream that has been read is
+ * a stream that is over, and a second reader learns that rather than being lied to.
+ */
+const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
+
+/** Completions' own keys, extending the shared space by intersection. */
+export interface CompletionsFacts extends GatewayFacts {
+  /** What the client asked for, which is not what the upstream is asked for: the gateway
+   *  meters every stream and so always turns the usage chunk on. These stay put for the same
+   *  reason every `ingress.*` key does — they describe the request that arrived, and the
+   *  answer is rendered back into it. */
+  'ingress.completions.wantsStream': boolean;
+  'ingress.completions.wantsUsageChunk': boolean;
+  'request.completions.payload': CompletionsPayload;
+  /** The answer, whichever kind it turned out to be. A stream, a value and a failure sit at
+   *  one key: telling them apart is reading a value, and each stage does that where it needs
+   *  to. */
+  'response.completions.payload': CompletionsResult | CompletionsFrames | Failure;
+  /** What the upstream will have reported by the time the frames run out, and `null` on
+   *  every path that does not stream. A stream's usage arrives with its last chunk, which is
+   *  after this run has answered — so the numbers cannot be in `response.usage.billable`,
+   *  which says what had been reported when the ending stage handed up: the entity, and no
+   *  quantities. Settling billing from this is the prologue's job, after the drain. */
+  'response.completions.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
+   *  of a stream. The edge provides it, so a dump shows what the client received rather than
+   *  the gateway's own reading of it. */
+  'response.completions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+}
+
+type C<K extends keyof CompletionsFacts> = { [P in K]: CompletionsFacts[P] };
+
+const isFrames = (answer: CompletionsFacts['response.completions.payload']): answer is CompletionsFrames =>
+  Symbol.asyncIterator in answer;
+
+/**
+ * The outermost edge, and the only place where what the client asked for and what the
+ * upstream is asked for differ: billing needs the usage chunk on every stream, so it is
+ * turned on going down and taken back out coming up unless the client asked to see it.
+ *
+ * Rendering the answer is the other half. SSE framing is produced here and nowhere else —
+ * below this stage a stream carries protocol frames, so the same assembly would serve
+ * another transport by rendering differently at this one point.
+ */
+const emitCompletions = defineStage<
+  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
+  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
+  C<'ingress.completions.wantsUsageChunk' | 'response.completions.payload'>,
+  C<'response.completions.rendered' | 'response.http.status'>
+>({
+  name: 'emitCompletions',
+  through: {
+    request: {
+      needs: ['ingress.completions.wantsStream', 'ingress.completions.wantsUsageChunk', 'request.completions.payload'],
+      consumes: [],
+      provides: ['request.completions.payload'],
+    },
+    response: {
+      needs: ['response.completions.payload'],
+      consumes: ['response.completions.payload'],
+      provides: ['response.completions.rendered', 'response.http.status'],
+    },
+  },
+  execute: async (facts, next) => {
+    const asked = facts['request.completions.payload'];
+    const back = await next({
+      ...facts,
+      'request.completions.payload': move(facts['ingress.completions.wantsStream']
+        ? { ...asked, stream_options: { ...asked.stream_options, include_usage: true } }
+        : asked),
+    });
+
+    const { 'response.completions.payload': answer, ...rest } = back;
+    // A refusal keeps the status the upstream gave it. Anything that answered is a 200 the
+    // gateway says itself, because what the client receives is serialized here rather than
+    // relayed — the upstream's own status is a fact further down for whoever wants it.
+    return {
+      ...rest,
+      'response.http.status': isFailure(answer) ? answer.status : 200,
+      'response.completions.rendered': move(rendered(answer, back['ingress.completions.wantsUsageChunk'])),
+    };
+  },
+});
+
+const rendered = (
+  answer: CompletionsFacts['response.completions.payload'],
+  wantsUsageChunk: boolean,
+): CompletionsFacts['response.completions.rendered'] =>
+  isFailure(answer) ? { error: { message: answer.message, type: 'api_error' } }
+    : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
+      : answer;
+
+const renderSSE = (frames: CompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => view((async function* () {
+  for await (const frame of frames) {
+    if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
+    yield completionsProtocolFrameToSSEFrame(frame);
+  }
+})());
+
+/**
+ * The ending. It dials, reads what came back on the shape the request asked for, and
+ * provides the answer, the raw HTTP response beneath it, and what the call is billable for.
+ * A failure is a value: a 429 here is what an earlier stage fails over, and so is a 200 whose
+ * body this protocol cannot read, because the next candidate's path and flags may differ.
+ */
+const callCompletionsUpstream = defineStage<
+  C<'ingress.completions.wantsStream' | 'request.completions.payload' | 'route.candidate' | 'ingress.http.headers'>,
+  C<'response.completions.payload' | 'response.completions.streamedUsage' | 'response.usage.billable'
+    | 'response.http.status' | 'response.http.headers' | 'response.http.body'>,
+  GatewayServices
+>({
+  name: 'callCompletionsUpstream',
+  return: {
+    provides: [
+      'response.completions.payload',
+      'response.completions.streamedUsage',
+      'response.usage.billable',
+      'response.http.status',
+      'response.http.headers',
+      'response.http.body',
+    ],
+  },
+  execute: async (facts, use) => {
+    const candidate = facts['route.candidate'];
+    // The provider re-stamps whatever id it resolved upstream, so the id the client
+    // addressed does not travel with the body.
+    const { model: _addressed, ...body } = facts['request.completions.payload'];
+    const result = await candidate.provider.instance.callCompletions(
+      providerModelOf(candidate),
+      body,
+      use.gateway.abortSignal,
+      // The client's own headers reach the upstream from the record, not from a live request
+      // object: what a provider is allowed to forward is filtered per provider, and the dump
+      // shows what was there to filter.
+      buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
+    );
+    use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'text_completion');
+    if (!result.response.ok) use.log.warn('upstream refused', { status: result.response.status });
+
+    const answer = await readUpstream(
+      result.response,
+      facts['ingress.completions.wantsStream'],
+      telemetryModelIdentity(candidate, result.modelKey),
+      candidate,
+      use.gateway.abortSignal,
+    );
+    return move({
+      ...facts,
+      'response.completions.payload': answer.payload,
+      'response.completions.streamedUsage': answer.streamedUsage,
+      'response.usage.billable': answer.billable,
+      'response.http.status': result.response.status,
+      'response.http.headers': [...result.response.headers],
+      'response.http.body': answer.body,
+    });
+  },
+});
+
+interface UpstreamAnswer {
+  readonly payload: CompletionsFacts['response.completions.payload'];
+  readonly streamedUsage: CompletionsFacts['response.completions.streamedUsage'];
+  readonly billable: readonly BillableEntity[];
+  /** Every arm hands one up, this stage's own reading included: the record holds a body as a
+   *  stream, and `failover` releases the losing attempts' by consuming that key. */
+  readonly body: ReadableStream<Uint8Array> & AsyncDisposable;
+}
+
+/** What the upstream said, on the shape the request asked for. Which of the four this is is
+ *  read from the response, never declared: a stream, a value and a failure sit at one key. */
+const readUpstream = async (
+  response: Response,
+  wantsStream: boolean,
+  identity: TelemetryModelIdentity,
+  candidate: ModelCandidate,
+  signal: AbortSignal | undefined,
+): Promise<UpstreamAnswer> => {
+  // An upstream was called and reported nothing — which is what every arm but a read usage
+  // block leaves standing, and is a different statement from reporting zero.
+  const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
+
+  if (!response.ok) {
+    // An upstream error body is JSON like any other body. Reading it here is also what
+    // leaves a losing attempt with nothing open behind it.
+    return { payload: await refusal(response), streamedUsage: null, billable: called, body: spentBody(response.body) };
+  }
+
+  if (!wantsStream) {
+    const read = await readResult(response);
+    return {
+      payload: isFailure(read) ? read : read.value,
+      streamedUsage: null,
+      billable: isFailure(read) ? called : [{ identity, quantities: billed(read.value.usage, read.value.service_tier, candidate) }],
+      body: spentBody(response.body),
+    };
+  }
+
+  if (response.body === null) {
+    return {
+      payload: { status: 502, message: 'Upstream returned a streaming response with no body.' },
+      streamedUsage: null,
+      billable: called,
+      body: spentBody(null),
+    };
+  }
+
+  // Usage is observed here, closest to the upstream and on the protocol it spoke, by folding
+  // the frames as they pass — so the reading costs one pass and the client's own stream is
+  // what drives it. What it finds arrives with the last frame, long after this stage has
+  // handed up, which is why the entity above carries no quantities.
+  const metered = meterFrames(parseCompletionsStream(response.body, { signal }), identity, candidate);
+  return {
+    payload: metered.frames,
+    streamedUsage: metered.billable,
+    billable: called,
+    // Releasing this body is draining those frames: they are one reader over one connection,
+    // and a second reader is not something a `ReadableStream` allows.
+    body: Object.assign(response.body, {
+      [Symbol.asyncDispose]: async (): Promise<void> => { for await (const _frame of metered.frames) { /* to end of stream */ } },
+    }),
+  };
+};
+
+/** A body this stage has already read to the end, or one the upstream never sent. The record
+ *  holds a body as a stream and `failover` releases the losing attempts', so every path hands
+ *  one up; what says an answer was unusable is the failure at the payload key, not this. */
+const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> & AsyncDisposable =>
+  Object.assign(body ?? new ReadableStream<Uint8Array>({ start: controller => controller.close() }), {
+    [Symbol.asyncDispose]: (): Promise<void> => Promise.resolve(),
+  });
+
+const refusal = async (response: Response): Promise<Failure> => {
+  const text = await response.text();
+  try {
+    return { status: response.status, message: text, body: JSON.parse(text) as unknown };
+  } catch {
+    // A refusal that is not JSON is still a refusal, and its text is what the client is
+    // told; there is simply no parsed body for a dump reader to open.
+    return { status: response.status, message: text };
+  }
+};
+
+/** A body that answered 200 and cannot be read as this protocol is an attempt that failed,
+ *  because the gateway serializes what it sends from the value it parsed and has nothing to
+ *  serialize. The next candidate may well answer in the protocol it advertised. */
+const readResult = async (response: Response): Promise<{ readonly value: CompletionsResult } | Failure> => {
+  try {
+    return { value: parseCompletionsResult(await response.json()) };
+  } catch (error) {
+    return { status: 502, message: `Upstream answered ${response.status} with a body this endpoint cannot read: ${error instanceof Error ? error.message : String(error)}` };
+  }
+};
+
+interface MeteredFrames {
+  readonly frames: CompletionsFrames;
+  readonly billable: Promise<readonly BillableEntity[]>;
+}
+
+const meterFrames = (
+  source: AsyncIterable<ProtocolFrame<CompletionsStreamEvent>>,
+  identity: TelemetryModelIdentity,
+  candidate: ModelCandidate,
+): MeteredFrames => {
+  let settle!: (billable: readonly BillableEntity[]) => void;
+  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  const frames = view((async function* () {
+    let usage: unknown;
+    let tier: string | null | undefined;
+    try {
+      for await (const frame of source) {
+        if (frame.type === 'event') {
+          // `service_tier` can ride on any chunk's root while the totals only land on the
+          // usage-only one, so the two are tracked apart and settled together.
+          const root = frame.event as { service_tier?: string | null; usage?: unknown };
+          if (root.service_tier !== undefined) tier = root.service_tier;
+          if (isOpenAIUsageOnlyEventShape(frame.event)) usage = root.usage;
+        }
+        yield frame;
+      }
+    } finally {
+      // Reached however the frames ended — the terminal chunk, a client that stopped
+      // reading, or a broken upstream — because tokens the upstream already metered are
+      // billable whatever happened to the downstream half.
+      settle([{ identity, quantities: billed(usage, tier, candidate) }]);
+    }
+  })());
+  return { frames, billable };
+};
+
+const billed = (usage: unknown, tier: string | null | undefined, candidate: ModelCandidate): UsageQuantities => {
+  const model = providerModelOf(candidate);
+  const tokens = tokenUsageFromCompletionsUsage(
+    usage,
+    tier,
+    model.enabledFlags.has('usage-exclusive-cached-tokens'),
+    `${candidate.provider.upstreamId}/${model.id}`,
+  );
+  // An upstream that reported nothing leaves no quantities at all, which is a different
+  // statement from reporting zero.
+  //
+  // The service tier survives as far as `TokenUsage.tier` and no further: a billed entity is
+  // an identity and a bag of quantities, and the pricing selector the tier feeds has no seat
+  // there. It comes back when settlement does.
+  return tokens === null ? {} : tokenUsageQuantities(tokens);
+};
+
+/** A candidate that cannot serve this endpoint is not a candidate. The resolver's own filter
+ *  is by kind, and a text-completion model is a chat-kind model, so what is left to say is
+ *  whether the upstream exposes the endpoint at all. */
+const narrowing = {
+  kind: 'chat' as const,
+  reject: (candidate: ModelCandidate): string | null =>
+    candidate.model.endpoints.completions === undefined ? 'the upstream does not expose a completions endpoint' : null,
+  refuse: (status: number, message: string): C<'response.completions.payload' | 'response.completions.streamedUsage'> => ({
+    'response.completions.payload': { status, message },
+    'response.completions.streamedUsage': null,
+  }),
+  refuses: ['response.completions.payload', 'response.completions.streamedUsage'] as const,
+};
+
+export const completionsServePipeline: Pipeline<
+  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload' | 'serve.model'>,
+  C<'response.completions.rendered' | 'response.completions.streamedUsage' | 'response.http.status' | 'response.usage.billable'>
+> = compose('completionsServe', [
+  emitCompletions,
+  resolveCandidates(narrowing),
+  failover(handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload'])),
+  callCompletionsUpstream,
+]);

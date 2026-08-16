@@ -1,8 +1,7 @@
-// Codex `/alpha/search` compatibility endpoint. The private request carries
-// model/session context plus a command object; the response is
-// `{ encrypted_output?, output, results? }`.
-// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29
-// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L297-L305
+// Codex `/alpha/search` compatibility endpoint. The protocol itself — the request
+// schema, the response shape, and the projection of Codex's settings onto the
+// gateway's search filters — lives in `protocol.ts`.
+//
 // Clients append `alpha/search` to an OpenAI-compatible provider base. The
 // aliases below cover Floway's general root and `/v1` base conventions.
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
@@ -16,8 +15,8 @@
 // the resolved API key for per-key search-usage accounting.
 
 import type { Hono } from 'hono';
-import { z } from 'zod';
 
+import { alphaSearchRequestSchema, webSearchFiltersFromSettings } from './protocol.ts';
 import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -26,69 +25,10 @@ import { mountPublicRoute } from '../public-route.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
-import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, executeOperationToText, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
-
-const domainListSchema = z.array(z.string());
-
-// This is OpenAI Codex's complete SearchSettings shape. The loose object keeps
-// future fields intact for passthrough; local providers consume the routing
-// fields they implement while accepting Codex metadata such as allowed_callers.
-// https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L215-L295
-const searchSettingsSchema = z.looseObject({
-  filters: z.looseObject({
-    allowed_domains: domainListSchema.optional(),
-    blocked_domains: domainListSchema.optional(),
-  }).optional(),
-  user_location: z.looseObject({
-    type: z.literal('approximate').optional(),
-    city: z.string().optional(),
-    region: z.string().optional(),
-    country: z.string().optional(),
-    timezone: z.string().optional(),
-  }).optional(),
-  search_context_size: z.enum(['low', 'medium', 'high']).optional(),
-  image_settings: z.looseObject({
-    max_results: z.number().int().nonnegative().optional(),
-    caption: z.boolean().optional(),
-  }).optional(),
-  allowed_callers: z.array(z.enum(['direct', 'shell', 'code_interpreter'])).optional(),
-  external_web_access: z.union([
-    z.boolean(),
-    z.enum(['cached', 'indexed', 'live']),
-  ]).optional(),
-});
-
-// `commands` is validated only as "an object" — the per-kind arrays are
-// parsed by the shared command engine. `looseObject` preserves every OpenAI
-// command and nested parameter so passthrough stays lossless and the local
-// capability gate can reject unimplemented fields explicitly.
-const alphaSearchRequestSchema = z.looseObject({
-  commands: z.looseObject({}).optional(),
-  settings: searchSettingsSchema.optional(),
-});
-
-type AlphaSearchRequest = z.infer<typeof alphaSearchRequestSchema>;
-
-const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearchFilters => {
-  const filters: WebSearchFilters = {
-    maxResults: maxResultsForContextSize(settings?.search_context_size),
-  };
-  if (settings?.filters?.allowed_domains) filters.allowedDomains = settings.filters.allowed_domains;
-  if (settings?.filters?.blocked_domains) filters.blockedDomains = settings.filters.blocked_domains;
-  const loc = settings?.user_location;
-  if (loc && (loc.city !== undefined || loc.region !== undefined || loc.country !== undefined || loc.timezone !== undefined)) {
-    filters.userLocation = {
-      ...(loc.city !== undefined ? { city: loc.city } : {}),
-      ...(loc.region !== undefined ? { region: loc.region } : {}),
-      ...(loc.country !== undefined ? { country: loc.country } : {}),
-      ...(loc.timezone !== undefined ? { timezone: loc.timezone } : {}),
-    };
-  }
-  return filters;
-};
 
 const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
   const body = c.req.valid('json');
@@ -122,7 +62,7 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
       configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
       return configuredProvider;
     },
-    filters: filtersFromSettings(body.settings),
+    filters: webSearchFiltersFromSettings(body.settings),
     apiKeyId: apiKeyFromContext(c).id,
     pageCache: new Map(),
     // Codex renders `output` as plain text; the search-action sources list
