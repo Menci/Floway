@@ -13,7 +13,7 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type ResponsesCompactionResult, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ModelCandidate, type ProviderResponsesResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -99,7 +99,13 @@ const payload = {
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
 let affinityPayload: CanonicalResponsesPayload = payload;
 
-const serve = async (wantsStream: boolean) => await run(
+/** How many times the chain asked the resolver for that payload. One stage owns the reading;
+ *  anything below it reads the record. */
+let asked = 0;
+
+const serve = async (wantsStream: boolean) => await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream);
+
+const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsStream: boolean) => await run(
   responsesServePipeline(payload),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
@@ -109,11 +115,11 @@ const serve = async (wantsStream: boolean) => await run(
     'serve.model': 'responses-model',
   }) as never,
   {
-    gateway: mockChatGatewayCtx({ wantsStream }),
+    gateway,
     background: () => {},
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
-    chatPayloadFor: () => affinityPayload,
+    chatPayloadFor: () => { asked += 1; return affinityPayload; },
     selectAffinity: () => {},
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
@@ -131,6 +137,7 @@ const drain = async (rendered: unknown): Promise<SseFrame[]> => {
 
 beforeEach(() => {
   affinityPayload = payload;
+  asked = 0;
   vi.mocked(enumerateModelCandidates).mockReset();
   initRepo({
     usage: { record: async () => {} },
@@ -141,25 +148,33 @@ beforeEach(() => {
 describe('the responses chain', () => {
   // Affinity rewrites client-carried state for the upstream that will see it, so the body
   // that goes out is the one it materialized rather than the one the client sent — and this
-  // chain dials the generate action, whatever else the protocol can ask an upstream for.
-  it('sends the payload affinity materialized for the candidate it dialled', async () => {
+  // chain dials the generate action, whatever else the protocol can ask an upstream for. The
+  // payload enters the record below the fork because everything between there and the dial
+  // rewrites the request as a fact, and one stage owns that reading: an ending that asked the
+  // resolver again would send a payload no stage in the chain had touched.
+  it('puts the payload this attempt is owed into the record, and sends that', async () => {
     let sent: Record<string, unknown> | undefined;
-    let asked: unknown;
+    let action: unknown;
     affinityPayload = {
       ...payload,
       input: [{ type: 'message', role: 'user', content: 'rewritten' }],
     } as CanonicalResponsesPayload;
-    resolves([candidate(async (_model, body, action) => {
+    resolves([candidate(async (_model, body, asks) => {
       sent = body as Record<string, unknown>;
-      asked = action;
+      action = asks;
       return stream(completed('hi'));
     })]);
 
-    await serve(false);
+    const { facts } = await serve(false);
 
+    // The exit contract names what the run answers with, and the request the chain sent is
+    // not that — but the record carries every key in flight, so what was sent is still there
+    // to read.
+    expect((facts as Record<string, unknown>)['request.chat.responses']).toBe(affinityPayload);
+    expect(asked).toBe(1);
     expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: 'rewritten' }] });
     expect(sent).not.toHaveProperty('model');
-    expect(asked).toBe('generate');
+    expect(action).toBe('generate');
   });
 
   // Every event goes out under its own SSE name, and the client's stream ends on the literal
@@ -200,6 +215,49 @@ describe('the responses chain', () => {
     expect(billable).toEqual([expect.objectContaining({
       quantities: { input_tokens: '11', output_tokens: '7' },
     })]);
+    // A rate can depend on the tier and on how much input there was; both are selector
+    // coordinates, so they travel as pricing facts rather than as quantities.
+    expect(billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
+  });
+
+  // Time to first token is measured where the token is — a lifecycle envelope is not one, and
+  // a run that never stamps it is recorded as having produced nothing to time.
+  it('stamps the first frame that carried a generated token', async () => {
+    resolves([candidate(async () => stream(delta('hi'), completed('hi')))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts } = await serveWith(gateway, true);
+    expect(gateway.attempt.firstOutputTokenAt).toBeNull();
+    await drain(facts['response.chat.responses.rendered']);
+
+    expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
+  });
+
+  // The turn is over at its terminal event, so what an upstream writes after it is not part
+  // of the answer and the client is not shown it. Reading stops there, which also closes the
+  // upstream rather than leaving the client's stream open behind a connection nobody reads.
+  it('stops reading at the terminal event', async () => {
+    resolves([candidate(async () => stream(delta('hi'), completed('hi'), delta(' and more')))]);
+
+    const { facts } = await serve(true);
+    const frames = await drain(facts['response.chat.responses.rendered']);
+
+    expect(frames.map(frame => frame.event)).toEqual([
+      'response.output_text.delta',
+      'response.completed',
+      undefined,
+    ]);
+  });
+
+  // A stream that ran out before its terminal event is a turn nobody can answer from: the
+  // response was never stated complete, incomplete or failed, so serving what did arrive
+  // would report a truncated answer as a whole one.
+  it('fails a stream that ended without its terminal event', async () => {
+    resolves([candidate(async () => stream(delta('hi')))]);
+
+    const { facts } = await serve(true);
+
+    await expect(drain(facts['response.chat.responses.rendered'])).rejects.toThrow(RESPONSES_MISSING_TERMINAL_MESSAGE);
   });
 
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to

@@ -4,6 +4,7 @@
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
+//   materializeAttempt     puts the payload this candidate is owed into the record
 //   callResponsesUpstream  the ending: dials this candidate's wire
 //
 // One wire and one transport: `/v1/responses` over HTTP, dialled on a candidate's own
@@ -20,8 +21,8 @@
 //     the same `response.chat.responses` key, which is what will make them interchangeable
 //     with this one.
 //   - this family's interceptors, the server-tool shims among them. Still only in the
-//     interceptor form, so the array between the fork and the ending is empty rather than
-//     short.
+//     interceptor form, so the array between the materialized payload and the ending is
+//     empty rather than short.
 //   - the stored-items membrane: `previous_response_id` expansion, item hydration, and the
 //     snapshot the next turn reads. It wraps the chain rather than sitting in it, and
 //     `serve-prep.ts` and `client-output.ts` still hold it.
@@ -45,8 +46,9 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
+import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
+import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import { doneFrame, renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
@@ -194,12 +196,16 @@ const callResponsesUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // Affinity materializes the payload this candidate is owed: client-carried state — an
-    // encrypted reasoning blob, a compaction the upstream issued — is rewritten for the
+    // What the record holds by now: the payload affinity materialized for this candidate, as
+    // every stage between the fork and here has rewritten it. Client-carried state — an
+    // encrypted reasoning blob, a compaction the upstream issued — was rewritten for the
     // upstream that will see it, which is the whole reason a turn can be pinned at all. The
     // id the client addressed does not travel — the provider re-stamps whatever it resolved
     // upstream — and an alias' own rules apply to the body that is sent.
-    const asked = use.chatPayloadFor(facts['route.attempt']) as CanonicalResponsesPayload;
+    //
+    // The key holds what a client may send, whose `input` is a string or a list; this chain
+    // runs on the canonical form the entry normalized it to, which is the one a wire takes.
+    const asked = facts['request.chat.responses'] as CanonicalResponsesPayload;
     const payload = { ...asked, model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamResponses(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
@@ -270,7 +276,7 @@ const callResponsesUpstream = defineStage<
       });
     }
 
-    const metered = meterResponses(result.events, identity);
+    const metered = meterResponses(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.responses': { kind: 'stream' as const, frames: metered.frames },
@@ -288,6 +294,7 @@ const callResponsesUpstream = defineStage<
 const meterResponses = (
   source: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   identity: TelemetryModelIdentity,
+  attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
   let settle!: (billable: readonly BillableEntity[]) => void;
   const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
@@ -295,6 +302,11 @@ const meterResponses = (
     let reported: BillableUsage | undefined;
     try {
       for await (const frame of source) {
+        // Time to first token is measured where the token is, which is the only place that
+        // knows a frame carries generated content rather than the envelope around it.
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'responses')) {
+          attempt.firstOutputTokenAt = performance.now();
+        }
         if (frame.type !== 'event') {
           yield frame;
           continue;
@@ -338,7 +350,6 @@ const billed = (identity: TelemetryModelIdentity, usage: BillableUsage | undefin
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
 const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses'>> => ({
-  source: 'responses',
   canServe: candidate => responsesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeResponsesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
@@ -382,5 +393,6 @@ export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipe
       failed: handedUp => isFailure((handedUp as { 'response.chat.responses'?: unknown })['response.chat.responses']),
       owns: [],
     }),
+    materializeAttempt('request.chat.responses'),
     callResponsesUpstream,
   ]);
