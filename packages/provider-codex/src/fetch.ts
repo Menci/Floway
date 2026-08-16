@@ -134,10 +134,7 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
     const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
     return { ok: true, accessToken: entry };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
-    }
+    if (err instanceof CodexOAuthSessionTerminatedError) return await codexRefreshFailed(opts, err);
     // An access-only credential with nothing usable left is a configuration
     // problem, not an upstream one, so it reaches the client as our 503 with
     // the re-import instruction rather than as a bare failure.
@@ -565,10 +562,7 @@ const refreshAccessTokenForRetry = async (
     );
     return { ok: true, accessToken: effective };
   } catch (err) {
-    if (err instanceof CodexOAuthSessionTerminatedError) {
-      await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
-    }
+    if (err instanceof CodexOAuthSessionTerminatedError) return await codexRefreshFailed(opts, err);
     throw err;
   }
 };
@@ -793,6 +787,11 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
   status: 503,
   headers: { 'content-type': 'application/json' },
 });
+
+const codexRefreshFailed = async (opts: CodexBackendCallBase, err: CodexOAuthSessionTerminatedError): Promise<{ ok: false; response: Response }> => {
+  await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
+  return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
+};
 
 // Codex backend serves SSE without setting `content-type: text/event-stream`
 // (observed in production: only x-codex-* + standard CDN headers come back).
