@@ -400,6 +400,18 @@ const buildCodexResponsesBody = (
   return body;
 };
 
+// The per-request inputs for one Codex HTTP dispatch. Callers build the
+// identity and the turn-metadata JSON once and hand both over in a single
+// bundle rather than threading six positional arguments.
+interface CodexHttpCallRequest {
+  accessToken: string;
+  path: string;
+  accept: string;
+  body: Record<string, unknown>;
+  identity: CodexRequestIdentity;
+  turnMetadataJson: string | null;
+}
+
 // One upstream round-trip with quota-header persistence and terminal-401
 // classification. The returned Response is what the caller relays:
 //   - 2xx: caller decodes the body (SSE for /responses, JSON for /responses/compact)
@@ -412,13 +424,9 @@ const buildCodexResponsesBody = (
 //   - other: returned verbatim
 const dispatchCodexHttpCall = async (
   opts: CodexBackendCallBase,
-  accessToken: string,
-  path: string,
-  accept: string,
-  body: Record<string, unknown>,
-  identity: CodexRequestIdentity,
-  turnMetadataJson: string | null,
+  request: CodexHttpCallRequest,
 ): Promise<Response> => {
+  const { accessToken, path, accept, body, identity, turnMetadataJson } = request;
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   // A null account id omits the header rather than sending an empty one: the
@@ -611,15 +619,14 @@ const performStreamingResponsesCall = async (
   const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
-  const upstreamFetch = dispatchCodexHttpCall(
-    opts,
-    accessToken.token,
-    CODEX_RESPONSES_PATH,
-    'text/event-stream',
-    buildCodexResponsesBody(opts, identity, turnMetadataJson.body),
+  const upstreamFetch = dispatchCodexHttpCall(opts, {
+    accessToken: accessToken.token,
+    path: CODEX_RESPONSES_PATH,
+    accept: 'text/event-stream',
+    body: buildCodexResponsesBody(opts, identity, turnMetadataJson.body),
     identity,
-    turnMetadataJson.header,
-  ).then(ensureSseContentType);
+    turnMetadataJson: turnMetadataJson.header,
+  }).then(ensureSseContentType);
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
@@ -646,15 +653,14 @@ const performUnaryCompactCall = async (
   const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata: CodexTurnMetadataOptions = { requestKind: 'compaction' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
-  const response = await dispatchCodexHttpCall(
-    opts,
-    accessToken.token,
-    CODEX_RESPONSES_COMPACT_PATH,
-    'application/json',
-    { ...opts.body, model: opts.model.id },
+  const response = await dispatchCodexHttpCall(opts, {
+    accessToken: accessToken.token,
+    path: CODEX_RESPONSES_COMPACT_PATH,
+    accept: 'application/json',
+    body: { ...opts.body, model: opts.model.id },
     identity,
-    turnMetadataJson.header,
-  );
+    turnMetadataJson: turnMetadataJson.header,
+  });
 
   const attempt = await retryCodexAccess401(
     opts,
@@ -688,15 +694,14 @@ const performAlphaSearchCall = async (
     windowId: `${requestId}:0`,
   };
   const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata');
-  const response = await dispatchCodexHttpCall(
-    opts,
-    accessToken.token,
-    CODEX_ALPHA_SEARCH_PATH,
-    'application/json',
-    { ...opts.body, model: opts.model.id },
+  const response = await dispatchCodexHttpCall(opts, {
+    accessToken: accessToken.token,
+    path: CODEX_ALPHA_SEARCH_PATH,
+    accept: 'application/json',
+    body: { ...opts.body, model: opts.model.id },
     identity,
     turnMetadataJson,
-  );
+  });
 
   const attempt = await retryCodexAccess401(
     opts,
