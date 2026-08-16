@@ -1,5 +1,5 @@
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertAllowedObjectKeys } from './auth/parse-helpers.ts';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 // One Codex account's operator-managed identity, derived from explicit import
 // fields and whatever claims the supplied tokens happen to carry. Mutating
