@@ -370,6 +370,9 @@ export const audioTranscriptionServePipeline: Pipeline<
 > = compose('audioTranscriptionServe', [
   emitAudioTranscription,
   resolveCandidates(narrowing),
-  failover(handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical'])),
+  failover({
+    failed: handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical']),
+    owns: ['response.http.body'],
+  }),
   callAudioTranscriptionUpstream,
 ]);

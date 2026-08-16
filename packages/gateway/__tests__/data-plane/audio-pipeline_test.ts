@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { audioTranscriptionServePipeline } from '../../src/data-plane/audio/pipeline.ts';
-import { isReleasable, move, run } from '@floway-dev/pipeline';
+import { isOwned, move, run } from '@floway-dev/pipeline';
 
 describe('the audio transcription pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
@@ -37,15 +37,18 @@ describe('the audio transcription pipeline', () => {
       .rejects.toThrow('run(audioTranscriptionServe): audioTranscriptionServe needs');
   });
 
-  // Why the streamed answer is handed over as a wrapper around its generator rather than as
-  // the generator: an async generator carries `Symbol.asyncDispose`, so the runner would adopt
-  // one in the record as a resource and the top-level sweep would call it — and for a
-  // generator that call is `return()`, which cancels the iteration rather than draining it.
-  // The resource is the upstream body, at `response.http.body`, and it is the only thing here
-  // that should answer to release.
-  it('makes an events view that the runner cannot mistake for the resource', () => {
+  // The streamed answer is a wrapper around its generator rather than the generator itself.
+  // That was once load-bearing: the runner detected ownership structurally, an async
+  // generator carries `Symbol.asyncDispose`, and the sweep would have called it — which for
+  // a generator is `return()`, cancelling the iteration rather than draining it.
+  //
+  // The runner now claims ownership through `own()` instead of detecting it, so a bare
+  // generator is safe in the record. The wrapper stays because it says which thing is the
+  // resource: the upstream body at `response.http.body`, and nothing else here.
+  it('keeps the events view clear of what answers to release', () => {
     const generator = (async function* () { yield 1; })();
-    expect(isReleasable(generator)).toBe(true);
-    expect(isReleasable({ [Symbol.asyncIterator]: () => generator })).toBe(false);
+    expect(Symbol.asyncDispose in generator).toBe(true);   // the language marks it
+    expect(isOwned(generator)).toBe(false);                // the run does not
+    expect(isOwned({ [Symbol.asyncIterator]: () => generator })).toBe(false);
   });
 });

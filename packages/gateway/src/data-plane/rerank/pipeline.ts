@@ -176,7 +176,10 @@ export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
 > => compose('rerankServe', [
   emitRerank,
   resolveCandidates(narrowing(request)),
-  failover(handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical'])),
+  failover({
+    failed: handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical']),
+    owns: [],
+  }),
   callRerankUpstream,
 ]);
 

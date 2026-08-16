@@ -161,6 +161,9 @@ export const embeddingsServePipeline: Pipeline<
 > = compose('embeddingsServe', [
   emitEmbeddings,
   resolveCandidates(narrowing),
-  failover(handedUp => isFailure((handedUp as { 'response.embeddings.canonical'?: unknown })['response.embeddings.canonical'])),
+  failover({
+    failed: handedUp => isFailure((handedUp as { 'response.embeddings.canonical'?: unknown })['response.embeddings.canonical']),
+    owns: [],
+  }),
   callEmbeddingsUpstream,
 ]);

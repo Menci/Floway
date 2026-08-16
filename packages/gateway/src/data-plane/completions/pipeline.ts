@@ -372,6 +372,9 @@ export const completionsServePipeline: Pipeline<
 > = compose('completionsServe', [
   emitCompletions,
   resolveCandidates(narrowing),
-  failover(handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload'])),
+  failover({
+    failed: handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload']),
+    owns: ['response.http.body'],
+  }),
   callCompletionsUpstream,
 ]);

@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { failover } from '../../src/data-plane/pipeline/stages.ts';
 import { rerankServePipeline } from '../../src/data-plane/rerank/pipeline.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
@@ -37,6 +38,26 @@ describe('the rerank pipeline', () => {
   // catches it at the definition site, which is why this is a gap and not a break.
   it('cannot see what an ending stage reads, because a return-only stage declares no needs', () => {
     expect(rerankServePipeline(request).entryNeeds).not.toContain('ingress.http.headers');
+  });
+
+  // `failover` used to declare that it provides `response.http.body` for every family. Three
+  // of the six never produce one — they read their answer to the end — so those pipelines
+  // composed cleanly and then threw on the first real request, at the deepest stage, with a
+  // message about a key their author had never written down.
+  //
+  // What a fork owns is a statement only the family can make, so it makes it. This asserts
+  // the shape of that statement rather than the absence of a bug, because the absence of a
+  // bug is what every one of these tests asserted before and none of them caught it.
+  it('claims nothing on the way up when a family reads its answer to the end', () => {
+    const reading = failover({ failed: () => false, owns: [] });
+    expect(reading.through?.response.consumes).toEqual([]);
+    expect(reading.through?.response.provides).toEqual([]);
+
+    // And a family that streams claims the key it streams at, in both directions: every
+    // attempt's is the fork's to release, and the one it adopts rides up with ownership.
+    const streaming = failover({ failed: () => false, owns: ['response.http.body'] });
+    expect(streaming.through?.response.consumes).toEqual(['response.http.body']);
+    expect(streaming.through?.response.provides).toEqual(['response.http.body']);
   });
 
   it('names the entry key a caller did not bring, before any stage runs', async () => {

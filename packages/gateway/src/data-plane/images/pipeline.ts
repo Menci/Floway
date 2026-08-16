@@ -261,6 +261,9 @@ export const imagesServePipeline = (request: CanonicalImagesRequest): Pipeline<I
   compose('imagesServe', [
     emitImages,
     resolveCandidates(narrowing(request)),
-    failover(handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical'])),
+    failover({
+      failed: handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical']),
+      owns: [],
+    }),
     callImagesUpstream,
   ]);
