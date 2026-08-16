@@ -568,18 +568,24 @@ const refreshAccessTokenForRetry = async (
 // The 401 retry gate every call dispatcher shares: on a renewable credential
 // that has not already been retried, rotate the failed access token and re-run
 // the operation once; if the refresh fails, relay the dispatcher's own failure
-// result. Callers keep the `refresh_token !== null && !alreadyRetried` guard so
-// an access-only credential's terminal 401 reaches the client verbatim.
+// result. The gate — a 401 on a credential with a refresh token, not already
+// retried — is folded in here, so callers pass the response they saw and only
+// branch on the retried outcome. An access-only credential's 401 is already
+// classified terminal in `classifyCodexHttpResponse`, and the verbatim upstream
+// response reaches the client.
 const retryCodexAccess401 = async <T>(
   opts: CodexBackendCallBase,
   accessToken: CodexAccessTokenEntry,
+  response: Response | null,
+  alreadyRetried: boolean,
   run: (fresh: CodexAccessTokenEntry) => Promise<T>,
   onRefreshFailure: (response: Response) => T,
   fallbackPlan?: CodexPlanObservation,
-): Promise<T> => {
+): Promise<{ retried: true; value: T } | { retried: false }> => {
+  if (response?.status !== 401 || opts.account.refresh_token === null || alreadyRetried) return { retried: false };
   const fresh = await refreshAccessTokenForRetry(opts, accessToken, fallbackPlan);
-  if (!fresh.ok) return onRefreshFailure(fresh.response);
-  return await run(fresh.accessToken);
+  if (!fresh.ok) return { retried: true, value: onRefreshFailure(fresh.response) };
+  return { retried: true, value: await run(fresh.accessToken) };
 };
 
 const mergeRetryPlan = (
@@ -616,9 +622,15 @@ const performStreamingResponsesCall = async (
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
-  if (!result.ok && result.response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    return await retryCodexAccess401(opts, accessToken, fresh => performStreamingResponsesCall(opts, fresh, true), resp => ({ ok: false, modelKey: opts.model.id, response: resp }));
-  }
+  const attempt = await retryCodexAccess401(
+    opts,
+    accessToken,
+    result.ok ? null : result.response,
+    alreadyRetried,
+    fresh => performStreamingResponsesCall(opts, fresh, true),
+    resp => ({ ok: false as const, modelKey: opts.model.id, response: resp }),
+  );
+  if (attempt.retried) return attempt.value;
 
   return result;
 };
@@ -643,9 +655,15 @@ const performUnaryCompactCall = async (
     turnMetadataJson.header,
   );
 
-  if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    return await retryCodexAccess401(opts, accessToken, fresh => performUnaryCompactCall(opts, fresh, true), resp => ({ ok: false, modelKey: opts.model.id, response: resp }));
-  }
+  const attempt = await retryCodexAccess401(
+    opts,
+    accessToken,
+    response,
+    alreadyRetried,
+    fresh => performUnaryCompactCall(opts, fresh, true),
+    resp => ({ ok: false as const, modelKey: opts.model.id, response: resp }),
+  );
+  if (attempt.retried) return attempt.value;
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
@@ -679,9 +697,15 @@ const performAlphaSearchCall = async (
     turnMetadataJson,
   );
 
-  if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    return await retryCodexAccess401(opts, accessToken, fresh => performAlphaSearchCall(opts, fresh, true), resp => ({ modelKey: opts.model.id, response: resp }));
-  }
+  const attempt = await retryCodexAccess401(
+    opts,
+    accessToken,
+    response,
+    alreadyRetried,
+    fresh => performAlphaSearchCall(opts, fresh, true),
+    resp => ({ modelKey: opts.model.id, response: resp }),
+  );
+  if (attempt.retried) return attempt.value;
   return { modelKey: opts.model.id, response };
 };
 
@@ -695,13 +719,20 @@ const performImageCall = async (
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
-  if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    return await retryCodexAccess401(opts, accessToken, async entry => {
+  const attempt = await retryCodexAccess401(
+    opts,
+    accessToken,
+    response,
+    alreadyRetried,
+    async entry => {
       const refreshedPlan = codexPlanObservation(entry) ?? effectivePlan;
       if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
       return await performImageCall(opts, entry, path, body, turnId, refreshedPlan, true);
-    }, resp => ({ modelKey: opts.model.id, response: resp }), effectivePlan);
-  }
+    },
+    resp => ({ modelKey: opts.model.id, response: resp }),
+    effectivePlan,
+  );
+  if (attempt.retried) return attempt.value;
   return { modelKey: opts.model.id, response };
 };
 
