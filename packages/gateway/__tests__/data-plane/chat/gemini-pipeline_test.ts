@@ -235,7 +235,7 @@ describe('the gemini pipeline', () => {
     // upstream actually returned and the words that upstream used, rather than a synthesized
     // envelope quoting its serialized body back as a message.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { message: 'no' } });
+    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { code: 400, message: '{"error":{"message":"no"}}', status: 'INVALID_ARGUMENT' } });
     // An upstream that was called and reported nothing, which is a different statement from
     // reporting zero.
     expect(facts['response.usage.billable']).toEqual([
@@ -250,7 +250,7 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     expect(facts['response.http.status']).toBe(502);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { message: 'socket hang up', type: 'api_error' } });
+    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { code: 502, message: 'socket hang up', status: 'UNAVAILABLE' } });
     // A dial that never completed reached no upstream, so nothing was billed and there are no
     // headers to carry.
     expect(facts['response.usage.billable']).toEqual([]);
