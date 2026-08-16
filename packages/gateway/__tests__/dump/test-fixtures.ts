@@ -1,6 +1,7 @@
 import type { DumpBroker } from '../../src/dump/broker.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
+import type { DumpMetadata, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import { toNdjson, type DumpEvent } from '@floway-dev/pipeline';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({
   id: 'test-id',
@@ -20,11 +21,28 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
   ...overrides,
 });
 
-export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpRecord => ({
+export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpEdgeRecord => ({
+  shape: 'edge',
   meta: fakeMeta(overrides),
   request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
   response: { status: 200, headers: [], body: { type: 'none' } },
 });
+
+// A run record holds one NDJSON stream and no edge halves, so a fixture only
+// needs the lines the reader is meant to get back.
+export const fakeRunRecord = (events: readonly DumpEvent[], overrides: Partial<DumpMetadata> = {}): StoredDumpRunRecord => ({
+  shape: 'run',
+  meta: fakeMeta(overrides),
+  events: new TextEncoder().encode(toNdjson(events)),
+});
+
+// A reader hands back whichever shape was written, so a test asserting on the
+// request or response halves says which one it wrote.
+export const edgeRecordOf = (record: StoredDumpRecord | null | undefined): StoredDumpEdgeRecord => {
+  if (!record) throw new Error('expected a stored dump record');
+  if (record.shape !== 'edge') throw new Error(`expected the edge shape, got ${record.shape}`);
+  return record;
+};
 
 type DumpStubFailMethod =
   | 'put'
@@ -60,11 +78,14 @@ export const installDumpStubs = (
     },
     async put(keyId, record) {
       if (throws.put) throw throws.put;
-      if (record.request.body.encoding !== 'identity') throw new Error('dump test stub expected identity request body');
-      const storedRecord: StoredDumpRecord = {
-        ...record,
-        request: { ...record.request, body: record.request.body.bytes },
-      };
+      // The run shape is already stored-shaped; only the edge shape carries a
+      // separately prepared request body to rehydrate.
+      if (record.shape === 'edge' && record.request.body.encoding !== 'identity') {
+        throw new Error('dump test stub expected identity request body');
+      }
+      const storedRecord: StoredDumpRecord = record.shape === 'run'
+        ? record
+        : { ...record, request: { ...record.request, body: record.request.body.bytes } };
       stored.push({ keyId, record: storedRecord });
       const list = records.get(keyId) ?? [];
       list.unshift(storedRecord);

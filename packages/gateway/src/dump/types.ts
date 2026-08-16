@@ -8,6 +8,17 @@
 //     view served to the dashboard by `dumpRecordToWire`.
 //
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
+//
+// Across all three, a record is one of two shapes, and `shape` is what a reader
+// dispatches on. An endpoint served by the onion records its **edges** — what
+// the client sent and what the client got back. An endpoint served by a
+// pipeline records the **whole run**: every stage, both directions, as the
+// NDJSON event stream `@floway-dev/pipeline` encodes. The edges are still in
+// that stream; they are the first and last things it holds. The shape follows
+// the endpoint, so both are alive for as long as the two mechanisms are.
+//
+// What stays common is `DumpMetadata`: the dashboard lists both kinds together,
+// and one turn's attribution does not depend on which mechanism served it.
 
 import type { z } from 'zod';
 
@@ -17,6 +28,11 @@ import type {
   dumpStreamEventSchema,
   dumpUpstreamRefSchema,
 } from './schemas.ts';
+import type { DumpEvent } from '@floway-dev/pipeline';
+
+// Re-exported because the dashboard reads a run record's stream through this
+// module and has no other reach into the pipeline package.
+export type { DumpEvent };
 
 export type DumpRecordId = string;
 
@@ -79,17 +95,36 @@ export interface StoredDumpResponse {
   body: StoredDumpResponseBody;
 }
 
-export type StoredDumpRecord = {
+// The run's NDJSON, still as bytes: it is a body file under the same contract
+// as the other two, gzipped into the file store and pointed at by the row's
+// descriptor. One `put` carries it whole — measured on production, P99 of a
+// turn's request and response together is 2.86 MB, well under the 5 MiB below
+// which multipart has nothing to divide.
+export interface StoredDumpRunRecord {
+  shape: 'run';
+  meta: DumpMetadata;
+  events: Uint8Array;
+}
+
+export type StoredDumpEdgeRecord = {
+  shape: 'edge';
   meta: DumpMetadata;
   request: StoredDumpRequest;
   response: StoredDumpResponse;
 };
 
-export type DumpWriteRecord = {
+export type StoredDumpRecord = StoredDumpEdgeRecord | StoredDumpRunRecord;
+
+export type DumpWriteEdgeRecord = {
+  shape: 'edge';
   meta: DumpMetadata;
   request: DumpWriteRequest;
   response: StoredDumpResponse;
 };
+
+// No prepared half: a run's stream is encoded once the run is over, so there is
+// nothing to compress ahead of the terminal write the way a request body is.
+export type DumpWriteRecord = DumpWriteEdgeRecord | StoredDumpRunRecord;
 
 // --- Wire shape (serialized JSON over the dashboard's control plane) ---
 
@@ -119,8 +154,20 @@ interface DumpResponse {
   body: DumpResponseBody;
 }
 
-export type DumpRecord = {
+export type DumpEdgeRecord = {
+  shape: 'edge';
   meta: DumpMetadata;
   request: DumpRequest;
   response: DumpResponse;
 };
+
+// The stored NDJSON verbatim, decoded as UTF-8. One line is one event and one
+// SSE `data:` payload, so what a reader parses here is what a live observer
+// will parse frame by frame once the fan-out exists.
+export type DumpRunRecord = {
+  shape: 'run';
+  meta: DumpMetadata;
+  events: string;
+};
+
+export type DumpRecord = DumpEdgeRecord | DumpRunRecord;

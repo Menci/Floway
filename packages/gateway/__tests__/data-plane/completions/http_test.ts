@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { edgeRecordOf, installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -311,7 +311,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = edgeRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
@@ -353,7 +353,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = edgeRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
