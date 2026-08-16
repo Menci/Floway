@@ -181,6 +181,9 @@ const narrowing = (request: CanonicalRerankRequest) => ({
     }
     return rerankRequestIncompatibility(model.rerankTarget.protocol, request);
   },
+  unsupported: (model: string, reasons: readonly string[]) => reasons.length === 0
+    ? `Model ${model} does not support rerank.`
+    : `Model ${model} does not support this rerank request: ${reasons.join('; ')}.`,
   refuse: (status: number, message: string) => ({ 'response.rerank.canonical': { status, message } }),
   refuses: ['response.rerank.canonical'] as const,
 });

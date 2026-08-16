@@ -56,6 +56,7 @@ const serve = async () => await run(
   {
     gateway: mockGatewayCtx({ wantsStream: false }),
     background: () => {},
+    rememberCandidates: () => {},
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);

@@ -1,52 +1,56 @@
-// POST /v1/embeddings — route embedding requests to the provider that
-// declares the requested model and embeddings capability.
+// POST /v1/embeddings, served through the pipeline.
 //
-// Transitional: the request is already parsed against the embeddings contract and written
-// again for the upstream, which is what the pipeline does, while the response is still
-// forwarded by the passthrough scaffold. The whole file goes when the route is wired to
-// `embeddingsServePipeline`.
+// The handler is a prologue and an epilogue around `embeddingsServePipeline`: parse what
+// the client sent, hand it over, and turn what the run answered with into a response.
+// Everything between is stages.
 
+import { move } from '@floway-dev/pipeline';
+import { parseEmbeddingsRequest, type ParsedEmbeddingsRequest } from '@floway-dev/protocols/embeddings';
 import type { Context } from 'hono';
 
-import { tokenUsageFromEmbeddingsBody } from './usage.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
-import { parseEmbeddingsRequest, serializeEmbeddingsRequest, type ParsedEmbeddingsRequest } from '@floway-dev/protocols/embeddings';
+import { embeddingsServePipeline } from './pipeline.ts';
+import { openPrologue, serveThrough } from '../pipeline/serve.ts';
+import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 
 // The contract reports a malformed request by throwing; what the client is owed is a 400
-// carrying the reason. Reading has to finish before the context takes the bytes.
+// carrying the reason.
 const readRequest = (bytes: Uint8Array): { type: 'ok'; parsed: ParsedEmbeddingsRequest } | { type: 'invalid'; message: string } => {
   try {
     return { type: 'ok', parsed: parseEmbeddingsRequest(JSON.parse(new TextDecoder().decode(bytes)) as unknown) };
-  } catch (e) {
-    return { type: 'invalid', message: e instanceof Error ? e.message : String(e) };
+  } catch (error) {
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
 };
 
 export const embeddings = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const result = readRequest(requestBody.bytes);
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const prologue = await openPrologue(c, { wantsStream: false });
+  const result = readRequest(prologue.bytes);
   if (result.type === 'invalid') {
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, result.message, 400));
+    // A request the gateway could not read never reaches a pipeline: there is no model to
+    // resolve and no attempt to make, so there is nothing for a run to record.
+    prologue.gateway.dump?.error('gateway');
+    return finalizeGatewayResponse(
+      prologue.gateway,
+      Response.json({ error: { message: result.message, type: 'api_error' } }, { status: 400 }),
+    );
   }
-  const { model, request } = result.parsed;
 
-  ctx.dump?.requestedModel(model);
-  const response = await passthroughServe({
+  const { model, request } = result.parsed;
+  prologue.gateway.dump?.requestedModel(model);
+
+  return await serveThrough(
     c,
-    ctx,
-    sourceApi: '/embeddings',
-    operation: 'embeddings',
-    model,
-    kind: 'embedding',
-    modelServesEndpoint: candidate => candidate.endpoints.embeddings !== undefined,
-    call: async (provider, providerModel, opts) =>
-      await provider.instance.callEmbeddings(providerModel, serializeEmbeddingsRequest(request), undefined, opts),
-    response: { format: 'json', extractBilling: tokenUsageFromEmbeddingsBody },
-  });
-  return finalizeGatewayResponse(ctx, response);
+    prologue,
+    embeddingsServePipeline,
+    move({
+      'ingress.http.headers': prologue.headers,
+      'ingress.embeddings.encodingFormat': request.encodingFormat,
+      'request.embeddings.canonical': request,
+      'serve.model': model,
+    }) as never,
+    facts => ({
+      status: (facts as { readonly 'response.http.status': number })['response.http.status'],
+      body: JSON.stringify((facts as { readonly 'response.embeddings.rendered': unknown })['response.embeddings.rendered']),
+    }),
+  );
 };

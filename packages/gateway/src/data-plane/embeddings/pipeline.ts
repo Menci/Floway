@@ -100,7 +100,7 @@ const emitEmbeddings = defineStage<
  * fails over, and even a 400 can be, because the next candidate's path and flags may differ.
  */
 const callEmbeddingsUpstream = defineStage<
-  E<'request.embeddings.canonical' | 'route.attempt' | 'ingress.http.headers'>,
+  E<'request.embeddings.canonical' | 'route.attempt' | 'ingress.http.headers' | 'serve.model'>,
   E<'response.embeddings.canonical' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -138,7 +138,7 @@ const callEmbeddingsUpstream = defineStage<
 
     // Every protocol the gateway carries is one it fully understands: the body is parsed
     // here and written again at the edge, in whichever encoding the client can read.
-    const canonical = parseEmbeddingsResponse(await result.response.json() as unknown);
+    const canonical = parseEmbeddingsResponse(await result.response.json() as unknown, facts['serve.model']);
     return move({
       ...facts,
       'response.embeddings.canonical': canonical,
@@ -160,6 +160,7 @@ const narrowing: Narrowing<E<'response.embeddings.canonical'>> = {
   reject: candidate => candidate.model.endpoints.embeddings === undefined
     ? 'the upstream does not expose an embeddings endpoint'
     : null,
+  unsupported: model => `Model ${model} does not support the /embeddings endpoint.`,
   refuse: (status, message) => ({ 'response.embeddings.canonical': { status, message } }),
   refuses: ['response.embeddings.canonical'],
 };

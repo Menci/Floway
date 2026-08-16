@@ -348,6 +348,7 @@ const narrowing = {
     candidate.model.endpoints.audioTranscriptions === undefined
       ? 'the upstream does not expose an audio transcription endpoint'
       : null,
+  unsupported: (model: string) => `Model ${model} does not support the /audio/transcriptions endpoint.`,
   refuse: (status: number, message: string) => ({
     'response.audioTranscription.canonical': { status, message } as Failure,
     'response.audioTranscription.mediaType': null,

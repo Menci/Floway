@@ -26,6 +26,9 @@ export interface GatewayServices {
    *  prologue either, so what is injected is the thing that resolves one and what travels
    *  is the identifier it resolves from. */
   readonly resolveAttempt: (selector: AttemptSelector) => ModelCandidate;
+  /** The other half of the resolver: the stage that enumerates hands the live candidates
+   *  here, so the ones that travel can be selectors. Per run, because a candidate list is. */
+  readonly rememberCandidates: (candidates: readonly ModelCandidate[]) => void;
   /** Binds a promise to the request's lifetime: `waitUntil` on Workers, the event loop on
    *  Node. What the drain is handed to, so an answer is not held up by it. */
   readonly background: (work: Promise<unknown>) => void;

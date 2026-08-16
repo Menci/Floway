@@ -243,6 +243,7 @@ const narrowing = (request: CanonicalImagesRequest) => ({
   reject: (candidate: ModelCandidate) => candidate.model.endpoints[ENDPOINT[request.operation]] === undefined
     ? `the upstream does not expose the images ${request.operation} endpoint`
     : null,
+  unsupported: (model: string) => `Model ${model} does not support the /images/${request.operation} endpoint.`,
   refuse: (status: number, message: string) => ({
     'response.images.canonical': { status, message },
     'response.http.headers': [],

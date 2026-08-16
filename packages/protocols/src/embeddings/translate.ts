@@ -142,7 +142,15 @@ const parseUsage = (value: unknown): CanonicalEmbeddingsUsage | undefined => {
   };
 };
 
-export const parseEmbeddingsResponse = (value: unknown): CanonicalEmbeddingsResponse => {
+/**
+ * Reads an upstream's answer into the canonical form.
+ *
+ * `requestedModel` completes the record when the upstream did not name one. The schema
+ * marks `model` required, and most upstreams send it; the one this gateway carries that
+ * does not is GitHub Copilot's `/embeddings`. Naming the model the request asked for is
+ * both what the client can correlate against and what usage is billed under.
+ */
+export const parseEmbeddingsResponse = (value: unknown, requestedModel: string): CanonicalEmbeddingsResponse => {
   if (!isRecord(value)) throw new Error('Embeddings response body must be an object');
   const { data } = value;
   if (!Array.isArray(data)) throw new Error('data must be an array');
@@ -155,7 +163,7 @@ export const parseEmbeddingsResponse = (value: unknown): CanonicalEmbeddingsResp
     };
   });
   return {
-    model: requiredString(value.model, 'model'),
+    model: value.model === undefined ? requestedModel : requiredString(value.model, 'model'),
     embeddings,
     ...(usage === undefined ? {} : { usage }),
   };

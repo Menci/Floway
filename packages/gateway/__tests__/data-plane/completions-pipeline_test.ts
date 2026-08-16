@@ -87,6 +87,7 @@ const serve = async (facts: Record<string, unknown>) => await run(
   {
     gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }),
     background: () => {},
+    rememberCandidates: () => {},
     resolveAttempt,
   } as never,
 );

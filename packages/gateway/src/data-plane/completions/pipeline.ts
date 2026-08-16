@@ -356,6 +356,7 @@ const narrowing = {
   kind: 'chat' as const,
   reject: (candidate: ModelCandidate): string | null =>
     candidate.model.endpoints.completions === undefined ? 'the upstream does not expose a completions endpoint' : null,
+  unsupported: (model: string) => `Model ${model} does not support the /completions endpoint.`,
   refuse: (status: number, message: string): C<'response.completions.payload' | 'response.completions.streamedUsage'> => ({
     'response.completions.payload': { status, message },
     'response.completions.streamedUsage': null,

@@ -39,6 +39,12 @@ export interface Narrowing<Refusal extends object> {
   readonly kind: ModelKind;
   /** Keeps a candidate, or says in one phrase why it cannot serve this request. */
   readonly reject: (candidate: ModelCandidate) => string | null;
+  /** What the client is told when the model resolved but nothing can serve the request.
+   *  `reasons` holds what `reject` said, and is empty when no candidate of this kind was
+   *  found at all — which is the difference between "this model is not an embeddings model"
+   *  and "this reranker cannot do what this request asks". Families differ in how much of
+   *  that they spell out, so the sentence is the family's rather than this stage's. */
+  readonly unsupported: (model: string, reasons: readonly string[]) => string;
   /** What this family answers with when there is no candidate to try. The family decides
    *  which of its own keys carries the failure, which is why the refusal slice is a type
    *  parameter rather than a shared key: a reusable stage whose short-circuit provides
@@ -85,7 +91,7 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
 
     if (candidates.length === 0) {
       const missing = sawModel
-        ? `Model ${model} does not support ${narrowing.kind}.`
+        ? narrowing.unsupported(model, [])
         : `Model ${model} is not available on any configured upstream.`;
       return refuse(sawModel ? 400 : 404, appendFailedUpstreams(missing, failedUpstreams));
     }
@@ -95,16 +101,16 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       const why = narrowing.reject(candidate);
       if (why !== null) refused.add(why);
       return why === null;
-    }).map(selectorFor);
+    });
+    // The live half stays with the resolver; only selectors travel.
+    use.rememberCandidates(viable);
     if (viable.length === 0) {
-      return refuse(400, appendFailedUpstreams(
-        `Model ${model} does not support this request: ${[...refused].join('; ')}.`,
-        failedUpstreams,
-      ));
+      use.log.debug('no viable candidate', { model, refused: [...refused] });
+      return refuse(400, appendFailedUpstreams(narrowing.unsupported(model, [...refused]), failedUpstreams));
     }
 
     use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(viable) });
+    return await next({ ...facts, 'serve.candidates': move(viable.map(selectorFor)) });
   },
 });
 
