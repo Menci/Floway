@@ -20,7 +20,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { writeSSEFrames } from '../shared/sse.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { run } from '@floway-dev/pipeline';
-import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
@@ -121,6 +121,10 @@ export type Rendered =
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
     readonly frames: AsyncIterable<SseFrame>;
+    /** What is written on an idle connection to keep it open. A comment is invisible to any
+     *  client, but a protocol that defines its own idle event is read by clients that expect
+     *  one — Anthropic's `ping` is a frame Claude Code sees — so the family names it. */
+    readonly keepAlive?: SseWritableFrame;
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
@@ -173,7 +177,7 @@ export const serveThrough = async <
     return finalizeGatewayResponse(prologue.gateway, streamSSE(c, async stream => {
       try {
         await writeSSEFrames(stream, answer.frames, {
-          keepAlive: { frame: sseCommentFrame('keepalive') },
+          keepAlive: { frame: answer.keepAlive ?? sseCommentFrame('keepalive') },
           ...(prologue.gateway.downstreamAbortController === undefined
             ? {}
             : { downstreamAbortController: prologue.gateway.downstreamAbortController }),

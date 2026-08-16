@@ -31,7 +31,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { renderMessagesError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
-import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
   collectMessagesProtocolEventsToResult,
   messagesProtocolFrameToSSEFrame,
@@ -298,6 +298,11 @@ const narrowing = (payload: MessagesPayload): ChatNarrowing<M<'response.chat.mes
   refuse: (status, message) => ({ 'response.chat.messages': { status, message } }),
   refuses: ['response.chat.messages'],
 });
+
+/** What this protocol writes on an idle connection. Anthropic defines a `ping` event and
+ *  clients read it, so an SSE comment — invisible by design — is not the same wire byte.
+ *  The route that serves this chain hands it to the seam alongside the frames. */
+export const messagesKeepAlive: SseWritableFrame = sseFrame(JSON.stringify({ type: 'ping' }), 'ping');
 
 export type MessagesServeEntry = M<
   'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'ingress.chat.messages.wantsStream'
