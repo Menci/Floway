@@ -10,6 +10,7 @@ import {
   buildCodexAuthorizeUrl,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
+  CodexAccessOnlyCredentialError,
   CodexOAuthSessionTerminatedError,
   assertCodexUpstreamState,
   ensureCodexAccessToken,
@@ -109,11 +110,6 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
   if (account.state !== 'active') {
     return c.json({ error: `Codex upstream is ${account.state}; re-run OAuth exchange to recover` }, 400);
   }
-  // An access-only credential has nothing to refresh from, so the answer is
-  // the same one the data plane gives: re-import.
-  if (account.refresh_token === null) {
-    return c.json({ error: 'Codex access-only credentials cannot be refreshed; re-import the credential' }, 400);
-  }
 
   let fetcher: Fetcher;
   try {
@@ -146,6 +142,11 @@ export const codexOAuthRefresh = async (c: CtxWithJson<typeof codexOAuthRefreshB
       // the red badge and prompts a re-import.
       await persistCodexRefreshFailure(record.id, account.chatgptAccountId, err.upstreamMessage);
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
+    }
+    if (err instanceof CodexAccessOnlyCredentialError) {
+      // An access-only credential has nothing to refresh from; surface the
+      // provider's re-import instruction verbatim.
+      return c.json({ error: err.message }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
