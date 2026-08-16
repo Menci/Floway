@@ -516,7 +516,10 @@ test('cross-protocol success still validates result items before rendering', asy
   assertEquals(performance.errorsNoOutput, 1);
 });
 
-test('same-protocol malformed JSON is forwarded as request-only usage', async () => {
+// The replaced surface forwarded these bytes verbatim with the upstream's 200. Rerank is a
+// JSON protocol, so a body that is not JSON at all is no answer to serve and the gateway says
+// so itself rather than passing on something it never read.
+test('same-protocol answer that is not JSON is refused rather than forwarded', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });
 
@@ -528,12 +531,15 @@ test('same-protocol malformed JSON is forwarded as request-only usage', async ()
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
       });
-      assertEquals(response.status, 200);
-      assertEquals(await response.text(), '{not-json');
+      assertEquals(response.status, 502);
+      const body = await response.json() as { error: { message: string } };
+      assertEquals(body.error.message.includes('the rerank protocol cannot read'), true);
     },
   );
 
   await flushAsyncWork();
+  // Called, and reported nothing this reader could make sense of — which still counts as a
+  // request against the upstream that was dialled.
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, []);
