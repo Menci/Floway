@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { clientLoader } from '../src/routes/legacy-redirects';
 
-const redirectTarget = async (path: string, params: Record<string, string> = {}) => {
+const redirectTarget = async (path: string, params: Record<string, string> = {}, hash = '') => {
+  window.history.replaceState({}, '', `${path}${hash}`);
   const request = new Request(`http://floway.test${path}`);
   try {
     await clientLoader({ params, request } as unknown as Parameters<typeof clientLoader>[0]);
@@ -34,7 +35,7 @@ describe('legacy dashboard route redirects', () => {
   });
 
   it('preserves a legacy request record hash as the record search param', async () => {
-    await expect(redirectTarget('/dashboard/requests/key-123#record-9', { keyId: 'key-123' })).resolves
+    await expect(redirectTarget('/dashboard/requests/key-123', { keyId: 'key-123' }, '#record-9')).resolves
       .toBe('/dashboard/monitor/requests?key=key-123&record=record-9');
   });
 

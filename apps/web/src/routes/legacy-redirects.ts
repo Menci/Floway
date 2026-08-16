@@ -21,6 +21,11 @@ const LEGACY_PATHS: Record<string, string> = {
 export async function clientLoader({ params, request }: Route.ClientLoaderArgs) {
   const url = new URL(request.url);
   const pathname = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+  // React Router builds the loader Request from the URL with the hash
+  // stripped, so a legacy record deep link would otherwise lose its record
+  // id. Read the hash from the browser location, where it still is while the
+  // redirect is being resolved.
+  const hash = typeof window !== 'undefined' ? window.location.hash : url.hash;
 
   const staticRedirect = LEGACY_PATHS[pathname];
 
@@ -28,7 +33,7 @@ export async function clientLoader({ params, request }: Route.ClientLoaderArgs) 
   if (staticRedirect !== undefined) {
     redirectTo = staticRedirect;
   } else if (params.keyId !== undefined) {
-    const record = url.hash.length > 1 ? `&record=${encodeURIComponent(url.hash.slice(1))}` : '';
+    const record = hash.length > 1 ? `&record=${encodeURIComponent(hash.slice(1))}` : '';
     redirectTo = `/dashboard/monitor/requests?key=${encodeURIComponent(params.keyId)}${record}`;
   } else if (params.provider !== undefined) {
     redirectTo = `/dashboard/providers/upstreams/new/${encodeURIComponent(params.provider)}`;
