@@ -1,0 +1,225 @@
+// The translated wires, run end to end — one row per (source, target) pair.
+//
+// The property each row states is the same, and it is the one nothing else can state: a
+// candidate reachable *only* over another protocol's endpoint is dialled there rather than
+// refused or dialled on the wrong wire, and what comes back reaches the client in the
+// client's own protocol. The candidates here carry exactly one endpoint each, so a chain that
+// picked any other wire would call a provider method that throws.
+//
+// Gemini's three rows are here; the other families' fill in beside them.
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
+import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { initRepo } from '../../../src/repo/index.ts';
+import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
+import { move, run, type Pipeline } from '@floway-dev/pipeline';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
+import type { GeminiPayload, GeminiResult } from '@floway-dev/protocols/gemini';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+
+vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../src/data-plane/providers/resolution.ts')>()),
+  enumerateModelCandidates: vi.fn(),
+}));
+
+const MODEL = 'model-x';
+
+let live: readonly ModelCandidate[] = [];
+
+const resolves = (candidates: readonly ModelCandidate[]): void => {
+  live = candidates;
+  vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] } as never);
+};
+
+interface Calls {
+  readonly callChatCompletions?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  readonly callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  readonly callResponses?: (model: unknown, body: unknown) => Promise<ProviderResponsesResult>;
+}
+
+/** A candidate reachable over exactly the endpoints it is given. Handing it one endpoint is
+ *  what pins the wire: every provider method the stub was not given throws, so a chain that
+ *  picked another wire fails loudly rather than quietly answering. */
+const candidate = (
+  upstreamId: string,
+  endpoints: ModelEndpoints,
+  calls: Calls,
+  flags: readonly FlagId[] = [],
+): ModelCandidate => ({
+  provider: {
+    upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
+    disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+    instance: stubProvider(calls as never),
+  },
+  model: stubInternalModel(
+    {
+      id: MODEL,
+      endpoints,
+      providerModels: { [upstreamId]: stubProviderModel({ id: MODEL, endpoints, enabledFlags: new Set(flags) }) },
+    },
+    upstreamId,
+  ),
+  fetcher: directFetcher,
+} as unknown as ModelCandidate);
+
+// ── What each wire answers with ───────────────────────────────────────────────────────────
+
+const chatCompletionsTurn = (text: string): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+  ok: true,
+  modelKey: 'k',
+  headers: new Headers(),
+  events: (async function* () {
+    yield eventFrame({
+      id: 'c1', object: 'chat.completion.chunk', created: 1, model: MODEL,
+      choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }],
+    } as ChatCompletionsStreamEvent);
+    yield eventFrame({
+      id: 'c1', object: 'chat.completion.chunk', created: 1, model: MODEL,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    } as ChatCompletionsStreamEvent);
+    yield doneFrame();
+  })(),
+});
+
+const messagesTurn = (text: string): ProviderStreamResult<MessagesStreamEvent> => ({
+  ok: true,
+  modelKey: 'k',
+  headers: new Headers(),
+  events: (async function* () {
+    yield eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1', type: 'message', role: 'assistant', content: [], model: MODEL,
+        stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 },
+      },
+    } as MessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as MessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } as MessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent);
+    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } } as MessagesStreamEvent);
+    yield eventFrame({ type: 'message_stop' } as MessagesStreamEvent);
+    yield doneFrame();
+  })(),
+});
+
+const responsesResult = (text: string): ResponsesResult => ({
+  id: 'resp_1',
+  object: 'response',
+  model: MODEL,
+  status: 'completed',
+  output: [{
+    type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
+    content: [{ type: 'output_text', text, annotations: [] }],
+  }],
+  error: null,
+  incomplete_details: null,
+});
+
+const responsesTurn = (text: string): ProviderResponsesResult => ({
+  action: 'generate',
+  ok: true,
+  modelKey: 'k',
+  headers: new Headers(),
+  events: (async function* () {
+    yield eventFrame({
+      type: 'response.output_item.added',
+      sequence_number: 1,
+      output_index: 0,
+      item: { type: 'message', id: 'msg_1', role: 'assistant', status: 'in_progress', content: [] },
+    } as ResponsesStreamEvent);
+    yield eventFrame({
+      type: 'response.output_text.delta',
+      sequence_number: 2, item_id: 'msg_1', output_index: 0, content_index: 0, delta: text,
+    } as ResponsesStreamEvent);
+    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: responsesResult(text) } as ResponsesStreamEvent);
+    yield doneFrame();
+  })(),
+});
+
+// ── Running one source protocol's chain ───────────────────────────────────────────────────
+
+const serve = async <Entry extends object, Exit extends object>(
+  pipeline: Pipeline<Entry, Exit>,
+  facts: Record<string, unknown>,
+  attemptPayload: unknown,
+) => {
+  const gateway = mockChatGatewayCtx({ wantsStream: false });
+  return await run(pipeline, move(facts) as never, {
+    gateway,
+    background: () => {},
+    rememberCandidates: () => {},
+    rememberChatSelection: () => {},
+    chatPayloadFor: () => attemptPayload,
+    selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
+    resolveAttempt: (selector: { readonly upstreamId: string }) => {
+      const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
+      if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
+      return found;
+    },
+  } as never);
+};
+
+const geminiPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiPayload;
+
+const serveGemini = async (payload: GeminiPayload = geminiPayload) =>
+  await serve(geminiServePipeline(payload), {
+    'ingress.http.headers': [],
+    'ingress.chat.sourceProtocol': 'gemini',
+    'ingress.chat.gemini.wantsStream': false,
+    'request.chat.gemini': payload,
+    'serve.model': MODEL,
+  }, payload);
+
+// ── What the client was answered with, per protocol ───────────────────────────────────────
+
+const geminiText = (rendered: unknown): string | undefined =>
+  (rendered as GeminiResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
+
+beforeEach(() => {
+  vi.mocked(enumerateModelCandidates).mockReset();
+  initRepo({
+    usage: { record: async () => {} },
+    performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
+  } as never);
+});
+
+describe('a chat family reaching a candidate over another protocol', () => {
+  it('serves :generateContent on a Chat Completions-only candidate', async () => {
+    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
+
+    const { facts, drain } = await serveGemini();
+
+    expect(callChatCompletions).toHaveBeenCalledTimes(1);
+    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves :generateContent on a Messages-only candidate', async () => {
+    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    resolves([candidate('up_a', { messages: {} }, { callMessages })]);
+
+    const { facts, drain } = await serveGemini();
+
+    expect(callMessages).toHaveBeenCalledTimes(1);
+    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves :generateContent on a Responses-only candidate', async () => {
+    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    resolves([candidate('up_a', { responses: {} }, { callResponses })]);
+
+    const { facts, drain } = await serveGemini();
+
+    expect(callResponses).toHaveBeenCalledTimes(1);
+    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    await drain();
+  });
+});

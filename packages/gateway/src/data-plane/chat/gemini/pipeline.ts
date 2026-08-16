@@ -13,9 +13,10 @@
 // `response.chat.gemini`.
 //
 // It is also the one family with no wire of its own: the provider surface has no `callGemini`,
-// so every candidate is reached through a translation and the wire is whichever of the three
-// translatable ones the picker finds on it. Only the first, Chat Completions, is built here —
-// a handoff into that protocol, followed by that protocol's own wire.
+// so every candidate is reached through a translation and all three wires are translated ones
+// — a handoff into Chat Completions, into Messages or into Responses, followed by that
+// protocol's own wire. Which one a candidate is dialled on is the picker's answer for that
+// candidate, and failover re-running the suffix is what re-asks for the next.
 //
 // Because every wire is translated, the reading is taken on the dialect the upstream actually
 // spoke: the target protocol's own wire meters its own frames on their way into the
@@ -25,10 +26,6 @@
 // reporting a finish reason translates into candidates that never finish.
 //
 // What is not built, stated rather than implied:
-//   - the Messages and the Responses wires. Each is a handoff of its own into that protocol's
-//     wire, and until they exist a candidate the picker admitted on one of those two is
-//     dialled on Chat Completions anyway, which is the same interim state the other three
-//     chains carry for their own translated wires.
 //   - `:countTokens`. It is a second entry against this protocol rather than another wire of
 //     this one: no stream, no billable turn, and a `{ totalTokens }` envelope of its own.
 //   - the affinity egress' thought-signature rewrite is here, but the Gemini interceptors are
@@ -60,6 +57,8 @@ import {
   stripUnsupportedToolsFromGemini,
   suppressThoughtPartsFromGemini,
 } from '../interceptors.ts';
+import { messagesWire } from '../messages/pipeline.ts';
+import { responsesWire } from '../responses/pipeline.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
@@ -75,7 +74,7 @@ import {
   type GeminiStreamEvent,
 } from '@floway-dev/protocols/gemini';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
-import { translateGeminiViaChatCompletions } from '@floway-dev/translate';
+import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
 
 /** `:generateContent` has no wire of its own, so the whole preference list is translated:
  *  Chat Completions first, then Messages, then Responses. */
@@ -248,19 +247,40 @@ const framesUntilTerminal = async function* (
 /** This family's own reading, which every wire under it hands up. */
 const STREAMED_USAGE = 'response.chat.gemini.streamedUsage';
 
-/** The wires `:generateContent` can be served on, and every one of them is a translated one:
- *  the provider surface has no Gemini call, so a handoff is how every candidate is reached.
- *  Only the first preference is built; until the other two exist a candidate the picker
- *  admitted on one of them is dialled here anyway. */
-const geminiWireFor = (_target: ChatTargetApi, candidate: ModelCandidate): ChatWire =>
-  compose('geminiViaChatCompletions', [
-    handOff({
-      from: { request: 'request.chat.gemini', response: 'response.chat.gemini' },
-      to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
-      trip: async payload => await translateGeminiViaChatCompletions(payload, { model: candidate.model.id }),
-    }),
-    ...chatCompletionsWire(STREAMED_USAGE),
-  ]);
+/** The three wires `:generateContent` can be served on, and all three are translated ones:
+ *  the provider surface has no Gemini call, so a handoff is how every candidate is reached. */
+const geminiWireFor = (target: ChatTargetApi, candidate: ModelCandidate): ChatWire => {
+  const context = { model: candidate.model.id, fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens };
+  switch (target) {
+  case 'chat-completions':
+    return compose('geminiViaChatCompletions', [
+      handOff({
+        from: { request: 'request.chat.gemini', response: 'response.chat.gemini' },
+        to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+        trip: async payload => await translateGeminiViaChatCompletions(payload, context),
+      }),
+      ...chatCompletionsWire(STREAMED_USAGE),
+    ]);
+  case 'messages':
+    return compose('geminiViaMessages', [
+      handOff({
+        from: { request: 'request.chat.gemini', response: 'response.chat.gemini' },
+        to: { request: 'request.chat.messages', response: 'response.chat.messages' },
+        trip: async payload => await translateGeminiViaMessages(payload, context),
+      }),
+      ...messagesWire(STREAMED_USAGE),
+    ]);
+  case 'responses':
+    return compose('geminiViaResponses', [
+      handOff({
+        from: { request: 'request.chat.gemini', response: 'response.chat.gemini' },
+        to: { request: 'request.chat.responses', response: 'response.chat.responses' },
+        trip: async payload => await translateGeminiViaResponses(payload, context),
+      }),
+      ...responsesWire(STREAMED_USAGE),
+    ]);
+  }
+};
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
