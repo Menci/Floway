@@ -142,7 +142,22 @@ const parseUsage = (value: unknown): CanonicalEmbeddingsUsage | undefined => {
   };
 };
 
-export const parseEmbeddingsResponse = (value: unknown): CanonicalEmbeddingsResponse => {
+/**
+ * Reads an upstream's answer into the canonical form.
+ *
+ * `requestedModel` completes the record when the upstream did not name one. The schema marks
+ * `model` required —
+ * https://github.com/openai/openai-openapi/blob/2186421dca0cca7c1e67caa7739005e8b1ccc4dd/openapi.yaml#L34327-L34331
+ * — and we have observed Copilot's `/embeddings` answering without it. Nothing holds it to
+ * the field: the endpoint's own first-party client reads `data` alone and never looks at it,
+ * where the sibling dotcom route reads its model back and asserts it —
+ * https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/embeddings/common/remoteEmbeddingsComputer.ts#L294-L301
+ *
+ * Naming the model the request asked for is what the client can correlate against, and it is
+ * what another Copilot gateway meters under for the same reason —
+ * https://github.com/caozhiyuan/copilot-api/blob/96854ce1e1e741d621b12d4ca844efd77f6e8d90/src/routes/embeddings/route.ts#L16-L23
+ */
+export const parseEmbeddingsResponse = (value: unknown, requestedModel: string): CanonicalEmbeddingsResponse => {
   if (!isRecord(value)) throw new Error('Embeddings response body must be an object');
   const { data } = value;
   if (!Array.isArray(data)) throw new Error('data must be an array');
@@ -155,7 +170,7 @@ export const parseEmbeddingsResponse = (value: unknown): CanonicalEmbeddingsResp
     };
   });
   return {
-    model: requiredString(value.model, 'model'),
+    model: value.model === undefined ? requestedModel : requiredString(value.model, 'model'),
     embeddings,
     ...(usage === undefined ? {} : { usage }),
   };

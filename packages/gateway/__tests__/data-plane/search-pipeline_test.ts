@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { searchServePipeline } from '../../src/data-plane/alpha-search/pipeline.ts';
+import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 
 const pinned = { kind: 'upstream', upstreamId: 'up_alpha', model: 'gpt-search' } as const;
@@ -37,15 +38,16 @@ describe('the search pipeline', () => {
       .rejects.toThrow('run(searchServe): searchServe needs request.search.alphaSearch');
   });
 
-  // A request with nothing to run reaches no backend at all, so this drives the whole
-  // assembly on no services: the parse stage answers instead of descending, and what the
-  // assembly guarantees — that a short-circuit covers what the edge needs — is what makes the
-  // run produce a rendered body, a status and a billed set anyway.
+  // A request with nothing to run reaches no backend at all: the parse stage answers instead
+  // of descending, and what the assembly guarantees — that a short-circuit covers what the
+  // edge needs — is what makes the run produce a rendered body, a status and a billed set
+  // anyway. Settlement is unconditional, so the run still writes; a search that ran locally
+  // simply names no billed entity.
   it('answers in band when there is nothing to run, and the edge renders that answer', async () => {
     const { facts } = await run(
       searchServePipeline({ kind: 'local' }),
       move({ 'request.search.alphaSearch': { commands: {} } }),
-      {},
+      { gateway: mockGatewayCtx({ wantsStream: false }), background: () => {} } as never,
     );
     expect(facts['response.http.status']).toBe(200);
     expect(facts['response.search.rendered']).toEqual({

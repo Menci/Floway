@@ -26,6 +26,7 @@ import { isJsonObject } from '../../shared/json-helpers.ts';
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { filterInboundHeadersForProvider } from '../shared/inbound-headers.ts';
@@ -350,6 +351,9 @@ export const searchServePipeline = (execution: SearchExecution): Pipeline<
   S<'response.search.rendered' | 'response.http.status' | 'response.usage.billable'>
 > => compose('searchServe', [
   emitAlphaSearch,
+  // Unconditional, as everywhere: a run that searched locally reached no upstream and bills
+  // for none, and saying so is a row that names no billed entity rather than no row.
+  writeSettlement(handedUp => isFailure((handedUp as { 'response.search.alphaSearch'?: unknown })['response.search.alphaSearch'])),
   ...(execution.kind === 'local'
     ? [parseSearchOperations, executeSearchOperations]
     : [callSearchUpstream(execution)]),

@@ -11,17 +11,17 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
+import { dialFailure, readUpstreamBody } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { compose, defineStage, move } from '@floway-dev/pipeline';
-import { mediaTypeEssence, parseDecimalString, type ModelEndpointKey } from '@floway-dev/protocols/common';
+import { mediaTypeEssence, parseDecimalString, renderErrorEnvelope, upstreamErrorMessage, type ModelEndpointKey } from '@floway-dev/protocols/common';
 import {
-  imagesErrorMessage,
   parseImagesResponse,
-  renderImagesError,
   renderImagesResponse,
   type CanonicalImagesEditsRequest,
   type CanonicalImagesRequest,
@@ -89,7 +89,7 @@ const emitImages = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.images.rendered': move(renderImagesError(answer.message, answer.body)),
+        'response.images.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
         'response.http.status': answer.status,
       };
     }
@@ -110,7 +110,7 @@ const emitImages = defineStage<
  * run.
  */
 const callImagesUpstream = defineStage<
-  I<'request.images.canonical' | 'route.candidate' | 'ingress.http.headers'>,
+  I<'request.images.canonical' | 'route.attempt' | 'ingress.http.headers'>,
   I<'response.images.canonical' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
@@ -119,7 +119,7 @@ const callImagesUpstream = defineStage<
     provides: ['response.images.canonical', 'response.http.headers', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
-    const candidate = facts['route.candidate'];
+    const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.images.canonical'];
     const options = buildUpstreamCallOptions(
       candidate,
@@ -127,16 +127,33 @@ const callImagesUpstream = defineStage<
       // The client's own headers reach the upstream from the record, not from a live request
       // object: what a provider is allowed to forward is filtered per provider, and the dump
       // shows what was there to filter.
-      new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value])),
+      new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value])),
     );
     const model = providerModelOf(candidate);
-    // No abort signal, as on this family's endpoints from the beginning: an image the upstream
-    // has already begun is charged for whether or not the client waited for it, so dropping the
-    // call would lose the usage reading and save nothing.
-    const result = request.operation === 'generations'
-      ? await candidate.provider.instance.callImagesGenerations(model, request.parameters, undefined, options)
-      : await candidate.provider.instance.callImagesEdits(model, providerEditsRequest(request), undefined, options);
+    // Attribution is set before the dial, so an attempt that never completes still names the
+    // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, PERFORMANCE_OPERATION[request.operation]);
+
+    let result;
+    try {
+      // No abort signal, as on this family's endpoints from the beginning: an image the upstream
+      // has already begun is charged for whether or not the client waited for it, so dropping the
+      // call would lose the usage reading and save nothing.
+      result = request.operation === 'generations'
+        ? await candidate.provider.instance.callImagesGenerations(model, request.parameters, undefined, options)
+        : await candidate.provider.instance.callImagesEdits(model, providerEditsRequest(request), undefined, options);
+    } catch (error) {
+      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
+      // A dial that never completed reached no upstream, so nothing was billed and there are
+      // no headers to carry. What it leaves behind is the performance row settlement writes.
+      return move({
+        ...facts,
+        'response.images.canonical': dialFailure(error),
+        'response.http.headers': [],
+        'response.usage.billable': [],
+      });
+    }
+
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     // What came back, unfiltered: the edge is where a client's view of it is decided.
     const headers = [...result.response.headers];
@@ -155,7 +172,7 @@ const callImagesUpstream = defineStage<
       use.log.warn('upstream refused', { status: result.response.status });
       return answered({
         status: result.response.status,
-        message: imagesErrorMessage(body.json) ?? body.text,
+        message: upstreamErrorMessage(body.json) ?? body.text,
         ...('json' in body ? { body: body.json } : {}),
       }, reportedNothing);
     }
@@ -183,22 +200,6 @@ const callImagesUpstream = defineStage<
     return answered(canonical, billed(canonical.usage));
   },
 });
-
-interface UpstreamBody {
-  readonly text: string;
-  /** Absent when the body was not JSON at all, which is itself the answer to a protocol that
-   *  requires JSON. */
-  readonly json?: unknown;
-}
-
-const readUpstreamBody = async (response: Response): Promise<UpstreamBody> => {
-  const text = await response.text();
-  try {
-    return { text, json: JSON.parse(text) as unknown };
-  } catch {
-    return { text };
-  }
-};
 
 /** An image is billed by the tokens its upstream reports: `BILLING_METRICS` names no per-image
  *  or per-size unit, and per-size pricing is a selector coordinate rather than a metric, so
@@ -235,18 +236,15 @@ const providerEditsSource = (image: ImagesEditImage): ImagesEditsSource => {
 
 /** A candidate that cannot serve *this* request is not a candidate. One family covers two
  *  endpoints and an upstream may expose either without the other, so which one is asked for is
- *  what narrows the list. A refusal answers with no upstream headers because there was no
- *  upstream, which is the same statement the edge above reads on every other path. */
+ *  what narrows the list. */
 const narrowing = (request: CanonicalImagesRequest) => ({
   kind: 'image' as const,
   reject: (candidate: ModelCandidate) => candidate.model.endpoints[ENDPOINT[request.operation]] === undefined
     ? `the upstream does not expose the images ${request.operation} endpoint`
     : null,
-  refuse: (status: number, message: string) => ({
-    'response.images.canonical': { status, message },
-    'response.http.headers': [],
-  }),
-  refuses: ['response.images.canonical', 'response.http.headers'] as const,
+  unsupported: (model: string) => `Model ${model} does not support the /images/${request.operation} endpoint.`,
+  refuse: (status: number, message: string) => ({ 'response.images.canonical': { status, message } }),
+  refuses: ['response.images.canonical'] as const,
 });
 
 /** What a caller must bring. `ingress.http.headers` and `request.images.canonical` are in it
@@ -260,6 +258,7 @@ export type ImagesServeExit = I<'response.images.rendered' | 'response.http.stat
 export const imagesServePipeline = (request: CanonicalImagesRequest): Pipeline<ImagesServeEntry, ImagesServeExit> =>
   compose('imagesServe', [
     emitImages,
+    writeSettlement(handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical'])),
     resolveCandidates(narrowing(request)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical']),

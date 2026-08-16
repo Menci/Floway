@@ -89,21 +89,3 @@ const splitModality = (
 };
 
 export const renderImagesResponse = (response: CanonicalImagesResponse): Record<string, unknown> => response.raw;
-
-/** What an upstream that refused said about it, when it said it in the shape this protocol
- *  uses. Anything else has no message to lift and is reported as the body it was. */
-export const imagesErrorMessage = (body: unknown): string | undefined => {
-  if (!isRecord(body) || !isRecord(body.error)) return undefined;
-  return typeof body.error.message === 'string' ? body.error.message : undefined;
-};
-
-/**
- * What the client is sent when the run produced no images. An upstream that answered with an
- * error object is rendered as that object — a client reads the code inside it, and the gateway
- * has nothing truer to say than what the upstream said — and everything else, a refusal that
- * never reached an upstream included, becomes the gateway's own envelope over the message.
- */
-export const renderImagesError = (message: string, upstreamBody: unknown): Record<string, unknown> =>
-  isRecord(upstreamBody) && isRecord(upstreamBody.error)
-    ? upstreamBody
-    : { error: { message, type: 'api_error' } };

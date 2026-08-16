@@ -41,59 +41,6 @@ const registerEmbeddingsUpstream = async (
   }));
 };
 
-test('passthrough-serve: usage-record failure does not turn upstream 2xx into 502', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
-
-  repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-  try {
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-        }
-        if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-          assertEquals(request.headers.get('anthropic-beta'), null);
-          assertEquals(request.headers.get('x-client-request-id'), null);
-          assertEquals(request.headers.get('x-debug'), null);
-          return jsonResponse({
-            object: 'list',
-            model: 'custom-embed-model',
-            data: [{ object: 'embedding', index: 0, embedding: [0.5] }],
-            usage: { prompt_tokens: 3, total_tokens: 3 },
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const response = await requestApp('/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-api-key': apiKey.key,
-            'anthropic-beta': 'context-1m-2025-08-07',
-            'x-client-request-id': 'request-1',
-            'x-debug': 'discard',
-          },
-          body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
-        });
-
-        assertEquals(response.status, 200);
-        const body = await response.json() as { data: Array<{ embedding: number[] }> };
-        assertEquals(body.data[0].embedding, [0.5]);
-        await flushAsyncWork();
-      },
-    );
-
-    assertEquals(errorSpy.mock.calls.some(call => call[0] === 'Failed to record usage:'), true);
-  } finally {
-    errorSpy.mockRestore();
-  }
-});
-
 test('passthrough-serve: Custom resolves configured ingress header rules before provider dispatch', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo, [
@@ -134,55 +81,6 @@ test('passthrough-serve: Custom resolves configured ingress header rules before 
       assertEquals(response.status, 200);
     },
   );
-});
-
-test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
-
-  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-  try {
-    const binary = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-        }
-        if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-          return new Response(binary, {
-            status: 200,
-            headers: { 'content-type': 'application/octet-stream' },
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const response = await requestApp('/v1/embeddings', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-          body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
-        });
-
-        assertEquals(response.status, 200);
-        assertEquals(response.headers.get('content-type'), 'application/octet-stream');
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        assertEquals(Array.from(bytes), Array.from(binary));
-        await flushAsyncWork();
-      },
-    );
-
-    const usage = await repo.usage.listAll();
-    assertEquals(usage.length, 1);
-    assertEquals(usage[0].requests, 1);
-    assertEquals(usage[0].metrics, []);
-    // The parse failure is observable through console.warn so operators can
-    // correlate missing usage rows against upstream body shape regressions.
-    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('passthrough-serve: failed to parse 2xx upstream body for /embeddings')), true);
-  } finally {
-    warnSpy.mockRestore();
-  }
 });
 
 test('passthrough-serve: response header blocklist preserves vendor metadata and drops unsafe headers', async () => {

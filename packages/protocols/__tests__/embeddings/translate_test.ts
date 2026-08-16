@@ -83,7 +83,7 @@ describe('embeddings response egress', () => {
       model: 'text-embedding-3-small',
       data: [{ object: 'embedding', index: 0, embedding: PACKED }],
       usage: { prompt_tokens: 8, total_tokens: 8 },
-    });
+    }, 'm');
 
     expect(parsed.embeddings).toEqual([{ index: 0, values: VECTOR }]);
     expect(parsed.usage).toEqual({ promptTokens: 8, totalTokens: 8 });
@@ -93,13 +93,31 @@ describe('embeddings response egress', () => {
     expect(() => parseEmbeddingsResponse({
       model: 'm',
       data: [{ index: 0, embedding: PACKED.slice(0, 8) }],
-    })).toThrow('data[0].embedding is not a whole number of float32 values');
+    }, 'm')).toThrow('data[0].embedding is not a whole number of float32 values');
+  });
+
+  // The schema marks `model` required and most upstreams send it; Copilot's `/embeddings`
+  // does not. An answer the gateway understands is one it can write again, so the record is
+  // completed with the model the request named rather than refused.
+  test('an upstream that names no model is read as having answered for the requested one', () => {
+    const parsed = parseEmbeddingsResponse(
+      { object: 'list', data: [{ object: 'embedding', index: 0, embedding: [0.5] }] },
+      'text-embedding-real',
+    );
+
+    expect(parsed.model).toBe('text-embedding-real');
+    expect(renderEmbeddingsResponse('float', parsed)).toMatchObject({ model: 'text-embedding-real' });
+  });
+
+  // A model the upstream *did* name is its own answer, and the request's id never overrides it.
+  test('a model the upstream named is kept', () => {
+    expect(parseEmbeddingsResponse({ model: 'upstream-id', data: [] }, 'requested-id').model).toBe('upstream-id');
   });
 
   // An upstream that reports no usage is a fact the gateway has to be able to carry: the
   // billed entity is present with no quantities, which is not the same as reporting zero.
   test('a missing usage block leaves the answer intact and reports nothing', () => {
-    const parsed = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: [0.5] }] });
+    const parsed = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: [0.5] }] }, 'm');
 
     expect(parsed.usage).toBeUndefined();
     expect(renderEmbeddingsResponse('float', parsed)).not.toHaveProperty('usage');
@@ -109,7 +127,7 @@ describe('embeddings response egress', () => {
   // saying so and will decode whatever it is handed; an upstream that ignores the field
   // and answers with float arrays would otherwise hand it noise.
   test('the answer is written in the encoding the client asked for, not the one it arrived in', () => {
-    const arrived = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: VECTOR }] });
+    const arrived = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: VECTOR }] }, 'm');
 
     expect(renderEmbeddingsResponse('base64', arrived)).toMatchObject({
       object: 'list',
@@ -118,16 +136,16 @@ describe('embeddings response egress', () => {
     expect(renderEmbeddingsResponse('float', parseEmbeddingsResponse({
       model: 'm',
       data: [{ index: 0, embedding: PACKED }],
-    }))).toMatchObject({ data: [{ embedding: VECTOR }] });
+    }, 'm'))).toMatchObject({ data: [{ embedding: VECTOR }] });
   });
 
   // Every float32 is a float64, so widening loses nothing and narrowing a value that came
   // from a float32 gives the same bits back. Holding vectors as numbers is therefore exact
   // and not an approximation, however many times a vector crosses the gateway.
   test('a vector survives any number of trips through the two encodings', () => {
-    const once = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: PACKED }] });
-    const twice = parseEmbeddingsResponse(renderEmbeddingsResponse('base64', once));
-    const thrice = parseEmbeddingsResponse(renderEmbeddingsResponse('base64', twice));
+    const once = parseEmbeddingsResponse({ model: 'm', data: [{ index: 0, embedding: PACKED }] }, 'm');
+    const twice = parseEmbeddingsResponse(renderEmbeddingsResponse('base64', once), 'm');
+    const thrice = parseEmbeddingsResponse(renderEmbeddingsResponse('base64', twice), 'm');
 
     expect(renderEmbeddingsResponse('base64', thrice)).toMatchObject({ data: [{ embedding: PACKED }] });
     expect(thrice.embeddings).toEqual(once.embeddings);
@@ -139,7 +157,7 @@ describe('embeddings response egress', () => {
       model: 'm',
       data: [{ object: 'not-an-embedding', index: 0, embedding: [0.5] }],
       usage: { prompt_tokens: 1, total_tokens: 1 },
-    }));
+    }, 'm'));
 
     expect(rendered).toEqual({
       object: 'list',

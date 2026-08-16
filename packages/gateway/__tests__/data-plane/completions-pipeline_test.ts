@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { completionsServePipeline } from '../../src/data-plane/completions/pipeline.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
+import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
@@ -19,8 +20,20 @@ vi.mock('../../src/data-plane/providers/resolution.ts', async importOriginal => 
   enumerateModelCandidates: vi.fn(),
 }));
 
+/** The live candidates the resolver hands back. They never enter the record: a candidate
+ *  carries the provider's instance, its fetcher and its models cache, and freezing those is
+ *  what putting one in the record would do. What travels is the selector. */
+let live: readonly ModelCandidate[] = [];
+
 const resolves = (candidates: readonly ModelCandidate[]): void => {
+  live = candidates;
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] });
+};
+
+const resolveAttempt = (selector: { readonly upstreamId: string }): ModelCandidate => {
+  const found = live.find(candidate => candidate.provider.upstreamId === selector.upstreamId);
+  if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
+  return found;
 };
 
 const candidate = (
@@ -50,10 +63,33 @@ const usageChunk = JSON.stringify({
   usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
 });
 
+// Settlement is part of every serve pipeline now, and it writes. A test that drives a whole
+// pipeline therefore needs somewhere for the row to go — the point being that the write
+// happens at all, which is what "a run that measured rather than generated still writes"
+// means and what nothing was checking before.
+const recorded: { usage: unknown[]; performance: unknown[] } = { usage: [], performance: [] };
+
+beforeEach(() => {
+  recorded.usage = [];
+  recorded.performance = [];
+  initRepo({
+    usage: { record: async (row: unknown) => { recorded.usage.push(row); } },
+    performance: {
+      recordNeutral: async (dims: unknown) => { recorded.performance.push(dims); },
+      recordZeroOutputError: async (dims: unknown) => { recorded.performance.push(dims); },
+    },
+  } as never);
+});
+
 const serve = async (facts: Record<string, unknown>) => await run(
   completionsServePipeline,
   move(facts) as never,
-  { gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }), background: () => {} } as never,
+  {
+    gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }),
+    background: () => {},
+    rememberCandidates: () => {},
+    resolveAttempt,
+  } as never,
 );
 
 const entryFacts = (overrides: Record<string, unknown> = {}) => ({
@@ -165,6 +201,92 @@ describe('the completions pipeline', () => {
     await drain();
   });
 
+  // Ownership is claimed, never detected, and until the claim was made the whole mechanism
+  // was inert: `failover` declared it consumes the body, `drain()` existed, and no family
+  // ever marked a body — so a losing attempt's connection stayed open and the winner's was
+  // never drained. This is the property, not the absence of the bug.
+  it('drains the losing attempt-s body at the fork, and the winner-s at the drain', async () => {
+    const drained: string[] = [];
+    const body = (label: string, chunks: readonly string[]): ReadableStream<Uint8Array> => {
+      let index = 0;
+      return new ReadableStream<Uint8Array>({
+        pull: controller => {
+          if (index < chunks.length) { controller.enqueue(new TextEncoder().encode(chunks[index]!)); index += 1; return; }
+          drained.push(label);
+          controller.close();
+        },
+      });
+    };
+    resolves([
+      candidate('up_a', async () => ({
+        response: new Response(body('loser', []), { status: 429, headers: { 'content-type': 'application/json' } }),
+        modelKey: 'k',
+      })),
+      candidate('up_b', async () => ({
+        response: new Response(body('winner', [`data: ${chunk('hi')}\n\n`, 'data: [DONE]\n\n']), {
+          status: 200, headers: { 'content-type': 'text/event-stream' },
+        }),
+        modelKey: 'k',
+      })),
+    ]);
+
+    const { facts, drain } = await serve(entryFacts());
+    // The client's stream is still live: the run answered before anything was drained.
+    expect(facts['response.completions.rendered']).toBeDefined();
+    await drain();
+    expect(drained).toContain('winner');
+  });
+
+  // Settlement is above the fork, so a run bills once however many candidates it tried —
+  // and it is unconditional, so a run that reached no upstream still writes a row that names
+  // no billed entity. Nothing asserted either until the review found the stage was composed
+  // into no pipeline at all.
+  it('writes exactly one usage row per run, however many candidates it tried', async () => {
+    resolves([
+      candidate('up_a', async () => ({ response: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
+      candidate('up_b', async () => ({
+        response: Response.json({ id: 'c', choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+        modelKey: 'k',
+      })),
+    ]);
+    const { drain } = await serve(entryFacts({
+      'ingress.completions.wantsStream': false,
+      'request.completions.payload': { model: 'text-model', prompt: 'hello' },
+    }));
+    await drain();
+    expect(recorded.usage).toHaveLength(1);
+    expect(recorded.performance).toHaveLength(1);
+  });
+
+  // A stream states its usage in the chunk that ends it, which is after the run has answered.
+  // Settling in the stage as well would write the row twice — once for the entity that had
+  // reported nothing, once for what the stream turned out to say — so the pipeline hands the
+  // numbers up as a promise and the epilogue is what writes them.
+  it('defers a stream-s settlement to the promise it hands up', async () => {
+    resolves([candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
+
+    const { facts, drain } = await serve(entryFacts());
+    await drain();
+
+    expect(recorded.usage).toHaveLength(0);
+    const streamed = facts['response.completions.streamedUsage'];
+    expect(streamed).not.toBeNull();
+    const billable = await streamed!;
+    expect(billable).toHaveLength(1);
+    expect(billable[0]!.quantities).toMatchObject({ input_tokens: '5', output_tokens: '7' });
+  });
+
+  // A run that reached no upstream bills nothing and samples nothing, which is what the
+  // replaced surface did: `recordPerformance` returns early without an attempt's telemetry,
+  // and there is no attempt. Settlement still runs — it is unconditional — and finds an
+  // empty billed set, which is how "we did not call an upstream" is said.
+  it('bills nothing and samples nothing when no upstream was reached', async () => {
+    vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates: [], sawModel: false, failedUpstreams: [] });
+    await serve(entryFacts());
+    expect(recorded.usage).toHaveLength(0);
+    expect(recorded.performance).toHaveLength(0);
+  });
+
   it('fails a refusal over to the next candidate, and renders the last one it got', async () => {
     const tried: string[] = [];
     resolves([
@@ -185,9 +307,10 @@ describe('the completions pipeline', () => {
 
     expect(tried).toEqual(['up_a', 'up_b']);
     // Every candidate failed, so the last failure is the base — the client sees the status
-    // an upstream actually returned rather than a synthesized gateway envelope.
+    // an upstream actually returned, and the words that upstream used, rather than a
+    // synthesized envelope quoting its serialized body back as a message.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.completions.rendered']).toEqual({ error: { message: JSON.stringify({ error: { message: 'no' } }), type: 'api_error' } });
+    expect(facts['response.completions.rendered']).toEqual({ error: { message: 'no' } });
     await drain();
   });
 

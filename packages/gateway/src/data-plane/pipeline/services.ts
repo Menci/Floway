@@ -6,8 +6,10 @@
 // Everything in facts is dumpable, and that is the test: a live handle dumps as nothing,
 // so a live handle is never a fact.
 
+import type { AttemptSelector } from './facts.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { Event, Logger } from '@floway-dev/pipeline';
+import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface GatewayServices {
   /** The global sink. Every stage's lines reach it, tagged with the stage's name. */
@@ -19,6 +21,14 @@ export interface GatewayServices {
   /** The request-scoped context the settlement and telemetry stages read. It is a service
    *  and not a fact because it holds live handles — the scheduler, the abort signal. */
   readonly gateway: GatewayCtx;
+  /** Turns a selector back into the thing that dials. The resolver is the service and the
+   *  selector is the fact: a per-upstream transport is not a fact and is not pinned at the
+   *  prologue either, so what is injected is the thing that resolves one and what travels
+   *  is the identifier it resolves from. */
+  readonly resolveAttempt: (selector: AttemptSelector) => ModelCandidate;
+  /** The other half of the resolver: the stage that enumerates hands the live candidates
+   *  here, so the ones that travel can be selectors. Per run, because a candidate list is. */
+  readonly rememberCandidates: (candidates: readonly ModelCandidate[]) => void;
   /** Binds a promise to the request's lifetime: `waitUntil` on Workers, the event loop on
    *  Node. What the drain is handed to, so an answer is not held up by it. */
   readonly background: (work: Promise<unknown>) => void;

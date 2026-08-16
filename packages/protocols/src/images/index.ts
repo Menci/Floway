@@ -105,4 +105,4 @@ export interface CanonicalImagesResponse {
 }
 
 export { parseImagesEditsRequest, parseImagesGenerationsRequest } from './request.ts';
-export { imagesErrorMessage, parseImagesResponse, parseImagesUsage, renderImagesError, renderImagesResponse } from './response.ts';
+export { parseImagesResponse, parseImagesUsage, renderImagesResponse } from './response.ts';

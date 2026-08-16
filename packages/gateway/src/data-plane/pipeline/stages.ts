@@ -10,16 +10,26 @@
 // them compose into a pipeline over any family's larger space with no variance question to
 // lose: assembly reasons over declarations, which are strings.
 
-import type { GatewayFacts } from './facts.ts';
+import type { AttemptSelector, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import type { Facts } from '@floway-dev/pipeline';
 import type { ModelKind } from '@floway-dev/protocols/common';
+import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
+
+/** Everything about a candidate that is data. The live half — the provider instance, the
+ *  fetcher, the models cache — stays out of the record and is looked back up by the
+ *  resolver service at the moment of the call. */
+const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
+  upstreamId: candidate.provider.upstreamId,
+  modelId: candidate.model.id,
+  flags: [...providerModelOf(candidate).enabledFlags],
+});
 
 /** What a family narrows its candidates by, and what it says when nothing is left. A
  *  candidate that resolves but cannot serve this request — no endpoint for the kind, or a
@@ -29,6 +39,12 @@ export interface Narrowing<Refusal extends object> {
   readonly kind: ModelKind;
   /** Keeps a candidate, or says in one phrase why it cannot serve this request. */
   readonly reject: (candidate: ModelCandidate) => string | null;
+  /** What the client is told when the model resolved but nothing can serve the request.
+   *  `reasons` holds what `reject` said, and is empty when no candidate of this kind was
+   *  found at all — which is the difference between "this model is not an embeddings model"
+   *  and "this reranker cannot do what this request asks". Families differ in how much of
+   *  that they spell out, so the sentence is the family's rather than this stage's. */
+  readonly unsupported: (model: string, reasons: readonly string[]) => string;
   /** What this family answers with when there is no candidate to try. The family decides
    *  which of its own keys carries the failure, which is why the refusal slice is a type
    *  parameter rather than a shared key: a reusable stage whose short-circuit provides
@@ -46,18 +62,18 @@ export interface Narrowing<Refusal extends object> {
  */
 export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<Refusal>) => defineStage<
   Slice<'serve.model'>,                                  // what arrives
-  Slice<'serve.model' | 'serve.candidates'>,             // what it hands down
-  Slice<'response.usage.billable'>,                      // what comes back
-  Slice<'response.usage.billable'>,                      // what it hands up, having descended
-  Slice<'response.usage.billable'> & Refusal,            // and what it answers with instead
+  Slice<'serve.model' | 'serve.candidates'>,                            // what it hands down
+  Slice<'response.usage.billable' | 'response.http.headers'>,           // what comes back
+  Slice<'response.usage.billable' | 'response.http.headers'>,           // what it hands up, having descended
+  Slice<'response.usage.billable' | 'response.http.headers'> & Refusal, // and what it answers with instead
   GatewayServices
 >({
   name: 'resolveCandidates',
   through: {
     request: { needs: ['serve.model'], consumes: [], provides: ['serve.candidates'] },
-    response: { needs: ['response.usage.billable'], consumes: [], provides: [] },
+    response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.usage.billable', ...narrowing.refuses] },
+  return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -68,14 +84,20 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       runtimeLocation: use.gateway.runtimeLocation,
     });
 
-    // An empty billed set is what "we did not call an upstream" looks like. The settlement
-    // stages still run and still write; the row simply names no billed entity.
+    // An empty billed set is what "we did not call an upstream" looks like, and an empty
+    // header list is the same statement on the other key. The settlement stages still run
+    // and still write; the row simply names no billed entity.
     const refuse = (status: number, message: string) =>
-      move({ ...facts, 'response.usage.billable': [], ...narrowing.refuse(status, message) });
+      move({
+        ...facts,
+        'response.usage.billable': [],
+        'response.http.headers': [],
+        ...narrowing.refuse(status, message),
+      });
 
     if (candidates.length === 0) {
       const missing = sawModel
-        ? `Model ${model} does not support ${narrowing.kind}.`
+        ? narrowing.unsupported(model, [])
         : `Model ${model} is not available on any configured upstream.`;
       return refuse(sawModel ? 400 : 404, appendFailedUpstreams(missing, failedUpstreams));
     }
@@ -86,15 +108,15 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       if (why !== null) refused.add(why);
       return why === null;
     });
+    // The live half stays with the resolver; only selectors travel.
+    use.rememberCandidates(viable);
     if (viable.length === 0) {
-      return refuse(400, appendFailedUpstreams(
-        `Model ${model} does not support this request: ${[...refused].join('; ')}.`,
-        failedUpstreams,
-      ));
+      use.log.debug('no viable candidate', { model, refused: [...refused] });
+      return refuse(400, appendFailedUpstreams(narrowing.unsupported(model, [...refused]), failedUpstreams));
     }
 
     use.log.debug('resolved candidates', { model, viable: viable.length, resolved: candidates.length });
-    return await next({ ...facts, 'serve.candidates': move(viable) });
+    return await next({ ...facts, 'serve.candidates': move(viable.map(selectorFor)) });
   },
 });
 
@@ -123,14 +145,14 @@ export interface Forking {
 
 export const failover = ({ failed, owns }: Forking) => defineStage<
   Slice<'serve.candidates'>,
-  Slice<'serve.candidates' | 'route.candidate'>,
+  Slice<'serve.candidates' | 'route.attempt'>,
   Slice<'response.usage.billable'>,
   Slice<'response.usage.billable'>,
   GatewayServices
 >({
   name: 'failover',
   through: {
-    request: { needs: ['serve.candidates'], consumes: [], provides: ['route.candidate'] },
+    request: { needs: ['serve.candidates'], consumes: [], provides: ['route.attempt'] },
     response: {
       needs: ['response.usage.billable'],
       // Owned on the way up and handed onward: every attempt's is this stage's to release,
@@ -146,9 +168,9 @@ export const failover = ({ failed, owns }: Forking) => defineStage<
       // still attributes its performance row to the candidate that was being tried.
       use.gateway.attempt.upstreamCallStartedAt = null;
       use.gateway.attempt.firstOutputTokenAt = null;
-      last = await next({ ...facts, 'route.candidate': move(candidate) });
+      last = await next({ ...facts, 'route.attempt': move(candidate) });
       if (!failed(last as Facts)) return last;
-      use.log.info('candidate failed, trying the next', { upstream: candidate.provider.upstreamId });
+      use.log.info('candidate failed, trying the next', { upstream: candidate.upstreamId });
     }
     if (last === undefined) throw new Error('failover: assembly handed it an empty candidate list');
     // Every candidate failed, and the last failure is the base — so the client sees real

@@ -9,8 +9,20 @@
 // key for key and semantically disjoint.
 
 import type { UsageQuantities } from '../../repo/types.ts';
-import type { Secret } from '@floway-dev/pipeline';
-import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { Secret, Owned } from '@floway-dev/pipeline';
+import type { PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import type { TelemetryModelIdentity } from '@floway-dev/provider';
+
+/** Everything about an attempt that is data: which upstream, which model row on it, and the
+ *  flags that row carries. Enough to choose, to record and to price — and to look the live
+ *  candidate back up when the time comes to dial. */
+export interface AttemptSelector {
+  readonly upstreamId: string;
+  readonly modelId: string;
+  /** Snapshotted rather than referenced, because the record must show what was true when
+   *  the attempt was made rather than what the row says now. */
+  readonly flags: readonly string[];
+}
 
 /** What an upstream call is answerable for. Keyed by billed entity, because one call can
  *  bill in units that are not commensurable, and an entity with no quantities at all is
@@ -18,6 +30,11 @@ import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provide
 export interface BillableEntity {
   readonly identity: TelemetryModelIdentity;
   readonly quantities: UsageQuantities;
+  /** What pricing needs beyond the quantities, when a rate depends on more than how much
+   *  there was. Absent is a real reading and not a missing one: most families price on the
+   *  quantities alone. Observed where the reading is, because settlement is the last reader
+   *  and not a second observer. */
+  readonly pricingFacts?: PricingRuntimeFacts;
 }
 
 /** A failure is a value, never a throw, so an earlier stage can fail over a later stage's
@@ -34,20 +51,27 @@ export const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
 
 export interface GatewayFacts {
-  /** What the client sent, before anything read it. Recorded on every request, so the
-   *  dump can always show it. */
-  'ingress.http.method': string;
-  'ingress.http.path': string;
+  /** What the client sent, before anything read it. Every family hands these over, because
+   *  every ending forwards what a provider is allowed to forward of them. */
   'ingress.http.headers': readonly (readonly [string, string])[];
-  'ingress.http.body': Uint8Array;
 
   /** The public model id the client asked for, and the candidates it resolves to. Nothing
    *  consumes these: they outlive an attempt. */
   'serve.model': string;
-  'serve.candidates': readonly ModelCandidate[];
+  'serve.candidates': readonly AttemptSelector[];
 
-  /** Which upstream this attempt targets. Provided per attempt by the stage that forks. */
-  'route.candidate': ModelCandidate;
+  /** Which upstream this attempt targets. Provided per attempt by the stage that forks.
+   *
+   *  A **selector**, not the candidate itself. A `ModelCandidate` carries the provider's
+   *  live instance, its fetcher and its models cache, and a live handle is never a fact —
+   *  the test being whether it can be rendered into the dump. Putting one in the record
+   *  deep-freezes all three, and the writes the provider relies on then fail *silently*,
+   *  because a frozen write only throws in strict mode and the provider's own code is not
+   *  the caller. The SWR models cache would stop refreshing with nothing to see.
+   *
+   *  So the resolver is a service and the selector is the fact, which is the ruling as
+   *  written. What travels is what identifies the attempt; what dials is injected. */
+  'route.attempt': AttemptSelector;
 
   /** There is exactly one url and one headers. Headers are rewritten the whole way down,
    *  so the dump shows a header's entire history in one place, and a value may be secret. */
@@ -56,8 +80,11 @@ export interface GatewayFacts {
 
   'response.http.status': number;
   'response.http.headers': readonly (readonly [string, string])[];
-  /** The upstream's body, still open. Whoever declares it consumed owns draining it. */
-  'response.http.body': ReadableStream<Uint8Array> & AsyncDisposable;
+  /** The upstream's body, still open, and marked as something the run answers for. `Owned`
+   *  rather than `AsyncDisposable`: the language puts `Symbol.asyncDispose` on every async
+   *  generator and on no `ReadableStream`, so a structural type would admit an iterator that
+   *  is not a resource and reject the body that is. */
+  'response.http.body': ReadableStream<Uint8Array> & Owned;
 
   /** The authoritative reading, provided closest to the upstream on the dialect it
    *  actually spoke. Every step that changes usage re-provides it. */
