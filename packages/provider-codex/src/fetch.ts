@@ -1,4 +1,4 @@
-import { CodexAccessOnlyCredentialError, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
+import { CodexAccessOnlyCredentialError, codexPlanObservation, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { isObject } from './auth/parse-helpers.ts';
 import {
@@ -102,7 +102,7 @@ export const callCodexImagesGenerations = async (opts: CallCodexImagesGeneration
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
   // An account whose plan is unknown falls back to a fail-open sentinel: the
   // upstream gate only withholds images from an explicitly `free` plan.
-  const effectivePlan = accessTokenPlan(ready.accessToken)
+  const effectivePlan = codexPlanObservation(ready.accessToken)
     ?? (opts.fallbackPlanType === undefined ? { planType: '' } : { planType: opts.fallbackPlanType });
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
@@ -114,18 +114,13 @@ export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): P
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
   // An account whose plan is unknown falls back to a fail-open sentinel: the
   // upstream gate only withholds images from an explicitly `free` plan.
-  const effectivePlan = accessTokenPlan(ready.accessToken)
+  const effectivePlan = codexPlanObservation(ready.accessToken)
     ?? (opts.fallbackPlanType === undefined ? { planType: '' } : { planType: opts.fallbackPlanType });
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
   return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
 };
-
-const accessTokenPlan = (entry: CodexAccessTokenEntry): CodexPlanObservation | null =>
-  entry.planType === undefined
-    ? null
-    : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
 
 // Pre-fetch gates + initial access-token mint.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: CodexAccessTokenEntry } | { ok: false; response: Response }> => {
@@ -556,7 +551,7 @@ const refreshAccessTokenForRetry = async (
       opts.account.chatgptAccountId,
       async refreshToken => {
         const minted = await mintAccessToken(opts, refreshToken);
-        return mergeRetryPlan(minted, fallbackPlan ?? accessTokenPlan(failedEntry) ?? undefined);
+        return mergeRetryPlan(minted, fallbackPlan ?? codexPlanObservation(failedEntry) ?? undefined);
       },
       true,
     );
@@ -692,7 +687,7 @@ const performImageCall = async (
   if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts, accessToken, effectivePlan);
     if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    const refreshedPlan = accessTokenPlan(fresh.accessToken) ?? effectivePlan;
+    const refreshedPlan = codexPlanObservation(fresh.accessToken) ?? effectivePlan;
     if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
     return await performImageCall(opts, fresh.accessToken, path, body, turnId, refreshedPlan, true);
   }

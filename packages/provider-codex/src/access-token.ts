@@ -37,7 +37,7 @@ export interface CodexPlanObservation {
   observedAt?: string;
 }
 
-const planObservation = (entry: CodexAccessTokenEntry | null | undefined): CodexPlanObservation | null =>
+export const codexPlanObservation = (entry: CodexAccessTokenEntry | null | undefined): CodexPlanObservation | null =>
   entry?.planType === undefined
     ? null
     : { planType: entry.planType, observedAt: entry.planObservedAt ?? entry.refreshedAt };
@@ -69,7 +69,7 @@ const mergeCodexAccessTokenEntry = (
   const token = Number.isFinite(currentTime) && (!Number.isFinite(incomingTime) || currentTime >= incomingTime)
     ? current!
     : incoming;
-  const plan = latestPlanObservation(planObservation(incoming), planObservation(current), fallbackPlan);
+  const plan = latestPlanObservation(codexPlanObservation(incoming), codexPlanObservation(current), fallbackPlan);
   const { planType: _planType, planObservedAt: _planObservedAt, ...tokenFields } = token;
   return plan === null
     ? tokenFields
@@ -258,7 +258,7 @@ const ensureCodexAccessTokenInner = async (
     accountId,
     minted,
     'ensureCodexAccessToken',
-    planObservation(account.accessToken) ?? undefined,
+    codexPlanObservation(account.accessToken) ?? undefined,
   )) ?? minted;
 };
 
