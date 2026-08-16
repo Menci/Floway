@@ -21,6 +21,7 @@ import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
+import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import {
   isAudioTranscriptionDoneEvent,
@@ -103,8 +104,10 @@ const isEvents = (answer: CanonicalAudioTranscription | AudioTranscriptionEvents
 const emitAudioTranscription = defineStage<
   A<'ingress.audioTranscription.responseFormat'>,
   A<'ingress.audioTranscription.responseFormat'>,
-  A<'ingress.audioTranscription.responseFormat' | 'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType'>,
-  A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType'> & { 'response.http.status': number }
+  A<'ingress.audioTranscription.responseFormat' | 'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType'>
+    & { 'response.http.headers': readonly (readonly [string, string])[] },
+  A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType'>
+    & { 'response.http.status': number; 'response.http.headers': readonly (readonly [string, string])[] }
 >({
   name: 'emitAudioTranscription',
   through: {
@@ -114,18 +117,24 @@ const emitAudioTranscription = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.audioTranscription.canonical', 'response.audioTranscription.mediaType'],
-      consumes: ['response.audioTranscription.canonical'],
-      provides: ['response.audioTranscription.rendered', 'response.audioTranscription.mediaType', 'response.http.status'],
+      needs: ['response.audioTranscription.canonical', 'response.audioTranscription.mediaType', 'response.http.headers'],
+      consumes: ['response.audioTranscription.canonical', 'response.http.headers'],
+      provides: ['response.audioTranscription.rendered', 'response.audioTranscription.mediaType', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
-    const { 'response.audioTranscription.canonical': answer, ...rest } = back;
+    const { 'response.audioTranscription.canonical': answer, 'response.http.headers': headers, ...rest } = back;
+    // Vendor traces and quota state stay visible; what an intermediary must strip, and what
+    // would misdescribe a body this gateway serialized itself, does not. A filter that removed
+    // nothing hands the same array on, so the record shows no change where none happened.
+    const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
       return {
         ...rest,
+        'response.http.headers': forClient,
         'response.http.status': answer.status,
         'response.audioTranscription.mediaType': 'application/json',
         'response.audioTranscription.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
@@ -136,6 +145,7 @@ const emitAudioTranscription = defineStage<
     // client gets rather than the one the upstream gave.
     return {
       ...rest,
+      'response.http.headers': forClient,
       'response.http.status': 200,
       'response.audioTranscription.rendered': move(isEvents(answer)
         ? renderSSE(answer)
@@ -364,7 +374,8 @@ const narrowing = {
 export const audioTranscriptionServePipeline: Pipeline<
   A<'ingress.http.headers' | 'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'serve.model'>,
   A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
-  & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[] }
+  & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[];
+    'response.http.headers': readonly (readonly [string, string])[] }
 > = compose('audioTranscriptionServe', [
   emitAudioTranscription,
   writeSettlement(handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical'])),

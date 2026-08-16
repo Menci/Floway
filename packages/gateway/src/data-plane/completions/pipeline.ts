@@ -22,6 +22,7 @@ import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
+import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
@@ -95,8 +96,8 @@ const isFrames = (answer: CompletionsFacts['response.completions.payload']): ans
 const emitCompletions = defineStage<
   C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
   C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
-  C<'ingress.completions.wantsUsageChunk' | 'response.completions.payload'>,
-  C<'response.completions.rendered' | 'response.http.status'>
+  C<'ingress.completions.wantsUsageChunk' | 'response.completions.payload' | 'response.http.headers'>,
+  C<'response.completions.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitCompletions',
   through: {
@@ -106,9 +107,9 @@ const emitCompletions = defineStage<
       provides: ['request.completions.payload'],
     },
     response: {
-      needs: ['response.completions.payload'],
-      consumes: ['response.completions.payload'],
-      provides: ['response.completions.rendered', 'response.http.status'],
+      needs: ['response.completions.payload', 'response.http.headers'],
+      consumes: ['response.completions.payload', 'response.http.headers'],
+      provides: ['response.completions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
@@ -120,12 +121,17 @@ const emitCompletions = defineStage<
         : asked),
     });
 
-    const { 'response.completions.payload': answer, ...rest } = back;
+    const { 'response.completions.payload': answer, 'response.http.headers': headers, ...rest } = back;
+    // Vendor traces and quota state stay visible; what an intermediary must strip, and what
+    // would misdescribe a body this gateway serialized itself, does not. A filter that removed
+    // nothing hands the same array on, so the record shows no change where none happened.
+    const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
     // A refusal keeps the status the upstream gave it. Anything that answered is a 200 the
     // gateway says itself, because what the client receives is serialized here rather than
     // relayed — the upstream's own status is a fact further down for whoever wants it.
     return {
       ...rest,
+      'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
       'response.http.status': isFailure(answer) ? answer.status : 200,
       'response.completions.rendered': move(rendered(answer, back['ingress.completions.wantsUsageChunk'])),
     };
@@ -366,7 +372,7 @@ const narrowing = {
 
 export const completionsServePipeline: Pipeline<
   C<'ingress.http.headers' | 'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload' | 'serve.model'>,
-  C<'response.completions.rendered' | 'response.completions.streamedUsage' | 'response.http.status' | 'response.usage.billable'>
+  C<'response.completions.rendered' | 'response.completions.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > = compose('completionsServe', [
   emitCompletions,
   writeSettlement(handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload'])),
