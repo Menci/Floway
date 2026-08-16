@@ -187,11 +187,15 @@ const affinityCarriers = (events: readonly GeminiResult[]): readonly string[] =>
 
 describe('the gemini pipeline', () => {
   // The whole entry contract, and it does not mention `request.chat.gemini`: the turn the
-  // ending translates is not the one the caller handed in but the one materializeAttempt put
+  // wire translates is not the one the caller handed in but the one materializeAttempt put
   // into the record below the fork, which is where a per-candidate payload can exist at all.
+  // The two `ingress.*` keys are there because the fork declares what the wire under it
+  // reads — a wire is built against a candidate, so assembly cannot ask one itself.
   it('assembles, and asks its caller only for what the descending stages need', () => {
     expect([...geminiServePipeline(payload).entryNeeds].sort()).toEqual([
       'ingress.chat.gemini.wantsStream',
+      'ingress.chat.sourceProtocol',
+      'ingress.http.headers',
       'serve.model',
     ]);
   });
@@ -226,7 +230,7 @@ describe('the gemini pipeline', () => {
   // upstream that issued them — so the turn that is translated is the one affinity rewrote
   // for this candidate, and the candidate that answered is marked for the next turn. That
   // turn enters the record below the fork because everything between there and the dial
-  // rewrites the request as a fact, and one stage owns the reading: an ending that asked the
+  // rewrites the request as a fact, and one stage owns the reading: a wire that asked the
   // resolver again would translate a turn no stage in the chain had touched.
   it('translates what the record holds, and marks the candidate that answered', async () => {
     let sent: Record<string, unknown> | undefined;
@@ -240,9 +244,12 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
     await collect(facts['response.chat.gemini.rendered']);
 
-    // The exit contract names what the run answers with, and the turn the chain translated is
-    // not that — but the record carries every key in flight, so it is still there to read.
-    expect((facts as Record<string, unknown>)['request.chat.gemini']).toBe(affinityPayload);
+    // The handoff consumed `request.chat.gemini` and provided the wire's own key, so what the
+    // record still carries below the fork is the translated turn and not the Gemini one — the
+    // whole of what a translation is, said in the fact space.
+    expect((facts as Record<string, unknown>)['request.chat.gemini']).toBeUndefined();
+    expect((facts as Record<string, unknown>)['request.chat.chatCompletions'])
+      .toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
     expect(asked).toBe(1);
     expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
     expect(selected).toEqual([dialled]);

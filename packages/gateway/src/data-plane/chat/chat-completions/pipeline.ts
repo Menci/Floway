@@ -5,12 +5,19 @@
 //   resolveChatCandidates      narrows to what can serve, in the order affinity asks for
 //   failover                   runs what follows once per candidate
 //   the interceptors           the shared array, each one a stage
-//   callChatCompletionsUpstream  the ending: dials this candidate's wire
+//   dialChatWire               the ending: picks this candidate's wire and hands into it
 //
 // The wire a candidate is dialled on is chosen per candidate rather than at assembly, and
-// because failover re-runs the whole suffix the next candidate re-picks its own. Only the
-// native wire is here; the translated ones hand up the same key, which is what will make
-// them interchangeable with it.
+// because failover re-runs the whole suffix the next candidate re-picks its own. Only its own
+// wire is built here; the translated ones will hand up `response.chat.chatCompletions` too,
+// which is what will make them interchangeable with it.
+//
+// What sits *in* a wire rather than above the fork is the other half of the arrangement. A
+// rule that speaks about an upstream's Chat Completions endpoint — the role rewrite does,
+// which is why its interceptor form stood down on `ctx.targetApi !== 'chat-completions'` —
+// belongs to the wire and not to the source chain, so a turn that leaves for another
+// protocol never carries it. Said by position rather than by a guard: a stage below the fork
+// runs only when this is the wire the fork chose.
 
 import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
@@ -25,6 +32,7 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
+import { dialChatWire, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToChatCompletions,
   disableReasoningOnForcedToolChoiceForChatCompletions,
@@ -35,7 +43,7 @@ import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import {
   CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
   chatCompletionsErrorPayloadMessage,
@@ -164,21 +172,25 @@ const renderSSE = (
 });
 
 /**
- * The native wire. It dials Chat Completions and provides the answer at this family's own
- * response key — which is what will make it interchangeable with a translated chain: both
- * hand up `response.chat.chatCompletions`, and the stage above cannot tell which ran.
+ * The wire. It dials Chat Completions and provides the answer at whichever family's response
+ * key the chain above it reads — which is what makes it interchangeable with a translated
+ * chain: both hand up `response.chat.chatCompletions`, and the stage above cannot tell which
+ * ran.
+ *
+ * `streamedUsage` is the one key it is told. A wire hands up one reading whatever protocol it
+ * spoke, and where that reading lands is the *source* family's own key rather than this
+ * protocol's — so it is built with it rather than naming one of its own.
  */
-const callChatCompletionsUpstream = defineStage<
+const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
   C<'request.chat.chatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
-  C<'response.chat.chatCompletions' | 'response.chat.chatCompletions.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+  C<'response.chat.chatCompletions' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
   name: 'callChatCompletionsUpstream',
   return: {
     provides: [
       'response.chat.chatCompletions',
-      'response.chat.chatCompletions.streamedUsage',
+      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -190,9 +202,10 @@ const callChatCompletionsUpstream = defineStage<
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
     // What the record holds by now: the payload affinity materialized for this candidate,
-    // as every stage between the fork and here has rewritten it. The id the client addressed
-    // does not travel — the provider re-stamps whatever it resolved upstream — and an alias'
-    // own rules apply to the body that is sent.
+    // as every stage between the fork and here has rewritten it — or, on a translated wire,
+    // what the handoff put here. The id the client addressed does not travel — the provider
+    // re-stamps whatever it resolved upstream — and an alias' own rules apply to the body
+    // that is sent.
     const payload = { ...facts['request.chat.chatCompletions'], model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
@@ -215,7 +228,7 @@ const callChatCompletionsUpstream = defineStage<
       return move({
         ...facts,
         'response.chat.chatCompletions': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.chat.chatCompletions.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -238,7 +251,7 @@ const callChatCompletionsUpstream = defineStage<
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        'response.chat.chatCompletions.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -251,12 +264,34 @@ const callChatCompletionsUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.chatCompletions': { kind: 'stream' as const, frames: metered.frames },
-      'response.chat.chatCompletions.streamedUsage': metered.outcome,
+      [streamedUsage]: metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
   },
 });
+
+/**
+ * The Chat Completions wire, as the chain that dials it.
+ *
+ * Every source protocol that reaches an upstream over this endpoint runs this, whether the
+ * client spoke Chat Completions or a handoff arrived here — which is what makes a rule that
+ * speaks about *this* wire belong here. The role rewrite states what an upstream's Chat
+ * Completions endpoint accepts, so it applies to whatever body this wire actually sends and
+ * to nothing that leaves for another protocol.
+ */
+export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
+  applyRoleCompatibilityToChatCompletions,
+  callChatCompletionsUpstream(streamedUsage),
+];
+
+/** This family's own reading, which every wire under it hands up. */
+const STREAMED_USAGE = 'response.chat.chatCompletions.streamedUsage';
+
+/** The wires `/v1/chat/completions` can be served on. Only its own is built; the two
+ *  translated ones are each a handoff and then that protocol's own wire, and until they exist
+ *  a candidate the picker admitted on one of them is dialled here anyway. */
+const chatCompletionsWireFor = (): ChatWire => compose('chatCompletionsNative', chatCompletionsWire(STREAMED_USAGE));
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Only a report carrying real counts
@@ -368,8 +403,13 @@ export const chatCompletionsServePipeline = (payload: ChatCompletionsPayload): P
       owns: [],
     }),
     materializeAttempt('request.chat.chatCompletions'),
-    applyRoleCompatibilityToChatCompletions,
     disableReasoningOnForcedToolChoiceForChatCompletions,
     stripPromptCacheKeyForChatCompletions,
-    callChatCompletionsUpstream,
+    dialChatWire({
+      source: 'request.chat.chatCompletions',
+      needs: ['request.chat.chatCompletions', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
+      provides: ['response.chat.chatCompletions', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      pick: endpoints => chatCompletionsTarget.pick(endpoints),
+      wire: chatCompletionsWireFor,
+    }),
   ]);

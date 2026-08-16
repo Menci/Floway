@@ -5,14 +5,14 @@
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
 //   materializeAttempt     puts the payload this candidate is owed into the record
-//   callMessagesUpstream   the ending: dials this candidate's wire
+//   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
-// Only the native wire is here. The translated ones — Messages via Responses and Messages
-// via Chat Completions — hand up the same `response.chat.messages` key, which is what will
-// make them interchangeable with this one, and each is a step of its own. So is
-// `/v1/messages/count_tokens`: a second operation over this protocol rather than another
-// wire under this pipeline. This family's own interceptors are not stages yet either, so
-// the array between the materialized payload and the ending is empty rather than short.
+// Only its own wire is built. The translated ones — Messages via Responses and Messages via
+// Chat Completions — will hand up `response.chat.messages` too, which is what will make them
+// interchangeable with it, and each is a step of its own. So is
+// `/v1/messages/count_tokens`: a second operation over this protocol rather than another wire
+// under this pipeline. This family's own interceptors are not all stages yet either, so the
+// array between the materialized payload and the fork is short rather than complete.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
@@ -27,6 +27,7 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
+import { dialChatWire, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToMessages,
   disableReasoningOnForcedToolChoiceForMessages,
@@ -39,7 +40,7 @@ import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
   collectMessagesProtocolEventsToResult,
@@ -237,17 +238,16 @@ const answerClaudeCodeProbe = defineStage<
   },
 });
 
-const callMessagesUpstream = defineStage<
-  M<'request.chat.messages' | 'route.attempt' | 'ingress.http.headers'>,
-  M<'response.chat.messages' | 'response.chat.messages.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+const callMessagesUpstream = (streamedUsage: string) => defineStage<
+  M<'request.chat.messages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
+  M<'response.chat.messages' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
   name: 'callMessagesUpstream',
   return: {
     provides: [
       'response.chat.messages',
-      'response.chat.messages.streamedUsage',
+      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -259,11 +259,11 @@ const callMessagesUpstream = defineStage<
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
     // What the record holds by now: the payload affinity materialized for this candidate, as
-    // every stage between the fork and here has rewritten it. A thinking signature was
-    // rewritten for the upstream that will see it, and one that no upstream but the issuer
-    // can read was dropped rather than sent on. The id the client addressed does not travel —
-    // the provider re-stamps whatever it resolved upstream — and an alias' own rules apply to
-    // the body that is sent.
+    // every stage between the fork and here has rewritten it — or, on a translated wire, what
+    // the handoff put here. A thinking signature was rewritten for the upstream that will see
+    // it, and one that no upstream but the issuer can read was dropped rather than sent on.
+    // The id the client addressed does not travel — the provider re-stamps whatever it
+    // resolved upstream — and an alias' own rules apply to the body that is sent.
     const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
@@ -271,10 +271,14 @@ const callMessagesUpstream = defineStage<
     // The client's own headers reach the upstream from the record, not from a live request
     // object: what a provider is allowed to forward is filtered per provider, and the dump
     // shows what was there to filter. Anthropic's beta flags are the exception — they have a
-    // typed path of their own so no header allowlist can admit them and no other source
-    // protocol can leak them in, which is why the field is read off and then dropped.
+    // typed path of their own so no header allowlist can admit them, and they are the
+    // client's own only when the client spoke this protocol: a turn that arrived here through
+    // a translation asked for nothing on this wire, so the field is read off and then dropped
+    // whichever protocol sent it.
     const headers = new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]));
-    const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
+    const anthropicBeta = facts['ingress.chat.sourceProtocol'] === 'messages'
+      ? parseAnthropicBetaHeader(headers.get('anthropic-beta'))
+      : [];
     headers.delete('anthropic-beta');
 
     let result;
@@ -292,7 +296,7 @@ const callMessagesUpstream = defineStage<
       return move({
         ...facts,
         'response.chat.messages': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.chat.messages.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -315,7 +319,7 @@ const callMessagesUpstream = defineStage<
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        'response.chat.messages.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -328,12 +332,34 @@ const callMessagesUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.messages': { kind: 'stream' as const, frames: metered.frames },
-      'response.chat.messages.streamedUsage': metered.outcome,
+      [streamedUsage]: metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
   },
 });
+
+/**
+ * The Messages wire, as the chain that dials it.
+ *
+ * Every source protocol that reaches an upstream over this endpoint runs this, whether the
+ * client spoke Messages or a handoff arrived here — which is what makes a rule that speaks
+ * about *this* wire belong here. The system-role rewrite states what an upstream's Messages
+ * endpoint accepts, so it applies to whatever body this wire actually sends and to nothing
+ * that leaves for another protocol.
+ */
+export const messagesWire = (streamedUsage: string): readonly Stage[] => [
+  applyRoleCompatibilityToMessages,
+  callMessagesUpstream(streamedUsage),
+];
+
+/** This family's own reading, which every wire under it hands up. */
+const STREAMED_USAGE = 'response.chat.messages.streamedUsage';
+
+/** The wires `/v1/messages` can be served on. Only its own is built; the two translated ones
+ *  are each a handoff and then that protocol's own wire, and until they exist a candidate the
+ *  picker admitted on one of them is dialled here anyway. */
+const messagesWireFor = (): ChatWire => compose('messagesNative', messagesWire(STREAMED_USAGE));
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Anthropic states input accounting on
@@ -446,6 +472,11 @@ export const messagesServePipeline = (payload: MessagesPayload): Pipeline<Messag
     answerClaudeCodeProbe,
     stripBillingAttributionFromMessages,
     disableReasoningOnForcedToolChoiceForMessages,
-    applyRoleCompatibilityToMessages,
-    callMessagesUpstream,
+    dialChatWire({
+      source: 'request.chat.messages',
+      needs: ['request.chat.messages', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
+      provides: ['response.chat.messages', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      pick: endpoints => messagesTarget.pick(endpoints),
+      wire: messagesWireFor,
+    }),
   ]);

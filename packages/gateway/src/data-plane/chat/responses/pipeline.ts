@@ -5,11 +5,15 @@
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
 //   materializeAttempt     puts the payload this candidate is owed into the record
-//   callResponsesUpstream  the ending: dials this candidate's wire
+//   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
-// One wire and one transport: `/v1/responses` over HTTP, dialled on a candidate's own
-// Responses endpoint. Everything else this protocol owns is a step of its own, and is stated
-// here rather than implied by its absence:
+// Only its own wire is built. What sits *in* a wire rather than above the fork is a rule that
+// speaks about that wire: the role rewrite and the cache-bucket fold both do, which is why
+// their interceptor forms stood down on `ctx.targetApi !== 'responses'`, and position says it
+// here instead.
+//
+// One transport, and everything else this protocol owns is a step of its own, stated here
+// rather than implied by its absence:
 //
 //   - the WebSocket transport. A second entry against this protocol — its own framing, its
 //     own lifecycle — and `websocket.ts` still owns it.
@@ -17,12 +21,12 @@
 //     wire under this pipeline, so it stays on `responsesServe.compact`. The dial here asks
 //     for `generate`; what the ending answers with is the branch the provider says it ran,
 //     which is why the envelope a compaction is arrives somewhere rather than nowhere.
-//   - the translated wires, Responses via Messages and via Chat Completions. Each hands up
-//     the same `response.chat.responses` key, which is what will make them interchangeable
-//     with this one.
-//   - this family's interceptors, the server-tool shims among them. Still only in the
-//     interceptor form, so the array between the materialized payload and the ending is
-//     empty rather than short.
+//   - the translated wires, Responses via Messages and via Chat Completions. Each will hand
+//     up `response.chat.responses` too, which is what will make them interchangeable with
+//     this one.
+//   - this family's remaining interceptors, the server-tool shims among them. Still only in
+//     the interceptor form, so the array between the materialized payload and the fork is
+//     short rather than complete.
 //   - the stored-items membrane: `previous_response_id` expansion, item hydration, and the
 //     snapshot the next turn reads. It wraps the chain rather than sitting in it, and
 //     `serve-prep.ts` and `client-output.ts` still hold it.
@@ -46,6 +50,7 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
+import { dialChatWire, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToResponses,
   disableReasoningOnForcedToolChoiceForResponses,
@@ -60,7 +65,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import { doneFrame, renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
@@ -190,21 +195,20 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): 
 });
 
 /**
- * The native wire. It dials Responses and provides the answer at this family's own response
- * key — which is what will make it interchangeable with a translated chain: both hand up
- * `response.chat.responses`, and the stage above cannot tell which ran.
+ * The wire. It dials Responses and provides the answer at whichever family's response key the
+ * chain above it reads — which is what makes it interchangeable with a translated chain: both
+ * hand up `response.chat.responses`, and the stage above cannot tell which ran.
  */
-const callResponsesUpstream = defineStage<
+const callResponsesUpstream = (streamedUsage: string) => defineStage<
   R<'request.chat.responses' | 'route.attempt' | 'ingress.http.headers'>,
-  R<'response.chat.responses' | 'response.chat.responses.streamedUsage'
-  | 'response.usage.billable' | 'response.http.headers'>,
+  R<'response.chat.responses' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
   name: 'callResponsesUpstream',
   return: {
     provides: [
       'response.chat.responses',
-      'response.chat.responses.streamedUsage',
+      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -216,11 +220,12 @@ const callResponsesUpstream = defineStage<
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
     // What the record holds by now: the payload affinity materialized for this candidate, as
-    // every stage between the fork and here has rewritten it. Client-carried state — an
-    // encrypted reasoning blob, a compaction the upstream issued — was rewritten for the
-    // upstream that will see it, which is the whole reason a turn can be pinned at all. The
-    // id the client addressed does not travel — the provider re-stamps whatever it resolved
-    // upstream — and an alias' own rules apply to the body that is sent.
+    // every stage between the fork and here has rewritten it — or, on a translated wire, what
+    // the handoff put here. Client-carried state — an encrypted reasoning blob, a compaction
+    // the upstream issued — was rewritten for the upstream that will see it, which is the
+    // whole reason a turn can be pinned at all. The id the client addressed does not travel —
+    // the provider re-stamps whatever it resolved upstream — and an alias' own rules apply to
+    // the body that is sent.
     //
     // The key holds what a client may send, whose `input` is a string or a list; this chain
     // runs on the canonical form the entry normalized it to, which is the one a wire takes.
@@ -248,7 +253,7 @@ const callResponsesUpstream = defineStage<
       return move({
         ...facts,
         'response.chat.responses': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        'response.chat.responses.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -271,7 +276,7 @@ const callResponsesUpstream = defineStage<
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        'response.chat.responses.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -289,7 +294,7 @@ const callResponsesUpstream = defineStage<
       return move({
         ...facts,
         'response.chat.responses': { kind: 'value' as const, body: result.result },
-        'response.chat.responses.streamedUsage': null,
+        [streamedUsage]: null,
         'response.usage.billable': [billed(identity, billableUsageFromResponsesResult(result.result) ?? undefined)],
         'response.http.headers': [],
       });
@@ -299,12 +304,36 @@ const callResponsesUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.responses': { kind: 'stream' as const, frames: metered.frames },
-      'response.chat.responses.streamedUsage': metered.outcome,
+      [streamedUsage]: metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
   },
 });
+
+/**
+ * The Responses wire, as the chain that dials it.
+ *
+ * Every source protocol that reaches an upstream over this endpoint runs this, whether the
+ * client spoke Responses or a handoff arrived here — which is what makes the two rules above
+ * the dial belong here. The role rewrite states what an upstream's Responses endpoint
+ * accepts; the cache-bucket fold speaks about the usage *this* wire reports and about the
+ * flag that describes it, and a translator emits the canonical form, which is the one case
+ * the fold has nothing to do with.
+ */
+export const responsesWire = (streamedUsage: string): readonly Stage[] => [
+  applyRoleCompatibilityToResponses,
+  normalizeExclusiveCachedTokensForResponses,
+  callResponsesUpstream(streamedUsage),
+];
+
+/** This family's own reading, which every wire under it hands up. */
+const STREAMED_USAGE = 'response.chat.responses.streamedUsage';
+
+/** The wires `/v1/responses` can be served on. Only its own is built; the two translated ones
+ *  are each a handoff and then that protocol's own wire, and until they exist a candidate the
+ *  picker admitted on one of them is dialled here anyway. */
+const responsesWireFor = (): ChatWire => compose('responsesNative', responsesWire(STREAMED_USAGE));
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Responses states its counts on the
@@ -418,10 +447,14 @@ export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipe
     }),
     materializeAttempt('request.chat.responses'),
     disableReasoningOnForcedToolChoiceForResponses,
-    applyRoleCompatibilityToResponses,
     stripPromptCacheKeyForResponses,
-    normalizeExclusiveCachedTokensForResponses,
     vendorDeepSeekNormalizeForResponses,
     vendorQwenNormalizeForResponses,
-    callResponsesUpstream,
+    dialChatWire({
+      source: 'request.chat.responses',
+      needs: ['request.chat.responses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
+      provides: ['response.chat.responses', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      pick: endpoints => responsesTarget.pick(endpoints),
+      wire: responsesWireFor,
+    }),
   ]);
