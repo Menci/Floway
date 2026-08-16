@@ -22,6 +22,7 @@ const developmentRoutes =
 
 export default [
   index('routes/home.tsx'),
+  route('login', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-login' }),
   route('dashboard', 'routes/dashboard.tsx', [
     index('routes/dashboard-index.tsx'),
     route('playground', 'routes/dashboard-playground.tsx'),
@@ -39,6 +40,17 @@ export default [
     route('admin/users', 'routes/dashboard-admin-users.tsx'),
     route('admin/backup-restore', 'routes/dashboard-admin-backup-restore.tsx'),
     route('settings', 'routes/dashboard-settings.tsx'),
+    route('keys', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-keys' }),
+    route('models', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-models' }),
+    route('performance', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-performance' }),
+    route('requests', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-requests' }),
+    route('requests/:keyId', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-request' }),
+    route('upstreams', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-upstreams' }),
+    route('upstreams/new', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-upstream-new-index' }),
+    route('upstreams/new/:provider', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-upstream-new' }),
+    route('upstreams/:id', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-upstream' }),
+    route('usage', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-usage' }),
+    route('users', 'routes/legacy-redirects.ts', { id: 'routes/legacy-redirects-users' }),
     ...developmentRoutes,
   ]),
 ] satisfies RouteConfig;
