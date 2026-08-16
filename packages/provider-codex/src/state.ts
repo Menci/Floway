@@ -3,6 +3,7 @@
 // and replays the mutator whenever a concurrent writer wins.
 
 import type { CodexQuotaSnapshot } from './quota.ts';
+import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
@@ -261,4 +262,55 @@ export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
       quotaSnapshot: account.quotaSnapshot ?? null,
     })),
   };
+};
+
+// Control-plane refresh transitions. The operator-facing refresh handler in
+// the gateway delegates to these so the provider owns its own state writes —
+// the data plane's createCodexProvider persists the same fields through the
+// same helper. Both no-op on a missing account rather than throw, matching
+// the refresh contract that a state slot it cannot address should be left
+// alone (saveState skips the write when the mutator returns state unchanged).
+
+export const persistCodexRefreshTokenRotation = async (
+  upstreamId: string,
+  accountId: string | null,
+  newRefreshToken: string,
+): Promise<void> => {
+  // OpenAI rotates the refresh_token on every /oauth/token call. Stamped
+  // before the write so a replay against a winning sibling produces the same
+  // document rather than a later timestamp.
+  const rotatedAt = new Date().toISOString();
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) return current;
+    return replaceCodexAccount(state, idx, account => ({
+      ...account,
+      refresh_token: newRefreshToken,
+      state_updated_at: rotatedAt,
+    }));
+  });
+};
+
+export const persistCodexRefreshFailure = async (
+  upstreamId: string,
+  accountId: string | null,
+  message: string,
+): Promise<void> => {
+  const failedAt = new Date().toISOString();
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) return current;
+    // Clear any cached access token on the terminal flip — once the
+    // credential is dead the cached token is dead too, and leaving it would
+    // confuse the dashboard's status panel.
+    return replaceCodexAccount(state, idx, account => ({
+      ...account,
+      state: 'refresh_failed' as const,
+      state_message: message,
+      state_updated_at: failedAt,
+      accessToken: null,
+    }));
+  });
 };
