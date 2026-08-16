@@ -58,7 +58,7 @@ const emitEmbeddings = defineStage<
   E<'ingress.embeddings.encodingFormat'>,
   E<'ingress.embeddings.encodingFormat'>,
   E<'ingress.embeddings.encodingFormat' | 'response.embeddings.canonical'>,
-  E<'response.embeddings.rendered'>
+  E<'response.embeddings.rendered' | 'response.http.status'>
 >({
   name: 'emitEmbeddings',
   through: {
@@ -70,17 +70,25 @@ const emitEmbeddings = defineStage<
     response: {
       needs: ['response.embeddings.canonical'],
       consumes: ['response.embeddings.canonical'],
-      provides: ['response.embeddings.rendered'],
+      provides: ['response.embeddings.rendered', 'response.http.status'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
     const { 'response.embeddings.canonical': answer, ...rest } = back;
     if (isFailure(answer)) {
-      return { ...rest, 'response.embeddings.rendered': move({ error: { message: answer.message, type: 'api_error' } }) };
+      return {
+        ...rest,
+        'response.embeddings.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
+        // The upstream's own status, or the gateway's own when it refused before dialling.
+        // A client is not owed the upstream's exact bytes; it is owed the truth about what
+        // happened, and a 429 arriving as a 200 is not that.
+        'response.http.status': answer.status,
+      };
     }
     return {
       ...rest,
+      'response.http.status': 200,
       'response.embeddings.rendered': move(renderEmbeddingsResponse(back['ingress.embeddings.encodingFormat'], answer)),
     };
   },
@@ -158,7 +166,7 @@ const narrowing: Narrowing<E<'response.embeddings.canonical'>> = {
 
 export const embeddingsServePipeline: Pipeline<
   E<'ingress.http.headers' | 'ingress.embeddings.encodingFormat' | 'request.embeddings.canonical' | 'serve.model'>,
-  E<'response.embeddings.rendered' | 'response.usage.billable'>
+  E<'response.embeddings.rendered' | 'response.http.status' | 'response.usage.billable'>
 > = compose('embeddingsServe', [
   emitEmbeddings,
   writeSettlement(handedUp => isFailure((handedUp as { 'response.embeddings.canonical'?: unknown })['response.embeddings.canonical'])),

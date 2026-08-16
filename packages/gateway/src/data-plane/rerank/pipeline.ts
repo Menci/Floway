@@ -58,7 +58,7 @@ const emitRerank = defineStage<
   R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
   R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
   R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'response.rerank.canonical' | 'response.rerank.targetProtocol'>,
-  R<'response.rerank.rendered'>
+  R<'response.rerank.rendered' | 'response.http.status'>
 >({
   name: 'emitRerank',
   through: {
@@ -70,17 +70,25 @@ const emitRerank = defineStage<
     response: {
       needs: ['response.rerank.canonical'],
       consumes: ['response.rerank.canonical', 'response.rerank.targetProtocol'],
-      provides: ['response.rerank.rendered'],
+      provides: ['response.rerank.rendered', 'response.http.status'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
     const { 'response.rerank.canonical': answer, 'response.rerank.targetProtocol': target, ...rest } = back;
     if (isFailure(answer)) {
-      return { ...rest, 'response.rerank.rendered': move({ error: { message: answer.message, type: 'api_error' } }) };
+      return {
+        ...rest,
+        'response.rerank.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
+        // The upstream's own status, or the gateway's own when it refused before dialling.
+        // A client is not owed the upstream's exact bytes; it is owed the truth about what
+        // happened, and a 429 arriving as a 200 is not that.
+        'response.http.status': answer.status,
+      };
     }
     return {
       ...rest,
+      'response.http.status': 200,
       'response.rerank.rendered': move(renderRerankResponse(
         back['ingress.rerank.sourceProtocol'],
         target,
@@ -179,7 +187,7 @@ const narrowing = (request: CanonicalRerankRequest) => ({
 
 export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
   R<'ingress.http.headers' | 'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'serve.model'>,
-  R<'response.rerank.rendered' | 'response.usage.billable'>
+  R<'response.rerank.rendered' | 'response.http.status' | 'response.usage.billable'>
 > => compose('rerankServe', [
   emitRerank,
   writeSettlement(handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical'])),
