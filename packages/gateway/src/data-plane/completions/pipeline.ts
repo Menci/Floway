@@ -195,7 +195,7 @@ const callCompletionsUpstream = defineStage<
         // The client's own headers reach the upstream from the record, not from a live request
         // object: what a provider is allowed to forward is filtered per provider, and the dump
         // shows what was there to filter.
-        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
+        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]))),
       );
     } catch (error) {
       use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });

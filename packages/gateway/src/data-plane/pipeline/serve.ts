@@ -180,7 +180,7 @@ export const serveThrough = async <
   // Nothing is left to read: what the client is sent was serialized from facts the run
   // already held, so releasing can start at once.
   prologue.services.background(drain());
-  const headers = new Headers(facts['response.http.headers'].map(([name, value]) => [name, value]));
+  const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
   headers.set('content-type', answer.contentType);
   return finalizeGatewayResponse(prologue.gateway, new Response(answer.body, { status, headers }));
 };

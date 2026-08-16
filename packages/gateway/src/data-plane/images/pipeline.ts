@@ -127,7 +127,7 @@ const callImagesUpstream = defineStage<
       // The client's own headers reach the upstream from the record, not from a live request
       // object: what a provider is allowed to forward is filtered per provider, and the dump
       // shows what was there to filter.
-      new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value])),
+      new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value])),
     );
     const model = providerModelOf(candidate);
     // Attribution is set before the dial, so an attempt that never completes still names the
