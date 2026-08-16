@@ -40,6 +40,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
   const prologue = openPrologue(c, ingress, { wantsStream: false, model });
 
   return await serveThrough(
+    c,
     prologue,
     embeddingsServePipeline,
     move({

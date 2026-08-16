@@ -41,6 +41,7 @@ const serveImages = async (
   const prologue = openPrologue(c, ingress, { wantsStream: false, model });
 
   return await serveThrough(
+    c,
     prologue,
     imagesServePipeline(request),
     move({

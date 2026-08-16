@@ -53,6 +53,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   const prologue = openPrologue(c, ingress, { wantsStream: false, model });
 
   return await serveThrough(
+    c,
     prologue,
     rerankServePipeline(request),
     move({

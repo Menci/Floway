@@ -7,16 +7,20 @@
 // resolving a dump sink, not a flag anywhere below it.
 
 import type { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-import type { AttemptSelector, GatewayFacts } from './facts.ts';
+import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
+import { settleBillable } from './settlement.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { writeSSEFrames } from '../shared/sse.ts';
 import type { Event, Pipeline } from '@floway-dev/pipeline';
 import { run } from '@floway-dev/pipeline';
+import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
@@ -97,13 +101,24 @@ export const openPrologue = (
 };
 
 /** What a family writes for the client. The status and the upstream's own headers are facts
- *  the pipeline already carries, so what is left here is the bytes and what they are. */
-export interface Rendered {
-  readonly body: BodyInit;
-  /** Owned by whichever stage serialized the body, never by the upstream — a media type
-   *  describing bytes the gateway wrote itself is the one thing an upstream cannot say. */
-  readonly contentType: string;
-}
+ *  the pipeline already carries, so what is left here is the answer itself. */
+export type Rendered =
+  | {
+    readonly body: BodyInit;
+    /** Owned by whichever stage serialized the body, never by the upstream — a media type
+     *  describing bytes the gateway wrote itself is the one thing an upstream cannot say. */
+    readonly contentType: string;
+  }
+  | {
+    /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
+     *  above waits for them and why what they billed is settled afterwards. */
+    readonly frames: AsyncIterable<SseFrame>;
+  };
+
+/** What a streaming family will have been billed once its frames run out. A stream's usage
+ *  arrives with its last chunk, which is after the run has answered — so the run hands up a
+ *  promise and settlement of it belongs here, after the answer is on its way. */
+export type DeferredUsage<Exit> = (facts: Exit) => Promise<readonly BillableEntity[]> | null;
 
 /**
  * Runs a family's pipeline and turns what it answered with into a response.
@@ -117,19 +132,41 @@ export const serveThrough = async <
   Entry extends object,
   Exit extends Slice<'response.http.status' | 'response.http.headers'>,
 >(
+  c: Context,
   prologue: Prologue,
   pipeline: Pipeline<Entry, Exit>,
   entry: Entry,
   render: (facts: Exit) => Rendered,
+  deferredUsage?: DeferredUsage<Exit>,
 ): Promise<Response> => {
   const { facts, drain } = await run(pipeline, entry, prologue.services as never);
   prologue.services.background(drain());
   const answer = render(facts);
 
+  const pending = deferredUsage?.(facts) ?? null;
+  if (pending !== null) {
+    prologue.services.background(pending.then(billable => {
+      settleBillable({ ...prologue.services, log: consoleLogSink }, billable, false);
+    }));
+  }
+
+  const status = facts['response.http.status'] as ContentfulStatusCode;
+  if ('frames' in answer) {
+    // Hono's streamSSE builds the response itself, so what the client is to see has to be
+    // staged on the context before it is called rather than passed to a constructor.
+    for (const [name, value] of facts['response.http.headers']) c.header(name, value);
+    c.status(status);
+    return streamSSE(c, async stream => {
+      await writeSSEFrames(stream, answer.frames, {
+        keepAlive: { frame: sseCommentFrame('keepalive') },
+        ...(prologue.gateway.downstreamAbortController === undefined
+          ? {}
+          : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
+      });
+    });
+  }
+
   const headers = new Headers(facts['response.http.headers'].map(([name, value]) => [name, value]));
   headers.set('content-type', answer.contentType);
-  return finalizeGatewayResponse(
-    prologue.gateway,
-    new Response(answer.body, { status: facts['response.http.status'] as ContentfulStatusCode, headers }),
-  );
+  return finalizeGatewayResponse(prologue.gateway, new Response(answer.body, { status, headers }));
 };
