@@ -7,7 +7,7 @@ import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { shortAccountId } from '../upstreams/account-id';
-import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, quotaEntries } from '../upstreams/codex-account';
+import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, planLabel, quotaEntries } from '../upstreams/codex-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
 import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
@@ -45,7 +45,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{account.email ?? t('dashboard.upstreamEditor.codex.unknownEmail')}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone="accent">{account.planType ?? t('dashboard.upstreamEditor.codex.unknownPlan')}</StatusBadge>
+          <StatusBadge tone="accent">{planLabel(account) ?? t('dashboard.upstreamEditor.codex.unknownPlan')}</StatusBadge>
           {renewable !== null && <StatusBadge tone={renewable ? 'success' : 'warning'}>
             {t(renewable ? 'dashboard.upstreamEditor.codex.renewable' : 'dashboard.upstreamEditor.codex.accessOnly')}
           </StatusBadge>}
