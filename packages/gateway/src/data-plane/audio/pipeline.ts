@@ -324,7 +324,14 @@ const meterEvents = (
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
         const event = parseAudioTranscriptionStreamEvent(JSON.parse(frame.data) as unknown);
-        if (isAudioTranscriptionDoneEvent(event)) usage = parseAudioTranscriptionStreamUsage(event);
+        if (isAudioTranscriptionDoneEvent(event)) {
+          usage = parseAudioTranscriptionStreamUsage(event);
+          yield event;
+          // The transcript is complete, so there is nothing further to read. An upstream that
+          // holds the connection open past this point would otherwise keep the client's own
+          // stream open with it; returning here closes the read, which cancels the upstream.
+          return;
+        }
         yield event;
       }
     } finally {
