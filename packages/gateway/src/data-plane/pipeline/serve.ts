@@ -13,6 +13,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
+import { openRunDump } from '../../dump/run-sink.ts';
+import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -63,15 +65,25 @@ export interface Prologue {
  * live ones here, and the stage that dials asks for one back by selector.
  */
 export const openPrologue = (
-  c: Context,
+  c: AuthedContext,
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
 ): Prologue => {
+  const backgroundScheduler = backgroundSchedulerFromContext(c);
+  // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
+  // stage, both directions — so it opens that recording here instead of the edge one, and
+  // no turn is ever written twice.
+  const runDump = openRunDump(
+    apiKeyFromContext(c),
+    { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
+    backgroundScheduler,
+  );
   const gateway = createGatewayCtxFromHono(c, {
     wantsStream: options.wantsStream,
     ...(options.model === undefined ? {} : { model: options.model }),
     requestBody: takeRequestBody(ingress.body),
-    backgroundScheduler: backgroundSchedulerFromContext(c),
+    backgroundScheduler,
+    dump: runDump,
   });
 
   const live = new Map<string, ModelCandidate>();
@@ -86,6 +98,9 @@ export const openPrologue = (
       rememberCandidates: candidates => {
         for (const candidate of candidates) live.set(candidate.provider.upstreamId, candidate);
       },
+      // Absent when this key has no retention configured, which is what keeps recording
+      // conditional: the runner does none of it rather than doing it and discarding.
+      ...(runDump === null ? {} : { dump: runDump.sink }),
       resolveAttempt: (selector: AttemptSelector) => {
         const candidate = live.get(selector.upstreamId);
         if (candidate === undefined) {

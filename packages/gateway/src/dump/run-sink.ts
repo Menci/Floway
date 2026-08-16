@@ -21,6 +21,7 @@ import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import { createRunEncoder, toNdjson, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 // What the client sent, as the metadata needs it. The headers and the body are
@@ -37,6 +38,7 @@ export class RunDump {
   private readonly attribution = new DumpAttribution();
   private readonly encode = createRunEncoder();
   private readonly events: DumpEvent[] = [];
+  private sentPayloadBytes = 0;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -51,7 +53,7 @@ export class RunDump {
     for (const encoded of this.encode(event)) this.events.push(encoded);
   };
 
-  // --- mid-flight hooks, the same four the edge record is stamped with ---
+  // --- mid-flight hooks, the same ones the edge record is stamped with ---
 
   requestedModel(model: string): void {
     this.attribution.requestedModel(model);
@@ -63,6 +65,18 @@ export class RunDump {
 
   failed(reason: unknown): void {
     this.attribution.failed(reason);
+  }
+
+  /**
+   * A frame the client was sent, as the event the format names for one.
+   *
+   * The edge dump kept a frame log of its own; here a frame is content about a stream, so it
+   * is `stream.frame` and it folds through the same encoder as everything else. One stream
+   * per turn is what the endpoints this carries produce, so the id is fixed — a family that
+   * opens two would need to say which, and none does.
+   */
+  frame(frame: ProtocolFrame<unknown>): void {
+    this.sink({ type: 'stream.frame', streamId: 1, frames: [frame] });
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
@@ -82,12 +96,20 @@ export class RunDump {
   // The drain → encode → store put → broker publish runs on the runtime's
   // BackgroundScheduler so a dump write failure cannot turn a served answer
   // into a 502.
+  /** A transport that writes its own frames counts what it sent, because nothing downstream
+   *  of it can. The run's own bytes are its events; this is the answer's. */
+  recordSentPayloadBytes(byteLength: number): void {
+    this.sentPayloadBytes += byteLength;
+  }
+
   finalize(status: number | null, responseBytes: number): void;
   finalize(response: Response): Response;
   finalize(...args: [number | null, number] | [Response]): void | Response {
     if (args.length === 2) {
       const [status, responseBytes] = args;
-      this.backgroundScheduler(this.write(status, responseBytes, null));
+      // A transport that wrote its own frames counted them as it went; what it passes here
+      // is whatever else it sent alongside them.
+      this.backgroundScheduler(this.write(status, responseBytes + this.sentPayloadBytes, null));
       return;
     }
 

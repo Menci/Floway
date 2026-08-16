@@ -45,6 +45,17 @@ export const edgeRecordOf = (record: StoredDumpRecord | null | undefined): Store
   return record;
 };
 
+export const runRecordOf = (record: StoredDumpRecord | null | undefined): StoredDumpRunRecord => {
+  if (!record) throw new Error('expected a stored dump record');
+  if (record.shape !== 'run') throw new Error(`expected the run shape, got ${record.shape}`);
+  return record;
+};
+
+/** The events a run recorded, decoded from the NDJSON one line at a time. */
+export const eventsOf = (record: StoredDumpRunRecord): readonly Record<string, unknown>[] =>
+  new TextDecoder().decode(record.events).split('\n').filter(line => line.length > 0)
+    .map(line => JSON.parse(line) as Record<string, unknown>);
+
 type DumpStubFailMethod =
   | 'put'
   | 'list'

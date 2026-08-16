@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { edgeRecordOf, installDumpStubs } from '../../dump/test-fixtures.ts';
+import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -311,15 +311,16 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = edgeRecordOf(dumpStubs.stored[0]?.record);
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 7);
   assertEquals(dump.meta.outputTokens, 2);
-  // Non-streaming: the upstream sent a one-shot JSON, so the dump
-  // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  // The shape follows the endpoint: a pipelined turn is recorded as its whole run, so what
+  // is stored is the event stream rather than the two edges. The metadata is common to both,
+  // which is what lets the dashboard list them together.
+  assertEquals(runRecordOf(dumpStubs.stored[0]!.record).shape, 'run');
 });
 
 // A stream that stops before its terminator did not produce what it said it would, and the
@@ -382,32 +383,24 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = edgeRecordOf(dumpStubs.stored[0]?.record);
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 4);
   assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    assertEquals(frames.length, 4);
-    assertEquals(frames[0]?.type, 'event');
-    assertEquals(frames[1]?.type, 'event');
-    assertEquals(frames[2]?.type, 'event');
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.choices.length, 0);
-      assertEquals(event.usage.prompt_tokens, 4);
-    }
-    assertEquals(frames[3]?.type, 'done');
-  }
+  // The frames the gateway saw from upstream, before the edge decided which of them the
+  // client is shown — recorded as `stream.frame` events in the run's own stream. The fixture
+  // emits two content events, one usage-only event (which this client did not opt into and
+  // so was stripped from what it received), and a done terminator.
+  const events = eventsOf(runRecordOf(dumpStubs.stored[0]!.record));
+  const frames = events
+    .filter(event => event.type === 'stream.frame')
+    .flatMap(event => (event as unknown as { frames: readonly unknown[] }).frames);
+  assertEquals(frames.length, 4);
+  // The usage chunk the client did not opt into is still in the run's own record: what the
+  // gateway saw is not narrowed to what it forwarded. The encoder shares repeated values, so
+  // what is asserted is that the numbers are in the stream, not the shape they took in it.
+  const stored = new TextDecoder().decode(runRecordOf(dumpStubs.stored[0]!.record).events);
+  assertEquals(stored.includes('"prompt_tokens":4'), true);
 });
