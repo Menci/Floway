@@ -10,7 +10,7 @@ import { enumerateModelCandidates } from '../../../src/data-plane/providers/reso
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -54,6 +54,16 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
 const chunk = (text: string): ChatCompletionsStreamEvent => ({
   id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
   choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+});
+
+/** A stream that stops without ever saying it ended — what a dropped upstream looks like. */
+const truncated = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+  ok: true,
+  modelKey: 'chat-model-key',
+  headers: new Headers(),
+  events: (async function* () {
+    for (const event of events) yield { type: 'event' as const, event };
+  })(),
 });
 
 const stream = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
@@ -241,6 +251,31 @@ describe('the chat completions chain', () => {
     expect(facts['response.chat.chatCompletions.rendered']).toEqual({
       error: { message: 'Model chat-model does not support the /chat/completions endpoint.', type: 'invalid_request_error' },
     });
+  });
+
+  // Serving what arrived would present a truncated answer as a whole one, and a client has no
+  // way to tell the difference. The streaming path is where this has to be caught: nothing
+  // folds those frames, so the collector's own check never runs on them.
+  it('fails a stream that ran out without saying it ended', async () => {
+    resolves([candidate(async () => truncated(chunk('he'), chunk('llo')))]);
+
+    const { facts } = await serve(true);
+    const drain = async (): Promise<void> => {
+      for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
+    };
+
+    await expect(drain()).rejects.toThrow(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+  });
+
+  // Anything an upstream keeps sending after its terminator is not part of the answer.
+  it('stops reading at the terminator, and writes it', async () => {
+    resolves([candidate(async () => stream(chunk('hi')))]);
+
+    const { facts } = await serve(true);
+    const frames: SseFrame[] = [];
+    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+
+    expect(frames.at(-1)!.data).toBe('[DONE]');
   });
 
   // A refused connection is an outcome the fork has to be able to see, not a fault that ends

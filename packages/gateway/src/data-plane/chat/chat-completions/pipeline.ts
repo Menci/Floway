@@ -34,6 +34,8 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import {
+  CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
+  chatCompletionsErrorPayloadMessage,
   chatCompletionsProtocolFrameToSSEFrame,
   collectChatCompletionsProtocolEventsToResult,
   type ChatCompletionsPayload,
@@ -261,8 +263,6 @@ const meterChatCompletions = (
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
         // knows a frame carries generated content rather than the envelope around it.
-        // Time to first token is measured where the token is, which is the only place that
-        // knows a frame carries generated content rather than the envelope around it.
         if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'chat-completions')) {
           attempt.firstOutputTokenAt = performance.now();
         }
@@ -271,7 +271,13 @@ const meterChatCompletions = (
           if (usage !== null) reported = usage;
         }
         yield frame;
+        // The terminator is written out before the read stops, because it is what the client
+        // reads as the end. Stopping here also drops anything an upstream sends after it.
+        if (isTerminal(frame)) return;
       }
+      // A stream that ran out without saying it ended is not a turn that finished. Serving
+      // what arrived would present a truncated answer as a whole one.
+      throw new Error(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
@@ -281,6 +287,11 @@ const meterChatCompletions = (
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
 };
+
+/** The frame that says this turn is over: the transport's own terminator, or an error the
+ *  upstream wrote into the stream instead of finishing it. */
+const isTerminal = (frame: ProtocolFrame<ChatCompletionsStreamEvent>): boolean =>
+  frame.type === 'done' || (frame.type === 'event' && chatCompletionsErrorPayloadMessage(frame.event) !== null);
 
 /** What one attempt is billable for. An upstream that reported nothing leaves no quantities
  *  at all, which is a different statement from reporting zero — and a rate can depend on the
