@@ -59,6 +59,8 @@ import {
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -103,7 +105,8 @@ const emitGemini = defineStage<
   C<'ingress.chat.gemini.wantsStream'>,
   C<'ingress.chat.gemini.wantsStream'>,
   C<'ingress.chat.gemini.wantsStream' | 'response.chat.gemini' | 'response.http.headers'>,
-  C<'response.chat.gemini.rendered' | 'response.http.status' | 'response.http.headers'>
+  C<'response.chat.gemini.rendered' | 'response.http.status' | 'response.http.headers'>,
+  ChatServices
 >({
   name: 'emitGemini',
   through: {
@@ -118,7 +121,7 @@ const emitGemini = defineStage<
       provides: ['response.chat.gemini.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, next, use) => {
     const back = await next(facts);
     const { 'response.chat.gemini': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
@@ -144,7 +147,14 @@ const emitGemini = defineStage<
       };
     }
 
-    const frames = answer.frames as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>;
+    // The turn's own state, written back into the frames the client is handed: a follow-up
+    // carrying it comes back to the upstream that issued it. This is the other half of the
+    // affinity the resolver read on the way down, and it has to sit here because it rewrites
+    // the frames — below the fold, and there would be nothing left to rewrite.
+    const frames = wrapGeminiAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
+      affinityEgressOptions(use.gateway),
+    );
     if (!back['ingress.chat.gemini.wantsStream']) {
       return {
         ...rest,

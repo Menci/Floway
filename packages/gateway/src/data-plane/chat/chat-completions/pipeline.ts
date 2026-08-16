@@ -12,6 +12,7 @@
 // native wire is here; the translated ones hand up the same key, which is what will make
 // them interchangeable with it.
 
+import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromChatCompletionsEvent } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
@@ -29,6 +30,7 @@ import {
   disableReasoningOnForcedToolChoiceForChatCompletions,
   stripPromptCacheKeyForChatCompletions,
 } from '../interceptors.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
@@ -74,7 +76,8 @@ const emitChatCompletions = defineStage<
   C<'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'>,
   C<'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'
     | 'response.chat.chatCompletions' | 'response.http.headers'>,
-  C<'response.chat.chatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>
+  C<'response.chat.chatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
+  ChatServices
 >({
   name: 'emitChatCompletions',
   through: {
@@ -89,7 +92,7 @@ const emitChatCompletions = defineStage<
       provides: ['response.chat.chatCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, next, use) => {
     const back = await next(facts);
     const { 'response.chat.chatCompletions': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
@@ -118,7 +121,14 @@ const emitChatCompletions = defineStage<
       };
     }
 
-    const frames = answer.frames as AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>;
+    // The turn's own state, written back into the frames the client is handed: a follow-up
+    // carrying it comes back to the upstream that issued it. This is the other half of the
+    // affinity the resolver read on the way down, and it has to sit here because it rewrites
+    // the frames — below the fold, and there would be nothing left to rewrite.
+    const frames = wrapChatCompletionsAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+      affinityEgressOptions(use.gateway),
+    );
     if (!back['ingress.chat.chatCompletions.wantsStream']) {
       return {
         ...rest,

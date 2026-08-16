@@ -57,6 +57,8 @@ import {
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import { doneFrame, renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
@@ -101,6 +103,8 @@ const emitResponses = defineStage<
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream' | 'response.chat.responses' | 'response.http.headers'>,
   R<'response.chat.responses.rendered' | 'response.http.status' | 'response.http.headers'>
+  ,
+  ChatServices
 >({
   name: 'emitResponses',
   through: {
@@ -111,7 +115,7 @@ const emitResponses = defineStage<
       provides: ['response.chat.responses.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, next, use) => {
     const back = await next(facts);
     const { 'response.chat.responses': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
@@ -142,7 +146,14 @@ const emitResponses = defineStage<
       };
     }
 
-    const frames = answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>;
+    // The turn's own state, written back into the frames the client is handed: a follow-up
+    // carrying it comes back to the upstream that issued it. This is the other half of the
+    // affinity the resolver read on the way down, and it has to sit here because it rewrites
+    // the frames — below the fold, and there would be nothing left to rewrite.
+    const frames = wrapResponsesAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+      affinityEgressOptions(use.gateway),
+    );
     if (!back['ingress.chat.responses.wantsStream']) {
       return {
         ...rest,

@@ -35,6 +35,8 @@ import {
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
@@ -80,6 +82,8 @@ const emitMessages = defineStage<
   M<'ingress.chat.messages.wantsStream'>,
   M<'ingress.chat.messages.wantsStream' | 'response.chat.messages' | 'response.http.headers'>,
   M<'response.chat.messages.rendered' | 'response.http.status' | 'response.http.headers'>
+  ,
+  ChatServices
 >({
   name: 'emitMessages',
   through: {
@@ -90,7 +94,7 @@ const emitMessages = defineStage<
       provides: ['response.chat.messages.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, next, use) => {
     const back = await next(facts);
     const { 'response.chat.messages': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
@@ -116,7 +120,14 @@ const emitMessages = defineStage<
       };
     }
 
-    const frames = answer.frames as AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
+    // The turn's own state, written back into the frames the client is handed: a follow-up
+    // carrying it comes back to the upstream that issued it. This is the other half of the
+    // affinity the resolver read on the way down, and it has to sit here because it rewrites
+    // the frames — below the fold, and there would be nothing left to rewrite.
+    const frames = wrapMessagesAffinityEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
+      affinityEgressOptions(use.gateway),
+    );
     if (!back['ingress.chat.messages.wantsStream']) {
       return {
         ...rest,
@@ -205,6 +216,9 @@ const answerClaudeCodeProbe = defineStage<
     if (!isClaudeCodeProbe(facts['request.chat.messages'], headers)) return await next(facts);
 
     const candidate = use.resolveAttempt(facts['route.attempt']);
+    // The probe is answered *for* this candidate, so it is the one a follow-up turn carrying
+    // our own state must come back to — the same statement a dialled attempt makes.
+    use.selectAffinity(candidate);
     use.log.debug('answering a Claude Code probe without dialling', { upstream: facts['route.attempt'].upstreamId });
     return move({
       ...facts,
