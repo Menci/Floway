@@ -170,6 +170,37 @@ test('/v1/images/generations answers a refused stream in the upstream status and
   assertEquals(performance?.errorsNoOutput, 1);
 });
 
+test('/v1/images/generations completes and cancels an upstream kept open after the completed event', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerImagesModel(repo);
+  let upstreamCancelled = false;
+  const encoder = new TextEncoder();
+
+  await withMockedFetch(
+    () => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(PARTIAL));
+        controller.enqueue(encoder.encode(COMPLETED));
+        // Deliberately never closed: the image is done and the connection is not.
+      },
+      cancel() {
+        upstreamCancelled = true;
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } })),
+    async () => {
+      const response = await requestApp('/v1/images/generations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a shiba in space', stream: true }),
+      });
+      const stream = await response.text();
+      assertEquals(stream.includes('event: image_generation.completed'), true);
+    },
+  );
+
+  assertEquals(upstreamCancelled, true);
+});
+
 test('/v1/images/generations fails a stream that ended without a completed event', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerImagesModel(repo);
