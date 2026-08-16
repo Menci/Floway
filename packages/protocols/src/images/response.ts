@@ -89,7 +89,3 @@ const splitModality = (
 };
 
 export const renderImagesResponse = (response: CanonicalImagesResponse): Record<string, unknown> => response.raw;
-
-/** What an upstream that refused said about it, when it said it in the shape this protocol
- *  uses. Anything else has no message to lift and is reported as the body it was. */
-

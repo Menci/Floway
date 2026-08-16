@@ -7,7 +7,7 @@
 import type { Context } from 'hono';
 
 import { imagesServePipeline } from './pipeline.ts';
-import { openPrologue, serveThrough, type Prologue } from '../pipeline/serve.ts';
+import { openPrologue, readIngress, serveThrough, type Ingress } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { move } from '@floway-dev/pipeline';
 import { parseImagesEditsRequest, parseImagesGenerationsRequest, type ParsedImagesRequest } from '@floway-dev/protocols/images';
@@ -16,7 +16,8 @@ import { parseImagesEditsRequest, parseImagesGenerationsRequest, type ParsedImag
  *  run answered with into a response. The contract reports a malformed request by throwing;
  *  what the client is owed is a 400 carrying the reason. */
 const serveImages = async (
-  prologue: Prologue,
+  c: Context,
+  ingress: Ingress,
   read: () => ParsedImagesRequest | Promise<ParsedImagesRequest>,
 ): Promise<Response> => {
   let parsed: ParsedImagesRequest;
@@ -25,9 +26,10 @@ const serveImages = async (
   } catch (error) {
     // A request the gateway could not read never reaches a pipeline: there is no model to
     // resolve and no attempt to make, so there is nothing for a run to record.
-    prologue.gateway.dump?.error('gateway');
+    const refused = openPrologue(c, ingress, { wantsStream: false });
+    refused.gateway.dump?.error('gateway');
     return finalizeGatewayResponse(
-      prologue.gateway,
+      refused.gateway,
       Response.json(
         { error: { message: error instanceof Error ? error.message : String(error), type: 'api_error' } },
         { status: 400 },
@@ -36,7 +38,7 @@ const serveImages = async (
   }
 
   const { model, request } = parsed;
-  prologue.gateway.dump?.requestedModel(model);
+  const prologue = openPrologue(c, ingress, { wantsStream: false, model });
 
   return await serveThrough(
     prologue,
@@ -51,13 +53,13 @@ const serveImages = async (
 };
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
-  const prologue = await openPrologue(c, { wantsStream: false });
-  return await serveImages(prologue, () => parseImagesGenerationsRequest(prologue.bytes));
+  const ingress = await readIngress(c);
+  return await serveImages(c, ingress, () => parseImagesGenerationsRequest(ingress.body.bytes));
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
-  const prologue = await openPrologue(c, { wantsStream: false });
+  const ingress = await readIngress(c);
   // Which of the two bodies arrived is a header's statement and not the payload's, so the
   // contract is handed the media type alongside the bytes.
-  return await serveImages(prologue, () => parseImagesEditsRequest(c.req.header('content-type'), prologue.bytes));
+  return await serveImages(c, ingress, () => parseImagesEditsRequest(c.req.header('content-type'), ingress.body.bytes));
 };

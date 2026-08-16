@@ -9,7 +9,7 @@
 import type { Context } from 'hono';
 
 import { rerankServePipeline } from './pipeline.ts';
-import { openPrologue, serveThrough } from '../pipeline/serve.ts';
+import { openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { move } from '@floway-dev/pipeline';
 import type { RerankSourceProtocol } from '@floway-dev/protocols/common';
@@ -36,20 +36,21 @@ const readRequest = (
 };
 
 export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Context): Promise<Response> => {
-  const prologue = await openPrologue(c, { wantsStream: false });
-  const result = readRequest(sourceProtocol, prologue.bytes);
+  const ingress = await readIngress(c);
+  const result = readRequest(sourceProtocol, ingress.body.bytes);
   if (result.type === 'invalid') {
     // A request the gateway could not read never reaches a pipeline: there is no model to
     // resolve and no attempt to make, so there is nothing for a run to record.
-    prologue.gateway.dump?.error('gateway');
+    const refused = openPrologue(c, ingress, { wantsStream: false });
+    refused.gateway.dump?.error('gateway');
     return finalizeGatewayResponse(
-      prologue.gateway,
+      refused.gateway,
       Response.json({ error: { message: result.message, type: 'api_error' } }, { status: 400 }),
     );
   }
 
   const { model, request } = result.parsed;
-  prologue.gateway.dump?.requestedModel(model);
+  const prologue = openPrologue(c, ingress, { wantsStream: false, model });
 
   return await serveThrough(
     prologue,
