@@ -23,13 +23,13 @@ import { dialFailure } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, own, type Logger, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import {
   isAudioTranscriptionDoneEvent,
-  isAudioTranscriptionObjectFormat,
   parseAudioTranscription,
   parseAudioTranscriptionStreamEvent,
   parseAudioTranscriptionStreamUsage,
+  parseAudioTranscriptionUsage,
   renderAudioTranscription,
   type AudioTranscriptionResponseFormat,
   type AudioTranscriptionStreamEvent,
@@ -52,6 +52,16 @@ export type AudioTranscriptionEvents = AsyncIterable<AudioTranscriptionStreamEve
 
 const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => events });
 
+/** What settling this run will be told once the events run out: what the upstream metered,
+ *  and whether the transcript ever finished. */
+export interface AudioTranscriptionStreamOutcome {
+  readonly billable: readonly BillableEntity[];
+  /** An upstream that stopped before `transcript.text.done` answered 200 and then did not
+   *  finish what it started, which is a failed request however much of the transcript
+   *  reached the client — the same reading the replaced surface made. */
+  readonly failed: boolean;
+}
+
 /** Audio transcription's own keys, extending the shared space by intersection. */
 export interface AudioTranscriptionFacts extends GatewayFacts {
   /** Which of the six renderings the client asked for. It belongs to the ingress and stays
@@ -69,22 +79,23 @@ export interface AudioTranscriptionFacts extends GatewayFacts {
    *  telling them apart is reading a value, and each stage does that where it needs to. */
   'response.audioTranscription.canonical': CanonicalAudioTranscription | AudioTranscriptionEvents | Failure;
   /** What the answer goes out under. A media type is upstream-owned — OpenAI answers
-   *  `text`, `srt` and `vtt` under one media type and other upstreams label them apart — so
-   *  the upstream's own travels, and the edge re-provides it only where the gateway wrote
-   *  the body itself. `null` is an upstream that declared none, which is what a client of
-   *  this endpoint sees today. */
+   *  `text`, `srt` and `vtt` under one media type and other upstreams label them apart, and
+   *  the document beneath it is the upstream's own either way — so the upstream's travels,
+   *  and the edge names one only where the gateway wrote the body out of nothing the
+   *  upstream sent. `null` is an upstream that declared none, and it stays `null`: labelling
+   *  a body nobody described is a statement this gateway has no grounds to make. */
   'response.audioTranscription.mediaType': string | null;
-  /** What the upstream will have reported by the time the events run out, and `null` on
-   *  every path that does not stream. A streamed transcription states its usage in the
-   *  terminal event, which is after this run has answered — so the numbers cannot be in
+  /** What the stream will have come to by the time the events run out, and `null` on every
+   *  path that does not stream. A streamed transcription states its usage in the terminal
+   *  event, which is after this run has answered — so the numbers cannot be in
    *  `response.usage.billable`, which says what had been reported when the ending stage
-   *  handed up: the entity, and no quantities. Settling from this is the prologue's job,
+   *  handed up: the entity, and no quantities. Settling from this is the epilogue's job,
    *  after the drain. */
-  'response.audioTranscription.streamedUsage': Promise<readonly BillableEntity[]> | null;
-  /** What the client is actually sent — a JSON object, a text document, or the SSE frames
-   *  of a stream. The edge provides it, so a dump shows what the client received rather
-   *  than the gateway's own reading of it. */
-  'response.audioTranscription.rendered': Record<string, unknown> | string | AsyncIterable<SseFrame>;
+  'response.audioTranscription.streamedOutcome': Promise<AudioTranscriptionStreamOutcome> | null;
+  /** What the client is actually sent — a JSON object, the upstream's own document, or the
+   *  SSE frames of a stream. The edge provides it, so a dump shows what the client received
+   *  rather than the gateway's own reading of it. */
+  'response.audioTranscription.rendered': Record<string, unknown> | Uint8Array | AsyncIterable<SseFrame>;
 }
 
 type A<K extends keyof AudioTranscriptionFacts> = { [P in K]: AudioTranscriptionFacts[P] };
@@ -93,8 +104,11 @@ const isEvents = (answer: CanonicalAudioTranscription | AudioTranscriptionEvents
   Symbol.asyncIterator in answer;
 
 /**
- * The outermost edge. Writes the answer back in the rendering the client asked for, and
- * owns the media type of anything the gateway wrote itself.
+ * The outermost edge. Writes the answer back in the rendering the client asked for, and names
+ * a media type for the one body the gateway wrote out of nothing the upstream sent — its
+ * error envelope. Every other answer goes out under the media type it arrived with, because
+ * for a document that is carried rather than rewritten the upstream's label is the only true
+ * description there is.
  *
  * SSE framing is produced here and nowhere else — below this stage the answer is parsed
  * events, so the same assembly would serve another transport by rendering differently at
@@ -163,13 +177,14 @@ const renderSSE = (events: AudioTranscriptionEvents): AsyncIterable<SseFrame> =>
 /**
  * The ending. It dials, reads what came back in the rendering the request asked for, and
  * provides the answer, the raw HTTP response beneath it, and what the call is billable for.
- * A failure is a value: a 429 here is what an earlier stage fails over, and so is a 200 whose
- * body this rendering cannot be read from, because the next candidate may answer with one
- * that can.
+ * A failure is a value: a 429 here is what an earlier stage fails over, and so is a dial that
+ * never reached anyone. A 200 is never one of them — this endpoint carries the document the
+ * upstream sent rather than serializing one from what it read, so a body no reading could
+ * open is still that upstream's answer and there is nothing to try the next candidate for.
  */
 const callAudioTranscriptionUpstream = defineStage<
   A<'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'route.attempt' | 'ingress.http.headers'>,
-  A<'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
+  A<'response.audioTranscription.canonical' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedOutcome'>
     & { 'response.usage.billable': readonly BillableEntity[]; 'response.http.status': number;
       'response.http.headers': readonly (readonly [string, string])[];
       'response.http.body': ReadableStream<Uint8Array> & Owned; },
@@ -180,7 +195,7 @@ const callAudioTranscriptionUpstream = defineStage<
     provides: [
       'response.audioTranscription.canonical',
       'response.audioTranscription.mediaType',
-      'response.audioTranscription.streamedUsage',
+      'response.audioTranscription.streamedOutcome',
       'response.usage.billable',
       'response.http.status',
       'response.http.headers',
@@ -212,7 +227,7 @@ const callAudioTranscriptionUpstream = defineStage<
         ...facts,
         'response.audioTranscription.canonical': dialFailure(error),
         'response.audioTranscription.mediaType': null,
-        'response.audioTranscription.streamedUsage': null,
+        'response.audioTranscription.streamedOutcome': null,
         'response.usage.billable': [],
         'response.http.status': 502,
         'response.http.headers': [],
@@ -236,7 +251,7 @@ const callAudioTranscriptionUpstream = defineStage<
         ...facts,
         'response.audioTranscription.canonical': await refusal(status, result.response),
         'response.audioTranscription.mediaType': mediaType,
-        'response.audioTranscription.streamedUsage': null,
+        'response.audioTranscription.streamedOutcome': null,
         'response.usage.billable': called,
         'response.http.status': status,
         'response.http.headers': headers,
@@ -254,22 +269,22 @@ const callAudioTranscriptionUpstream = defineStage<
           ...facts,
           'response.audioTranscription.canonical': { status: 502, message: 'Upstream returned a streaming response with no body.' },
           'response.audioTranscription.mediaType': mediaType,
-          'response.audioTranscription.streamedUsage': null,
+          'response.audioTranscription.streamedOutcome': null,
           'response.usage.billable': called,
           'response.http.status': status,
           'response.http.headers': headers,
           'response.http.body': spentBody(null),
         });
       }
-      // Usage is observed here, closest to the upstream and on the protocol it spoke, by
-      // folding the events as they pass — so the reading costs one pass and the client's own
-      // stream is what drives it.
-      const metered = meterEvents(result.response.body, identity, use.gateway.abortSignal);
+      // What the upstream metered, and whether the transcript finished, are both observed
+      // here — closest to the upstream and on the protocol it spoke — by folding the events
+      // as they pass, so the reading costs one pass and the client's own stream drives it.
+      const metered = meterEvents(result.response.body, identity, use.gateway.abortSignal, use.log);
       return move({
         ...facts,
         'response.audioTranscription.canonical': metered.events,
         'response.audioTranscription.mediaType': mediaType,
-        'response.audioTranscription.streamedUsage': metered.billable,
+        'response.audioTranscription.streamedOutcome': metered.outcome,
         'response.usage.billable': called,
         'response.http.status': status,
         'response.http.headers': headers,
@@ -279,13 +294,17 @@ const callAudioTranscriptionUpstream = defineStage<
       });
     }
 
-    const read = await readTranscription(format, result.response);
+    // A 2xx body is the answer whether or not this endpoint could read it, because what the
+    // client is sent is the document that arrived and not something serialized from a parse.
+    // So there is nothing here to fail over from: the reading feeds the record and the usage
+    // row, and the bytes travel either way.
+    const read = readTranscription(format, new Uint8Array(await result.response.arrayBuffer()), use.log);
     return move({
       ...facts,
-      'response.audioTranscription.canonical': isFailure(read) ? read : read.value,
+      'response.audioTranscription.canonical': read.canonical,
       'response.audioTranscription.mediaType': mediaType,
-      'response.audioTranscription.streamedUsage': null,
-      'response.usage.billable': isFailure(read) ? called : [{ identity, quantities: billed(read.value.usage) }],
+      'response.audioTranscription.streamedOutcome': null,
+      'response.usage.billable': [{ identity, quantities: billed(read.usage) }],
       'response.http.status': status,
       'response.http.headers': headers,
       'response.http.body': spentBody(result.response.body),
@@ -310,43 +329,68 @@ const refusal = async (status: number, response: Response): Promise<Failure> => 
   }
 };
 
-/** A body that answered 200 and cannot be read in the rendering it was asked for is an
- *  attempt that failed, because the gateway serializes what it sends from the value it
- *  parsed and has nothing to serialize. */
-const readTranscription = async (
+/**
+ * What a 2xx body was worth to this endpoint, in two readings that do not depend on each
+ * other.
+ *
+ * Neither can cost the client the answer: the document is carried, so a body no reading
+ * could open is still what goes back, and what a failed reading costs is the transcript in
+ * the record and whatever usage the body would have stated. Nor can either cost the other —
+ * an upstream whose usage block this gateway cannot model still had its transcript read, and
+ * one whose document it could not open is still billed for nothing rather than mis-billed.
+ */
+const readTranscription = (
   format: AudioTranscriptionResponseFormat,
-  response: Response,
-): Promise<{ readonly value: CanonicalAudioTranscription } | Failure> => {
+  document: Uint8Array,
+  log: Logger,
+): { readonly canonical: CanonicalAudioTranscription; readonly usage: AudioTranscriptionUsage | undefined } => {
+  let canonical: CanonicalAudioTranscription;
   try {
-    const body: unknown = isAudioTranscriptionObjectFormat(format) ? await response.json() : await response.text();
-    return { value: parseAudioTranscription(format, body) };
+    canonical = parseAudioTranscription(format, document);
   } catch (error) {
-    return {
-      status: 502,
-      message: `Upstream answered ${response.status} with a body this endpoint cannot read as ${format}: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    log.warn('failed to parse 2xx upstream body for /audio/transcriptions; forwarding it as it arrived', { error: String(error) });
+    return { canonical: { document }, usage: undefined };
+  }
+  // Only an object rendering states usage: `text`, `srt` and `vtt` have nowhere to put it,
+  // and asking them for one is what would warn about every subtitle a client requests.
+  return { canonical, usage: canonical.raw === undefined ? undefined : readUsage(() => parseAudioTranscriptionUsage(canonical.raw), log) };
+};
+
+/** A transcription states its usage in two places — the body of an object rendering and the
+ *  terminal event of a stream — and either can state it in a shape this gateway cannot read.
+ *  That upstream metered something, and the request is recorded saying exactly that: the
+ *  entity, and no quantities. */
+const readUsage = (read: () => AudioTranscriptionUsage | undefined, log: Logger): AudioTranscriptionUsage | undefined => {
+  try {
+    return read();
+  } catch (error) {
+    log.warn('invalid usage in 2xx upstream response; recording the request only', { error: String(error) });
+    return undefined;
   }
 };
 
 interface MeteredEvents {
   readonly events: AudioTranscriptionEvents;
-  readonly billable: Promise<readonly BillableEntity[]>;
+  readonly outcome: Promise<AudioTranscriptionStreamOutcome>;
 }
 
 const meterEvents = (
   body: ReadableStream<Uint8Array>,
   identity: TelemetryModelIdentity,
   signal: AbortSignal | undefined,
+  log: Logger,
 ): MeteredEvents => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  let settle!: (outcome: AudioTranscriptionStreamOutcome) => void;
+  const outcome = new Promise<AudioTranscriptionStreamOutcome>(resolve => { settle = resolve; });
   const events = viewOf((async function* () {
     let usage: AudioTranscriptionUsage | undefined;
+    let completed = false;
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
         const event = parseAudioTranscriptionStreamEvent(JSON.parse(frame.data) as unknown);
         if (isAudioTranscriptionDoneEvent(event)) {
-          usage = parseAudioTranscriptionStreamUsage(event);
+          usage = readUsage(() => parseAudioTranscriptionStreamUsage(event), log);
+          completed = true;
           yield event;
           // The transcript is complete, so there is nothing further to read. An upstream that
           // holds the connection open past this point would otherwise keep the client's own
@@ -359,10 +403,10 @@ const meterEvents = (
       // Reached however the events ended — the terminal one, a client that stopped reading,
       // or a broken upstream — because what the upstream already metered is billable
       // whatever happened to the downstream half.
-      settle([{ identity, quantities: billed(usage) }]);
+      settle({ billable: [{ identity, quantities: billed(usage) }], failed: !completed });
     }
   })());
-  return { events, billable };
+  return { events, outcome };
 };
 
 const billed = (usage: AudioTranscriptionUsage | undefined): UsageQuantities => {
@@ -390,25 +434,25 @@ const narrowing = {
   refuse: (status: number, message: string) => ({
     'response.audioTranscription.canonical': { status, message } as Failure,
     'response.audioTranscription.mediaType': null,
-    'response.audioTranscription.streamedUsage': null,
+    'response.audioTranscription.streamedOutcome': null,
   }),
   refuses: [
     'response.audioTranscription.canonical',
     'response.audioTranscription.mediaType',
-    'response.audioTranscription.streamedUsage',
+    'response.audioTranscription.streamedOutcome',
   ] as const,
 };
 
 export const audioTranscriptionServePipeline: Pipeline<
   A<'ingress.http.headers' | 'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'serve.model'>,
-  A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
+  A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedOutcome'>
   & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[];
     'response.http.headers': readonly (readonly [string, string])[]; }
 > = compose('audioTranscriptionServe', [
   emitAudioTranscription,
   writeSettlement(
     handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical']),
-    handedUp => (handedUp as { 'response.audioTranscription.streamedUsage'?: unknown })['response.audioTranscription.streamedUsage'] !== null,
+    handedUp => (handedUp as { 'response.audioTranscription.streamedOutcome'?: unknown })['response.audioTranscription.streamedOutcome'] !== null,
   ),
   resolveCandidates(narrowing),
   failover({
