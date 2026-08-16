@@ -208,10 +208,5 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
   // A refresh only re-mints the bearer. Whatever identity the account has was
   // settled at import, so the id_token here (when present) is used for the
   // account's latest plan observation, never to re-litigate identity.
-  return {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_in: tokens.expires_in,
-    ...(tokens.id_token === undefined ? {} : { id_token: tokens.id_token }),
-  };
+  return tokens;
 };

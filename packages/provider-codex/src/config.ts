@@ -67,9 +67,8 @@ export const patchCodexIdentityMetadata = (
     throw new TypeError('Codex config metadata patch account must be a plain object');
   }
   const accountPatch = rawAccount as Record<string, unknown>;
-  const allowedKeys: ReadonlySet<string> = new Set(IDENTITY_KEYS);
   for (const key of Object.keys(accountPatch)) {
-    if (!allowedKeys.has(key)) throw new TypeError(`Codex config metadata patch account has unexpected key '${key}'`);
+    if (!IDENTITY_KEYS_SET.has(key)) throw new TypeError(`Codex config metadata patch account has unexpected key '${key}'`);
   }
   if (accountPatch.chatgptAccountId !== undefined) {
     assertIdentityValue(accountPatch.chatgptAccountId, 'Codex config metadata patch chatgptAccountId');

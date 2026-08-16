@@ -402,9 +402,6 @@ const buildCodexResponsesBody = (
   return body;
 };
 
-// The per-request inputs for one Codex HTTP dispatch. Callers build the
-// identity and the turn-metadata JSON once and hand both over in a single
-// bundle rather than threading six positional arguments.
 interface CodexHttpCallRequest {
   accessToken: string;
   path: string;
