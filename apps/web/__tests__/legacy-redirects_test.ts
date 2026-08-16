@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Route } from '../src/routes/+types/legacy-redirects';
 import { clientLoader } from '../src/routes/legacy-redirects';
 
 const redirectTarget = async (path: string, params: Record<string, string> = {}) => {
   const request = new Request(`http://floway.test${path}`);
   try {
-    await clientLoader({ params, request } as unknown as Route.ClientLoaderArgs);
+    await clientLoader({ params, request } as unknown as Parameters<typeof clientLoader>[0]);
     return null;
   } catch (error) {
     if (error instanceof Response && error.status === 302) return error.headers.get('Location');
