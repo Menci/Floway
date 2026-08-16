@@ -29,7 +29,7 @@ export const WALL_CLOCK_REFRESH_MS = 60_000;
 // No windows means nothing is known, which is not the same reading as zero.
 export const heaviestPercent = (percents: number[]): number | null => percents.length ? Math.max(...percents) : null;
 
-type UsageHeavyOrActive =
+export type UsageHeavyOrActive =
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 

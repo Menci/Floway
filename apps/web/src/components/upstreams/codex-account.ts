@@ -3,7 +3,7 @@
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L27-L100
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L217-L228
 
-import { heaviestPercent, usageStatusFromHeaviest } from './subscription-quota';
+import { heaviestPercent, type UsageHeavyOrActive, usageStatusFromHeaviest } from './subscription-quota';
 import type {
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
@@ -122,11 +122,11 @@ export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): 
   return newest;
 };
 
-export type AccountStatus =
+type CodexDangerStatus =
   | { tone: 'danger'; reason: 'account-id-mismatch' | 'session-terminated' | 'refresh-failed'; detail?: string }
-  | { tone: 'danger'; reason: 'rate-limited'; until: string; detail?: string }
-  | { tone: 'warning'; reason: 'heavy'; percent: number }
-  | { tone: 'success'; reason: 'active' };
+  | { tone: 'danger'; reason: 'rate-limited'; until: string; detail?: string };
+
+export type AccountStatus = CodexDangerStatus | UsageHeavyOrActive;
 
 export const accountStatus = (lookup: CredentialLookup, entries: QuotaEntry[]): AccountStatus => {
   if (lookup.kind === 'account-id-mismatch') return { tone: 'danger', reason: 'account-id-mismatch' };
