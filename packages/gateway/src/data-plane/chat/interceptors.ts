@@ -14,15 +14,13 @@
 import type { Chat } from './facts.ts';
 import { defineStage, move, transform } from '@floway-dev/pipeline';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 /** Role rewrites, in the fixed order `system → developer → system → user`. Later rewrites
  *  are authoritative when flags overlap, and the last step affects only a system message
  *  that appears after the leading run — which is what "mid-conversation" means and why the
  *  fold carries a flag rather than testing the index. */
 export const applyRoleCompatibilityToChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
   Chat<'request.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>
@@ -30,7 +28,7 @@ export const applyRoleCompatibilityToChatCompletions = defineStage<
   name: 'applyRoleCompatibility',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.candidate'],
+      needs: ['request.chat.chatCompletions', 'route.attempt'],
       consumes: [],
       // Declared even though it will not always be written: a stage that only modifies a
       // field need not write on every run, and `provides \ needs` is the set that must be.
@@ -39,13 +37,13 @@ export const applyRoleCompatibilityToChatCompletions = defineStage<
     response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
     Chat<'request.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>
   >(() => ({
     request: facts => {
-      const rewrite = rolesFor(facts['route.candidate']);
+      const rewrite = rolesFor(facts['route.attempt'].flags);
       if (rewrite === null) return facts;                       // the free do-nothing path
       const payload = facts['request.chat.chatCompletions'];
       const messages = rewriteRoles(payload.messages, rewrite);
@@ -66,12 +64,11 @@ interface RoleRewrite {
 
 /** A flag is data on an upstream model, and this is a stage reading it. There is no
  *  category of stage a flag switches on or off. */
-const rolesFor = (candidate: ModelCandidate): RoleRewrite | null => {
-  const flags = providerModelOf(candidate).enabledFlags;
+const rolesFor = (flags: readonly string[]): RoleRewrite | null => {
   const rewrite: RoleRewrite = {
-    systemToDeveloper: flags.has('rewrite-system-to-developer'),
-    developerToSystem: flags.has('rewrite-developer-to-system'),
-    midConversationSystemToUser: flags.has('rewrite-mid-conv-system-to-user'),
+    systemToDeveloper: flags.includes('rewrite-system-to-developer'),
+    developerToSystem: flags.includes('rewrite-developer-to-system'),
+    midConversationSystemToUser: flags.includes('rewrite-mid-conv-system-to-user'),
   };
   return rewrite.systemToDeveloper || rewrite.developerToSystem || rewrite.midConversationSystemToUser
     ? rewrite
@@ -101,7 +98,7 @@ const rewriteRoles = (messages: Messages, rewrite: RoleRewrite): Messages => {
  *  is the gateway's canonical form — putting it on the wire in a vendor's shape is the
  *  vendor normalizer's job, which is why this runs above them. */
 export const disableReasoningOnForcedToolChoiceForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
   Chat<'request.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>
@@ -109,20 +106,20 @@ export const disableReasoningOnForcedToolChoiceForChatCompletions = defineStage<
   name: 'disableReasoningOnForcedToolChoice',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.candidate'],
+      needs: ['request.chat.chatCompletions', 'route.attempt'],
       consumes: [],
       provides: ['request.chat.chatCompletions'],
     },
     response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
     Chat<'request.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>
   >(() => ({
     request: facts => {
-      if (!providerModelOf(facts['route.candidate']).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) {
+      if (!facts['route.attempt'].flags.includes('disable-reasoning-on-forced-tool-choice')) {
         return facts;
       }
       const payload = facts['request.chat.chatCompletions'];
@@ -139,7 +136,7 @@ const isForcedToolChoice = (choice: ChatCompletionsPayload['tool_choice']): bool
 /** Drops a field the upstream would reject as an unknown argument. It runs above the vendor
  *  normalizers so each of them sees the already-stripped canonical payload. */
 export const stripPromptCacheKeyForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
   Chat<'request.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>,
   Chat<'response.chat.chatCompletions'>
@@ -147,20 +144,20 @@ export const stripPromptCacheKeyForChatCompletions = defineStage<
   name: 'stripPromptCacheKey',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.candidate'],
+      needs: ['request.chat.chatCompletions', 'route.attempt'],
       consumes: [],
       provides: ['request.chat.chatCompletions'],
     },
     response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.candidate'>,
+    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
     Chat<'request.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>,
     Chat<'response.chat.chatCompletions'>
   >(() => ({
     request: facts => {
-      if (!providerModelOf(facts['route.candidate']).enabledFlags.has('strip-prompt-cache-key')) return facts;
+      if (!facts['route.attempt'].flags.includes('strip-prompt-cache-key')) return facts;
       const payload = facts['request.chat.chatCompletions'];
       if (!('prompt_cache_key' in payload)) return facts;
       // Removing a field inside a value is the same move as removing a fact: name it in the

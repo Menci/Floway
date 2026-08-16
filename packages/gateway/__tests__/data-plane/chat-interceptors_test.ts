@@ -11,16 +11,13 @@ import {
   disableReasoningOnForcedToolChoiceForChatCompletions,
   stripPromptCacheKeyForChatCompletions,
 } from '../../src/data-plane/chat/interceptors.ts';
+import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { move, run, compose, defineStage } from '@floway-dev/pipeline';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelCandidate } from '@floway-dev/provider';
 
-/** Enough of a candidate for a stage that only reads its flags. `providerModelOf` expands
- *  the row for the candidate's own upstream, so the shape has to be the real one. */
-const candidateWith = (...flags: string[]): ModelCandidate => ({
-  model: { id: 'm', endpoints: {}, providerModels: { u: { enabledFlags: new Set(flags), pricing: null } } },
-  provider: { upstreamId: 'u' },
-} as unknown as ModelCandidate);
+/** What an attempt is, to a stage that only reads flags. The selector carries them as data,
+ *  so nothing here needs the live candidate the resolver kept. */
+const attemptWith = (...flags: string[]): AttemptSelector => ({ upstreamId: 'u', modelId: 'm', flags });
 
 const payload = (messages: ChatCompletionsPayload['messages'], rest: Partial<ChatCompletionsPayload> = {}): ChatCompletionsPayload =>
   ({ model: 'm', messages, ...rest }) as ChatCompletionsPayload;
@@ -51,7 +48,7 @@ describe('the shared chat interceptors, as stages', () => {
         { role: 'user', content: 'hi' },
         { role: 'system', content: 'mid' },
       ]),
-      'route.candidate': candidateWith('rewrite-system-to-developer'),
+      'route.attempt': attemptWith('rewrite-system-to-developer'),
     });
     const after = down['request.chat.chatCompletions'] as ChatCompletionsPayload;
     expect(after.messages.map(m => m.role)).toEqual(['developer', 'user', 'developer']);
@@ -65,7 +62,7 @@ describe('the shared chat interceptors, as stages', () => {
         { role: 'user', content: 'hi' },
         { role: 'system', content: 'mid' },
       ]),
-      'route.candidate': candidateWith('rewrite-mid-conv-system-to-user'),
+      'route.attempt': attemptWith('rewrite-mid-conv-system-to-user'),
     });
     const after = down['request.chat.chatCompletions'] as ChatCompletionsPayload;
     expect(after.messages.map(m => m.role)).toEqual(['system', 'system', 'user', 'user']);
@@ -78,7 +75,7 @@ describe('the shared chat interceptors, as stages', () => {
     const original = payload([{ role: 'system', content: 'lead' }]);
     const down = await handedDown(applyRoleCompatibilityToChatCompletions, {
       'request.chat.chatCompletions': original,
-      'route.candidate': candidateWith(),
+      'route.attempt': attemptWith(),
     });
     expect(down['request.chat.chatCompletions']).toBe(original);
   });
@@ -87,7 +84,7 @@ describe('the shared chat interceptors, as stages', () => {
     const original = payload([{ role: 'user', content: 'hi' }]);
     const down = await handedDown(applyRoleCompatibilityToChatCompletions, {
       'request.chat.chatCompletions': original,
-      'route.candidate': candidateWith('rewrite-system-to-developer'),
+      'route.attempt': attemptWith('rewrite-system-to-developer'),
     });
     expect(down['request.chat.chatCompletions']).toBe(original);
   });
@@ -99,7 +96,7 @@ describe('the shared chat interceptors, as stages', () => {
     const original = payload(messages);
     const down = await handedDown(applyRoleCompatibilityToChatCompletions, {
       'request.chat.chatCompletions': original,
-      'route.candidate': candidateWith('rewrite-system-to-developer'),
+      'route.attempt': attemptWith('rewrite-system-to-developer'),
     });
     const after = down['request.chat.chatCompletions'] as ChatCompletionsPayload;
     const shared = after.messages.filter((message, index) => message === messages[index]).length;
@@ -109,14 +106,14 @@ describe('the shared chat interceptors, as stages', () => {
   it('disables reasoning only when a tool choice is forced', async () => {
     const forced = await handedDown(disableReasoningOnForcedToolChoiceForChatCompletions, {
       'request.chat.chatCompletions': payload([], { tool_choice: 'required' }),
-      'route.candidate': candidateWith('disable-reasoning-on-forced-tool-choice'),
+      'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
     expect((forced['request.chat.chatCompletions'] as ChatCompletionsPayload).reasoning_effort).toBe('none');
 
     const free = payload([], { tool_choice: 'auto' });
     const untouched = await handedDown(disableReasoningOnForcedToolChoiceForChatCompletions, {
       'request.chat.chatCompletions': free,
-      'route.candidate': candidateWith('disable-reasoning-on-forced-tool-choice'),
+      'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
     expect(untouched['request.chat.chatCompletions']).toBe(free);
   });
@@ -124,7 +121,7 @@ describe('the shared chat interceptors, as stages', () => {
   it('removes the prompt cache key, and the key itself rather than its value', async () => {
     const down = await handedDown(stripPromptCacheKeyForChatCompletions, {
       'request.chat.chatCompletions': payload([], { prompt_cache_key: 'k' } as Partial<ChatCompletionsPayload>),
-      'route.candidate': candidateWith('strip-prompt-cache-key'),
+      'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
     const after = down['request.chat.chatCompletions'] as ChatCompletionsPayload;
     // `undefined` is not a removal: the key has to be gone, not present and empty.
@@ -135,7 +132,7 @@ describe('the shared chat interceptors, as stages', () => {
     const original = payload([]);
     const down = await handedDown(stripPromptCacheKeyForChatCompletions, {
       'request.chat.chatCompletions': original,
-      'route.candidate': candidateWith('strip-prompt-cache-key'),
+      'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
     expect(down['request.chat.chatCompletions']).toBe(original);
   });
