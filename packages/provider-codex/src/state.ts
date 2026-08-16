@@ -286,27 +286,35 @@ export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   };
 };
 
-// Control-plane refresh transitions. The operator-facing refresh handler in
-// the gateway delegates to these so the provider owns its own state writes —
-// the data plane's createCodexProvider persists the same fields through the
-// same helper. Both no-op on a missing account rather than throw, matching
-// the refresh contract that a state slot it cannot address should be left
-// alone (saveState skips the write when the mutator returns state unchanged).
+// State-transition writes for both planes. The operator-facing refresh handler
+// in the gateway delegates to these so the provider owns its own state writes,
+// and the data plane's createCodexProvider routes the same fields through the
+// same helpers. The control plane no-ops on a missing account rather than
+// throw, matching the refresh contract that a state slot it cannot address
+// should be left alone (saveState skips the write when the mutator returns
+// state unchanged), while the data plane passes onMissing:'throw' so a lost
+// credential fails loudly instead of silently persisting nothing.
 
-// Shared control-plane write scaffold: stamps state_updated_at on every
-// successful account patch and no-ops on a missing account, so the refresh
-// transitions below can't silently drop the write timestamp or address a
-// state slot they can't find.
+// Shared state-write scaffold: stamps state_updated_at on every successful
+// account patch and no-ops on a missing account, so the transitions below
+// can't silently drop the write timestamp or address a state slot they can't
+// find. Pass { onMissing: 'throw' } to fail loudly on a missing account.
 const updateCodexAccountState = async (
   upstreamId: string,
   accountId: string | null,
   stamp: string,
   patch: (account: CodexAccountCredential) => CodexAccountCredential,
+  options?: { onMissing: 'noop' | 'throw' },
 ): Promise<void> => {
   await getProviderRepo().upstreams.saveState(upstreamId, current => {
     const state = readCodexUpstreamState(current);
     const idx = findCodexAccountIndex(state, accountId);
-    if (idx < 0) return current;
+    if (idx < 0) {
+      if (options?.onMissing === 'throw') {
+        throw new TypeError(`Codex upstream ${upstreamId} state has no credential for account ${accountId}`);
+      }
+      return current;
+    }
     return replaceCodexAccount(state, idx, account => ({ ...patch(account), state_updated_at: stamp }));
   });
 };
@@ -315,6 +323,7 @@ export const persistCodexRefreshTokenRotation = async (
   upstreamId: string,
   accountId: string | null,
   newRefreshToken: string,
+  options?: { onMissing: 'noop' | 'throw' },
 ): Promise<void> => {
   // OpenAI rotates the refresh_token on every /oauth/token call. Stamped
   // before the write so a replay against a winning sibling produces the same
@@ -323,7 +332,7 @@ export const persistCodexRefreshTokenRotation = async (
   await updateCodexAccountState(upstreamId, accountId, rotatedAt, account => ({
     ...account,
     refresh_token: newRefreshToken,
-  }));
+  }), options);
 };
 
 export const persistCodexRefreshFailure = async (
@@ -343,4 +352,27 @@ export const persistCodexRefreshFailure = async (
       accessToken: null,
     };
   });
+};
+
+export const persistCodexTerminalState = async (
+  upstreamId: string,
+  accountId: string | null,
+  state: 'session_terminated' | 'refresh_failed',
+  message: string,
+  options?: { onMissing: 'noop' | 'throw' },
+): Promise<void> => {
+  // Stamped before the write so a replay against a winning sibling produces
+  // the same document rather than a later timestamp.
+  const flippedAt = new Date().toISOString();
+  await updateCodexAccountState(upstreamId, accountId, flippedAt, account => {
+    // Clear any cached access token on the terminal flip — once the
+    // credential is dead the cached token is dead too, and leaving it would
+    // confuse the dashboard's status panel.
+    return {
+      ...account,
+      state,
+      state_message: message,
+      accessToken: null,
+    };
+  }, options);
 };

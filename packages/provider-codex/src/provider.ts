@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexImagesEdits, callCodexImagesGenerations,
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
-import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
+import { assertCodexUpstreamState, findCodexAccountIndex, persistCodexRefreshTokenRotation, persistCodexTerminalState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
@@ -64,26 +64,12 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     return locateActiveAccount(fresh.state);
   };
 
-  const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
-    const rotatedAt = new Date().toISOString();
-    await getProviderRepo().upstreams.saveState(record.id, current => {
-      const { state, accountIndex } = locateActiveAccount(current);
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: rotatedAt }));
-    });
+  const effects: CodexCallEffects = {
+    persistRefreshTokenRotation: newRefreshToken =>
+      persistCodexRefreshTokenRotation(record.id, accountIdentity.chatgptAccountId, newRefreshToken, { onMissing: 'throw' }),
+    persistTerminalState: (newState, message) =>
+      persistCodexTerminalState(record.id, accountIdentity.chatgptAccountId, newState, message, { onMissing: 'throw' }),
   };
-
-  const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
-    const flippedAt = new Date().toISOString();
-    await getProviderRepo().upstreams.saveState(record.id, current => {
-      const { state, accountIndex } = locateActiveAccount(current);
-      // Clear any cached access token on the terminal flip — once the credential
-      // is dead the cached token is dead too, and leaving it would confuse the
-      // dashboard's status panel.
-      return replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: flippedAt, accessToken: null }));
-    });
-  };
-
-  const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const instance: ProviderInstance = {
     getProvidedModels: async fetcher => {
@@ -97,10 +83,10 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       let access;
       try {
         access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+          mintCodexAccessToken(refreshToken, fetcher, effects.persistRefreshTokenRotation));
       } catch (err) {
         if (err instanceof CodexOAuthSessionTerminatedError) {
-          await persistTerminalState('refresh_failed', err.upstreamMessage);
+          await effects.persistTerminalState('refresh_failed', err.upstreamMessage);
         }
         throw err;
       }
