@@ -737,7 +737,7 @@ interface CodexImageCallRequest {
 type CodexImageCallDispatchRequest = CodexImageCallRequest & { accessToken: string };
 
 const performImageCall = async (
-  opts: CodexBackendCallBase & { fallbackPlanType: string | undefined },
+  opts: CodexBackendCallBase,
   request: CodexImageCallRequest,
   accessToken: CodexAccessTokenEntry,
   effectivePlan: CodexPlanObservation,
