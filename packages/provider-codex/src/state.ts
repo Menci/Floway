@@ -312,7 +312,7 @@ export const persistCodexRefreshFailure = async (
   accountId: string | null,
   message: string,
 ): Promise<void> => {
-  return persistCodexTerminalState(upstreamId, accountId, 'refresh_failed', message);
+  return await persistCodexTerminalState(upstreamId, accountId, 'refresh_failed', message);
 };
 
 export const persistCodexTerminalState = async (
