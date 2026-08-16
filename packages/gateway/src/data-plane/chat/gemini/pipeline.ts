@@ -37,6 +37,7 @@
 
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';
 import type { UsageQuantities } from '../../../repo/types.ts';
+import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -146,7 +147,7 @@ const emitGemini = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.gemini.rendered': renderSSE(frames),
+      'response.chat.gemini.rendered': move(renderSSE(frames)),
       'response.http.status': 200,
     };
   },
@@ -174,7 +175,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): Asy
  * that come out of it, so a figure the upstream stated is billed as stated.
  */
 const callGeminiViaChatCompletions = defineStage<
-  C<'request.chat.gemini' | 'route.attempt' | 'ingress.http.headers'>,
+  C<'route.attempt' | 'ingress.http.headers'>,
   C<'response.chat.gemini' | 'response.chat.gemini.streamedUsage'
   | 'response.usage.billable' | 'response.http.headers'>,
   ChatServices
@@ -195,11 +196,15 @@ const callGeminiViaChatCompletions = defineStage<
     // made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // The trip owns both directions: it builds the payload that goes out, stamping the id the
-    // candidate resolved to rather than the one the client addressed in its URL, and it hands
-    // back the closure that turns the upstream's frames into Gemini's. An alias' own rules are
-    // applied to the translated body, which is the only shape the wire will see.
-    const trip = await translateGeminiViaChatCompletions(facts['request.chat.gemini'], { model: candidate.model.id });
+    // The trip owns both directions: it builds the payload that goes out and hands back the
+    // closure that turns the upstream's frames into Gemini's. What it translates is what
+    // affinity materialized for this candidate — client-carried state rewritten for the
+    // upstream that will see it, which is the whole reason a turn can be pinned at all. The
+    // id the client addressed does not travel: Gemini carries it in the URL, the trip stamps
+    // the candidate's own, and the wire is handed the body without it. An alias' own rules
+    // apply to the translated body, which is the only shape the wire will see.
+    const asked = use.chatPayloadFor(facts['route.attempt']) as GeminiPayload;
+    const trip = await translateGeminiViaChatCompletions(asked, { model: candidate.model.id });
     if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(trip.target, candidate.rules);
     const { model: _addressed, ...body } = trip.target;
 
@@ -250,6 +255,9 @@ const callGeminiViaChatCompletions = defineStage<
       });
     }
 
+    // This candidate answered, so it is the one a follow-up turn carrying our own state must
+    // come back to.
+    use.selectAffinity(candidate);
     const metered = meterChatCompletions(result.events, identity);
     return move({
       ...facts,
@@ -291,9 +299,16 @@ const meterChatCompletions = (
 };
 
 /** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities =>
-  usage === undefined ? {} : tokenUsageFromBillableUsage(usage) as unknown as UsageQuantities;
+ *  statement from reporting zero.
+ *
+ *  A billed entity is keyed by billing metric, which is not the shape a protocol reports in,
+ *  so the reading is converted rather than cast. The service tier survives as far as
+ *  `TokenUsage.tier` and no further: a billed entity is an identity and a bag of quantities,
+ *  and the pricing selector the tier feeds has no seat there. */
+const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+  const tokens = tokenUsageFromBillableUsage(usage);
+  return tokens === null ? {} : tokenUsageQuantities(tokens);
+};
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
