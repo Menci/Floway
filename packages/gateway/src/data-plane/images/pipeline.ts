@@ -236,19 +236,15 @@ const providerEditsSource = (image: ImagesEditImage): ImagesEditsSource => {
 
 /** A candidate that cannot serve *this* request is not a candidate. One family covers two
  *  endpoints and an upstream may expose either without the other, so which one is asked for is
- *  what narrows the list. A refusal answers with no upstream headers because there was no
- *  upstream, which is the same statement the edge above reads on every other path. */
+ *  what narrows the list. */
 const narrowing = (request: CanonicalImagesRequest) => ({
   kind: 'image' as const,
   reject: (candidate: ModelCandidate) => candidate.model.endpoints[ENDPOINT[request.operation]] === undefined
     ? `the upstream does not expose the images ${request.operation} endpoint`
     : null,
   unsupported: (model: string) => `Model ${model} does not support the /images/${request.operation} endpoint.`,
-  refuse: (status: number, message: string) => ({
-    'response.images.canonical': { status, message },
-    'response.http.headers': [],
-  }),
-  refuses: ['response.images.canonical', 'response.http.headers'] as const,
+  refuse: (status: number, message: string) => ({ 'response.images.canonical': { status, message } }),
+  refuses: ['response.images.canonical'] as const,
 });
 
 /** What a caller must bring. `ingress.http.headers` and `request.images.canonical` are in it

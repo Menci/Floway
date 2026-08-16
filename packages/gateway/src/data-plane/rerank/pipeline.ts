@@ -18,6 +18,7 @@ import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
+import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { defineStage, move, compose } from '@floway-dev/pipeline';
 import { parseDecimalString, type RerankProtocol, type RerankSourceProtocol } from '@floway-dev/protocols/common';
@@ -57,8 +58,8 @@ type R<K extends keyof RerankFacts> = { [P in K]: RerankFacts[P] };
 const emitRerank = defineStage<
   R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
   R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical'>,
-  R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'response.rerank.canonical' | 'response.rerank.targetProtocol'>,
-  R<'response.rerank.rendered' | 'response.http.status'>
+  R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.headers'>,
+  R<'response.rerank.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitRerank',
   through: {
@@ -68,17 +69,23 @@ const emitRerank = defineStage<
       provides: [],
     },
     response: {
-      needs: ['response.rerank.canonical'],
-      consumes: ['response.rerank.canonical', 'response.rerank.targetProtocol'],
-      provides: ['response.rerank.rendered', 'response.http.status'],
+      needs: ['response.rerank.canonical', 'response.http.headers'],
+      consumes: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.headers'],
+      provides: ['response.rerank.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
-    const { 'response.rerank.canonical': answer, 'response.rerank.targetProtocol': target, ...rest } = back;
+    const { 'response.rerank.canonical': answer, 'response.rerank.targetProtocol': target, 'response.http.headers': headers, ...rest } = back;
+    // Vendor traces and quota state stay visible; what an intermediary must strip, and what
+    // would misdescribe a body this gateway serialized itself, does not. A filter that removed
+    // nothing hands the same array on, so the record shows no change where none happened.
+    const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     if (isFailure(answer)) {
       return {
         ...rest,
+        'response.http.headers': forClient,
         'response.rerank.rendered': move({ error: { message: answer.message, type: 'api_error' } }),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
@@ -88,6 +95,7 @@ const emitRerank = defineStage<
     }
     return {
       ...rest,
+      'response.http.headers': forClient,
       'response.http.status': 200,
       'response.rerank.rendered': move(renderRerankResponse(
         back['ingress.rerank.sourceProtocol'],
@@ -106,12 +114,12 @@ const emitRerank = defineStage<
  */
 const callRerankUpstream = defineStage<
   R<'request.rerank.canonical' | 'route.attempt' | 'ingress.http.headers'>,
-  R<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.usage.billable'>,
+  R<'response.rerank.canonical' | 'response.rerank.targetProtocol' | 'response.http.headers' | 'response.usage.billable'>,
   GatewayServices
 >({
   name: 'callRerankUpstream',
   return: {
-    provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.usage.billable'],
+    provides: ['response.rerank.canonical', 'response.rerank.targetProtocol', 'response.http.headers', 'response.usage.billable'],
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -127,6 +135,8 @@ const callRerankUpstream = defineStage<
     );
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'rerank');
     const identity = telemetryModelIdentity(candidate, result.modelKey);
+    // What came back, unfiltered: the edge is where a client's view of it is decided.
+    const headers = [...result.response.headers];
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
@@ -137,6 +147,7 @@ const callRerankUpstream = defineStage<
           message: await result.response.text(),
         },
         'response.rerank.targetProtocol': result.target.protocol,
+        'response.http.headers': headers,
         // The upstream was called and reported nothing, which is a different situation
         // from reporting zero — so the entity is present with no quantities.
         'response.usage.billable': [{ identity, quantities: {} }],
@@ -152,6 +163,7 @@ const callRerankUpstream = defineStage<
       ...facts,
       'response.rerank.canonical': canonical,
       'response.rerank.targetProtocol': result.target.protocol,
+      'response.http.headers': headers,
       'response.usage.billable': [{
         identity,
         quantities: billed(usage),
@@ -190,7 +202,7 @@ const narrowing = (request: CanonicalRerankRequest) => ({
 
 export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
   R<'ingress.http.headers' | 'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'serve.model'>,
-  R<'response.rerank.rendered' | 'response.http.status' | 'response.usage.billable'>
+  R<'response.rerank.rendered' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > => compose('rerankServe', [
   emitRerank,
   writeSettlement(handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical'])),

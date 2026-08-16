@@ -39,7 +39,6 @@ export const embeddings = async (c: Context): Promise<Response> => {
   prologue.gateway.dump?.requestedModel(model);
 
   return await serveThrough(
-    c,
     prologue,
     embeddingsServePipeline,
     move({
@@ -48,9 +47,6 @@ export const embeddings = async (c: Context): Promise<Response> => {
       'request.embeddings.canonical': request,
       'serve.model': model,
     }) as never,
-    facts => ({
-      status: (facts as { readonly 'response.http.status': number })['response.http.status'],
-      body: JSON.stringify((facts as { readonly 'response.embeddings.rendered': unknown })['response.embeddings.rendered']),
-    }),
+    facts => ({ body: JSON.stringify(facts['response.embeddings.rendered']), contentType: 'application/json' }),
   );
 };

@@ -12,11 +12,13 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-import type { AttemptSelector } from './facts.ts';
+import type { AttemptSelector, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+
+type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
 export interface Prologue {
   readonly services: GatewayServices;
@@ -80,12 +82,13 @@ export const openPrologue = async (
   };
 };
 
-/** What a family's pipeline answers with, in the shape a route can return. Every family
- *  provides the status; the body and its media type are the family's own rendering. */
+/** What a family writes for the client. The status and the upstream's own headers are facts
+ *  the pipeline already carries, so what is left here is the bytes and what they are. */
 export interface Rendered {
-  readonly status: number;
   readonly body: BodyInit;
-  readonly headers?: Readonly<Record<string, string>>;
+  /** Owned by whichever stage serialized the body, never by the upstream — a media type
+   *  describing bytes the gateway wrote itself is the one thing an upstream cannot say. */
+  readonly contentType: string;
 }
 
 /**
@@ -96,22 +99,23 @@ export interface Rendered {
  * is not cancel — an aborted connection cannot be reused and leaves the upstream's own
  * billing unsettled — so it still happens, just after the answer is on its way.
  */
-export const serveThrough = async <Entry extends object, Exit extends object>(
-  c: Context,
+export const serveThrough = async <
+  Entry extends object,
+  Exit extends Slice<'response.http.status' | 'response.http.headers'>,
+>(
   prologue: Prologue,
   pipeline: Pipeline<Entry, Exit>,
   entry: Entry,
   render: (facts: Exit) => Rendered,
 ): Promise<Response> => {
-  void c;
   const { facts, drain } = await run(pipeline, entry, prologue.services as never);
   prologue.services.background(drain());
   const answer = render(facts);
+
+  const headers = new Headers(facts['response.http.headers'].map(([name, value]) => [name, value]));
+  headers.set('content-type', answer.contentType);
   return finalizeGatewayResponse(
     prologue.gateway,
-    new Response(answer.body, {
-      status: answer.status as ContentfulStatusCode,
-      headers: answer.headers ?? { 'content-type': 'application/json' },
-    }),
+    new Response(answer.body, { status: facts['response.http.status'] as ContentfulStatusCode, headers }),
   );
 };

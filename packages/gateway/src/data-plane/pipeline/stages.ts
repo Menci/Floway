@@ -62,18 +62,18 @@ export interface Narrowing<Refusal extends object> {
  */
 export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<Refusal>) => defineStage<
   Slice<'serve.model'>,                                  // what arrives
-  Slice<'serve.model' | 'serve.candidates'>,             // what it hands down
-  Slice<'response.usage.billable'>,                      // what comes back
-  Slice<'response.usage.billable'>,                      // what it hands up, having descended
-  Slice<'response.usage.billable'> & Refusal,            // and what it answers with instead
+  Slice<'serve.model' | 'serve.candidates'>,                            // what it hands down
+  Slice<'response.usage.billable' | 'response.http.headers'>,           // what comes back
+  Slice<'response.usage.billable' | 'response.http.headers'>,           // what it hands up, having descended
+  Slice<'response.usage.billable' | 'response.http.headers'> & Refusal, // and what it answers with instead
   GatewayServices
 >({
   name: 'resolveCandidates',
   through: {
     request: { needs: ['serve.model'], consumes: [], provides: ['serve.candidates'] },
-    response: { needs: ['response.usage.billable'], consumes: [], provides: [] },
+    response: { needs: ['response.usage.billable', 'response.http.headers'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.usage.billable', ...narrowing.refuses] },
+  return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -84,10 +84,16 @@ export const resolveCandidates = <Refusal extends object>(narrowing: Narrowing<R
       runtimeLocation: use.gateway.runtimeLocation,
     });
 
-    // An empty billed set is what "we did not call an upstream" looks like. The settlement
-    // stages still run and still write; the row simply names no billed entity.
+    // An empty billed set is what "we did not call an upstream" looks like, and an empty
+    // header list is the same statement on the other key. The settlement stages still run
+    // and still write; the row simply names no billed entity.
     const refuse = (status: number, message: string) =>
-      move({ ...facts, 'response.usage.billable': [], ...narrowing.refuse(status, message) });
+      move({
+        ...facts,
+        'response.usage.billable': [],
+        'response.http.headers': [],
+        ...narrowing.refuse(status, message),
+      });
 
     if (candidates.length === 0) {
       const missing = sawModel
