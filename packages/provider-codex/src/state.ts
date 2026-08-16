@@ -294,6 +294,24 @@ export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
 // the refresh contract that a state slot it cannot address should be left
 // alone (saveState skips the write when the mutator returns state unchanged).
 
+// Shared control-plane write scaffold: stamps state_updated_at on every
+// successful account patch and no-ops on a missing account, so the refresh
+// transitions below can't silently drop the write timestamp or address a
+// state slot they can't find.
+const updateCodexAccountState = async (
+  upstreamId: string,
+  accountId: string | null,
+  stamp: string,
+  patch: (account: CodexAccountCredential) => CodexAccountCredential,
+): Promise<void> => {
+  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+    const state = readCodexUpstreamState(current);
+    const idx = findCodexAccountIndex(state, accountId);
+    if (idx < 0) return current;
+    return replaceCodexAccount(state, idx, account => ({ ...patch(account), state_updated_at: stamp }));
+  });
+};
+
 export const persistCodexRefreshTokenRotation = async (
   upstreamId: string,
   accountId: string | null,
@@ -303,16 +321,10 @@ export const persistCodexRefreshTokenRotation = async (
   // before the write so a replay against a winning sibling produces the same
   // document rather than a later timestamp.
   const rotatedAt = new Date().toISOString();
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readCodexUpstreamState(current);
-    const idx = findCodexAccountIndex(state, accountId);
-    if (idx < 0) return current;
-    return replaceCodexAccount(state, idx, account => ({
-      ...account,
-      refresh_token: newRefreshToken,
-      state_updated_at: rotatedAt,
-    }));
-  });
+  await updateCodexAccountState(upstreamId, accountId, rotatedAt, account => ({
+    ...account,
+    refresh_token: newRefreshToken,
+  }));
 };
 
 export const persistCodexRefreshFailure = async (
@@ -321,19 +333,15 @@ export const persistCodexRefreshFailure = async (
   message: string,
 ): Promise<void> => {
   const failedAt = new Date().toISOString();
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readCodexUpstreamState(current);
-    const idx = findCodexAccountIndex(state, accountId);
-    if (idx < 0) return current;
+  await updateCodexAccountState(upstreamId, accountId, failedAt, account => {
     // Clear any cached access token on the terminal flip — once the
     // credential is dead the cached token is dead too, and leaving it would
     // confuse the dashboard's status panel.
-    return replaceCodexAccount(state, idx, account => ({
+    return {
       ...account,
       state: 'refresh_failed' as const,
       state_message: message,
-      state_updated_at: failedAt,
       accessToken: null,
-    }));
+    };
   });
 };
