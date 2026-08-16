@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, jsonRequestBody, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -130,14 +130,16 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     return byKey;
   }, new Map());
 
-  const headersForCall = (headers: Headers): Headers => {
-    const resolved = new Headers(headers);
+  const headersForCall = (headers: Headers): HttpHeaderLines => {
+    const resolved: [string, string][] = [];
+    for (const [name, value] of headers) {
+      if (!valuesByKey.has(name.toLowerCase())) resolved.push([name, value]);
+    }
     for (const [key, values] of valuesByKey) {
-      const admitted = resolved.get(key);
-      resolved.delete(key);
+      const admitted = headers.get(key);
       for (const value of values) {
-        if (value !== null) resolved.append(key, value);
-        else if (admitted !== null) resolved.append(key, admitted);
+        if (value !== null) resolved.push([key, value]);
+        else if (admitted !== null) resolved.push([key, admitted]);
       }
     }
     return resolved;
@@ -147,7 +149,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    headers: Headers,
+    headers: HttpHeaderLines,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
@@ -163,7 +165,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    headers: Headers,
+    headers: HttpHeaderLines,
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {

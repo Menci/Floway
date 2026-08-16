@@ -8,7 +8,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderModel, type ProviderResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -22,7 +22,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    headers: Headers,
+    headers: HttpHeaderLines,
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {
@@ -39,7 +39,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     );
   };
 
-  const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers, opts: UpstreamCallOptions) => {
+  const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
     const response = await transport(azure.config, { method: 'POST', body: jsonRequestBody({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
     return { response, modelKey: upstreamModelId };
@@ -64,8 +64,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         };
       }));
     },
-    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
-    callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
+    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, [...opts.headers], opts),
+    callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, [...opts.headers], parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -78,7 +78,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           switch (ctx.action) {
           case 'generate': {
-            const stream = await callStreaming(azureFetchResponses, model, wireBody, signal, ctx.headers, parseResponsesStream, opts);
+            const stream = await callStreaming(azureFetchResponses, model, wireBody, signal, [...ctx.headers], parseResponsesStream, opts);
             return stream.ok
               ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
               : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
@@ -88,7 +88,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
             const response = await azureFetchResponsesCompact(
               azure.config,
               { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(wireBody), model: upstreamModelId }), signal },
-              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+              { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
             );
             return response.ok
               ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: upstreamModelId }
@@ -101,20 +101,20 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         },
       );
     },
-    callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), parseMessagesStream, opts),
-    callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, headersForMessagesCall(opts.headers, opts.anthropicBeta), opts),
-    callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
-    callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
+    callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, headersForMessagesCall([...opts.headers], opts.anthropicBeta), parseMessagesStream, opts),
+    callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, headersForMessagesCall([...opts.headers], opts.anthropicBeta), opts),
+    callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, [...opts.headers], opts),
+    callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, [...opts.headers], opts),
     callImagesEdits: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
     callAudioTranscriptions: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = serializeModelPathAudioTranscriptionRequest(request);
-      const response = await azureFetchAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      const response = await azureFetchAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
     callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),

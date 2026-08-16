@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { copilotAuthedFetch } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
-import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { initProviderRepo, directFetcher, type Fetcher, type HttpHeaderLines, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
@@ -50,7 +50,7 @@ const installRepoAndClearCache = async () => {
 };
 
 const mockTokenAndCapture = async (
-  extraHeaders: Headers | undefined,
+  extraHeaders: HttpHeaderLines | undefined,
   assert: (headers: Headers) => void,
 ): Promise<void> => {
   await installRepoAndClearCache();
@@ -252,7 +252,7 @@ describe('Copilot token exchange retries', () => {
 });
 
 test('copilotAuthedFetch overlays interceptor headers on the pinned base set', async () => {
-  await mockTokenAndCapture(new Headers({ 'x-initiator': 'agent', 'copilot-vision-request': 'true' }), headers => {
+  await mockTokenAndCapture([['x-initiator', 'agent'], ['copilot-vision-request', 'true']], headers => {
     assertEquals(headers.get('x-initiator'), 'agent');
     assertEquals(headers.get('copilot-vision-request'), 'true');
     // Base headers we did not override stay pinned.
@@ -263,7 +263,7 @@ test('copilotAuthedFetch overlays interceptor headers on the pinned base set', a
 
 test('copilotAuthedFetch deletes a base header when the interceptor passes an empty-string value', async () => {
   // Sentinel contract: empty string means drop this base header from the pinned set.
-  await mockTokenAndCapture(new Headers({ 'copilot-integration-id': '' }), headers => {
+  await mockTokenAndCapture([['copilot-integration-id', '']], headers => {
     assertEquals(headers.has('copilot-integration-id'), false);
   });
 });

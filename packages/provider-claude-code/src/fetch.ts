@@ -370,7 +370,7 @@ const performUpstreamCall = async (
     // allowlist. This path restores typed Messages metadata, preserves the
     // resulting fingerprint, fills Content-Type when absent, and sets
     // provider-owned OAuth auth.
-    const passthrough = Object.fromEntries(headersForMessagesCall(opts.call.headers, opts.call.anthropicBeta));
+    const passthrough = Object.fromEntries(headersForMessagesCall([...opts.call.headers], opts.call.anthropicBeta));
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream
     // never receives a body-bearing request without a media type.

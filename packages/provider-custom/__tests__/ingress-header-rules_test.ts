@@ -3,8 +3,7 @@ import { test } from 'vitest';
 import type { CustomIngressHeaderRule } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
@@ -59,43 +58,43 @@ const ADMITTED: Record<string, string | null> = {
   'client sends two values': 'client-a, client-b',
 };
 
-// The upstream's `x-route` for each pair, stated from the rule contract rather
-// than read back from the resolver.
-const EXPECTED: Record<string, Record<string, string | null>> = {
+// The upstream's `x-route` field lines for each pair, stated from the rule
+// contract rather than read back from the resolver.
+const EXPECTED: Record<string, Record<string, string[]>> = {
   'no rule': {
-    'client sends nothing': null,
-    'client sends one value': null,
-    'client sends two values': null,
+    'client sends nothing': [],
+    'client sends one value': [],
+    'client sends two values': [],
   },
   passthrough: {
-    'client sends nothing': null,
-    'client sends one value': 'client-a',
-    'client sends two values': 'client-a, client-b',
+    'client sends nothing': [],
+    'client sends one value': ['client-a'],
+    'client sends two values': ['client-a, client-b'],
   },
   'one value': {
-    'client sends nothing': 'one',
-    'client sends one value': 'one',
-    'client sends two values': 'one',
+    'client sends nothing': ['one'],
+    'client sends one value': ['one'],
+    'client sends two values': ['one'],
   },
   'two values': {
-    'client sends nothing': 'one, two',
-    'client sends one value': 'one, two',
-    'client sends two values': 'one, two',
+    'client sends nothing': ['one', 'two'],
+    'client sends one value': ['one', 'two'],
+    'client sends two values': ['one', 'two'],
   },
   'passthrough before a value': {
-    'client sends nothing': 'one',
-    'client sends one value': 'client-a, one',
-    'client sends two values': 'client-a, client-b, one',
+    'client sends nothing': ['one'],
+    'client sends one value': ['client-a', 'one'],
+    'client sends two values': ['client-a, client-b', 'one'],
   },
   'passthrough after a value': {
-    'client sends nothing': 'one',
-    'client sends one value': 'one, client-a',
-    'client sends two values': 'one, client-a, client-b',
+    'client sends nothing': ['one'],
+    'client sends one value': ['one', 'client-a'],
+    'client sends two values': ['one', 'client-a, client-b'],
   },
   'empty beside a value': {
-    'client sends nothing': ', one',
-    'client sends one value': ', one',
-    'client sends two values': ', one',
+    'client sends nothing': ['', 'one'],
+    'client sends one value': ['', 'one'],
+    'client sends two values': ['', 'one'],
   },
 };
 
@@ -107,38 +106,40 @@ const admittedBag = (allowlist: readonly unknown[], admitted: string | null): He
   return headers;
 };
 
-const upstreamHeaders = async (rules: CustomIngressHeaderRule[], admitted: string | null): Promise<Headers> => {
+// The provider hands the transport field lines, so the lines themselves are
+// what these cases read — a `Request`'s `Headers` would merge a repeated name
+// back into one value and hide exactly what is under test.
+const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string | null): Promise<[string, string][]> => {
   const provider = createCustomProvider(buildCustomUpstream(rules, CHAT_MODEL));
-  let observed: Headers | undefined;
+  let observed: [string, string][] | undefined;
+  const fetcher: Fetcher = (_url, init) => {
+    observed = init.headers as [string, string][];
+    return Promise.resolve(sseResponse());
+  };
 
-  await withMockedFetch(
-    request => {
-      observed = request.headers;
-      return sseResponse();
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      assertExists(model);
-      await provider.instance.callChatCompletions(
-        model,
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }),
-      );
-    },
+  const [model] = await provider.instance.getProvidedModels(directFetcher);
+  assertExists(model);
+  await provider.instance.callChatCompletions(
+    model,
+    { messages: [] },
+    undefined,
+    noopUpstreamCallOptions({ fetcher, headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }),
   );
 
   assertExists(observed);
   return observed;
 };
 
+const valuesFor = (lines: readonly (readonly [string, string])[], name: string): string[] =>
+  lines.flatMap(([candidate, value]) => candidate.toLowerCase() === name ? [value] : []);
+
 for (const [ruleName, rules] of Object.entries(RULES)) {
   for (const [clientName, admitted] of Object.entries(ADMITTED)) {
     test(`${ruleName}: ${clientName}`, async () => {
-      const observed = await upstreamHeaders(rules, admitted);
+      const lines = await upstreamLines(rules, admitted);
 
-      assertEquals(observed.get(HEADER), EXPECTED[ruleName][clientName]);
-      assertEquals(observed.get('x-untouched'), 'kept');
+      assertEquals(valuesFor(lines, HEADER), EXPECTED[ruleName][clientName]);
+      assertEquals(valuesFor(lines, 'x-untouched'), ['kept']);
     });
   }
 }

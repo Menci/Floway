@@ -131,10 +131,34 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
   });
 };
 
-// Node combines a repeated name into one field line on both egress paths:
-// undici concatenates inside `Headers.append`, and our socket writer receives
-// an already-combined `Record<string, string>`. The values and their order
-// survive, which is what RFC 9110 §5.3 makes equivalent to separate lines.
+// A rule set that sends a name several times reaches the wire as several
+// field lines wherever the transport can express them: our own socket writer
+// does, and so does workerd's `fetch`, which keeps a repeated name as a list
+// and emits one line per value. Node's `fetch` cannot — undici concatenates
+// inside `Headers.append`, before any transport sees the request — so an
+// operator who selects `direct_fetch` on Node gets the combined form, which
+// RFC 9110 §5.3 makes the same field value.
+// https://github.com/cloudflare/workerd/blob/5165b467ef2a5df54768cb5f18f33b2916e58fa7/src/workerd/api/headers.c%2B%2B#L398-L440
+// https://github.com/nodejs/undici/blob/v8.3.0/lib/web/fetch/headers.js#L236-L258
+//
+// The client's own repeated values arrive already combined: both runtimes
+// merge a repeated name when the inbound request is turned into a `Headers`,
+// so passthrough contributes one value however many lines the client sent.
+const EXPECTED: Record<string, Record<string, string[]>> = {
+  direct_connect: {
+    'x-passthrough': ['kept-a, kept-b'],
+    'x-route': ['client-a, client-b', 'appended'],
+    'x-configured': ['first', 'second'],
+    'x-dropped': [],
+  },
+  direct_fetch: {
+    'x-passthrough': ['kept-a, kept-b'],
+    'x-route': ['client-a, client-b, appended'],
+    'x-configured': ['first, second'],
+    'x-dropped': [],
+  },
+};
+
 for (const egress of [[{ id: 'direct_fetch' }], [{ id: 'direct_connect' }]] satisfies ProxyFallbackEntry[][]) {
   test(`${egress[0].id} puts every configured value on the wire`, async () => {
     const upstream = await startUpstream();
@@ -143,9 +167,7 @@ for (const egress of [[{ id: 'direct_fetch' }], [{ id: 'direct_connect' }]] sati
 
     assertEquals(response.status, 200);
     const request = upstream.received();
-    assertEquals(fieldLines(request, 'x-passthrough'), ['kept-a, kept-b']);
-    assertEquals(fieldLines(request, 'x-route'), ['client-a, client-b, appended']);
-    assertEquals(fieldLines(request, 'x-configured'), ['first, second']);
-    assertEquals(fieldLines(request, 'x-dropped'), []);
+    const expected = EXPECTED[egress[0].id];
+    for (const [name, lines] of Object.entries(expected)) assertEquals(fieldLines(request, name), lines);
   });
 }
