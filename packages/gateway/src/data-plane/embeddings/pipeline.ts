@@ -16,6 +16,7 @@ import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates, type Narrowing } from '../pipeline/stages.ts';
+import { dialFailure, readUpstreamBody, unreadableBody } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
@@ -118,44 +119,69 @@ const callEmbeddingsUpstream = defineStage<
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    const result = await candidate.provider.instance.callEmbeddings(
-      providerModelOf(candidate),
-      serializeEmbeddingsRequest(facts['request.embeddings.canonical']),
-      use.gateway.abortSignal,
-      // The client's own headers reach the upstream from the record, not from a live
-      // request object: what a provider is allowed to forward is filtered per provider,
-      // and the dump shows what was there to filter.
-      buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
-    );
+    // Attribution is set before the dial, so an attempt that never completes still names the
+    // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'embeddings');
+
+    let result;
+    try {
+      result = await candidate.provider.instance.callEmbeddings(
+        providerModelOf(candidate),
+        serializeEmbeddingsRequest(facts['request.embeddings.canonical']),
+        use.gateway.abortSignal,
+        // The client's own headers reach the upstream from the record, not from a live
+        // request object: what a provider is allowed to forward is filtered per provider,
+        // and the dump shows what was there to filter.
+        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
+      );
+    } catch (error) {
+      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
+      // A dial that never completed reached no upstream, so nothing was billed and there are
+      // no headers to carry. What it leaves behind is the performance row settlement writes.
+      return move({
+        ...facts,
+        'response.embeddings.canonical': dialFailure(error),
+        'response.http.headers': [],
+        'response.usage.billable': [],
+      });
+    }
+
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     // What came back, unfiltered: the edge is where a client's view of it is decided.
     const headers = [...result.response.headers];
+    const body = await readUpstreamBody(result.response);
+    // The upstream was called and reported nothing, which is a different situation from
+    // reporting zero — so the entity is present with no quantities.
+    const answered = (canonical: CanonicalEmbeddingsResponse | Failure, quantities: UsageQuantities) => move({
+      ...facts,
+      'response.embeddings.canonical': canonical,
+      'response.http.headers': headers,
+      'response.usage.billable': [{ identity, quantities }],
+    });
+    const reportedNothing: UsageQuantities = {};
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
-      return move({
-        ...facts,
-        'response.embeddings.canonical': {
-          status: result.response.status,
-          message: await result.response.text(),
-        },
-        'response.http.headers': headers,
-        // The upstream was called and reported nothing, which is a different situation
-        // from reporting zero — so the entity is present with no quantities.
-        'response.usage.billable': [{ identity, quantities: {} }],
-      });
+      return answered({
+        status: result.response.status,
+        message: body.text,
+        ...('json' in body ? { body: body.json } : {}),
+      }, reportedNothing);
+    }
+    if (!('json' in body)) {
+      return answered(unreadableBody(result.response, body, 'the embeddings protocol'), reportedNothing);
     }
 
     // Every protocol the gateway carries is one it fully understands: the body is parsed
     // here and written again at the edge, in whichever encoding the client can read.
-    const canonical = parseEmbeddingsResponse(await result.response.json() as unknown, facts['serve.model']);
-    return move({
-      ...facts,
-      'response.embeddings.canonical': canonical,
-      'response.http.headers': headers,
-      'response.usage.billable': [{ identity, quantities: billed(canonical.usage) }],
-    });
+    let canonical: CanonicalEmbeddingsResponse;
+    try {
+      canonical = parseEmbeddingsResponse(body.json, facts['serve.model']);
+    } catch (error) {
+      use.log.warn('upstream answered with a body the embeddings protocol cannot read', { error: String(error) });
+      return answered(unreadableBody(result.response, body, 'the embeddings protocol'), reportedNothing);
+    }
+    return answered(canonical, billed(canonical.usage));
   },
 });
 

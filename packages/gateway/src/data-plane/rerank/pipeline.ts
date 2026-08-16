@@ -16,6 +16,7 @@ import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
+import { dialFailure, readUpstreamBody, unreadableBody } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
@@ -40,8 +41,9 @@ export interface RerankFacts extends GatewayFacts {
   'ingress.rerank.sourceProtocol': RerankSourceProtocol;
   'request.rerank.canonical': CanonicalRerankRequest;
   'response.rerank.canonical': CanonicalRerankResponse | Failure;
-  /** Which protocol the upstream turned out to speak. A response fact, because it is not
-   *  known until one answered, and the edge needs it to render back into the client's. */
+  /** Which protocol the attempt spoke. A response fact, because an upstream picks the target
+   *  it answers in and the edge needs it to render back into the client's — a run that never
+   *  reached one carries the target its request was serialized for. */
   'response.rerank.targetProtocol': RerankProtocol;
   /** What the client is actually sent, in its own protocol. The edge provides it, so a
    *  dump shows the bytes the client received rather than the gateway's canonical form. */
@@ -124,19 +126,46 @@ const callRerankUpstream = defineStage<
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
     const request = facts['request.rerank.canonical'];
-    const result = await candidate.provider.instance.callRerank(
-      providerModelOf(candidate),
-      request,
-      use.gateway.abortSignal,
-      // The client's own headers reach the upstream from the record, not from a live
-      // request object: what a provider is allowed to forward is filtered per provider,
-      // and the dump shows what was there to filter.
-      buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
-    );
+    const model = providerModelOf(candidate);
+    // Configuration refuses a rerank model without a target, so this holds for every candidate
+    // the narrowing kept; saying so here is what lets a dial that never answered still name
+    // the protocol it spoke.
+    const configuredTarget = model.rerankTarget;
+    if (configuredTarget === undefined) {
+      throw new Error(`${candidate.provider.upstreamId} serves rerank for ${candidate.model.id} without a target protocol`);
+    }
+    // Attribution is set before the dial, so an attempt that never completes still names the
+    // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'rerank');
+
+    let result;
+    try {
+      result = await candidate.provider.instance.callRerank(
+        model,
+        request,
+        use.gateway.abortSignal,
+        // The client's own headers reach the upstream from the record, not from a live
+        // request object: what a provider is allowed to forward is filtered per provider,
+        // and the dump shows what was there to filter.
+        buildUpstreamCallOptions(candidate, use.gateway, new Headers(facts['ingress.http.headers'].map(([name, value]) => [name, value]))),
+      );
+    } catch (error) {
+      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
+      // A dial that never completed reached no upstream, so nothing was billed and there are
+      // no headers to carry. What it leaves behind is the performance row settlement writes.
+      return move({
+        ...facts,
+        'response.rerank.canonical': dialFailure(error),
+        'response.rerank.targetProtocol': configuredTarget.protocol,
+        'response.http.headers': [],
+        'response.usage.billable': [],
+      });
+    }
+
     const identity = telemetryModelIdentity(candidate, result.modelKey);
     // What came back, unfiltered: the edge is where a client's view of it is decided.
     const headers = [...result.response.headers];
+    const body = await readUpstreamBody(result.response);
 
     if (!result.response.ok) {
       use.log.warn('upstream refused', { status: result.response.status });
@@ -144,7 +173,8 @@ const callRerankUpstream = defineStage<
         ...facts,
         'response.rerank.canonical': {
           status: result.response.status,
-          message: await result.response.text(),
+          message: body.text,
+          ...('json' in body ? { body: body.json } : {}),
         },
         'response.rerank.targetProtocol': result.target.protocol,
         'response.http.headers': headers,
@@ -154,11 +184,20 @@ const callRerankUpstream = defineStage<
       });
     }
 
+    if (!('json' in body)) {
+      return move({
+        ...facts,
+        'response.rerank.canonical': unreadableBody(result.response, body, 'the rerank protocol'),
+        'response.rerank.targetProtocol': result.target.protocol,
+        'response.http.headers': headers,
+        'response.usage.billable': [{ identity, quantities: {} }],
+      });
+    }
+
     // Every protocol the gateway carries is one it fully understands: the body is parsed
     // here and re-serialized at the edge, whether or not the two protocols match.
-    const body = await result.response.json() as unknown;
-    const canonical = parseRerankResponse(result.target.protocol, body);
-    const usage = parseRerankUsage(result.target.protocol, body);
+    const canonical = parseRerankResponse(result.target.protocol, body.json);
+    const usage = parseRerankUsage(result.target.protocol, body.json);
     return move({
       ...facts,
       'response.rerank.canonical': canonical,
