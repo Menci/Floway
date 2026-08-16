@@ -17,6 +17,7 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
@@ -364,11 +365,12 @@ const narrowing = {
 };
 
 export const audioTranscriptionServePipeline: Pipeline<
-  A<'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'serve.model'>,
+  A<'ingress.http.headers' | 'ingress.audioTranscription.responseFormat' | 'request.audioTranscription.form' | 'serve.model'>,
   A<'response.audioTranscription.rendered' | 'response.audioTranscription.mediaType' | 'response.audioTranscription.streamedUsage'>
   & { 'response.http.status': number; 'response.usage.billable': readonly BillableEntity[] }
 > = compose('audioTranscriptionServe', [
   emitAudioTranscription,
+  writeSettlement(handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical'])),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.audioTranscription.canonical'?: unknown })['response.audioTranscription.canonical']),

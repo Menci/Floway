@@ -11,6 +11,7 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
@@ -260,6 +261,7 @@ export type ImagesServeExit = I<'response.images.rendered' | 'response.http.stat
 export const imagesServePipeline = (request: CanonicalImagesRequest): Pipeline<ImagesServeEntry, ImagesServeExit> =>
   compose('imagesServe', [
     emitImages,
+    writeSettlement(handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical'])),
     resolveCandidates(narrowing(request)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.images.canonical'?: unknown })['response.images.canonical']),

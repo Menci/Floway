@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { completionsServePipeline } from '../../src/data-plane/completions/pipeline.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
+import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
@@ -60,6 +61,24 @@ const chunk = (text: string): string =>
 const usageChunk = JSON.stringify({
   id: 'cmpl_1', object: 'text_completion', created: 1, model: 'text-model', choices: [],
   usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+});
+
+// Settlement is part of every serve pipeline now, and it writes. A test that drives a whole
+// pipeline therefore needs somewhere for the row to go — the point being that the write
+// happens at all, which is what "a run that measured rather than generated still writes"
+// means and what nothing was checking before.
+const recorded: { usage: unknown[]; performance: unknown[] } = { usage: [], performance: [] };
+
+beforeEach(() => {
+  recorded.usage = [];
+  recorded.performance = [];
+  initRepo({
+    usage: { record: async (row: unknown) => { recorded.usage.push(row); } },
+    performance: {
+      recordNeutral: async (dims: unknown) => { recorded.performance.push(dims); },
+      recordZeroOutputError: async (dims: unknown) => { recorded.performance.push(dims); },
+    },
+  } as never);
 });
 
 const serve = async (facts: Record<string, unknown>) => await run(
@@ -179,6 +198,32 @@ describe('the completions pipeline', () => {
       },
     ]);
     await drain();
+  });
+
+  // Settlement is above the fork, so a run bills once however many candidates it tried —
+  // and it is unconditional, so a run that reached no upstream still writes a row that names
+  // no billed entity. Nothing asserted either until the review found the stage was composed
+  // into no pipeline at all.
+  it('writes exactly one usage row per run, however many candidates it tried', async () => {
+    resolves([
+      candidate('up_a', async () => ({ response: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
+      candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' })),
+    ]);
+    const { drain } = await serve(entryFacts());
+    await drain();
+    expect(recorded.usage).toHaveLength(1);
+    expect(recorded.performance).toHaveLength(1);
+  });
+
+  // A run that reached no upstream bills nothing and samples nothing, which is what the
+  // replaced surface did: `recordPerformance` returns early without an attempt's telemetry,
+  // and there is no attempt. Settlement still runs — it is unconditional — and finds an
+  // empty billed set, which is how "we did not call an upstream" is said.
+  it('bills nothing and samples nothing when no upstream was reached', async () => {
+    vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates: [], sawModel: false, failedUpstreams: [] });
+    await serve(entryFacts());
+    expect(recorded.usage).toHaveLength(0);
+    expect(recorded.performance).toHaveLength(0);
   });
 
   it('fails a refusal over to the next candidate, and renders the last one it got', async () => {

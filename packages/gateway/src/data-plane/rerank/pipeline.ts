@@ -14,6 +14,7 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
@@ -177,10 +178,11 @@ const narrowing = (request: CanonicalRerankRequest) => ({
 });
 
 export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
-  R<'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'serve.model'>,
+  R<'ingress.http.headers' | 'ingress.rerank.sourceProtocol' | 'request.rerank.canonical' | 'serve.model'>,
   R<'response.rerank.rendered' | 'response.usage.billable'>
 > => compose('rerankServe', [
   emitRerank,
+  writeSettlement(handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical'])),
   resolveCandidates(narrowing(request)),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical']),

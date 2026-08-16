@@ -14,6 +14,7 @@ import type { UsageQuantities } from '../../repo/types.ts';
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates, type Narrowing } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
@@ -156,10 +157,11 @@ const narrowing: Narrowing<E<'response.embeddings.canonical'>> = {
 };
 
 export const embeddingsServePipeline: Pipeline<
-  E<'ingress.embeddings.encodingFormat' | 'request.embeddings.canonical' | 'serve.model'>,
+  E<'ingress.http.headers' | 'ingress.embeddings.encodingFormat' | 'request.embeddings.canonical' | 'serve.model'>,
   E<'response.embeddings.rendered' | 'response.usage.billable'>
 > = compose('embeddingsServe', [
   emitEmbeddings,
+  writeSettlement(handedUp => isFailure((handedUp as { 'response.embeddings.canonical'?: unknown })['response.embeddings.canonical'])),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.embeddings.canonical'?: unknown })['response.embeddings.canonical']),

@@ -18,6 +18,7 @@ import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
@@ -367,10 +368,11 @@ const narrowing = {
 };
 
 export const completionsServePipeline: Pipeline<
-  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload' | 'serve.model'>,
+  C<'ingress.http.headers' | 'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload' | 'serve.model'>,
   C<'response.completions.rendered' | 'response.completions.streamedUsage' | 'response.http.status' | 'response.usage.billable'>
 > = compose('completionsServe', [
   emitCompletions,
+  writeSettlement(handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload'])),
   resolveCandidates(narrowing),
   failover({
     failed: handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload']),
