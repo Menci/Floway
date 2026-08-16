@@ -1,5 +1,6 @@
 import type { ControlPlaneModel } from '../../api/types';
 import type { CatalogIndex } from '../models/catalog-index';
+import { isAliasTargetEnabled } from '@floway-dev/protocols/common';
 import type {
   AliasTarget,
   AnnouncedMetadata,
@@ -64,6 +65,7 @@ export const computeAnnouncedMetadata = (
   catalog: CatalogIndex,
 ): AnnouncedMetadata => {
   const available = targets
+    .filter(isAliasTargetEnabled)
     .map(target => ({ target, model: catalog.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; model: ControlPlaneModel } => entry.model?.kind === kind);
   if (!available.length) return {};

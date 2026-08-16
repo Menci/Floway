@@ -614,9 +614,12 @@ const chatAliasRulesSchema = z.object({
 // Rules are validated against the alias-level kind in the superRefine pass
 // below — chat-kind aliases accept ChatAliasRules; other kinds require an
 // empty object. Each target_model_id is opaque (no `/` semantics in the
-// alias layer), so the only structural check is non-emptiness.
+// alias layer), so the only structural check is non-emptiness. `enabled`
+// is optional for compatibility with bodies written before the per-target
+// routing switch existed; absent means enabled.
 const aliasTargetSchema = z.object({
   target_model_id: z.string().min(1),
+  enabled: z.boolean().optional(),
   rules: z.record(z.string(), z.unknown()),
 });
 

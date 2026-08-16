@@ -6,7 +6,7 @@ import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
 import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/common';
-const target = (id: string, rules: AliasTarget['rules'] = {}): AliasTarget => ({ target_model_id: id, rules });
+const target = (id: string, rules: AliasTarget['rules'] = {}, enabled?: boolean): AliasTarget => ({ target_model_id: id, rules, ...(enabled === undefined ? {} : { enabled }) });
 
 describe('model alias warnings', () => {
   it('never treats an alias catalog row as a real target', () => {
@@ -30,6 +30,22 @@ describe('model alias warnings', () => {
     expect(computeAliasWarnings({ name: '', targets: [target(''), target('')] }, catalog)).toEqual([]);
     expect(computeAliasWarnings({ name: '', targets: [target(''), target('missing')] }, catalog).map(warning => warning.type))
       .toEqual(['no-target']);
+  });
+
+  it('ignores disabled targets when deciding whether any target resolves', () => {
+    const catalog = indexCatalog([catalogModel('gpt-5')]);
+    expect(computeAliasWarnings({ name: 'fresh', targets: [target('missing', {}, false), target('gpt-5')] }, catalog)).toEqual([]);
+    expect(computeAliasWarnings({ name: 'fresh', targets: [target('missing', {}, false), target('also-missing')] }, catalog).map(warning => warning.type))
+      .toEqual(['no-target']);
+  });
+
+  it('warns when every configured target is disabled', () => {
+    const catalog = indexCatalog([catalogModel('gpt-5')]);
+    expect(computeAliasWarnings({ name: 'fresh', targets: [target('gpt-5', {}, false)] }, catalog).map(warning => warning.type))
+      .toEqual(['all-targets-disabled']);
+    expect(computeAliasWarnings({ name: 'fresh', targets: [target('gpt-5', {}, false), target('')] }, catalog).map(warning => warning.type))
+      .toEqual(['all-targets-disabled']);
+    expect(computeAliasWarnings({ name: 'fresh', targets: [target('')] }, catalog)).toEqual([]);
   });
 
   it('warns when pinned rules exceed advertised capabilities', () => {
@@ -57,6 +73,17 @@ describe('announced metadata', () => {
     ]));
     expect(result.chat?.reasoning).toBeUndefined();
   });
+
+  it('excludes disabled targets from the announced-metadata intersection', () => {
+    const result = computeAnnouncedMetadata([
+      target('a', {}, false),
+      target('b'),
+    ], 'chat', indexCatalog([
+      catalogModel('a', { contextWindow: 1000, chat: { modalities: { input: ['text'], output: ['text'] } } }),
+      catalogModel('b', { contextWindow: 2000, chat: { modalities: { input: ['text'], output: ['text'] } } }),
+    ]));
+    expect(result.limits).toEqual({ max_context_window_tokens: 2000 });
+  });
 });
 
 describe('alias wire body', () => {
@@ -80,6 +107,16 @@ describe('alias wire body', () => {
     const body = aliasBody(values);
     expect(body).toMatchObject({ name: 'renamed', display_name: null, targets: [{ target_model_id: 'a', rules: {} }] });
     expect(body).not.toHaveProperty('sort_order');
+  });
+
+  it('normalizes legacy targets to explicit enabled=true in defaults', () => {
+    expect(aliasDefaults(existing).targets[0].enabled).toBe(true);
+  });
+
+  it('sends explicit enabled flags for every target', () => {
+    const values = aliasDefaults(existing);
+    values.targets = [target('a', {}, false)];
+    expect(aliasBody(values)).toMatchObject({ targets: [{ target_model_id: 'a', enabled: false }] });
   });
 
   it('drops chat rules and announced metadata for image aliases', () => {

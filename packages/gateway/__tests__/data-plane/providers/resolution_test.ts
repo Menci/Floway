@@ -541,6 +541,60 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     );
   });
 
+  test('skips disabled targets in the alias walk', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_partial-disabled',
+      name: 'partial-disabled', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'disabled', enabled: false, rules: { verbosity: 'low' } },
+        { target_model_id: 'gpt-5', rules: { verbosity: 'high' } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['disabled', 'gpt-5'], up_b: [] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'partial-disabled', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+        });
+        assertEquals(
+          resolved.candidates.map(c => `${c.model.id}@${c.provider.upstreamId}`),
+          ['gpt-5@up_a'],
+        );
+        assertEquals(resolved.candidates[0]!.rules?.verbosity, 'high');
+      },
+    );
+  });
+
+  test('all disabled targets yields no candidates', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      id: 'alias_all-disabled',
+      name: 'all-disabled', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', enabled: false, rules: {} },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'all-disabled', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+        });
+        assertEquals(resolved.candidates, []);
+        assertEquals(resolved.sawModel, false);
+      },
+    );
+  });
+
   test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
     clearInFlightForTesting();
     const { repo } = await setupAppTest();

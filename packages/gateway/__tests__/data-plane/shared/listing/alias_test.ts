@@ -196,6 +196,33 @@ describe('synthesizeListedAliases', () => {
     expect(synthesizeListedAliases({ aliases, gatewayAddressableModelIds: [], callerAddressableModelIds: [], narrowTargets: false })).toEqual([]);
   });
 
+  test('disabled targets do not contribute metadata, endpoints, or aliasedFrom targets', () => {
+    const aliases = [aliasFixture({
+      name: 'partial',
+      targets: [
+        { target_model_id: 'disabled-a', enabled: false, rules: {} },
+        { target_model_id: 'enabled-b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'disabled-a', limits: { max_context_window_tokens: 1000 }, endpoints: { completions: {} } }),
+      realModel({ id: 'enabled-b', limits: { max_context_window_tokens: 2000 }, endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: true });
+    expect(entry.limits.max_context_window_tokens).toBe(2000);
+    expect(entry.endpoints.completions).toBeUndefined();
+    expect(entry.aliasedFrom?.targets.map(t => t.target_model_id)).toEqual(['enabled-b']);
+  });
+
+  test('alias with every target disabled is not emitted from the listing', () => {
+    const aliases = [aliasFixture({
+      name: 'all-disabled',
+      targets: [{ target_model_id: 'gpt-5.4', enabled: false, rules: {} }],
+    })];
+    const realModels = [realModel({ id: 'gpt-5.4' })];
+    expect(synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: true })).toEqual([]);
+  });
+
   test('sorts entries by (sort_order, name) so listing order stays stable', () => {
     const aliases = [
       aliasFixture({ name: 'late', sortOrder: 1 }),

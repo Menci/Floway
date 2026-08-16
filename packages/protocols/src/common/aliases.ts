@@ -70,10 +70,19 @@ export type AliasRules = ChatAliasRules;
 
 // One target row inside an alias's `targets` list. Order is meaningful for
 // `first-available` selection and preserved (but ignored) for `random`.
+// `enabled` is optional so rows written before this field existed are still
+// readable; absent means enabled (see `isAliasTargetEnabled`).
 export interface AliasTarget {
   target_model_id: string;
   rules: AliasRules;
+  enabled?: boolean;
 }
+
+// Default-true semantics for alias targets. All routing/listing code should
+// use this rather than a bare `.enabled` check so legacy rows without the
+// field keep routing exactly as they were before the switch was introduced.
+export const isAliasTargetEnabled = (target: { enabled?: boolean }): boolean =>
+  target.enabled !== false;
 
 // Operator-set override for the alias's announced /v1/models payload —
 // the `limits` + `chat.*` block the listing surfaces to clients. Sparse:
