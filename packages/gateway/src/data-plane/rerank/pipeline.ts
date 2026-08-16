@@ -143,7 +143,13 @@ const callRerankUpstream = defineStage<
       ...facts,
       'response.rerank.canonical': canonical,
       'response.rerank.targetProtocol': result.target.protocol,
-      'response.usage.billable': [{ identity, quantities: billed(usage) }],
+      'response.usage.billable': [{
+        identity,
+        quantities: billed(usage),
+        // A rerank rate can depend on how large the input was and not only on how much of
+        // it there was, so the token total is a pricing input as well as a quantity.
+        ...(usage?.totalTokens === undefined ? {} : { pricingFacts: { inputTokens: usage.totalTokens } }),
+      }],
     });
   },
 });

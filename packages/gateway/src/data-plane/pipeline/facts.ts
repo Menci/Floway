@@ -10,6 +10,7 @@
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { Secret } from '@floway-dev/pipeline';
+import type { PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** What an upstream call is answerable for. Keyed by billed entity, because one call can
@@ -18,6 +19,11 @@ import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provide
 export interface BillableEntity {
   readonly identity: TelemetryModelIdentity;
   readonly quantities: UsageQuantities;
+  /** What pricing needs beyond the quantities, when a rate depends on more than how much
+   *  there was. Absent is a real reading and not a missing one: most families price on the
+   *  quantities alone. Observed where the reading is, because settlement is the last reader
+   *  and not a second observer. */
+  readonly pricingFacts?: PricingRuntimeFacts;
 }
 
 /** A failure is a value, never a throw, so an earlier stage can fail over a later stage's
