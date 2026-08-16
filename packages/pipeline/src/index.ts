@@ -28,8 +28,8 @@ export type {
 
 export { compose } from './compose.ts';
 
-export { isOwned, own, run } from './run.ts';
-export type { Owned, RunResult } from './run.ts';
+export { defer, isDeferred, isOwned, own, run } from './run.ts';
+export type { Deferred, Owned, RunResult } from './run.ts';
 
 export {
   createEncoder,

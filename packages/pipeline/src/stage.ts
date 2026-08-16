@@ -82,6 +82,9 @@ export type IntoNext<Entry extends object, Up extends object> =
  *  holding both, one `stageId` issued twice — and a gateway serves concurrent requests by
  *  definition. */
 export interface RunScope {
+  /** What this run started and has not finished. Filled at handover, the same moment
+   *  ownership is, because a value only becomes the run's when it enters the record. */
+  readonly deferred: Set<PromiseLike<unknown>>;
   /** A no-op when the prologue resolved no dump sink, which is what makes recording
    *  conditional rather than a mode flag. */
   readonly emit: (event: import('./dump.ts').Event) => void;

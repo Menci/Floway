@@ -45,6 +45,29 @@ export const own = <T extends object>(value: T, release: () => Promise<void>): T
 export const isOwned = (value: unknown): value is Owned =>
   typeof value === 'object' && value !== null && OWNED in value;
 
+const DEFERRED = Symbol('floway.deferred');
+
+/** A value the run has started and has not finished. It is a property of the value, not a
+ *  capability a stage was handed: what a run must wait for is legible from its own record. */
+export type Deferred<T> = PromiseLike<T> & { readonly [DEFERRED]: true };
+
+/**
+ * Marks a promise as this run's to finish.
+ *
+ * Declared rather than sniffed. Testing for a `then` method would make a fact that happens to
+ * hold a promise indistinguishable from one the run owes work to, and it would be quietly
+ * awaited instead of reported — so the claim is explicit, exactly as ownership is.
+ *
+ * Helpers call this and hand out the promise; a stage never creates one. That is what
+ * "stages have no fire-and-forget" means in practice: work a stage starts becomes a fact
+ * with a name, and the runner waits for it where it can see it.
+ */
+export const defer = <T>(promise: PromiseLike<T>): Deferred<T> =>
+  Object.assign(promise, { [DEFERRED]: true as const });
+
+export const isDeferred = (value: unknown): value is Deferred<unknown> =>
+  typeof value === 'object' && value !== null && DEFERRED in value;
+
 /**
  * Frozen in place, never copied. A stage that hands on what it received hands on the
  * same object, so the record has an identity of its own and "this side changed nothing"
@@ -59,6 +82,7 @@ const handOn = (record: Facts, decl: ErasedSide, stage: string, way: 'down' | 'u
   for (const [key, value] of Object.entries(record)) {
     assertHandedOver(`${stage} handing ${way} ${key}`, value);
     if (isOwned(value)) scope.outstanding.add(value);
+    if (isDeferred(value)) scope.deferred.add(value);
   }
   for (const key of decl.provides) {
     if (!(key in record)) throw new Error(`${stage}: declared providing ${key} but did not`);
@@ -174,6 +198,45 @@ const release = async (value: Owned, scope: RunScope): Promise<void> => {
   await value[Symbol.asyncDispose]();
 };
 
+/** How long teardown waits for what the run started. A value that never settles would hang
+ *  teardown forever, so exceeding this is reported rather than waited through. */
+const TEARDOWN_DEADLINE_MS = 30_000;
+
+/**
+ * Waits for what this run started, and says so loudly when something does not finish.
+ *
+ * Per run and not per root: a discarded branch's facts are private to that branch and
+ * unreachable from the root's record, so a root-level sweep could never see them. Each run
+ * tears down its own, and a branch nobody adopted still finishes what it began.
+ */
+const settleDeferred = async (scope: RunScope, services: RunServices): Promise<void> => {
+  const pending = [...scope.deferred];
+  if (pending.length === 0) return;
+  scope.deferred.clear();
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'deadline'>(resolve => {
+    timer = setTimeout(() => { resolve('deadline'); }, TEARDOWN_DEADLINE_MS);
+  });
+  try {
+    const outcome = await Promise.race([
+      Promise.allSettled(pending).then(results => results),
+      deadline,
+    ]);
+    if (outcome === 'deadline') {
+      services.log?.error('teardown deadline exceeded', { pending: pending.length });
+      return;
+    }
+    for (const result of outcome) {
+      if (result.status === 'rejected') {
+        services.log?.error('a deferred fact failed', { error: String(result.reason) });
+      }
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
 const requireEntry = (target: Pipeline<object, object>, handed: Facts, who: string): void => {
   for (const key of target.entryNeeds) {
     if (!(String(key) in handed)) {
@@ -234,6 +297,7 @@ export const run = async <Entry extends object, Exit extends object, S extends R
   const scope: RunScope = {
     emit: sink === undefined ? () => {} : event => { events.push(event); sink(event); },
     outstanding: new Set<Owned>(),
+    deferred: new Set<PromiseLike<unknown>>(),
     parentStageId: null,
     nextStageId: 1,
   };
@@ -243,6 +307,7 @@ export const run = async <Entry extends object, Exit extends object, S extends R
 
   const drain = async (): Promise<void> => {
     for (const value of [...scope.outstanding]) await release(value, scope);
+    await settleDeferred(scope, services);
   };
 
   try {
