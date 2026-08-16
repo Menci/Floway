@@ -12,7 +12,7 @@ import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -25,6 +25,7 @@ let live: readonly ModelCandidate[] = [];
 const candidate = (
   callChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>,
   upstreamId = 'up_a',
+  flags: readonly FlagId[] = [],
 ): ModelCandidate => {
   const endpoints = { chatCompletions: {} };
   return {
@@ -34,7 +35,11 @@ const candidate = (
       instance: stubProvider({ callChatCompletions }),
     },
     model: stubInternalModel(
-      { id: 'chat-model', endpoints, providerModels: { [upstreamId]: stubProviderModel({ id: 'chat-model', endpoints }) } },
+      {
+        id: 'chat-model',
+        endpoints,
+        providerModels: { [upstreamId]: stubProviderModel({ id: 'chat-model', endpoints, enabledFlags: new Set(flags) }) },
+      },
       upstreamId,
     ),
     fetcher: directFetcher,
@@ -101,6 +106,26 @@ beforeEach(() => {
 });
 
 describe('the chat completions chain', () => {
+  // The interceptors rewrite the request as a fact, so what they rewrite has to be what the
+  // ending sends. An ending that asked the resolver for the payload instead would read one no
+  // interceptor had touched, and every rewrite in the chain would go nowhere.
+  it('sends what the interceptors rewrote, not what the resolver materialized', async () => {
+    let sent: { messages: { role: string }[] } | undefined;
+    affinityPayload = {
+      ...payload,
+      messages: [{ role: 'system', content: 'be brief' }, { role: 'user', content: 'hi' }],
+    } as unknown as ChatCompletionsPayload;
+    resolves([candidate(async (_model, body) => {
+      sent = body as { messages: { role: string }[] };
+      return stream(chunk('hi'));
+    }, 'up_a', ['rewrite-system-to-developer'])]);
+
+    await serve(false);
+
+    expect(sent!.messages.map(message => message.role)).toEqual(['developer', 'user']);
+    affinityPayload = payload;
+  });
+
   // Affinity rewrites client-carried state for the upstream that will see it, so the body
   // that goes out is the one it materialized rather than the one the client sent.
   it('sends the payload affinity materialized for the candidate it dialled', async () => {

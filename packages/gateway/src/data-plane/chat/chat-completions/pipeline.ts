@@ -32,7 +32,7 @@ import {
 } from '../interceptors.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
+import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import {
   chatCompletionsProtocolFrameToSSEFrame,
@@ -174,12 +174,11 @@ const callChatCompletionsUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // Affinity materializes the payload this candidate is owed: client-carried state is
-    // rewritten for the upstream that will see it, which is the whole reason a turn can be
-    // pinned at all. The id the client addressed does not travel — the provider re-stamps
-    // whatever it resolved upstream — and an alias' own rules apply to the body that is sent.
-    const asked = use.chatPayloadFor(facts['route.attempt']) as ChatCompletionsPayload;
-    const payload = { ...asked, model: candidate.model.id };
+    // What the record holds by now: the payload affinity materialized for this candidate,
+    // as every stage between the fork and here has rewritten it. The id the client addressed
+    // does not travel — the provider re-stamps whatever it resolved upstream — and an alias'
+    // own rules apply to the body that is sent.
+    const payload = { ...facts['request.chat.chatCompletions'], model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
 
@@ -316,6 +315,7 @@ export const chatCompletionsServePipeline = (payload: ChatCompletionsPayload): P
       failed: handedUp => isFailure((handedUp as { 'response.chat.chatCompletions'?: unknown })['response.chat.chatCompletions']),
       owns: [],
     }),
+    materializeAttempt('request.chat.chatCompletions'),
     applyRoleCompatibilityToChatCompletions,
     disableReasoningOnForcedToolChoiceForChatCompletions,
     stripPromptCacheKeyForChatCompletions,

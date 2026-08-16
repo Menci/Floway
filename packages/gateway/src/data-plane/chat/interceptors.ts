@@ -7,9 +7,10 @@
 // returns the record it hands on instead of assigning to `ctx.payload`, so a rewrite is a
 // spread and structural sharing is what makes it cheap — today's code already writes the
 // map conditionally, which is the convention that keeps a 49-message conversation costing
-// three objects. And `ctx.targetApi !== <self>` is gone: array position says which chain a
-// stage is in, and the translating stage above consumed the source key, so a re-entered
-// request cannot reach a stage that needs it.
+// three objects. And `ctx.targetApi` is a declared need rather than an ambient field — array
+// position says which chain a stage is in, and what it reads about the protocol it is
+// looking at is in the record. The guards themselves are not deleted by that: there is one
+// interceptor array, so a rule that must not run on a re-entered request still says so.
 
 import type { Chat } from './facts.ts';
 import { defineStage, move, transform } from '@floway-dev/pipeline';

@@ -3,11 +3,12 @@
 //
 // Two things the key layout says that the old context object could not. Each protocol has
 // its own request key and its own response key, so a translation *consumes* the source and
-// *provides* the target — and `compose` then refuses a chain that could re-enter its own
-// protocol, which is `ctx.targetApi === <self>` deleted and made structural. And
-// `ingress.*` is what the client asked for: it survives the switch to whatever protocol the
-// upstream turned out to speak, which is why `wantsStream` is four disjoint keys rather
-// than one shared one.
+// *provides* the target, and which protocol a stage is looking at is a declared need rather
+// than an ambient field on a mutable context. That is visibility and checkability, not the
+// deletion of the guards themselves — with one interceptor array the guards remain, and the
+// migration is an equivalent one. And `ingress.*` is what the client asked for: it survives
+// the switch to whatever protocol the upstream turned out to speak, which is why
+// `wantsStream` is four disjoint keys rather than one shared one.
 
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -27,10 +28,10 @@ export interface ChatFacts extends GatewayFacts {
   /** Which protocol the client spoke. Read by the stages that must know — a vendor
    *  normalizer genuinely does — rather than reached for through an ambient field.
    *
-   *  This is one half of what `ctx.targetApi === <self>` used to test. The other half,
-   *  "do not run on a re-entered request", is not a question a stage asks any more: the
-   *  translating stage consumed the source key, so a stage that needs it cannot be placed
-   *  below, and `compose` says so at assembly. */
+   *  This is what `ctx.targetApi` was, read through `needs` rather than reached for. The
+   *  guards that field carried are not deleted by saying it this way — there is one
+   *  interceptor array, so a stage that must not run on a re-entered request still says so
+   *  itself. What changed is that the thing it tests is declared. */
   'ingress.chat.sourceProtocol': ChatSourceProtocol;
   /** What the client asked for, per protocol and disjoint, because a translated request
    *  must not inherit the target protocol's answer to a question the client never asked. */

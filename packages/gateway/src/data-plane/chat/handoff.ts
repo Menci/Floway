@@ -5,9 +5,10 @@
 // target's response key and provides the source's. Two consequences follow from saying it
 // that way rather than carrying a `targetApi` field.
 //
-// A chain cannot re-enter its own protocol. The source key is gone below this stage, so a
-// stage that needs it cannot be placed there and `compose` says so at assembly — which is
-// `ctx.targetApi === <self>` deleted and made structural rather than tested at runtime.
+// The source key is gone below this stage, so a stage that needs it cannot be placed there
+// and `compose` says so at assembly. That is a check on one chain's arrangement and not a
+// proof that no chain can re-enter a protocol: a later handoff provides the key again, and
+// nothing here counts hops — by ruling, because the graph does not loop.
 //
 // And nothing below knows a translation happened. The target chain sees its own protocol's
 // keys and only those, so the same chain serves a native request and a translated one.
