@@ -235,7 +235,7 @@ describe('the gemini pipeline', () => {
     // upstream actually returned and the words that upstream used, rather than a synthesized
     // envelope quoting its serialized body back as a message.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { code: 400, message: '{"error":{"message":"no"}}', status: 'INVALID_ARGUMENT' } });
+    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { message: 'no' } });
     // An upstream that was called and reported nothing, which is a different statement from
     // reporting zero.
     expect(facts['response.usage.billable']).toEqual([

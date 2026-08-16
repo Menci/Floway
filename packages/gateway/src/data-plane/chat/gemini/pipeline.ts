@@ -54,7 +54,7 @@ import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '..
 import { renderGeminiError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiProtocolEventsToResult,
   geminiProtocolFrameToSSEFrame,
@@ -121,7 +121,7 @@ const emitGemini = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.gemini.rendered': move(renderGeminiError(answer.status, answer.message)),
+        'response.chat.gemini.rendered': move(renderProtocolError(answer.body, () => renderGeminiError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }

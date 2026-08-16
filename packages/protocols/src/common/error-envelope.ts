@@ -17,5 +17,19 @@ export const upstreamErrorMessage = (body: unknown): string | undefined => {
   return typeof body.error.message === 'string' ? body.error.message : undefined;
 };
 
+/**
+ * The rule, with the envelope left to the protocol that writes it.
+ *
+ * An upstream that refused in its own words is handed on in them whatever protocol it spoke,
+ * because those words are already the shape its own client reads. Only a refusal the gateway
+ * itself produced has no body to forward, and that is the one case where which protocol the
+ * *client* speaks decides the shape.
+ */
+export const renderProtocolError = (
+  upstreamBody: unknown,
+  envelope: () => Record<string, unknown>,
+): Record<string, unknown> => isJsonObject(upstreamBody) ? upstreamBody : envelope();
+
+/** The envelope the OpenAI-shaped protocols write. */
 export const renderErrorEnvelope = (message: string, upstreamBody?: unknown): Record<string, unknown> =>
-  isJsonObject(upstreamBody) ? upstreamBody : { error: { message, type: 'api_error' } };
+  renderProtocolError(upstreamBody, () => ({ error: { message, type: 'api_error' } }));

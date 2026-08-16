@@ -92,7 +92,10 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
 
     const viable = candidates.filter(candidate => narrowing.canServe(candidate));
     const selection = selectAffinityCandidates(viable, affinity);
-    if ('kind' in selection) return refuse(409, selection.message);
+    // A turn whose carried state needs two upstreams at once is a request the client can fix
+    // by not carrying it, which is what every family called this before: a 400, not a
+    // conflict with something the gateway holds.
+    if ('kind' in selection) return refuse(400, selection.message);
     if (selection.candidates.length === 0) {
       const missing = sawModel
         ? narrowing.unsupported(model)

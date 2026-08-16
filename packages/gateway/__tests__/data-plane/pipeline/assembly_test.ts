@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
 import { audioTranscriptionServePipeline } from '../../../src/data-plane/audio/pipeline.ts';
 import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
+import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
+import { messagesServePipeline } from '../../../src/data-plane/chat/messages/pipeline.ts';
 import { completionsServePipeline } from '../../../src/data-plane/completions/pipeline.ts';
 import { embeddingsServePipeline } from '../../../src/data-plane/embeddings/pipeline.ts';
 import { imagesServePipeline } from '../../../src/data-plane/images/pipeline.ts';
@@ -23,6 +25,8 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['audio transcription', () => audioTranscriptionServePipeline],
   ['alpha search', () => searchServePipeline({ kind: 'search' } as never)],
   ['chat completions', () => chatCompletionsServePipeline({ model: 'm', messages: [] } as never)],
+  ['messages', () => messagesServePipeline({ model: 'm', messages: [] } as never)],
+  ['gemini', () => geminiServePipeline({ model: 'm', contents: [] } as never)],
 ];
 
 describe('every family assembles', () => {

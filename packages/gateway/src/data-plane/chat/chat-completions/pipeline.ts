@@ -15,12 +15,12 @@
 import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromChatCompletionsEvent } from './usage.ts';
 import type { UsageQuantities } from '../../../repo/types.ts';
+import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
-import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
