@@ -420,18 +420,38 @@ interface CodexHttpCallRequest {
 //     other 401 is rebuilt with a re-readable body so the caller can decide to
 //     retry with a fresh access token
 //   - other: returned verbatim
-const dispatchCodexHttpCall = async (
+const postCodexJson = async (
   opts: CodexBackendCallBase,
-  request: CodexHttpCallRequest,
+  request: {
+    path: string;
+    accessToken: string;
+    body: Record<string, unknown>;
+    headers: Headers;
+    quotaPolicy: 'always' | 'when-present';
+  },
 ): Promise<Response> => {
-  const { accessToken, path, accept, body, identity, turnMetadataJson } = request;
-  const headers = new Headers();
+  const { path, accessToken, body, headers, quotaPolicy } = request;
   headers.set('authorization', `Bearer ${accessToken}`);
   // A null account id omits the header rather than sending an empty one: the
   // upstream reads absence as "whichever account this bearer belongs to".
   if (opts.account.chatgptAccountId !== null) {
     headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
   }
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
+    method: 'POST',
+    headers,
+    body: jsonRequestBody(body),
+    signal: opts.signal,
+  }));
+  return await classifyCodexHttpResponse(opts, response, quotaPolicy);
+};
+
+const dispatchCodexHttpCall = async (
+  opts: CodexBackendCallBase,
+  request: CodexHttpCallRequest,
+): Promise<Response> => {
+  const { accessToken, path, accept, body, identity, turnMetadataJson } = request;
+  const headers = new Headers();
   headers.set('originator', CODEX_ORIGINATOR);
   headers.set('user-agent', CODEX_USER_AGENT);
   headers.set('accept', accept);
@@ -442,14 +462,7 @@ const dispatchCodexHttpCall = async (
   headers.set('x-codex-window-id', identity.windowId);
   if (turnMetadataJson !== null) headers.set('x-codex-turn-metadata', turnMetadataJson);
 
-  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
-    method: 'POST',
-    headers,
-    body: jsonRequestBody(body),
-    signal: opts.signal,
-  }));
-
-  return await classifyCodexHttpResponse(opts, response);
+  return await postCodexJson(opts, { path, accessToken, body, headers, quotaPolicy: 'always' });
 };
 
 const classifyCodexHttpResponse = async (
@@ -511,25 +524,13 @@ const dispatchCodexImageCall = async (
   turnId: string,
 ): Promise<Response> => {
   const headers = new Headers({
-    authorization: `Bearer ${accessToken}`,
     originator: trimHeader(opts.headers, 'originator') ?? CODEX_ORIGINATOR,
     'user-agent': CODEX_USER_AGENT,
     accept: 'application/json',
     'content-type': 'application/json',
     'x-codex-image-turn-id': turnId,
   });
-  // A null account id omits the header rather than sending an empty one: the
-  // upstream reads absence as "whichever account this bearer belongs to".
-  if (opts.account.chatgptAccountId !== null) {
-    headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
-  }
-  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
-    method: 'POST',
-    headers,
-    body: jsonRequestBody(body),
-    signal: opts.signal,
-  }));
-  return await classifyCodexHttpResponse(opts, response, 'when-present');
+  return await postCodexJson(opts, { path, accessToken, body, headers, quotaPolicy: 'when-present' });
 };
 
 // Recover from a 401 without deleting a sibling's newer credential: invalidate
