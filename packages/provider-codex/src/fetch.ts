@@ -565,6 +565,23 @@ const refreshAccessTokenForRetry = async (
   }
 };
 
+// The 401 retry gate every call dispatcher shares: on a renewable credential
+// that has not already been retried, rotate the failed access token and re-run
+// the operation once; if the refresh fails, relay the dispatcher's own failure
+// result. Callers keep the `refresh_token !== null && !alreadyRetried` guard so
+// an access-only credential's terminal 401 reaches the client verbatim.
+const retryCodexAccess401 = async <T>(
+  opts: CodexBackendCallBase,
+  accessToken: CodexAccessTokenEntry,
+  run: (fresh: CodexAccessTokenEntry) => Promise<T>,
+  onRefreshFailure: (response: Response) => T,
+  fallbackPlan?: CodexPlanObservation,
+): Promise<T> => {
+  const fresh = await refreshAccessTokenForRetry(opts, accessToken, fallbackPlan);
+  if (!fresh.ok) return onRefreshFailure(fresh.response);
+  return await run(fresh.accessToken);
+};
+
 const mergeRetryPlan = (
   entry: CodexAccessTokenEntry,
   fallback: CodexPlanObservation | undefined,
@@ -600,9 +617,7 @@ const performStreamingResponsesCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
-    if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performStreamingResponsesCall(opts, fresh.accessToken, true);
+    return await retryCodexAccess401(opts, accessToken, fresh => performStreamingResponsesCall(opts, fresh, true), resp => ({ ok: false, modelKey: opts.model.id, response: resp }));
   }
 
   return result;
@@ -629,9 +644,7 @@ const performUnaryCompactCall = async (
   );
 
   if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
-    if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performUnaryCompactCall(opts, fresh.accessToken, true);
+    return await retryCodexAccess401(opts, accessToken, fresh => performUnaryCompactCall(opts, fresh, true), resp => ({ ok: false, modelKey: opts.model.id, response: resp }));
   }
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
@@ -667,9 +680,7 @@ const performAlphaSearchCall = async (
   );
 
   if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken);
-    if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    return await performAlphaSearchCall(opts, fresh.accessToken, true);
+    return await retryCodexAccess401(opts, accessToken, fresh => performAlphaSearchCall(opts, fresh, true), resp => ({ modelKey: opts.model.id, response: resp }));
   }
   return { modelKey: opts.model.id, response };
 };
@@ -685,11 +696,11 @@ const performImageCall = async (
 ): Promise<ProviderCallResult> => {
   const response = await dispatchCodexImageCall(opts, accessToken.token, path, body, turnId);
   if (response.status === 401 && opts.account.refresh_token !== null && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts, accessToken, effectivePlan);
-    if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
-    const refreshedPlan = codexPlanObservation(fresh.accessToken) ?? effectivePlan;
-    if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
-    return await performImageCall(opts, fresh.accessToken, path, body, turnId, refreshedPlan, true);
+    return await retryCodexAccess401(opts, accessToken, async entry => {
+      const refreshedPlan = codexPlanObservation(entry) ?? effectivePlan;
+      if (!codexPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
+      return await performImageCall(opts, entry, path, body, turnId, refreshedPlan, true);
+    }, resp => ({ modelKey: opts.model.id, response: resp }), effectivePlan);
   }
   return { modelKey: opts.model.id, response };
 };
