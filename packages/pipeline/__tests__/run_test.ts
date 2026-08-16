@@ -5,7 +5,7 @@ import {
   makeProvider, rememberShape, servePipeline, splitWords,
 } from './fixtures.ts';
 import type { Core } from './fixtures.ts';
-import { compose, defineStage, move, run, transform } from '../src/index.ts';
+import { compose, defineStage, isOwned, move, own, run, transform } from '../src/index.ts';
 import type { Descend, Event, Facts } from '../src/index.ts';
 
 /** No dump sink, so nothing records — which is the ordinary case. */
@@ -29,8 +29,8 @@ const edges = (events: readonly Event[]): string[] => {
   return out;
 };
 
-const body = (label: string, released: string[]): AsyncDisposable =>
-  move({ label, [Symbol.asyncDispose]: async () => { released.push(label); } });
+const body = (label: string, released: string[]) =>
+  move(own({ label }, async () => { released.push(label); }));
 
 describe('run', () => {
   it('carries a request through every stage shape and answers', async () => {
@@ -90,13 +90,11 @@ describe('what the run owns', () => {
   it('answers before draining, so a live stream can be handed back', async () => {
     const released: string[] = [];
     let drained = false;
-    const slow = move({
-      [Symbol.asyncDispose]: async () => {
-        await new Promise(resolve => setTimeout(resolve, 30));
-        drained = true;
-        released.push('slow');
-      },
-    });
+    const slow = move(own({}, async () => {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      drained = true;
+      released.push('slow');
+    }));
     const opens = defineStage<object, { 'out.body': unknown }>({
       name: 'opens',
       return: { provides: ['out.body'] },
@@ -200,7 +198,45 @@ describe('what the run owns', () => {
     expect(released).toEqual(['kept']);
   });
 
-  it('passes a releasable nobody declared straight through to the run', async () => {
+  // Ownership is claimed, never sniffed. The language hands `Symbol.asyncDispose` out on
+  // its own terms and they do not match ours in either direction — every async generator
+  // has it, and a `ReadableStream`, which is what a body actually is, does not. Sniffing
+  // would adopt a transducer's own iterator as a run resource and release it the moment its
+  // stage handed up, while missing the upstream body the rule exists for.
+  it('does not adopt an async generator, which the language marks disposable', async () => {
+    const frames = (async function* () { yield 1; yield 2; })();
+    expect(Symbol.asyncDispose in frames).toBe(true);        // the language says yes
+    expect(isOwned(frames)).toBe(false);                     // the run says no
+
+    const opens = defineStage<object, { 'out.frames': unknown }>({
+      name: 'opens',
+      return: { provides: ['out.frames'] },
+      execute: async facts => move({ ...facts, 'out.frames': frames }),
+    });
+    const pipeline = compose<object, { 'out.frames': unknown }>('frames', [opens]);
+    const { facts, drain } = await run(pipeline, move({}), PLAIN);
+    await drain();
+    // Still readable: nothing released it out from under whoever holds it.
+    expect(await (facts['out.frames'] as AsyncGenerator<number>).next()).toEqual({ value: 1, done: false });
+  });
+
+  it('does adopt a ReadableStream, which the language does not mark at all', async () => {
+    const released: string[] = [];
+    const stream = new ReadableStream<number>();
+    expect(Symbol.asyncDispose in stream).toBe(false);       // the language says no
+    const body = move(own(stream, async () => { released.push('drained'); }));
+    const opens = defineStage<object, { 'out.body': unknown }>({
+      name: 'opens',
+      return: { provides: ['out.body'] },
+      execute: async facts => move({ ...facts, 'out.body': body }),
+    });
+    const pipeline = compose<object, { 'out.body': unknown }>('body', [opens]);
+    const { drain } = await run(pipeline, move({}), PLAIN);
+    await drain();
+    expect(released).toEqual(['drained']);
+  });
+
+  it('passes an owned value nobody declared straight through to the run', async () => {
     const released: string[] = [];
     const undeclared = body('undeclared', released);
     const opens = defineStage<object, { 'out.body': unknown }>({
