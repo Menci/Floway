@@ -190,8 +190,8 @@ export class DumpAccumulator {
     const recordId = ulid(completedAt);
 
     // Prefer the accumulator's frame log so dumps reflect the gateway's
-    // frame sequence regardless of negotiated wire shape; passthrough
-    // endpoints with no frames fall back to captured bytes.
+    // frame sequence regardless of negotiated wire shape; a turn with no
+    // frames falls back to captured bytes.
     const responseBody: StoredDumpResponseBody = this.events.length > 0
       ? { type: 'stream', events: this.events }
       : response.bytes.byteLength > 0 || response.streamError !== null

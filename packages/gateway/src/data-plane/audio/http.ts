@@ -7,18 +7,13 @@
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L714-L1040
 
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { audioTranscriptionServePipeline } from './pipeline.ts';
-import { consoleLogSink } from '../../runtime/log.ts';
-import { isFrames, openPrologue, readIngress } from '../pipeline/serve.ts';
-import { settleBillable } from '../pipeline/settlement.ts';
+import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { writeSSEFrames } from '../shared/sse.ts';
-import { move, run } from '@floway-dev/pipeline';
+import { move } from '@floway-dev/pipeline';
 import { parseAudioTranscriptionResponseFormat, type AudioTranscriptionResponseFormat } from '@floway-dev/protocols/audio';
-import { isMultipartFormDataMediaType, sseCommentFrame } from '@floway-dev/protocols/common';
+import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedTranscription =
@@ -112,7 +107,10 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
   }
 
   const prologue = openPrologue(c, ingress, { wantsStream: request.wantsStream, model: request.model });
-  const { facts, drain } = await run(
+
+  return await serveThrough(
+    c,
+    prologue,
     audioTranscriptionServePipeline,
     move({
       'ingress.http.headers': prologue.headers,
@@ -120,49 +118,13 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
       'request.audioTranscription.form': request.entries,
       'serve.model': request.model,
     }) as never,
-    prologue.services as never,
+    facts => {
+      const rendered = facts['response.audioTranscription.rendered'];
+      if (isFrames(rendered)) return { frames: rendered };
+      // The upstream's own media type, or none where it declared none: a document this
+      // gateway carried rather than wrote is not one it can describe.
+      return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.audioTranscription.mediaType'] };
+    },
+    facts => facts['response.audioTranscription.streamedOutcome'],
   );
-
-  // A stream states what it billed, and whether the transcript ever finished, in its last
-  // event — which is after the run has answered. So the stage above the fork stood down and
-  // settlement is scheduled here, on the promise the ending stage handed up.
-  const outcome = facts['response.audioTranscription.streamedOutcome'];
-  if (outcome !== null) {
-    prologue.services.background(outcome.then(({ billable, failed }) => {
-      settleBillable({ ...prologue.services, log: consoleLogSink }, billable, failed);
-    }));
-  }
-
-  const rendered = facts['response.audioTranscription.rendered'];
-  const status = facts['response.http.status'] as ContentfulStatusCode;
-  if (isFrames(rendered)) {
-    // Hono's streamSSE builds the response itself, so what the client is to see has to be
-    // staged on the context before it is called rather than passed to a constructor.
-    for (const [name, value] of facts['response.http.headers']) c.header(name, value);
-    c.status(status);
-    return finalizeGatewayResponse(prologue.gateway, streamSSE(c, async stream => {
-      try {
-        await writeSSEFrames(stream, rendered, {
-          keepAlive: { frame: sseCommentFrame('keepalive') },
-          ...(prologue.gateway.downstreamAbortController === undefined
-            ? {}
-            : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
-        });
-      } finally {
-        // Reading the frames to the client *is* releasing the body they came from, so the
-        // drain waits for that to finish. Draining alongside it would take frames out of the
-        // client's own stream — one connection has one reader. A client that stopped reading
-        // still gets here, which is what leaves nothing open behind it.
-        await drain();
-      }
-    }));
-  }
-
-  // Nothing is left to read: what the client is sent is either the document the run already
-  // holds or an object serialized from it, so releasing can start at once.
-  prologue.services.background(drain());
-  const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
-  const mediaType = facts['response.audioTranscription.mediaType'];
-  if (mediaType !== null) headers.set('content-type', mediaType);
-  return finalizeGatewayResponse(prologue.gateway, new Response(bodyOf(rendered) as BodyInit, { status, headers }));
 };

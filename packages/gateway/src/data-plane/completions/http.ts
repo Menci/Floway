@@ -10,7 +10,7 @@ import type { Context } from 'hono';
 import { completionsServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
+import { prepareJsonModelRequest } from '../shared/json-model-request.ts';
 import { move } from '@floway-dev/pipeline';
 
 export const completions = async (c: Context): Promise<Response> => {
