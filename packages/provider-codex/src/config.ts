@@ -33,8 +33,6 @@ export type CodexUpstreamRecord = UpstreamRecord & {
 
 const IDENTITY_KEYS: readonly (keyof CodexAccountIdentity)[] = ['email', 'chatgptAccountId', 'chatgptUserId', 'planType'];
 
-// Allowlists for the shared shape guard: the config document's only key is
-// `accounts`, while each account may carry any of the identity fields.
 const CONFIG_KEYS_SET: ReadonlySet<string> = new Set(['accounts']);
 const IDENTITY_KEYS_SET: ReadonlySet<string> = new Set(IDENTITY_KEYS);
 
@@ -51,8 +49,7 @@ export const patchCodexIdentityMetadata = (
   if (!Array.isArray(patch.accounts) || patch.accounts.length !== 1) {
     throw new TypeError('Codex config metadata patch accounts must hold exactly one account');
   }
-  const rawAccount = patch.accounts[0];
-  const accountPatch = assertAllowedObjectKeys(rawAccount, 'Codex config metadata patch account', IDENTITY_KEYS_SET);
+  const accountPatch = assertAllowedObjectKeys(patch.accounts[0], 'Codex config metadata patch account', IDENTITY_KEYS_SET);
   if (accountPatch.chatgptAccountId !== undefined) {
     assertStringOrNull(accountPatch.chatgptAccountId, 'Codex config metadata patch chatgptAccountId');
     if (accountPatch.chatgptAccountId !== current.accounts[0].chatgptAccountId) {

@@ -803,7 +803,7 @@ test('POST /api/upstreams/list-models without an id still serves draft preview',
 // --- Codex routes ---
 //
 // The auth.json import path lets us drive the OAuth ingestion deterministically
-// without mocking the token-exchange roundtrip: parseCodexIdTokenClaims decodes
+// without mocking the token-exchange roundtrip: parseCodexTokenClaims decodes
 // the id_token JWT directly. Build a fake JWT that carries the identity claims
 // the production parser requires.
 const encodeBase64Url = (input: string): string =>
