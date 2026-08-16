@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
 import { audioTranscriptionServePipeline } from '../../../src/data-plane/audio/pipeline.ts';
+import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
 import { completionsServePipeline } from '../../../src/data-plane/completions/pipeline.ts';
 import { embeddingsServePipeline } from '../../../src/data-plane/embeddings/pipeline.ts';
 import { imagesServePipeline } from '../../../src/data-plane/images/pipeline.ts';
@@ -21,6 +22,7 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['completions', () => completionsServePipeline],
   ['audio transcription', () => audioTranscriptionServePipeline],
   ['alpha search', () => searchServePipeline({ kind: 'search' } as never)],
+  ['chat completions', () => chatCompletionsServePipeline({ model: 'm', messages: [] } as never)],
 ];
 
 describe('every family assembles', () => {

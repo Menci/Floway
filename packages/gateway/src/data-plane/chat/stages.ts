@@ -17,6 +17,7 @@ import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { selectAffinityCandidates } from './shared/affinity/index.ts';
 import type { AffinityRequestAnalysis } from './shared/affinity/selection.ts';
+import type { ChatGatewayCtx } from './shared/gateway-ctx.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { providerModelOf, type ModelCandidate } from '@floway-dev/provider';
 
@@ -25,6 +26,7 @@ type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 /** What a chat family needs beyond the shared services: the affinity selection this run
  *  made, so the stage that dials can ask for the payload the winning candidate is owed. */
 export interface ChatServices extends GatewayServices {
+  readonly gateway: ChatGatewayCtx;
   readonly rememberChatSelection: (payloadFor: (candidate: ModelCandidate) => unknown) => void;
   readonly chatPayloadFor: (selector: AttemptSelector) => unknown;
   readonly selectAffinity: (candidate: ModelCandidate) => void;
@@ -39,7 +41,7 @@ export interface ChatNarrowing<Refusal extends object> {
   /** What the client's own turn says about where it must go. Client-carried state — a
    *  Responses `previous_response_id`, an encrypted reasoning blob — pins the turn to the
    *  upstream that issued it, so this runs before any candidate is tried. */
-  readonly affinity: () => Promise<AffinityRequestAnalysis<unknown>>;
+  readonly affinity: (gateway: ChatGatewayCtx) => Promise<AffinityRequestAnalysis<unknown>>;
   readonly unsupported: (model: string) => string;
   readonly refuse: (status: number, message: string) => Refusal;
   readonly refuses: readonly (keyof Refusal)[];
@@ -69,7 +71,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
   return: { provides: ['response.usage.billable', 'response.http.headers', ...narrowing.refuses] },
   execute: async (facts, next, use) => {
     const model = facts['serve.model'];
-    const affinity = await narrowing.affinity();
+    const affinity = await narrowing.affinity(use.gateway);
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: use.gateway.upstreamIds,
       model,
