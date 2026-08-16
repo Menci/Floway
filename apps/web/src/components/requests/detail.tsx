@@ -8,6 +8,7 @@ import type { PropsWithChildren, ReactNode } from 'react';
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
+import { renderRunEvents } from './run-render';
 import {
   detectCollectKind,
   renderStreamEvents,
@@ -194,14 +195,22 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   }
   const { collected, error, record, recordId } = shown;
 
-  const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
-  const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
+  // The two shapes a record comes in. An endpoint served by the onion is
+  // recorded as its edges and draws the four sections below; a pipelined one is
+  // recorded as its whole run, and the run's event stream is the whole of it.
+  const edge = record?.shape === 'edge' ? record : null;
+  const requestBody = edge ? renderBody(edge.request.body, contentTypeOf(edge.request.headers)) : EMPTY_BODY;
+  const responseBody = edge?.response.body.type === 'bytes' ? renderBody(edge.response.body.body, contentTypeOf(edge.response.headers)) : EMPTY_BODY;
   const streamEvents = useMemo<DumpStreamEvent[]>(
-    () => record?.response.body.type === 'stream' ? record.response.body.events : [],
+    () => record?.shape === 'edge' && record.response.body.type === 'stream' ? record.response.body.events : [],
     [record],
   );
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
+  const runEvents = useMemo(
+    () => record?.shape === 'run' ? renderRunEvents(record.events) : [],
+    [record],
+  );
 
   if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
   // This replaces every section rather than sitting in one, so it takes the
@@ -210,8 +219,40 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   if (error) return <OutcomeMessageBar className="!m-4">{error}</OutcomeMessageBar>;
   if (!record) return null;
 
-  const severity = requestSeverity(record.response.status, record.meta.error);
+  const severity = requestSeverity(record.meta.status, record.meta.error);
   const responseError = errorLabel(record.meta.error);
+
+  if (record.shape === 'run') {
+    return (
+      <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
+        <section>
+          <DetailSectionHeader
+            title={t('dashboard.requests.run')}
+            detail={<>
+              <HttpMethodBadge method={record.meta.method} />
+              <Text size={300} className="font-mono">{record.meta.path}</Text>
+              <HttpStatusBadge severity={severity}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+              {responseError && <Text size={200} className={dangerText}>{responseError}</Text>}
+            </>}
+            copyText={record.events || undefined}
+          />
+          <SectionBody>
+            {runEvents.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine> : runEvents.map((event, index) => (
+              <div className={s.section} key={index}>
+                <div className="flex items-center gap-2 px-4 pt-3">
+                  <Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.type || t('dashboard.requests.unlabeled')}</Text>
+                  {event.subject && <Text size={100} className="font-mono mono-size-100 text-fui-fg3">{event.subject}</Text>}
+                  {event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}
+                </div>
+                <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
+              </div>
+            ))}
+          </SectionBody>
+        </section>
+      </ScrollArea>
+    );
+  }
+
   const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const collectedCopyText = collected?.result === null || collected?.result === undefined

@@ -910,6 +910,8 @@ const zhHansCN = {
         apiKeysLink: 'API 密钥',
         request: '请求',
         requestBody: '请求体',
+        run: '运行过程',
+        noRunEvents: '这次运行没有记录到任何事件。',
         response: '响应',
         responseBody: '响应体',
         noRequestBody: '没有请求体',
