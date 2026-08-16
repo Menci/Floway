@@ -2,7 +2,7 @@
 // across header and probe sources, because the SDK keeps the windows separate:
 // https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
-import { FIVE_HOUR_WINDOW_MINUTES, HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent, SEVEN_DAY_WINDOW_MINUTES } from './subscription-quota';
+import { FIVE_HOUR_WINDOW_MINUTES, heaviestPercent, SEVEN_DAY_WINDOW_MINUTES, usageStatusFromHeaviest } from './subscription-quota';
 import type {
   ClaudeCodeAccountCredentialSummary,
   ClaudeCodeQuotaWindow,
@@ -175,9 +175,7 @@ export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], no
   // it, so this asks whether the limit is still running rather than whether one
   // was ever reported -- the data plane draws the line at the same instant.
   if (rateLimitedUntil(credential.quotaSnapshot, now) !== null) return { tone: 'danger', reason: 'exhausted' };
-  const heaviest = heaviestPercent(windows.map(row => row.percent));
-  if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
-  return { tone: 'success', reason: 'active' };
+  return usageStatusFromHeaviest(heaviestPercent(windows.map(row => row.percent)));
 };
 
 // Rejected optional overage pairs with `out_of_credits`, which is not actionable:

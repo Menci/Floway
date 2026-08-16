@@ -3,7 +3,7 @@
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L27-L100
 // https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L217-L228
 
-import { HEAVY_USAGE_THRESHOLD_PERCENT, heaviestPercent } from './subscription-quota';
+import { heaviestPercent, usageStatusFromHeaviest } from './subscription-quota';
 import type {
   CodexAccountCredentialState,
   CodexQuotaSnapshot,
@@ -138,7 +138,5 @@ export const accountStatus = (lookup: CredentialLookup, entries: QuotaEntry[]): 
     .filter((value): value is string => value !== null)
     .toSorted((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
   if (until !== undefined) return { tone: 'danger', reason: 'rate-limited', until };
-  const heaviest = heaviestPercent(entries.flatMap(entry => entry.windows.map(item => item.percent)));
-  if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
-  return { tone: 'success', reason: 'active' };
+  return usageStatusFromHeaviest(heaviestPercent(entries.flatMap(entry => entry.windows.map(item => item.percent))));
 };
