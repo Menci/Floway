@@ -20,6 +20,7 @@ import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
+import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
@@ -273,9 +274,12 @@ const meterChatCompletions = (
 };
 
 /** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities =>
-  usage === undefined ? {} : tokenUsageFromBillableUsage(usage) as unknown as UsageQuantities;
+ *  statement from reporting zero. The two shapes are not interchangeable: what the upstream
+ *  reported is per token category, and what is billed is per metric name. */
+const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+  const tokens = tokenUsageFromBillableUsage(usage);
+  return tokens === null ? {} : tokenUsageQuantities(tokens);
+};
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is

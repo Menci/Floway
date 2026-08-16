@@ -171,6 +171,21 @@ describe('the chat completions chain', () => {
     expect(facts['response.chat.chatCompletions.rendered']).toEqual({ error: { message: 'slow down' } });
   });
 
+  // What the upstream reported is per token category and what is billed is per metric name;
+  // the two are not interchangeable, and a cast between them writes a row with no metrics.
+  it('bills the metrics the upstream-s own usage adds up to', async () => {
+    resolves([candidate(async () => stream(chunk('hi'), {
+      id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
+      choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 },
+    } as unknown as ChatCompletionsStreamEvent))]);
+
+    const { facts } = await serve(true);
+    for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
+    const billable = await facts['response.chat.chatCompletions.streamedUsage']!;
+
+    expect(billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
+  });
+
   // A refused connection is an outcome the fork has to be able to see, not a fault that ends
   // the run — so the second candidate is tried and its answer is the one served.
   it('fails a dial that never connected over to the next candidate', async () => {
