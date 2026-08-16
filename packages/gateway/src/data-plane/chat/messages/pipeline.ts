@@ -27,6 +27,11 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
+import {
+  applyRoleCompatibilityToMessages,
+  disableReasoningOnForcedToolChoiceForMessages,
+  stripBillingAttributionFromMessages,
+} from '../interceptors.ts';
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
@@ -354,5 +359,8 @@ export const messagesServePipeline = (payload: MessagesPayload): Pipeline<Messag
       owns: [],
     }),
     materializeAttempt('request.chat.messages'),
+    stripBillingAttributionFromMessages,
+    disableReasoningOnForcedToolChoiceForMessages,
+    applyRoleCompatibilityToMessages,
     callMessagesUpstream,
   ]);

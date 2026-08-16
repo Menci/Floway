@@ -46,6 +46,14 @@ import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
+import {
+  applyRoleCompatibilityToResponses,
+  disableReasoningOnForcedToolChoiceForResponses,
+  normalizeExclusiveCachedTokensForResponses,
+  stripPromptCacheKeyForResponses,
+  vendorDeepSeekNormalizeForResponses,
+  vendorQwenNormalizeForResponses,
+} from '../interceptors.ts';
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
@@ -399,5 +407,11 @@ export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipe
       owns: [],
     }),
     materializeAttempt('request.chat.responses'),
+    disableReasoningOnForcedToolChoiceForResponses,
+    applyRoleCompatibilityToResponses,
+    stripPromptCacheKeyForResponses,
+    normalizeExclusiveCachedTokensForResponses,
+    vendorDeepSeekNormalizeForResponses,
+    vendorQwenNormalizeForResponses,
     callResponsesUpstream,
   ]);

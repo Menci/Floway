@@ -50,6 +50,12 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { billableUsageFromChatCompletionsEvent } from '../chat-completions/usage.ts';
 import type { ChatFacts } from '../facts.ts';
+import {
+  stripSafetySettingsFromGemini,
+  stripUnsupportedPartFieldsFromGemini,
+  stripUnsupportedToolsFromGemini,
+  suppressThoughtPartsFromGemini,
+} from '../interceptors.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
@@ -288,9 +294,6 @@ const meterChatCompletions = (
 ): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
   let settle!: (outcome: StreamOutcome) => void;
   const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
-  // Running out without the terminal frame is what "it did not finish" means, and it is known
-  // at the same moment the usage is.
-  const sawTerminal = false;
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
     try {
@@ -390,5 +393,9 @@ export const geminiServePipeline = (payload: GeminiPayload): Pipeline<GeminiServ
       owns: [],
     }),
     materializeAttempt('request.chat.gemini'),
+    stripUnsupportedPartFieldsFromGemini,
+    stripUnsupportedToolsFromGemini,
+    stripSafetySettingsFromGemini,
+    suppressThoughtPartsFromGemini,
     callGeminiViaChatCompletions,
   ]);
