@@ -4,6 +4,7 @@
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
+//   materializeAttempt     puts the payload this candidate is owed into the record
 //   callMessagesUpstream   the ending: dials this candidate's wire
 //
 // Only the native wire is here. The translated ones — Messages via Responses and Messages
@@ -11,30 +12,30 @@
 // make them interchangeable with this one, and each is a step of its own. So is
 // `/v1/messages/count_tokens`: a second operation over this protocol rather than another
 // wire under this pipeline. This family's own interceptors are not stages yet either, so
-// the array between the fork and the ending is empty rather than short.
+// the array between the materialized payload and the ending is empty rather than short.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { createMessagesBillableUsageReader } from './usage.ts';
-import type { UsageQuantities } from '../../../repo/types.ts';
-import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
-import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
+import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
+import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { renderMessagesError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
   collectMessagesProtocolEventsToResult,
   messagesProtocolFrameToSSEFrame,
+  MESSAGES_MISSING_TERMINAL_MESSAGE,
   parseAnthropicBetaHeader,
   type MessagesPayload,
   type MessagesStreamEvent,
@@ -64,8 +65,8 @@ type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
  *
  * Collecting is therefore the edge's own work and not a second reading of the upstream: the
  * same frames that would have gone out are folded here instead, by the protocol's own
- * reassembly, which is what makes a stream that stopped short of `message_stop` say so
- * rather than answer with half a message.
+ * reassembly. Neither shape can answer with half a message: the ending fails a stream that
+ * ran out before `message_stop`, whichever of the two the client asked for.
  */
 const emitMessages = defineStage<
   M<'ingress.chat.messages.wantsStream'>,
@@ -167,13 +168,13 @@ const callMessagesUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // Affinity materializes the payload this candidate is owed: a thinking signature is
+    // What the record holds by now: the payload affinity materialized for this candidate, as
+    // every stage between the fork and here has rewritten it. A thinking signature was
     // rewritten for the upstream that will see it, and one that no upstream but the issuer
-    // can read is dropped rather than sent on. The id the client addressed does not travel —
+    // can read was dropped rather than sent on. The id the client addressed does not travel —
     // the provider re-stamps whatever it resolved upstream — and an alias' own rules apply to
     // the body that is sent.
-    const asked = use.chatPayloadFor(facts['route.attempt']) as MessagesPayload;
-    const payload = { ...asked, model: candidate.model.id };
+    const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
 
@@ -233,7 +234,7 @@ const callMessagesUpstream = defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterMessages(result.events, identity);
+    const metered = meterMessages(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.messages': { kind: 'stream' as const, frames: metered.frames },
@@ -251,6 +252,7 @@ const callMessagesUpstream = defineStage<
 const meterMessages = (
   source: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   identity: TelemetryModelIdentity,
+  attempt: { firstOutputTokenAt: number | null },
 ): { readonly frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
   let settle!: (billable: readonly BillableEntity[]) => void;
   const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
@@ -259,39 +261,55 @@ const meterMessages = (
     let reported: BillableUsage | undefined;
     try {
       for await (const frame of source) {
+        // Time to first token is measured where the token is, which is the only place that
+        // knows a frame carries generated content rather than the envelope around it.
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'messages')) {
+          attempt.firstOutputTokenAt = performance.now();
+        }
         if (frame.type === 'event') {
           const usage = readBillableUsage(frame.event);
           if (usage !== null) reported = usage;
         }
         yield frame;
+        // The turn is over, so there is nothing further to read. An upstream that holds the
+        // connection open past `message_stop` would otherwise hold the client's stream open
+        // with it; returning here closes the read, which cancels the upstream.
+        if (isMessagesTerminalFrame(frame)) return;
       }
+      // Frames ran out with no terminal event, which is a turn nobody can answer from: the
+      // message was never stopped and never failed.
+      throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([{ identity, quantities: billed(reported) }]);
+      settle([billedEntity(reported, identity)]);
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
 };
 
-/** An upstream that reported nothing leaves no quantities at all, which is a different
- *  statement from reporting zero.
- *
- *  A billed entity is keyed by billing metric, which is not the shape a protocol reports
- *  in — so the reading is converted here rather than cast. The service tier survives as far
- *  as `TokenUsage.tier` and no further: a billed entity is an identity and a bag of
- *  quantities, and the pricing selector the tier feeds has no seat there. */
-const billed = (usage: BillableUsage | undefined): UsageQuantities => {
+/** What ends a Messages turn. Anthropic's own stream terminator is an event rather than a
+ *  transport sentinel, and a stream that failed mid-turn says so with `error` in place of the
+ *  `message_stop` that will now never come. */
+const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>): boolean =>
+  frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
+
+/** What one attempt is billable for. An upstream that reported nothing leaves no quantities
+ *  at all, which is a different statement from reporting zero — and a rate can depend on the
+ *  service tier and on how much input there was, so both travel as pricing facts rather than
+ *  being folded into the quantities. */
+const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModelIdentity): BillableEntity => {
   const tokens = tokenUsageFromBillableUsage(usage);
-  return tokens === null ? {} : tokenUsageQuantities(tokens);
+  if (tokens === null) return { identity, quantities: {} };
+  const measurement = tokenUsageMeasurement(tokens);
+  return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
 };
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
 const narrowing = (payload: MessagesPayload): ChatNarrowing<M<'response.chat.messages'>> => ({
-  source: 'messages',
   canServe: candidate => messagesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeMessagesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /messages endpoint.`,
@@ -326,5 +344,6 @@ export const messagesServePipeline = (payload: MessagesPayload): Pipeline<Messag
       failed: handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages']),
       owns: [],
     }),
+    materializeAttempt('request.chat.messages'),
     callMessagesUpstream,
   ]);
