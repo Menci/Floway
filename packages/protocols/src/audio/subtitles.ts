@@ -1,12 +1,17 @@
 // SubRip and WebVTT, the two renderings of a transcription that are subtitle documents
-// rather than JSON. Both carry exactly one thing — timed cues — so both are a total
-// reading of, and a total writing from, the canonical transcription's `cues`.
+// rather than JSON. Both carry exactly one thing — timed cues — so reading one is a total
+// reading of it.
 //
-// The exact shapes are Whisper's own writers, which is what OpenAI's `whisper-1` runs:
-// SubRip numbers its cues from 1, always writes the hour component and separates the
-// milliseconds with a comma; WebVTT opens with a `WEBVTT` line, drops the hour component
-// below one hour and separates the milliseconds with a period. Both terminate every cue
-// with a blank line.
+// There is no writer here, and that is the point: a subtitle rendering is carried to the
+// client as the bytes the upstream sent, so nothing ever has to reproduce one. What the
+// reading is for is the record and the transcript beside it.
+//
+// The shapes are Whisper's own writers, which is what OpenAI's `whisper-1` runs: SubRip
+// numbers its cues from 1, always writes the hour component and separates the milliseconds
+// with a comma; WebVTT opens with a `WEBVTT` line, drops the hour component below one hour
+// and separates the milliseconds with a period. Both terminate every cue with a blank line.
+// Every one of those is a convention rather than a rule, which is why reading is written to
+// accept more than Whisper writes.
 // https://github.com/openai/whisper/blob/v20250625/whisper/utils.py#L238-L262
 
 export interface AudioTranscriptionCue {
@@ -19,27 +24,6 @@ export interface AudioTranscriptionCue {
 export type SubtitleDialect = 'srt' | 'vtt';
 
 const VTT_HEADER = 'WEBVTT';
-
-/** Whisper rounds to whole milliseconds before splitting the components, so a timestamp
- *  written from a parsed one is the same string it was parsed from.
- *  https://github.com/openai/whisper/blob/v20250625/whisper/utils.py#L50-L68 */
-const writeTimestamp = (seconds: number, dialect: SubtitleDialect): string => {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    throw new Error(`Subtitle timestamp must be a finite non-negative number: ${seconds}`);
-  }
-  let milliseconds = Math.round(seconds * 1000);
-  const hours = Math.floor(milliseconds / 3_600_000);
-  milliseconds -= hours * 3_600_000;
-  const minutes = Math.floor(milliseconds / 60_000);
-  milliseconds -= minutes * 60_000;
-  const whole = Math.floor(milliseconds / 1_000);
-  milliseconds -= whole * 1_000;
-
-  const pad = (value: number, width: number) => String(value).padStart(width, '0');
-  const hoursMarker = dialect === 'srt' || hours > 0 ? `${pad(hours, 2)}:` : '';
-  const decimalMarker = dialect === 'srt' ? ',' : '.';
-  return `${hoursMarker}${pad(minutes, 2)}:${pad(whole, 2)}${decimalMarker}${pad(milliseconds, 3)}`;
-};
 
 const TIMESTAMP = /^(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})$/;
 
@@ -93,15 +77,4 @@ export const parseSubtitleDocument = (dialect: SubtitleDialect, document: string
     open.push(line);
   }
   return blocks.map(block => readCueBlock(block, dialect));
-};
-
-export const renderSubtitleDocument = (dialect: SubtitleDialect, cues: readonly AudioTranscriptionCue[]): string => {
-  const body = cues
-    .map((cue, index) => {
-      const timing = `${writeTimestamp(cue.start, dialect)} --> ${writeTimestamp(cue.end, dialect)}`;
-      const ordinal = dialect === 'srt' ? `${index + 1}\n` : '';
-      return `${ordinal}${timing}\n${cue.text}\n\n`;
-    })
-    .join('');
-  return dialect === 'vtt' ? `${VTT_HEADER}\n\n${body}` : body;
 };

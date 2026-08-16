@@ -1,21 +1,26 @@
 // The one transcription, and the several documents that are renderings of it.
 //
-// `response_format` picks a rendering, and it travels to the upstream in the form the
-// client sent, so the rendering the client asked for is the rendering the upstream answers
-// in. That is what makes one canonical value enough: the gateway reads whichever document
-// arrived and writes the same one back, and no rendering is ever derived from a value that
-// was read out of a different one.
+// `response_format` picks a rendering, and it travels to the upstream in the form the client
+// sent, so the rendering the client asked for is the rendering the upstream answers in. That
+// is what makes one canonical value enough: whichever rendering arrived is the one that goes
+// back, and no rendering is ever derived from a value read out of a different one.
+//
+// A document rendering is **carried**, never written again. `text`, `srt` and `vtt` are
+// documents the upstream wrote for the client to read, and re-writing one from what we read
+// out of it changes bytes nobody asked to have changed: a cue writer of our own terminates
+// the last cue with a blank line the upstream may not have written, renumbers a SubRip cue
+// the upstream numbered from something else, and rounds a timestamp to its own precision. So
+// the canonical value holds the bytes that arrived and hands them straight back, and what it
+// reads out of them is what the record shows and what usage is measured from.
 //
 // Which is as well, because the renderings are not equally rich. `verbose_json` carries a
 // whole transcript and its cues; `json` carries the transcript with usage beside it; `srt`
 // and `vtt` carry the cues alone; `text` carries the transcript alone and nothing else at
-// all. So a `srt` answer holds no `language`, no `duration` and no usage, and its transcript
-// exists only as the cues' texts. Those are properties of the renderings, not gaps in the
-// reading.
+// all. Those are properties of the renderings, not gaps in the reading.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L714-L745
 
 import type { AudioTranscriptionCue } from './subtitles.ts';
-import { parseSubtitleDocument, renderSubtitleDocument } from './subtitles.ts';
+import { parseSubtitleDocument } from './subtitles.ts';
 
 // `diarized_json` joined the enum with `gpt-4o-transcribe-diarize`; it is a JSON rendering
 // and needs nothing of its own here.
@@ -57,20 +62,27 @@ export type AudioTranscriptionUsage =
   | { readonly kind: 'duration'; readonly seconds: number };
 
 export interface CanonicalAudioTranscription {
-  /** The whole transcript. A subtitle document does not carry one, so for `srt` and `vtt`
-   *  this is the cues' texts joined by newlines — which is what Whisper's own text writer
-   *  produces from the same result, and is not claimed to be byte-identical to what a
-   *  `text` request would have returned.
+  /** What the upstream sent, byte for byte. Every rendering but the objects is written back
+   *  from this, and so is a body the reading below could not open.
+   *
+   *  Bytes rather than a string, because a decode is a reading like any other: a document
+   *  under a charset nothing here asked about survives being carried and does not survive
+   *  being decoded and encoded again. */
+  readonly document: Uint8Array;
+  /** The whole transcript, as the rendering stated it. A subtitle document does not carry
+   *  one, so for `srt` and `vtt` this is the cues' texts joined by newlines — which is what
+   *  Whisper's own text writer produces from the same result, and is not the string a `text`
+   *  request would have returned. Absent on a document the reading could not open.
    *  https://github.com/openai/whisper/blob/v20250625/whisper/utils.py#L109-L116 */
-  readonly text: string;
+  readonly text?: string;
   /** The timed cues. This is the whole of `srt` and `vtt`; `verbose_json` and
    *  `diarized_json` carry the same thing as `segments`. */
   readonly cues?: readonly AudioTranscriptionCue[];
   /** The upstream's own object, kept whole for the renderings that are objects. A JSON
    *  answer is re-serialized from this, so a field this type does not name — a segment's
-   *  `avg_logprob`, a `logprobs` array, a `speaker` label — reaches the client unchanged. */
+   *  `avg_logprob`, a `logprobs` array, a `speaker` label — reaches the client unchanged,
+   *  and it is also what usage is read out of. */
   readonly raw?: Record<string, unknown>;
-  readonly usage?: AudioTranscriptionUsage;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -78,39 +90,58 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const seconds = (value: unknown, where: string): number => {
+  if (!isFiniteNumber(value) || value < 0) throw new Error(`Audio transcription ${where} must be a finite non-negative number`);
+  return value;
+};
+
+const count = (value: unknown, where: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Audio transcription ${where} must be a non-negative safe integer`);
+  }
+  return value;
+};
 
 /**
- * What the upstream said it will bill for, or `undefined` when it said nothing this reading
- * recognizes. There is no third answer: a report that cannot be read is, from here, no
- * report, and the caller says so by naming the entity with no quantities.
+ * What the upstream said it will bill for.
  *
- * Whisper's `verbose_json` predates the `usage` block and states the same duration at the
- * top level, so that is read where no block is present.
+ * `undefined` is "nothing this reading recognizes was stated": no report at all, or one under
+ * a discriminator this protocol does not name — a metric invented after this was written is
+ * not a malformed one. A report that *is* one of the two and cannot be read is the other
+ * situation entirely, and it throws, so the caller can say so rather than bill an upstream
+ * that did meter as though it had not.
+ *
+ * Whisper's `verbose_json` predates the `usage` block and states the same duration at the top
+ * level, so that is read where no block is present.
  * https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36513-L36545
  * https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L61968-L62051
  */
 export const parseAudioTranscriptionUsage = (value: unknown): AudioTranscriptionUsage | undefined => {
   if (!isRecord(value)) return undefined;
+  if (value.usage === undefined) {
+    if (value.duration === undefined) return undefined;
+    return { kind: 'duration', seconds: seconds(value.duration, 'duration') };
+  }
   const usage = value.usage;
-  if (!isRecord(usage)) {
-    return isFiniteNumber(value.duration) && value.duration >= 0
-      ? { kind: 'duration', seconds: value.duration }
-      : undefined;
-  }
-  if (usage.type === 'duration') {
-    return isFiniteNumber(usage.seconds) && usage.seconds >= 0 ? { kind: 'duration', seconds: usage.seconds } : undefined;
-  }
-  if (usage.type !== 'tokens' || !isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return undefined;
+  if (!isRecord(usage)) throw new Error('Audio transcription usage must be an object');
+  if (usage.type === 'duration') return { kind: 'duration', seconds: seconds(usage.seconds, 'usage.seconds') };
+  if (usage.type !== 'tokens') return undefined;
+
+  const inputTokens = count(usage.input_tokens, 'usage.input_tokens');
+  const outputTokens = count(usage.output_tokens, 'usage.output_tokens');
   const details = usage.input_token_details;
-  const audioTokens = isRecord(details) && isCount(details.audio_tokens) ? details.audio_tokens : undefined;
-  if (audioTokens !== undefined && audioTokens > usage.input_tokens) return undefined;
+  if (details !== undefined && !isRecord(details)) throw new Error('Audio transcription usage.input_token_details must be an object');
+  const audioTokens = details?.audio_tokens === undefined
+    ? undefined
+    : count(details.audio_tokens, 'usage.input_token_details.audio_tokens');
+  if (audioTokens !== undefined && audioTokens > inputTokens) {
+    throw new Error('Audio transcription usage.input_token_details.audio_tokens must not exceed usage.input_tokens');
+  }
   return {
     kind: 'tokens',
-    inputTokens: usage.input_tokens,
+    inputTokens,
     ...(audioTokens === undefined ? {} : { inputAudioTokens: audioTokens }),
-    outputTokens: usage.output_tokens,
+    outputTokens,
   };
 };
 
@@ -132,48 +163,45 @@ const objectCues = (value: Record<string, unknown>): readonly AudioTranscription
 };
 
 /**
- * The one reading. A JSON rendering hands in the parsed object; `text`, `srt` and `vtt`
- * hand in the document itself.
+ * The one reading, over the bytes the upstream sent.
+ *
+ * It throws on a body it cannot open, and a caller that carries the document rather than
+ * serializing one from what it read answers anyway: what a failed reading costs is the
+ * transcript in the record and the usage measured beside it, never the answer.
  */
 export const parseAudioTranscription = (
   format: AudioTranscriptionResponseFormat,
-  body: unknown,
+  document: Uint8Array,
 ): CanonicalAudioTranscription => {
+  const decoded = new TextDecoder().decode(document);
   if (isAudioTranscriptionObjectFormat(format)) {
+    const body: unknown = JSON.parse(decoded);
     if (!isRecord(body)) throw new Error('Audio transcription response body must be an object');
     const cues = objectCues(body);
-    const usage = parseAudioTranscriptionUsage(body);
     return {
+      document,
       text: requiredText(body.text, 'text'),
       ...(cues === undefined ? {} : { cues }),
       raw: body,
-      ...(usage === undefined ? {} : { usage }),
     };
   }
-  const document = requiredText(body, 'response body');
-  if (format === 'text') return { text: document };
-  const cues = parseSubtitleDocument(format, document);
-  return { text: cues.map(cue => cue.text).join('\n'), cues };
+  if (format === 'text') return { document, text: decoded };
+  const cues = parseSubtitleDocument(format, decoded);
+  return { document, text: cues.map(cue => cue.text).join('\n'), cues };
 };
 
 /**
- * The one writing, back into the rendering the client asked for. A JSON rendering is the
- * upstream's own object re-serialized; a subtitle rendering is written from the cues; `text`
- * is the transcript alone.
+ * The one writing, back into the rendering the client asked for.
+ *
+ * An object rendering is the upstream's own object re-serialized, which is what keeps a field
+ * this protocol does not name on its way to the client. Everything else is the document that
+ * arrived, handed back untouched — and so is an object rendering whose body the reading could
+ * not open, because bytes nobody could read are still the answer the upstream gave.
  */
 export const renderAudioTranscription = (
   format: AudioTranscriptionResponseFormat,
   transcription: CanonicalAudioTranscription,
-): Record<string, unknown> | string => {
-  if (isAudioTranscriptionObjectFormat(format)) {
-    if (transcription.raw === undefined) {
-      throw new Error(`Audio transcription cannot be rendered as ${format}: it was not read from an object`);
-    }
-    return transcription.raw;
-  }
-  if (format === 'text') return transcription.text;
-  if (transcription.cues === undefined) {
-    throw new Error(`Audio transcription cannot be rendered as ${format}: it carries no cues`);
-  }
-  return renderSubtitleDocument(format, transcription.cues);
-};
+): Record<string, unknown> | Uint8Array =>
+  isAudioTranscriptionObjectFormat(format) && transcription.raw !== undefined
+    ? transcription.raw
+    : transcription.document;
