@@ -18,17 +18,31 @@ import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-cop
 
 const { Button, Field, Link, Spinner, Text } = fluentComponents;
 
+type OAuthFlow = 'oauth' | 'setup-token';
+
+type OAuthCallbackImportProps =
+  | {
+      kind: 'codex';
+      hasAccount: boolean;
+      record: UpstreamRecord;
+      getValues: () => UpstreamEditorValues;
+      onImported: (patch: { config?: unknown; state?: unknown }) => void;
+    }
+  | {
+      kind: 'claude-code';
+      flowKind: OAuthFlow;
+      hasAccount: boolean;
+      record: UpstreamRecord;
+      getValues: () => UpstreamEditorValues;
+      onImported: (patch: { config?: unknown; state?: unknown }) => void;
+    };
+
 // The codex OAuth tab opens with a hint the claude-code OAuth and Setup-Token
 // tabs never carried; the kind prop decides which copy this shared surface
 // shows.
-export function OAuthCallbackImport({ kind, flowKind, hasAccount, record, getValues, onImported }: {
-  kind: 'codex' | 'claude-code';
-  flowKind: 'oauth' | 'setup-token';
-  hasAccount: boolean;
-  record: UpstreamRecord;
-  getValues: () => UpstreamEditorValues;
-  onImported: (patch: { config?: unknown; state?: unknown }) => void;
-}) {
+export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
+  const { kind, hasAccount, record, getValues, onImported } = props;
+  const flowKind: OAuthFlow = kind === 'codex' ? 'oauth' : props.flowKind;
   const { t } = useTranslation();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const { copy, outcomeFor } = useCopyToClipboard();

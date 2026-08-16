@@ -197,7 +197,6 @@ export function CodexImportForm({ hasAccount, onImported, record }: {
 
     {tab === 'oauth' && <OAuthCallbackImport
       kind="codex"
-      flowKind="oauth"
       hasAccount={hasAccount}
       record={record}
       getValues={getValues}
