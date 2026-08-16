@@ -135,7 +135,7 @@ describe('the dump encoding', () => {
   it('carries a log line with its structured fields', () => {
     const events: Event[] = [{ type: 'stage.log', stageId: 4, level: 'warn', message: 'slow', fields: { ms: 1200 } }];
     const [encoded] = encodeRun(events).filter(e => e.type === 'stage.log');
-    expect(encoded).toMatchObject({ stageId: 4, level: 'warn', message: 'slow' });
+    expect(encoded).toMatchObject({ stageId: 4, level: 'warn', message: 'slow', fields: { ms: 1200 } });
   });
 
   // A buffer is atomic and records its full content, the way a string does. Walking it by
