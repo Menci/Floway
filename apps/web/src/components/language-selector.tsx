@@ -19,10 +19,13 @@ export function LanguageSelector({ className }: { className?: string }) {
   const { i18n, t } = useTranslation();
   const currentLanguage = normalizeLanguage(i18n.language) ?? defaultLanguage;
 
-  const selectLanguage = (next: SupportedLanguage) => {
-    void setLanguage(next)
-      .then(() => storeLanguage(next))
-      .catch(() => undefined);
+  const selectLanguage = async (next: SupportedLanguage) => {
+    try {
+      await setLanguage(next);
+      storeLanguage(next);
+    } catch {
+      // The locale chunk could not be fetched; keep the current language.
+    }
   };
 
   return (
@@ -31,7 +34,7 @@ export function LanguageSelector({ className }: { className?: string }) {
       className={className}
       onOptionSelect={(_, data) => {
         const next = normalizeLanguage(data.optionValue);
-        if (next) selectLanguage(next);
+        if (next) void selectLanguage(next);
       }}
       selectedOptions={[currentLanguage]}
       value={languageNames[currentLanguage]}
