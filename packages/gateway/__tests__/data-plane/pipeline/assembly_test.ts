@@ -6,12 +6,12 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
 import { audioTranscriptionServePipeline } from '../../../src/data-plane/audio/pipeline.ts';
 import { completionsServePipeline } from '../../../src/data-plane/completions/pipeline.ts';
 import { embeddingsServePipeline } from '../../../src/data-plane/embeddings/pipeline.ts';
 import { imagesServePipeline } from '../../../src/data-plane/images/pipeline.ts';
 import { rerankServePipeline } from '../../../src/data-plane/rerank/pipeline.ts';
-import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
 
 const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] = [
   ['embeddings', () => embeddingsServePipeline],

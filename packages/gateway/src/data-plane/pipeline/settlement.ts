@@ -84,15 +84,17 @@ export const writeSettlement = (
   failed: (handedUp: Record<string, unknown>) => boolean,
   stillReading?: (handedUp: Record<string, unknown>) => boolean,
 ) => defineStage<
-  Slice<'serve.model'>,
-  Slice<'serve.model'>,
+  Record<string, never>,
+  Record<string, never>,
   Slice<'response.usage.billable'>,
   Slice<'response.usage.billable'>,
   GatewayServices
 >({
   name: 'writeSettlement',
   through: {
-    request: { needs: ['serve.model'], consumes: [], provides: [] },
+    // Nothing on the way down: what is settled is what came back, and naming a request key
+    // here would put it in the entry contract of a family that never resolved a model.
+    request: { needs: [], consumes: [], provides: [] },
     // It reads the authoritative reading and hands it on untouched: settlement is the last
     // reader, not another writer, and a stage that changed usage re-provided it below.
     response: { needs: ['response.usage.billable'], consumes: [], provides: [] },
