@@ -7,9 +7,11 @@ import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -85,6 +87,30 @@ const connectResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<
   const pair = runtime.pairs.at(-1);
   assertExists(pair);
   return pair.client;
+};
+
+// The upgrade registers exactly one runtime background task: the session
+// lifetime promise, which resolves once the socket is closed and every
+// session-scoped write has drained. Capturing it lets a test observe the
+// instant the runtime would be free to evict the isolate — on Cloudflare
+// that is the deadline every session-scoped write has to beat.
+const connectResponsesWebSocketCapturingSessionLifetime = async (
+  apiKey: string,
+): Promise<{ client: TestWorkerWebSocket; sessionLifetime: Promise<unknown> }> => {
+  const registered: Promise<unknown>[] = [];
+  initBackgroundSchedulerResolver(_c => promise => {
+    registered.push(Promise.resolve(promise));
+    trackBackground(promise);
+  });
+  try {
+    const client = await connectResponsesWebSocket(apiKey);
+    assertEquals(registered.length, 1, 'expected the upgrade to register exactly one background task');
+    const sessionLifetime = registered[0];
+    assertExists(sessionLifetime);
+    return { client, sessionLifetime };
+  } finally {
+    initBackgroundSchedulerResolver(_c => trackBackground);
+  }
 };
 
 let currentRuntime: ReturnType<typeof installWorkerWebSocketRuntime> | undefined;
@@ -1362,6 +1388,88 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       await responsesStarted;
       client.close();
       await upstreamAborted;
+    }),
+  );
+});
+
+// A turn schedules its dump and usage writes from its terminal `finally`, so
+// nothing of its own sits in the session's pending set while it streams. The
+// session lifetime therefore has to hold the in-flight message chain itself:
+// a client that closes mid-turn otherwise finds that set empty at the exact
+// moment the close resolves `sessionClosed`, and the lifetime would resolve —
+// freeing Cloudflare to evict the isolate — before the interrupted turn had
+// recorded anything.
+test('Responses WebSocket holds the session lifetime open until a turn the client interrupted has recorded its dump', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const encoder = new TextEncoder();
+  let resolveUpstreamReadStarted!: () => void;
+  const upstreamReadStarted = new Promise<void>(resolve => {
+    resolveUpstreamReadStarted = resolve;
+  });
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(`event: response.created\ndata: ${JSON.stringify({
+              type: 'response.created',
+              response: {
+                id: 'resp_ws_lifetime',
+                object: 'response',
+                model: 'gpt-direct-responses',
+                status: 'in_progress',
+                output: [],
+                output_text: '',
+              },
+              sequence_number: 0,
+            })}\n\n`));
+            // The turn never reaches a terminal event. The client's close
+            // reaches this body through the request signal, which is how a
+            // real streaming upstream is torn down mid-flight.
+            request.signal.addEventListener('abort', () => {
+              controller.error(request.signal.reason);
+            }, { once: true });
+          },
+          pull() {
+            resolveUpstreamReadStarted();
+          },
+        }), {
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const { client, sessionLifetime } = await connectResponsesWebSocketCapturingSessionLifetime(apiKey.key);
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_ws_lifetime',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'hello',
+        },
+      }));
+
+      await waitForMessages(client, messages => messages.length >= 1);
+      await upstreamReadStarted;
+      client.close();
+
+      await sessionLifetime;
+      // Sampled at the instant the runtime would be free to drop the isolate,
+      // deliberately without flushing background work first: the interrupted
+      // turn's dump has to be stored by then, not merely scheduled.
+      assertEquals(dumps.stored.length, 1);
     }),
   );
 });

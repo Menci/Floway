@@ -140,6 +140,15 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // `sessionClosed` resolves. The loop keeps going until the Set is
   // genuinely empty, which is bounded because `closed = true` short-
   // circuits future message handlers at the top of `handleClientMessage`.
+  //
+  // That loop only ever runs while the Set is non-empty, which is why the
+  // message chain itself is tracked as session work in `onMessage`. A turn
+  // schedules nothing until its terminal `finally` — dump.finalize and
+  // settle are the only background work it produces, and both come after an
+  // `await` there — so a client closing mid-turn finds the Set empty at the
+  // exact moment `sessionClosed` resolves, and the drain would fall through
+  // before the turn recorded anything. Holding the chain keeps the lifetime
+  // open until the handler has unwound and its records are in the Set.
   const pendingWork = new Set<Promise<unknown>>();
   let sessionClosedResolve: (() => void) | undefined;
   const sessionClosed = new Promise<void>(resolve => { sessionClosedResolve = resolve; });
@@ -183,6 +192,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
+      sessionScheduler(queue);
     },
   };
 };
