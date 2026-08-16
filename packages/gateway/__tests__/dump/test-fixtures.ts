@@ -1,7 +1,7 @@
 import type { DumpBroker } from '../../src/dump/broker.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
 import type { DumpMetadata, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
-import { toNdjson, type DumpEvent } from '@floway-dev/pipeline';
+import { encodeRun, toNdjson, type Event } from '@floway-dev/pipeline';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({
   id: 'test-id',
@@ -28,12 +28,13 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpEdg
   response: { status: 200, headers: [], body: { type: 'none' } },
 });
 
-// A run record holds one NDJSON stream and no edge halves, so a fixture only
-// needs the lines the reader is meant to get back.
-export const fakeRunRecord = (events: readonly DumpEvent[], overrides: Partial<DumpMetadata> = {}): StoredDumpRunRecord => ({
+// A run record holds one NDJSON stream and no edge halves, so a fixture takes
+// the events a run emitted and encodes them the way the sink does — object
+// space, folding and all.
+export const fakeRunRecord = (events: readonly Event[], overrides: Partial<DumpMetadata> = {}): StoredDumpRunRecord => ({
   shape: 'run',
   meta: fakeMeta(overrides),
-  events: new TextEncoder().encode(toNdjson(events)),
+  events: new TextEncoder().encode(toNdjson(encodeRun(events))),
 });
 
 // A reader hands back whichever shape was written, so a test asserting on the

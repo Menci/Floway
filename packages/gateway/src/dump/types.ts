@@ -95,22 +95,22 @@ export interface StoredDumpResponse {
   body: StoredDumpResponseBody;
 }
 
-// The run's NDJSON, still as bytes: it is a body file under the same contract
-// as the other two, gzipped into the file store and pointed at by the row's
-// descriptor. One `put` carries it whole — measured on production, P99 of a
-// turn's request and response together is 2.86 MB, well under the 5 MiB below
-// which multipart has nothing to divide.
-export interface StoredDumpRunRecord {
-  shape: 'run';
-  meta: DumpMetadata;
-  events: Uint8Array;
-}
-
 export type StoredDumpEdgeRecord = {
   shape: 'edge';
   meta: DumpMetadata;
   request: StoredDumpRequest;
   response: StoredDumpResponse;
+};
+
+// The run's NDJSON, still as bytes: it is a body file under the same contract
+// as the other two, gzipped into the file store and pointed at by the row's
+// descriptor. One `put` carries it whole — measured on production, P99 of a
+// turn's request and response together is 2.86 MB, well under the 5 MiB below
+// which multipart has nothing to divide.
+export type StoredDumpRunRecord = {
+  shape: 'run';
+  meta: DumpMetadata;
+  events: Uint8Array;
 };
 
 export type StoredDumpRecord = StoredDumpEdgeRecord | StoredDumpRunRecord;
@@ -122,8 +122,9 @@ export type DumpWriteEdgeRecord = {
   response: StoredDumpResponse;
 };
 
-// No prepared half: a run's stream is encoded once the run is over, so there is
-// nothing to compress ahead of the terminal write the way a request body is.
+// The run half is the stored shape unchanged: a run's stream is encoded once the
+// run is over, so there is nothing to compress ahead of the terminal write the
+// way a request body is.
 export type DumpWriteRecord = DumpWriteEdgeRecord | StoredDumpRunRecord;
 
 // --- Wire shape (serialized JSON over the dashboard's control plane) ---
