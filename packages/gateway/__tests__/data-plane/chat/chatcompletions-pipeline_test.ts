@@ -1,7 +1,8 @@
 // The Chat Completions chain, run. Assembly is checked where every family's is; what is
 // written down here is what only running it can say — that the edge folds a stream into one
-// object when the client did not ask to stream, that a refusal keeps the upstream's own
-// status and words, and that a dial nobody answered is a value the fork can move past.
+// object when the client did not ask to stream, that it hands the turn's own state back for
+// the client to carry, that a refusal keeps the upstream's own status and words, and that a
+// dial nobody answered is a value the fork can move past.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,6 +57,13 @@ const chunk = (text: string): ChatCompletionsStreamEvent => ({
   choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
 });
 
+/** What this frame carries of the turn's own state, if it is the carrier the edge writes: a
+ *  chunk whose delta holds nothing but `reasoning_opaque`. */
+const affinityCarrier = (frame: SseFrame): string | undefined => {
+  if (frame.data === '[DONE]') return undefined;
+  return (JSON.parse(frame.data) as ChatCompletionsStreamEvent).choices[0]?.delta.reasoning_opaque ?? undefined;
+};
+
 /** A stream that stops without ever saying it ended — what a dropped upstream looks like. */
 const truncated = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
   ok: true,
@@ -100,7 +108,9 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsSt
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
     chatPayloadFor: () => affinityPayload,
-    selectAffinity: () => {},
+    // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
+    // chain named here.
+    selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
@@ -163,11 +173,34 @@ describe('the chat completions chain', () => {
     for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
 
     expect(facts['response.http.status']).toBe(200);
-    expect(frames.map(frame => frame.data)).toEqual([
+    // The carrier the edge writes has a test of its own below; what the protocol itself
+    // answered with is these frames, in this order.
+    expect(frames.filter(frame => affinityCarrier(frame) === undefined).map(frame => frame.data)).toEqual([
       JSON.stringify(chunk('he')),
       JSON.stringify(chunk('llo')),
       '[DONE]',
     ]);
+  });
+
+  // The other half of affinity: the resolver reads client-carried state on the way down, and
+  // this is what the client is given to carry back. A turn that handed back nothing would
+  // leave the follow-up quoting it with no way to name the upstream that issued it.
+  it('hands the turn-s own state back on a chunk of its own', async () => {
+    resolves([candidate(async () => stream(chunk('hi')))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts } = await serveWith(gateway, true);
+    const frames: SseFrame[] = [];
+    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    const carried = frames.flatMap(frame => affinityCarrier(frame) ?? []);
+
+    expect(carried).toHaveLength(1);
+    // It names the upstream that answered, sealed under this run's own secret — which is what
+    // lets the next turn be pinned to it.
+    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'chat-completions.reasoning_opaque')).toMatchObject({
+      kind: 'owned',
+      affinity: { upstreamId: 'up_a', modelId: 'chat-model' },
+    });
   });
 
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to

@@ -1,9 +1,10 @@
 // The Responses chain, run. Assembly is checked where every family's is; what is written
 // down here is what only running it can say — that the edge terminates the client's stream
 // on `[DONE]` however the upstream's ended, that it folds a stream into one response object
-// when the client did not ask to stream, that a turn the upstream answered with one envelope
-// instead of a stream is served as that envelope, that a refusal keeps the upstream's own
-// status and words, and that a dial nobody answered is a value the fork can move past.
+// when the client did not ask to stream, that it hands the turn's own state back for the
+// client to carry, that a turn the upstream answered with one envelope instead of a stream is
+// served as that envelope, that a refusal keeps the upstream's own status and words, and that
+// a dial nobody answered is a value the fork can move past.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,7 +14,7 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type ResponsesCompactionResult, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ModelCandidate, type ProviderResponsesResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -120,7 +121,9 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsSt
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
-    selectAffinity: () => {},
+    // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
+    // chain named here.
+    selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
@@ -134,6 +137,29 @@ const drain = async (rendered: unknown): Promise<SseFrame[]> => {
   for await (const frame of rendered as AsyncIterable<SseFrame>) frames.push(frame);
   return frames;
 };
+
+// The carrier the edge writes back is a reasoning item holding this turn's own state. The
+// message this turn answers with cannot hold it, so the carrier gets an output slot of its
+// own at the head of the answer: two frames, and a slot in every snapshot that follows them.
+const isCarrierItem = (item: ResponsesOutputItem): boolean => item.type === 'reasoning';
+
+/** The turn's own answer, with the carrier's item taken back out. */
+const withoutCarrierItem = (response: ResponsesResult): ResponsesResult =>
+  ({ ...response, output: response.output.filter(item => !isCarrierItem(item)) });
+
+/** The turn's own frames. The two sequence numbers the carrier's frames spent stay spent —
+ *  they are numbers the client saw. */
+const withoutCarrier = (frames: readonly SseFrame[]): readonly SseFrame[] =>
+  frames.flatMap(frame => {
+    if (frame.data === '[DONE]') return [frame];
+    const event = JSON.parse(frame.data) as ResponsesStreamEvent;
+    if (
+      (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
+      && isCarrierItem(event.item)
+    ) return [];
+    if (!('response' in event)) return [frame];
+    return [{ ...frame, data: JSON.stringify({ ...event, response: withoutCarrierItem(event.response) }) }];
+  });
 
 beforeEach(() => {
   affinityPayload = payload;
@@ -183,7 +209,7 @@ describe('the responses chain', () => {
     resolves([candidate(async () => stream(delta('he'), delta('llo'), completed('hello')))]);
 
     const { facts } = await serve(true);
-    const frames = await drain(facts['response.chat.responses.rendered']);
+    const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
 
     expect(facts['response.http.status']).toBe(200);
     expect(frames.map(frame => frame.event)).toEqual([
@@ -195,9 +221,35 @@ describe('the responses chain', () => {
     expect(frames.map(frame => frame.data)).toEqual([
       JSON.stringify(delta('he')),
       JSON.stringify(delta('llo')),
-      JSON.stringify(completed('hello')),
+      // The carrier's own two frames went out ahead of this one under two sequence numbers of
+      // their own, so the terminal event is numbered where they left it.
+      JSON.stringify({ ...completed('hello'), sequence_number: 4 }),
       '[DONE]',
     ]);
+  });
+
+  // The other half of affinity: the resolver reads client-carried state on the way down, and
+  // this is what the client is given to carry back. A turn that handed back nothing would
+  // leave the follow-up quoting it with no way to name the upstream that issued it.
+  it('hands the turn-s own state back on an item of its own', async () => {
+    resolves([candidate(async () => stream(delta('hi'), completed('hi')))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts } = await serveWith(gateway, true);
+    const frames = await drain(facts['response.chat.responses.rendered']);
+    const answered = frames.find(frame => frame.event === 'response.completed');
+    const carrier = (JSON.parse(answered!.data) as { readonly response: ResponsesResult }).response.output
+      .filter(item => item.type === 'reasoning');
+
+    expect(carrier).toHaveLength(1);
+    // It names the upstream that answered, sealed under this run's own secret — which is what
+    // lets the next turn be pinned to it. The item is ours rather than the upstream's, and it
+    // says so, so a turn quoting it back is not read as reasoning the upstream produced.
+    expect(await gateway.affinity.codec.unwrap(carrier[0]!.encrypted_content!, 'responses.reasoning.encrypted_content')).toMatchObject({
+      kind: 'owned',
+      syntheticItem: true,
+      affinity: { upstreamId: 'up_a', modelId: 'responses-model' },
+    });
   });
 
   // A stream's numbers arrive with its last chunk, so what the run hands up is a promise and
@@ -241,7 +293,7 @@ describe('the responses chain', () => {
     resolves([candidate(async () => stream(delta('hi'), completed('hi'), delta(' and more')))]);
 
     const { facts } = await serve(true);
-    const frames = await drain(facts['response.chat.responses.rendered']);
+    const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
 
     expect(frames.map(frame => frame.event)).toEqual([
       'response.output_text.delta',
@@ -269,7 +321,7 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.responses.rendered']).toMatchObject({
+    expect(withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult)).toMatchObject({
       id: 'resp_1',
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: 'hello' }] }],

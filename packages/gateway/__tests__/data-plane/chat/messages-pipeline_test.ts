@@ -1,10 +1,10 @@
 // The Messages chain, run. Assembly is checked where every family's is; what is written
 // down here is what only running it can say — that the edge writes Anthropic's own named
 // SSE events when the client asked to stream and reassembles them into one message when it
-// did not, that a refusal keeps the upstream's own status and words, that a dial nobody
-// answered is a value the fork can move past, that the beta flags travel on their typed
-// path rather than as a header, and that what the two usage-bearing events add up to is
-// billed in the metrics settlement reads.
+// did not, that it hands the turn's own state back for the client to carry, that a refusal
+// keeps the upstream's own status and words, that a dial nobody answered is a value the fork
+// can move past, that the beta flags travel on their typed path rather than as a header, and
+// that what the two usage-bearing events add up to is billed in the metrics settlement reads.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -122,7 +122,9 @@ const serveWith = async (
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
-    selectAffinity: () => {},
+    // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
+    // chain named here.
+    selectAffinity: (selected: ModelCandidate) => { gateway.affinity.select(selected); },
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
       if (found === undefined) throw new Error(`no live candidate for ${selector.upstreamId}`);
@@ -136,6 +138,34 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
   for await (const frame of rendered as AsyncIterable<SseFrame>) frames.push(frame);
   return frames;
 };
+
+// The carrier the edge writes back is a redacted_thinking block holding this turn's own
+// state. Messages has real block boundaries, so it takes content block 0 of its own: its
+// start and stop are the two extra frames, and the turn's own blocks answer behind it.
+
+/** The turn's own frames, with the carrier block's dropped. */
+const withoutCarrier = (frames: readonly SseFrame[]): readonly SseFrame[] => {
+  const carrierBlocks = new Set<number>();
+  return frames.filter(frame => {
+    const event = JSON.parse(frame.data) as {
+      readonly type: string;
+      readonly index?: number;
+      readonly content_block?: { readonly type: string };
+    };
+    if (event.index === undefined) return true;
+    if (event.type === 'content_block_start' && event.content_block?.type === 'redacted_thinking') {
+      carrierBlocks.add(event.index);
+    }
+    return !carrierBlocks.has(event.index);
+  });
+};
+
+/** The same events, at the block index the carrier leaves them at. */
+const behindCarrier = (events: readonly unknown[]): readonly unknown[] =>
+  events.map(event => {
+    const block = event as { readonly index?: number };
+    return block.index === undefined ? event : { ...block, index: block.index + 1 };
+  });
 
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
@@ -180,14 +210,36 @@ describe('the messages chain', () => {
     resolves([candidate(async () => stream(turn('he', 'llo')))]);
 
     const { facts } = await serve(true);
-    const frames = await collect(facts['response.chat.messages.rendered']);
+    const frames = withoutCarrier(await collect(facts['response.chat.messages.rendered']));
 
     expect(facts['response.http.status']).toBe(200);
     expect(frames.map(frame => frame.event)).toEqual([
       'message_start', 'content_block_start', 'content_block_delta', 'content_block_delta',
       'content_block_stop', 'message_delta', 'message_stop',
     ]);
-    expect(frames.map(frame => frame.data)).toEqual(turn('he', 'llo').map(event => JSON.stringify(event)));
+    expect(frames.map(frame => frame.data)).toEqual(behindCarrier(turn('he', 'llo')).map(event => JSON.stringify(event)));
+  });
+
+  // The other half of affinity: the resolver reads client-carried state on the way down, and
+  // this is what the client is given to carry back. A turn that handed back nothing would
+  // leave the follow-up quoting it with no way to name the upstream that issued it.
+  it('hands the turn-s own state back on a block of its own', async () => {
+    resolves([candidate(async () => stream(turn('hi')))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts } = await serveWith(gateway, true);
+    const frames = await collect(facts['response.chat.messages.rendered']);
+    const carrier = frames
+      .map(frame => JSON.parse(frame.data) as { readonly type: string; readonly content_block?: { readonly type: string; readonly data: string } })
+      .filter(event => event.type === 'content_block_start' && event.content_block?.type === 'redacted_thinking');
+
+    expect(carrier).toHaveLength(1);
+    // It names the upstream that answered, sealed under this run's own secret — which is what
+    // lets the next turn be pinned to it.
+    expect(await gateway.affinity.codec.unwrap(carrier[0]!.content_block!.data, 'messages.redacted_thinking.data')).toMatchObject({
+      kind: 'owned',
+      affinity: { upstreamId: 'up_a', modelId: 'claude-model' },
+    });
   });
 
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to
@@ -198,14 +250,14 @@ describe('the messages chain', () => {
     const { facts } = await serve(false);
     const rendered = facts['response.chat.messages.rendered'] as {
       readonly type: string;
-      readonly content: readonly { readonly text: string }[];
+      readonly content: readonly { readonly type: string; readonly text?: string }[];
       readonly stop_reason: string;
       readonly usage: { readonly input_tokens: number; readonly output_tokens: number };
     };
 
     expect(facts['response.http.status']).toBe(200);
     expect(rendered.type).toBe('message');
-    expect(rendered.content.map(block => block.text)).toEqual(['hello']);
+    expect(rendered.content.filter(block => block.type !== 'redacted_thinking').map(block => block.text)).toEqual(['hello']);
     expect(rendered.stop_reason).toBe('end_turn');
     expect(rendered.usage).toMatchObject({ input_tokens: 5, output_tokens: 7 });
   });
@@ -323,7 +375,7 @@ describe('the messages chain', () => {
     resolves([candidate(async () => stream([...turn('hi'), textDelta(' and more')]))]);
 
     const { facts } = await serve(true);
-    const frames = await collect(facts['response.chat.messages.rendered']);
+    const frames = withoutCarrier(await collect(facts['response.chat.messages.rendered']));
 
     expect(frames.map(frame => frame.event)).toEqual([
       'message_start', 'content_block_start', 'content_block_delta',

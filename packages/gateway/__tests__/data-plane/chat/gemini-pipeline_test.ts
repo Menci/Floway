@@ -1,7 +1,8 @@
 // Gemini's pipeline, assembled and run. Gemini is the source-only family and the one with no
 // wire of its own, so what a run of it has to show beyond the entry contract is the round
-// trip: a turn translated out to Chat Completions, an answer translated back, and the reading
-// taken on the dialect the upstream actually spoke rather than on the one the client did.
+// trip: a turn translated out to Chat Completions, an answer translated back, the turn's own
+// state handed back on a Part for the client to carry, and the reading taken on the dialect
+// the upstream actually spoke rather than on the one the client did.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +13,7 @@ import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiPayload } from '@floway-dev/protocols/gemini';
+import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiPayload, type GeminiResult } from '@floway-dev/protocols/gemini';
 import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -141,7 +142,9 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: 
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
     chatPayloadFor: () => { asked += 1; return affinityPayload; },
-    selectAffinity: (candidate: ModelCandidate) => { selected.push(candidate); },
+    // Wired where the app wires it: the carrier the edge writes is addressed to whatever the
+    // chain named here.
+    selectAffinity: (answered: ModelCandidate) => { selected.push(answered); gateway.affinity.select(answered); },
     resolveAttempt,
   } as never,
 );
@@ -160,6 +163,27 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
   for await (const frame of rendered as AsyncIterable<SseFrame>) frames.push(frame);
   return frames;
 };
+
+/** The turn's own answer. The carrier the edge writes back rides as a `thoughtSignature` on
+ *  a Part rather than as an event of its own, so taking it off leaves what Gemini itself
+ *  said. */
+const withoutCarrier = (event: GeminiResult): GeminiResult => ({
+  ...event,
+  ...(event.candidates === undefined ? {} : {
+    candidates: event.candidates.map(candidate => ({
+      ...candidate,
+      content: {
+        ...candidate.content,
+        parts: candidate.content.parts.map(({ thoughtSignature: _carried, ...part }) => part),
+      },
+    })),
+  }),
+});
+
+/** Every piece of this turn's own state the client was handed back. */
+const affinityCarriers = (events: readonly GeminiResult[]): readonly string[] =>
+  events.flatMap(event => (event.candidates ?? []).flatMap(candidate =>
+    candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
 
 describe('the gemini pipeline', () => {
   // The whole entry contract, and it does not mention `request.chat.gemini`: the turn the
@@ -183,7 +207,8 @@ describe('the gemini pipeline', () => {
 
     // The answer comes back before the drain runs, which is what lets a streaming family
     // hand its stream on: the frames are still there to read.
-    expect((await collect(facts['response.chat.gemini.rendered'])).map(frame => JSON.parse(frame.data) as unknown)).toEqual([
+    expect((await collect(facts['response.chat.gemini.rendered']))
+      .map(frame => withoutCarrier(JSON.parse(frame.data) as GeminiResult))).toEqual([
       { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }] } }] },
       {
         candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'llo' }] }, finishReason: 'STOP' }],
@@ -229,11 +254,34 @@ describe('the gemini pipeline', () => {
 
     const { facts, drain } = await serve(entryFacts({ 'ingress.chat.gemini.wantsStream': false }));
 
-    expect(facts['response.chat.gemini.rendered']).toEqual({
-      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hello' }] }, finishReason: 'STOP' }],
+    // The two chunks stay two Parts: the carrier signs the Part it rides on, and merging a
+    // signed Part into its neighbour would spread that signature over text it does not cover.
+    expect(withoutCarrier(facts['response.chat.gemini.rendered'] as GeminiResult)).toEqual({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }, { text: 'llo' }] }, finishReason: 'STOP' }],
       usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 7, totalTokenCount: 12 },
     });
     expect(facts['response.http.status']).toBe(200);
+    await drain();
+  });
+
+  // The other half of affinity: the resolver reads client-carried state on the way down, and
+  // this is what the client is given to carry back. A turn that handed back nothing would
+  // leave the follow-up quoting it with no way to name the upstream that issued it.
+  it('hands the turn-s own state back on the Part that answered', async () => {
+    resolves([candidate('up_a', async () => streamed(turn()))]);
+    const gateway = mockChatGatewayCtx({ wantsStream: true });
+
+    const { facts, drain } = await serveWith(gateway, entryFacts());
+    const frames = await collect(facts['response.chat.gemini.rendered']);
+    const carried = affinityCarriers(frames.map(frame => JSON.parse(frame.data) as GeminiResult));
+
+    expect(carried).toHaveLength(1);
+    // It names the upstream that answered, sealed under this run's own secret — which is what
+    // lets the next turn be pinned to it.
+    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'gemini.part.thoughtSignature')).toMatchObject({
+      kind: 'owned',
+      affinity: { upstreamId: 'up_a', modelId: 'gemini-2.5-pro' },
+    });
     await drain();
   });
 
