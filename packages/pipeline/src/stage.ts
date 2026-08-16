@@ -144,11 +144,17 @@ export function defineStage<Rq extends object, Rs extends object, S extends obje
 }): Stage;
 
 // 2. through + return — may answer, may go down. A cache has this shape.
-export function defineStage<Rq extends object, Down extends object, Up extends object, Rs extends object, S extends object = object>(s: {
+//
+// `Answer` is its own parameter, because what a stage provides when it short-circuits and
+// what it provides when it descends are two statements, not one — which is what the
+// declaration already says by having two blocks, and what `compose` already checks
+// separately. A stage that answers with a key its descend path never carries is ordinary:
+// a resolver refusing a request it found no upstream for has exactly that shape.
+export function defineStage<Rq extends object, Down extends object, Up extends object, Rs extends object, Answer extends object = Rs, S extends object = object>(s: {
   name: string;
   through: PassDecl<Rq, Down, Up, Rs>;
-  return: ReturnDecl<Rs>;
-  execute: (facts: Rq, next: ThroughNext<Down, Up>, use: Use<S>) => Promise<Handed<Rs>>;
+  return: ReturnDecl<Answer>;
+  execute: (facts: Rq, next: ThroughNext<Down, Up>, use: Use<S>) => Promise<Handed<Rs> | Handed<Answer>>;
 }): Stage;
 
 // 3. through — must go down; it cannot answer on its own.
@@ -158,12 +164,13 @@ export function defineStage<Rq extends object, Down extends object, Up extends o
   execute: (facts: Rq, next: ThroughNext<Down, Up>, use: Use<S>) => Promise<Handed<Rs>>;
 }): Stage;
 
-// 4. into + return — may answer, or hand off to a named pipeline.
-export function defineStage<Rq extends object, Entry extends object, Up extends object, Rs extends object, S extends object = object>(s: {
+// 4. into + return — may answer, or hand off to a named pipeline. `Answer` is separate for
+// the same reason as shape 2.
+export function defineStage<Rq extends object, Entry extends object, Up extends object, Rs extends object, Answer extends object = Rs, S extends object = object>(s: {
   name: string;
   into: PassDecl<Rq, Entry, Up, Rs>;
-  return: ReturnDecl<Rs>;
-  execute: (facts: Rq, next: IntoNext<Entry, Up>, use: Use<S>) => Promise<Handed<Rs>>;
+  return: ReturnDecl<Answer>;
+  execute: (facts: Rq, next: IntoNext<Entry, Up>, use: Use<S>) => Promise<Handed<Rs> | Handed<Answer>>;
 }): Stage;
 
 // 5. into — must hand off.

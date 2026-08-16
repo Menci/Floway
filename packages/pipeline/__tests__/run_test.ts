@@ -518,6 +518,34 @@ describe('runs beside each other', () => {
       .toEqual(['launcher', 'failover', 'callUpstream']);
   });
 
+  // What a stage provides when it short-circuits and what it provides when it descends are
+  // two statements, not one. A resolver that refuses a request it found no upstream for
+  // answers with a key its descend path never carries, and that has to be expressible.
+  it('lets a stage answer with a key its descend path never carries', async () => {
+    const refuses = defineStage<
+      Core<'in.words'>, Core<'in.words'>, Core<'out.result'>, Core<'out.result'>,
+      Core<'out.result'> & { 'out.refusal': string }
+    >({
+      name: 'refuses',
+      through: {
+        request: { needs: ['in.words'], consumes: [], provides: [] },
+        response: { needs: ['out.result'], consumes: [], provides: [] },
+      },
+      return: { provides: ['out.result', 'out.refusal'] },
+      execute: async (facts, next) => (facts['in.words'].length === 0
+        ? move({ ...facts, 'out.result': { failed: 'nothing to do' }, 'out.refusal': 'empty input' })
+        : await next(facts)),
+    });
+    const pipeline = compose<Core<'in.words'>, Core<'out.result'>>('refusing', [
+      refuses, callUpstream(makeProvider('tok', [])),
+    ]);
+    const refused = await run(pipeline, move({ 'in.words': [] }), PLAIN);
+    expect(refused.facts).toMatchObject({ 'out.refusal': 'empty input' });
+    const served = await run(pipeline, move({ 'in.words': ['a'], 'route.candidate': 'steady' }), PLAIN);
+    expect(served.facts['out.result']).toEqual({ ok: 'tok:a' });
+    expect('out.refusal' in served.facts).toBe(false);
+  });
+
   it('runs a stage carrying both traits, one way each time', async () => {
     const attempt = attemptPipeline(makeProvider('tok', []), ['steady']);
     const short = compose<Core<'in.words'>, Core<'out.result'>>('short', [handoffUnlessEmpty(attempt)]);
