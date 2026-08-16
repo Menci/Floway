@@ -2,7 +2,7 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import { assertAllowedObjectKeys, isUnsafeObjectKey } from './auth/parse-helpers.ts';
+import { assertAllowedObjectKeys, assertStringOrNull, isUnsafeObjectKey } from './auth/parse-helpers.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
@@ -197,12 +197,8 @@ const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void =
 
 const assertCodexAccountCredential = (value: unknown, where: string): void => {
   const obj = assertAllowedObjectKeys(value, where, CREDENTIAL_ALLOWED_KEYS);
-  if (obj.chatgptAccountId !== null && (typeof obj.chatgptAccountId !== 'string' || obj.chatgptAccountId === '')) {
-    throw new TypeError(`${where}.chatgptAccountId must be a non-empty string or null`);
-  }
-  if (obj.refresh_token !== null && (typeof obj.refresh_token !== 'string' || obj.refresh_token === '')) {
-    throw new TypeError(`${where}.refresh_token must be a non-empty string or null`);
-  }
+  assertStringOrNull(obj.chatgptAccountId, `${where}.chatgptAccountId`);
+  assertStringOrNull(obj.refresh_token, `${where}.refresh_token`);
   if (obj.state !== 'active' && obj.state !== 'session_terminated' && obj.state !== 'refresh_failed') {
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
   }

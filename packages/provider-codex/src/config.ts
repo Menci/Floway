@@ -1,4 +1,4 @@
-import { assertAllowedObjectKeys } from './auth/parse-helpers.ts';
+import { assertAllowedObjectKeys, assertStringOrNull } from './auth/parse-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 // One Codex account's operator-managed identity, derived from explicit import
@@ -38,15 +38,6 @@ const IDENTITY_KEYS: readonly (keyof CodexAccountIdentity)[] = ['email', 'chatgp
 const CONFIG_KEYS_SET: ReadonlySet<string> = new Set(['accounts']);
 const IDENTITY_KEYS_SET: ReadonlySet<string> = new Set(IDENTITY_KEYS);
 
-// An absent value is written as an explicit `null`, so a missing key and an
-// empty string both stay rejected — the document says what it knows and what
-// it does not, and never leaves the reader guessing which.
-function assertIdentityValue(value: unknown, where: string): asserts value is string | null {
-  if (value !== null && (typeof value !== 'string' || value === '')) {
-    throw new TypeError(`${where} must be a non-empty string or null`);
-  }
-}
-
 // The generic upstream PATCH may correct display metadata an import could not
 // infer, but `chatgptAccountId` is the join key between config and state, so
 // changing it would orphan the stored credential. It may only be restated as
@@ -71,7 +62,7 @@ export const patchCodexIdentityMetadata = (
     if (!IDENTITY_KEYS_SET.has(key)) throw new TypeError(`Codex config metadata patch account has unexpected key '${key}'`);
   }
   if (accountPatch.chatgptAccountId !== undefined) {
-    assertIdentityValue(accountPatch.chatgptAccountId, 'Codex config metadata patch chatgptAccountId');
+    assertStringOrNull(accountPatch.chatgptAccountId, 'Codex config metadata patch chatgptAccountId');
     if (accountPatch.chatgptAccountId !== current.accounts[0].chatgptAccountId) {
       throw new TypeError('Codex ChatGPT account ID can only be changed by re-importing credentials');
     }
@@ -81,7 +72,7 @@ export const patchCodexIdentityMetadata = (
   for (const key of ['email', 'chatgptUserId', 'planType'] as const) {
     const value = accountPatch[key];
     if (value === undefined) continue;
-    assertIdentityValue(value, `Codex config metadata patch ${key}`);
+    assertStringOrNull(value, `Codex config metadata patch ${key}`);
     next[key] = value;
   }
   return { accounts: [next] };
@@ -101,7 +92,7 @@ function assertCodexUpstreamConfig(value: unknown): asserts value is CodexUpstre
     const where = `CodexUpstreamConfig.accounts[${i}]`;
     const acc = assertAllowedObjectKeys(obj.accounts[i], where, IDENTITY_KEYS_SET);
     for (const key of IDENTITY_KEYS) {
-      assertIdentityValue(acc[key], `${where}.${key}`);
+      assertStringOrNull(acc[key], `${where}.${key}`);
     }
   }
 }

@@ -26,6 +26,13 @@ export const requireString = (value: unknown, where: string): string => {
   return value;
 };
 
+// A null field records absence; anything else must be a non-empty string.
+export const assertStringOrNull: (value: unknown, where: string) => asserts value is string | null = (value, where) => {
+  if (value !== null && (typeof value !== 'string' || value === '')) {
+    throw new TypeError(`${where} must be a non-empty string or null`);
+  }
+};
+
 // An empty string reads as absent rather than as an error: exporters routinely
 // serialize an unset optional field as `""`, and an operator clearing a form
 // field means the same thing as never filling it in.
