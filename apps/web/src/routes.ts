@@ -3,7 +3,7 @@ import { type RouteConfig, index, route } from '@react-router/dev/routes';
 import { LEGACY_REDIRECT_RULES } from './lib/legacy-redirects';
 
 const legacyRedirectRoute = (path: string) =>
-  route(path, 'routes/legacy-redirects.ts', { id: `routes/legacy-redirects-${path.replace(/[^\w]+/g, '-')}` });
+  route(path, 'routes/legacy-redirects.tsx', { id: `routes/legacy-redirects-${path.replace(/[^\w]+/g, '-')}` });
 
 const rootLegacyRoutes = LEGACY_REDIRECT_RULES
   .map(rule => rule.from)
