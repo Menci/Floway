@@ -316,18 +316,7 @@ export const persistCodexRefreshFailure = async (
   accountId: string | null,
   message: string,
 ): Promise<void> => {
-  const failedAt = new Date().toISOString();
-  await updateCodexAccountState(upstreamId, accountId, failedAt, account => {
-    // Clear any cached access token on the terminal flip — once the
-    // credential is dead the cached token is dead too, and leaving it would
-    // confuse the dashboard's status panel.
-    return {
-      ...account,
-      state: 'refresh_failed' as const,
-      state_message: message,
-      accessToken: null,
-    };
-  });
+  return persistCodexTerminalState(upstreamId, accountId, 'refresh_failed', message);
 };
 
 export const persistCodexTerminalState = async (
