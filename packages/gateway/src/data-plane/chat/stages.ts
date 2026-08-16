@@ -32,6 +32,10 @@ export interface ChatServices extends GatewayServices {
   readonly selectAffinity: (candidate: ModelCandidate) => void;
 }
 
+/** Why the gateway refused before it reached an upstream. A protocol's envelope names the
+ *  condition in its own words, and this is what it names. */
+export type ChatRefusal = 'routing-unavailable' | 'model-unsupported' | 'model-missing';
+
 /** How a source protocol narrows and orders the candidates that could serve it. */
 export interface ChatNarrowing<Refusal extends object> {
   readonly source: ChatSourceProtocol;
@@ -43,7 +47,7 @@ export interface ChatNarrowing<Refusal extends object> {
    *  upstream that issued it, so this runs before any candidate is tried. */
   readonly affinity: (gateway: ChatGatewayCtx) => Promise<AffinityRequestAnalysis<unknown>>;
   readonly unsupported: (model: string) => string;
-  readonly refuse: (status: number, message: string) => Refusal;
+  readonly refuse: (status: number, message: string, reason: ChatRefusal) => Refusal;
   readonly refuses: readonly (keyof Refusal)[];
 }
 
@@ -82,12 +86,12 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
 
     // An empty billed set is what "we did not call an upstream" looks like, and an empty
     // header list is the same statement on the other key.
-    const refuse = (status: number, message: string) =>
+    const refuse = (status: number, message: string, reason: ChatRefusal) =>
       move({
         ...facts,
         'response.usage.billable': [],
         'response.http.headers': [],
-        ...narrowing.refuse(status, message),
+        ...narrowing.refuse(status, message, reason),
       });
 
     const viable = candidates.filter(candidate => narrowing.canServe(candidate));
@@ -95,12 +99,12 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
     // A turn whose carried state needs two upstreams at once is a request the client can fix
     // by not carrying it, which is what every family called this before: a 400, not a
     // conflict with something the gateway holds.
-    if ('kind' in selection) return refuse(400, selection.message);
+    if ('kind' in selection) return refuse(400, selection.message, 'routing-unavailable');
     if (selection.candidates.length === 0) {
       const missing = sawModel
         ? narrowing.unsupported(model)
         : `Model ${model} is not available on any configured upstream.`;
-      return refuse(sawModel ? 400 : 404, appendFailedUpstreams(missing, failedUpstreams));
+      return refuse(sawModel ? 400 : 404, appendFailedUpstreams(missing, failedUpstreams), sawModel ? 'model-unsupported' : 'model-missing');
     }
 
     // The live half stays with the resolver; only selectors travel. The payload a candidate

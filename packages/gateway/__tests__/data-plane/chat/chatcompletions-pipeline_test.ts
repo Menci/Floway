@@ -211,6 +211,20 @@ describe('the chat completions chain', () => {
     expect(billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
   });
 
+  // A refusal the gateway made itself has no upstream body to forward, and that is the one
+  // case where the client's own protocol decides the shape. An OpenAI client reads
+  // error.type, and `api_error` would say the gateway broke rather than that the request did.
+  it('names its own refusal in the type an OpenAI client reads', async () => {
+    vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates: [], sawModel: true, failedUpstreams: [] } as never);
+
+    const { facts } = await serve(false);
+
+    expect(facts['response.http.status']).toBe(400);
+    expect(facts['response.chat.chatCompletions.rendered']).toEqual({
+      error: { message: 'Model chat-model does not support the /chat/completions endpoint.', type: 'invalid_request_error' },
+    });
+  });
+
   // A refused connection is an outcome the fork has to be able to see, not a fault that ends
   // the run — so the second candidate is tried and its answer is the one served.
   it('fails a dial that never connected over to the next candidate', async () => {

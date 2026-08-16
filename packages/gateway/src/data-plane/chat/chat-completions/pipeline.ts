@@ -40,7 +40,7 @@ import {
   type ChatCompletionsPayload,
   type ChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/chat-completions';
-import { renderErrorEnvelope, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** `/v1/chat/completions` prefers its own wire, then the translated Messages path, then the
@@ -100,7 +100,10 @@ const emitChatCompletions = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.chatCompletions.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.chat.chatCompletions.rendered': move(renderProtocolError(
+          answer.body,
+          () => answer.envelope ?? { error: { message: answer.message, type: 'api_error' } },
+        )),
         'response.http.status': answer.status,
       };
     }
@@ -288,7 +291,21 @@ const narrowing = (payload: ChatCompletionsPayload): ChatNarrowing<C<'response.c
   canServe: candidate => chatCompletionsTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeChatCompletionsAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /chat/completions endpoint.`,
-  refuse: (status, message) => ({ 'response.chat.chatCompletions': { status, message } }),
+  refuse: (status, message, reason) => ({
+    'response.chat.chatCompletions': {
+      status,
+      message,
+      // What an OpenAI client reads: the condition's own type, and for a turn whose carried
+      // state cannot be routed, the field at fault and the code that names it.
+      envelope: {
+        error: {
+          message,
+          type: 'invalid_request_error',
+          ...(reason === 'routing-unavailable' ? { param: 'input', code: 'responses_item_routing_unavailable' } : {}),
+        },
+      },
+    },
+  }),
   refuses: ['response.chat.chatCompletions'],
 });
 

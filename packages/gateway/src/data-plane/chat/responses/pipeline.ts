@@ -48,7 +48,7 @@ import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
-import { doneFrame, renderErrorEnvelope, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
   isResponsesTerminalEvent,
@@ -113,7 +113,10 @@ const emitResponses = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.responses.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.chat.responses.rendered': move(renderProtocolError(
+          answer.body,
+          () => answer.envelope ?? { error: { message: answer.message, type: 'api_error' } },
+        )),
         'response.http.status': answer.status,
       };
     }
@@ -339,7 +342,21 @@ const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'respons
   canServe: candidate => responsesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeResponsesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
-  refuse: (status, message) => ({ 'response.chat.responses': { status, message } }),
+  refuse: (status, message, reason) => ({
+    'response.chat.responses': {
+      status,
+      message,
+      // What an OpenAI client reads: the condition's own type, and for a turn whose carried
+      // state cannot be routed, the field at fault and the code that names it.
+      envelope: {
+        error: {
+          message,
+          type: 'invalid_request_error',
+          ...(reason === 'routing-unavailable' ? { param: 'input', code: 'responses_item_routing_unavailable' } : {}),
+        },
+      },
+    },
+  }),
   refuses: ['response.chat.responses'],
 });
 

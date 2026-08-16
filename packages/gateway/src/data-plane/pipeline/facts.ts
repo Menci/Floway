@@ -45,6 +45,11 @@ export interface Failure {
   /** The upstream's own body, when there was one. A client is not owed the upstream's
    *  exact bytes, but a dump reader is owed what actually came back. */
   readonly body?: unknown;
+  /** What the gateway itself would write, when the refusal is its own. A protocol's envelope
+   *  carries more than a status and a sentence — which field was at fault, which code names
+   *  the condition — and only whoever refused knows those, so it is written where the refusal
+   *  is made rather than derived from the status where it is rendered. */
+  readonly envelope?: Record<string, unknown>;
 }
 
 export const isFailure = (value: unknown): value is Failure =>
