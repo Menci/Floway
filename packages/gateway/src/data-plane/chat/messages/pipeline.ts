@@ -1,0 +1,309 @@
+// Messages as a pipeline, on the chain Chat Completions established.
+//
+//   emitMessages           the edge: writes the answer in the shape the client asked for
+//   writeSettlement        above the fork, so a run bills once however many wires it tried
+//   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
+//   failover               runs what follows once per candidate
+//   callMessagesUpstream   the ending: dials this candidate's wire
+//
+// Only the native wire is here. The translated ones — Messages via Responses and Messages
+// via Chat Completions — hand up the same `response.chat.messages` key, which is what will
+// make them interchangeable with this one, and each is a step of its own. So is
+// `/v1/messages/count_tokens`: a second operation over this protocol rather than another
+// wire under this pipeline. This family's own interceptors are not stages yet either, so
+// the array between the fork and the ending is empty rather than short.
+
+import { analyzeMessagesAffinity } from './affinity/ingress.ts';
+import { createMessagesBillableUsageReader } from './usage.ts';
+import type { UsageQuantities } from '../../../repo/types.ts';
+import type { BillableEntity } from '../../pipeline/facts.ts';
+import { isFailure } from '../../pipeline/facts.ts';
+import { writeSettlement } from '../../pipeline/settlement.ts';
+import { failover } from '../../pipeline/stages.ts';
+import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
+import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
+import type { ChatFacts } from '../facts.ts';
+import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
+import { chatTargetPicker } from '../shared/target-picker.ts';
+import { resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
+import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { renderErrorEnvelope, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import {
+  collectMessagesProtocolEventsToResult,
+  messagesProtocolFrameToSSEFrame,
+  parseAnthropicBetaHeader,
+  type MessagesPayload,
+  type MessagesStreamEvent,
+} from '@floway-dev/protocols/messages';
+import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
+
+/** `/v1/messages` prefers its own wire, then the translated Responses path, then the
+ *  translated Chat Completions path. */
+export const messagesTarget = chatTargetPicker(['messages', 'responses', 'chat-completions']);
+
+/** What this family adds to the chat space. */
+export interface MessagesFacts extends ChatFacts {
+  /** What the client is actually sent — an object when it asked for one, SSE frames when it
+   *  asked to stream. The edge provides it, so a dump shows what the client received. */
+  'response.chat.messages.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  /** What the upstream will have reported once the frames run out, and `null` when nothing
+   *  streamed. Settling from this is the epilogue's job, after the drain. */
+  'response.chat.messages.streamedUsage': Promise<readonly BillableEntity[]> | null;
+}
+
+type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
+
+/**
+ * The outermost edge. A Messages answer is always a stream by the time it reaches here —
+ * the upstream speaks SSE whatever the client asked for — so what this decides is whether
+ * the client sees the frames or the one message they add up to.
+ *
+ * Collecting is therefore the edge's own work and not a second reading of the upstream: the
+ * same frames that would have gone out are folded here instead, by the protocol's own
+ * reassembly, which is what makes a stream that stopped short of `message_stop` say so
+ * rather than answer with half a message.
+ */
+const emitMessages = defineStage<
+  M<'ingress.chat.messages.wantsStream'>,
+  M<'ingress.chat.messages.wantsStream'>,
+  M<'ingress.chat.messages.wantsStream' | 'response.chat.messages' | 'response.http.headers'>,
+  M<'response.chat.messages.rendered' | 'response.http.status' | 'response.http.headers'>
+>({
+  name: 'emitMessages',
+  through: {
+    request: { needs: ['ingress.chat.messages.wantsStream'], consumes: [], provides: [] },
+    response: {
+      needs: ['response.chat.messages', 'response.http.headers'],
+      consumes: ['response.chat.messages', 'response.http.headers'],
+      provides: ['response.chat.messages.rendered', 'response.http.status', 'response.http.headers'],
+    },
+  },
+  execute: async (facts, next) => {
+    const back = await next(facts);
+    const { 'response.chat.messages': answer, 'response.http.headers': headers, ...rest } = back;
+    // Vendor traces and quota state stay visible; what an intermediary must strip, and what
+    // would misdescribe a body this gateway serialized itself, does not. A filter that removed
+    // nothing hands the same array on, so the record shows no change where none happened.
+    const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
+
+    if (isFailure(answer)) {
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.chat.messages.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.http.status': answer.status,
+      };
+    }
+    if (answer.kind === 'value') {
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.chat.messages.rendered': move(answer.body as Record<string, unknown>),
+        'response.http.status': 200,
+      };
+    }
+
+    const frames = answer.frames as AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
+    if (!back['ingress.chat.messages.wantsStream']) {
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.chat.messages.rendered': move(
+          await collectMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+        ),
+        'response.http.status': 200,
+      };
+    }
+    return {
+      ...rest,
+      'response.http.headers': forClient,
+      'response.chat.messages.rendered': renderSSE(frames),
+      'response.http.status': 200,
+    };
+  },
+});
+
+/** Anthropic names its own SSE events, and every frame that has one is the client's. Which
+ *  frames have an SSE form at all is the protocol's to say, and it says so by writing no
+ *  frame — a stream terminator is a Chat Completions idea and there is nothing to send for
+ *  it here. */
+const renderSSE = (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncIterable<SseFrame> => ({
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) {
+      const written = messagesProtocolFrameToSSEFrame(frame);
+      if (written !== null) yield written;
+    }
+  })(),
+});
+
+/**
+ * The native wire. It dials Messages and provides the answer at this family's own response
+ * key — which is what will make it interchangeable with a translated chain: both hand up
+ * `response.chat.messages`, and the stage above cannot tell which ran.
+ */
+const callMessagesUpstream = defineStage<
+  M<'request.chat.messages' | 'route.attempt' | 'ingress.http.headers'>,
+  M<'response.chat.messages' | 'response.chat.messages.streamedUsage'
+  | 'response.usage.billable' | 'response.http.headers'>,
+  ChatServices
+>({
+  name: 'callMessagesUpstream',
+  return: {
+    provides: [
+      'response.chat.messages',
+      'response.chat.messages.streamedUsage',
+      'response.usage.billable',
+      'response.http.headers',
+    ],
+  },
+  execute: async (facts, use) => {
+    const candidate = use.resolveAttempt(facts['route.attempt']);
+    // Attribution is set before the dial, so an attempt that never completes still names the
+    // candidate it was made against rather than the one tried before it.
+    use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
+
+    // The id the client addressed does not travel: the provider re-stamps whatever it
+    // resolved upstream, and an alias' own rules are applied to the body that is sent.
+    const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
+    if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
+    const { model: _addressed, ...body } = payload;
+
+    // The client's own headers reach the upstream from the record, not from a live request
+    // object: what a provider is allowed to forward is filtered per provider, and the dump
+    // shows what was there to filter. Anthropic's beta flags are the exception — they have a
+    // typed path of their own so no header allowlist can admit them and no other source
+    // protocol can leak them in, which is why the field is read off and then dropped.
+    const headers = new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]));
+    const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
+    headers.delete('anthropic-beta');
+
+    let result;
+    try {
+      result = await candidate.provider.instance.callMessages(
+        providerModelOf(candidate),
+        body,
+        use.gateway.abortSignal,
+        { ...buildUpstreamCallOptions(candidate, use.gateway, headers), anthropicBeta },
+      );
+    } catch (error) {
+      use.log.warn('dial failed', { upstream: facts['route.attempt'].upstreamId, error: String(error) });
+      // A dial that never completed reached no upstream, so nothing was billed and there are
+      // no headers to carry. What it leaves behind is the performance row settlement writes.
+      return move({
+        ...facts,
+        'response.chat.messages': { status: 502, message: error instanceof Error ? error.message : String(error) },
+        'response.chat.messages.streamedUsage': null,
+        'response.usage.billable': [],
+        'response.http.headers': [],
+      });
+    }
+
+    const identity = telemetryModelIdentity(candidate, result.modelKey);
+    // An upstream that was called and reported nothing, which is a different statement from
+    // reporting zero.
+    const called: readonly BillableEntity[] = [{ identity, quantities: {} }];
+
+    if (!result.ok) {
+      const text = await result.response.text();
+      use.log.warn('upstream refused', { status: result.response.status });
+      let parsed: unknown;
+      try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }
+      return move({
+        ...facts,
+        'response.chat.messages': {
+          status: result.response.status,
+          message: text,
+          ...(parsed === undefined ? {} : { body: parsed }),
+        },
+        'response.chat.messages.streamedUsage': null,
+        'response.usage.billable': called,
+        'response.http.headers': [...result.response.headers],
+      });
+    }
+
+    const metered = meterMessages(result.events, identity);
+    return move({
+      ...facts,
+      'response.chat.messages': { kind: 'stream' as const, frames: metered.frames },
+      'response.chat.messages.streamedUsage': metered.billable,
+      'response.usage.billable': called,
+      'response.http.headers': [...(result.headers ?? new Headers())],
+    });
+  },
+});
+
+/** Reads the upstream's own usage off its own events as they pass, so the reading costs one
+ *  pass and the client's stream is what drives it. Anthropic states input accounting on
+ *  `message_start` and output accounting on `message_delta`, so the reader that merges the
+ *  two is per-stream state and is made here rather than shared. */
+const meterMessages = (
+  source: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
+  identity: TelemetryModelIdentity,
+): { readonly frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
+  let settle!: (billable: readonly BillableEntity[]) => void;
+  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  const readBillableUsage = createMessagesBillableUsageReader();
+  const generator = (async function* () {
+    let reported: BillableUsage | undefined;
+    try {
+      for await (const frame of source) {
+        if (frame.type === 'event') {
+          const usage = readBillableUsage(frame.event);
+          if (usage !== null) reported = usage;
+        }
+        yield frame;
+      }
+    } finally {
+      // Reached however the frames ended — the terminal event, a client that stopped
+      // reading, or a broken upstream — because tokens the upstream already metered are
+      // billable whatever happened to the downstream half.
+      settle([{ identity, quantities: billed(reported) }]);
+    }
+  })();
+  return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
+};
+
+/** An upstream that reported nothing leaves no quantities at all, which is a different
+ *  statement from reporting zero. */
+const billed = (usage: BillableUsage | undefined): UsageQuantities =>
+  usage === undefined ? {} : tokenUsageFromBillableUsage(usage) as unknown as UsageQuantities;
+
+/** A candidate that cannot serve *this* request is not a candidate — and what the client's
+ *  own turn carries decides the order the rest are tried in, which is why the narrowing is
+ *  built from the request rather than being a constant. */
+const narrowing = (payload: MessagesPayload): ChatNarrowing<M<'response.chat.messages'>> => ({
+  source: 'messages',
+  canServe: candidate => messagesTarget.canServe(candidate.model.endpoints),
+  affinity: async gateway => await analyzeMessagesAffinity(payload, gateway.affinity.codec),
+  unsupported: model => `Model ${model} does not support the /messages endpoint.`,
+  refuse: (status, message) => ({ 'response.chat.messages': { status, message } }),
+  refuses: ['response.chat.messages'],
+});
+
+export type MessagesServeEntry = M<
+  'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'ingress.chat.messages.wantsStream'
+  | 'request.chat.messages' | 'serve.model'
+>;
+
+export type MessagesServeExit = M<
+  'response.chat.messages.rendered' | 'response.chat.messages.streamedUsage'
+  | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
+>;
+
+export const messagesServePipeline = (payload: MessagesPayload): Pipeline<MessagesServeEntry, MessagesServeExit> =>
+  compose('messagesServe', [
+    emitMessages,
+    writeSettlement(
+      handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages']),
+      handedUp => (handedUp as { 'response.chat.messages.streamedUsage'?: unknown })['response.chat.messages.streamedUsage'] !== null,
+    ),
+    resolveChatCandidates(narrowing(payload)),
+    failover({
+      failed: handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages']),
+      owns: [],
+    }),
+    callMessagesUpstream,
+  ]);

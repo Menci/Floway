@@ -23,7 +23,7 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
-  callChatCompletions: () => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>,
+  callChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>,
   upstreamId = 'up_a',
 ): ModelCandidate => {
   const endpoints = { chatCompletions: {} };
@@ -63,6 +63,10 @@ const stream = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStrea
 
 const payload = { model: 'chat-model', messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
 
+/** What affinity materialized for the candidate about to be dialled. It differs from the
+ *  payload the client sent, which is the point: carried state is rewritten per candidate. */
+let affinityPayload: ChatCompletionsPayload = payload;
+
 const serve = async (wantsStream: boolean) => await run(
   chatCompletionsServePipeline(payload),
   move({
@@ -78,7 +82,7 @@ const serve = async (wantsStream: boolean) => await run(
     background: () => {},
     rememberCandidates: () => {},
     rememberChatSelection: () => {},
-    chatPayloadFor: () => undefined,
+    chatPayloadFor: () => affinityPayload,
     selectAffinity: () => {},
     resolveAttempt: (selector: { readonly upstreamId: string }) => {
       const found = live.find(c => c.provider.upstreamId === selector.upstreamId);
@@ -97,6 +101,23 @@ beforeEach(() => {
 });
 
 describe('the chat completions chain', () => {
+  // Affinity rewrites client-carried state for the upstream that will see it, so the body
+  // that goes out is the one it materialized rather than the one the client sent.
+  it('sends the payload affinity materialized for the candidate it dialled', async () => {
+    let sent: Record<string, unknown> | undefined;
+    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as ChatCompletionsPayload;
+    resolves([candidate(async (_model, body) => {
+      sent = body as Record<string, unknown>;
+      return stream(chunk('hi'));
+    })]);
+
+    await serve(false);
+
+    expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
+    expect(sent).not.toHaveProperty('model');
+    affinityPayload = payload;
+  });
+
   it('writes the frames out when the client asked to stream', async () => {
     resolves([candidate(async () => stream(chunk('he'), chunk('llo')))]);
 

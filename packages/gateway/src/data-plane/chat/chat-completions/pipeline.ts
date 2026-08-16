@@ -173,9 +173,12 @@ const callChatCompletionsUpstream = defineStage<
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
-    // The id the client addressed does not travel: the provider re-stamps whatever it
-    // resolved upstream, and an alias' own rules are applied to the body that is sent.
-    const payload = { ...facts['request.chat.chatCompletions'], model: candidate.model.id };
+    // Affinity materializes the payload this candidate is owed: client-carried state is
+    // rewritten for the upstream that will see it, which is the whole reason a turn can be
+    // pinned at all. The id the client addressed does not travel — the provider re-stamps
+    // whatever it resolved upstream — and an alias' own rules apply to the body that is sent.
+    const asked = use.chatPayloadFor(facts['route.attempt']) as ChatCompletionsPayload;
+    const payload = { ...asked, model: candidate.model.id };
     if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
     const { model: _addressed, ...body } = payload;
 
@@ -226,6 +229,9 @@ const callChatCompletionsUpstream = defineStage<
       });
     }
 
+    // This candidate answered, so it is the one a follow-up turn carrying our own state
+    // must come back to.
+    use.selectAffinity(candidate);
     const metered = meterChatCompletions(result.events, identity);
     return move({
       ...facts,
