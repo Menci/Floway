@@ -78,7 +78,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey>(
       // is read as text and parsed only for whoever wants the object.
       const rewritten = trip.apiError?.({
         status: answer.status,
-        headers: new Headers(((up['response.http.headers'] ?? []) as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
+        headers: new Headers((up['response.http.headers'] as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
         body: new TextEncoder().encode(answer.message),
       });
       if (rewritten === undefined) return { ...up, [handoff.from.response]: answer } as never;

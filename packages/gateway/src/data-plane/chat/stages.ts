@@ -2,24 +2,26 @@
 //
 // Chat differs from the families in PR 2 in two ways, and both are here rather than in each
 // family. Candidates are ordered by affinity before they are tried, because client-carried
-// state pins a turn to the upstream that issued it. And the last stage picks a *wire*: a
-// candidate that serves this request may speak a different protocol than the client did, so
-// what follows the fork is decided per candidate rather than at assembly.
+// state pins a turn to the upstream that issued it. And the payload a candidate is dialled
+// with is that candidate's own, because affinity rewrites client-carried state for the
+// upstream that will see it — so it enters the record below the fork, where there is one
+// payload to speak of, rather than above it where there are as many as there are candidates.
 //
-// The second is why dispatch is an `into` stage. Only a pipeline's last stage may name what
-// comes next, and failover re-runs the whole suffix — including that last stage — so the
-// next candidate re-picks its own wire with no mechanism of its own.
+// When the translated wires land, which wire a candidate is dialled on will be decided per
+// candidate too, by the chain's last stage handing into the target's. Failover re-runs the
+// whole suffix including that stage, so the next candidate re-picks with no mechanism of its
+// own. Every chain here dials its own protocol, so nothing picks yet.
 
-import type { ChatSourceProtocol } from './facts.ts';
 import type { AttemptSelector, GatewayFacts } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
+import { selectorFor } from '../pipeline/stages.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { selectAffinityCandidates } from './shared/affinity/index.ts';
 import type { AffinityRequestAnalysis } from './shared/affinity/selection.ts';
 import type { ChatGatewayCtx } from './shared/gateway-ctx.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { providerModelOf, type ModelCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -38,7 +40,6 @@ export type ChatRefusal = 'routing-unavailable' | 'model-unsupported' | 'model-m
 
 /** How a source protocol narrows and orders the candidates that could serve it. */
 export interface ChatNarrowing<Refusal extends object> {
-  readonly source: ChatSourceProtocol;
   /** Which upstream wires this source prefers, in order. A candidate none of whose endpoints
    *  appear here cannot serve the request whatever else it offers. */
   readonly canServe: (candidate: ModelCandidate) => boolean;
@@ -143,13 +144,4 @@ export const materializeAttempt = (requestKey: string) => defineStage<
   },
   execute: async (facts, next, use) =>
     await next({ ...facts, [requestKey]: move(use.chatPayloadFor(facts['route.attempt'])) }),
-});
-
-/** Everything about a candidate that is data. The live half — the provider instance, the
- *  fetcher, the models cache — stays out of the record and is looked back up by the
- *  resolver service at the moment of the call. */
-const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
-  upstreamId: candidate.provider.upstreamId,
-  modelId: candidate.model.id,
-  flags: [...providerModelOf(candidate).enabledFlags],
 });

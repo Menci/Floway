@@ -297,7 +297,6 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
 const narrowing = (payload: ChatCompletionsPayload): ChatNarrowing<C<'response.chat.chatCompletions'>> => ({
-  source: 'chatCompletions',
   canServe: candidate => chatCompletionsTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeChatCompletionsAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /chat/completions endpoint.`,
