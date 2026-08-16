@@ -218,12 +218,14 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serve(true);
     for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
-    const billable = await facts['response.chat.chatCompletions.streamedUsage']!;
+    const outcome = await facts['response.chat.chatCompletions.streamedUsage']!;
 
-    expect(billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
+    expect(outcome.billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
     // A rate can depend on the tier and on how much input there was; both are selector
     // coordinates, so they travel as pricing facts rather than as quantities.
-    expect(billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
+    expect(outcome.billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
+    // The stream reached its terminator, so the turn produced what it said it would.
+    expect(outcome.failed).toBe(false);
   });
 
   // Time to first token is measured where the token is — an envelope frame is not one, and a

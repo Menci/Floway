@@ -38,8 +38,10 @@
 // that envelope maps to `INTERNAL`.
 
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';
+import { renderGeminiError } from './errors.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
@@ -52,7 +54,6 @@ import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { renderGeminiError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
@@ -78,7 +79,7 @@ export interface GeminiFacts extends ChatFacts {
   'response.chat.gemini.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.gemini.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  'response.chat.gemini.streamedUsage': Promise<StreamOutcome> | null;
 }
 
 type C<K extends keyof GeminiFacts> = { [P in K]: GeminiFacts[P] };
@@ -262,11 +263,14 @@ const callGeminiViaChatCompletions = defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state must
     // come back to.
     use.selectAffinity(candidate);
-    const metered = meterChatCompletions(result.events, identity, use.gateway.attempt);
+    // Where this turn ends is stated on the Gemini frames the client is handed, and what it
+    // billed is read on the Chat Completions wire below them.
+    const ending = { sawTerminal: false };
+    const metered = meterChatCompletions(result.events, identity, use.gateway.attempt, ending);
     return move({
       ...facts,
-      'response.chat.gemini': { kind: 'stream' as const, frames: geminiFramesUntilTerminal(trip.events(metered.frames)) },
-      'response.chat.gemini.streamedUsage': metered.billable,
+      'response.chat.gemini': { kind: 'stream' as const, frames: geminiFramesUntilTerminal(trip.events(metered.frames), ending) },
+      'response.chat.gemini.streamedUsage': metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -280,9 +284,13 @@ const meterChatCompletions = (
   source: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+  ending: { sawTerminal: boolean },
+): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+  let settle!: (outcome: StreamOutcome) => void;
+  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Running out without the terminal frame is what "it did not finish" means, and it is known
+  // at the same moment the usage is.
+  const sawTerminal = false;
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
     try {
@@ -303,23 +311,30 @@ const meterChatCompletions = (
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([billedEntity(reported, identity)]);
+      settle({ billable: [billedEntity(reported, identity)], failed: !ending.sawTerminal });
     }
   })();
-  return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
+  return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
 };
 
 /** Where a Gemini turn ends, stated on the frames the client is handed rather than on the
  *  wire below: a Chat Completions stream that closed cleanly without ever reporting a finish
  *  reason translates into candidates that never finish, and serving those would report a
  *  truncated answer as a whole one. */
-const geminiFramesUntilTerminal = (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): AsyncIterable<ProtocolFrame<GeminiStreamEvent>> => ({
+const geminiFramesUntilTerminal = (
+  frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
+  ending: { sawTerminal: boolean },
+): AsyncIterable<ProtocolFrame<GeminiStreamEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
       yield frame;
       // The turn is over, so there is nothing further to read; returning here closes the
-      // translation and the wire under it.
-      if (frame.type === 'done' || isGeminiTerminalEvent(frame.event)) return;
+      // translation and the wire under it. The end is stated here and the usage is read on
+      // the wire below, so one flag carries what the settlement needs from both.
+      if (frame.type === 'done' || isGeminiTerminalEvent(frame.event)) {
+        ending.sawTerminal = true;
+        return;
+      }
     }
     throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
   })(),
@@ -339,12 +354,17 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
-const narrowing = (payload: GeminiPayload): ChatNarrowing<C<'response.chat.gemini'>> => ({
+const narrowing = (payload: GeminiPayload): ChatNarrowing<C<'response.chat.gemini' | 'response.chat.gemini.streamedUsage'>> => ({
   canServe: candidate => geminiTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeGeminiAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the Gemini generateContent endpoint.`,
-  refuse: (status, message) => ({ 'response.chat.gemini': { status, message } }),
-  refuses: ['response.chat.gemini'],
+  refuse: (status, message) => ({
+    'response.chat.gemini': { status, message },
+    // A refusal never opened a stream, so there is nothing still to read — which is what
+    // lets settlement write its row here rather than wait for numbers that never come.
+    'response.chat.gemini.streamedUsage': null,
+  }),
+  refuses: ['response.chat.gemini', 'response.chat.gemini.streamedUsage'],
 });
 
 export type GeminiServeEntry = C<

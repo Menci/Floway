@@ -290,7 +290,8 @@ describe('the messages chain', () => {
     ]);
 
     await collect(facts['response.chat.messages.rendered']);
-    const billable = await facts['response.chat.messages.streamedUsage']!;
+    const outcome = await facts['response.chat.messages.streamedUsage']!;
+    const billable = outcome.billable;
 
     expect(billable[0]).toMatchObject({
       identity: { model: 'claude-model', upstream: 'up_a', modelKey: 'claude-model-key', pricing: null },

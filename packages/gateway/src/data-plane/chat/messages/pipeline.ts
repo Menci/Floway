@@ -15,9 +15,11 @@
 // the array between the materialized payload and the ending is empty rather than short.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
+import { renderMessagesError } from './errors.ts';
 import { createMessagesBillableUsageReader } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
@@ -29,7 +31,6 @@ import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { renderMessagesError } from './errors.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
@@ -53,7 +54,7 @@ export interface MessagesFacts extends ChatFacts {
   'response.chat.messages.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.messages.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  'response.chat.messages.streamedUsage': Promise<StreamOutcome> | null;
 }
 
 type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
@@ -238,7 +239,7 @@ const callMessagesUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.messages': { kind: 'stream' as const, frames: metered.frames },
-      'response.chat.messages.streamedUsage': metered.billable,
+      'response.chat.messages.streamedUsage': metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -253,9 +254,12 @@ const meterMessages = (
   source: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+): { readonly frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+  let settle!: (outcome: StreamOutcome) => void;
+  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Running out without the terminal frame is what "it did not finish" means, and it is known
+  // at the same moment the usage is.
+  let sawTerminal = false;
   const readBillableUsage = createMessagesBillableUsageReader();
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
@@ -274,7 +278,7 @@ const meterMessages = (
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past `message_stop` would otherwise hold the client's stream open
         // with it; returning here closes the read, which cancels the upstream.
-        if (isMessagesTerminalFrame(frame)) return;
+        if (isMessagesTerminalFrame(frame)) { sawTerminal = true; return; }
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // message was never stopped and never failed.
@@ -283,10 +287,10 @@ const meterMessages = (
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([billedEntity(reported, identity)]);
+      settle({ billable: [billedEntity(reported, identity)], failed: !sawTerminal });
     }
   })();
-  return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
+  return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
 };
 
 /** What ends a Messages turn. Anthropic's own stream terminator is an event rather than a
@@ -309,12 +313,17 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
-const narrowing = (payload: MessagesPayload): ChatNarrowing<M<'response.chat.messages'>> => ({
+const narrowing = (payload: MessagesPayload): ChatNarrowing<M<'response.chat.messages' | 'response.chat.messages.streamedUsage'>> => ({
   canServe: candidate => messagesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeMessagesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /messages endpoint.`,
-  refuse: (status, message) => ({ 'response.chat.messages': { status, message } }),
-  refuses: ['response.chat.messages'],
+  refuse: (status, message) => ({
+    'response.chat.messages': { status, message },
+    // A refusal never opened a stream, so there is nothing still to read — which is what
+    // lets settlement write its row here rather than wait for numbers that never come.
+    'response.chat.messages.streamedUsage': null,
+  }),
+  refuses: ['response.chat.messages', 'response.chat.messages.streamedUsage'],
 });
 
 /** What this protocol writes on an idle connection. Anthropic defines a `ping` event and

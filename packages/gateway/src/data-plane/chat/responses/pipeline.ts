@@ -38,6 +38,7 @@ import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
@@ -72,7 +73,7 @@ export interface ResponsesFacts extends ChatFacts {
   'response.chat.responses.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.responses.streamedUsage': Promise<readonly BillableEntity[]> | null;
+  'response.chat.responses.streamedUsage': Promise<StreamOutcome> | null;
 }
 
 type R<K extends keyof ResponsesFacts> = { [P in K]: ResponsesFacts[P] };
@@ -280,7 +281,7 @@ const callResponsesUpstream = defineStage<
     return move({
       ...facts,
       'response.chat.responses': { kind: 'stream' as const, frames: metered.frames },
-      'response.chat.responses.streamedUsage': metered.billable,
+      'response.chat.responses.streamedUsage': metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -295,9 +296,12 @@ const meterResponses = (
   source: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; readonly billable: Promise<readonly BillableEntity[]> } => {
-  let settle!: (billable: readonly BillableEntity[]) => void;
-  const billable = new Promise<readonly BillableEntity[]>(resolve => { settle = resolve; });
+): { readonly frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+  let settle!: (outcome: StreamOutcome) => void;
+  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Running out without the terminal frame is what "it did not finish" means, and it is known
+  // at the same moment the usage is.
+  let sawTerminal = false;
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
     try {
@@ -317,7 +321,7 @@ const meterResponses = (
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past its terminal event would otherwise hold the client's stream
         // open with it; returning here closes the read, which cancels the upstream.
-        if (isResponsesTerminalEvent(frame.event)) return;
+        if (isResponsesTerminalEvent(frame.event)) { sawTerminal = true; return; }
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // response was never stated complete, incomplete or failed.
@@ -326,10 +330,10 @@ const meterResponses = (
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle([billed(identity, reported)]);
+      settle({ billable: [billed(identity, reported)], failed: !sawTerminal });
     }
   })();
-  return { frames: { [Symbol.asyncIterator]: () => generator }, billable };
+  return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
 };
 
 /** An upstream that reported nothing leaves no quantities at all, which is a different
@@ -349,11 +353,12 @@ const billed = (identity: TelemetryModelIdentity, usage: BillableUsage | undefin
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
-const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses'>> => ({
+const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses' | 'response.chat.responses.streamedUsage'>> => ({
   canServe: candidate => responsesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeResponsesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
   refuse: (status, message, reason) => ({
+    'response.chat.responses.streamedUsage': null,
     'response.chat.responses': {
       status,
       message,
@@ -368,7 +373,7 @@ const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'respons
       },
     },
   }),
-  refuses: ['response.chat.responses'],
+  refuses: ['response.chat.responses', 'response.chat.responses.streamedUsage'],
 });
 
 export type ResponsesServeEntry = R<

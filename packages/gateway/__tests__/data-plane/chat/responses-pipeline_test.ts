@@ -210,7 +210,8 @@ describe('the responses chain', () => {
 
     const { facts } = await serve(true);
     await drain(facts['response.chat.responses.rendered']);
-    const billable = await facts['response.chat.responses.streamedUsage']!;
+    const outcome = await facts['response.chat.responses.streamedUsage']!;
+    const billable = outcome.billable;
 
     expect(billable).toEqual([expect.objectContaining({
       quantities: { input_tokens: '11', output_tokens: '7' },

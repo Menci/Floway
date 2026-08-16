@@ -308,7 +308,8 @@ describe('the gemini pipeline', () => {
     expect(recorded.usage).toHaveLength(0);
     const usage = facts['response.chat.gemini.streamedUsage'];
     expect(usage).not.toBeNull();
-    const billable = await usage!;
+    const outcome = await usage!;
+    const billable = outcome.billable;
     expect(billable[0]).toMatchObject({
       identity: { model: 'gemini-2.5-pro', upstream: 'up_a', modelKey: 'gemini-2.5-pro-key', pricing: null },
       quantities: { input_tokens: '5', output_tokens: '7' },

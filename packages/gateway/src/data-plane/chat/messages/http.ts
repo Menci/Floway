@@ -132,18 +132,7 @@ export const messagesHttp = {
         if (isFrames(rendered)) return { frames: rendered, keepAlive: messagesKeepAlive };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => {
-        const streamed = facts['response.chat.messages.streamedUsage'];
-        // Two readings this chain does not hand up. A refusal that never reached an upstream
-        // leaves the key unwritten rather than null, and the meter that does write it resolves
-        // what was billed without saying whether the frames reached their terminator — so a
-        // stream that stopped short settles here as one that finished. Both belong to the
-        // chain: a family whose meter reports the outcome hands up a `StreamOutcome`, and this
-        // adapter goes with it.
-        return streamed === null || streamed === undefined
-          ? null
-          : streamed.then(billable => ({ billable, failed: false }));
-      },
+      facts => facts['response.chat.messages.streamedUsage'],
     );
   },
 
