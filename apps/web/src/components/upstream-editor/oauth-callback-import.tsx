@@ -24,20 +24,20 @@ type OAuthImportRecord = Extract<UpstreamRecord, { kind: 'codex' | 'claude-code'
 
 type OAuthCallbackImportProps =
   | {
-      kind: 'codex';
-      hasAccount: boolean;
-      record: OAuthImportRecord;
-      getValues: () => UpstreamEditorValues;
-      onImported: (patch: { config?: unknown; state?: unknown }) => void;
-    }
+    kind: 'codex';
+    hasAccount: boolean;
+    record: OAuthImportRecord;
+    getValues: () => UpstreamEditorValues;
+    onImported: (patch: { config?: unknown; state?: unknown }) => void;
+  }
   | {
-      kind: 'claude-code';
-      flowKind: OAuthFlow;
-      hasAccount: boolean;
-      record: OAuthImportRecord;
-      getValues: () => UpstreamEditorValues;
-      onImported: (patch: { config?: unknown; state?: unknown }) => void;
-    };
+    kind: 'claude-code';
+    flowKind: OAuthFlow;
+    hasAccount: boolean;
+    record: OAuthImportRecord;
+    getValues: () => UpstreamEditorValues;
+    onImported: (patch: { config?: unknown; state?: unknown }) => void;
+  };
 
 // The codex OAuth tab opens with a hint the claude-code OAuth and Setup-Token
 // tabs never carried; the kind prop decides which copy this shared surface
