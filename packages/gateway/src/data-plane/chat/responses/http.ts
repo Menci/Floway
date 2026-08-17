@@ -1,16 +1,30 @@
+// POST /v1/responses, served through the pipeline, and POST /v1/responses/compact beside it
+// — a second operation over this protocol rather than another wire under its chain, so it
+// still goes through `responsesServe.compact`.
+//
+// The generate entry is a prologue and an epilogue around `responsesServePipeline`: read
+// what the client sent, hand it over, and turn what the run answered with into a response.
+// Everything between is stages, the stored-items membrane included — which is why a
+// continuation that does not resolve is answered by the chain here and still caught as a
+// throw on the compact route, which has not moved.
+
 import { responsesInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
+import { responsesServePipeline } from './pipeline.ts';
 import { respondResponses, respondResponsesFailure } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { isFrames, openPrologue, readIngress, serveThrough } from '../../pipeline/serve.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { openChatPrologue } from '../prologue.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
+import { move } from '@floway-dev/pipeline';
 import type { CanonicalResponsesPayload, ResponsesRequestPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
@@ -67,30 +81,95 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   return await respondWithInternalError(c, error, requestBody, ctx);
 };
 
-const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
-  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
+const parsePayload = (bytes: Uint8Array): CanonicalResponsesPayload =>
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as ResponsesRequestPayload);
+
+/** The same read, as a value rather than a throw, because a pipelined entry decides what to
+ *  do about a body it could not read before it opens a run rather than after one unwound.
+ *
+ *  What the reader rejected travels with the rejection. This protocol's envelope names the
+ *  field at fault and the code for the condition, and those are statements only the reader
+ *  can make: `input` and `input[0]` are different sentences, and a body with no `model` is
+ *  refused in words OpenAI's own clients already parse. */
+const readRequest = (bytes: Uint8Array):
+  | { type: 'ok'; payload: CanonicalResponsesPayload }
+  | { type: 'invalid'; message: string; param?: string; code?: string } => {
+  try {
+    return { type: 'ok', payload: parsePayload(bytes) };
+  } catch (error) {
+    if (!(error instanceof TranslatorInputError)) {
+      return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
+    }
+    return {
+      type: 'invalid',
+      message: error.message,
+      ...(error.param === undefined ? {} : { param: error.param }),
+      ...(error.code === undefined ? {} : { code: error.code }),
+    };
+  }
+};
+
+/** The rejection, as this protocol's clients read one. A reader that named neither field
+ *  still fills both slots, because the envelope declares them and `input` is where a body
+ *  this endpoint could not read went wrong. */
+const invalidRequestResponse = (invalid: { message: string; param?: string; code?: string }): Response =>
+  Response.json(
+    {
+      error: {
+        message: invalid.message,
+        type: 'invalid_request_error',
+        param: invalid.param ?? 'input',
+        code: invalid.code ?? null,
+      },
+    },
+    { status: 400 },
+  );
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = parsePayload(requestBody);
-      const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
-      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondResponses(c, result, wantsStream, ctx, payload);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
+    const ingress = await readIngress(c);
+    const request = readRequest(ingress.body.bytes);
+    if (request.type === 'invalid') {
+      // A request the gateway could not read never reaches a pipeline: there is no model to
+      // resolve and no attempt to make, so there is nothing for a run to record.
+      const refused = openPrologue(c, ingress, { wantsStream: false });
+      refused.gateway.dump?.error('gateway');
+      return finalizeGatewayResponse(refused.gateway, invalidRequestResponse(request));
     }
+
+    const { payload } = request;
+    const wantsStream = payload.stream === true;
+    const prologue = openChatPrologue(c, ingress, {
+      wantsStream,
+      model: payload.model,
+      storeFactory: (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
+    });
+
+    return await serveThrough(
+      c,
+      prologue,
+      responsesServePipeline(payload),
+      move({
+        'ingress.http.headers': prologue.headers,
+        'ingress.chat.sourceProtocol': 'responses',
+        'ingress.chat.responses.wantsStream': wantsStream,
+        'request.chat.responses': payload,
+        'serve.model': payload.model,
+      }) as never,
+      facts => {
+        const rendered = facts['response.chat.responses.rendered'];
+        if (isFrames(rendered)) return { frames: rendered };
+        return { body: JSON.stringify(rendered), contentType: 'application/json' };
+      },
+      facts => facts['response.chat.responses.streamedUsage'],
+    );
   },
 
   compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
     let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = parsePayload(requestBody);
+      const payload = parsePayload(requestBody.bytes);
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeaders(c) });
       if (result.type === 'result') {
