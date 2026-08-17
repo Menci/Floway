@@ -4,7 +4,7 @@
 //   writeSettlement            above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates      narrows to what can serve, in the order affinity asks for
 //   failover                   runs what follows once per candidate
-//   the interceptors           the shared array, each one a stage
+//   materializeAttempt         puts the payload this candidate is owed into the record
 //   dialChatWire               the ending: picks this candidate's wire and hands into it
 //
 // The wire a candidate is dialled on is chosen per candidate rather than at assembly, and

@@ -5,6 +5,7 @@
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
 //   materializeAttempt     puts the payload this candidate is owed into the record
+//   answerClaudeCodeProbe  answers the CLI's model probe without dialling anything
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.messages`: this protocol's own, and the two

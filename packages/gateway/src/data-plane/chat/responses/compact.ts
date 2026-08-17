@@ -8,7 +8,6 @@
 //   materializeAttempt         puts the payload this candidate is owed into the record
 //   beginStoredAttempt         reseeds the store's per-attempt scratchpad
 //   expandShimCompactions      a compaction this gateway wrote, back into what it stood for
-//   this family's request rules, the same four generation runs above its fork
 //   dialResponsesCompaction    the ending: dials a compaction, or simulates one
 //
 // A second **operation** over this protocol rather than another wire under
@@ -36,9 +35,9 @@
 // What the simulation cannot reproduce is stated where it happens, at `summarizationTurnFor`.
 //
 // One thing this chain does not carry, stated rather than implied by its absence: the
-// server-tool shim. It is still only an interceptor, so a compaction whose caller declared a
-// server tool is summarized without the ReAct loop wrapped around it — the same gap the
-// generate chain states, and for the same reason.
+// server-tool shim. It never became a stage and the interceptor array that ran it is gone, so
+// a compaction whose caller declared a server tool is summarized without the ReAct loop wrapped
+// around it — the same gap the generate chain states, and for the same reason.
 
 import { responsesCreatedAt, wrapResponsesStatefulOutput } from './client-output.ts';
 import { completeResponsesCompaction } from './compaction-resource.ts';

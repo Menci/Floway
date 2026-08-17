@@ -140,7 +140,9 @@ test('an upstream refusal reaches the client in this protocol-s own envelope', a
   // belongs. So the upstream's words become the message and this protocol writes the shape.
   const body = await response.json() as { error: { code: number; message: string; status: string } };
   expect(body.error.code).toBe(402);
-  expect(typeof body.error.status).toBe('string');
+  // The Google-RPC name for the status, which is the field an SDK branches on. A code this
+  // envelope cannot express reads `INTERNAL`, and 402 is one of them.
+  expect(body.error.status).toBe('INTERNAL');
   expect(body.error.message).toContain('copilot said no');
 });
 

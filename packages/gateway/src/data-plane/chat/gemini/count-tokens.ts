@@ -1,6 +1,7 @@
 // Gemini's `:countTokens` as a pipeline.
 //
 //   emitGeminiTokenCount     the edge: writes the measurement, or the refusal, as one body
+//   writeSettlement          above the fork, so a measurement is sampled once however many it tried
 //   resolveChatCandidates    narrows to what can serve, in the order affinity asks for
 //   failover                 runs what follows once per candidate
 //   materializeAttempt       puts the payload this candidate is owed into the record

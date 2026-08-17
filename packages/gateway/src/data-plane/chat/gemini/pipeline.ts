@@ -36,12 +36,16 @@
 //     ended without a terminal event. The chain detects one and leaves the run as a throw
 //     rather than as that 502 envelope.
 //
-// One deliberate difference from `respond.ts`, shared with every other family on the
-// pipeline: an upstream that refused is answered in its own words. A Chat Completions wire
-// refuses in the OpenAI envelope, and that object is handed on as it came rather than being
-// quoted back inside a Google-RPC `{ error: { code, message, status } }` — which also means
-// the status the upstream sent is the status the client sees, with no coercion of the codes
-// that envelope maps to `INTERNAL`.
+// A refusal is the one place where having no wire of its own changes what a client is owed.
+// Every other family can hand an upstream's own error object on, because the upstream spoke
+// that family's protocol. Here it never did: whatever came back was written by Chat
+// Completions, Messages or Responses, and `error.status` — the field a Google client reads —
+// is in none of them. So the words survive and the shape is this protocol's, which is what
+// the handoff arranges by dropping a foreign envelope on the way up.
+//
+// The status is still the upstream's, with no coercion of the codes a Google-RPC envelope
+// maps to `INTERNAL`. That part is a departure from the replaced surface, which raised such a
+// status to 500.
 
 import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';

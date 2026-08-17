@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { SourceStreamState } from '../../../../src/data-plane/chat/shared/respond.ts';
+import { SourceStreamState } from '../../../../src/data-plane/chat/shared/source-stream-state.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // ── SourceStreamState classification ──

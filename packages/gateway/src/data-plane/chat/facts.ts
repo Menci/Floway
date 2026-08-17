@@ -21,9 +21,6 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
  *  and no target role. */
 export type ChatSourceProtocol = 'chatCompletions' | 'messages' | 'responses' | 'gemini';
 
-/** The three a translation can target. */
-export type ChatTargetProtocol = Exclude<ChatSourceProtocol, 'gemini'>;
-
 export interface ChatFacts extends GatewayFacts {
   /** Which protocol the client spoke. Read by the stages that must know — a vendor
    *  normalizer genuinely does — rather than reached for through an ambient field.

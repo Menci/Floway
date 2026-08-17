@@ -1,6 +1,7 @@
 // `/v1/messages/count_tokens` as a pipeline.
 //
 //   emitMessagesTokenCount  the edge: writes the measurement, or the refusal, as one body
+//   writeSettlement         above the fork, so a measurement is sampled once however many it tried
 //   resolveChatCandidates   narrows to what can serve, in the order affinity asks for
 //   failover                runs what follows once per candidate
 //   materializeAttempt      puts the payload this candidate is owed into the record
@@ -10,8 +11,9 @@
 // A second **operation** over this protocol rather than another wire under
 // `messagesServePipeline`, which is why it is a chain of its own rather than a branch inside
 // that one. It answers with a body and nothing else: no stream, and no billed turn — the
-// replaced surface wrote neither a usage row nor a performance sample for a measurement, so
-// there is no `writeSettlement` here and the ending states an empty billed set.
+// ending states an empty billed set, so settlement writes the performance sample every run
+// owes and no usage row. Measuring is not generating, and an upstream that answered the
+// question charged nothing for it.
 //
 // There is one wire, and it is shared. Only an upstream's own Messages endpoint measures —
 // no protocol but this one answers "what would this cost" — so the chain dials directly

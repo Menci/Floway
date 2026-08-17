@@ -765,9 +765,9 @@ export const hydrateStoredItems = (
  *
  * Below the fork because it is per attempt: what one attempt wrote into the scratchpad is
  * not what the next one starts from, and re-running the suffix is what clears it. Nothing in
- * a pipelined turn writes to it yet — the server-tool shim is what writes, and it is still
- * an interceptor — so today this only puts back the state the stored rows already carried,
- * which is what lets an item this turn re-emits be stored with it intact.
+ * a pipelined turn writes to it — the server-tool shim is what writes, and it does not run at
+ * all — so today this only puts back the state the stored rows already carried, which is what
+ * lets an item this turn re-emits be stored with it intact.
  */
 export const beginStoredAttempt = defineStage<
   R<'request.chat.responses.privatePayloads'>,

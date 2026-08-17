@@ -75,7 +75,9 @@ const refuseTranslation = (response: ResponseKey, message: string): Record<strin
  *
  * An upstream refusal gets the pair's own rewrite where it has one: the canonical case is a
  * context-window error becoming the Anthropic `prompt is too long:` shape that Claude Code
- * reads for auto-compaction. A pair that declares no rewrite hands the refusal up unchanged.
+ * reads for auto-compaction. Where a pair declares no rewrite, the status and the sentence go up
+ * and the object they arrived in does not — it is the target protocol's, and the client is not
+ * reading that one.
  *
  * It carries the `return` trait too, because a body the target protocol cannot represent is
  * answered here rather than dialled.

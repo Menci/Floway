@@ -1,5 +1,5 @@
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
+import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, MessagesInvocation } from '@floway-dev/provider';
@@ -21,12 +21,3 @@ export type MessagesCountTokensInterceptor = Interceptor<
   GatewayCtx,
   Response
 >;
-
-// Payload-only transforms can run in both the streaming generation chain and
-// the one-shot count_tokens chain. Keeping the result generic prevents those
-// shared interceptors from accidentally inspecting either result shape.
-export type MessagesPayloadInterceptor = <TResult>(
-  ctx: MessagesInvocation,
-  gatewayCtx: GatewayCtx,
-  run: InterceptorRun<TResult>,
-) => Promise<TResult>;

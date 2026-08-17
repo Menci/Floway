@@ -389,10 +389,10 @@ export const createResponsesHttpStore = (apiKey: ResponsesStatePolicy, requestSt
 
 // Non-Responses sources (Messages / Gemini / Chat Completions) never persist
 // Responses items, even when translation enters a Responses attempt — but the
-// server-tool shim still runs there, and its request-private payload
-// scratchpad lives on the store. So they get a store with no backing: it holds
-// per-attempt state in memory and reads/writes nothing durable, keeping the
-// store present on every chat ctx.
+// server-tool shim's request-private payload scratchpad lives on the store, and
+// it is what will write there once that shim is a stage. So they get a store
+// with no backing: it holds per-attempt state in memory and reads/writes nothing
+// durable, keeping the store present on every chat ctx.
 export const createNonResponsesSourceStore = (apiKeyId: string): StatefulResponsesStore =>
   new LayeredStatefulResponsesStore({ apiKeyId, reads: [], writes: [] });
 

@@ -25,7 +25,7 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import type { ChatPrologue } from '../prologue.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState } from '../shared/respond.ts';
+import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
