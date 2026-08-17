@@ -39,6 +39,7 @@ import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { wrapResponsesClientEgress } from './client-output.ts';
 import type { ResponsesServeFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
+import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
@@ -413,16 +414,51 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
 });
 
 /**
+ * What an upstream's Responses endpoint accepts on an assistant item it produced itself.
+ * Copilot's compaction translation and Azure-native compaction both emit assistant messages
+ * whose content blocks carry `type: 'input_text'`, and both then refuse those same items
+ * echoed back as input on the next turn. Every way prior upstream-produced history reaches a
+ * wire arrives here — a direct client echo, the snapshot the membrane expanded, a compaction
+ * tail — so this is the one place the canonical assistant content type is put back.
+ *
+ * Only this wire needs it. Both translators read `input_text` and `output_text` the same way
+ * on assistant content, so a turn that leaves for Messages or Chat Completions never carried
+ * the disagreement in the first place.
+ */
+const normalizeAssistantContentForResponses = defineStage<
+  R<'request.chat.responses'>,
+  R<'request.chat.responses'>,
+  Record<string, never>,
+  Record<string, never>,
+  ChatServices
+>({
+  name: 'normalizeAssistantContentForResponses',
+  through: {
+    request: { needs: ['request.chat.responses'], consumes: [], provides: ['request.chat.responses'] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, next) => {
+    const payload = facts['request.chat.responses'] as CanonicalResponsesPayload;
+    const input = normalizeAssistantInputText(payload.input);
+    // A rewrite that changed nothing hands the same payload on, so the record shows no
+    // change where none happened.
+    if (input === payload.input) return await next(facts);
+    return await next({ ...facts, 'request.chat.responses': move({ ...payload, input }) });
+  },
+});
+
+/**
  * The Responses wire, as the chain that dials it.
  *
  * Every source protocol that reaches an upstream over this endpoint runs this, whether the
- * client spoke Responses or a handoff arrived here — which is what makes the two rules above
- * the dial belong here. The role rewrite states what an upstream's Responses endpoint
- * accepts; the cache-bucket fold speaks about the usage *this* wire reports and about the
- * flag that describes it, and a translator emits the canonical form, which is the one case
- * the fold has nothing to do with.
+ * client spoke Responses or a handoff arrived here — which is what makes the three rules
+ * above the dial belong here. The role rewrite and the assistant-content rewrite both state
+ * what an upstream's Responses endpoint accepts; the cache-bucket fold speaks about the usage
+ * *this* wire reports and about the flag that describes it, and a translator emits the
+ * canonical form, which is the one case the fold has nothing to do with.
  */
 export const responsesWire = (streamedUsage: string): readonly Stage[] => [
+  normalizeAssistantContentForResponses,
   applyRoleCompatibilityToResponses,
   normalizeExclusiveCachedTokensForResponses,
   callResponsesUpstream(streamedUsage),

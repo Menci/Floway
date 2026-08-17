@@ -205,6 +205,35 @@ describe('the responses chain', () => {
     expect(action).toBe('generate');
   });
 
+  // Copilot's compaction translation and Azure-native compaction both emit assistant messages
+  // whose content blocks say `input_text`, and both then refuse those same items echoed back
+  // as input. The wire puts the canonical type back on whatever reaches it, however the
+  // history got there — a client echo, or the snapshot the membrane replayed.
+  it('sends an assistant item back in the content type this wire accepts', async () => {
+    let sent: Record<string, unknown> | undefined;
+    affinityPayload = {
+      ...payload,
+      input: [
+        { type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'summary so far' }] },
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'and then?' }] },
+      ],
+    } as unknown as CanonicalResponsesPayload;
+    resolves([candidate(async (_model, body) => {
+      sent = body as Record<string, unknown>;
+      return stream(completed('hi'));
+    })]);
+
+    await serve(false);
+
+    // Only the assistant's: `input_text` IS the correct type on a user message.
+    expect(sent).toMatchObject({
+      input: [
+        { role: 'assistant', content: [{ type: 'output_text', text: 'summary so far' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'and then?' }] },
+      ],
+    });
+  });
+
   // Every event goes out under its own SSE name, and the client's stream ends on the literal
   // `[DONE]` the transport reads as the turn being over.
   it('writes the frames out when the client asked to stream', async () => {
