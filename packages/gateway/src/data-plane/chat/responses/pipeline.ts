@@ -7,6 +7,8 @@
 //   failover               runs what follows once per candidate
 //   materializeAttempt     puts the payload this candidate is owed into the record
 //   beginStoredAttempt     reseeds the store's per-attempt scratchpad
+//   expandShimCompactions  a compaction this gateway wrote, back into what it stood for
+//   summarizeForCompaction answers a turn that asked for a compaction with one
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.responses`: this protocol's own, and the two
@@ -26,10 +28,10 @@
 //
 //   - `/v1/responses/compact`. A second operation over this protocol rather than another
 //     wire under this pipeline, so it is a chain of its own in `compact.ts` — which reuses
-//     this one's membrane, its narrowing and its wires, because a compaction routes and is
-//     rewritten exactly as a turn is. The dial here asks for `generate`; what the ending
-//     answers with is the branch the provider says it ran, which is why the envelope a
-//     compaction is arrives somewhere rather than nowhere.
+//     this one's membrane, its narrowing, its wires and the two shim rules below, because a
+//     compaction routes and is rewritten exactly as a turn is. The dial here asks for
+//     `generate`; what the ending answers with is the branch the provider says it ran, which
+//     is why the envelope a compaction is arrives somewhere rather than nowhere.
 //   - this family's remaining interceptors, the server-tool shims among them. Still only in
 //     the interceptor form, so the array between the materialized payload and the fork is
 //     short rather than complete — and nothing in a pipelined turn writes to the store's
@@ -42,11 +44,20 @@
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { wrapResponsesClientEgress } from './client-output.ts';
 import type { ResponsesServeFailure } from './errors.ts';
+import {
+  buildCompactionEnvelope,
+  containsCompactionTrigger,
+  EMPTY_SUMMARY_MESSAGE,
+  expandShimCompactionItems,
+  summarizationTurnFor,
+  summaryTextFrom,
+} from './interceptors/compact-shim.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
+import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
-import type { BillableEntity } from '../../pipeline/facts.ts';
+import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -77,12 +88,14 @@ import { compose, defineStage, move, type Pipeline, type Stage, type Use } from 
 import { doneFrame, eventFrame, renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
+  createRandomResponsesItemId,
   isResponsesTerminalEvent,
   responsesProtocolFrameToSSEFrame,
   RESPONSES_MISSING_TERMINAL_MESSAGE,
   type CanonicalResponsesPayload,
   type ClientResponseResource,
   type ClientResponsesStreamEvent,
+  type ResponsesOutputItem,
   type ResponsesStreamEvent,
 } from '@floway-dev/protocols/responses';
 import { providerModelOf, toInternalDebugError, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
@@ -763,6 +776,168 @@ export const beginStoredAttempt = defineStage<
   },
 });
 
+// ── The compact shim ──────────────────────────────────────────────────────────────────────
+//
+// Two rules, composed by both of this protocol's chains, because a compaction the shim wrote
+// is issued through one entry and read back through the other: Codex asks for one by ending
+// a generate turn's input with a `compaction_trigger`, `/v1/responses/compact` asks for one
+// by being called at all, and either way the envelope comes back to the client, who echoes it
+// into the ordinary turns that follow. What the shim is, what it vendors and what it cannot
+// reproduce is at `interceptors/compact-shim.ts`.
+
+/**
+ * Whether this candidate's compactions are the shim's to simulate.
+ *
+ * Two ways to be, and an upstream only has to be one of them. The operator opted a Responses
+ * upstream in with `responses-compact-shim`, which is the say-so for one that would answer a
+ * compaction itself. Or the candidate has no Responses endpoint at all: no translation
+ * carries a compaction, so a Messages or Chat Completions candidate has neither a compaction
+ * to dial nor a translator that models the item asking for one — the shim is structurally
+ * required there rather than chosen.
+ *
+ * One reading, taken wherever the question is asked, so a turn that asks for a compaction on
+ * its way through generation is answered with the compaction this protocol's own endpoint
+ * would have produced for it.
+ */
+export const simulatesCompaction = (candidate: ModelCandidate, attempt: AttemptSelector): boolean =>
+  responsesTarget.pick(candidate.model.endpoints) !== 'responses'
+  || attempt.flags.includes('responses-compact-shim');
+
+/**
+ * Expands a compaction this gateway wrote back into the history it stood for.
+ *
+ * The shim's envelope carries the items it summarized, so a turn that echoes one back is sent
+ * that history rather than an opaque blob the upstream has no key for. A blob this gateway
+ * did not write — a native upstream's own encrypted compaction — fails the decode and rides
+ * through untouched, which is what lets an operator turn the flag off for an upstream that
+ * compacts natively.
+ *
+ * Gated on the same reading the endings take: only an upstream whose compactions this gateway
+ * simulates can be holding one of ours, and a native one is owed its own blob verbatim.
+ */
+export const expandShimCompactions = defineStage<
+  R<'request.chat.responses' | 'route.attempt'>,
+  R<'request.chat.responses'>,
+  Record<string, never>,
+  Record<string, never>,
+  ChatServices
+>({
+  name: 'expandShimCompactions',
+  through: {
+    request: {
+      needs: ['request.chat.responses', 'route.attempt'],
+      consumes: [],
+      provides: ['request.chat.responses'],
+    },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, next, use) => {
+    if (!simulatesCompaction(use.resolveAttempt(facts['route.attempt']), facts['route.attempt'])) {
+      return await next(facts);
+    }
+    // The key holds what a client may send, whose `input` is a string or a list; this chain
+    // runs on the canonical form the entry normalized it to.
+    const payload = facts['request.chat.responses'] as CanonicalResponsesPayload;
+    const expanded = expandShimCompactionItems(payload);
+    // A turn carrying none of ours hands the same payload on, so the record shows no change
+    // where none happened.
+    if (expanded === payload) return await next(facts);
+    return await next({ ...facts, 'request.chat.responses': move(expanded) });
+  },
+});
+
+/** How the chain that composed the stage below says a turn reaching it asked for a compaction.
+ *  It is the whole gate, so each chain states its own: what asks for a compaction differs by
+ *  operation, and no action travels in the record for the stage to read instead. */
+export type CompactionAsk = (
+  facts: R<'request.chat.responses' | 'route.attempt'>,
+  use: Use<ChatServices>,
+) => boolean;
+
+/**
+ * Answers a turn that asked for a compaction with one, over an upstream that has no
+ * compaction wire.
+ *
+ * It rewrites the turn on the way down — the compactor's prompt at the head of the history,
+ * the trigger stripped, a terminal nudge appended, nothing persisted upstream — and folds the
+ * generated summary into an envelope of this gateway's own on the way back. Below it is the
+ * ordinary generate fork, which is what makes every wire generation can take a wire a
+ * compaction can be simulated over.
+ *
+ * What the simulation cannot reproduce is stated where it happens, at `summarizationTurnFor`.
+ */
+export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
+  R<'request.chat.responses' | 'route.attempt'>,
+  R<'request.chat.responses'>,
+  R<'response.chat.responses'>,
+  R<'response.chat.responses'>,
+  ChatServices
+>({
+  name: 'summarizeForCompaction',
+  through: {
+    request: {
+      needs: ['request.chat.responses', 'route.attempt'],
+      consumes: [],
+      provides: ['request.chat.responses'],
+    },
+    response: {
+      needs: ['response.chat.responses'],
+      consumes: [],
+      provides: ['response.chat.responses'],
+    },
+  },
+  execute: async (facts, next, use) => {
+    if (!asked(facts, use)) return await next(facts);
+    const payload = facts['request.chat.responses'] as CanonicalResponsesPayload;
+    const back = await next({ ...facts, 'request.chat.responses': move(summarizationTurnFor(payload)) });
+
+    const answer = back['response.chat.responses'];
+    // An upstream that refused is handed on as it came: the client learns the compaction
+    // failed rather than being given a silent empty envelope. One that answered with a single
+    // envelope compacted on its own, and an envelope is already the answer — there are no
+    // frames to fold and nothing this layer could add to it.
+    if (isFailure(answer) || answer.kind !== 'stream') return back;
+
+    // The item lifecycle is the authority on what the turn closed; a Codex upstream states an
+    // `output` on its terminal that omits the message it just closed, so both are read and
+    // the closed items win where there are any.
+    const closed = new Map<number, ResponsesOutputItem>();
+    const observed = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+      for await (const frame of answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>) {
+        if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+          closed.set(frame.event.output_index, frame.event.item);
+        }
+        yield frame;
+      }
+    })();
+    const collected = await collectResponsesProtocolEventsToResult(observed);
+
+    const summaryText = summaryTextFrom(closed, collected.output);
+    if (summaryText.length === 0) {
+      // A summarization that closed no text produced no summary, and the blob is the whole of
+      // what the next turn inherits — so this is a candidate that did not do the job rather
+      // than a fault that ends the request, and the fork can try another.
+      return { ...back, 'response.chat.responses': move({ status: 502, message: EMPTY_SUMMARY_MESSAGE }) };
+    }
+
+    const synthesized = buildCompactionEnvelope(createRandomResponsesItemId('compaction'), summaryText, collected);
+    return { ...back, 'response.chat.responses': move({ kind: 'stream' as const, frames: syntheticEventsFromResult(synthesized) }) };
+  },
+});
+
+/**
+ * What asking for a compaction looks like on this chain.
+ *
+ * Codex's RemoteCompactionV2 path asks for one inside an ordinary turn, by ending its input
+ * with the control item that requests it — so this chain reads the request rather than the
+ * operation, and reads it per turn. Where the shim is not this candidate's to run, the item
+ * travels on to an upstream whose own `/responses` endpoint answers it, which is what a
+ * native Responses upstream does with it.
+ */
+const asksForCompaction: CompactionAsk = (facts, use) =>
+  containsCompactionTrigger((facts['request.chat.responses'] as CanonicalResponsesPayload).input)
+  && simulatesCompaction(use.resolveAttempt(facts['route.attempt']), facts['route.attempt']);
+
 export type ResponsesServeEntry = R<
   'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'ingress.chat.responses.wantsStream'
   | 'request.chat.responses' | 'serve.model'
@@ -798,6 +973,8 @@ export const responsesServePipeline = (
     }),
     materializeAttempt('request.chat.responses'),
     beginStoredAttempt,
+    expandShimCompactions,
+    summarizeForCompaction(asksForCompaction),
     dialChatWire({
       source: 'request.chat.responses',
       needs: ['request.chat.responses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

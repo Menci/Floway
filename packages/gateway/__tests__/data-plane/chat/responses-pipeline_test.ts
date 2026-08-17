@@ -4,20 +4,24 @@
 // when the client did not ask to stream, that it hands the turn's own state back for the
 // client to carry, that the stored-items membrane's other half runs there too so the client
 // is answered under an envelope this gateway minted, that a turn the upstream answered with
-// one envelope instead of a stream is served as that envelope, that a refusal keeps the
-// upstream's own status and words, and that a dial nobody answered is a value the fork can
-// move past.
+// one envelope instead of a stream is served as that envelope, that a turn asking for a
+// compaction is answered with one wherever the shim is this candidate's to run and travels on
+// untouched where it is not, that a refusal keeps the upstream's own status and words, and
+// that a dial nobody answered is a value the fork can move past.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
 import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ModelCandidate, type ProviderResponsesResult } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -28,18 +32,28 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
-  callResponses: (model: unknown, body: unknown, action: unknown) => Promise<ProviderResponsesResult>,
-  upstreamId = 'up_a',
+  calls: {
+    callResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderResponsesResult>;
+    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  },
+  overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
-  const endpoints = { responses: {} };
+  const upstreamId = overrides.upstreamId ?? 'up_a';
+  const endpoints = overrides.endpoints ?? { responses: {} };
+  const enabledFlags = overrides.enabledFlags ?? new Set<FlagId>();
   return {
     provider: {
       upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callResponses }),
+      instance: stubProvider(calls as never),
     },
     model: stubInternalModel(
-      { id: 'responses-model', endpoints, providerModels: { [upstreamId]: stubProviderModel({ id: 'responses-model', endpoints }) } },
+      {
+        id: 'responses-model',
+        endpoints,
+        limits: { max_output_tokens: 4096 },
+        providerModels: { [upstreamId]: stubProviderModel({ id: 'responses-model', endpoints, enabledFlags }) },
+      },
       upstreamId,
     ),
     fetcher: directFetcher,
@@ -93,6 +107,34 @@ const stream = (...events: readonly ResponsesStreamEvent[]): ProviderResponsesRe
   })(),
 });
 
+/** One assistant message over the Messages wire, which is the only way a Messages-only
+ *  candidate can be reached: the turn crosses into that protocol and comes back translated. */
+const messagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
+  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    seen.body = body as Record<string, unknown>;
+    const events: unknown[] = [
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_1', type: 'message', role: 'assistant', content: [], model: 'responses-model',
+          stop_reason: null, stop_sequence: null, usage: { input_tokens: 12, output_tokens: 0 },
+        },
+      },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 3 } },
+      { type: 'message_stop' },
+    ];
+    return {
+      ok: true, modelKey: 'responses-model-key', headers: new Headers(),
+      events: (async function* () {
+        for (const event of events) yield { type: 'event' as const, event: event as MessagesStreamEvent };
+        yield { type: 'done' as const };
+      })(),
+    };
+  };
+
 const payload = {
   model: 'responses-model',
   input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -106,15 +148,20 @@ let affinityPayload: CanonicalResponsesPayload = payload;
  *  anything below it reads the record. */
 let asked = 0;
 
-const serve = async (wantsStream: boolean) => await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream);
+const serve = async (wantsStream: boolean, request: CanonicalResponsesPayload = payload) =>
+  await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream, request);
 
-const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsStream: boolean) => await run(
-  responsesServePipeline(payload),
+const serveWith = async (
+  gateway: ReturnType<typeof mockChatGatewayCtx>,
+  wantsStream: boolean,
+  request: CanonicalResponsesPayload = payload,
+) => await run(
+  responsesServePipeline(request),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
     'ingress.chat.sourceProtocol': 'responses',
     'ingress.chat.responses.wantsStream': wantsStream,
-    'request.chat.responses': payload,
+    'request.chat.responses': request,
     'serve.model': 'responses-model',
   }) as never,
   {
@@ -163,6 +210,37 @@ const withoutCarrier = (frames: readonly SseFrame[]): readonly SseFrame[] =>
     return [{ ...frame, data: JSON.stringify({ ...event, response: withoutCarrierItem(event.response) }) }];
   });
 
+/** A turn asking for a compaction, which on this protocol is an ordinary turn whose input
+ *  ends in the control item that requests one. */
+const asksForCompaction = {
+  ...payload,
+  input: [
+    { type: 'message', role: 'user', content: 'a long conversation' },
+    { type: 'compaction_trigger' },
+  ],
+} as unknown as CanonicalResponsesPayload;
+
+/** The compaction item out of what the client was answered with. */
+const compactionItem = (answered: Record<string, unknown>): { readonly encrypted_content: string } => {
+  const item = (answered.output as { type: string }[]).find(candidateItem => candidateItem.type === 'compaction');
+  if (item === undefined) throw new Error('expected the answer to carry a compaction item');
+  return item as unknown as { readonly encrypted_content: string };
+};
+
+/** The summary a simulated compaction packed into the item the client is handed. The turn's
+ *  own state is sealed around it on the way out — that is what pins the next turn to the
+ *  upstream that issued this one — so the carrier is opened before the blob is read. */
+const summaryIn = async (
+  gateway: ReturnType<typeof mockChatGatewayCtx>,
+  encryptedContent: string,
+): Promise<string> => {
+  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'responses.compaction.encrypted_content');
+  if (carrier.kind !== 'owned' || carrier.value === undefined) throw new Error('expected the turn-s own carrier around the blob');
+  const items = decodeBase64UrlJson(carrier.value) as { content: { text: string }[] }[] | null;
+  if (items === null) throw new Error('expected a shim-encoded compaction blob');
+  return items[0]!.content[0]!.text;
+};
+
 beforeEach(() => {
   affinityPayload = payload;
   asked = 0;
@@ -187,10 +265,12 @@ describe('the responses chain', () => {
       ...payload,
       input: [{ type: 'message', role: 'user', content: 'rewritten' }],
     } as CanonicalResponsesPayload;
-    resolves([candidate(async (_model, body, asks) => {
-      sent = body as Record<string, unknown>;
-      action = asks;
-      return stream(completed('hi'));
+    resolves([candidate({
+      callResponses: async (_model, body, asks) => {
+        sent = body as Record<string, unknown>;
+        action = asks;
+        return stream(completed('hi'));
+      },
     })]);
 
     const { facts } = await serve(false);
@@ -218,9 +298,11 @@ describe('the responses chain', () => {
         { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'and then?' }] },
       ],
     } as unknown as CanonicalResponsesPayload;
-    resolves([candidate(async (_model, body) => {
-      sent = body as Record<string, unknown>;
-      return stream(completed('hi'));
+    resolves([candidate({
+      callResponses: async (_model, body) => {
+        sent = body as Record<string, unknown>;
+        return stream(completed('hi'));
+      },
     })]);
 
     await serve(false);
@@ -237,7 +319,7 @@ describe('the responses chain', () => {
   // Every event goes out under its own SSE name, and the client's stream ends on the literal
   // `[DONE]` the transport reads as the turn being over.
   it('writes the frames out when the client asked to stream', async () => {
-    resolves([candidate(async () => stream(delta('he'), delta('llo'), completed('hello')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
 
     const { facts } = await serve(true);
     const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
@@ -273,7 +355,7 @@ describe('the responses chain', () => {
   // this is what the client is given to carry back. A turn that handed back nothing would
   // leave the follow-up quoting it with no way to name the upstream that issued it.
   it('hands the turn-s own state back on an item of its own', async () => {
-    resolves([candidate(async () => stream(delta('hi'), completed('hi')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi')) })]);
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
@@ -296,10 +378,12 @@ describe('the responses chain', () => {
   // A stream's numbers arrive with its last chunk, so what the run hands up is a promise and
   // the reading is taken off the frames the client itself drove.
   it('bills what the terminal event reported, once the frames have run out', async () => {
-    resolves([candidate(async () => stream(
-      delta('hi'),
-      completed('hi', { input_tokens: 11, output_tokens: 7, total_tokens: 18 }),
-    ))]);
+    resolves([candidate({
+      callResponses: async () => stream(
+        delta('hi'),
+        completed('hi', { input_tokens: 11, output_tokens: 7, total_tokens: 18 }),
+      ),
+    })]);
 
     const { facts } = await serve(true);
     await drain(facts['response.chat.responses.rendered']);
@@ -317,7 +401,7 @@ describe('the responses chain', () => {
   // Time to first token is measured where the token is — a lifecycle envelope is not one, and
   // a run that never stamps it is recorded as having produced nothing to time.
   it('stamps the first frame that carried a generated token', async () => {
-    resolves([candidate(async () => stream(delta('hi'), completed('hi')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi')) })]);
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
@@ -331,7 +415,7 @@ describe('the responses chain', () => {
   // of the answer and the client is not shown it. Reading stops there, which also closes the
   // upstream rather than leaving the client's stream open behind a connection nobody reads.
   it('stops reading at the terminal event', async () => {
-    resolves([candidate(async () => stream(delta('hi'), completed('hi'), delta(' and more')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi'), delta(' and more')) })]);
 
     const { facts } = await serve(true);
     const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
@@ -350,7 +434,7 @@ describe('the responses chain', () => {
   // words — and the stream ends on that rather than on the terminator, because a stream that
   // ended on `[DONE]` is a stream that finished.
   it('tells a client already being streamed to that the stream never ended', async () => {
-    resolves([candidate(async () => stream(delta('hi')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('hi')) })]);
 
     const { facts } = await serve(true);
     const frames = await drain(facts['response.chat.responses.rendered']);
@@ -368,7 +452,7 @@ describe('the responses chain', () => {
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to
   // stream is answered from the same frames — folded here rather than read a second time.
   it('folds the frames into one response when the client did not', async () => {
-    resolves([candidate(async () => stream(delta('he'), delta('llo'), completed('hello')))]);
+    resolves([candidate({ callResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
 
     const { facts } = await serve(false);
 
@@ -395,9 +479,11 @@ describe('the responses chain', () => {
       }],
       usage: { input_tokens: 900, output_tokens: 40, total_tokens: 940 },
     };
-    resolves([candidate(async () => ({
-      action: 'compact', ok: true, modelKey: 'responses-model-key', result: compaction,
-    }))]);
+    resolves([candidate({
+      callResponses: async () => ({
+        action: 'compact', ok: true, modelKey: 'responses-model-key', result: compaction,
+      }),
+    })]);
 
     const { facts } = await serve(false);
 
@@ -412,7 +498,7 @@ describe('the responses chain', () => {
   // Content-length would misdescribe a body this gateway serialized itself; a vendor trace
   // is what a client and an operator both need to correlate a turn.
   it('forwards the upstream headers a client may see and drops the ones it may not', async () => {
-    resolves([candidate(async () => stream(completed('hi')))]);
+    resolves([candidate({ callResponses: async () => stream(completed('hi')) })]);
 
     const { facts } = await serve(true);
 
@@ -421,14 +507,16 @@ describe('the responses chain', () => {
   });
 
   it('answers an upstream refusal with its own status and words', async () => {
-    resolves([candidate(async () => ({
-      action: 'generate',
-      ok: false,
-      modelKey: 'responses-model-key',
-      response: new Response(JSON.stringify({ error: { message: 'slow down' } }), {
-        status: 429, headers: { 'content-type': 'application/json' },
+    resolves([candidate({
+      callResponses: async () => ({
+        action: 'generate',
+        ok: false,
+        modelKey: 'responses-model-key',
+        response: new Response(JSON.stringify({ error: { message: 'slow down' } }), {
+          status: 429, headers: { 'content-type': 'application/json' },
+        }),
       }),
-    }))]);
+    })]);
 
     const { facts } = await serve(false);
 
@@ -441,13 +529,176 @@ describe('the responses chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); }, 'up_dead'),
-      candidate(async () => { tried.push('alive'); return stream(completed('hi')); }, 'up_alive'),
+      candidate({ callResponses: async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); } }, { upstreamId: 'up_dead' }),
+      candidate({ callResponses: async () => { tried.push('alive'); return stream(completed('hi')); } }, { upstreamId: 'up_alive' }),
     ]);
 
     const { facts } = await serve(false);
 
     expect(tried).toEqual(['dead', 'alive']);
     expect(facts['response.http.status']).toBe(200);
+  });
+
+  // Codex asks for a compaction inside an ordinary turn, by ending its input with the control
+  // item that requests one. Where the shim is this candidate's to run, that item never reaches
+  // the upstream: what is sent instead is the compactor's own turn, and what comes back is an
+  // envelope this gateway packed the summary into.
+  it('answers a turn that asked for a compaction with one, where the shim is engaged', async () => {
+    let sent: Record<string, unknown> | undefined;
+    affinityPayload = asksForCompaction;
+    resolves([candidate(
+      {
+        callResponses: async (_model, body) => {
+          sent = body as Record<string, unknown>;
+          return stream(completed('CONDENSED SUMMARY'));
+        },
+      },
+      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+    )]);
+    const gateway = mockChatGatewayCtx({ wantsStream: false });
+
+    const { facts } = await serveWith(gateway, false, asksForCompaction);
+
+    // The compactor's prompt reached the upstream, the item that asked for the compaction did
+    // not, and the ephemeral summarization turn is not persisted in the upstream's history.
+    expect(JSON.stringify(sent)).toContain('CONTEXT CHECKPOINT COMPACTION');
+    expect(JSON.stringify(sent)).not.toContain('compaction_trigger');
+    expect(sent).toMatchObject({ store: false });
+
+    expect(facts['response.http.status']).toBe(200);
+    const answered = facts['response.chat.responses.rendered'] as Record<string, unknown>;
+    expect(answered.object).toBe('response.compaction');
+    expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+  });
+
+  // The flag says where a compaction would be simulated, not that this turn asked for one —
+  // so an ordinary turn on an opted-in upstream is dialled as itself and answered as a
+  // response, with nothing of the compactor's in the body that went out.
+  it('dials an ordinary turn as itself, where the shim is engaged but nothing asked for one', async () => {
+    let sent: Record<string, unknown> | undefined;
+    resolves([candidate(
+      {
+        callResponses: async (_model, body) => {
+          sent = body as Record<string, unknown>;
+          return stream(completed('hello'));
+        },
+      },
+      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+    )]);
+
+    const { facts } = await serve(false);
+
+    expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: 'hi' }] });
+    expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
+    const answered = withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult);
+    expect(answered.object).toBe('response');
+    expect(answered).toMatchObject({ output: [{ content: [{ type: 'output_text', text: 'hello' }] }] });
+  });
+
+  // The flag is the operator's opt-in, so an upstream that did not get it answers the item
+  // itself: it reaches the wire as the client wrote it, and the compaction that comes back is
+  // the upstream's own — its id, and a blob only it can read.
+  it('sends a turn that asked for a compaction on unchanged, where the shim is not engaged', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const upstreamCompaction: ResponsesCompactionResult = {
+      id: 'resp_upstream_compaction',
+      object: 'response.compaction',
+      output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'OPAQUE_NATIVE_BLOB' } as unknown as never],
+      usage: { input_tokens: 900, output_tokens: 40, total_tokens: 940 },
+    };
+    affinityPayload = asksForCompaction;
+    resolves([candidate({
+      callResponses: async (_model, body) => {
+        sent = body as Record<string, unknown>;
+        return { action: 'compact', ok: true, modelKey: 'responses-model-key', result: upstreamCompaction };
+      },
+    })]);
+
+    const { facts } = await serve(false, asksForCompaction);
+
+    expect(sent).toMatchObject({ input: [{ role: 'user' }, { type: 'compaction_trigger' }] });
+    expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
+    expect(facts['response.chat.responses.rendered']).toEqual(upstreamCompaction);
+  });
+
+  // No translation carries a compaction, and neither translator models the item that asks for
+  // one — so on a candidate this protocol can only reach through one, the shim is structurally
+  // required rather than opted into, and the flag has nothing to say.
+  it('answers a turn that asked for a compaction over a candidate with no Responses wire', async () => {
+    const seen: { body?: Record<string, unknown> } = {};
+    affinityPayload = asksForCompaction;
+    resolves([candidate(
+      { callMessages: messagesTurn('CONDENSED SUMMARY', seen) },
+      { endpoints: { messages: {} } },
+    )]);
+    const gateway = mockChatGatewayCtx({ wantsStream: false });
+
+    const { facts } = await serveWith(gateway, false, asksForCompaction);
+
+    expect(JSON.stringify(seen.body)).toContain('CONTEXT CHECKPOINT COMPACTION');
+    expect(JSON.stringify(seen.body)).not.toContain('compaction_trigger');
+    const answered = facts['response.chat.responses.rendered'] as Record<string, unknown>;
+    expect(answered.object).toBe('response.compaction');
+    expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+  });
+
+  // A compaction this gateway simulated carries the history it stood for, so an ordinary turn
+  // that echoes one back is sent that history — the upstream has no key for the blob, and
+  // would otherwise continue from nothing.
+  it('expands a compaction it wrote before the turn quoting it goes out', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const continues = {
+      ...payload,
+      input: [
+        {
+          type: 'compaction',
+          id: 'cmp_prior',
+          encrypted_content: encodeBase64UrlJson([
+            { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'THE EARLIER HISTORY' }] },
+          ]),
+        },
+        { type: 'message', role: 'user', content: 'and then?' },
+      ],
+    } as unknown as CanonicalResponsesPayload;
+    affinityPayload = continues;
+    resolves([candidate(
+      {
+        callResponses: async (_model, body) => {
+          sent = body as Record<string, unknown>;
+          return stream(completed('hi'));
+        },
+      },
+      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+    )]);
+
+    await serve(false, continues);
+
+    expect(JSON.stringify(sent)).toContain('THE EARLIER HISTORY');
+    expect(JSON.stringify(sent)).not.toContain('cmp_prior');
+  });
+
+  // Only an upstream whose compactions this gateway simulates can be holding one of ours, and
+  // an upstream that compacts natively is owed its own blob byte for byte — so where the shim
+  // is not engaged the item travels as the client wrote it.
+  it('leaves a compaction alone where the shim is not engaged', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const encoded = encodeBase64UrlJson([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'THE EARLIER HISTORY' }] },
+    ]);
+    const continues = {
+      ...payload,
+      input: [{ type: 'compaction', id: 'cmp_prior', encrypted_content: encoded }],
+    } as unknown as CanonicalResponsesPayload;
+    affinityPayload = continues;
+    resolves([candidate({
+      callResponses: async (_model, body) => {
+        sent = body as Record<string, unknown>;
+        return stream(completed('hi'));
+      },
+    })]);
+
+    await serve(false, continues);
+
+    expect(sent).toMatchObject({ input: [{ type: 'compaction', id: 'cmp_prior', encrypted_content: encoded }] });
   });
 });

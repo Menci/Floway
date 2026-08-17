@@ -7,6 +7,7 @@
 //   failover                   runs what follows once per candidate
 //   materializeAttempt         puts the payload this candidate is owed into the record
 //   beginStoredAttempt         reseeds the store's per-attempt scratchpad
+//   expandShimCompactions      a compaction this gateway wrote, back into what it stood for
 //   this family's request rules, the same four generation runs above its fork
 //   dialResponsesCompaction    the ending: dials a compaction, or simulates one
 //
@@ -14,7 +15,8 @@
 // `responsesServePipeline`, which is why it is a chain of its own. Everything above the
 // ending it shares with generation, stage for stage, because a compaction is routed, pinned
 // and rewritten exactly as a turn is: the same membrane hydrates it, the same narrowing
-// orders its candidates, the same four rules shape the body that goes out.
+// orders its candidates, the same rules shape the body that goes out — the shim's own
+// expansion among them, because a compaction it wrote is echoed back into either entry.
 //
 // The ending is where the two part. Two wires, both handing up `response.chat.responses`:
 //
@@ -26,8 +28,10 @@
 //     `responses-compact-shim` — is sent an ordinary generate turn against the compactor's
 //     prompt over the wires generation would have used, and the summary it produces is packed
 //     into an envelope of this gateway's own. That is the whole of what the action pivot was:
-//     one wire dials `compact`, the other dials `generate` under a stage that folds the
-//     answer, and neither needs an action to travel in the record.
+//     one wire dials `compact`, the other dials `generate` under the stage that folds the
+//     answer, and neither needs an action to travel in the record. The stage is the one the
+//     generate chain answers a `compaction_trigger` with, so whichever entry asked, the
+//     compaction that comes back was made the same way.
 //
 // What the simulation cannot reproduce is stated where it happens, at `summarizationTurnFor`.
 //
@@ -38,17 +42,11 @@
 
 import { responsesCreatedAt, wrapResponsesStatefulOutput } from './client-output.ts';
 import { completeResponsesCompaction } from './compaction-resource.ts';
-import {
-  buildCompactionEnvelope,
-  EMPTY_SUMMARY_MESSAGE,
-  expandShimCompactionItems,
-  summarizationTurnFor,
-  summaryTextFrom,
-} from './interceptors/compact-shim.ts';
-import { syntheticEventsFromCompaction, syntheticEventsFromResult } from './items/output.ts';
+import { syntheticEventsFromCompaction } from './items/output.ts';
 import {
   beginStoredAttempt,
   billedResponsesEntity,
+  expandShimCompactions,
   hydrateStoredItems,
   internalErrorEnvelope,
   RESPONSES_STREAMED_USAGE,
@@ -56,6 +54,8 @@ import {
   responsesTarget,
   responsesWireFor,
   responsesWireRules,
+  simulatesCompaction,
+  summarizeForCompaction,
   type ResponsesFacts,
 } from './pipeline.ts';
 import { billableUsageFromResponsesResult } from './usage.ts';
@@ -80,9 +80,7 @@ import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline'
 import { renderProtocolError, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
-  createRandomResponsesItemId,
   type CanonicalResponsesPayload,
-  type ResponsesOutputItem,
   type ResponsesStreamEvent,
 } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
@@ -292,74 +290,6 @@ const callResponsesCompactUpstream = defineStage<
   },
 });
 
-/**
- * Simulates a compaction over an upstream that has no compaction wire.
- *
- * It rewrites the turn on the way down — the compactor's prompt at the head of the history,
- * the trigger stripped, a terminal nudge appended, nothing persisted upstream — and folds the
- * generated summary into an envelope of this gateway's own on the way back. Below it is an
- * ordinary generate fork, which is what makes every wire generation can take a wire a
- * compaction can be simulated over.
- *
- * A prior simulated compaction the client echoed back is expanded first, so what is summarized
- * is the history it stood for rather than an opaque blob. A blob this gateway did not write
- * round-trips untouched.
- */
-const summarizeForCompaction = defineStage<
-  R<'request.chat.responses'>,
-  R<'request.chat.responses'>,
-  Compacted<'response.chat.responses'>,
-  Compacted<'response.chat.responses'>,
-  ChatServices
->({
-  name: 'summarizeForCompaction',
-  through: {
-    request: { needs: ['request.chat.responses'], consumes: [], provides: ['request.chat.responses'] },
-    response: {
-      needs: ['response.chat.responses'],
-      consumes: [],
-      provides: ['response.chat.responses'],
-    },
-  },
-  execute: async (facts, next) => {
-    const asked = facts['request.chat.responses'] as CanonicalResponsesPayload;
-    const back = await next({
-      ...facts,
-      'request.chat.responses': move(summarizationTurnFor(expandShimCompactionItems(asked))),
-    });
-
-    const answer = back['response.chat.responses'];
-    // An upstream that refused is handed on as it came: the client learns the compaction
-    // failed rather than being given a silent empty envelope.
-    if (isFailure(answer)) return back;
-
-    // The item lifecycle is the authority on what the turn closed; a Codex upstream states an
-    // `output` on its terminal that omits the message it just closed, so both are read and
-    // the closed items win where there are any.
-    const closed = new Map<number, ResponsesOutputItem>();
-    const observed = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-      for await (const frame of answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>) {
-        if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-          closed.set(frame.event.output_index, frame.event.item);
-        }
-        yield frame;
-      }
-    })();
-    const collected = await collectResponsesProtocolEventsToResult(observed);
-
-    const summaryText = summaryTextFrom(closed, collected.output);
-    if (summaryText.length === 0) {
-      // A summarization that closed no text produced no summary, and the blob is the whole of
-      // what the next turn inherits — so this is a candidate that did not do the job rather
-      // than a fault that ends the request, and the fork can try another.
-      return { ...back, 'response.chat.responses': move({ status: 502, message: EMPTY_SUMMARY_MESSAGE }) };
-    }
-
-    const synthesized = buildCompactionEnvelope(createRandomResponsesItemId('compaction'), summaryText, collected);
-    return { ...back, 'response.chat.responses': move({ kind: 'stream' as const, frames: syntheticEventsFromResult(synthesized) }) };
-  },
-});
-
 /** The generate fork, as the simulation reaches it. A summarization is an ordinary turn, so
  *  it is dialled on the wires an ordinary turn is dialled on. */
 const dialSummarizationWire = dialChatWire({
@@ -371,7 +301,9 @@ const dialSummarizationWire = dialChatWire({
 });
 
 const compactionWire: ChatWire = compose('responsesCompactNative', [...responsesWireRules, callResponsesCompactUpstream]);
-const simulationWire: ChatWire = compose('responsesCompactSimulated', [summarizeForCompaction, dialSummarizationWire]);
+// The ending below picks this wire only for a candidate whose compactions are the shim's to
+// simulate, so the ask is already answered: every turn that reaches it is one to summarize.
+const simulationWire: ChatWire = compose('responsesCompactSimulated', [summarizeForCompaction(() => true), dialSummarizationWire]);
 
 /**
  * Picks how this candidate's compaction is produced.
@@ -415,8 +347,7 @@ const dialResponsesCompaction = defineStage<
   },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    const compacts = responsesTarget.pick(candidate.model.endpoints) === 'responses'
-      && !facts['route.attempt'].flags.includes('responses-compact-shim');
+    const compacts = !simulatesCompaction(candidate, facts['route.attempt']);
     use.log.debug('compacting', { upstream: facts['route.attempt'].upstreamId, wire: compacts ? 'compact' : 'simulated' });
     return await next(facts, compacts ? compactionWire : simulationWire);
   },
@@ -450,6 +381,7 @@ export const responsesCompactPipeline = (payload: CanonicalResponsesPayload): Pi
     }),
     materializeAttempt('request.chat.responses'),
     beginStoredAttempt,
+    expandShimCompactions,
     disableReasoningOnForcedToolChoiceForResponses,
     stripPromptCacheKeyForResponses,
     vendorDeepSeekNormalizeForResponses,
