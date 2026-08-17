@@ -1,16 +1,5 @@
-import { analyzeResponsesAffinity } from './affinity/ingress.ts';
-import { responsesTarget } from './attempt.ts';
-import { renderResponsesFailure, type ResponsesServeFailure } from './errors.ts';
-import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
-import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
-import { selectAffinityCandidates } from '../shared/affinity/index.ts';
-import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -57,64 +46,4 @@ export const expandPreviousResponseId = async (
       ...payload.input,
     ],
   };
-};
-
-export type ResponsesServePlan =
-  | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | {
-    readonly kind: 'ready';
-    readonly affinitySelection: AffinityCandidateSelection<CanonicalResponsesPayload>;
-    readonly privatePayloads: ReadonlyMap<string, unknown>;
-    readonly candidates: readonly ModelCandidate[];
-  };
-
-// Runs the native source preparation both `responsesServe.generate` and
-// `responsesServe.compact` need before dispatching to `responsesAttempt`:
-// expand any `previous_response_id`, load and hydrate stored items, prepare
-// affinity, stage the user input, and return the selected candidate list.
-// Returns a rendered failure result when no candidate is viable so the
-// caller can surface it directly without re-deriving the model-error
-// branch. The caller iterates the candidates — a successful attempt is the
-// final answer, a per-candidate failure falls through to the next entry.
-export const prepareResponsesServePlan = async (args: {
-  readonly payload: CanonicalResponsesPayload;
-  readonly ctx: ChatGatewayCtx;
-}): Promise<ResponsesServePlan> => {
-  const { payload, ctx } = args;
-  const store = ctx.store;
-  const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
-    upstreamIds: ctx.upstreamIds,
-    model: prepared.model,
-    kind: 'chat',
-    scheduler: ctx.backgroundScheduler,
-    runtimeLocation: ctx.runtimeLocation,
-  });
-  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
-  await store.loadInputItems(prepared.input, payload.input);
-  let hydrated: ReturnType<typeof hydrateResponsesPayload>;
-  try {
-    hydrated = hydrateResponsesPayload(prepared, store);
-  } catch (error) {
-    const failure = tryCatchChatServeFailure<ResponsesServeFailure>(error);
-    if (failure === null) throw error;
-    return { kind: 'failure', result: renderResponsesFailure(failure) };
-  }
-  const affinity = await analyzeResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const selection = selectAffinityCandidates(viable, affinity);
-  if ('kind' in selection) return { kind: 'failure', result: renderResponsesFailure(selection) };
-  // Stage the user-supplied input from the original payload — not the
-  // expansion's `item_reference` prefix — so the next-turn snapshot picks
-  // up the new user items in addition to the prior snapshot history.
-  // Runs after the affinity walk so any `item_reference` in user-supplied
-  // input has its target row loaded.
-  await store.stageInputItems(payload.input);
-
-  if (selection.candidates.length === 0) {
-    return {
-      kind: 'failure',
-      result: renderResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
-    };
-  }
-  return { kind: 'ready', affinitySelection: selection, privatePayloads: hydrated.privatePayloads, candidates: selection.candidates };
 };
