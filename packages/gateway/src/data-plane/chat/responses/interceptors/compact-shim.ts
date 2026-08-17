@@ -189,7 +189,7 @@ type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>
 // assistant message it just closed. A turn that closed nothing falls back to
 // the terminal, as the client-facing egress does.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
+export const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
   const items = closed.size === 0
     ? stated
     : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
@@ -203,7 +203,7 @@ const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: reado
   return parts.join('');
 };
 
-const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
+export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
   // The prefix lives inside the blob so it round-trips atomically with the
   // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
   // one message and reads it as "another LLM's handoff", not as the human
@@ -243,12 +243,15 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: R
   };
 };
 
-const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const originalPayload = ctx.payload;
-
+// The turn a compaction is simulated with: the compactor's own prompt, the
+// history that is being compacted, and a nudge to produce the summary now.
+// Exported because the pipeline's compaction chain sends the same turn — one
+// definition is what keeps the simulated compaction identical whichever entry
+// asked for it.
+export const summarizationTurnFor = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => {
   // Strip compaction_trigger so the upstream sees a plain generate turn
   // against SUMMARIZATION_PROMPT.
-  const historyItems = originalPayload.input.filter(item => item.type !== 'compaction_trigger');
+  const historyItems = payload.input.filter(item => item.type !== 'compaction_trigger');
 
   // Anthropic Messages rejects assistant prefill — when the translated
   // conversation ends on an assistant message, the upstream returns 400
@@ -303,15 +306,22 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
     role: 'system',
     content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }],
   };
-  const inputForSummarization = [compactorSystemMessage, ...historyItems, terminalUserMessage];
-
-  ctx.payload = {
-    ...originalPayload,
-    input: inputForSummarization,
+  return {
+    ...payload,
+    input: [compactorSystemMessage, ...historyItems, terminalUserMessage],
     // Do not persist the ephemeral summarization turn in the upstream's
     // conversation history.
     store: false,
   };
+};
+
+// A summarization that closed no assistant text produced no summary, and a
+// compaction blob is the whole of what the next turn inherits — so an empty one
+// silently discards the conversation.
+export const EMPTY_SUMMARY_MESSAGE = 'Responses compact shim: the summarization turn closed no assistant text to summarize';
+
+const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  ctx.payload = summarizationTurnFor(ctx.payload);
   // Pivot the action so the inner dispatch routes to the upstream's
   // generate wire instead of its compact wire. The mutation is one-way:
   // the project's interceptor convention is that every `ctx.*` write
@@ -340,11 +350,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
 
   const collected = await collectResponsesProtocolEventsToResult(observed);
   const summaryText = summaryTextFrom(closedItems, collected.output);
-  // A compaction blob is the whole of what the next turn inherits, so an empty
-  // one silently discards the conversation.
-  if (summaryText.length === 0) {
-    throw new Error('Responses compact shim: the summarization turn closed no assistant text to summarize');
-  }
+  if (summaryText.length === 0) throw new Error(EMPTY_SUMMARY_MESSAGE);
   const cmpId = createRandomResponsesItemId('compaction');
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 

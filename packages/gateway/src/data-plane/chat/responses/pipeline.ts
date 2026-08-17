@@ -25,9 +25,11 @@
 // absence:
 //
 //   - `/v1/responses/compact`. A second operation over this protocol rather than another
-//     wire under this pipeline, so it stays on `responsesServe.compact`. The dial here asks
-//     for `generate`; what the ending answers with is the branch the provider says it ran,
-//     which is why the envelope a compaction is arrives somewhere rather than nowhere.
+//     wire under this pipeline, so it is a chain of its own in `compact.ts` — which reuses
+//     this one's membrane, its narrowing and its wires, because a compaction routes and is
+//     rewritten exactly as a turn is. The dial here asks for `generate`; what the ending
+//     answers with is the branch the provider says it ran, which is why the envelope a
+//     compaction is arrives somewhere rather than nowhere.
 //   - this family's remaining interceptors, the server-tool shims among them. Still only in
 //     the interceptor form, so the array between the materialized payload and the fork is
 //     short rather than complete — and nothing in a pipelined turn writes to the store's
@@ -228,7 +230,7 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStre
 /** What a fault the gateway is answerable for looks like on this protocol, with the stack
  *  that says where it happened: this is the gateway's own failure and not an upstream's, so
  *  the body is a diagnostic rather than something a client is meant to parse. */
-const internalErrorEnvelope = (error: unknown): Record<string, unknown> => {
+export const internalErrorEnvelope = (error: unknown): Record<string, unknown> => {
   const debug = toInternalDebugError(error);
   return {
     error: {
@@ -410,7 +412,7 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
         ...facts,
         'response.chat.responses': { kind: 'value' as const, body: result.result },
         [streamedUsage]: null,
-        'response.usage.billable': [billed(identity, billableUsageFromResponsesResult(result.result) ?? undefined)],
+        'response.usage.billable': [billedResponsesEntity(identity, billableUsageFromResponsesResult(result.result) ?? undefined)],
         'response.http.headers': [],
       });
     }
@@ -461,31 +463,39 @@ const normalizeAssistantContentForResponses = defineStage<
 });
 
 /**
- * The Responses wire, as the chain that dials it.
+ * What every turn this wire sends is subject to, whichever operation asked for it.
  *
- * Every source protocol that reaches an upstream over this endpoint runs this, whether the
+ * Every source protocol that reaches an upstream over this endpoint runs these, whether the
  * client spoke Responses or a handoff arrived here — which is what makes the three rules
- * above the dial belong here. The role rewrite and the assistant-content rewrite both state
- * what an upstream's Responses endpoint accepts; the cache-bucket fold speaks about the usage
- * *this* wire reports and about the flag that describes it, and a translator emits the
- * canonical form, which is the one case the fold has nothing to do with.
+ * belong to the wire. The role rewrite and the assistant-content rewrite both state what an
+ * upstream's Responses endpoint accepts; the cache-bucket fold speaks about the usage *this*
+ * wire reports and about the flag that describes it, and a translator emits the canonical
+ * form, which is the one case the fold has nothing to do with.
+ *
+ * They are named apart from the dial because a compaction is dialled differently and is
+ * subject to the same three.
  */
-export const responsesWire = (streamedUsage: string): readonly Stage[] => [
+export const responsesWireRules: readonly Stage[] = [
   normalizeAssistantContentForResponses,
   applyRoleCompatibilityToResponses,
   normalizeExclusiveCachedTokensForResponses,
+];
+
+/** The Responses wire, as the chain that dials it. */
+export const responsesWire = (streamedUsage: string): readonly Stage[] => [
+  ...responsesWireRules,
   callResponsesUpstream(streamedUsage),
 ];
 
 /** This family's own reading, which every wire under it hands up. */
-const STREAMED_USAGE = 'response.chat.responses.streamedUsage';
+export const RESPONSES_STREAMED_USAGE = 'response.chat.responses.streamedUsage';
 
 /** The three wires `/v1/responses` can be served on. Its own is the bare wire; each translated
  *  one is a handoff and then the target protocol's own wire. */
-const responsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+export const responsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
   case 'responses':
-    return compose('responsesNative', responsesWire(STREAMED_USAGE));
+    return compose('responsesNative', responsesWire(RESPONSES_STREAMED_USAGE));
   case 'messages':
     return compose('responsesViaMessages', [
       handOff({
@@ -497,7 +507,7 @@ const responsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use:
           loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
         }),
       }),
-      ...messagesWire(STREAMED_USAGE),
+      ...messagesWire(RESPONSES_STREAMED_USAGE),
     ]);
   case 'chat-completions':
     return compose('responsesViaChatCompletions', [
@@ -506,7 +516,7 @@ const responsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use:
         to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
         trip: async payload => await translateResponsesViaChatCompletions(payload, { model: candidate.model.id }),
       }),
-      ...chatCompletionsWire(STREAMED_USAGE),
+      ...chatCompletionsWire(RESPONSES_STREAMED_USAGE),
     ]);
   }
 };
@@ -559,7 +569,7 @@ const meterResponses = (
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billed(identity, reported)], failed: !sawTerminal });
+      settle({ billable: [billedResponsesEntity(identity, reported)], failed: !sawTerminal });
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
@@ -573,7 +583,7 @@ const meterResponses = (
  *  because on this protocol it is not a quantity but a rate selector — `service_tier` states
  *  the tier the turn was actually served at, and that is the pricing entry it is billed
  *  under. */
-const billed = (identity: TelemetryModelIdentity, usage: BillableUsage | undefined): BillableEntity => {
+export const billedResponsesEntity = (identity: TelemetryModelIdentity, usage: BillableUsage | undefined): BillableEntity => {
   if (usage === undefined) return { identity, quantities: {} };
   const measurement = tokenUsageMeasurement(tokenUsageFromBillableUsage(usage));
   return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
@@ -588,7 +598,7 @@ const billed = (identity: TelemetryModelIdentity, usage: BillableUsage | undefin
  *  client never sent, and a turn is pinned by what its items carry. The narrowing is built
  *  at assembly, before any fact exists, so the membrane hands the prepared payload across
  *  through the run's own cell rather than through the record. */
-const narrowing = (prepared: () => CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses' | 'response.chat.responses.streamedUsage'>> => ({
+export const responsesNarrowing = (prepared: () => CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses' | 'response.chat.responses.streamedUsage'>> => ({
   canServe: candidate => responsesTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeResponsesAffinity(prepared(), gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
@@ -645,7 +655,7 @@ const refuseStoredItems = (
  * nowhere to be routed to. Both of its refusals are answers it already holds, which is why
  * it carries the `return` trait alongside `through`.
  */
-const hydrateStoredItems = (
+export const hydrateStoredItems = (
   client: CanonicalResponsesPayload,
   prepared: (payload: CanonicalResponsesPayload) => void,
 ) => defineStage<
@@ -731,7 +741,7 @@ const hydrateStoredItems = (
  * an interceptor — so today this only puts back the state the stored rows already carried,
  * which is what lets an item this turn re-emits be stored with it intact.
  */
-const beginStoredAttempt = defineStage<
+export const beginStoredAttempt = defineStage<
   R<'request.chat.responses.privatePayloads'>,
   R<'request.chat.responses.privatePayloads'>,
   Record<string, never>,
@@ -777,7 +787,7 @@ export const responsesServePipeline = (
       handedUp => (handedUp as { 'response.chat.responses.streamedUsage'?: unknown })['response.chat.responses.streamedUsage'] !== null,
     ),
     hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
-    resolveChatCandidates(narrowing(() => prepared)),
+    resolveChatCandidates(responsesNarrowing(() => prepared)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.responses'?: unknown })['response.chat.responses']),
       owns: [],
@@ -791,7 +801,7 @@ export const responsesServePipeline = (
     dialChatWire({
       source: 'request.chat.responses',
       needs: ['request.chat.responses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
-      provides: ['response.chat.responses', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      provides: ['response.chat.responses', RESPONSES_STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
       pick: endpoints => responsesTarget.pick(endpoints),
       wire: responsesWireFor,
     }),
