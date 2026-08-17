@@ -1,54 +1,53 @@
+// What a simulated compaction is made of. The rules that use these run as stages and are
+// tested where they run — `responses-pipeline_test.ts` for the generate chain and
+// `responses-compact_test.ts` for the compaction chain; what is written down here is the
+// substance those stages send and pack.
+
 import { test } from 'vitest';
 
-import { SUMMARY_PREFIX, expandShimCompactionItems, withResponsesCompactShim } from '../../../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
-import type { ResponsesInvocation } from '../../../../../src/data-plane/chat/responses/interceptors/types.ts';
-import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import {
+  buildCompactionEnvelope,
+  expandShimCompactionItems,
+  summarizationTurnFor,
+  summaryTextFrom,
+  SUMMARY_PREFIX,
+} from '../../../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
+import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import { assertEquals } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx();
+const turnFor = (payload: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload =>
+  summarizationTurnFor({ model: 'test-model', input: [], ...payload } as CanonicalResponsesPayload);
 
-const makeInvocation = (
-  payload: Partial<ResponsesPayload> = {},
-  options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'responses' | 'messages' | 'chat-completions' } = {},
-): ResponsesInvocation => ({
-  payload: { model: 'test-model', input: [], ...payload } as CanonicalResponsesPayload,
-  action: options.action ?? 'generate',
-  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) }),
-  targetApi: options.targetApi ?? 'responses',
-  headers: new Headers(),
+/** The items a turn was rewritten into, as the assertions below read them. */
+const itemsOf = (payload: CanonicalResponsesPayload): { type: string; role?: string; content?: { type: string; text: string }[] }[] =>
+  payload.input as { type: string; role?: string; content?: { type: string; text: string }[] }[];
+
+/** What the summarization turn produced, as an upstream states it. */
+const summarized = (text: string, overrides: Partial<ResponsesResult> = {}): ResponsesResult => ({
+  id: 'resp_fake_upstream',
+  object: 'response',
+  model: 'test-upstream-model',
+  status: 'completed',
+  output: [{
+    type: 'message',
+    id: 'msg_1',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text, annotations: [] }],
+  }],
+  error: null,
+  incomplete_details: null,
+  usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+  ...overrides,
 });
 
-// Build a fake upstream `run()` that emits a single completed response whose
-// output contains one assistant message with the given text. Used to model
-// the inner summarization turn the shim drives.
-const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const response: ResponsesResult = {
-    id: 'resp_fake_upstream',
-    object: 'response',
-    model: 'test-upstream-model',
-    status: 'completed',
-    output: [{
-      type: 'message',
-      id: 'msg_1',
-      role: 'assistant',
-      status: 'completed',
-      content: [{ type: 'output_text', text: summaryText, annotations: [] }],
-    }],
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
-  };
-  return () => Promise.resolve(eventResult(
-    (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
-      yield doneFrame();
-    })(),
-    testTelemetryModelIdentity,
-  ));
+/** The items a compaction blob stands for. The blob is this gateway's own base64url-JSON
+ *  marker, so what a test reads back is what a later turn's expansion would. */
+const decodeBlob = (encryptedContent: string): { type: string; role: string; content: { type: string; text: string }[] }[] => {
+  const decoded = decodeBase64UrlJson(encryptedContent);
+  if (decoded === null) throw new Error('expected a shim-encoded compaction blob');
+  return decoded as { type: string; role: string; content: { type: string; text: string }[] }[];
 };
 
 // ── Inbound expansion (expandShimCompactionItems) ────────────────────────────
@@ -97,49 +96,21 @@ test('inbound: foreign compaction blob (valid base64url but wrong shape) round-t
   assertEquals(expanded, original);
 });
 
-// ── Outbound summarization (withResponsesCompactShim) ────────────────────────
+// ── The summarization turn (summarizationTurnFor) ────────────────────────────
 
-test('compact + flag on: pivots to generate, drives upstream summarization, returns compaction envelope', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
-    { action: 'compact' },
-  );
+test('the turn carries SUMMARIZATION_PROMPT as a role=system item at the head of the history, and persists nothing', () => {
+  const turn = turnFor({ input: [{ type: 'message', role: 'user', content: 'long conversation history' }] });
 
-  let seenPayload: ResponsesPayload | undefined;
-  let seenAction: 'generate' | 'compact' | undefined;
-  const result = await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    seenAction = inv.action;
-    return fakeUpstreamRun('CONDENSED SUMMARY')();
-  });
-
-  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
-  // Inner action seen by the upstream is 'generate'.
-  assertEquals(seenAction, 'generate');
-  // The pivot is one-way per the project's interceptor convention: outer
-  // ctx.action stays 'generate' after the run. attempt.invoke keys
-  // envelope-drain on the caller's intent action (captured by value), so
-  // leaving invocation.action='generate' does not change the result shape.
-  assertEquals(inv.action, 'generate');
-  // Payload pivoted: SUMMARIZATION_PROMPT injected as a role=system input
-  // item at the head of the history (mirroring native compact's system-role
-  // compactor prompt), store:false, the original history retained after it
-  // (compaction_trigger items would be stripped but there are none here).
-  if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  const rewrittenInput = seenPayload.input as ResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
+  const compactorSystem = itemsOf(turn)[0]!;
   assertEquals(compactorSystem.type, 'message');
   assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
-  assertEquals(seenPayload.store, false);
-
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.object, 'response.compaction');
-  const compactionItem = collected.output[0] as { type: string; encrypted_content: string };
-  assertEquals(compactionItem.type, 'compaction');
+  assertEquals(compactorSystem.content![0]!.text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  // The ephemeral summarization turn does not pollute the upstream's own conversation
+  // history.
+  assertEquals(turn.store, false);
 });
 
-test("compact + flag on: caller's `instructions` field flows through untouched (bug-for-bug parity with native compact)", async () => {
+test("the caller's `instructions` field flows through untouched (bug-for-bug parity with native compact)", () => {
   // Native `/responses/compact` puts SUMMARIZATION_PROMPT into the compactor
   // context as a role=system message AND forwards the caller's `instructions`
   // as a developer-role message alongside; both are in scope. Prompt-
@@ -149,463 +120,149 @@ test("compact + flag on: caller's `instructions` field flows through untouched (
   // summary. The shim must reproduce that shape — do NOT overwrite the
   // caller's instructions with SUMMARIZATION_PROMPT (it now lives as a
   // separate role=system input item).
-  const inv = makeInvocation(
-    {
-      input: [{ type: 'message', role: 'user', content: 'history' }],
-      instructions: 'You are a helpful assistant. Always mention the word quokka.',
-    },
-    { action: 'compact' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('irrelevant')();
+  const turn = turnFor({
+    input: [{ type: 'message', role: 'user', content: 'history' }],
+    instructions: 'You are a helpful assistant. Always mention the word quokka.',
   });
 
-  if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  // Original instructions preserved verbatim; SUMMARIZATION_PROMPT lives
-  // separately in the role=system input item at index 0.
-  assertEquals(seenPayload.instructions, 'You are a helpful assistant. Always mention the word quokka.');
-  const rewrittenInput = seenPayload.input as ResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
+  assertEquals(turn.instructions, 'You are a helpful assistant. Always mention the word quokka.');
+  const compactorSystem = itemsOf(turn)[0]!;
   assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(compactorSystem.content![0]!.text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
 });
 
-test('compact + flag on: caller with no `instructions` still gets SUMMARIZATION_PROMPT as a role=system input item and instructions stays absent', async () => {
+test('a caller with no `instructions` still gets the compactor prompt, and the slot stays absent', () => {
   // Baseline: when the caller sends no `instructions` field, the shim still
   // injects SUMMARIZATION_PROMPT via the role=system input item — matching
   // native compact, which always has its system-role compactor prompt in
   // scope regardless of whether the caller supplies a developer message.
   // The `instructions` slot stays unset so a downstream translator does not
   // synthesize a phantom developer message from thin air.
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
+  const turn = turnFor({ input: [{ type: 'message', role: 'user', content: 'history' }] });
 
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('irrelevant')();
-  });
-
-  if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
-  assertEquals(seenPayload.instructions, undefined);
-  const rewrittenInput = seenPayload.input as ResponsesInputItem[];
-  const compactorSystem = rewrittenInput[0] as { type: string; role: string; content: Array<{ text: string }> };
+  assertEquals(turn.instructions, undefined);
+  const compactorSystem = itemsOf(turn)[0]!;
   assertEquals(compactorSystem.type, 'message');
   assertEquals(compactorSystem.role, 'system');
-  assertEquals(compactorSystem.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  assertEquals(compactorSystem.content![0]!.text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
 });
 
-test('compact + flag on: synthesized encrypted_content decodes to a user message containing the summary prefixed with the handoff prompt', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
-  const result = await withResponsesCompactShim(inv, stubCtx, fakeUpstreamRun('THE SUMMARY'));
-  if (result.type !== 'events') throw new Error('expected events branch');
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  const compactionItem = collected.output[0] as { type: string; encrypted_content: string };
-
-  // The encrypted_content decodes to our base64url-JSON marker: one
-  // user-role message carrying `${SUMMARY_PREFIX}\n${summary}` as
-  // input_text. The prefix rides inside the blob so a downstream LLM
-  // that echoes the compaction back reads the message as "another LLM's
-  // handoff summary", not as raw user speech.
-  const decoded = JSON.parse(
-    new TextDecoder().decode(
-      Uint8Array.from(
-        atob(compactionItem.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0),
-      ),
-    ),
-  );
-  assertEquals(decoded.length, 1);
-  assertEquals(decoded[0].type, 'message');
-  assertEquals(decoded[0].role, 'user');
-  assertEquals(decoded[0].content[0].type, 'input_text');
-  assertEquals(decoded[0].content[0].text, `${SUMMARY_PREFIX}\nTHE SUMMARY`);
-});
-
-test('compact + flag on: upstream `output_text` SDK alias is dropped from the synthesized envelope', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
-
-  // Some upstreams (and some OpenAPI implementations) emit the convenience
-  // `output_text` alias alongside `output`. The synthesized
-  // `response.compaction` envelope must not forward it — its value is the
-  // upstream's summary plaintext, which a downstream SDK reading
-  // `output_text` on a compaction envelope would surface in place of the
-  // opaque-blob contract `encrypted_content` is supposed to carry.
-  const runWithOutputText = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const response: ResponsesResult = {
-      id: 'resp_fake_upstream',
-      object: 'response',
-      model: 'test-upstream-model',
-      status: 'completed',
-      output: [{
-        type: 'message',
-        id: 'msg_1',
-        role: 'assistant',
-        status: 'completed',
-        content: [{ type: 'output_text', text: 'THE SUMMARY', annotations: [] }],
-      }],
-      output_text: 'THE SUMMARY',
-      error: null,
-      incomplete_details: null,
-      usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
-    };
-    return Promise.resolve(eventResult(
-      (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
-        yield doneFrame();
-      })(),
-      testTelemetryModelIdentity,
-    ));
-  };
-  const result = await withResponsesCompactShim(inv, stubCtx, runWithOutputText);
-  if (result.type !== 'events') throw new Error('expected events branch');
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.output_text, undefined);
-});
-
-test('compact + flag on: upstream incomplete status propagates onto the synthesized envelope', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
-
-  // Simulate a summarization turn that hit `max_output_tokens` mid-stream:
-  // the upstream returns `status: 'incomplete'` with `incomplete_details`
-  // populated. The synthesized envelope must surface that — not pretend the
-  // turn ran to completion.
-  const runIncomplete = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const response: ResponsesResult = {
-      id: 'resp_fake_upstream',
-      object: 'response',
-      model: 'test-upstream-model',
-      status: 'incomplete',
-      incomplete_details: { reason: 'max_output_tokens' },
-      output: [{
-        type: 'message',
-        id: 'msg_1',
-        role: 'assistant',
-        status: 'incomplete',
-        content: [{ type: 'output_text', text: 'partial summary', annotations: [] }],
-      }],
-      error: null,
-      usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
-    };
-    return Promise.resolve(eventResult(
-      (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
-        yield doneFrame();
-      })(),
-      testTelemetryModelIdentity,
-    ));
-  };
-  const result = await withResponsesCompactShim(inv, stubCtx, runIncomplete);
-  if (result.type !== 'events') throw new Error('expected events branch');
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.status, 'incomplete');
-  assertEquals(collected.incomplete_details, { reason: 'max_output_tokens' });
-});
-
-test('compact + flag on: compaction_trigger items are stripped before the upstream call', async () => {
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: 'real history' },
-        { type: 'compaction_trigger' } as unknown as never,
-      ],
-    },
-    { action: 'compact' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('s')();
+test('compaction_trigger items are stripped from the history the compactor is sent', () => {
+  const turn = turnFor({
+    input: [
+      { type: 'message', role: 'user', content: 'real history' },
+      { type: 'compaction_trigger' } as unknown as never,
+    ],
   });
-  if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const items = seenPayload.input as Array<{ type: string }>;
-  assertEquals(items.every(i => i.type !== 'compaction_trigger'), true);
+
+  assertEquals(itemsOf(turn).every(item => item.type !== 'compaction_trigger'), true);
 });
 
-test('compact + flag on: history ending on an assistant message gets a synthetic terminal user prompt appended', async () => {
+test('a history ending on an assistant message gets a synthetic terminal user prompt appended', () => {
   // Anthropic Messages rejects assistant prefill: a conversation that
   // ends on an assistant turn returns 400 `This model does not support
   // assistant message prefill`. The shim normalizes by appending a
   // synthetic user-role nudge so the summarization call always ends on
   // a user message — harmless on OpenAI-style upstreams and load-bearing
   // for translated Anthropic ones.
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
-        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hello back', annotations: [] }] } as unknown as never,
-      ],
-    },
-    { action: 'compact' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('s')();
+  const turn = turnFor({
+    input: [
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hello back', annotations: [] }] } as unknown as never,
+    ],
   });
-  if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const items = seenPayload.input as Array<{ type: string; role?: string; content?: Array<{ type: string; text: string }> }>;
+
   // [SUMMARIZATION_PROMPT system, user 'hi', assistant 'hello back', synthetic user nudge]
+  const items = itemsOf(turn);
   assertEquals(items.length, 4);
-  assertEquals(items[0].role, 'system');
-  const tail = items[items.length - 1];
+  assertEquals(items[0]!.role, 'system');
+  const tail = items[items.length - 1]!;
   assertEquals(tail.type, 'message');
   assertEquals(tail.role, 'user');
-  assertEquals(tail.content?.[0].type, 'input_text');
+  assertEquals(tail.content![0]!.type, 'input_text');
 });
 
-test('compact + flag off: passes through to run() unchanged', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'compact me' }] },
-    { action: 'compact', flagOn: false },
-  );
+// ── The summary, and the envelope it is packed into ──────────────────────────
 
-  let runCalled = false;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    runCalled = true;
-    return fakeUpstreamRun('unused')();
-  });
-  // Flag off: shim early-returns without expansion or pivot. The inner
-  // run() is called directly, action stays 'compact', payload unchanged.
-  assertEquals(runCalled, true);
-  assertEquals(inv.action, 'compact');
-});
-
-// ── Bug 1 — engagement gating ────────────────────────────────────────────────
-//
-// The shim engages when EITHER the per-upstream flag is on OR the candidate's
-// targetApi is not 'responses'. The compact-shape check inside (action ===
-// 'compact' OR input contains compaction_trigger) decides whether to simulate
-// or just pass the request through. Together these gates make the shim
-// structurally required on non-Responses upstreams (Messages / Chat
-// Completions translation has no `compaction_trigger` variant) while keeping
-// the flag as the operator opt-in for Responses-target upstreams.
-
-test('generate + compaction_trigger + flag off + messages target: shim simulates (structurally required)', async () => {
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: 'real history' },
-        { type: 'compaction_trigger' } as unknown as never,
-      ],
-    },
-    { action: 'generate', flagOn: false, targetApi: 'messages' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  const result = await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('CONDENSED SUMMARY')();
-  });
-
-  // The shim should have engaged: the upstream sees the summarization
-  // prompt (as a role=system input item at the head of the history) and a
-  // stripped (no compaction_trigger) history, and the result is the
-  // synthesized `response.compaction` envelope.
-  if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const innerItems = seenPayload.input as ResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.type, 'message');
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
-  assertEquals(innerItems.every(i => i.type !== 'compaction_trigger'), true);
-
-  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.object, 'response.compaction');
-});
-
-test('generate + compaction_trigger + flag off + responses target: shim passes through (flag opt-in not taken)', async () => {
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: 'real history' },
-        { type: 'compaction_trigger' } as unknown as never,
-      ],
-    },
-    { action: 'generate', flagOn: false, targetApi: 'responses' },
-  );
-
-  let runCalled = false;
-  let seenAction: 'generate' | 'compact' | undefined;
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    runCalled = true;
-    seenAction = inv.action;
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('unused')();
-  });
-
-  // Shim did not engage — request flowed through untouched.
-  assertEquals(runCalled, true);
-  assertEquals(seenAction, 'generate');
-  // Payload still carries the trigger (no expansion, no strip, no pivot).
-  const items = seenPayload?.input as Array<{ type: string }>;
-  assertEquals(items.some(i => i.type === 'compaction_trigger'), true);
-});
-
-test('generate + compaction_trigger + flag on + messages target: shim simulates (same as flag-off path)', async () => {
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: 'real history' },
-        { type: 'compaction_trigger' } as unknown as never,
-      ],
-    },
-    { action: 'generate', targetApi: 'messages' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  const result = await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('CONDENSED SUMMARY')();
-  });
-
-  if (!seenPayload) throw new Error('expected the upstream call to fire');
-  const innerItems = seenPayload.input as ResponsesInputItem[];
-  const head = innerItems[0] as { type: string; role: string; content: Array<{ text: string }> };
-  assertEquals(head.role, 'system');
-  assertEquals(head.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
-  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.object, 'response.compaction');
-});
-
-test('generate + flag on: runs inbound expansion but does not pivot', async () => {
-  const userItem = { type: 'message' as const, role: 'user' as const, content: 'expanded' };
-  const encoded = encodeBase64UrlJson([userItem]);
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'compaction', id: 'cmp_1', encrypted_content: encoded } as unknown as never,
-        { type: 'message', role: 'user', content: 'follow-up' },
-      ],
-    },
-    { action: 'generate' },
-  );
-
-  let runCalled = false;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    runCalled = true;
-    return fakeUpstreamRun('unused')();
-  });
-  assertEquals(runCalled, true);
-  // generate action stays as-is.
-  assertEquals(inv.action, 'generate');
-  // Inbound expansion ran: the compaction item was replaced by `userItem`.
-  const items = inv.payload.input as Array<{ type: string; content?: unknown }>;
-  assertEquals(items.length, 2);
-  assertEquals(items[0], userItem);
-});
-
-test('compact + flag on: upstream api-error propagates', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
-
-  const errorResult: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> = {
-    type: 'api-error',
-    source: 'upstream',
-    status: 502,
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode('{"error":"upstream blew up"}'),
+test('the summary is the item the turn closed, not the output its terminal stated', () => {
+  const message: ResponsesOutputItem = {
+    type: 'message',
+    id: 'msg_1',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: 'CONDENSED SUMMARY', annotations: [] }],
   };
-  const result = await withResponsesCompactShim(inv, stubCtx, () => Promise.resolve(errorResult));
-  if (result.type !== 'api-error') throw new Error(`expected api-error, got ${result.type}`);
-  assertEquals(result.status, 502);
+
+  assertEquals(summaryTextFrom(new Map([[0, message]]), []), 'CONDENSED SUMMARY');
+  // A turn that closed nothing falls back to the terminal, as the client-facing egress does.
+  assertEquals(summaryTextFrom(new Map(), [message]), 'CONDENSED SUMMARY');
+});
+
+test('the synthesized encrypted_content decodes to a user message carrying the summary behind the handoff prefix', () => {
+  const envelope = buildCompactionEnvelope('cmp_1', 'THE SUMMARY', summarized('THE SUMMARY'));
+
+  assertEquals(envelope.object, 'response.compaction');
+  const item = envelope.output[0] as unknown as { type: string; id: string; encrypted_content: string };
+  assertEquals(item.type, 'compaction');
+  assertEquals(item.id, 'cmp_1');
+  // The prefix rides inside the blob so a downstream LLM that echoes the compaction back
+  // reads the message as "another LLM's handoff summary", not as raw user speech.
+  const decoded = decodeBlob(item.encrypted_content);
+  assertEquals(decoded.length, 1);
+  assertEquals(decoded[0]!.type, 'message');
+  assertEquals(decoded[0]!.role, 'user');
+  assertEquals(decoded[0]!.content[0]!.type, 'input_text');
+  assertEquals(decoded[0]!.content[0]!.text, `${SUMMARY_PREFIX}\nTHE SUMMARY`);
+  // The envelope is answered under an id of this gateway's own rather than the summarization
+  // turn's.
+  assertEquals(envelope.id === 'resp_fake_upstream', false);
+});
+
+test("the upstream's `output_text` SDK alias is dropped from the synthesized envelope", () => {
+  // Some upstreams (and some OpenAPI implementations) emit the convenience
+  // `output_text` alias alongside `output`. The synthesized
+  // `response.compaction` envelope must not forward it — its value is the
+  // upstream's summary plaintext, which a downstream SDK reading
+  // `output_text` on a compaction envelope would surface in place of the
+  // opaque-blob contract `encrypted_content` is supposed to carry.
+  const envelope = buildCompactionEnvelope(
+    'cmp_1',
+    'THE SUMMARY',
+    summarized('THE SUMMARY', { output_text: 'THE SUMMARY' } as Partial<ResponsesResult>),
+  );
+
+  assertEquals(envelope.output_text, undefined);
+});
+
+test('an incomplete summarization turn says so on the envelope it backs', () => {
+  // A summarization that hit `max_output_tokens` mid-stream comes back with
+  // `status: 'incomplete'` and `incomplete_details` populated. The synthesized
+  // envelope must surface that — not pretend the turn ran to completion.
+  const envelope = buildCompactionEnvelope('cmp_1', 'partial summary', summarized('partial summary', {
+    status: 'incomplete',
+    incomplete_details: { reason: 'max_output_tokens' },
+  }));
+
+  assertEquals(envelope.status, 'incomplete');
+  assertEquals(envelope.incomplete_details, { reason: 'max_output_tokens' });
 });
 
 // ── Round-trip ────────────────────────────────────────────────────────────────
 
-test('round-trip: outbound synthesis then inbound expansion recovers the summary message prefixed with the handoff prompt', async () => {
-  // Step 1: simulate compaction — returns the synthesized envelope with
-  // shim-encoded `encrypted_content`.
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'long convo' }] },
-    { action: 'compact' },
-  );
-  const result = await withResponsesCompactShim(inv, stubCtx, fakeUpstreamRun('SUMMARY TEXT'));
-  if (result.type !== 'events') throw new Error('expected events');
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  const compactionItem = collected.output[0] as { type: string; id?: string; encrypted_content: string };
+test('round-trip: what one turn packed is what the next turn is sent', () => {
+  const envelope = buildCompactionEnvelope('cmp_rt', 'SUMMARY TEXT', summarized('SUMMARY TEXT'));
+  const item = envelope.output[0] as unknown as { id: string; encrypted_content: string };
 
-  // Step 2: next turn echoes the compaction item back as an input item;
-  // inbound expansion replaces it with the summary message — carrying the
-  // handoff prefix that was baked into the blob at encode time.
-  const nextTurn: CanonicalResponsesPayload = {
+  // The next turn echoes the compaction item back as an input item; expansion replaces it
+  // with the summary message, carrying the handoff prefix baked in at encode time.
+  const expanded = expandShimCompactionItems({
     model: 'test-model',
-    input: [
-      { type: 'compaction', id: compactionItem.id ?? 'cmp_rt', encrypted_content: compactionItem.encrypted_content } as unknown as never,
-    ],
-  };
-  const expanded = expandShimCompactionItems(nextTurn);
-  const items = expanded.input as Array<{ type: string; role: string; content: Array<{ type: string; text: string }> }>;
+    input: [{ type: 'compaction', id: item.id, encrypted_content: item.encrypted_content } as unknown as ResponsesInputItem],
+  });
+
+  const items = expanded.input as { type: string; role: string; content: { type: string; text: string }[] }[];
   assertEquals(items.length, 1);
-  assertEquals(items[0].type, 'message');
-  assertEquals(items[0].role, 'user');
-  assertEquals(items[0].content[0].text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
-});
-
-const upstreamRunStatingNoOutput = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const message = {
-    type: 'message' as const,
-    id: 'msg_1',
-    role: 'assistant' as const,
-    status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: summaryText, annotations: [] }],
-  };
-  const response: ResponsesResult = {
-    id: 'resp_fake_upstream',
-    object: 'response',
-    model: 'test-upstream-model',
-    status: 'completed',
-    output: [],
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
-  };
-  return () => Promise.resolve(eventResult(
-    (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-      yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: message });
-      yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: message });
-      yield eventFrame({ type: 'response.completed', sequence_number: 2, response });
-      yield doneFrame();
-    })(),
-    testTelemetryModelIdentity,
-  ));
-};
-
-test('compact + flag on: the summary is the item the turn closed, not the output its terminal stated', async () => {
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'long conversation history' }] },
-    { action: 'compact' },
-  );
-
-  const result = await withResponsesCompactShim(inv, stubCtx, upstreamRunStatingNoOutput('CONDENSED SUMMARY'));
-  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
-
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  const compaction = collected.output[0] as unknown as { type: string; encrypted_content: string };
-  assertEquals(compaction.type, 'compaction');
-  const decoded = JSON.parse(new TextDecoder().decode(
-    Uint8Array.from(atob(compaction.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
-  )) as Array<{ content: Array<{ text: string }> }>;
-  assertEquals(decoded[0]?.content[0]?.text, `${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+  assertEquals(items[0]!.type, 'message');
+  assertEquals(items[0]!.role, 'user');
+  assertEquals(items[0]!.content[0]!.text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
 });

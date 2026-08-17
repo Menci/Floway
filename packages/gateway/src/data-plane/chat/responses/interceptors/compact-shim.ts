@@ -1,65 +1,40 @@
-// Compact-shim — simulates a `response.compaction` envelope against upstreams
-// that have no native compaction wire.
+// Compact-shim — what a `response.compaction` envelope is made of, where no upstream wire
+// makes one.
 //
-// Engagement is the OR of two conditions:
-//   1. The per-upstream `responses-compact-shim` flag is on. This is the
-//      operator-controlled opt-in for Responses-target upstreams that
-//      already answer a compact request themselves — natively through
-//      `/responses/compact` (codex / azure / custom), or by replaying
-//      `RemoteCompactionV2` over `/responses` (copilot) — but where we still
-//      want shim-synthesized envelopes.
-//   2. The candidate's `targetApi` is not `responses`. When the upstream is
-//      Messages or Chat Completions, the translation layer has no concept
-//      of a `compaction` output item or a `compaction_trigger` input item.
-//      The shim is structurally required regardless of the flag — without
-//      it, a `compaction_trigger` item would reach the translator and
-//      crash on the unknown variant.
+// The rules that use these are stages: `simulatesCompaction` says which candidates'
+// compactions are the shim's to make, `expandShimCompactions` puts a blob of ours back into
+// the items it stood for, and `summarizeForCompaction` sends the turn built here and packs
+// what comes back (`responses/pipeline.ts`). Both of this protocol's chains compose them,
+// because a compaction the shim wrote is issued through one entry — `/v1/responses/compact`,
+// or a generate turn whose input ends in a `compaction_trigger` — and echoed back into the
+// other by the client that received it.
 //
-// Inner compact-shape detection is also the OR of two conditions:
-//   - `invocation.action === 'compact'` (the native `/responses/compact`
-//     entry point), or
-//   - `invocation.payload.input` contains a `compaction_trigger` item
-//     (Codex CLI's RemoteCompactionV2 path: a `generate` call whose input
-//     ends in a control item that semantically requests compaction).
+// What is here is the shim's own substance:
 //
-// Flow when engaged and compact-shaped:
-//   1. Inbound: walk `payload.input` for `compaction` items whose
-//      `encrypted_content` decodes as our base64url-JSON marker. Each match
-//      is replaced inline with the items it originally encoded — so a
-//      subsequent turn that echoes back the synthesized compaction sees the
-//      summarized history.
-//   2. Outbound: pivot the action to 'generate', prepend a role=system
-//      message carrying the SUMMARIZATION_PROMPT (vendored from
-//      openai/codex), strip any `compaction_trigger` items, append a
-//      terminal user message if the history ends on a non-user item
-//      (Anthropic Messages rejects assistant prefill), and force
-//      `store: false` so the ephemeral summarization turn does not
-//      pollute the upstream's conversation history. The caller's
-//      `instructions` field flows through untouched — native
-//      `/responses/compact` keeps SUMMARIZATION_PROMPT as a system-role
-//      prompt AND forwards the caller's instructions as a developer-role
-//      message alongside, and we mirror that shape. Call `run()` to
-//      drive the chain through the normal generate path; collect the
-//      resulting summary text; pack a single user-role message
-//      containing the summary into a synthetic `response.compaction`
-//      envelope. Mutations of `ctx.payload` / `ctx.action` are one-way
-//      per the project's interceptor convention; attempt.invoke does
-//      not consume the post-chain `ctx` for its result shape (it keys
-//      envelope-drain off the caller's intent action).
+//   - `expandShimCompactionItems`: walk `payload.input` for `compaction` items whose
+//     `encrypted_content` decodes as our base64url-JSON marker, and replace each inline with
+//     the items it originally encoded — so a turn that echoes back a synthesized compaction
+//     is sent the summarized history rather than a blob.
+//   - `summarizationTurnFor`: the turn a compaction is simulated with. A role=system message
+//     carrying the SUMMARIZATION_PROMPT (vendored from openai/codex) at the head of the
+//     history, any `compaction_trigger` items stripped, a terminal user message appended
+//     where the history ends on a non-user item (Anthropic Messages rejects assistant
+//     prefill), and `store: false` so the ephemeral summarization turn does not pollute the
+//     upstream's conversation history. The caller's `instructions` field flows through
+//     untouched — native `/responses/compact` keeps SUMMARIZATION_PROMPT as a system-role
+//     prompt AND forwards the caller's instructions as a developer-role message alongside,
+//     and we mirror that shape.
+//   - `summaryTextFrom` and `buildCompactionEnvelope`: the summary the turn produced, and the
+//     synthetic `response.compaction` envelope carrying it as a blob only this gateway reads.
 //
-// Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding
-// or fail the array-of-objects-with-string-types schema below) round-trip
-// untouched, so the operator can selectively turn the flag off for the
-// codex / copilot / azure / custom upstreams that answer compact themselves.
+// Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding or fail the
+// array-of-objects-with-string-types schema below) round-trip untouched, so the operator can
+// selectively turn the flag off for the codex / copilot / azure / custom upstreams that
+// answer compact themselves.
 
-import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { syntheticEventsFromResult } from '../items/output.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, createRandomResponsesItemId, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -181,8 +156,6 @@ export const expandShimCompactionItems = (payload: CanonicalResponsesPayload): C
 };
 
 // ── Outbound summarization ────────────────────────────────────────────────────
-
-type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
 // The spec makes the item lifecycle the authority and requires nothing of the
 // terminal's `output`; a Codex upstream states an `output` that omits the
@@ -320,68 +293,5 @@ export const summarizationTurnFor = (payload: CanonicalResponsesPayload): Canoni
 // silently discards the conversation.
 export const EMPTY_SUMMARY_MESSAGE = 'Responses compact shim: the summarization turn closed no assistant text to summarize';
 
-const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  ctx.payload = summarizationTurnFor(ctx.payload);
-  // Pivot the action so the inner dispatch routes to the upstream's
-  // generate wire instead of its compact wire. The mutation is one-way:
-  // the project's interceptor convention is that every `ctx.*` write
-  // propagates downstream and is never restored on the way out. Post-chain
-  // consumers keep their own captured copies of inputs they care about.
-  ctx.action = 'generate';
-
-  const upstreamResult = await run();
-
-  if (upstreamResult.type !== 'events') {
-    // api-error / internal-error from the upstream propagate so the client
-    // learns the compaction failed rather than receiving a silent empty
-    // envelope.
-    return upstreamResult;
-  }
-
-  const closedItems = new Map<number, ResponsesOutputItem>();
-  const observed = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    for await (const frame of upstreamResult.events) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        closedItems.set(frame.event.output_index, frame.event.item);
-      }
-      yield frame;
-    }
-  })();
-
-  const collected = await collectResponsesProtocolEventsToResult(observed);
-  const summaryText = summaryTextFrom(closedItems, collected.output);
-  if (summaryText.length === 0) throw new Error(EMPTY_SUMMARY_MESSAGE);
-  const cmpId = createRandomResponsesItemId('compaction');
-  const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
-
-  // A real generate turn backs this envelope, so its own `incomplete` or
-  // `failed` status must reach the terminal event.
-  return {
-    ...upstreamResult,
-    events: syntheticEventsFromResult(synthesized),
-  };
-};
-
 export const containsCompactionTrigger = (input: readonly ResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
-
-export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
-  // The shim is engaged when the operator turned it on for this upstream,
-  // OR when the upstream's targetApi is not Responses (Messages /
-  // Chat Completions have no compaction wire and would crash on the
-  // unknown `compaction_trigger` input variant).
-  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
-  const structurallyRequired = ctx.targetApi !== 'responses';
-  if (!flagOn && !structurallyRequired) return await run();
-
-  // Inbound: expand any prior shim-encoded compactions back into their
-  // original items so the upstream sees the summarized history.
-  ctx.payload = expandShimCompactionItems(ctx.payload);
-
-  // Compact-shaped requests are either the native `/responses/compact`
-  // action or a `generate` call whose input ends in a `compaction_trigger`.
-  const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
-  if (!isCompactShaped) return await run();
-
-  return await simulateCompaction(ctx, gatewayCtx, run);
-};
