@@ -12,8 +12,9 @@
 // is frozen and `delete ctx.payload.x` would throw. `ctx.targetApi` is a declared need rather
 // than an ambient field — array position says which chain a stage is in, and what it reads
 // about the protocol it is looking at is in the record. The guards themselves are not deleted
-// by that: there is one interceptor array, so a rule that must not run on a re-entered request
-// still says so. And a rule that reads the response — the two that rewrite a stream — states
+// by that, they are split: a guard about the *wire* is said by position, because a stage below
+// the fork runs only on the wire the fork chose, and a guard about what the *client* spoke is
+// said by needing `ingress.chat.sourceProtocol`, which survives the switch. And a rule that reads the response — the two that rewrite a stream — states
 // it as a response-direction declaration rather than as work after `await run()`, with what it
 // learned on the way down carried in the stage's own closure, because a response-side `needs`
 // can only name what the ending provides.

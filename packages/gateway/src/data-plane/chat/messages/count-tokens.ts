@@ -23,9 +23,9 @@
 // too, and sits with it.
 //
 // What it measures is what generation would send. The same three request rules run, in the
-// order the interceptor chain ran them, and the web-search shim's request half runs above
-// them: a client that asked for the native server tool is measured on the client-tool shape
-// the gateway would actually put on the wire.
+// order generation runs them, and the web-search shim's request half runs above them: a client
+// that asked for the native server tool is measured on the client-tool shape the gateway would
+// actually put on the wire.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
