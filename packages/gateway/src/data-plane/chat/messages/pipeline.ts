@@ -13,8 +13,11 @@
 //
 // `/v1/messages/count_tokens` is not one of them: it is a second operation over this
 // protocol rather than another wire under this pipeline, so it is a chain of its own in
-// `count-tokens.ts`. This family's own interceptors are not all stages yet either, so the
-// array between the materialized payload and the fork is short rather than complete.
+// `count-tokens.ts`. The web-search shim is not one of them either, and for a worse reason: it
+// never became a stage and the interceptor array that ran it is gone, so a turn declaring
+// Anthropic's native `web_search` reaches the upstream unshimmed and the flag that gates it does
+// nothing. Only its request half survives on a live path, in the counting chain. The code is kept
+// so that porting it starts from something rather than from nothing.
 
 import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';

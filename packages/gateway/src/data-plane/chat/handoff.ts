@@ -54,8 +54,11 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
  * The four keys are what "no upstream was called" looks like on this family's slice: nothing
  * billed, no upstream headers to carry, and nothing still streaming for settlement to wait on.
  * The streamed-usage key is the response key's own sub-key by the fact space's naming rule, so
- * naming it here costs no call site a parameter — and a family that broke the convention would
- * be caught at assembly, where its real key would go unprovided and join the entry contract.
+ * naming it here costs no call site a parameter. A family that broke the convention is caught by
+ * the runner rather than by assembly: `handOff` is the first stage of every wire, so nothing
+ * above it inside that composition needs the key, and it is `dialChatWire` — which declares the
+ * whole set the wire owes — whose provides check fails when the wire hands up a key by another
+ * name.
  *
  * No envelope is written. Each family renders a failure in its own protocol at its own edge,
  * which is the only place that knows what that protocol's clients read.

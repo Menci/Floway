@@ -32,10 +32,13 @@
 //     compaction routes and is rewritten exactly as a turn is. The dial here asks for
 //     `generate`; what the ending answers with is the branch the provider says it ran, which
 //     is why the envelope a compaction is arrives somewhere rather than nowhere.
-//   - this family's remaining interceptors, the server-tool shims among them. Still only in
-//     the interceptor form, so the array between the materialized payload and the fork is
-//     short rather than complete — and nothing in a pipelined turn writes to the store's
-//     private-payload scratchpad, because the shim that writes to it is what is missing.
+//   - the server-tool shims. They never became stages and the interceptor array that ran them
+//     is gone, so `withResponsesServerToolShim` and the two tools under it are reachable only
+//     from their own tests: a turn declaring a hosted `web_search` or `image_generation` tool
+//     reaches the upstream unshimmed, and the two flags that gate them do nothing. The code is
+//     kept so that porting it starts from something rather than from nothing. Nothing in a
+//     pipelined turn writes to the store's private-payload scratchpad for the same reason —
+//     the shim that writes to it does not run.
 //
 // One deliberate difference from `respond.ts`, shared with every other family on the
 // pipeline: an upstream that refused is answered in its own words, with the status it sent,
@@ -57,6 +60,7 @@ import { normalizeAssistantInputText } from './items/normalize-assistant-content
 import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
+import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -205,10 +209,18 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStre
     // id beneath one response id this gateway minted, and the resource completed to what the
     // schema requires of it. It runs before the fold rather than beside it, so a client that
     // did not ask to stream is answered with the object the persisted frames add up to.
-    const frames = wrapResponsesClientEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-      use.gateway,
-      client,
+    //
+    // The record is teed above all of it, which is what makes it a record of what the client
+    // was served rather than of what some layer below had still to rewrite. One tee covers
+    // every shape this edge can hand up, because all three read the same iterable: an SSE
+    // body, the events a transport frames itself, and the object the fold assembles.
+    const frames = recordFrames(
+      wrapResponsesClientEgress(
+        answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+        use.gateway,
+        client,
+      ),
+      use.gateway.dump,
     );
     if (!back['ingress.chat.responses.wantsStream']) {
       try {

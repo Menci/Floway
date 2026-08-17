@@ -59,6 +59,7 @@ import {
   type ResponsesFacts,
 } from './pipeline.ts';
 import { billableUsageFromResponsesResult } from './usage.ts';
+import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -69,12 +70,6 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { dialChatWire, type ChatWire } from '../handoff.ts';
-import {
-  disableReasoningOnForcedToolChoiceForResponses,
-  stripPromptCacheKeyForResponses,
-  vendorDeepSeekNormalizeForResponses,
-  vendorQwenNormalizeForResponses,
-} from '../interceptors.ts';
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
@@ -148,8 +143,15 @@ const emitResponsesCompaction = defineStage<
     }
 
     try {
+      // The frames never reach a client, so the record is the only place they survive at all:
+      // the tee sits above the stateful half, where they are this protocol's own and carry
+      // the ids the resource below is assembled under. Reading is what records, and the fold
+      // on the next line is the read.
       const persisted = await collectResponsesProtocolEventsToResult(
-        wrapResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, use.gateway),
+        recordFrames(
+          wrapResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, use.gateway),
+          use.gateway.dump,
+        ),
       );
       return {
         ...rest,
@@ -381,10 +383,6 @@ export const responsesCompactPipeline = (payload: CanonicalResponsesPayload): Pi
     materializeAttempt('request.chat.responses'),
     beginStoredAttempt,
     expandShimCompactions,
-    disableReasoningOnForcedToolChoiceForResponses,
-    stripPromptCacheKeyForResponses,
-    vendorDeepSeekNormalizeForResponses,
-    vendorQwenNormalizeForResponses,
     dialResponsesCompaction,
   ]);
 };
