@@ -119,7 +119,7 @@ test('a non-streaming turn reaches the client as one assembled Gemini body', asy
   expect(body.usageMetadata?.candidatesTokenCount).toBe(3);
 });
 
-test('an upstream refusal reaches the client in the upstream-s own words and status', async () => {
+test('an upstream refusal reaches the client in this protocol-s own envelope', async () => {
   const { apiKey } = await setupAppTest();
   const refusal = { error: { message: 'copilot said no', type: 'insufficient_quota', code: 'quota_exceeded' } };
 
@@ -132,9 +132,16 @@ test('an upstream refusal reaches the client in the upstream-s own words and sta
   // The status the upstream sent, with none of the coercion a Google-RPC envelope would force
   // onto the codes it cannot express.
   expect(response.status).toBe(402);
-  // And the upstream's own object, rather than the same words quoted back inside
-  // `{ error: { code, message, status } }`.
-  expect(await response.json()).toEqual(refusal);
+
+  // Gemini has no wire of its own, so every refusal that gets here was written by whatever
+  // protocol the candidate was dialled on — here OpenAI's. Handing that object on would answer
+  // a Gemini client in another protocol's words: `error.status` is the field its SDKs read and
+  // an OpenAI envelope has none, while `error.code` would arrive as a string where a number
+  // belongs. So the upstream's words become the message and this protocol writes the shape.
+  const body = await response.json() as { error: { code: number; message: string; status: string } };
+  expect(body.error.code).toBe(402);
+  expect(typeof body.error.status).toBe('string');
+  expect(body.error.message).toContain('copilot said no');
 });
 
 test('a refusal on a turn that asked to stream is a body, not an opened stream', async () => {
@@ -152,7 +159,9 @@ test('a refusal on a turn that asked to stream is a body, not an opened stream',
 
   expect(response.status).toBe(402);
   expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
-  expect(await response.json()).toEqual(refusal);
+  const body = await response.json() as { error: { code: number; message: string; status: string } };
+  expect(body.error.code).toBe(402);
+  expect(body.error.message).toContain('copilot said no');
 });
 
 test('a served turn writes one usage row carrying the tokens the upstream reported', async () => {

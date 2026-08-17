@@ -300,15 +300,18 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
  * with the cache-bucket fold seeing cache fields under OpenAI's names and the carrier split
  * seeing usage the fold has already settled.
  *
- * `disableReasoningOnForcedToolChoice` and `stripPromptCacheKey` sit above the fork rather
- * than here, and both still precede every vendor dialect on the request path: the canonical
- * sentinel is emitted before a vendor spells it, and the field an upstream would reject is
- * gone before a vendor rewrites what is left.
+ * `disableReasoningOnForcedToolChoice` and `stripPromptCacheKey` are here rather than above
+ * the fork, because both speak about what an upstream's Chat Completions endpoint accepts —
+ * so a turn that arrived over a translation gets them too. Both still precede every vendor
+ * dialect on the request path: the canonical sentinel is emitted before a vendor spells it,
+ * and the field an upstream would reject is gone before a vendor rewrites what is left.
  */
 export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
   includeUsageStreamOptionsForChatCompletions,
   normalizeUsageForChatCompletions,
+  disableReasoningOnForcedToolChoiceForChatCompletions,
   applyRoleCompatibilityToChatCompletions,
+  stripPromptCacheKeyForChatCompletions,
   normalizeExclusiveCachedTokensForChatCompletions,
   vendorDeepSeekNormalizeForChatCompletions,
   vendorQwenNormalizeForChatCompletions,
@@ -460,8 +463,6 @@ export const chatCompletionsServePipeline = (payload: ChatCompletionsPayload): P
       owns: [],
     }),
     materializeAttempt('request.chat.chatCompletions'),
-    disableReasoningOnForcedToolChoiceForChatCompletions,
-    stripPromptCacheKeyForChatCompletions,
     dialChatWire({
       source: 'request.chat.chatCompletions',
       needs: ['request.chat.chatCompletions', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

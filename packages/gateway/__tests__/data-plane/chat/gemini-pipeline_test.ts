@@ -308,11 +308,15 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     expect(tried).toEqual(['up_a', 'up_b']);
-    // Every candidate failed, so the last failure is the base: the client sees the status an
-    // upstream actually returned and the words that upstream used, rather than a synthesized
-    // envelope quoting its serialized body back as a message.
+    // Every candidate failed, so the last failure is the base: the client sees the status the
+    // last upstream actually returned, and its words. The shape around them is this protocol's,
+    // because every Gemini wire is a translation and the object that came back was written by
+    // whatever protocol the candidate was dialled on.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { message: 'no' } });
+    const rendered = facts['response.chat.gemini.rendered'] as { error: { code: number; message: string; status: string } };
+    expect(rendered.error.code).toBe(400);
+    expect(rendered.error.status).toBe('INVALID_ARGUMENT');
+    expect(rendered.error.message).toContain('no');
     // An upstream that was called and reported nothing, which is a different statement from
     // reporting zero.
     expect(facts['response.usage.billable']).toEqual([

@@ -138,7 +138,19 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
         headers: new Headers((up['response.http.headers'] as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
         body: new TextEncoder().encode(answer.message),
       });
-      if (rewritten === undefined) return { ...up, [handoff.from.response]: answer } as never;
+      // A pair that declares no rewrite has nothing that can carry the refusal across, so what
+      // crosses is the status and the sentence and not the object they came in. The object is
+      // the *target* protocol's envelope — an OpenAI `{error:{type,code}}` where the client is
+      // reading Anthropic, or anything at all where the client is Gemini and reads
+      // `error.status` — and handing it on would answer one protocol in another's words. The
+      // family's own edge renders what is left, in the protocol its client actually speaks.
+      //
+      // Nothing is lost to the record: the target's failure was already written at the target's
+      // own key, with its body, before this stage consumed it.
+      if (rewritten === undefined) {
+        const { body: _foreign, envelope: _foreignEnvelope, ...carried } = answer;
+        return { ...up, [handoff.from.response]: move(carried) } as never;
+      }
       const text = new TextDecoder().decode(rewritten.body);
       let parsed: unknown;
       try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }

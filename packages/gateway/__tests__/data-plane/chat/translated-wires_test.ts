@@ -397,9 +397,12 @@ describe('the fork over wires', () => {
     await drain();
   });
 
-  // A refusal a pair says nothing about reaches the client as the upstream wrote it, with the
-  // status the upstream sent.
-  it('hands a refusal the pair does not speak about up unchanged', async () => {
+  // A refusal a pair says nothing about keeps the status the upstream sent and loses the
+  // envelope it came in. The object was the *target* protocol's — an OpenAI `{error:{message}}`
+  // reaching a client that reads Anthropic — and answering one protocol in another's words is
+  // what the pair exists to prevent. What crosses is the status and the sentence; the client's
+  // own edge writes the shape.
+  it('carries a refusal the pair does not speak about without its foreign envelope', async () => {
     const callChatCompletions = vi.fn(async () => ({
       ok: false as const, modelKey: 'k', response: Response.json({ error: { message: 'no' } }, { status: 403 }),
     }));
@@ -408,7 +411,26 @@ describe('the fork over wires', () => {
     const { facts, drain } = await serveMessages();
 
     expect(facts['response.http.status']).toBe(403);
-    expect(facts['response.chat.messages.rendered']).toEqual({ error: { message: 'no' } });
+    const rendered = facts['response.chat.messages.rendered'] as { type: string; error: { type: string; message: string } };
+    expect(rendered.type).toBe('error');
+    expect(rendered.error.type).toBe('permission_error');
+    // The upstream's own words survive as the sentence, which is what the replaced surface did
+    // with a body it could not forward.
+    expect(rendered.error.message).toContain('no');
+    await drain();
+  });
+
+  // The other half of the same rule: a rule that *can* speak carries the object across, because
+  // by then it is in the client's own protocol.
+  it('carries the envelope a pair did rewrite', async () => {
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions: contextExceeded })]);
+
+    const { facts, drain } = await serveMessages();
+
+    expect(facts['response.chat.messages.rendered']).toEqual({
+      type: 'error',
+      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+    });
     await drain();
   });
 });
