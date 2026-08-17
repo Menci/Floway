@@ -16,12 +16,14 @@
 // do, which is why their interceptor forms stood down on `ctx.targetApi !== 'responses'`, and
 // position says it here instead.
 //
-// One transport, and everything else this protocol owns is a step of its own, stated here
-// rather than implied by its absence:
+// Two transports enter here — `POST /v1/responses` and the WebSocket one — and the only thing
+// they disagree about is how a streamed answer is framed, which is what `framing` says. Below
+// the edge there is nothing to tell them apart: both open a run, both are outside the pipeline
+// system, and neither needs a capability to start one.
 //
-//   - the WebSocket transport. A second entry against this protocol — its own framing, its
-//     own lifecycle — and `websocket.ts` still owns it. It reaches the same membrane through
-//     `serve-prep.ts` and `client-output.ts`, which is why both outlive this chain.
+// What this protocol owns and this chain does not is stated here rather than implied by its
+// absence:
+//
 //   - `/v1/responses/compact`. A second operation over this protocol rather than another
 //     wire under this pipeline, so it stays on `responsesServe.compact`. The dial here asks
 //     for `generate`; what the ending answers with is the branch the provider says it ran,
@@ -88,6 +90,12 @@ import { translateResponsesViaChatCompletions, translateResponsesViaMessages } f
  *  translated Chat Completions path. */
 export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
 
+/** How the transport that opened the run frames a streamed answer. Both carry this
+ *  protocol's own events and neither adds or drops one: SSE is the format an HTTP body is
+ *  written in, terminator and all, and a WebSocket turn writes each event as a text frame of
+ *  its own — so the transport that owns the socket takes the events and frames them itself. */
+export type ResponsesStreamFraming = 'sse' | 'events';
+
 /** What this family adds to the chat space. */
 export interface ResponsesFacts extends ChatFacts {
   /** Server-only state the gateway once attached to an item it emitted, keyed by that
@@ -98,9 +106,10 @@ export interface ResponsesFacts extends ChatFacts {
    *  properties, so it would be written into the dump as an empty object and the record would
    *  say the turn hydrated nothing. */
   'request.chat.responses.privatePayloads': readonly (readonly [string, unknown])[];
-  /** What the client is actually sent — an object when it asked for one, SSE frames when it
-   *  asked to stream. The edge provides it, so a dump shows what the client received. */
-  'response.chat.responses.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  /** What the client is actually sent — an object when it asked for one, and the stream it
+   *  asked to be streamed, in the framing its transport writes. The edge provides it, so a
+   *  dump shows what the client received. */
+  'response.chat.responses.rendered': Record<string, unknown> | AsyncIterable<SseFrame> | AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
   'response.chat.responses.streamedUsage': Promise<StreamOutcome> | null;
@@ -121,8 +130,12 @@ type R<K extends keyof ResponsesFacts> = { [P in K]: ResponsesFacts[P] };
  * The stored-items membrane's other half runs here too, and it takes the client's own
  * payload rather than the record's, because by the fork the record holds the prepared one —
  * `previous_response_id` expanded away — and the resource echoes what the client asked with.
+ *
+ * A streamed answer is handed on in the framing the transport that opened the run writes.
+ * Only the last step differs: `renderSSE` is a wire format written over an HTTP body, and a
+ * transport that frames each event itself takes the events it would have been written from.
  */
-const emitResponses = (client: CanonicalResponsesPayload) => defineStage<
+const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStreamFraming) => defineStage<
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream' | 'response.chat.responses' | 'response.http.headers'>,
@@ -206,7 +219,7 @@ const emitResponses = (client: CanonicalResponsesPayload) => defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.responses.rendered': move(renderSSE(frames)),
+      'response.chat.responses.rendered': move(framing === 'sse' ? renderSSE(frames) : frames),
       'response.http.status': 200,
     };
   },
@@ -527,11 +540,17 @@ const meterResponses = (
         }
         const usage = billableUsageFromResponsesEvent(frame.event);
         if (usage !== null) reported = usage;
+        // Read off the frame rather than off having been resumed past it. The stage that
+        // stores the turn's items stops reading at the terminal event, so the resumption
+        // never comes: what this loop would learn from it is already true when the frame
+        // arrives, and the turn ended the way the upstream said it did whether or not
+        // anything downstream asked for another.
+        if (isResponsesTerminalEvent(frame.event)) sawTerminal = true;
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past its terminal event would otherwise hold the client's stream
         // open with it; returning here closes the read, which cancels the upstream.
-        if (isResponsesTerminalEvent(frame.event)) { sawTerminal = true; return; }
+        if (sawTerminal) return;
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // response was never stated complete, incomplete or failed.
@@ -740,14 +759,19 @@ export type ResponsesServeExit = R<
   | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
 >;
 
-export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipeline<ResponsesServeEntry, ResponsesServeExit> => {
+export const responsesServePipeline = (
+  payload: CanonicalResponsesPayload,
+  // SSE is what a run is written in when nothing else claims its frames, which is every
+  // entry over an HTTP body; the WebSocket transport says so because it writes its own.
+  framing: ResponsesStreamFraming = 'sse',
+): Pipeline<ResponsesServeEntry, ResponsesServeExit> => {
   // One cell per run, written by the stage directly above the one that reads it. The
   // resolver takes its narrowing at assembly, so this is where the prepared payload crosses
   // from the membrane to the affinity walk; until the membrane has run, what the client sent
   // is the whole of what is known about the turn.
   let prepared = payload;
   return compose('responsesServe', [
-    emitResponses(payload),
+    emitResponses(payload, framing),
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.responses'?: unknown })['response.chat.responses']),
       handedUp => (handedUp as { 'response.chat.responses.streamedUsage'?: unknown })['response.chat.responses.streamedUsage'] !== null,

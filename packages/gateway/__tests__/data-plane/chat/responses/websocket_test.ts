@@ -3,11 +3,11 @@ import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
-import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
-import { edgeRecordOf, installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
+import { installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
@@ -226,17 +226,26 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
       const stored = dumps.stored[0];
       assertExists(stored);
       assertEquals(stored.keyId, apiKey.id);
-      const request = edgeRecordOf(stored.record).request;
-      assertEquals(request.method, 'WS');
-      assertEquals(request.path, '/v1/responses');
-      assertEquals(JSON.parse(new TextDecoder().decode(request.body)), {
+      // The shape follows the endpoint, and this turn was served through the pipeline: it is
+      // recorded as its whole run rather than as a pair of edges. One socket carries many
+      // turns, so each names itself — `WS /v1/responses`, not the `GET` upgrade that opened
+      // the connection — and the frame that opened it is that run's request, both as the
+      // bytes the record measured and as the payload the chain ran on.
+      const record = runRecordOf(stored.record);
+      assertEquals(record.meta.method, 'WS');
+      assertEquals(record.meta.path, '/v1/responses');
+      assertEquals(record.meta.requestBytes, new TextEncoder().encode(JSON.stringify({
         type: 'response.create',
         event_id: 'capture-after-enable',
         response: {
           model: 'gpt-direct-responses',
           input: 'capture-after-enable',
         },
-      });
+      })).byteLength);
+      assert(
+        new TextDecoder().decode(record.events).includes('"capture-after-enable"'),
+        'expected the run to record the payload the frame opened the turn with',
+      );
       client.close();
     }),
   );
@@ -288,6 +297,44 @@ test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent
       }
     }),
   );
+});
+
+// A turn on this transport is a run, and a run settles once: the chain reads what the
+// upstream metered off its own events as they pass, and the transport settles that reading
+// after the last frame has gone out. The rows are filtered to this turn's own key because
+// every `setupAppTest` mints a fresh one, and background writes from earlier files in the
+// suite resolve against whichever repo was installed last.
+test('Responses WebSocket settles a streamed turn once, with what the chain read off it', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await completeResponsesTurn(client, 'settled-turn');
+      client.close();
+    }),
+  );
+  await flushAsyncWork();
+
+  const usage = (await repo.usage.listAll()).filter(row => row.keyId === apiKey.id);
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.model, 'gpt-direct-responses');
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 3, output: 5 });
+
+  const performance = (await repo.performance.listAll()).filter(row => row.keyId === apiKey.id);
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
+
+  // The same reading, on the record: a turn that was settled is a turn the dump names the
+  // upstream's model and token counts on.
+  await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+  const meta = runRecordOf(dumps.stored[0]?.record).meta;
+  assertEquals(meta.model, 'gpt-direct-responses');
+  assertEquals(meta.inputTokens, 3);
+  assertEquals(meta.outputTokens, 5);
 });
 
 test('Responses WebSocket rejects the next turn after its API key is rotated', async () => {
@@ -1367,78 +1414,68 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
   );
 });
 
-// The four chat HTTP transports render a mid-attempt throw (interceptor
-// bug, translation error, provider-layer JS exception not represented as a ChatServeFailure) through an
-// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
-// which internally reaches `recordFailedRequest` and lands an error row
-// attributed to the throwing candidate. The WS transport's outer catch
-// must do the same: alongside its sendError / dump.failed / dump.finalize,
-// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
-// the failure shows up in performance_summary.
+// A throw that escapes the run never reached the settlement stage, so the sample
+// that stage would have written is the WS transport's outer catch to write —
+// alongside its sendError / dump.failed / dump.finalize it calls
+// `recordFailedRequest(ctx, ctx.attempt.telemetry)`, and the row lands attributed
+// to the candidate that was being dialled when it threw. The throw here is a real
+// one: a refusal whose body cannot be read. `callResponsesUpstream` stamps this
+// candidate's telemetry before it dials and then reads the refusal's own words, so
+// the read's rejection is a mid-attempt throw with attribution already in place.
 test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
-  const { apiKey, repo } = await setupAppTest();
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
 
-  // Mirror what responsesServe.generate would have stamped before failing
-  // — telemetry set for the throwing candidate — then throw.
-  const generateSpy = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
-    ctx.attempt.telemetry = {
-      keyId: apiKey.id,
-      model: 'gpt-direct-responses',
-      upstream: 'up_throwing',
-      operation: 'chat',
-      runtimeLocation: 'TEST',
-    };
-    throw new Error('simulated mid-attempt provider throw');
-  });
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) { controller.error(new Error('simulated mid-attempt provider throw')); },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const received = waitForMessages(client, messages => messages.length === 1);
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_throw',
+        response: { model: 'gpt-direct-responses', input: 'hello' },
+      }));
 
-  try {
-    await withMockedFetch(
-      async request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-        if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-        }
-        if (url.pathname === '/models') {
-          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectResponsesWebSocket(apiKey.key);
-        const received = waitForMessages(client, messages => messages.length === 1);
-        client.send(JSON.stringify({
-          type: 'response.create',
-          event_id: 'evt_throw',
-          response: { model: 'gpt-direct-responses', input: 'hello' },
-        }));
+      const [errorMessage] = await received;
+      assertExists(errorMessage);
+      assertEquals(errorMessage.type, 'error');
+      assertEquals(errorMessage.status, 500);
+      assertEquals(errorMessage.event_id, 'evt_throw');
+    }),
+  );
 
-        const [errorMessage] = await received;
-        assertExists(errorMessage);
-        assertEquals(errorMessage.type, 'error');
-        assertEquals(errorMessage.status, 500);
-        assertEquals(errorMessage.event_id, 'evt_throw');
-      }),
-    );
+  await flushAsyncWork();
 
-    await flushAsyncWork();
-
-    // Filter to the throwing upstream: earlier WS tests in the same file
-    // schedule background recordFailedRequest calls through the session
-    // scheduler, and the shared `getRepo()` global resolves them against
-    // whichever repo `setupAppTest` last installed — so cross-test rows can
-    // land here. Only the row from the mocked generate is load-bearing for
-    // this fix.
-    const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_throwing');
-    assertEquals(perfRows.length, 1);
-    assertEquals(perfRows[0]?.upstream, 'up_throwing');
-    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
-    assertEquals(perfRows[0]?.operation, 'chat');
-    assertEquals(perfRows[0]?.errorsNoOutput, 1);
-    assertEquals(perfRows[0]?.requests, 1);
-  } finally {
-    generateSpy.mockRestore();
-  }
+  // Filter to this turn's own key: earlier WS tests in the same file schedule
+  // background performance writes through the session scheduler, and the shared
+  // `getRepo()` global resolves them against whichever repo `setupAppTest` last
+  // installed — so cross-test rows for the same upstream can land here. Every
+  // `setupAppTest` mints a fresh api key, which is what tells them apart.
+  const perfRows = (await repo.performance.listAll())
+    .filter(row => row.keyId === apiKey.id && row.upstream === copilotUpstream.id);
+  assertEquals(perfRows.length, 1);
+  assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
+  assertEquals(perfRows[0]?.operation, 'chat');
+  assertEquals(perfRows[0]?.errorsNoOutput, 1);
+  assertEquals(perfRows[0]?.requests, 1);
 });
 
 test('Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
