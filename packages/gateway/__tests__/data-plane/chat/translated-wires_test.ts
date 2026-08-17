@@ -6,12 +6,11 @@
 // client's own protocol. The candidates here carry exactly one endpoint each, so a chain that
 // picked any other wire would call a provider method that throws.
 //
-// Gemini's three rows are here, Chat Completions' two, and Messages' two; the remaining
-// family's fill in beside them. Beside the matrix, three things that are about the fork rather
-// than about a pair: that failover moves from a native candidate onto a translated one, that a
-// pair's own refusal rewrite survives the trip, and that a rule which speaks about one
-// protocol's wire does not run on a turn that leaves for another — which is what the
-// interceptor form said with `ctx.targetApi !== <self>` and what position says here.
+// Beside the matrix, three things that are about the fork rather than about a pair: that
+// failover moves from a native candidate onto a translated one, that a pair's own refusal
+// rewrite survives the trip, and that a rule which speaks about one protocol's wire does not
+// run on a turn that leaves for another — which is what the interceptor form said with
+// `ctx.targetApi !== <self>` and what position says here.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +18,7 @@ import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-
 import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
 import { handOff } from '../../../src/data-plane/chat/handoff.ts';
 import { messagesServePipeline, messagesWire } from '../../../src/data-plane/chat/messages/pipeline.ts';
+import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
@@ -27,7 +27,7 @@ import type { ChatCompletionsPayload, ChatCompletionsResult, ChatCompletionsStre
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiResult } from '@floway-dev/protocols/gemini';
 import { PROMPT_TOO_LONG_MESSAGE, type MessagesPayload, type MessagesResult, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -185,6 +185,7 @@ const serve = async <Entry extends object, Exit extends object>(
 
 const chatCompletionsPayload = { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
 const messagesPayload = { model: MODEL, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as MessagesPayload;
+const responsesPayload = { model: MODEL, input: [{ type: 'message', role: 'user', content: 'hi' }] } as unknown as CanonicalResponsesPayload;
 const geminiPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiPayload;
 
 const serveChatCompletions = async (payload: ChatCompletionsPayload = chatCompletionsPayload) =>
@@ -203,6 +204,15 @@ const serveMessages = async (payload: MessagesPayload = messagesPayload) =>
     'ingress.chat.sourceProtocol': 'messages',
     'ingress.chat.messages.wantsStream': false,
     'request.chat.messages': payload,
+    'serve.model': MODEL,
+  }, payload);
+
+const serveResponses = async (payload: CanonicalResponsesPayload = responsesPayload) =>
+  await serve(responsesServePipeline(payload), {
+    'ingress.http.headers': [],
+    'ingress.chat.sourceProtocol': 'responses',
+    'ingress.chat.responses.wantsStream': false,
+    'request.chat.responses': payload,
     'serve.model': MODEL,
   }, payload);
 
@@ -225,6 +235,12 @@ const chatCompletionsText = (rendered: unknown): string | null | undefined =>
 const messagesText = (rendered: unknown): string | undefined => {
   const block = (rendered as MessagesResult).content.find(part => part.type === 'text');
   return block?.type === 'text' ? block.text : undefined;
+};
+
+const responsesText = (rendered: unknown): string | undefined => {
+  const item = (rendered as ResponsesResult).output.find(output => output.type === 'message');
+  const part = item?.type === 'message' ? item.content[0] : undefined;
+  return part?.type === 'output_text' ? part.text : undefined;
 };
 
 const geminiText = (rendered: unknown): string | undefined =>
@@ -284,6 +300,29 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
+  it('serves /v1/responses on a Messages-only candidate', async () => {
+    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    resolves([candidate('up_a', { messages: {} }, { callMessages })]);
+
+    const { facts, drain } = await serveResponses();
+
+    expect(callMessages).toHaveBeenCalledTimes(1);
+    expect(responsesText(facts['response.chat.responses.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves /v1/responses on a Chat Completions-only candidate', async () => {
+    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
+
+    const { facts, drain } = await serveResponses();
+
+    expect(callChatCompletions).toHaveBeenCalledTimes(1);
+    expect(responsesText(facts['response.chat.responses.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  // Gemini has no wire of its own, so all three of its rows are translated ones.
   it('serves :generateContent on a Chat Completions-only candidate', async () => {
     const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
     resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
