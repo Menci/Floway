@@ -12,7 +12,7 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from './shared/gate
 import type { ChatServices } from './stages.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
-import { gatewayCtxOptions, prologueFor, type Ingress, type Prologue } from '../pipeline/serve.ts';
+import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
 import type { StatefulResponsesStore } from './responses/items/store.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -35,8 +35,12 @@ export const openChatPrologue = (
 ): ChatPrologue => {
   // One context, built once: the body is read once and `takeRequestBody` empties what it was
   // given, so the chat context is what this run *has* rather than a second one over it.
-  const gateway = createChatGatewayCtxFromHono(c, gatewayCtxOptions(c, ingress, options), options.storeFactory);
-  const base = prologueFor(gateway, ingress);
+  // One options object, read twice: the context is built from it, and the run recording it
+  // opened is what the runner's events are written to. Building the options again would take
+  // the body a second time and hand the dump an empty buffer.
+  const ctxOptions = gatewayCtxOptions(c, ingress, options);
+  const gateway = createChatGatewayCtxFromHono(c, ctxOptions, options.storeFactory);
+  const base = prologueFor(gateway, ingress, runDumpOf(ctxOptions));
 
   let materialize: ((candidate: ModelCandidate) => unknown) | undefined;
   return {
