@@ -9,8 +9,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/compact-shim.ts';
 import { responsesCompactPipeline } from '../../../src/data-plane/chat/responses/compact.ts';
-import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';

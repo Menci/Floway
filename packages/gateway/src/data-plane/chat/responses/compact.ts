@@ -61,7 +61,7 @@ import {
 import { billableUsageFromResponsesResult } from './usage.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -78,7 +78,7 @@ import {
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
-import { renderProtocolError, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
   type CanonicalResponsesPayload,
@@ -139,9 +139,9 @@ const emitResponsesCompaction = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.responses.rendered': move(renderProtocolError(
-          answer.body,
-          () => answer.envelope ?? { error: { message: answer.message, type: 'api_error' } },
+        'response.chat.responses.rendered': move(renderFailure(
+          answer,
+          () => ({ error: { message: answer.message, type: 'api_error' } }),
         )),
         'response.http.status': answer.status,
       };

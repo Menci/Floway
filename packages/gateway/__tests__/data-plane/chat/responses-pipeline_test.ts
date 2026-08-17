@@ -11,7 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
+import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/compact-shim.ts';
 import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';

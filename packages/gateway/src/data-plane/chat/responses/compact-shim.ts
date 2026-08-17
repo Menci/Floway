@@ -32,8 +32,8 @@
 // selectively turn the flag off for the codex / copilot / azure / custom upstreams that
 // answer compact themselves.
 
-import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
+import { isJsonObject } from '../../../shared/json-helpers.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)

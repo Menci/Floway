@@ -1,25 +1,17 @@
+// The one refusal that travels as a throw, and the guard that keeps it from catching anything
+// else. What it carries has to survive the trip intact: the message names which carried target
+// went missing, and only the selection several frames down knows that.
+
 import { test } from 'vitest';
 
 import { type ChatServeFailure, throwChatServeFailure, tryCatchChatServeFailure } from '../../../../src/data-plane/chat/shared/errors.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-const cases: readonly ChatServeFailure[] = [
-  { kind: 'model-missing', model: 'gpt-9', failedUpstreams: [] },
-  { kind: 'model-missing', model: 'gpt-9', failedUpstreams: ['Azure prod'] },
-  { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: [] },
-  { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: ['Azure prod', 'Custom'] },
-  { kind: 'routing-unavailable', message: 'no upstream can serve this' },
-];
-
-for (const failure of cases) {
-  const label = 'failedUpstreams' in failure && failure.failedUpstreams.length
-    ? `${failure.kind} (with ${failure.failedUpstreams.length} failed upstream(s))`
-    : failure.kind;
-  test(`round-trips ${label} through throw/catch`, () => {
-    const error = assertThrows(() => throwChatServeFailure(failure));
-    assertEquals(tryCatchChatServeFailure(error), failure);
-  });
-}
+test('round-trips routing-unavailable through throw/catch', () => {
+  const failure: ChatServeFailure = { kind: 'routing-unavailable', message: 'no upstream can serve this' };
+  const error = assertThrows(() => throwChatServeFailure(failure));
+  assertEquals(tryCatchChatServeFailure(error), failure);
+});
 
 test('returns null for an error not raised by throwChatServeFailure', () => {
   assertEquals(tryCatchChatServeFailure(new Error('something else')), null);

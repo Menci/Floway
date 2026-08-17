@@ -995,6 +995,18 @@ describe('the Responses interceptors, as stages', () => {
     expect(after.enable_thinking).toBe(false);
   });
 
+  it('leaves the sentinel alone for an upstream that is not Qwen', async () => {
+    // The dialect is the flag's, not the payload's: the same sentinel means something else on
+    // the next upstream, and a rewrite that fired without the flag would put a Qwen field on a
+    // wire that has never heard of it.
+    const original = responsesPayload([], { reasoning: { effort: 'none' } });
+    const { down } = await runStage(vendorQwenNormalizeForResponses, 'response.chat.responses', {
+      'request.chat.responses': original,
+      'route.attempt': attemptWith(),
+    });
+    expect(down['request.chat.responses']).toBe(original);
+  });
+
   it('leaves a payload that asked for real reasoning alone, by identity', async () => {
     const original = responsesPayload([], { reasoning: { effort: 'high' } });
     for (const stage of [vendorDeepSeekNormalizeForResponses, vendorQwenNormalizeForResponses]) {

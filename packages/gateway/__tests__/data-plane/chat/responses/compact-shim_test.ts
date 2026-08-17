@@ -11,8 +11,8 @@ import {
   summarizationTurnFor,
   summaryTextFrom,
   SUMMARY_PREFIX,
-} from '../../../../../src/data-plane/chat/responses/interceptors/compact-shim.ts';
-import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
+} from '../../../../src/data-plane/chat/responses/compact-shim.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
 import { assertEquals } from '@floway-dev/test-utils';
 

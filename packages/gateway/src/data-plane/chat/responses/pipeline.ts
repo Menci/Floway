@@ -43,7 +43,6 @@
 
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
 import { wrapResponsesClientEgress } from './client-output.ts';
-import type { ResponsesServeFailure } from './errors.ts';
 import {
   buildCompactionEnvelope,
   containsCompactionTrigger,
@@ -51,7 +50,8 @@ import {
   expandShimCompactionItems,
   summarizationTurnFor,
   summaryTextFrom,
-} from './interceptors/compact-shim.ts';
+} from './compact-shim.ts';
+import type { ResponsesServeFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
@@ -59,7 +59,7 @@ import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -86,7 +86,7 @@ import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
-import { doneFrame, eventFrame, renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
   createRandomResponsesItemId,
@@ -180,9 +180,9 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStre
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.responses.rendered': move(renderProtocolError(
-          answer.body,
-          () => answer.envelope ?? { error: { message: answer.message, type: 'api_error' } },
+        'response.chat.responses.rendered': move(renderFailure(
+          answer,
+          () => ({ error: { message: answer.message, type: 'api_error' } }),
         )),
         'response.http.status': answer.status,
       };
@@ -780,7 +780,7 @@ export const beginStoredAttempt = defineStage<
 // a generate turn's input with a `compaction_trigger`, `/v1/responses/compact` asks for one
 // by being called at all, and either way the envelope comes back to the client, who echoes it
 // into the ordinary turns that follow. What the shim is, what it vendors and what it cannot
-// reproduce is at `interceptors/compact-shim.ts`.
+// reproduce is at `compact-shim.ts`.
 
 /**
  * Whether this candidate's compactions are the shim's to simulate.

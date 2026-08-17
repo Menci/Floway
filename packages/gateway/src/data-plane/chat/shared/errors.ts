@@ -1,16 +1,14 @@
-import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+// Failures a chat protocol makes before it reaches an upstream, as a throw the chain that can
+// answer them catches. Unexpected throws bubble as-is.
+//
+// Almost every refusal is a value on the record — narrowing states its own, and the edge
+// renders it. What is left here is the one shape that cannot be: a fault found several frames
+// inside a walk, where the answer is written by the stage that started the walk.
 
-// Failures a chat protocol can render before reaching an upstream; unexpected
-// throws bubble as-is. `failedUpstreams` on model-{missing,unsupported}
-// carries the upstream names whose catalog fetch threw during this
-// resolution — surfaced parenthetically so the caller can tell a genuine
-// "no upstream has this model" miss from a transient outage where the
-// upstream that owns the model is currently unreachable. Empty means
-// every consulted upstream returned a catalog.
-export type ChatServeFailure =
-  | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams: readonly string[] }
-  | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
-  | { readonly kind: 'routing-unavailable'; readonly message: string };
+/** `routing-unavailable` is what affinity says when a turn carries state for an upstream no
+ *  candidate can be routed to. Its message is the caller's to read: only the selection knows
+ *  which of the carried targets went missing. */
+export type ChatServeFailure = { readonly kind: 'routing-unavailable'; readonly message: string };
 
 class ChatServeFailureError<TFailure extends { readonly kind: string }> extends Error {
   readonly failure: TFailure;
@@ -27,34 +25,3 @@ export const throwChatServeFailure = <TFailure extends { readonly kind: string }
 
 export const tryCatchChatServeFailure = <TFailure extends { readonly kind: string } = ChatServeFailure>(error: unknown): TFailure | null =>
   error instanceof ChatServeFailureError ? error.failure as TFailure : null;
-
-export const openAiErrorResult = (
-  status: number,
-  message: string,
-  extra?: { readonly param: string; readonly code: string | null },
-  performance?: PerformanceTelemetryContext,
-): ApiErrorResult => ({
-  type: 'api-error',
-  source: 'gateway',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
-  body: new TextEncoder().encode(JSON.stringify({
-    error: { message, type: 'invalid_request_error', ...extra },
-  })),
-  ...(performance ? { performance } : {}),
-}) satisfies ApiErrorResult;
-
-// Builds the failure value every serve dispatches with after `canServe` has
-// dropped every candidate: `sawModel=true` means the inbound id exists in
-// some upstream's catalog but no upstream wire reaches it for this protocol,
-// rendered as 400 model-unsupported; `sawModel=false` means no upstream knows
-// the id at all, rendered as 404 model-missing. The per-protocol failure
-// renderer turns the value into its own envelope shape.
-export const noViableCandidateFailure = (
-  sawModel: boolean,
-  model: string,
-  failedUpstreams: readonly string[],
-): ChatServeFailure =>
-  sawModel
-    ? { kind: 'model-unsupported', model, failedUpstreams }
-    : { kind: 'model-missing', model, failedUpstreams };
