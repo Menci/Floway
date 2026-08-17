@@ -59,6 +59,7 @@ import {
   type ResponsesFacts,
 } from './pipeline.ts';
 import { billableUsageFromResponsesResult } from './usage.ts';
+import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -216,12 +217,10 @@ const callResponsesCompactUpstream = defineStage<
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'chat');
 
     const asked = facts['request.chat.responses'] as CanonicalResponsesPayload;
-    const payload = { ...asked, model: candidate.model.id };
-    if (candidate.rules !== undefined) applyRulesToUpstreamResponses(payload, candidate.rules);
     // Neither field belongs on this endpoint: `store` is a gateway-only snapshot hint the
     // compaction endpoint rejects, and `stream` describes how an answer would be delivered
     // where there is one body and no stream.
-    const { model: _addressed, stream: _stream, store: _store, ...body } = payload;
+    const { stream: _stream, store: _store, ...body } = bodyForAttempt(asked, candidate, applyRulesToUpstreamResponses);
 
     let result;
     try {

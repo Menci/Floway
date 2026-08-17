@@ -539,6 +539,25 @@ describe('the responses chain', () => {
     expect(facts['response.http.status']).toBe(200);
   });
 
+  // A provider owns the body it is dialled with and shapes it in place, down to nested nodes —
+  // Copilot marks individual items for caching, and its Messages boundary writes into a nested
+  // field — while the record that body is built from is deep-frozen. A dial that handed over a
+  // shallow copy satisfies every type in the system and throws at the first nested write,
+  // answering the client with a 502 raised where nothing can explain it.
+  it('hands the provider a body it can write into, children included', async () => {
+    resolves([candidate({
+      callResponses: async (_model, body) => {
+        const item = (body as { input: Record<string, unknown>[] }).input[0]!;
+        item.copilot_cache_control = { type: 'ephemeral' };
+        return stream(completed('hi'));
+      },
+    })]);
+
+    const { facts } = await serve(false);
+
+    expect(facts['response.http.status']).toBe(200);
+  });
+
   // Codex asks for a compaction inside an ordinary turn, by ending its input with the control
   // item that requests one. Where the shim is this candidate's to run, that item never reaches
   // the upstream: what is sent instead is the compactor's own turn, and what comes back is an

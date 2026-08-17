@@ -57,6 +57,7 @@ import { normalizeAssistantInputText } from './items/normalize-assistant-content
 import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
+import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -353,16 +354,12 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
     // every stage between the fork and here has rewritten it — or, on a translated wire, what
     // the handoff put here. Client-carried state — an encrypted reasoning blob, a compaction
     // the upstream issued — was rewritten for the upstream that will see it, which is the
-    // whole reason a turn can be pinned at all. The id the client addressed does not travel —
-    // the provider re-stamps whatever it resolved upstream — and an alias' own rules apply to
-    // the body that is sent.
+    // whole reason a turn can be pinned at all.
     //
     // The key holds what a client may send, whose `input` is a string or a list; this chain
     // runs on the canonical form the entry normalized it to, which is the one a wire takes.
     const asked = facts['request.chat.responses'] as CanonicalResponsesPayload;
-    const payload = { ...asked, model: candidate.model.id };
-    if (candidate.rules !== undefined) applyRulesToUpstreamResponses(payload, candidate.rules);
-    const { model: _addressed, ...body } = payload;
+    const body = bodyForAttempt(asked, candidate, applyRulesToUpstreamResponses);
 
     let result;
     try {

@@ -389,4 +389,22 @@ describe('the responses compaction chain', () => {
       { quantities: { input_tokens: '12', output_tokens: '3' } },
     ]);
   });
+
+  // A provider owns the body it is dialled with and shapes it in place, down to nested nodes —
+  // Copilot marks individual items for caching — while the record that body is built from is
+  // deep-frozen. A dial that handed over a shallow copy throws at the first nested write, and
+  // this operation would answer 502 where the upstream had said nothing at all.
+  it('hands the provider a body it can write into, children included', async () => {
+    resolves([candidate({
+      callResponses: async (model, body, action) => {
+        const item = (body as { input: Record<string, unknown>[] }).input[0]!;
+        item.copilot_cache_control = { type: 'ephemeral' };
+        return await compacts({})(model, body, action);
+      },
+    })]);
+
+    const { facts } = await compact();
+
+    expect(facts['response.http.status']).toBe(200);
+  });
 });
