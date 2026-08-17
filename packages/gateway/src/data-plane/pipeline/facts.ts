@@ -97,9 +97,9 @@ export interface GatewayFacts {
   'response.http.status': number;
   'response.http.headers': readonly (readonly [string, string])[];
   /** The upstream's body, still open, and marked as something the run answers for. `Owned`
-   *  rather than `AsyncDisposable`: the language puts `Symbol.asyncDispose` on every async
-   *  generator and on no `ReadableStream`, so a structural type would admit an iterator that
-   *  is not a resource and reject the body that is. */
+   *  rather than `AsyncDisposable`, because a structural type would say what the host happens
+   *  to mark rather than what this run answers for — and what a host marks differs between the
+   *  Node versions this ships on. Ownership is claimed, so the type says so too. */
   'response.http.body': ReadableStream<Uint8Array> & Owned;
 
   /** The authoritative reading, provided closest to the upstream on the dialect it

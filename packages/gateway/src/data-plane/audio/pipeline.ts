@@ -43,11 +43,9 @@ import { providerModelOf, type AudioTranscriptionFormEntry, type ModelCandidate,
  *  resource: what owns the connection is `response.http.body`, which is where release and
  *  failover's ownership both read.
  *
- *  A view has to be built as a wrapper around the generator rather than handed over as the
- *  generator itself. Measured on Node 24: `Symbol.asyncDispose in (async function*(){})()`
- *  is `true`, so a bare generator in the record is a releasable — the runner would adopt it,
- *  the top-level sweep would call its `return()`, and that cancels the iteration instead of
- *  draining it, which is the one thing release must never mean. */
+ *  A view is a wrapper around the generator rather than the generator itself, which is what
+ *  says where the resource is: the upstream's body at `response.http.body`, claimed with
+ *  `own()`, and nothing else here. */
 export type AudioTranscriptionEvents = AsyncIterable<AudioTranscriptionStreamEvent>;
 
 const viewOf = <T>(events: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => events });
