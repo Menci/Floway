@@ -12,9 +12,9 @@
 // handoff followed by that protocol's own wire. The stage above cannot tell which ran.
 //
 // `/v1/messages/count_tokens` is not one of them: it is a second operation over this
-// protocol rather than another wire under this pipeline, and it is its own step. This
-// family's own interceptors are not all stages yet either, so the array between the
-// materialized payload and the fork is short rather than complete.
+// protocol rather than another wire under this pipeline, so it is a chain of its own in
+// `count-tokens.ts`. This family's own interceptors are not all stages yet either, so the
+// array between the materialized payload and the fork is short rather than complete.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';

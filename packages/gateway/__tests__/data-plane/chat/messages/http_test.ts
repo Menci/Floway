@@ -220,7 +220,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 });
 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
-  installRepo();
+  const repo = installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
@@ -237,6 +237,12 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+
+  // Measuring is not generating: the turn bills nothing and times nothing, so it leaves
+  // neither a usage row nor a performance sample behind.
+  await flushBackground();
+  assertEquals(await repo.usage.listAll(), []);
+  assertEquals(await repo.performance.listAll(), []);
 });
 
 test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
