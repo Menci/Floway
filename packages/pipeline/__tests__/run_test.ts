@@ -198,15 +198,16 @@ describe('what the run owns', () => {
     expect(released).toEqual(['kept']);
   });
 
-  // Ownership is claimed, never sniffed. The language hands `Symbol.asyncDispose` out on
-  // its own terms and they do not match ours in either direction — every async generator
-  // has it, and a `ReadableStream`, which is what a body actually is, does not. Sniffing
-  // would adopt a transducer's own iterator as a run resource and release it the moment its
-  // stage handed up, while missing the upstream body the rule exists for.
-  it('does not adopt an async generator, which the language marks disposable', async () => {
+  // Ownership is claimed, never sniffed. `Symbol.asyncDispose` is the language's own release
+  // mechanism handed out on the language's own terms, and those terms are not stable across
+  // the hosts this runs on: an async generator carries it on Node 24 and not on Node 22, and
+  // a `ReadableStream` — which is what a body actually is — carries it on neither. So what is
+  // asserted here is the run's answer, which is the same on every host. Sniffing would adopt
+  // a transducer's own iterator as a run resource and release it the moment its stage handed
+  // up, while missing the upstream body the rule exists for.
+  it('does not adopt an async generator, whatever the host says about disposing one', async () => {
     const frames = (async function* () { yield 1; yield 2; })();
-    expect(Symbol.asyncDispose in frames).toBe(true);        // the language says yes
-    expect(isOwned(frames)).toBe(false);                     // the run says no
+    expect(isOwned(frames)).toBe(false);
 
     const opens = defineStage<object, { 'out.frames': unknown }>({
       name: 'opens',
@@ -220,10 +221,9 @@ describe('what the run owns', () => {
     expect(await (facts['out.frames'] as AsyncGenerator<number>).next()).toEqual({ value: 1, done: false });
   });
 
-  it('does adopt a ReadableStream, which the language does not mark at all', async () => {
+  it('does adopt a ReadableStream, which no host marks at all', async () => {
     const released: string[] = [];
     const stream = new ReadableStream<number>();
-    expect(Symbol.asyncDispose in stream).toBe(false);       // the language says no
     const body = move(own(stream, async () => { released.push('drained'); }));
     const opens = defineStage<object, { 'out.body': unknown }>({
       name: 'opens',
