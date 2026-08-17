@@ -8,6 +8,7 @@ import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
@@ -42,12 +43,14 @@ export const respondResponsesFailure = (
 
 // Renders an upstream Responses result into the client HTTP/SSE response. An
 // events result drains to one JSON body (non-streaming) or is proxied frame by
-// frame (streaming); anything else is a pre-stream failure.
+// frame (streaming); anything else is a pre-stream failure. The egress it runs
+// is the stored-items membrane's, so the context it takes is the chat one that
+// carries the store and the affinity membrane.
 export const respondResponses = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
   wantsStream: boolean,
-  ctx: GatewayCtx,
+  ctx: ChatGatewayCtx,
   request: CanonicalResponsesPayload,
 ): Promise<Response> => {
   if (result.type !== 'events') return respondResponsesFailure(result, ctx);

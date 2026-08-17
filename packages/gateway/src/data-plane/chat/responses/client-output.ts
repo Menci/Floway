@@ -34,14 +34,11 @@ export const wrapResponsesStatefulOutput = (
 // at the stateful half and completes that resource itself.
 export const wrapResponsesClientEgress = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-  ctx: GatewayCtx,
+  ctx: ChatGatewayCtx,
   request: CanonicalResponsesPayload,
-): AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>> => {
-  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output requires chat context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return wrapResponseResourceCompletion(wrapResponsesStatefulOutput(frames, chatCtx), {
+): AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>> =>
+  wrapResponseResourceCompletion(wrapResponsesStatefulOutput(frames, ctx), {
     request,
     createdAt: responsesCreatedAt(ctx),
-    stored: chatCtx.store.writesState,
+    stored: ctx.store.writesState,
   });
-};

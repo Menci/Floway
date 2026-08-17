@@ -2,9 +2,11 @@
 // down here is what only running it can say — that the edge terminates the client's stream
 // on `[DONE]` however the upstream's ended, that it folds a stream into one response object
 // when the client did not ask to stream, that it hands the turn's own state back for the
-// client to carry, that a turn the upstream answered with one envelope instead of a stream is
-// served as that envelope, that a refusal keeps the upstream's own status and words, and that
-// a dial nobody answered is a value the fork can move past.
+// client to carry, that the stored-items membrane's other half runs there too so the client
+// is answered under an envelope this gateway minted, that a turn the upstream answered with
+// one envelope instead of a stream is served as that envelope, that a refusal keeps the
+// upstream's own status and words, and that a dial nobody answered is a value the fork can
+// move past.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -218,14 +220,24 @@ describe('the responses chain', () => {
       'response.completed',
       undefined,
     ]);
-    expect(frames.map(frame => frame.data)).toEqual([
+    expect(frames.slice(0, 2).map(frame => frame.data)).toEqual([
       JSON.stringify(delta('he')),
       JSON.stringify(delta('llo')),
-      // The carrier's own two frames went out ahead of this one under two sequence numbers of
-      // their own, so the terminal event is numbered where they left it.
-      JSON.stringify({ ...completed('hello'), sequence_number: 4 }),
-      '[DONE]',
     ]);
+    expect(frames[3]!.data).toBe('[DONE]');
+
+    // The terminal event is the upstream's, restated: the membrane at the edge stamps the
+    // envelope id this gateway minted for the turn and completes the resource to what the
+    // schema requires of it, so the deltas ride through untouched and this one does not.
+    const terminal = JSON.parse(frames[2]!.data) as { sequence_number: number; response: ResponsesResult };
+    // The carrier's own two frames went out ahead of it under two sequence numbers of their
+    // own, so the terminal event is numbered where they left it.
+    expect(terminal.sequence_number).toBe(4);
+    expect(terminal.response).toMatchObject({
+      status: 'completed',
+      output: [{ content: [{ type: 'output_text', text: 'hello' }] }],
+    });
+    expect(terminal.response.id).not.toBe('resp_1');
   });
 
   // The other half of affinity: the resolver reads client-carried state on the way down, and
@@ -304,13 +316,24 @@ describe('the responses chain', () => {
 
   // A stream that ran out before its terminal event is a turn nobody can answer from: the
   // response was never stated complete, incomplete or failed, so serving what did arrive
-  // would report a truncated answer as a whole one.
-  it('fails a stream that ended without its terminal event', async () => {
+  // would report a truncated answer as a whole one. By then the client is already being
+  // streamed to and the status went out with the headers, so it is told in the protocol's own
+  // words — and the stream ends on that rather than on the terminator, because a stream that
+  // ended on `[DONE]` is a stream that finished.
+  it('tells a client already being streamed to that the stream never ended', async () => {
     resolves([candidate(async () => stream(delta('hi')))]);
 
     const { facts } = await serve(true);
+    const frames = await drain(facts['response.chat.responses.rendered']);
 
-    await expect(drain(facts['response.chat.responses.rendered'])).rejects.toThrow(RESPONSES_MISSING_TERMINAL_MESSAGE);
+    expect(frames.map(frame => frame.event)).toEqual(['response.output_text.delta', 'error']);
+    expect(JSON.parse(frames[1]!.data)).toMatchObject({
+      type: 'error',
+      error: { message: RESPONSES_MISSING_TERMINAL_MESSAGE },
+    });
+    // The client was answered, and the run still failed: what the frames said on the way out
+    // is not what the row says the turn was.
+    expect((await facts['response.chat.responses.streamedUsage']!).failed).toBe(true);
   });
 
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to
@@ -321,11 +344,14 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    expect(withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult)).toMatchObject({
-      id: 'resp_1',
+    const answered = withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult);
+    expect(answered).toMatchObject({
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: 'hello' }] }],
     });
+    // One client response can span several upstream calls, so the envelope it is answered
+    // under is the one the membrane minted rather than the one the upstream sent.
+    expect(answered.id).not.toBe('resp_1');
   });
 
   // A compaction is one envelope rather than a stream: the upstream ran the turn, charged for

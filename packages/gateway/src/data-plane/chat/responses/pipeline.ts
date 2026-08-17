@@ -2,9 +2,11 @@
 //
 //   emitResponses          the edge: writes the answer in the shape the client asked for
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
+//   hydrateStoredItems     the stored-items membrane, on the way in
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
 //   materializeAttempt     puts the payload this candidate is owed into the record
+//   beginStoredAttempt     reseeds the store's per-attempt scratchpad
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.responses`: this protocol's own, and the two
@@ -18,26 +20,26 @@
 // rather than implied by its absence:
 //
 //   - the WebSocket transport. A second entry against this protocol — its own framing, its
-//     own lifecycle — and `websocket.ts` still owns it.
+//     own lifecycle — and `websocket.ts` still owns it. It reaches the same membrane through
+//     `serve-prep.ts` and `client-output.ts`, which is why both outlive this chain.
 //   - `/v1/responses/compact`. A second operation over this protocol rather than another
 //     wire under this pipeline, so it stays on `responsesServe.compact`. The dial here asks
 //     for `generate`; what the ending answers with is the branch the provider says it ran,
 //     which is why the envelope a compaction is arrives somewhere rather than nowhere.
 //   - this family's remaining interceptors, the server-tool shims among them. Still only in
 //     the interceptor form, so the array between the materialized payload and the fork is
-//     short rather than complete.
-//   - the stored-items membrane: `previous_response_id` expansion, item hydration, and the
-//     snapshot the next turn reads. It wraps the chain rather than sitting in it, and
-//     `serve-prep.ts` and `client-output.ts` still hold it.
+//     short rather than complete — and nothing in a pipelined turn writes to the store's
+//     private-payload scratchpad, because the shim that writes to it is what is missing.
 //
 // One deliberate difference from `respond.ts`, shared with every other family on the
 // pipeline: an upstream that refused is answered in its own words, with the status it sent,
-// rather than being quoted back inside an envelope this gateway wrote. And one that is this
-// family's own: a stream that runs out before its terminal event still ends the run with
-// `RESPONSES_MISSING_TERMINAL_MESSAGE`, but nothing turns that into the mid-stream `error`
-// and `response.failed` pair `respond.ts` wrote for a client already being streamed to.
+// rather than being quoted back inside an envelope this gateway wrote.
 
 import { analyzeResponsesAffinity } from './affinity/ingress.ts';
+import { wrapResponsesClientEgress } from './client-output.ts';
+import type { ResponsesServeFailure } from './errors.ts';
+import { hydrateResponsesPayload } from './items/hydrate.ts';
+import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
@@ -61,23 +63,24 @@ import {
 } from '../interceptors.ts';
 import { messagesWire } from '../messages/pipeline.ts';
 import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
+import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
-import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
-import { doneFrame, renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectResponsesProtocolEventsToResult,
   isResponsesTerminalEvent,
   responsesProtocolFrameToSSEFrame,
   RESPONSES_MISSING_TERMINAL_MESSAGE,
   type CanonicalResponsesPayload,
+  type ClientResponseResource,
+  type ClientResponsesStreamEvent,
   type ResponsesStreamEvent,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { providerModelOf, toInternalDebugError, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 /** `/v1/responses` prefers its own wire, then the translated Messages path, then the
@@ -86,6 +89,14 @@ export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-
 
 /** What this family adds to the chat space. */
 export interface ResponsesFacts extends ChatFacts {
+  /** Server-only state the gateway once attached to an item it emitted, keyed by that
+   *  item's id, as the rows this turn hydrated carry it. It never reaches an upstream: it is
+   *  what lets an item this turn re-emits be stored with the state it already had.
+   *
+   *  Pairs rather than a `Map`, for the same reason the header keys are: a `Map` has no own
+   *  properties, so it would be written into the dump as an empty object and the record would
+   *  say the turn hydrated nothing. */
+  'request.chat.responses.privatePayloads': readonly (readonly [string, unknown])[];
   /** What the client is actually sent — an object when it asked for one, SSE frames when it
    *  asked to stream. The edge provides it, so a dump shows what the client received. */
   'response.chat.responses.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
@@ -105,8 +116,12 @@ type R<K extends keyof ResponsesFacts> = { [P in K]: ResponsesFacts[P] };
  * same frames that would have gone out are folded here instead, by the protocol's own
  * reassembly, which is what makes a stream that stopped short of its terminal event say so
  * rather than answer with half a response.
+ *
+ * The stored-items membrane's other half runs here too, and it takes the client's own
+ * payload rather than the record's, because by the fork the record holds the prepared one —
+ * `previous_response_id` expanded away — and the resource echoes what the client asked with.
  */
-const emitResponses = defineStage<
+const emitResponses = (client: CanonicalResponsesPayload) => defineStage<
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream'>,
   R<'ingress.chat.responses.wantsStream' | 'response.chat.responses' | 'response.http.headers'>,
@@ -153,23 +168,39 @@ const emitResponses = defineStage<
       };
     }
 
-    // The turn's own state, written back into the frames the client is handed: a follow-up
-    // carrying it comes back to the upstream that issued it. This is the other half of the
-    // affinity the resolver read on the way down, and it has to sit here because it rewrites
-    // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = wrapResponsesAffinityEgress(
+    // Everything this protocol writes back into its own frames, in one place because every
+    // layer of it rewrites them and below the fold there would be nothing left to rewrite:
+    // the terminal restated from the items that actually closed, the turn's own state sealed
+    // into the carrier a follow-up comes back on, each complete item stored under its exact
+    // id beneath one response id this gateway minted, and the resource completed to what the
+    // schema requires of it. It runs before the fold rather than beside it, so a client that
+    // did not ask to stream is answered with the object the persisted frames add up to.
+    const frames = wrapResponsesClientEgress(
       answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-      affinityEgressOptions(use.gateway),
+      use.gateway,
+      client,
     );
     if (!back['ingress.chat.responses.wantsStream']) {
-      return {
-        ...rest,
-        'response.http.headers': forClient,
-        'response.chat.responses.rendered': move(
-          await collectResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
-        ),
-        'response.http.status': 200,
-      };
+      try {
+        return {
+          ...rest,
+          'response.http.headers': forClient,
+          'response.chat.responses.rendered': move(
+            await collectResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+          ),
+          'response.http.status': 200,
+        };
+      } catch (error) {
+        // Nothing has gone out yet, so the fault is still a status. A turn the gateway could
+        // not finish — the snapshot the next turn would read, most often — is not one it can
+        // answer, and the client is told what broke rather than handed the half that arrived.
+        return {
+          ...rest,
+          'response.http.headers': forClient,
+          'response.chat.responses.rendered': move(internalErrorEnvelope(error)),
+          'response.http.status': 502,
+        };
+      }
     }
     return {
       ...rest,
@@ -180,20 +211,87 @@ const emitResponses = defineStage<
   },
 });
 
+/** What a fault the gateway is answerable for looks like on this protocol, with the stack
+ *  that says where it happened: this is the gateway's own failure and not an upstream's, so
+ *  the body is a diagnostic rather than something a client is meant to parse. */
+const internalErrorEnvelope = (error: unknown): Record<string, unknown> => {
+  const debug = toInternalDebugError(error);
+  return {
+    error: {
+      type: debug.type,
+      name: debug.name,
+      message: debug.message,
+      stack: debug.stack,
+      cause: debug.cause,
+      target_api: debug.target_api,
+    },
+  };
+};
+
+/** The spec nests the `error` event's payload under `error`, and both official SDKs key
+ *  their mid-stream throw on exactly that key; the same fields at the top level are yielded
+ *  to them as an ordinary event instead.
+ *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L170-L177
+ *  https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
+ *  https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98 */
+const streamErrorEvent = (error: unknown): ClientResponsesStreamEvent => {
+  const debug = toInternalDebugError(error);
+  return {
+    type: 'error',
+    error: {
+      message: debug.message,
+      code: debug.type,
+      name: debug.name,
+      stack: debug.stack,
+      cause: debug.cause,
+      target_api: debug.target_api,
+    },
+  } as unknown as ClientResponsesStreamEvent;
+};
+
+/** "Any error incurred while streaming will be followed by a `response.failed` event."
+ *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430 */
+const streamFailedEvent = (announced: ClientResponseResource, error: unknown): ClientResponsesStreamEvent => {
+  const debug = toInternalDebugError(error);
+  return {
+    type: 'response.failed',
+    response: { ...announced, status: 'failed', error: { code: debug.type, message: debug.message } },
+  } as ClientResponsesStreamEvent;
+};
+
 /** Every Responses event has an SSE form of its own, so the render is a straight map. What
- *  it adds is the terminator: the client's stream ends on the literal `[DONE]` payload
- *  whether or not the upstream's stream carried one, because that is what the transport
- *  reads to know the turn is over.
- *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84 */
-const renderSSE = (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
+ *  it adds is the two endings a client already being streamed to can be given. The ordinary
+ *  one is the terminator: the client's stream ends on the literal `[DONE]` payload whether or
+ *  not the upstream's stream carried one, because that is what the transport reads to know
+ *  the turn is over.
+ *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
+ *
+ *  The other is a break — an upstream that died mid-stream, a turn that could not be stored,
+ *  a stream that ran out before saying how it ended. The status went out with the headers, so
+ *  the failure has to be said in the protocol's own words, and it is said *instead of* the
+ *  terminator: a stream that ended on `[DONE]` is a stream that finished. */
+const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
   [Symbol.asyncIterator]: () => (async function* () {
-    for await (const frame of frames) {
-      // The upstream's own terminator is not the client's — the ending stops reading at the
-      // turn's terminal event, and one terminator is written below however the frames ended.
-      if (frame.type === 'done') continue;
-      yield responsesProtocolFrameToSSEFrame(frame);
+    // The last resource the client was shown, which is the one a `response.failed` restates:
+    // the id it names has to be the id the client already saw this turn under.
+    let announced: ClientResponseResource | undefined;
+    try {
+      for await (const frame of frames) {
+        // The upstream's own terminator is not the client's — the ending stops reading at the
+        // turn's terminal event, and one terminator is written below however the frames ended.
+        if (frame.type === 'done') continue;
+        if ('response' in frame.event) announced = frame.event.response;
+        yield responsesProtocolFrameToSSEFrame(frame);
+      }
+      yield responsesProtocolFrameToSSEFrame(doneFrame());
+    } catch (error) {
+      yield sseFrame(JSON.stringify(streamErrorEvent(error)), 'error');
+      // Nothing was announced when the break came before the first resource-bearing event,
+      // and there is no response to restate as failed.
+      if (announced !== undefined) {
+        yield responsesProtocolFrameToSSEFrame(eventFrame(streamFailedEvent(announced, error)));
+      }
     }
-    yield responsesProtocolFrameToSSEFrame(doneFrame());
   })(),
 });
 
@@ -428,10 +526,16 @@ const billed = (identity: TelemetryModelIdentity, usage: BillableUsage | undefin
 
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
- *  built from the request rather than being a constant. */
-const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses' | 'response.chat.responses.streamedUsage'>> => ({
+ *  built from the request rather than being a constant.
+ *
+ *  It reads the request through a function because the one it has to read is the *prepared*
+ *  one: a `previous_response_id` continuation carries the prior turn's state on items the
+ *  client never sent, and a turn is pinned by what its items carry. The narrowing is built
+ *  at assembly, before any fact exists, so the membrane hands the prepared payload across
+ *  through the run's own cell rather than through the record. */
+const narrowing = (prepared: () => CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.responses' | 'response.chat.responses.streamedUsage'>> => ({
   canServe: candidate => responsesTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeResponsesAffinity(payload, gateway.affinity.codec),
+  affinity: async gateway => await analyzeResponsesAffinity(prepared(), gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
   refuse: (status, message, reason) => ({
     'response.chat.responses.streamedUsage': null,
@@ -452,6 +556,144 @@ const narrowing = (payload: CanonicalResponsesPayload): ChatNarrowing<R<'respons
   refuses: ['response.chat.responses', 'response.chat.responses.streamedUsage'],
 });
 
+/** A refusal the membrane makes on its own, in the shape every other refusal in this chain
+ *  takes: an empty billed set and empty headers are what "no upstream was called" looks like
+ *  on those two keys, and the envelope is what an OpenAI client reads. */
+const refuseStoredItems = (
+  status: number,
+  message: string,
+  extra: { readonly param: string; readonly code: string | null },
+): R<'response.chat.responses' | 'response.chat.responses.streamedUsage' | 'response.usage.billable' | 'response.http.headers'> => ({
+  'response.usage.billable': [],
+  'response.http.headers': [],
+  'response.chat.responses.streamedUsage': null,
+  'response.chat.responses': {
+    status,
+    message,
+    envelope: { error: { message, type: 'invalid_request_error', ...extra } },
+  },
+});
+
+/**
+ * The stored-items membrane, on the way in.
+ *
+ * Three things, in an order the store fixes. A `previous_response_id` becomes the snapshot's
+ * items in front of this turn's input, and the id itself never reaches a wire — it names
+ * something only this gateway holds. Every item the turn now names is read back out of the
+ * store, so an item the client echoed by id is sent as the row we stored rather than as the
+ * client's copy of it, and whatever server-only state that row carried comes back with it.
+ * Then the items this turn *adds* are staged, so the snapshot the next turn continues from
+ * holds them alongside the history it inherited.
+ *
+ * It sits above the resolver because everything after it routes on the result: the payload
+ * affinity reads is the hydrated one, and a turn whose continuation does not resolve has
+ * nowhere to be routed to. Both of its refusals are answers it already holds, which is why
+ * it carries the `return` trait alongside `through`.
+ */
+const hydrateStoredItems = (
+  client: CanonicalResponsesPayload,
+  prepared: (payload: CanonicalResponsesPayload) => void,
+) => defineStage<
+  R<'request.chat.responses'>,
+  R<'request.chat.responses' | 'request.chat.responses.privatePayloads'>,
+  Record<string, never>,
+  Record<string, never>,
+  R<'response.chat.responses' | 'response.chat.responses.streamedUsage' | 'response.usage.billable' | 'response.http.headers'>,
+  ChatServices
+>({
+  name: 'hydrateStoredItems',
+  through: {
+    request: {
+      needs: ['request.chat.responses'],
+      consumes: [],
+      provides: ['request.chat.responses', 'request.chat.responses.privatePayloads'],
+    },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  return: {
+    provides: [
+      'response.chat.responses',
+      'response.chat.responses.streamedUsage',
+      'response.usage.billable',
+      'response.http.headers',
+    ],
+  },
+  execute: async (facts, next, use) => {
+    const store = use.gateway.store;
+    // The key holds what a client may send, whose `input` is a string or a list; this chain
+    // runs on the canonical form the entry normalized it to.
+    const asked = facts['request.chat.responses'] as CanonicalResponsesPayload;
+
+    let expanded: CanonicalResponsesPayload;
+    try {
+      expanded = await expandPreviousResponseId(asked, store);
+    } catch (error) {
+      if (!(error instanceof PreviousResponseNotFoundError)) throw error;
+      // OpenAI's own words for a continuation that does not resolve, byte for byte: Codex
+      // compares this body against upstream's. See the cross-references on
+      // `PreviousResponseNotFoundError`.
+      return move({
+        ...facts,
+        ...refuseStoredItems(400, error.message, { param: 'previous_response_id', code: 'previous_response_not_found' }),
+      });
+    }
+
+    // Both lists: what the turn now names is read by id, and what the client itself sent is
+    // read by item hash as well, so a body repeated verbatim finds the row it already made.
+    await store.loadInputItems(expanded.input, client.input);
+
+    let hydrated: ReturnType<typeof hydrateResponsesPayload>;
+    try {
+      hydrated = hydrateResponsesPayload(expanded, store);
+    } catch (error) {
+      const failure = tryCatchChatServeFailure<ResponsesServeFailure>(error);
+      if (failure?.kind !== 'item-not-found') throw error;
+      return move({
+        ...facts,
+        ...refuseStoredItems(404, `Item with id '${failure.itemId}' not found.`, { param: 'input', code: null }),
+      });
+    }
+
+    // The client's own input, not the expansion's `item_reference` prefix: the prefix is
+    // already in the snapshot this turn inherited, and staging it again would repeat it.
+    await store.stageInputItems(client.input);
+
+    prepared(hydrated.payload);
+    return await next({
+      ...facts,
+      'request.chat.responses': move(hydrated.payload),
+      'request.chat.responses.privatePayloads': move([...hydrated.privatePayloads]),
+    });
+  },
+});
+
+/**
+ * Reseeds the store's per-attempt scratchpad from what the membrane hydrated.
+ *
+ * Below the fork because it is per attempt: what one attempt wrote into the scratchpad is
+ * not what the next one starts from, and re-running the suffix is what clears it. Nothing in
+ * a pipelined turn writes to it yet — the server-tool shim is what writes, and it is still
+ * an interceptor — so today this only puts back the state the stored rows already carried,
+ * which is what lets an item this turn re-emits be stored with it intact.
+ */
+const beginStoredAttempt = defineStage<
+  R<'request.chat.responses.privatePayloads'>,
+  R<'request.chat.responses.privatePayloads'>,
+  Record<string, never>,
+  Record<string, never>,
+  ChatServices
+>({
+  name: 'beginStoredAttempt',
+  through: {
+    request: { needs: ['request.chat.responses.privatePayloads'], consumes: [], provides: [] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, next, use) => {
+    use.gateway.store.beginAttempt(new Map(facts['request.chat.responses.privatePayloads']));
+    return await next(facts);
+  },
+});
+
 export type ResponsesServeEntry = R<
   'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'ingress.chat.responses.wantsStream'
   | 'request.chat.responses' | 'serve.model'
@@ -462,19 +704,26 @@ export type ResponsesServeExit = R<
   | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
 >;
 
-export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipeline<ResponsesServeEntry, ResponsesServeExit> =>
-  compose('responsesServe', [
-    emitResponses,
+export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipeline<ResponsesServeEntry, ResponsesServeExit> => {
+  // One cell per run, written by the stage directly above the one that reads it. The
+  // resolver takes its narrowing at assembly, so this is where the prepared payload crosses
+  // from the membrane to the affinity walk; until the membrane has run, what the client sent
+  // is the whole of what is known about the turn.
+  let prepared = payload;
+  return compose('responsesServe', [
+    emitResponses(payload),
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.responses'?: unknown })['response.chat.responses']),
       handedUp => (handedUp as { 'response.chat.responses.streamedUsage'?: unknown })['response.chat.responses.streamedUsage'] !== null,
     ),
-    resolveChatCandidates(narrowing(payload)),
+    hydrateStoredItems(payload, hydrated => { prepared = hydrated; }),
+    resolveChatCandidates(narrowing(() => prepared)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.responses'?: unknown })['response.chat.responses']),
       owns: [],
     }),
     materializeAttempt('request.chat.responses'),
+    beginStoredAttempt,
     disableReasoningOnForcedToolChoiceForResponses,
     stripPromptCacheKeyForResponses,
     vendorDeepSeekNormalizeForResponses,
@@ -487,3 +736,4 @@ export const responsesServePipeline = (payload: CanonicalResponsesPayload): Pipe
       wire: responsesWireFor,
     }),
   ]);
+};
