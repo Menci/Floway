@@ -58,12 +58,10 @@ import type { ImagesEditsRequest, ImagesEditsSource, ModelCandidate, Performance
  *  the events themselves rather than frames with a terminal arm the protocol has not got. */
 export type ImagesFrames = AsyncIterable<ImagesStreamEvent>;
 
-/** A stream as a value the record can hold. It has to be a wrapper around the generator rather
- *  than the generator itself: the language puts `Symbol.asyncDispose` on every async generator,
- *  so handing one over would make the runner adopt it as a resource, and releasing a resource
- *  calls `return()` — which cancels the iteration instead of draining it. The one resource in
- *  an images run is the upstream's body, at `response.http.body`, and this is what keeps it
- *  that way. */
+/** A stream as a value the record can hold, as a wrapper around the generator rather than the
+ *  generator itself. What the wrapper says is where the resource is: the one resource in an
+ *  images run is the upstream's body at `response.http.body`, claimed with `own()`, and this
+ *  keeps a frame view from reading as another. */
 const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
 
 /** Images' own keys. They extend the shared space and never merge into it, so a stage written

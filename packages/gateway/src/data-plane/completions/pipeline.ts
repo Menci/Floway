@@ -42,17 +42,13 @@ import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provide
 export type CompletionsFrames = AsyncIterable<ProtocolFrame<CompletionsStreamEvent>>;
 
 /**
- * A stream as a value the record can hold, and the one thing here that does not follow from
- * the rules as written: an async generator is itself an `AsyncDisposable` — V8 gives every
- * generator a `Symbol.asyncDispose` that returns it — so handing one over makes a frame view
- * a *resource* as far as the run is concerned. Two rules then bite, both correctly and both
- * fatally: a stage that consumes a view while providing a derived one has its source closed
- * the moment it returns, and `failover` refuses a fork that received a releasable at a key it
- * did not declare, which is every key but `response.http.body`.
+ * A stream as a value the record can hold: a wrapper around the generator rather than the
+ * generator itself, which is what says where the resource is. There is exactly one resource in
+ * a completions run — the upstream's body, claimed with `own()` — and the wrapper keeps a frame
+ * view from reading as another.
  *
- * There is exactly one resource in a completions run — the upstream's body — and this is what
- * keeps it that way. What comes back is single-shot on purpose: a stream that has been read is
- * a stream that is over, and a second reader learns that rather than being lied to.
+ * What comes back is single-shot on purpose: a stream that has been read is a stream that is
+ * over, and a second reader learns that rather than being lied to.
  */
 const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
 

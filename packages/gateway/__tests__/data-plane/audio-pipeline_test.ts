@@ -160,9 +160,11 @@ describe('the audio transcription pipeline', () => {
   });
 
   it('keeps the events view clear of what answers to release', () => {
+    // Neither the generator nor the view around it is a resource. Whether the host marks a
+    // generator disposable varies — Node 24 does, Node 22 does not — and the run's answer
+    // does not, because ownership is claimed rather than read off the value.
     const generator = (async function* () { yield 1; })();
-    expect(Symbol.asyncDispose in generator).toBe(true);   // the language marks it
-    expect(isOwned(generator)).toBe(false);                // the run does not
+    expect(isOwned(generator)).toBe(false);
     expect(isOwned({ [Symbol.asyncIterator]: () => generator })).toBe(false);
   });
 });
