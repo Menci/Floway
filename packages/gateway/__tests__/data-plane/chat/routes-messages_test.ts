@@ -145,6 +145,24 @@ test('an upstream refusal reaches the client in the upstream-s own words and sta
   expect(await response.json()).toEqual(refusal);
 });
 
+test('a refusal on a turn that asked to stream is a body, not an opened stream', async () => {
+  const { apiKey } = await setupAppTest();
+  const refusal = { type: 'error', error: { type: 'permission_error', message: 'copilot said no' } };
+
+  // The riskier half of the same statement: the client asked for SSE, so the seam has a
+  // stream to open and must not — nothing was ever generated, and Claude Code reads an error
+  // written into a 200 stream as a turn that succeeded and said nothing.
+  const response = await withCopilot(
+    [{ id: 'anthropic-route', supported_endpoints: ['/messages'] }],
+    () => jsonResponse(refusal, 403),
+    async () => await post(apiKey.key, turn('anthropic-route', { stream: true })),
+  );
+
+  expect(response.status).toBe(403);
+  expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
+  expect(await response.json()).toEqual(refusal);
+});
+
 test('a served turn writes one usage row carrying the tokens the upstream reported', async () => {
   const { apiKey, repo } = await setupAppTest();
 

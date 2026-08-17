@@ -137,6 +137,24 @@ test('an upstream refusal reaches the client in the upstream-s own words and sta
   expect(await response.json()).toEqual(refusal);
 });
 
+test('a refusal on a turn that asked to stream is a body, not an opened stream', async () => {
+  const { apiKey } = await setupAppTest();
+  const refusal = { error: { message: 'copilot said no', type: 'insufficient_quota' } };
+
+  // The riskier half of the same statement: the client asked for SSE, so the seam has a
+  // stream to open and must not — nothing was ever generated, and a Gemini stream that
+  // carried the refusal would be read as a turn that produced no candidates.
+  const response = await withCopilot(
+    [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],
+    () => jsonResponse(refusal, 402),
+    async () => await post(apiKey.key, 'gpt-route:streamGenerateContent'),
+  );
+
+  expect(response.status).toBe(402);
+  expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
+  expect(await response.json()).toEqual(refusal);
+});
+
 test('a served turn writes one usage row carrying the tokens the upstream reported', async () => {
   const { apiKey, repo } = await setupAppTest();
 
