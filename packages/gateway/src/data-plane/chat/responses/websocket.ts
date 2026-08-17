@@ -459,7 +459,7 @@ const respondResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ClientResponsesStreamEvent | undefined;
-    const iterator = observeResponsesWebSocketFrames(rendered, state, ctx)[Symbol.asyncIterator]();
+    const iterator = observeResponsesWebSocketFrames(rendered, state)[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
@@ -644,13 +644,13 @@ const respondResponsesWebSocket = async (input: {
   }
 };
 
+/** Reads the turn's own ending off the frames on their way to the socket. The record is not
+ *  its business: the edge tees these same frames, so what reaches here is already recorded. */
 const observeResponsesWebSocketFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>,
   state: SourceStreamState,
-  ctx: ChatGatewayCtx,
 ): AsyncGenerator<ProtocolFrame<ClientResponsesStreamEvent>> {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
     if (frame.type === 'event') {
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';

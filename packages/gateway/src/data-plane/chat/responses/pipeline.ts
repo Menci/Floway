@@ -219,11 +219,11 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStre
     // shapes this edge hands out itself, because both read the same iterable: the SSE body, and
     // the object the fold assembles from the frames that would have gone out.
     //
-    // The events framing is not one of them. There the frames go to a transport that writes
-    // each one itself, and a transport that writes its own frames records them — the same
-    // division `recordSentPayloadBytes` draws for the bytes, and for the same reason: only the
-    // transport knows which of them reached the socket.
-    const frames = framing === 'events' ? egress : recordFrames(egress, use.gateway.dump);
+    // Both transports too. A WebSocket turn is the same frames rendered differently, so it is
+    // recorded here rather than where it is framed — one tee for the family, whatever writes
+    // what it hands up. Reading is what records, so a transport that stopped early records
+    // exactly what it took.
+    const frames = recordFrames(egress, use.gateway.dump);
     if (!back['ingress.chat.responses.wantsStream']) {
       try {
         return {
