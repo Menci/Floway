@@ -577,10 +577,13 @@ const usageEvent = (usage: Record<string, unknown>): ProtocolFrame<ResponsesStre
 const usageOf = (frame: ProtocolFrame<ResponsesStreamEvent>): Record<string, unknown> =>
   (frame as { event: { response: { usage: Record<string, unknown> } } }).event.response.usage;
 
-// Each array below is the order that family's chain runs, and running it is what says the
-// order is a property of the array rather than of any one stage: assembly refuses
+// Each array below is the order a family's chain runs these rules in, and running it is what
+// says the order is a property of the array rather than of any one stage: assembly refuses
 // declarations that do not line up, and a rewrite that had to see another rewrite's output
 // only sees it from where it sits.
+//
+// It is not that family's *whole* chain. Rules a wire owns run in the wire's own chain, below
+// the stage that picks it, so what an array states is the order of what sits above the fork.
 describe('a family\'s interceptor array, in the order its chain runs it', () => {
   it('assembles and runs the Messages array', async () => {
     const { down } = await runChain('response.chat.messages', [

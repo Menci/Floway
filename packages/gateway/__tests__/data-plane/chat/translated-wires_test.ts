@@ -445,9 +445,10 @@ describe('a rule that speaks about one protocol-s wire', () => {
   });
 
   // The other half, and this one assembly says rather than a run: the wire's own rules read
-  // the wire's own request key, so `compose` refuses to place them where a handoff has taken
-  // it. A chain cannot be arranged to run the Messages rule on a turn on its way out of
-  // Messages, whatever anyone writes.
+  // the wire's own request key, so `compose` refuses to place them *below* a handoff that has
+  // taken it. It is one array's arrangement and not a proof — `compose` walks one array, and
+  // the same rule left above the fork is invisible to it. What keeps a wire's rule off a
+  // translated turn is that the rule lives in the wire's own chain.
   it('cannot be placed in a chain whose payload a handoff consumed', () => {
     const leaving = handOff({
       from: { request: 'request.chat.messages', response: 'response.chat.messages' },

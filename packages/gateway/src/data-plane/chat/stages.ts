@@ -7,10 +7,9 @@
 // upstream that will see it — so it enters the record below the fork, where there is one
 // payload to speak of, rather than above it where there are as many as there are candidates.
 //
-// When the translated wires land, which wire a candidate is dialled on will be decided per
-// candidate too, by the chain's last stage handing into the target's. Failover re-runs the
-// whole suffix including that stage, so the next candidate re-picks with no mechanism of its
-// own. Every chain here dials its own protocol, so nothing picks yet.
+// Which wire a candidate is dialled on is decided per candidate too, by the chain's last
+// stage handing into the target protocol's. Failover re-runs the whole suffix including that
+// stage, so the next candidate re-picks with no mechanism of its own.
 
 import type { AttemptSelector, GatewayFacts } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
