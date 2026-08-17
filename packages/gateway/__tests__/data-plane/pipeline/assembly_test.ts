@@ -11,6 +11,7 @@ import { audioTranscriptionServePipeline } from '../../../src/data-plane/audio/p
 import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
 import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
 import { messagesServePipeline } from '../../../src/data-plane/chat/messages/pipeline.ts';
+import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
 import { completionsServePipeline } from '../../../src/data-plane/completions/pipeline.ts';
 import { embeddingsServePipeline } from '../../../src/data-plane/embeddings/pipeline.ts';
 import { imagesServePipeline } from '../../../src/data-plane/images/pipeline.ts';
@@ -27,6 +28,7 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['chat completions', () => chatCompletionsServePipeline({ model: 'm', messages: [] } as never)],
   ['messages', () => messagesServePipeline({ model: 'm', messages: [] } as never)],
   ['gemini', () => geminiServePipeline({ model: 'm', contents: [] } as never)],
+  ['responses', () => responsesServePipeline({ model: 'm', input: [] } as never)],
 ];
 
 describe('every family assembles', () => {
