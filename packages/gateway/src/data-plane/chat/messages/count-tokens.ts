@@ -29,6 +29,7 @@ import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
 import { prepareMessagesWebSearchShimRequest } from './interceptors/web-search-shim.ts';
 import type { MessagesFacts } from './pipeline.ts';
+import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -181,12 +182,9 @@ const callMessagesCountTokensUpstream = defineStage<
     const candidate = use.resolveAttempt(facts['route.attempt']);
 
     // The payload affinity materialized for this candidate, as every stage between the fork
-    // and here has rewritten it. The id the client addressed does not travel — the provider
-    // re-stamps whatever it resolved upstream — and an alias' own rules apply to the body
-    // that is sent, so what is measured is what generation would be charged for.
-    const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
-    if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
-    const { model: _addressed, ...body } = payload;
+    // and here has rewritten it — built for the dial exactly as generation builds it, so what
+    // is measured is what generation would be charged for.
+    const body = bodyForAttempt(facts['request.chat.messages'], candidate, applyRulesToUpstreamMessages);
 
     // Anthropic's beta flags have a typed path of their own, so no header allowlist can admit
     // them, and they are the client's own only when the client spoke this protocol.
