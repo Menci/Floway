@@ -7,7 +7,7 @@ import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
-import { installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
+import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
@@ -291,6 +291,46 @@ test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent
         const utf16CodeUnits = recorded.messages.reduce((total, message) => total + message.length, 0);
         assert(expectedBytes > utf16CodeUnits, 'non-ASCII event_id must be counted as UTF-8 bytes');
         assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
+      } finally {
+        recorded.stop();
+        client.close();
+      }
+    }),
+  );
+});
+
+/** How many frames a run record holds. The format writes each recorded frame as a
+ *  `stream.frame` event, so counting them reads no object table. */
+const recordedFrameCount = (record: Parameters<typeof runRecordOf>[0]): number =>
+  eventsOf(runRecordOf(record))
+    .filter(event => event.type === 'stream.frame')
+    .reduce((total, event) => total + (event.frames as readonly unknown[]).length, 0);
+
+// The record holds one frame per event the turn sent, and the count is what says so. Two
+// readers sit on the same iterable — the family's edge, which tees what a client is served
+// into the record, and this transport, which reads it to write each event to the socket — so a
+// second tee is invisible everywhere except here, and it would make the collected view the
+// dashboard replays show the whole turn twice.
+test('Responses WebSocket records one frame per event it sent', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      try {
+        await completeResponsesTurn(client, 'one-frame-per-event');
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+        // A keep-alive is the transport's own idle write rather than a frame of the turn, so
+        // it is not one of the events the record is counted against.
+        const sent = recorded.messages
+          .map(message => JSON.parse(message) as { type?: unknown })
+          .filter(message => message.type !== KEEP_ALIVE_EVENT_TYPE);
+        assert(sent.length > 0, 'expected the turn to have sent events at all');
+        assertEquals(recordedFrameCount(dumps.stored[0]?.record), sent.length);
       } finally {
         recorded.stop();
         client.close();

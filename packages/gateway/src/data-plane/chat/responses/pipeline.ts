@@ -209,19 +209,21 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: ResponsesStre
     // id beneath one response id this gateway minted, and the resource completed to what the
     // schema requires of it. It runs before the fold rather than beside it, so a client that
     // did not ask to stream is answered with the object the persisted frames add up to.
-    //
-    // The record is teed above all of it, which is what makes it a record of what the client
-    // was served rather than of what some layer below had still to rewrite. One tee covers
-    // every shape this edge can hand up, because all three read the same iterable: an SSE
-    // body, the events a transport frames itself, and the object the fold assembles.
-    const frames = recordFrames(
-      wrapResponsesClientEgress(
-        answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-        use.gateway,
-        client,
-      ),
-      use.gateway.dump,
+    const egress = wrapResponsesClientEgress(
+      answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+      use.gateway,
+      client,
     );
+    // The record is teed above all of that, which is what makes it a record of what the client
+    // was served rather than of what some layer below had still to rewrite. One tee covers both
+    // shapes this edge hands out itself, because both read the same iterable: the SSE body, and
+    // the object the fold assembles from the frames that would have gone out.
+    //
+    // The events framing is not one of them. There the frames go to a transport that writes
+    // each one itself, and a transport that writes its own frames records them — the same
+    // division `recordSentPayloadBytes` draws for the bytes, and for the same reason: only the
+    // transport knows which of them reached the socket.
+    const frames = framing === 'events' ? egress : recordFrames(egress, use.gateway.dump);
     if (!back['ingress.chat.responses.wantsStream']) {
       try {
         return {
