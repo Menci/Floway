@@ -26,6 +26,7 @@ import { defineStage, move, type Pipeline, type Use } from '@floway-dev/pipeline
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 import type { TranslateTripResult } from '@floway-dev/translate';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 type RequestKey = Extract<keyof ChatFacts, `request.chat.${string}`>;
 type ResponseKey = Extract<keyof ChatFacts, `response.chat.${string}`>;
@@ -48,11 +49,33 @@ export interface Handoff<Source extends RequestKey, Target extends RequestKey, T
 }
 
 /**
+ * What a source chain holds when the translation itself refused.
+ *
+ * The four keys are what "no upstream was called" looks like on this family's slice: nothing
+ * billed, no upstream headers to carry, and nothing still streaming for settlement to wait on.
+ * The streamed-usage key is the response key's own sub-key by the fact space's naming rule, so
+ * naming it here costs no call site a parameter — and a family that broke the convention would
+ * be caught at assembly, where its real key would go unprovided and join the entry contract.
+ *
+ * No envelope is written. Each family renders a failure in its own protocol at its own edge,
+ * which is the only place that knows what that protocol's clients read.
+ */
+const refuseTranslation = (response: ResponseKey, message: string): Record<string, unknown> => ({
+  'response.usage.billable': [],
+  'response.http.headers': [],
+  [`${response}.streamedUsage`]: null,
+  [response]: { status: 400, message },
+});
+
+/**
  * Translates on the way down and back on the way up.
  *
  * An upstream refusal gets the pair's own rewrite where it has one: the canonical case is a
  * context-window error becoming the Anthropic `prompt is too long:` shape that Claude Code
  * reads for auto-compaction. A pair that declares no rewrite hands the refusal up unchanged.
+ *
+ * It carries the `return` trait too, because a body the target protocol cannot represent is
+ * answered here rather than dialled.
  */
 export const handOff = <Source extends RequestKey, Target extends RequestKey, TargetEvent>(
   handoff: Handoff<Source, Target, TargetEvent>,
@@ -63,6 +86,14 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
   { [K in ResponseKey]?: ChatAnswer } & Record<string, unknown>
 >({
   name: `handOff:${handoff.from.request}→${handoff.to.request}`,
+  return: {
+    provides: [
+      handoff.from.response,
+      `${handoff.from.response}.streamedUsage`,
+      'response.usage.billable',
+      'response.http.headers',
+    ],
+  },
   through: {
     request: {
       needs: [handoff.from.request],
@@ -80,7 +111,20 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
   execute: async (facts, next) => {
     const record = facts as Record<string, unknown>;
     const { [handoff.from.request]: source, ...down } = record;
-    const trip = await handoff.trip(source as ChatFacts[Source]);
+
+    let trip;
+    try {
+      trip = await handoff.trip(source as ChatFacts[Source]);
+    } catch (error) {
+      // Input this target protocol cannot represent is the client's fault, and the translator
+      // is what knows which part of the body was at fault. Answering rather than throwing is
+      // also what keeps it a *candidate's* verdict: the same body may translate cleanly for
+      // the next candidate, whose wire is a different protocol, and failover re-runs the
+      // suffix to find out. Anything else raised down here is a fault of this gateway's and
+      // rides up as one.
+      if (!(error instanceof TranslatorInputError)) throw error;
+      return move({ ...down, ...refuseTranslation(handoff.from.response, error.message) }) as never;
+    }
 
     const back = await next({ ...down, [handoff.to.request]: move(trip.target) } as never) as Record<string, unknown>;
     const { [handoff.to.response]: answered, ...up } = back;
