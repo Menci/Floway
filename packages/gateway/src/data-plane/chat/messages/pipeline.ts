@@ -354,6 +354,8 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
  * that leaves for another protocol.
  */
 export const messagesWire = (streamedUsage: string): readonly Stage[] => [
+  stripBillingAttributionFromMessages,
+  disableReasoningOnForcedToolChoiceForMessages,
   applyRoleCompatibilityToMessages,
   callMessagesUpstream(streamedUsage),
 ];
@@ -497,8 +499,6 @@ export const messagesServePipeline = (payload: MessagesPayload): Pipeline<Messag
     }),
     materializeAttempt('request.chat.messages'),
     answerClaudeCodeProbe,
-    stripBillingAttributionFromMessages,
-    disableReasoningOnForcedToolChoiceForMessages,
     dialChatWire({
       source: 'request.chat.messages',
       needs: ['request.chat.messages', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

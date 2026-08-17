@@ -463,6 +463,30 @@ describe('a rule that speaks about one protocol-s wire', () => {
     await drain();
   });
 
+  // The same arrangement for a rule no guard ever covered. The old surface ran the *whole*
+  // target array on a translated body, so a turn arriving over a translation was shaped for
+  // the wire it landed on. A rule left in the Messages source chain would scrub nothing here.
+  it('applies the target wire-s unguarded rules to a turn that arrived translated', async () => {
+    let sent: { system?: unknown } | undefined;
+    resolves([candidate('up_a', { messages: {} }, {
+      callMessages: async (_model, body) => {
+        sent = body as { system?: unknown };
+        return messagesTurn('hello');
+      },
+    }, ['strip-billing-attribution'])]);
+
+    const { drain } = await serveChatCompletions({
+      ...chatCompletionsPayload,
+      messages: [
+        { role: 'system', content: 'be brief\nx-anthropic-billing-header: acct-42' },
+        { role: 'user', content: 'hi' },
+      ],
+    } as ChatCompletionsPayload);
+
+    expect(String(JSON.stringify(sent?.system))).not.toContain('x-anthropic-billing-header');
+    await drain();
+  });
+
   // And a rule the *other* wire owns stays off this turn. `stream_options` is a Chat
   // Completions field, so a Chat Completions turn dialled over Messages must not carry it —
   // which is what the interceptor form said with `ctx.targetApi !== 'chat-completions'` and

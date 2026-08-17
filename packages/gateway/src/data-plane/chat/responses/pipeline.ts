@@ -477,8 +477,12 @@ const normalizeAssistantContentForResponses = defineStage<
  */
 export const responsesWireRules: readonly Stage[] = [
   normalizeAssistantContentForResponses,
+  disableReasoningOnForcedToolChoiceForResponses,
   applyRoleCompatibilityToResponses,
+  stripPromptCacheKeyForResponses,
   normalizeExclusiveCachedTokensForResponses,
+  vendorDeepSeekNormalizeForResponses,
+  vendorQwenNormalizeForResponses,
 ];
 
 /** The Responses wire, as the chain that dials it. */
@@ -794,10 +798,6 @@ export const responsesServePipeline = (
     }),
     materializeAttempt('request.chat.responses'),
     beginStoredAttempt,
-    disableReasoningOnForcedToolChoiceForResponses,
-    stripPromptCacheKeyForResponses,
-    vendorDeepSeekNormalizeForResponses,
-    vendorQwenNormalizeForResponses,
     dialChatWire({
       source: 'request.chat.responses',
       needs: ['request.chat.responses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
