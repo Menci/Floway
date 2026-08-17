@@ -13,10 +13,12 @@
 // replaced surface wrote neither a usage row nor a performance sample for a measurement, so
 // there is no `writeSettlement` here and the ending states an empty billed set.
 //
-// There is one wire. Only a native Messages endpoint measures — no translation carries the
-// question — so the chain dials directly instead of forking, and the rule that generation
-// keeps inside its Messages wire (the system-role rewrite, which speaks about what that
-// endpoint accepts) sits in the array here for the same reason it sits there.
+// There is one wire, and it is shared. Only an upstream's own Messages endpoint measures —
+// no protocol but this one answers "what would this cost" — so the chain dials directly
+// instead of forking, and Gemini's `:countTokens` translates into the same wire rather than
+// growing one of its own. The rule generation keeps inside its Messages wire (the system-role
+// rewrite, which speaks about what that endpoint accepts) is therefore a rule of this wire
+// too, and sits with it.
 //
 // What it measures is what generation would send. The same three request rules run, in the
 // order the interceptor chain ran them, and the web-search shim's request half runs above
@@ -40,7 +42,7 @@ import {
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import { renderProtocolError } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, type MessagesPayload } from '@floway-dev/protocols/messages';
 import { providerModelOf } from '@floway-dev/provider';
@@ -50,12 +52,12 @@ import { providerModelOf } from '@floway-dev/provider';
  *  this. */
 export const messagesCountTokensTarget = chatTargetPicker(['messages']);
 
-/** What a measurement hands up. It rides at this family's own response key — which is what
+/** What a measurement hands up. It rides at a protocol's own response key — which is what
  *  lets the request rules generation runs be the same stages here — and the arm is narrowed
- *  because nothing in this chain opens a stream. */
-type TokenCount = { readonly kind: 'value'; readonly body: unknown } | Failure;
+ *  because nothing in a counting chain opens a stream. */
+export type TokenCountAnswer = { readonly kind: 'value'; readonly body: unknown } | Failure;
 
-type Counted<K extends 'response.chat.messages'> = { [P in K]: TokenCount };
+type Counted<K extends 'response.chat.messages'> = { [P in K]: TokenCountAnswer };
 
 type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
 
@@ -243,6 +245,25 @@ const callMessagesCountTokensUpstream = defineStage<
   },
 });
 
+/**
+ * The Messages count-tokens wire, as the chain that dials it.
+ *
+ * Every source protocol whose measurement reaches an upstream does it over this endpoint —
+ * Gemini's `:countTokens` has no wire of its own and arrives here through a translation — so
+ * a rule that speaks about *this* wire belongs here rather than beside a source's own
+ * strippers. All four do: the system-role rewrite and the reasoning sentinel state what an
+ * upstream's Messages endpoint accepts, the billing-attribution scrub states what generation
+ * would have sent it, and the web-search preparation states the tool shape it would have
+ * seen.
+ */
+export const messagesCountTokensWire: readonly Stage[] = [
+  prepareMessagesWebSearchRequest,
+  stripBillingAttributionFromMessages,
+  disableReasoningOnForcedToolChoiceForMessages,
+  applyRoleCompatibilityToMessages,
+  callMessagesCountTokensUpstream,
+];
+
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
@@ -271,9 +292,5 @@ export const messagesCountTokensPipeline = (payload: MessagesPayload): Pipeline<
       owns: [],
     }),
     materializeAttempt('request.chat.messages'),
-    prepareMessagesWebSearchRequest,
-    stripBillingAttributionFromMessages,
-    disableReasoningOnForcedToolChoiceForMessages,
-    applyRoleCompatibilityToMessages,
-    callMessagesCountTokensUpstream,
+    ...messagesCountTokensWire,
   ]);

@@ -25,9 +25,11 @@
 // `requireGeminiTerminal` is for — a Chat Completions stream that closed cleanly without ever
 // reporting a finish reason translates into candidates that never finish.
 //
+// `:countTokens` is not one of the three: it is a second operation over this protocol rather
+// than another wire under this pipeline — no stream, no billable turn, and a
+// `{ totalTokens }` envelope of its own — so it is a chain of its own in `count-tokens.ts`.
+//
 // What is not built, stated rather than implied:
-//   - `:countTokens`. It is a second entry against this protocol rather than another wire of
-//     this one: no stream, no billable turn, and a `{ totalTokens }` envelope of its own.
 //   - the affinity egress' thought-signature rewrite is here, but the Gemini interceptors are
 //     only partly stages: the four `interceptors/` entries are, and nothing else is.
 //   - the Google-RPC envelope `respond.ts` wrote into a client's own stream for a turn that
