@@ -37,7 +37,13 @@ import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToChatCompletions,
   disableReasoningOnForcedToolChoiceForChatCompletions,
+  includeUsageStreamOptionsForChatCompletions,
+  normalizeExclusiveCachedTokensForChatCompletions,
+  normalizeUsageForChatCompletions,
   stripPromptCacheKeyForChatCompletions,
+  vendorDeepSeekNormalizeForChatCompletions,
+  vendorKimiNormalizeForChatCompletions,
+  vendorQwenNormalizeForChatCompletions,
 } from '../interceptors.ts';
 import { messagesWire } from '../messages/pipeline.ts';
 import { responsesWire } from '../responses/pipeline.ts';
@@ -282,11 +288,30 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
  * Every source protocol that reaches an upstream over this endpoint runs this, whether the
  * client spoke Chat Completions or a handoff arrived here — which is what makes a rule that
  * speaks about *this* wire belong here. The role rewrite states what an upstream's Chat
- * Completions endpoint accepts, so it applies to whatever body this wire actually sends and
- * to nothing that leaves for another protocol.
+ * Completions endpoint accepts; the usage rules speak about the usage this wire asks for and
+ * this wire reports; the vendor dialects are how one upstream spells both. All of them apply
+ * to whatever body this wire actually sends and to nothing that leaves for another protocol.
+ *
+ * The order is the one the rules had as an onion, which is the same order in both directions:
+ * a stage earlier in the array rewrites the request first and reads the answer last. So the
+ * usage chunk is asked for above everything, and coming back the vendor dialects have the
+ * first say — the generic rules above them then read a body already in OpenAI-canonical form,
+ * with the cache-bucket fold seeing cache fields under OpenAI's names and the carrier split
+ * seeing usage the fold has already settled.
+ *
+ * `disableReasoningOnForcedToolChoice` and `stripPromptCacheKey` sit above the fork rather
+ * than here, and both still precede every vendor dialect on the request path: the canonical
+ * sentinel is emitted before a vendor spells it, and the field an upstream would reject is
+ * gone before a vendor rewrites what is left.
  */
 export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
+  includeUsageStreamOptionsForChatCompletions,
+  normalizeUsageForChatCompletions,
   applyRoleCompatibilityToChatCompletions,
+  normalizeExclusiveCachedTokensForChatCompletions,
+  vendorDeepSeekNormalizeForChatCompletions,
+  vendorQwenNormalizeForChatCompletions,
+  vendorKimiNormalizeForChatCompletions,
   callChatCompletionsUpstream(streamedUsage),
 ];
 

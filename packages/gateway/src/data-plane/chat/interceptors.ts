@@ -18,12 +18,17 @@
 // learned on the way down carried in the stage's own closure, because a response-side `needs`
 // can only name what the ending provides.
 
-import type { Chat } from './facts.ts';
+import type { Chat, ChatAnswer } from './facts.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../shared/json-helpers.ts';
 import { isFailure, type AttemptSelector } from '../pipeline/facts.ts';
 import { foldsExclusiveCacheTokens } from '../shared/telemetry/usage.ts';
 import { defineStage, move, transform } from '@floway-dev/pipeline';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type {
+  ChatCompletionsMessage,
+  ChatCompletionsPayload,
+  ChatCompletionsReasoningItem,
+  ChatCompletionsStreamEvent,
+} from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent, GeminiToolGroup } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -50,6 +55,106 @@ const mapKeepingIdentity = <T>(items: T[], rewrite: (item: T) => T): T[] => {
   });
   return changed ? mapped : items;
 };
+
+/** The response half of every rule here that rewrites a stream: a refusal and a collected
+ *  body have no frames to rewrite, and telling the three apart is reading a value rather than
+ *  dispatching on a declaration. `null` says there was nothing to do, so the caller hands the
+ *  record it was given straight on. */
+const answerWithFrames = <Event>(
+  answer: ChatAnswer,
+  rewrite: (frames: AsyncIterable<ProtocolFrame<Event>>) => AsyncGenerator<ProtocolFrame<Event>>,
+): ChatAnswer | null => {
+  if (isFailure(answer) || answer.kind !== 'stream') return null;
+  const frames = answer.frames as AsyncIterable<ProtocolFrame<Event>>;
+  return { kind: 'stream' as const, frames: { [Symbol.asyncIterator]: () => rewrite(frames) } };
+};
+
+/** A stream with each event rewritten one for one. The frame comes back by identity when the
+ *  rewrite changed nothing, which is the same conditional-write convention the request-side
+ *  rules follow — and a transport frame is not an event, so it rides through untouched. */
+const rewritingEvents = async function* <Event>(
+  frames: AsyncIterable<ProtocolFrame<Event>>,
+  rewrite: (event: Event) => Event,
+): AsyncGenerator<ProtocolFrame<Event>> {
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
+    }
+    const event = rewrite(frame.event);
+    yield event === frame.event ? frame : eventFrame(event);
+  }
+};
+
+/** Where a protocol keeps the numbers the cache-bucket fold reads. The names are the whole of
+ *  what a protocol contributes: the decision, the two contradictions it raises and the
+ *  arithmetic are one rule, and it is written once below. */
+interface CacheBucketNames {
+  readonly input: string;
+  readonly output: string;
+  readonly details: string;
+  /** Read in the order given, because an upstream projecting Anthropic's cache-write bucket
+   *  onto an OpenAI-shaped usage block may spell it either way. */
+  readonly cacheWrite: readonly string[];
+}
+
+/**
+ * Restores OpenAI's inclusive input-token contract on a usage block that reports the cache
+ * buckets alongside the input total instead of inside it.
+ *
+ * OpenAI states the subset relationship outright — "Cached tokens here are counted as a subset
+ * of input tokens, meaning input tokens will include cached and uncached tokens"
+ * (https://github.com/openai/openai-openapi/blob/d4fb706e6e05d4cc9f1b33ca59b6e4f3e8edd439/openapi.yaml#L51043-L51049)
+ * — and every downstream consumer here subtracts on that basis. Anthropic takes the opposite
+ * convention: `input_tokens` counts only what was neither read from nor written to the cache,
+ * and the three buckets sum to the real input
+ * (https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching).
+ *
+ * A gateway that fronts an Anthropic-shaped upstream and projects it into an OpenAI shape can
+ * carry the exclusive convention through to a wire that declares the inclusive one. Portkey
+ * does exactly that — it assigns Anthropic's `input_tokens` straight to `prompt_tokens` while
+ * summing `total_tokens` from all four buckets
+ * (https://github.com/Portkey-AI/gateway/blob/669825cbe89ee51569918b8f78a9db486fd69dd4/src/providers/anthropic/chatComplete.ts#L612-L627).
+ * Charm Hyper produces the same shape by subtracting the cached prefix out of the input total
+ * it received: for one observed kimi-k3 turn it reported `prompt_tokens 479, cached_tokens
+ * 13312, completion_tokens 373, total_tokens 14164`, where 479 + 13312 + 373 = 14164.
+ *
+ * `foldsExclusiveCacheTokens` owns the decision and the two contradictions that must not pass
+ * silently; the `usage-exclusive-cached-tokens` flag is its declaration input. `total_tokens`
+ * itself is left alone: under the exclusive convention it already counts the real input, so
+ * the rewritten input plus output is what it was equal to all along. A block with nothing to
+ * fold comes back by identity.
+ */
+const withCacheBucketsFolded = (
+  usage: JsonObject,
+  names: CacheBucketNames,
+  declaredExclusive: boolean,
+  identity: string,
+): JsonObject => {
+  const inputTokens = readJsonNumber(usage[names.input]);
+  const outputTokens = readJsonNumber(usage[names.output]);
+  if (inputTokens == null || outputTokens == null) return usage;
+
+  const details = asJsonObject(usage[names.details]);
+  const cacheRead = readJsonNumber(details?.cached_tokens) ?? 0;
+  const cacheWrite = names.cacheWrite.map(name => readJsonNumber(details?.[name])).find(value => value != null) ?? 0;
+  if (cacheRead === 0 && cacheWrite === 0) return usage;
+
+  const folds = foldsExclusiveCacheTokens(declaredExclusive, {
+    inputTokens,
+    outputTokens,
+    totalTokens: readJsonNumber(usage.total_tokens) ?? undefined,
+    cacheRead,
+    cacheWrite,
+  }, identity);
+  if (!folds) return usage;
+
+  return { ...usage, [names.input]: inputTokens + cacheRead + cacheWrite };
+};
+
+/** How the attempt whose usage is being read is named in the errors the fold raises: an
+ *  operator is told which upstream and which model to set the flag on. */
+const attemptIdentity = (attempt: AttemptSelector): string => `${attempt.upstreamId}/${attempt.modelId}`;
 
 /** Role rewrites, in the fixed order `system → developer → system → user`. Later rewrites
  *  are authoritative when flags overlap, and the last step affects only a system message
@@ -216,6 +321,442 @@ export const stripPromptCacheKeyForChatCompletions = defineStage<
     },
   })),
 });
+
+/**
+ * Asks the upstream for the usage chunk that billing is read off.
+ *
+ * Chat Completions emits the final usage-only chunk only when `stream_options.include_usage`
+ * is on, and the gateway meters every stream from those frames — so what the client asked for
+ * and what the upstream is asked for differ here, which is the one thing this rule exists to
+ * say. Nothing downstream has to thread the client's original value through, because it is a
+ * fact of its own: `ingress.chat.chatCompletions.wantsUsageChunk` describes the request that
+ * arrived and survives this rewrite, and the edge reads it to decide who is shown the chunk.
+ *
+ * It belongs to the wire rather than to the source chain because it names a field of *this*
+ * protocol's request. Every source protocol that reaches an upstream over this endpoint runs
+ * it — a Messages or Gemini turn served here would otherwise be metered off a stream that was
+ * never asked to report anything — and a turn that leaves for another wire gets that wire's
+ * own rule for the same thing.
+ *
+ * Reference: https://platform.openai.com/docs/api-reference/chat/create
+ */
+export const includeUsageStreamOptionsForChatCompletions = defineStage<
+  Chat<'request.chat.chatCompletions'>,
+  Chat<'request.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'includeUsageStreamOptions',
+  through: {
+    request: {
+      needs: ['request.chat.chatCompletions'],
+      consumes: [],
+      provides: ['request.chat.chatCompletions'],
+    },
+    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+  },
+  execute: transform<
+    Chat<'request.chat.chatCompletions'>,
+    Chat<'request.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => ({
+    request: facts => {
+      const payload = facts['request.chat.chatCompletions'];
+      if (payload.stream_options?.include_usage === true) return facts;
+      // Whatever else the client put on `stream_options` is its own and stays; only the one
+      // field the gateway has an interest in is written.
+      return {
+        ...facts,
+        'request.chat.chatCompletions': move({
+          ...payload,
+          stream_options: { ...payload.stream_options, include_usage: true },
+        }),
+      };
+    },
+  })),
+});
+
+/**
+ * Puts a usage block back on the carrier chunk the spec says it arrives on.
+ *
+ * OpenAI puts the final `usage` on a `choices: []` chunk of its own
+ * (https://platform.openai.com/docs/api-reference/chat-streaming), and some upstreams have
+ * been observed to attach it to the same chunk that carries the last delta and
+ * `finish_reason`. Such a chunk is split in two — the delta as it arrived, then a synthesized
+ * carrier holding the usage — so everything downstream can rely on the standard shape.
+ *
+ * It runs above the vendor normalizers, so on the way back it sees a usage block whose cache
+ * fields already carry OpenAI's names.
+ */
+export const normalizeUsageForChatCompletions = defineStage<
+  Record<string, never>,
+  Record<string, never>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'normalizeUsage',
+  through: {
+    request: { needs: [], consumes: [], provides: [] },
+    response: {
+      needs: ['response.chat.chatCompletions'],
+      consumes: [],
+      provides: ['response.chat.chatCompletions'],
+    },
+  },
+  execute: transform<
+    Record<string, never>,
+    Record<string, never>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => ({
+    response: facts => {
+      const answer = answerWithFrames<ChatCompletionsStreamEvent>(facts['response.chat.chatCompletions'], withUsageOnItsOwnCarrier);
+      return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+    },
+  })),
+});
+
+/** One chunk in, two out — and only for the chunk that carried both, which is why this is not
+ *  a one-for-one event rewrite. */
+const withUsageOnItsOwnCarrier = async function* (
+  frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
+    }
+    const chunk = frame.event;
+    if (asJsonObject(chunk.usage) === null || chunk.choices.length === 0) {
+      yield frame;
+      continue;
+    }
+    const { usage, ...withoutUsage } = chunk;
+    yield eventFrame(withoutUsage);
+    yield eventFrame({ ...withoutUsage, choices: [], usage });
+  }
+};
+
+/**
+ * Restores OpenAI's inclusive input-token contract on an upstream that reports the cache
+ * buckets alongside `prompt_tokens` instead of inside it. The fold, the evidence for the two
+ * conventions and the contradictions it raises are at `withCacheBucketsFolded`.
+ *
+ * Unconditional on this wire rather than flag-gated: `foldsExclusiveCacheTokens` reads
+ * `total_tokens` as the witness, and the `usage-exclusive-cached-tokens` flag is a declaration
+ * input for the responses whose totals witness nothing.
+ *
+ * Everything it says is about one upstream's Chat Completions wire — the flag it reads
+ * describes how that upstream writes its usage there, and the remedy its errors name is a
+ * setting for that upstream. That is why it belongs to the wire: on any other wire these
+ * events are a projection of some other protocol, where the flag answers a question about
+ * counts it does not describe and telling an operator to set it would be advice that cannot
+ * help. Nothing is lost by standing down there — a translator emits the canonical form, which
+ * is the one case the fold has nothing to do with.
+ *
+ * It runs below the vendor normalizers, so on the way back it reads usage whose cache fields
+ * already carry OpenAI's names.
+ */
+export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
+  Chat<'route.attempt'>,
+  Chat<'route.attempt'>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'normalizeExclusiveCachedTokens',
+  through: {
+    request: { needs: ['route.attempt'], consumes: [], provides: [] },
+    response: {
+      needs: ['response.chat.chatCompletions'],
+      consumes: [],
+      provides: ['response.chat.chatCompletions'],
+    },
+  },
+  execute: transform<
+    Chat<'route.attempt'>,
+    Chat<'route.attempt'>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => {
+    // Which attempt this is gets read on the way down and spoken about on the way back, which
+    // is the order `transform` runs the two halves in.
+    let attempt!: AttemptSelector;
+    return {
+      request: facts => {
+        attempt = facts['route.attempt'];
+        return facts;
+      },
+      response: facts => {
+        const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
+        const identity = attemptIdentity(attempt);
+        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
+          facts['response.chat.chatCompletions'],
+          frames => rewritingEvents(frames, chunk => foldChatCompletionsUsage(chunk, declaredExclusive, identity)),
+        );
+        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+      },
+    };
+  }),
+});
+
+/** Chat Completions carries usage on the chunk's own root and names the buckets
+ *  `prompt_tokens` and `prompt_tokens_details.{cached_tokens, cache_creation_input_tokens}`. */
+const CHAT_COMPLETIONS_CACHE_BUCKETS: CacheBucketNames = {
+  input: 'prompt_tokens',
+  output: 'completion_tokens',
+  details: 'prompt_tokens_details',
+  cacheWrite: ['cache_creation_input_tokens', 'cache_write_tokens'],
+};
+
+const foldChatCompletionsUsage = (
+  chunk: ChatCompletionsStreamEvent,
+  declaredExclusive: boolean,
+  identity: string,
+): ChatCompletionsStreamEvent => {
+  const usage = asJsonObject(chunk.usage);
+  if (usage === null) return chunk;
+  const folded = withCacheBucketsFolded(usage, CHAT_COMPLETIONS_CACHE_BUCKETS, declaredExclusive, identity);
+  return folded === usage ? chunk : { ...chunk, usage: folded as unknown as ChatCompletionsStreamEvent['usage'] };
+};
+
+// ── Chat Completions vendor dialects ──────────────────────────────────────────────────────
+//
+// Each of the three below is last among this wire's rewrites, which is what gives it the final
+// say on the outbound body and the first say on the inbound stream: everything above deals
+// only in OpenAI-canonical form. The vendor flags are mutually exclusive in practice, but the
+// stages are independent and run in the order they are composed if more than one is somehow on.
+
+/**
+ * DeepSeek's wire dialect.
+ *
+ * Outbound: `reasoning_effort: 'none'` is the gateway's canonical "no reasoning" sentinel and
+ * is not in DeepSeek's own enum, which uses a top-level `thinking: { type: 'disabled' }`
+ * instead. Assistant messages carry their reasoning on the scalar `reasoning_content` DeepSeek
+ * documents — it is the only field it reads, and it reports 400s when the assistant-message
+ * replay of a multi-turn tool-call loop omits it. And `response_format: { type: 'json_schema' }`
+ * is downgraded to `json_object`, which is the only structured output DeepSeek supports; the
+ * schema body is dropped rather than rejected by the upstream.
+ *
+ * Inbound: `reasoning_content` deltas become `reasoning_text`, and the `prompt_cache_hit_tokens`
+ * / `prompt_cache_miss_tokens` pair becomes OpenAI's `prompt_tokens_details.cached_tokens` —
+ * computed from the hit count alone, which is the cached prefix length.
+ *
+ * References:
+ * - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+ * - https://api-docs.deepseek.com/guides/kv_cache
+ * - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
+ */
+export const vendorDeepSeekNormalizeForChatCompletions = defineStage<
+  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'vendorDeepSeekNormalize',
+  through: {
+    request: {
+      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      consumes: [],
+      provides: ['request.chat.chatCompletions'],
+    },
+    response: {
+      needs: ['response.chat.chatCompletions'],
+      consumes: [],
+      provides: ['response.chat.chatCompletions'],
+    },
+  },
+  execute: transform<
+    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => {
+    // Whether this vendor's dialect applies at all is read on the way down and acted on in
+    // both directions, which is the order `transform` runs the two halves in.
+    let enabled = false;
+    return {
+      request: facts => {
+        enabled = facts['route.attempt'].flags.includes('vendor-deepseek');
+        if (!enabled) return facts;
+        const payload = facts['request.chat.chatCompletions'];
+        const normalized = deepSeekOutbound(payload);
+        return normalized === payload ? facts : { ...facts, 'request.chat.chatCompletions': move(normalized) };
+      },
+      response: facts => {
+        if (!enabled) return facts;
+        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
+          facts['response.chat.chatCompletions'],
+          frames => rewritingEvents(frames, chunk => deepSeekInboundUsage(deepSeekInboundDeltas(chunk))),
+        );
+        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+      },
+    };
+  }),
+});
+
+const deepSeekOutbound = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
+  const withThinking = payload.reasoning_effort === 'none'
+    ? { ...withoutKeys(payload, ['reasoning_effort']), thinking: { type: 'disabled' } } satisfies ChatCompletionsPayloadWithDeepSeekThinking
+    : payload;
+  const withResponseFormat = withThinking.response_format?.type === 'json_schema'
+    ? { ...withThinking, response_format: { type: 'json_object' } }
+    : withThinking;
+  const messages = mapKeepingIdentity(withResponseFormat.messages, deepSeekAssistantReasoning);
+  return messages === withResponseFormat.messages ? withResponseFormat : { ...withResponseFormat, messages };
+};
+
+/** The reasoning DeepSeek reads, and only that: `reasoning_opaque` is the OpenAI-canonical
+ *  signature for cross-turn replay and DeepSeek does not accept it, so it goes with the two
+ *  fields that are projected onto `reasoning_content`. */
+const deepSeekAssistantReasoning = (message: ChatCompletionsMessage): ChatCompletionsMessage => {
+  const stripped = withoutKeys(message, ['reasoning_text', 'reasoning_opaque', 'reasoning_items']);
+  if (stripped === message) return message;
+  const text = typeof message.reasoning_text === 'string'
+    ? message.reasoning_text
+    : deepSeekReasoningFromItems(message.reasoning_items);
+  if (text === undefined) return stripped;
+  const projected: ChatCompletionsMessageWithDeepSeekReasoning = { ...stripped, reasoning_content: text };
+  return projected;
+};
+
+/** The newer OpenAI shape carries reasoning as summary items; DeepSeek documents only the
+ *  scalar, so what summaries there are become it. */
+const deepSeekReasoningFromItems = (items: ChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
+  const parts = items?.flatMap(item => item.summary?.map(summary => summary.text) ?? []) ?? [];
+  return parts.length > 0 ? parts.join('') : undefined;
+};
+
+const deepSeekInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+  const choices = mapKeepingIdentity(chunk.choices, choice => {
+    const delta = choice.delta as ChatCompletionsDeltaWithDeepSeekReasoning;
+    if (typeof delta.reasoning_content !== 'string') return choice;
+    const stripped = withoutKeys(delta, ['reasoning_content']);
+    return {
+      ...choice,
+      delta: delta.reasoning_text === undefined ? { ...stripped, reasoning_text: delta.reasoning_content } : stripped,
+    };
+  });
+  return choices === chunk.choices ? chunk : { ...chunk, choices };
+};
+
+/** DeepSeek's "hit" count is the cached prefix length, which is what OpenAI's
+ *  `cached_tokens` means; the "miss" count is what is left of the input and is dropped. */
+const DEEPSEEK_CACHE_FIELDS = ['prompt_cache_hit_tokens', 'prompt_cache_miss_tokens'] as const;
+
+const deepSeekInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+  const usage = asJsonObject(chunk.usage);
+  if (usage === null) return chunk;
+  const stripped = withoutKeys(usage, DEEPSEEK_CACHE_FIELDS);
+  if (stripped === usage) return chunk;
+  const hit = readJsonNumber(usage.prompt_cache_hit_tokens);
+  const next: JsonObject = hit == null
+    ? stripped
+    : { ...stripped, prompt_tokens_details: { ...(asJsonObject(usage.prompt_tokens_details) ?? {}), cached_tokens: hit } };
+  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
+};
+
+/** Qwen says "no reasoning" with a top-level `enable_thinking: false` rather than with the
+ *  canonical sentinel. Its response shape matches OpenAI for the fields the gateway reads, so
+ *  there is nothing to do on the way back.
+ *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
+export const vendorQwenNormalizeForChatCompletions = defineStage<
+  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'vendorQwenNormalize',
+  through: {
+    request: {
+      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      consumes: [],
+      provides: ['request.chat.chatCompletions'],
+    },
+    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+  },
+  execute: transform<
+    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => ({
+    request: facts => {
+      if (!facts['route.attempt'].flags.includes('vendor-qwen')) return facts;
+      const payload = facts['request.chat.chatCompletions'];
+      if (payload.reasoning_effort !== 'none') return facts;
+      const normalized: ChatCompletionsPayloadWithQwenThinking = {
+        ...withoutKeys(payload, ['reasoning_effort']),
+        enable_thinking: false,
+      };
+      return { ...facts, 'request.chat.chatCompletions': move(normalized) };
+    },
+  })),
+});
+
+/** Kimi (Moonshot) reports the cached prefix on a flat `cached_tokens` beside the totals; the
+ *  rules above this one read OpenAI's `prompt_tokens_details.cached_tokens`, so it is put
+ *  there. Kimi accepts the canonical request shape, so there is nothing to do on the way out.
+ *  https://platform.kimi.com/docs/api/chat */
+export const vendorKimiNormalizeForChatCompletions = defineStage<
+  Chat<'route.attempt'>,
+  Chat<'route.attempt'>,
+  Chat<'response.chat.chatCompletions'>,
+  Chat<'response.chat.chatCompletions'>
+>({
+  name: 'vendorKimiNormalize',
+  through: {
+    request: { needs: ['route.attempt'], consumes: [], provides: [] },
+    response: {
+      needs: ['response.chat.chatCompletions'],
+      consumes: [],
+      provides: ['response.chat.chatCompletions'],
+    },
+  },
+  execute: transform<
+    Chat<'route.attempt'>,
+    Chat<'route.attempt'>,
+    Chat<'response.chat.chatCompletions'>,
+    Chat<'response.chat.chatCompletions'>
+  >(() => {
+    let enabled = false;
+    return {
+      request: facts => {
+        enabled = facts['route.attempt'].flags.includes('vendor-kimi');
+        return facts;
+      },
+      response: facts => {
+        if (!enabled) return facts;
+        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
+          facts['response.chat.chatCompletions'],
+          frames => rewritingEvents(frames, kimiInboundUsage),
+        );
+        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+      },
+    };
+  }),
+});
+
+const kimiInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+  const usage = asJsonObject(chunk.usage);
+  if (usage === null) return chunk;
+  const cached = readJsonNumber(usage.cached_tokens);
+  if (cached == null) return chunk;
+  const next: JsonObject = {
+    ...withoutKeys(usage, ['cached_tokens']),
+    prompt_tokens_details: { ...(asJsonObject(usage.prompt_tokens_details) ?? {}), cached_tokens: cached },
+  };
+  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
+};
+
+/** None of the three fields is a Chat Completions field, so each is declared beside the vendor
+ *  that reads it rather than widening the protocol's own types. */
+type ChatCompletionsPayloadWithDeepSeekThinking = Omit<ChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
+type ChatCompletionsPayloadWithQwenThinking = Omit<ChatCompletionsPayload, 'reasoning_effort'> & { enable_thinking: false };
+type ChatCompletionsMessageWithDeepSeekReasoning =
+  Omit<ChatCompletionsMessage, 'reasoning_text' | 'reasoning_opaque' | 'reasoning_items'> & { reasoning_content: string };
+type ChatCompletionsDeltaWithDeepSeekReasoning =
+  ChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
 
 // ── Messages ──────────────────────────────────────────────────────────────────────────────
 
@@ -749,8 +1290,8 @@ export const stripPromptCacheKeyForResponses = defineStage<
  * flag is a declaration input for the responses whose totals witness nothing. Every event
  * that carries a response resource repeats the whole resource, so the rewrite applies to each
  * of them rather than to a single terminal frame. The evidence for the two conventions and
- * the contradictions that raise are documented at `foldsExclusiveCacheTokens` and at the Chat
- * Completions normalizer of the same name.
+ * the contradictions that raise are documented at `foldsExclusiveCacheTokens` and at
+ * `withCacheBucketsFolded`, which is the fold itself.
  */
 export const normalizeExclusiveCachedTokensForResponses = defineStage<
   Chat<'route.attempt'>,
@@ -778,41 +1319,28 @@ export const normalizeExclusiveCachedTokensForResponses = defineStage<
         return facts;
       },
       response: facts => {
-        const answer = facts['response.chat.responses'];
-        if (isFailure(answer) || answer.kind !== 'stream') return facts;
-        const frames = answer.frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>;
         const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
-        const identity = `${attempt.upstreamId}/${attempt.modelId}`;
-        return {
-          ...facts,
-          'response.chat.responses': move({
-            kind: 'stream' as const,
-            frames: { [Symbol.asyncIterator]: () => withCacheTokensFolded(frames, declaredExclusive, identity) },
-          }),
-        };
+        const identity = attemptIdentity(attempt);
+        const answer = answerWithFrames<ResponsesStreamEvent>(
+          facts['response.chat.responses'],
+          frames => rewritingEvents(frames, event => foldResponsesUsage(event, declaredExclusive, identity)),
+        );
+        return answer === null ? facts : { ...facts, 'response.chat.responses': move(answer) };
       },
     };
   }),
 });
 
-const withCacheTokensFolded = async function* (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-  declaredExclusive: boolean,
-  identity: string,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    const event = foldInboundUsage(frame.event, declaredExclusive, identity);
-    yield event === frame.event ? frame : eventFrame(event);
-  }
-};
-
 /** Responses carries usage on `event.response.usage` and names the buckets `input_tokens` and
  *  `input_tokens_details.{cached_tokens, cache_write_tokens}`. */
-const foldInboundUsage = (
+const RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
+  input: 'input_tokens',
+  output: 'output_tokens',
+  details: 'input_tokens_details',
+  cacheWrite: ['cache_write_tokens'],
+};
+
+const foldResponsesUsage = (
   event: ResponsesStreamEvent,
   declaredExclusive: boolean,
   identity: string,
@@ -820,28 +1348,10 @@ const foldInboundUsage = (
   if (!('response' in event)) return event;
   const response = asJsonObject(event.response);
   const usage = asJsonObject(response?.usage);
-  if (!response || !usage) return event;
-  const inputTokens = readJsonNumber(usage.input_tokens);
-  const outputTokens = readJsonNumber(usage.output_tokens);
-  if (inputTokens == null || outputTokens == null) return event;
-
-  const details = asJsonObject(usage.input_tokens_details);
-  const cacheRead = readJsonNumber(details?.cached_tokens) ?? 0;
-  const cacheWrite = readJsonNumber(details?.cache_write_tokens) ?? 0;
-  if (cacheRead === 0 && cacheWrite === 0) return event;
-
-  const fold = foldsExclusiveCacheTokens(declaredExclusive, {
-    inputTokens,
-    outputTokens,
-    totalTokens: readJsonNumber(usage.total_tokens) ?? undefined,
-    cacheRead,
-    cacheWrite,
-  }, identity);
-  if (!fold) return event;
-
-  const nextUsage: JsonObject = { ...usage, input_tokens: inputTokens + cacheRead + cacheWrite };
-  const nextResponse: JsonObject = { ...response, usage: nextUsage };
-  return { ...event, response: nextResponse } as unknown as ResponsesStreamEvent;
+  if (response === null || usage === null) return event;
+  const folded = withCacheBucketsFolded(usage, RESPONSES_CACHE_BUCKETS, declaredExclusive, identity);
+  if (folded === usage) return event;
+  return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as ResponsesStreamEvent;
 };
 
 /** DeepSeek says "no reasoning" with a top-level `thinking: { type: 'disabled' }` rather than

@@ -444,6 +444,45 @@ describe('a rule that speaks about one protocol-s wire', () => {
     await drain();
   });
 
+  // The other direction, and the one that pays for the whole arrangement: the usage chunk is
+  // asked for by the Chat Completions wire, so a Messages turn that reaches an upstream over
+  // that endpoint is metered like any other turn on it. A rule left in the Chat Completions
+  // *source* chain would ask for nothing here, and this turn would bill zero.
+  it('asks for the usage chunk on a turn that arrived from another protocol', async () => {
+    let sent: { stream_options?: unknown } | undefined;
+    resolves([candidate('up_a', { chatCompletions: {} }, {
+      callChatCompletions: async (_model, body) => {
+        sent = body as { stream_options?: unknown };
+        return chatCompletionsTurn('hello');
+      },
+    })]);
+
+    const { drain } = await serveMessages();
+
+    expect(sent?.stream_options).toEqual({ include_usage: true });
+    await drain();
+  });
+
+  // And a rule the *other* wire owns stays off this turn. `stream_options` is a Chat
+  // Completions field, so a Chat Completions turn dialled over Messages must not carry it —
+  // which is what the interceptor form said with `ctx.targetApi !== 'chat-completions'` and
+  // what position says here.
+  it('does not carry another wire-s request rules onto the wire it dialled', async () => {
+    let sent: Record<string, unknown> | undefined;
+    resolves([candidate('up_a', { messages: {} }, {
+      callMessages: async (_model, body) => {
+        sent = body as Record<string, unknown>;
+        return messagesTurn('hello');
+      },
+    })]);
+
+    const { drain } = await serveChatCompletions();
+
+    expect(sent).toBeDefined();
+    expect('stream_options' in sent!).toBe(false);
+    await drain();
+  });
+
   // The other half, and this one assembly says rather than a run: the wire's own rules read
   // the wire's own request key, so `compose` refuses to place them *below* a handoff that has
   // taken it. It is one array's arrangement and not a proof — `compose` walks one array, and

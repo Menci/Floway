@@ -92,13 +92,17 @@ let affinityPayload: ChatCompletionsPayload = payload;
 
 const serve = async (wantsStream: boolean) => await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream);
 
-const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, wantsStream: boolean) => await run(
+const serveWith = async (
+  gateway: ReturnType<typeof mockChatGatewayCtx>,
+  wantsStream: boolean,
+  wantsUsageChunk = false,
+) => await run(
   chatCompletionsServePipeline(payload),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
     'ingress.chat.sourceProtocol': 'chatCompletions',
     'ingress.chat.chatCompletions.wantsStream': wantsStream,
-    'ingress.chat.chatCompletions.wantsUsageChunk': false,
+    'ingress.chat.chatCompletions.wantsUsageChunk': wantsUsageChunk,
     'request.chat.chatCompletions': payload,
     'serve.model': 'chat-model',
   }) as never,
@@ -259,6 +263,125 @@ describe('the chat completions chain', () => {
     expect(outcome.billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
     // The stream reached its terminator, so the turn produced what it said it would.
     expect(outcome.failed).toBe(false);
+  });
+
+  // The test above hands over a usage chunk whatever was asked for, which is a stream no
+  // OpenAI-compatible upstream would have sent: the final usage chunk arrives only when
+  // `stream_options.include_usage` is on. This upstream behaves like a real one, so what it
+  // states is the whole billing path — a chain that stopped asking would meter a stream that
+  // reported nothing and bill the turn zero, with nothing else in the suite noticing.
+  it('asks the upstream for the usage chunk, and so bills a streaming turn at all', async () => {
+    let asked: { include_usage?: boolean } | null | undefined;
+    resolves([candidate(async (_model, body) => {
+      asked = (body as { stream_options?: { include_usage?: boolean } }).stream_options;
+      return asked?.include_usage === true
+        ? stream(chunk('hi'), {
+            id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
+            choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 },
+          } as unknown as ChatCompletionsStreamEvent)
+        : stream(chunk('hi'));
+    })]);
+
+    // The client did not ask to see the chunk, which is the ordinary case and the one where
+    // the two questions come apart: the upstream is asked for it regardless.
+    const { facts } = await serve(true);
+    const frames: SseFrame[] = [];
+    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    const outcome = await facts['response.chat.chatCompletions.streamedUsage']!;
+
+    expect(asked).toEqual({ include_usage: true });
+    expect(outcome.billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
+    // And the client, who asked for none of this, is shown none of it.
+    expect(frames.some(frame => frame.data !== '[DONE]' && 'usage' in (JSON.parse(frame.data) as object))).toBe(false);
+  });
+
+  // The wire's response-direction rules, on the wire that owns them, in the order it composes
+  // them — which is a property of the array in `chatCompletionsWire` and of nothing else. A
+  // DeepSeek-shaped upstream reporting the exclusive cache convention exercises all three at
+  // once, and each one's input is what the one below it left: the vendor rename, then the fold
+  // that reads the renamed field, then the split that puts the settled usage on a carrier.
+  it('serves a vendor dialect through the wire-s rules, in the order the wire composes them', async () => {
+    resolves([candidate(async () => stream(
+      {
+        id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
+        choices: [{ index: 0, delta: { reasoning_content: 'pondering' }, finish_reason: null }],
+      } as unknown as ChatCompletionsStreamEvent,
+      {
+        id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
+        // Hung off the final delta rather than sent on a carrier, in DeepSeek's own cache
+        // field names, counting the cached prefix outside the input total: 479 + 13312 + 373
+        // is the 14164 it states.
+        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164,
+          prompt_cache_hit_tokens: 13312, prompt_cache_miss_tokens: 479,
+        },
+      } as unknown as ChatCompletionsStreamEvent,
+    ), 'up_a', ['vendor-deepseek'])]);
+
+    const { facts } = await serveWith(mockChatGatewayCtx({ wantsStream: true }), true, true);
+    const written: ChatCompletionsStreamEvent[] = [];
+    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) {
+      if (frame.data !== '[DONE]' && affinityCarrier(frame) === undefined) {
+        written.push(JSON.parse(frame.data) as ChatCompletionsStreamEvent);
+      }
+    }
+
+    // The vendor's reasoning field left under the canonical name.
+    expect(written[0]!.choices[0]!.delta).toEqual({ reasoning_text: 'pondering' });
+    // The generated text is still the client's, whatever the rules did around it.
+    expect(written.some(event => event.choices[0]?.delta.content === 'hi')).toBe(true);
+    // Exactly one frame carries usage, and it is a carrier rather than a chunk that also
+    // carried a delta — which is the split, and it happened once.
+    const carriers = written.filter(event => 'usage' in event) as unknown as { choices: unknown[]; usage: Record<string, unknown> }[];
+    expect(carriers).toHaveLength(1);
+    expect(carriers[0]!.choices).toEqual([]);
+    // In OpenAI's names, with the cached prefix folded back into the input total the way
+    // OpenAI's contract states it: neither would be true if either rule ran out of turn.
+    expect(carriers[0]!.usage).toEqual({
+      prompt_tokens: 13791,
+      completion_tokens: 373,
+      total_tokens: 14164,
+      prompt_tokens_details: { cached_tokens: 13312 },
+    });
+  });
+
+  // The other two dialects the wire composes, each stating it in a different direction: Qwen
+  // rewrites the request, Kimi the usage that comes back. The flags are independent, so one
+  // candidate carrying both is what runs the pair in one turn — an upstream in the field
+  // carries one of them.
+  it('serves the request-side and response-side vendor dialects the wire also composes', async () => {
+    let sent: Record<string, unknown> | undefined;
+    affinityPayload = { ...payload, reasoning_effort: 'none' } as ChatCompletionsPayload;
+    resolves([candidate(async (_model, body) => {
+      sent = body as Record<string, unknown>;
+      return stream(chunk('hi'), {
+        id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
+        choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cached_tokens: 30 },
+      } as unknown as ChatCompletionsStreamEvent);
+    }, 'up_a', ['vendor-qwen', 'vendor-kimi'])]);
+
+    const { facts } = await serveWith(mockChatGatewayCtx({ wantsStream: true }), true, true);
+    const written: ChatCompletionsStreamEvent[] = [];
+    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) {
+      if (frame.data !== '[DONE]' && affinityCarrier(frame) === undefined) {
+        written.push(JSON.parse(frame.data) as ChatCompletionsStreamEvent);
+      }
+    }
+    affinityPayload = payload;
+
+    // Qwen's own spelling of "no reasoning" went out on the body this wire sent.
+    expect('reasoning_effort' in sent!).toBe(false);
+    expect(sent!.enable_thinking).toBe(false);
+    // And Kimi's flat cached count came back under the name every rule above it reads. The
+    // totals say the cache was counted inside the input here, so nothing is folded.
+    const carrier = written.find(event => 'usage' in event) as unknown as { usage: Record<string, unknown> };
+    expect(carrier.usage).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+      prompt_tokens_details: { cached_tokens: 30 },
+    });
   });
 
   // Time to first token is measured where the token is — an envelope frame is not one, and a
