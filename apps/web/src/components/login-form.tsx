@@ -91,7 +91,9 @@ export function LoginForm() {
     <Panel className="relative w-[min(440px,100%)]">
       <header className="flex items-center">
         <FlowayLogo />
-        <LanguageSelector className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <LanguageSelector />
+        </div>
       </header>
 
       {/* The first Field carries 12px of its own above its label, so no gap is

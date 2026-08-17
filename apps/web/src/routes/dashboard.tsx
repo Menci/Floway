@@ -112,7 +112,9 @@ function DashboardShell({ user }: { user: AuthUser }) {
             onClick={() => setNavigationOpen(true)}
           />
           <FlowayLogo />
-          <LanguageSelector className="ml-auto" />
+          <div className="ml-auto flex items-center gap-2">
+            <LanguageSelector />
+          </div>
         </header>
         <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
           {frames.map(frame => <div
