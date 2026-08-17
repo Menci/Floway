@@ -33,11 +33,10 @@ export const openChatPrologue = (
     readonly storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulResponsesStore;
   },
 ): ChatPrologue => {
-  // One context, built once: the body is read once and `takeRequestBody` empties what it was
-  // given, so the chat context is what this run *has* rather than a second one over it.
   // One options object, read twice: the context is built from it, and the run recording it
-  // opened is what the runner's events are written to. Building the options again would take
-  // the body a second time and hand the dump an empty buffer.
+  // opened is what the runner's events are written to. Building it a second time would call
+  // `takeRequestBody` again and hand the dump an empty buffer — which is exactly how every
+  // chat turn once came to write a record holding no events.
   const ctxOptions = gatewayCtxOptions(c, ingress, options);
   const gateway = createChatGatewayCtxFromHono(c, ctxOptions, options.storeFactory);
   const base = prologueFor(gateway, ingress, runDumpOf(ctxOptions));
