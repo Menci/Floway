@@ -16,9 +16,13 @@
 // `count-tokens.ts`. This family's own interceptors are not all stages yet either, so the
 // array between the materialized payload and the fork is short rather than complete.
 
+import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
+import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
 import { createMessagesBillableUsageReader } from './usage.ts';
+import { recordFrames } from '../../../dump/turn-dump.ts';
+import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -37,13 +41,11 @@ import {
   stripBillingAttributionFromMessages,
 } from '../interceptors.ts';
 import { responsesWire } from '../responses/pipeline.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
-import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
-import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
@@ -129,9 +131,12 @@ const emitMessages = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = wrapMessagesAffinityEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
-      affinityEgressOptions(use.gateway),
+    const frames = recordFrames(
+      wrapMessagesAffinityEgress(
+        answer.frames as AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
+        affinityEgressOptions(use.gateway),
+      ),
+      use.gateway.dump,
     );
     if (!back['ingress.chat.messages.wantsStream']) {
       return {
@@ -267,11 +272,7 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
     // every stage between the fork and here has rewritten it — or, on a translated wire, what
     // the handoff put here. A thinking signature was rewritten for the upstream that will see
     // it, and one that no upstream but the issuer can read was dropped rather than sent on.
-    // The id the client addressed does not travel — the provider re-stamps whatever it
-    // resolved upstream — and an alias' own rules apply to the body that is sent.
-    const payload = { ...facts['request.chat.messages'], model: candidate.model.id };
-    if (candidate.rules !== undefined) applyRulesToUpstreamMessages(payload, candidate.rules);
-    const { model: _addressed, ...body } = payload;
+    const body = bodyForAttempt(facts['request.chat.messages'], candidate, applyRulesToUpstreamMessages);
 
     // The client's own headers reach the upstream from the record, not from a live request
     // object: what a provider is allowed to forward is filtered per provider, and the dump

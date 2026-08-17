@@ -23,6 +23,8 @@
 import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromChatCompletionsEvent } from './usage.ts';
+import { recordFrames } from '../../../dump/turn-dump.ts';
+import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -144,9 +146,12 @@ const emitChatCompletions = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = wrapChatCompletionsAffinityEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
-      affinityEgressOptions(use.gateway),
+    const frames = recordFrames(
+      wrapChatCompletionsAffinityEgress(
+        answer.frames as AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+        affinityEgressOptions(use.gateway),
+      ),
+      use.gateway.dump,
     );
     if (!back['ingress.chat.chatCompletions.wantsStream']) {
       return {
@@ -214,12 +219,8 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
 
     // What the record holds by now: the payload affinity materialized for this candidate,
     // as every stage between the fork and here has rewritten it — or, on a translated wire,
-    // what the handoff put here. The id the client addressed does not travel — the provider
-    // re-stamps whatever it resolved upstream — and an alias' own rules apply to the body
-    // that is sent.
-    const payload = { ...facts['request.chat.chatCompletions'], model: candidate.model.id };
-    if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
-    const { model: _addressed, ...body } = payload;
+    // what the handoff put here.
+    const body = bodyForAttempt(facts['request.chat.chatCompletions'], candidate, applyRulesToUpstreamChatCompletions);
 
     let result;
     try {

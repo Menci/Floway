@@ -43,8 +43,10 @@
 // the status the upstream sent is the status the client sees, with no coercion of the codes
 // that envelope maps to `INTERNAL`.
 
+import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';
 import { renderGeminiError } from './errors.ts';
+import { recordFrames } from '../../../dump/turn-dump.ts';
 import { isFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -61,9 +63,8 @@ import {
 } from '../interceptors.ts';
 import { messagesWire } from '../messages/pipeline.ts';
 import { responsesWire } from '../responses/pipeline.ts';
-import { chatTargetPicker } from '../shared/target-picker.ts';
-import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, transform, type Pipeline } from '@floway-dev/pipeline';
 import { renderProtocolError, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
@@ -153,9 +154,12 @@ const emitGemini = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = wrapGeminiAffinityEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
-      affinityEgressOptions(use.gateway),
+    const frames = recordFrames(
+      wrapGeminiAffinityEgress(
+        answer.frames as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
+        affinityEgressOptions(use.gateway),
+      ),
+      use.gateway.dump,
     );
     if (!back['ingress.chat.gemini.wantsStream']) {
       return {

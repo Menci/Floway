@@ -23,3 +23,32 @@ export interface TurnDump {
   finalize(status: number | null, responseBytes: number | readonly unknown[]): void;
   finalize(response: Response): Response;
 }
+
+/**
+ * Records a stream's frames as they are read, and hands them on untouched.
+ *
+ * What the record is to hold is the stream the client was actually served, so the tee belongs
+ * at the family's edge: below it the frames are the upstream's and may still be translated,
+ * above it they are transport frames the record does not describe. A non-streaming turn folds
+ * the same frames into one value, and recording here is what puts both in the record — the
+ * frames as they flowed beside the value assembled from them.
+ *
+ * Reading is what records: a losing branch nobody read contributes nothing, and a stream that
+ * stopped short is recorded as far as it got.
+ */
+export const recordFrames = <T>(
+  frames: AsyncIterable<ProtocolFrame<T>>,
+  dump: TurnDump | null,
+): AsyncIterable<ProtocolFrame<T>> => {
+  // No recording configured hands the same iterable back, so a record shows no step where
+  // nothing happened and the frames are not wrapped for nobody.
+  if (dump === null) return frames;
+  return {
+    [Symbol.asyncIterator]: () => (async function* () {
+      for await (const frame of frames) {
+        dump.frame(frame);
+        yield frame;
+      }
+    })(),
+  };
+};
