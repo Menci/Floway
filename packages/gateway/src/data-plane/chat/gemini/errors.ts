@@ -1,10 +1,3 @@
-import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
-
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
 /** What a Gemini client is sent when a turn produced no content. `error.status` is the
@@ -33,44 +26,5 @@ export const geminiStatusForHttpStatus = (status: number): string => {
     return 'UNAVAILABLE';
   default:
     return 'INTERNAL';
-  }
-};
-
-const geminiRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => ({
-  type: 'api-error',
-  source: 'gateway',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
-  body: new TextEncoder().encode(JSON.stringify({
-    error: { code: status, message, status: geminiStatusForHttpStatus(status) },
-  })),
-  ...(performance ? { performance } : {}),
-});
-
-// Translator surfaced a caller-input violation (unsupported content part,
-// disallowed role, missing required field, etc.). Render as a 400
-// INVALID_ARGUMENT envelope so the caller sees a Gemini-shaped failure
-// instead of the internal-error 500 envelope. `performance` carries the
-// throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
-  performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> =>
-  geminiRpcErrorResult(400, error.message, performance);
-
-// `endpoint` selects between `:generateContent` and `:countTokens` only in
-// the `model-unsupported` message string.
-export const renderGeminiFailure = (
-  failure: ChatServeFailure,
-  endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
-  switch (failure.kind) {
-  case 'routing-unavailable':
-    return geminiRpcErrorResult(400, failure.message);
-  case 'model-missing':
-    return geminiRpcErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
-  case 'model-unsupported':
-    return geminiRpcErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`, failure.failedUpstreams));
   }
 };
