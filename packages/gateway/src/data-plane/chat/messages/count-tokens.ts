@@ -31,6 +31,7 @@ import { prepareMessagesWebSearchShimRequest } from './interceptors/web-search-s
 import type { MessagesFacts } from './pipeline.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
@@ -286,6 +287,11 @@ export type MessagesCountTokensExit = M<
 export const messagesCountTokensPipeline = (payload: MessagesPayload): Pipeline<MessagesCountTokensEntry, MessagesCountTokensExit> =>
   compose('messagesCountTokens', [
     emitMessagesTokenCount,
+    // A measurement goes through settlement like every other run. It provides an empty
+    // billed set because nothing here is billable today, not because the operation is
+    // exempt — an upstream that began charging for it would provide a non-empty one and
+    // nothing else would change.
+    writeSettlement(handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages'])),
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages']),

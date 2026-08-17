@@ -27,6 +27,7 @@ import { renderGeminiError } from './errors.ts';
 import type { GeminiFacts } from './pipeline.ts';
 import { asJsonObject, readJsonNumber } from '../../../shared/json-helpers.ts';
 import { isFailure } from '../../pipeline/facts.ts';
+import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import {
@@ -186,6 +187,11 @@ export type GeminiCountTokensExit = G<
 export const geminiCountTokensPipeline = (payload: GeminiPayload): Pipeline<GeminiCountTokensEntry, GeminiCountTokensExit> =>
   compose('geminiCountTokens', [
     emitGeminiTokenCount,
+    // A measurement goes through settlement like every other run. It provides an empty
+    // billed set because nothing here is billable today, not because the operation is
+    // exempt — an upstream that began charging for it would provide a non-empty one and
+    // nothing else would change.
+    writeSettlement(handedUp => isFailure((handedUp as { 'response.chat.gemini'?: unknown })['response.chat.gemini'])),
     resolveChatCandidates(narrowing(payload)),
     failover({
       failed: handedUp => isFailure((handedUp as { 'response.chat.gemini'?: unknown })['response.chat.gemini']),

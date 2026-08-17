@@ -238,10 +238,13 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(body.input_tokens, 99);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 
-  // Measuring is not generating: the turn bills nothing and times nothing, so it leaves
-  // neither a usage row nor a performance sample behind.
+  // A measurement goes through settlement like every other run. It names no billed entity —
+  // nothing here is billable today — but the row is written, because "count_tokens is exempt
+  // from billing" would hard-code today's commercial arrangement into the architecture. An
+  // upstream that began charging would provide a non-empty set and nothing else would change.
   await flushBackground();
   assertEquals(await repo.usage.listAll(), []);
+  // No latency to report either: nothing dialled an upstream on a path that measures.
   assertEquals(await repo.performance.listAll(), []);
 });
 
