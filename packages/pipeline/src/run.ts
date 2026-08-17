@@ -18,16 +18,20 @@ import type { Descend, ErasedSide, Logger, LogLevel, Pipeline, RunScope, RunServ
 
 /** Ownership is claimed, never sniffed.
  *
- *  `Symbol.asyncDispose` is a release *mechanism* and the language hands it out on its own
- *  terms, which do not match ours in either direction. Measured on Node 24:
+ *  `Symbol.asyncDispose` is a release *mechanism* the language hands out on its own terms,
+ *  and those terms are not stable across the hosts this runs on. Measured:
  *
- *    Symbol.asyncDispose in (async function*(){})()   true   — every async generator
- *    Symbol.asyncDispose in new ReadableStream()      false  — the thing a body actually is
+ *                                                     Node 24   Node 22
+ *    Symbol.asyncDispose in (async function*(){})()   true      false
+ *    Symbol.asyncDispose in new ReadableStream()      false     false
  *
- *  So a structural predicate adopts every generator-shaped fact as a run resource — a
- *  transducer's own iterator gets `.return()`ed the moment its stage hands up, and a fork
- *  throws on receiving one at a key nobody declared consuming, which is every failed-over
- *  streaming request — while missing the upstream body it exists for.
+ *  Neither column is what a run needs. On Node 24 a structural predicate adopts every
+ *  generator-shaped fact as a run resource — a transducer's own iterator gets `.return()`ed
+ *  the moment its stage hands up, and a fork throws on receiving one at a key nobody declared
+ *  consuming, which is every failed-over streaming request. On Node 22, which
+ *  `apps/platform-node` supports, it adopts nothing at all. Either way it misses the upstream
+ *  body it exists for, and a predicate whose answer depends on the host cannot be what decides
+ *  which resources a gateway closes.
  *
  *  `own()` is what says "the run is answerable for this". Which is also what the
  *  architecture already says: `consumes` on the response side *declares* the keys whose
