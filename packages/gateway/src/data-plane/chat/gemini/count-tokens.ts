@@ -16,7 +16,9 @@
 //
 // The pair is not `handOff`. A handoff maps frames, and there are none here: what crosses the
 // protocol boundary is one measurement, and reading Anthropic's counts back out as Google's
-// `{ totalTokens }` is the whole of the mapping.
+// `{ totalTokens }` is the whole of the mapping. What it does share with a handoff is that it
+// runs a translator, so it answers what the translator refuses — the same refusal, and the same
+// 400, whichever action a client asked this protocol for.
 //
 // The strippers run for the reason they run on generation: what no translation can carry
 // cannot be sent, so it goes at source. The thought suppressor does not — it rewrites a
@@ -40,7 +42,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
-import { translateGeminiViaMessages } from '@floway-dev/translate';
+import { translateGeminiViaMessages, TranslatorInputError } from '@floway-dev/translate';
 
 /** Counting is reachable only over an upstream's own Messages endpoint: no other protocol
  *  answers the question, and no translation invents an answer. */
@@ -103,12 +105,16 @@ const emitGeminiTokenCount = defineStage<
  * It consumes this protocol's request key and provides the target's, exactly as a handoff
  * does, so the wire below sees only Messages and cannot tell it was reached by translation.
  * What differs is the way back: there are no frames to map, only counts.
+ *
+ * It carries the `return` trait for the same reason a handoff does — a body the target
+ * protocol cannot represent is answered here rather than measured.
  */
 const measureGeminiAsMessages = defineStage<
   G<'request.chat.gemini' | 'route.attempt'>,
   G<'request.chat.messages'>,
   Counted<'response.chat.messages'>,
   Counted<'response.chat.gemini'>,
+  Counted<'response.chat.gemini'> & G<'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'measureGeminiAsMessages',
@@ -124,17 +130,38 @@ const measureGeminiAsMessages = defineStage<
       provides: ['response.chat.gemini'],
     },
   },
+  return: { provides: ['response.chat.gemini', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, next, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
-    const trip = await translateGeminiViaMessages(facts['request.chat.gemini'], {
-      model: candidate.model.id,
-      fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
-    });
+    const { 'request.chat.gemini': asked, ...down } = facts;
+
+    let trip;
+    try {
+      trip = await translateGeminiViaMessages(asked, {
+        model: candidate.model.id,
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+      });
+    } catch (error) {
+      // Input the counting wire's protocol cannot represent is the client's fault, and the
+      // translator is what knows which part of the body was at fault. Answering rather than
+      // throwing is also what keeps it a *candidate's* verdict, so the fork can try the next
+      // one. Anything else raised here is a fault of this gateway's and rides up as one.
+      if (!(error instanceof TranslatorInputError)) throw error;
+      return move({
+        ...down,
+        'response.chat.gemini': { status: 400, message: error.message },
+        // Nothing was measured, which is what an empty billed set and an empty header list say
+        // on the other two keys. There is no streamed reading to leave behind: a measurement
+        // never opens a stream, which is why this chain carries no such key at all.
+        'response.usage.billable': [],
+        'response.http.headers': [],
+      });
+    }
+
     // The translator writes a turn, and a turn says how its answer is delivered. There is no
     // answer to deliver here, so the field does not travel.
     const { stream: _stream, ...target } = trip.target;
 
-    const { 'request.chat.gemini': _asked, ...down } = facts;
     const back = await next({ ...down, 'request.chat.messages': move(target) });
     const { 'response.chat.messages': counted, ...up } = back;
     return { ...up, 'response.chat.gemini': move(asGeminiTokenCount(counted)) };
