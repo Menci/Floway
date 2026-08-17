@@ -641,7 +641,10 @@ const deepSeekInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletio
 };
 
 /** DeepSeek's "hit" count is the cached prefix length, which is what OpenAI's
- *  `cached_tokens` means; the "miss" count is what is left of the input and is dropped. */
+ *  `cached_tokens` means; the "miss" count is what is left of the input and is dropped.
+ *  `prompt_tokens` is documented as exactly hit + miss, and the cache matches only a prefix.
+ *  https://api-docs.deepseek.com/api/create-chat-completion
+ *  https://api-docs.deepseek.com/guides/kv_cache */
 const DEEPSEEK_CACHE_FIELDS = ['prompt_cache_hit_tokens', 'prompt_cache_miss_tokens'] as const;
 
 const deepSeekInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
@@ -854,11 +857,20 @@ const withMessagesReasoningDisabled = (payload: MessagesPayload): MessagesPayloa
 /**
  * Scrubs Claude Code's billing-attribution block out of the system prompt.
  *
- * The block carries a `cch=<hash>` that flips per call, so an upstream that reads it as
- * ordinary prompt text sees a different prompt every turn and never reuses its prompt cache.
- * The Claude Code subscription endpoint reads it to bill the request against the user's plan
- * tier and wants it intact, which is what the flag is for: it is on for the upstreams that
- * treat the block as text and off for the one that treats it as billing.
+ * The block leads every Claude Code turn as `system[0]`:
+ * `x-anthropic-billing-header: cc_version=<version>.<fingerprint>; cc_entrypoint=<entrypoint>;`
+ * with optional `cch=`, `cc_workload=` and `cc_prev_req=` segments after it. Two of those parts
+ * vary per call — the version's trailing fingerprint is derived from the first user message,
+ * and `cch=` was a per-request nonce on builds through 2.1.177 — so an upstream reading the
+ * block as ordinary prompt text sees a different prompt every turn and reuses nothing. One
+ * report measured stripping the line as taking the prefix cache from 0% to ~99.7%.
+ * https://github.com/anthropics/claude-code/issues/68900
+ * https://github.com/anthropics/claude-code/issues/50085
+ *
+ * Anthropic's own endpoint wants it intact, which is what the flag is for: it is on for the
+ * upstreams that treat the block as text and off for the one that reads it. What that endpoint
+ * does with it is not documented anywhere primary — the observable part is that the CLI adds
+ * *more* of these fields on its first-party path, so it reads as a client-attribution signal.
  */
 export const stripBillingAttributionFromMessages = defineStage<
   Chat<'request.chat.messages' | 'route.attempt'>,
@@ -896,6 +908,10 @@ export const stripBillingAttributionFromMessages = defineStage<
 });
 
 const BILLING_HEADER_LINE = /x-anthropic-billing-header[^\n]*/g;
+// Swept separately from the line because a `cch=` also reaches the prompt replayed inside
+// message content, where the line pattern cannot see it. Every value captured in the wild is
+// five hex digits with a trailing semicolon.
+// https://github.com/anthropics/claude-code/issues/40652
 const BILLING_CACHE_HASH = /cch=[0-9a-f]{5,};?/gi;
 
 const scrubText = (text: string): string =>
@@ -959,6 +975,12 @@ export const stripUnsupportedPartFieldsFromGemini = defineStage<
   })),
 });
 
+/** `fileData` addresses a Google-hosted file the API will not hand back — "you can use the API
+ *  to get metadata about the files, but you can't download the files" — and the two code parts
+ *  are the transcript of the server-side `codeExecution` tool that the stage below strips.
+ *  None survives a translation, so they go at source.
+ *  https://ai.google.dev/gemini-api/docs/files
+ *  https://ai.google.dev/gemini-api/docs/code-execution */
 const UNSUPPORTED_GEMINI_PART_FIELDS = ['fileData', 'executableCode', 'codeExecutionResult'] as const;
 
 const withUnsupportedPartFieldsStripped = (payload: GeminiPayload): GeminiPayload => {
@@ -1016,6 +1038,13 @@ export const stripUnsupportedToolsFromGemini = defineStage<
   })),
 });
 
+/** Every field a Gemini tool group can carry other than `functionDeclarations` — the
+ *  capabilities Google executes inside its own generation loop, which no target wire can be
+ *  asked to run. `functionDeclarations` is the one that survives because the model "does not
+ *  execute the function"; it asks the caller to. Re-derive against the `Tool` schema whenever
+ *  it gains a field, which it still does.
+ *  https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+ *  https://ai.google.dev/api/generate-content */
 const UNSUPPORTED_GEMINI_TOOL_CAPABILITIES = [
   'googleSearch',
   'googleSearchRetrieval',

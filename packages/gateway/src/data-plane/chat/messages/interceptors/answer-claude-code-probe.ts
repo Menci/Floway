@@ -36,11 +36,16 @@ import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate }
 // serves still fails at the serve layer with a 404 and the CLI still reports
 // it not found. What we suppress is only the pointless one-token generation
 // behind it — no upstream call, and no tokens to bill.
+// The CLI builds its agent string as
+// `claude-cli/${VERSION} (external, ${CLAUDE_CODE_ENTRYPOINT ?? "cli"}…)`, read off the
+// vendor's own shipped build — @anthropic-ai/claude-code-darwin-arm64@2.1.226, GIT_SHA
+// e140b3281c1e8d834468889bd0a5c3fd2f15507c.
+// https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.226.tgz
 const CLAUDE_CODE_USER_AGENT = /^claude-cli\/\d+\.\d+\.\d+/i;
 
-// The probes we can answer truthfully, written exactly as 2.1.226 sends them:
-// `Hi` is the `/model` validation probe, `test` the credential check, which
-// reads nothing at all off the response.
+// The probes we can answer truthfully, read verbatim off that same build:
+// `Hi` is the `model_validation` probe and `test` the `verify_api_key`
+// credential check, which reads nothing at all off the response.
 //
 // Two recorded prompts are deliberately absent. `quota` is the rate-limit
 // preflight, and its caller consumes the `anthropic-ratelimit-unified-*`
