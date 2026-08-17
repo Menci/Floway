@@ -14,14 +14,12 @@ describe('LanguageSelector', () => {
     await setLanguage('en');
 
     renderInApp(<LanguageSelector />);
-    const button = screen.getByRole('combobox', { name: 'Language' });
-    expect(button.textContent).toContain('English');
+    const button = screen.getByRole('button', { name: 'Language' });
 
     fireEvent.click(button);
-    fireEvent.click(await screen.findByRole('option', { name: '简体中文' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: '简体中文' }));
 
     await waitFor(() => expect(i18n.language).toBe('zh-Hans'));
-    expect(button.textContent).toContain('简体中文');
     await waitFor(() => expect(storage.get(flowayLanguageStorageKey)).toBe('zh-Hans'));
   });
 });

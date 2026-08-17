@@ -89,11 +89,9 @@ export function LoginForm() {
 
   return (
     <Panel className="relative w-[min(440px,100%)]">
-      <div className="absolute right-[var(--floway-panel-inset)] top-[var(--floway-panel-inset)]">
-        <LanguageSelector />
-      </div>
-      <header className="grid justify-items-center">
+      <header className="flex items-center">
         <FlowayLogo />
+        <LanguageSelector className="ml-auto" />
       </header>
 
       {/* The first Field carries 12px of its own above its label, so no gap is

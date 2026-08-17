@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard';
 import { requireDashboardSession } from './guards';
 import type { AuthUser } from '../api/auth';
+import { LanguageSelector } from '../components/language-selector';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/nav';
@@ -111,6 +112,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
             onClick={() => setNavigationOpen(true)}
           />
           <FlowayLogo />
+          <LanguageSelector className="ml-auto" />
         </header>
         <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
           {frames.map(frame => <div

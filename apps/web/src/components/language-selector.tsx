@@ -1,11 +1,20 @@
+import type { MenuCheckedValueChangeData } from '@fluentui/react-components';
+import { GlobeRegular } from '@fluentui/react-icons';
+
 import { fluentComponents } from '../fluent';
 import { setLanguage } from '../i18n';
 import { storeLanguage } from '../i18n/language-preference';
 import { defaultLanguage, normalizeLanguage, supportedLanguages, type SupportedLanguage } from '../i18n/languages';
 import { useTranslation } from '../i18n/translation';
-import { Dropdown } from './ui/fluent-form-controls';
 
-const { Option } = fluentComponents;
+const {
+  Button,
+  Menu,
+  MenuItemRadio,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+} = fluentComponents;
 
 // The languages are named in themselves, the way a native reader knows them; a
 // translated label would tell a reader about their own language in someone
@@ -28,22 +37,33 @@ export function LanguageSelector({ className }: { className?: string }) {
     }
   };
 
+  const onCheckedValueChange = (
+    _e: unknown,
+    data: Pick<MenuCheckedValueChangeData, 'checkedItems'>,
+  ) => {
+    const next = normalizeLanguage(data.checkedItems?.[0]);
+    if (next) void selectLanguage(next);
+  };
+
   return (
-    <Dropdown
-      aria-label={t('common.language')}
-      className={className}
-      onOptionSelect={(_, data) => {
-        const next = normalizeLanguage(data.optionValue);
-        if (next) void selectLanguage(next);
-      }}
-      selectedOptions={[currentLanguage]}
-      value={languageNames[currentLanguage]}
-    >
-      {supportedLanguages.map(language => (
-        <Option key={language} value={language}>
-          {languageNames[language]}
-        </Option>
-      ))}
-    </Dropdown>
+    <Menu checkedValues={{ language: [currentLanguage] }} onCheckedValueChange={onCheckedValueChange}>
+      <MenuTrigger disableButtonEnhancement>
+        <Button
+          appearance="subtle"
+          aria-label={t('common.language')}
+          className={className}
+          icon={<GlobeRegular />}
+        />
+      </MenuTrigger>
+      <MenuPopover>
+        <MenuList>
+          {supportedLanguages.map(language => (
+            <MenuItemRadio key={language} name="language" value={language}>
+              {languageNames[language]}
+            </MenuItemRadio>
+          ))}
+        </MenuList>
+      </MenuPopover>
+    </Menu>
   );
 }
