@@ -31,7 +31,7 @@ import { prepareMessagesWebSearchShimRequest } from './interceptors/web-search-s
 import type { MessagesFacts } from './pipeline.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -45,7 +45,6 @@ import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
-import { renderProtocolError } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, type MessagesPayload } from '@floway-dev/protocols/messages';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -97,7 +96,7 @@ const emitMessagesTokenCount = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.messages.rendered': move(renderProtocolError(answer.body, () => renderMessagesError(answer.status, answer.message))),
+        'response.chat.messages.rendered': move(renderFailure(answer, () => renderMessagesError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }

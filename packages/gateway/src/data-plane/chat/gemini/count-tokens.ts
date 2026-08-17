@@ -26,7 +26,7 @@ import { analyzeGeminiAffinity } from './affinity/ingress.ts';
 import { renderGeminiError } from './errors.ts';
 import type { GeminiFacts } from './pipeline.ts';
 import { asJsonObject, readJsonNumber } from '../../../shared/json-helpers.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
@@ -39,7 +39,6 @@ import { messagesCountTokensWire, type TokenCountAnswer } from '../messages/coun
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
-import { renderProtocolError } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import { translateGeminiViaMessages } from '@floway-dev/translate';
 
@@ -85,7 +84,7 @@ const emitGeminiTokenCount = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.gemini.rendered': move(renderProtocolError(answer.body, () => renderGeminiError(answer.status, answer.message))),
+        'response.chat.gemini.rendered': move(renderFailure(answer, () => renderGeminiError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }

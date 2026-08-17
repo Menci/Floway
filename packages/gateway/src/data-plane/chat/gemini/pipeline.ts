@@ -47,7 +47,7 @@ import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiAffinity } from './affinity/ingress.ts';
 import { renderGeminiError } from './errors.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -67,7 +67,7 @@ import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, transform, type Pipeline } from '@floway-dev/pipeline';
-import { renderProtocolError, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiProtocolEventsToResult,
   geminiProtocolFrameToSSEFrame,
@@ -137,7 +137,7 @@ const emitGemini = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.gemini.rendered': move(renderProtocolError(answer.body, () => renderGeminiError(answer.status, answer.message))),
+        'response.chat.gemini.rendered': move(renderFailure(answer, () => renderGeminiError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }

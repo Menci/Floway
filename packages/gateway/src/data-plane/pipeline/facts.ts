@@ -10,7 +10,7 @@
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { Secret, Owned } from '@floway-dev/pipeline';
-import type { PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { renderProtocolError, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** Everything about an attempt that is data: which upstream, which model row on it, and the
@@ -54,6 +54,17 @@ export interface Failure {
 
 export const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
+
+/**
+ * What a client is sent for a failure, in three tiers, so no edge has to remember them.
+ *
+ * An upstream that sent a body is forwarded it — the answer to "why was I refused" is the
+ * refusing party's to give. A refusal the gateway made itself is written by whoever made it,
+ * because only there is it known which field was at fault and which code names the condition.
+ * The protocol's own rendering of a status and a sentence is what is left when neither holds.
+ */
+export const renderFailure = (failure: Failure, protocolEnvelope: () => Record<string, unknown>): Record<string, unknown> =>
+  renderProtocolError(failure.body, () => failure.envelope ?? protocolEnvelope());
 
 export interface GatewayFacts {
   /** What the client sent, before anything read it. Every family hands these over, because

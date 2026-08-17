@@ -24,7 +24,7 @@ import { createMessagesBillableUsageReader } from './usage.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -47,7 +47,7 @@ import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
-import { renderProtocolError, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
+import { sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
   collectMessagesProtocolEventsToResult,
   messagesProtocolFrameToSSEFrame,
@@ -114,7 +114,7 @@ const emitMessages = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.messages.rendered': move(renderProtocolError(answer.body, () => renderMessagesError(answer.status, answer.message))),
+        'response.chat.messages.rendered': move(renderFailure(answer, () => renderMessagesError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }

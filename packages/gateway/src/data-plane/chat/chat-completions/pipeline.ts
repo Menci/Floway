@@ -26,7 +26,7 @@ import { billableUsageFromChatCompletionsEvent } from './usage.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -64,7 +64,7 @@ import {
   type ChatCompletionsPayload,
   type ChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/chat-completions';
-import { renderProtocolError, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 
@@ -126,9 +126,9 @@ const emitChatCompletions = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.chatCompletions.rendered': move(renderProtocolError(
-          answer.body,
-          () => answer.envelope ?? { error: { message: answer.message, type: 'api_error' } },
+        'response.chat.chatCompletions.rendered': move(renderFailure(
+          answer,
+          () => ({ error: { message: answer.message, type: 'api_error' } }),
         )),
         'response.http.status': answer.status,
       };
