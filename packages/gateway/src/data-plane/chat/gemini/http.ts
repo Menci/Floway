@@ -9,7 +9,6 @@
 import { geminiCountTokensPipeline } from './count-tokens.ts';
 import { renderGeminiError } from './errors.ts';
 import { geminiServePipeline } from './pipeline.ts';
-import { geminiRpcErrorResponse } from './respond.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
@@ -29,10 +28,14 @@ interface GeminiModelAction {
 // we split on the trailing `:` here so each entry sees just the action and
 // the resolved model id (with a leading `models/` prefix tolerated, as Google
 // SDKs send it).
+/** A refusal about the route itself. It is answered before a model is resolved, so there is no
+ *  attempt to record and nothing for a run to hold beyond the refusal. */
+const unknownAction = (message: string): Response => Response.json(renderGeminiError(404, message), { status: 404 });
+
 const parseGeminiModelAction = (modelAction: string | undefined): GeminiModelAction | Response => {
-  if (!modelAction) return geminiRpcErrorResponse(404, 'Missing Gemini model action.');
+  if (!modelAction) return unknownAction('Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
-  if (separator <= 0 || separator === modelAction.length - 1) return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${modelAction}`);
+  if (separator <= 0 || separator === modelAction.length - 1) return unknownAction(`Unknown Gemini model action: ${modelAction}`);
   return { model: modelAction.slice(0, separator).replace(/^models\//, ''), action: modelAction.slice(separator + 1) };
 };
 
@@ -55,7 +58,7 @@ export const geminiHttp = async (c: AuthedContext): Promise<Response> => {
   if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
     return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
   }
-  return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
+  return unknownAction(`Unknown Gemini model action: ${parsed.action}`);
 };
 
 /** A body the gateway could not read is reported in the words this protocol's own clients
