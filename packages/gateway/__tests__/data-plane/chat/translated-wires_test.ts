@@ -6,22 +6,27 @@
 // client's own protocol. The candidates here carry exactly one endpoint each, so a chain that
 // picked any other wire would call a provider method that throws.
 //
-// Gemini's three rows are here, and Chat Completions' two; the remaining families' fill in
-// beside them. Beside the matrix, one thing that is about the fork rather than about a pair:
-// that failover moves from a native candidate onto a translated one.
+// Gemini's three rows are here, Chat Completions' two, and Messages' two; the remaining
+// family's fill in beside them. Beside the matrix, three things that are about the fork rather
+// than about a pair: that failover moves from a native candidate onto a translated one, that a
+// pair's own refusal rewrite survives the trip, and that a rule which speaks about one
+// protocol's wire does not run on a turn that leaves for another — which is what the
+// interceptor form said with `ctx.targetApi !== <self>` and what position says here.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
 import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
+import { handOff } from '../../../src/data-plane/chat/handoff.ts';
+import { messagesServePipeline, messagesWire } from '../../../src/data-plane/chat/messages/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { move, run, type Pipeline } from '@floway-dev/pipeline';
+import { compose, move, run, type Pipeline } from '@floway-dev/pipeline';
 import type { ChatCompletionsPayload, ChatCompletionsResult, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiResult } from '@floway-dev/protocols/gemini';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { PROMPT_TOO_LONG_MESSAGE, type MessagesPayload, type MessagesResult, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -145,6 +150,16 @@ const responsesTurn = (text: string): ProviderResponsesResult => ({
   })(),
 });
 
+/** A refusal, in the words an OpenAI-shaped upstream uses for a turn that will not fit. */
+const contextExceeded = async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+  ok: false,
+  modelKey: 'k',
+  response: Response.json(
+    { error: { code: 'context_length_exceeded', type: 'invalid_request_error', message: "This model's maximum context length is 8192 tokens" } },
+    { status: 400 },
+  ),
+});
+
 // ── Running one source protocol's chain ───────────────────────────────────────────────────
 
 const serve = async <Entry extends object, Exit extends object>(
@@ -169,6 +184,7 @@ const serve = async <Entry extends object, Exit extends object>(
 };
 
 const chatCompletionsPayload = { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
+const messagesPayload = { model: MODEL, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as MessagesPayload;
 const geminiPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiPayload;
 
 const serveChatCompletions = async (payload: ChatCompletionsPayload = chatCompletionsPayload) =>
@@ -178,6 +194,15 @@ const serveChatCompletions = async (payload: ChatCompletionsPayload = chatComple
     'ingress.chat.chatCompletions.wantsStream': false,
     'ingress.chat.chatCompletions.wantsUsageChunk': false,
     'request.chat.chatCompletions': payload,
+    'serve.model': MODEL,
+  }, payload);
+
+const serveMessages = async (payload: MessagesPayload = messagesPayload) =>
+  await serve(messagesServePipeline(payload), {
+    'ingress.http.headers': [],
+    'ingress.chat.sourceProtocol': 'messages',
+    'ingress.chat.messages.wantsStream': false,
+    'request.chat.messages': payload,
     'serve.model': MODEL,
   }, payload);
 
@@ -194,6 +219,13 @@ const serveGemini = async (payload: GeminiPayload = geminiPayload) =>
 
 const chatCompletionsText = (rendered: unknown): string | null | undefined =>
   (rendered as ChatCompletionsResult).choices[0]?.message.content as string | null | undefined;
+
+/** The answer's own text, past the carrier the edge writes back: on this protocol the turn's
+ *  state rides as a redacted-thinking block at the head of the content. */
+const messagesText = (rendered: unknown): string | undefined => {
+  const block = (rendered as MessagesResult).content.find(part => part.type === 'text');
+  return block?.type === 'text' ? block.text : undefined;
+};
 
 const geminiText = (rendered: unknown): string | undefined =>
   (rendered as GeminiResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
@@ -227,6 +259,28 @@ describe('a chat family reaching a candidate over another protocol', () => {
 
     expect(callResponses).toHaveBeenCalledTimes(1);
     expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves /v1/messages on a Responses-only candidate', async () => {
+    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    resolves([candidate('up_a', { responses: {} }, { callResponses })]);
+
+    const { facts, drain } = await serveMessages();
+
+    expect(callResponses).toHaveBeenCalledTimes(1);
+    expect(messagesText(facts['response.chat.messages.rendered'])).toBe('hello');
+    await drain();
+  });
+
+  it('serves /v1/messages on a Chat Completions-only candidate', async () => {
+    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
+
+    const { facts, drain } = await serveMessages();
+
+    expect(callChatCompletions).toHaveBeenCalledTimes(1);
+    expect(messagesText(facts['response.chat.messages.rendered'])).toBe('hello');
     await drain();
   });
 
@@ -286,5 +340,89 @@ describe('the fork over wires', () => {
     expect(facts['response.http.status']).toBe(200);
     expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('second');
     await drain();
+  });
+
+  // The canonical rewrite: Claude Code reads Anthropic's `prompt is too long:` shape to know
+  // it must auto-compact, and an OpenAI-shaped upstream states the same condition in its own
+  // words. The pair owns the translation of that refusal, and the handoff is what asks it.
+  it('rewrites a context-window refusal into the pair-s own envelope', async () => {
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions: contextExceeded })]);
+
+    const { facts, drain } = await serveMessages();
+
+    expect(facts['response.http.status']).toBe(400);
+    expect(facts['response.chat.messages.rendered']).toEqual({
+      type: 'error',
+      error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+    });
+    await drain();
+  });
+
+  // A refusal a pair says nothing about reaches the client as the upstream wrote it, with the
+  // status the upstream sent.
+  it('hands a refusal the pair does not speak about up unchanged', async () => {
+    const callChatCompletions = vi.fn(async () => ({
+      ok: false as const, modelKey: 'k', response: Response.json({ error: { message: 'no' } }, { status: 403 }),
+    }));
+    resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
+
+    const { facts, drain } = await serveMessages();
+
+    expect(facts['response.http.status']).toBe(403);
+    expect(facts['response.chat.messages.rendered']).toEqual({ error: { message: 'no' } });
+    await drain();
+  });
+});
+
+describe('a rule that speaks about one protocol-s wire', () => {
+  // The Messages fold rewrites *every* inline system message, because Anthropic's top-level
+  // `system` is the only first-position slot there. The Chat Completions fold rewrites only a
+  // system message past the leading run. So a leading system message tells the two apart: a
+  // turn that left for Chat Completions must be folded by the Chat Completions rule, which
+  // leaves it alone, and not by the Messages one, which would not.
+  it('does not run on a turn that leaves for another protocol', async () => {
+    let sent: { messages: { role: string }[] } | undefined;
+    const payload = {
+      model: MODEL,
+      max_tokens: 64,
+      messages: [{ role: 'system', content: 'lead' }, { role: 'user', content: 'hi' }],
+    } as unknown as MessagesPayload;
+    resolves([candidate(
+      'up_a',
+      { chatCompletions: {} },
+      {
+        callChatCompletions: async (_model, body) => {
+          sent = body as { messages: { role: string }[] };
+          return chatCompletionsTurn('hello');
+        },
+      },
+      ['rewrite-mid-conv-system-to-user'],
+    )]);
+
+    const { drain } = await serveMessages(payload);
+
+    expect(sent?.messages.map(message => message.role)).toEqual(['system', 'user']);
+    await drain();
+  });
+
+  // The other half, and this one assembly says rather than a run: the wire's own rules read
+  // the wire's own request key, so `compose` refuses to place them where a handoff has taken
+  // it. A chain cannot be arranged to run the Messages rule on a turn on its way out of
+  // Messages, whatever anyone writes.
+  it('cannot be placed in a chain whose payload a handoff consumed', () => {
+    const leaving = handOff({
+      from: { request: 'request.chat.messages', response: 'response.chat.messages' },
+      to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+      trip: () => { throw new Error('not dialled'); },
+    });
+    const arriving = handOff({
+      from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+      to: { request: 'request.chat.messages', response: 'response.chat.messages' },
+      trip: () => { throw new Error('not dialled'); },
+    });
+
+    expect(() => compose('leaving', [leaving, ...messagesWire('r')]))
+      .toThrow(/needs request\.chat\.messages, which handOff:.* consumed above it/);
+    expect(() => compose('arriving', [arriving, ...messagesWire('r')])).not.toThrow();
   });
 });

@@ -7,12 +7,14 @@
 //   materializeAttempt     puts the payload this candidate is owed into the record
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
-// Only its own wire is built. The translated ones — Messages via Responses and Messages via
-// Chat Completions — will hand up `response.chat.messages` too, which is what will make them
-// interchangeable with it, and each is a step of its own. So is
-// `/v1/messages/count_tokens`: a second operation over this protocol rather than another wire
-// under this pipeline. This family's own interceptors are not all stages yet either, so the
-// array between the materialized payload and the fork is short rather than complete.
+// Three wires, all handing up `response.chat.messages`: this protocol's own, and the two
+// translated ones — Messages via Responses and Messages via Chat Completions — each a
+// handoff followed by that protocol's own wire. The stage above cannot tell which ran.
+//
+// `/v1/messages/count_tokens` is not one of them: it is a second operation over this
+// protocol rather than another wire under this pipeline, and it is its own step. This
+// family's own interceptors are not all stages yet either, so the array between the
+// materialized payload and the fork is short rather than complete.
 
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
@@ -26,13 +28,15 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
+import { chatCompletionsWire } from '../chat-completions/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
-import { dialChatWire, type ChatWire } from '../handoff.ts';
+import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
   applyRoleCompatibilityToMessages,
   disableReasoningOnForcedToolChoiceForMessages,
   stripBillingAttributionFromMessages,
 } from '../interceptors.ts';
+import { responsesWire } from '../responses/pipeline.ts';
 import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
@@ -50,7 +54,8 @@ import {
   type MessagesPayload,
   type MessagesStreamEvent,
 } from '@floway-dev/protocols/messages';
-import { providerModelOf, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 
 /** `/v1/messages` prefers its own wire, then the translated Responses path, then the
  *  translated Chat Completions path. */
@@ -356,10 +361,32 @@ export const messagesWire = (streamedUsage: string): readonly Stage[] => [
 /** This family's own reading, which every wire under it hands up. */
 const STREAMED_USAGE = 'response.chat.messages.streamedUsage';
 
-/** The wires `/v1/messages` can be served on. Only its own is built; the two translated ones
- *  are each a handoff and then that protocol's own wire, and until they exist a candidate the
- *  picker admitted on one of them is dialled here anyway. */
-const messagesWireFor = (): ChatWire => compose('messagesNative', messagesWire(STREAMED_USAGE));
+/** The three wires `/v1/messages` can be served on. Its own is the bare wire; each translated
+ *  one is a handoff and then the target protocol's own wire. */
+const messagesWireFor = (target: ChatTargetApi, candidate: ModelCandidate): ChatWire => {
+  switch (target) {
+  case 'messages':
+    return compose('messagesNative', messagesWire(STREAMED_USAGE));
+  case 'responses':
+    return compose('messagesViaResponses', [
+      handOff({
+        from: { request: 'request.chat.messages', response: 'response.chat.messages' },
+        to: { request: 'request.chat.responses', response: 'response.chat.responses' },
+        trip: async payload => await translateMessagesViaResponses(payload, { model: candidate.model.id }),
+      }),
+      ...responsesWire(STREAMED_USAGE),
+    ]);
+  case 'chat-completions':
+    return compose('messagesViaChatCompletions', [
+      handOff({
+        from: { request: 'request.chat.messages', response: 'response.chat.messages' },
+        to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+        trip: async payload => await translateMessagesViaChatCompletions(payload, { model: candidate.model.id }),
+      }),
+      ...chatCompletionsWire(STREAMED_USAGE),
+    ]);
+  }
+};
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Anthropic states input accounting on
