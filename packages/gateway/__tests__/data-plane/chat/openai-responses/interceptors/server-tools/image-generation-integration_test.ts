@@ -8,7 +8,7 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId, type ImagesEditsRequest } from '@floway-dev/provider';
+import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
@@ -20,7 +20,7 @@ import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '
 
 interface BackendStub {
   generationsCalls: Record<string, unknown>[];
-  editsRequests: ImagesEditsRequest[];
+  editsRequests: OpenAIImagesEditsRequest[];
   nextGenerations: Response[];
   nextEdits: Response[];
   // When set, the next `enumerateModelCandidates` call returns this
@@ -47,13 +47,13 @@ const defaultCandidates = vi.hoisted(() => () => [{
     modelsCache: null,
     hue: 210,
     instance: {
-      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
+      callOpenAIImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
         return { response, modelKey: 'gpt-image-2' };
       },
-      callImagesEdits: async (_model: unknown, request: ImagesEditsRequest) => {
+      callOpenAIImagesEdits: async (_model: unknown, request: OpenAIImagesEditsRequest) => {
         stub.editsRequests.push(request);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
@@ -63,11 +63,11 @@ const defaultCandidates = vi.hoisted(() => () => [{
   },
   model: {
     id: 'gpt-image-2',
-    endpoints: { imagesGenerations: {}, imagesEdits: {} },
+    endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
     providerModels: {
       u: {
         id: 'gpt-image-2', limits: {}, kind: 'image',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
         enabledFlags: new Set<FlagId>(),
       },
     },
@@ -215,7 +215,7 @@ beforeEach(async () => {
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'unused',
-      endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       modelsFetch: { enabled: false, endpoint: '/models' },
       models: [],
     },
@@ -545,15 +545,15 @@ test('resolveImageCandidate renders model_not_supported when sawModel=true but n
   assert(item.error.message.includes("Model 'gpt-image-2' is not an image model."), `unexpected message: ${item.error.message}`);
 });
 
-test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the imagesGenerations endpoint', async () => {
+test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
   // The resolver produced an image-kind candidate but its `endpoints` does
-  // not include the per-endpoint key the request needs (imagesGenerations).
+  // not include the per-endpoint key the request needs (openaiImagesGenerations).
   stub.nextResolutionOverride = {
     candidates: [stubModelCandidate({
       model: {
         id: 'gpt-image-2',
         kind: 'image',
-        endpoints: { imagesEdits: {} },
+        endpoints: { openaiImagesEdits: {} },
       },
     })],
     sawModel: true,

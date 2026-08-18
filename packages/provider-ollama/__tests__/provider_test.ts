@@ -69,7 +69,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
-    assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'completions', 'openaiChatCompletions', 'openaiResponses']);
+    assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
@@ -79,13 +79,13 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
   });
 });
 
-test('getProvidedModels routes embedding-capability models to kind=embedding with only the embeddings endpoint', async () => {
+test('getProvidedModels routes embedding-capability models to kind=embedding with only the openaiEmbeddings endpoint', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.instance.getProvidedModels(testFetcher);
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
-    assertEquals(Object.keys(embed.endpoints), ['embeddings']);
+    assertEquals(Object.keys(embed.endpoints), ['openaiEmbeddings']);
   });
 });
 
@@ -139,7 +139,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   }));
   let transcription: Request | undefined;
@@ -156,7 +156,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
     async () => {
       const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
-      await instance.instance.callAudioTranscriptions(models[0], {
+      await instance.instance.callOpenAIAudioTranscriptions(models[0], {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
           { name: 'model', value: 'public-model' },

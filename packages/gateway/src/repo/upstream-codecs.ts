@@ -17,14 +17,14 @@ import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
-  completions: endpointSchema.optional(),
+  openaiCompletions: endpointSchema.optional(),
   openaiChatCompletions: endpointSchema.optional(),
   openaiResponses: endpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
-  embeddings: endpointSchema.optional(),
-  imagesGenerations: endpointSchema.optional(),
-  imagesEdits: endpointSchema.optional(),
-  audioTranscriptions: endpointSchema.optional(),
+  openaiEmbeddings: endpointSchema.optional(),
+  openaiImagesGenerations: endpointSchema.optional(),
+  openaiImagesEdits: endpointSchema.optional(),
+  openaiAudioTranscriptions: endpointSchema.optional(),
   rerank: endpointSchema.optional(),
 }).passthrough();
 

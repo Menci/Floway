@@ -25,8 +25,8 @@ import type { AuthVars } from '../../middleware/auth.ts';
 import { mountAlphaSearchRoute } from '../alpha-search/routes.ts';
 import { openaiResponsesHttp } from '../chat/openai-responses/http.ts';
 import { openaiResponsesWebSocket } from '../chat/openai-responses/websocket.ts';
-import { imagesEdits, imagesGenerations } from '../images/http.ts';
 import { serveModels } from '../models/http.ts';
+import { openaiImagesEdits, openaiImagesGenerations } from '../openai-images/http.ts';
 import { mountPublicRoute } from '../public-route.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
@@ -38,7 +38,7 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponses, (method, path) => app.on(method, path, openaiResponsesHttp.generate));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesCompact, (method, path) => app.on(method, path, openaiResponsesHttp.compact));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesWebSocket, (method, path) => app.on(method, path, openaiResponsesWebSocket));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations, (method, path) => app.on(method, path, imagesGenerations));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits, (method, path) => app.on(method, path, imagesEdits));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIImagesGenerations, (method, path) => app.on(method, path, openaiImagesGenerations));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIImagesEdits, (method, path) => app.on(method, path, openaiImagesEdits));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexModels, (method, path) => app.on(method, path, serveModels));
 };

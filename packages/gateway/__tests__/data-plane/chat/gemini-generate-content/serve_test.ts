@@ -341,8 +341,8 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   installRepo();
   const callOpenAIChatCompletions = vi.fn();
   // geminiGenerateContentGenerateTarget prefers openai-chat-completions > messages > responses;
-  // an endpoints-only `completions` candidate matches none and is filtered.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callOpenAIChatCompletions })]);
+  // an endpoints-only `openaiCompletions` candidate matches none and is filtered.
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIChatCompletions })]);
 
   const result = await geminiGenerateContentServe.generate({
     payload: makePayload(),

@@ -151,7 +151,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
         upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-public',
         kind: 'chat',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
       },
       {
         upstreamModelId: 'deepseek-prod',

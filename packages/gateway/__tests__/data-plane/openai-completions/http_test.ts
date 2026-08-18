@@ -10,7 +10,7 @@ import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@flow
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
 // resolves to /v1/completions through the default pathOverrides table.
-const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -26,7 +26,7 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
       modelsFetch: { enabled: false },
       models: [{
         upstreamModelId: 'davinci-002',
-        endpoints: { completions: {} },
+        endpoints: { openaiCompletions: {} },
       }],
     },
   }));
@@ -47,7 +47,7 @@ const completionStream = (): Response => {
 
 test('/v1/completions non-streaming forwards body to upstream /v1/completions and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
   let forwardedBody: Record<string, unknown> | undefined;
   let forwardedUrl: string | undefined;
   let responseBody: unknown;
@@ -95,7 +95,7 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
 
 test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
   let forwardedBody: Record<string, unknown> | undefined;
 
   await withMockedFetch(
@@ -125,7 +125,7 @@ test('/v1/completions streaming forces stream_options.include_usage upstream', a
 
 test('/v1/completions streaming strips usage chunk when client did not request include_usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
 
   await withMockedFetch(
     request => {
@@ -160,7 +160,7 @@ test('/v1/completions streaming strips usage chunk when client did not request i
 
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
 
   await withMockedFetch(
     request => {
@@ -203,7 +203,7 @@ test('/v1/completions rejects malformed body with the standard 400', async () =>
   assertEquals(body.error.message.includes('valid JSON'), true);
 });
 
-test('/v1/completions rejects a model without the completions endpoint with the standard 400', async () => {
+test('/v1/completions rejects a model without the openaiCompletions endpoint with the standard 400', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -236,7 +236,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
 
 test('/v1/completions handler also serves the unversioned /completions path', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
 
   await withMockedFetch(
     request => {
@@ -274,7 +274,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
 test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   await withMockedFetch(
@@ -355,7 +355,7 @@ test('/v1/completions a stream that never terminated is recorded as a failed req
 test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   await withMockedFetch(

@@ -324,8 +324,8 @@ test('generate filters out candidates whose endpoints do not satisfy the message
   installRepo();
   const callAnthropicMessages = vi.fn();
   // anthropicMessagesGenerateTarget prefers messages > responses > openai-chat-completions; an
-  // endpoints-only `completions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callAnthropicMessages })]);
+  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callAnthropicMessages })]);
 
   const result = await anthropicMessagesServe.generate({
     payload: makePayload({ model: 'wrong-endpoint-model' }),

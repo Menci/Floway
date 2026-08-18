@@ -38,7 +38,7 @@ const registerAudioModel = async (
         upstreamModelId: 'gpt-4o-transcribe-upstream',
         publicModelId: 'gpt-4o-transcribe',
         kind: 'transcription',
-        endpoints: { audioTranscriptions: {} },
+        endpoints: { openaiAudioTranscriptions: {} },
         ...(pricing ? { pricing } : {}),
       }],
     },

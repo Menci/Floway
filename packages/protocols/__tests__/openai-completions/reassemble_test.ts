@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import type { CompletionsStreamEvent } from '../../src/completions/index.ts';
-import { reassembleCompletionsEvents } from '../../src/completions/reassemble.ts';
+import type { OpenAICompletionsStreamEvent } from '../../src/openai-completions/index.ts';
+import { reassembleOpenAICompletionsEvents } from '../../src/openai-completions/reassemble.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const chunk = (text: string, finish_reason: string | null = null, extra: Partial<CompletionsStreamEvent> = {}): CompletionsStreamEvent => ({
+const chunk = (text: string, finish_reason: string | null = null, extra: Partial<OpenAICompletionsStreamEvent> = {}): OpenAICompletionsStreamEvent => ({
   id: 'cmpl_test',
   object: 'text_completion',
   created: 123,
@@ -13,7 +13,7 @@ const chunk = (text: string, finish_reason: string | null = null, extra: Partial
   ...extra,
 });
 
-const usageChunk: CompletionsStreamEvent = {
+const usageChunk: OpenAICompletionsStreamEvent = {
   id: 'cmpl_test',
   object: 'text_completion',
   created: 123,
@@ -22,12 +22,12 @@ const usageChunk: CompletionsStreamEvent = {
   usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
 };
 
-const fromArray = async function* (events: CompletionsStreamEvent[]): AsyncGenerator<CompletionsStreamEvent> {
+const fromArray = async function* (events: OpenAICompletionsStreamEvent[]): AsyncGenerator<OpenAICompletionsStreamEvent> {
   for (const event of events) yield event;
 };
 
-test('reassembleCompletionsEvents concatenates per-choice text and lifts the final usage chunk', async () => {
-  const result = await reassembleCompletionsEvents(fromArray([
+test('reassembleOpenAICompletionsEvents concatenates per-choice text and lifts the final usage chunk', async () => {
+  const result = await reassembleOpenAICompletionsEvents(fromArray([
     chunk('hello'),
     chunk(', '),
     chunk('world', 'stop'),
@@ -44,8 +44,8 @@ test('reassembleCompletionsEvents concatenates per-choice text and lifts the fin
   });
 });
 
-test('reassembleCompletionsEvents merges multiple choices by index', async () => {
-  const choiceTwo = (text: string, finish_reason: string | null = null): CompletionsStreamEvent => ({
+test('reassembleOpenAICompletionsEvents merges multiple choices by index', async () => {
+  const choiceTwo = (text: string, finish_reason: string | null = null): OpenAICompletionsStreamEvent => ({
     id: 'cmpl_test',
     object: 'text_completion',
     created: 123,
@@ -53,7 +53,7 @@ test('reassembleCompletionsEvents merges multiple choices by index', async () =>
     choices: [{ index: 1, text, finish_reason }],
   });
 
-  const result = await reassembleCompletionsEvents(fromArray([
+  const result = await reassembleOpenAICompletionsEvents(fromArray([
     chunk('first '),
     choiceTwo('second '),
     chunk('half', 'stop'),
@@ -66,12 +66,12 @@ test('reassembleCompletionsEvents merges multiple choices by index', async () =>
   ]);
 });
 
-test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', async () => {
+test('reassembleOpenAICompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', async () => {
   // The Zhipu/GLM fork emits a final `choices: [{ index: 0 }]` (no text,
   // no finish_reason) carrying the usage block instead of OpenAI's
   // `choices: []`. The reassembler folds it as a no-op while still
   // surfacing the usage onto the result.
-  const result = await reassembleCompletionsEvents(fromArray([
+  const result = await reassembleOpenAICompletionsEvents(fromArray([
     chunk('hi'),
     chunk('!', 'stop'),
     {
@@ -88,8 +88,8 @@ test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chun
   assertEquals(result.usage, { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
 });
 
-test('reassembleCompletionsEvents carries system_fingerprint and logprobs through', async () => {
-  const fingerprinted: CompletionsStreamEvent = {
+test('reassembleOpenAICompletionsEvents carries system_fingerprint and logprobs through', async () => {
+  const fingerprinted: OpenAICompletionsStreamEvent = {
     id: 'cmpl_test',
     object: 'text_completion',
     created: 123,
@@ -98,7 +98,7 @@ test('reassembleCompletionsEvents carries system_fingerprint and logprobs throug
     system_fingerprint: 'fp_abc',
   };
 
-  const result = await reassembleCompletionsEvents(fromArray([fingerprinted, chunk('', 'stop')]));
+  const result = await reassembleOpenAICompletionsEvents(fromArray([fingerprinted, chunk('', 'stop')]));
 
   assertEquals(result.system_fingerprint, 'fp_abc');
   assertEquals(result.choices[0]?.logprobs, { tokens: ['x'] });

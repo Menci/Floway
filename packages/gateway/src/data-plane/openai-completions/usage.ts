@@ -21,7 +21,7 @@ import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/prot
 // upstream's `usage-exclusive-cached-tokens` flag and `identity` names it in whatever
 // `foldsExclusiveCacheTokens` raises.
 
-export const tokenUsageFromCompletionsUsage = (
+export const tokenUsageFromOpenAICompletionsUsage = (
   usage: unknown,
   serviceTier: string | null | undefined,
   declaredExclusive: boolean,

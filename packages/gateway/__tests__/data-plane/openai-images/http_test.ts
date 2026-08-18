@@ -205,7 +205,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        endpoints: { imagesEdits: {} },
+        endpoints: { openaiImagesEdits: {} },
       }],
     },
     state: null,

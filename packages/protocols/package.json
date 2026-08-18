@@ -5,14 +5,14 @@
   "type": "module",
   "exports": {
     "./common": { "import": "./src/common/index.ts", "types": "./src/common/index.ts" },
-    "./completions": { "import": "./src/completions/index.ts", "types": "./src/completions/index.ts" },
+    "./openai-completions": { "import": "./src/openai-completions/index.ts", "types": "./src/openai-completions/index.ts" },
     "./openai-chat-completions": { "import": "./src/openai-chat-completions/index.ts", "types": "./src/openai-chat-completions/index.ts" },
     "./openai-responses": { "import": "./src/openai-responses/index.ts", "types": "./src/openai-responses/index.ts" },
     "./anthropic-messages": { "import": "./src/anthropic-messages/index.ts", "types": "./src/anthropic-messages/index.ts" },
     "./gemini-generate-content": { "import": "./src/gemini-generate-content/index.ts", "types": "./src/gemini-generate-content/index.ts" },
-    "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" },
-    "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" },
-    "./audio": { "import": "./src/audio/index.ts", "types": "./src/audio/index.ts" },
+    "./openai-embeddings": { "import": "./src/openai-embeddings/index.ts", "types": "./src/openai-embeddings/index.ts" },
+    "./openai-images": { "import": "./src/openai-images/index.ts", "types": "./src/openai-images/index.ts" },
+    "./openai-audio": { "import": "./src/openai-audio/index.ts", "types": "./src/openai-audio/index.ts" },
     "./rerank": { "import": "./src/rerank/index.ts", "types": "./src/rerank/index.ts" }
   },
   "scripts": {

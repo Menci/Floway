@@ -77,15 +77,15 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
   callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),
-  callCompletions: overrides.callCompletions ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
+  callOpenAICompletions: overrides.callOpenAICompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAICompletions was called'))),
   callOpenAIChatCompletions: overrides.callOpenAIChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIChatCompletions was called'))),
   callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubProvider.callOpenAIResponses was called'))),
   callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessages was called'))),
   callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessagesCountTokens was called'))),
-  callEmbeddings: overrides.callEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callEmbeddings was called'))),
-  callImagesGenerations: overrides.callImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callImagesGenerations was called'))),
-  callImagesEdits: overrides.callImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
-  callAudioTranscriptions: overrides.callAudioTranscriptions ?? (() => Promise.reject(new Error('stubProvider.callAudioTranscriptions was called'))),
+  callOpenAIEmbeddings: overrides.callOpenAIEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callOpenAIEmbeddings was called'))),
+  callOpenAIImagesGenerations: overrides.callOpenAIImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesGenerations was called'))),
+  callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesEdits was called'))),
+  callOpenAIAudioTranscriptions: overrides.callOpenAIAudioTranscriptions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIAudioTranscriptions was called'))),
   callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubProvider.callRerank was called'))),
 });
 

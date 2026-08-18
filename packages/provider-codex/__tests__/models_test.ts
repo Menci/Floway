@@ -270,7 +270,7 @@ describe('Codex image capability', () => {
       owned_by: 'openai',
       kind: 'image',
       limits: {},
-      endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       enabledFlags: flags,
       pricing: {
         entries: [{

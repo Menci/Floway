@@ -13,7 +13,7 @@ export type ImagesOperation = 'generations' | 'edits';
 // without a gateway-side reject while named fields keep their narrow
 // types when accessed directly — the `T & Record<string, unknown>`
 // intersection form would widen every typed field to `unknown` on read.
-export interface ImagesGenerationsPayload {
+export interface OpenAIImagesGenerationsPayload {
   model: string;
   prompt: string;
   n?: number;
@@ -34,7 +34,7 @@ export interface ImagesGenerationsPayload {
 // or an uploaded file.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L47542-L47673
-export type ImageEditReference =
+export type OpenAIImageEditReference =
   | { image_url: string; file_id?: never; [key: string]: unknown }
   | { file_id: string; image_url?: never; [key: string]: unknown };
 

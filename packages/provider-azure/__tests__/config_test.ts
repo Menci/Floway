@@ -18,7 +18,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
       },
     ],
   },

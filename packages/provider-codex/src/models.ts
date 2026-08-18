@@ -152,7 +152,7 @@ export const codexImageProviderModel = (enabledFlags: ReadonlySet<FlagId>): Prov
   owned_by: 'openai',
   kind: 'image',
   limits: {},
-  endpoints: { imagesGenerations: {}, imagesEdits: {} },
+  endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
   enabledFlags,
   pricing: GPT_IMAGE_2_PRICING,
 });

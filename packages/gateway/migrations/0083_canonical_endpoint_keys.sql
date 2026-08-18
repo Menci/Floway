@@ -1,7 +1,12 @@
 -- Protocol names are spelled in full everywhere, including the structured
 -- `endpoints` capability map: `chatCompletions` becomes `openaiChatCompletions`,
--- `responses` becomes `openaiResponses`, and `messages` becomes
--- `anthropicMessages`.
+-- `responses` becomes `openaiResponses`, `messages` becomes `anthropicMessages`,
+-- and the five non-chat keys gain their vendor too — `completions`,
+-- `embeddings`, `imagesGenerations`, `imagesEdits` and `audioTranscriptions`
+-- become `openaiCompletions`, `openaiEmbeddings`, `openaiImagesGenerations`,
+-- `openaiImagesEdits` and `openaiAudioTranscriptions`. `rerank` keeps its
+-- spelling: it is a model kind that fans out to six vendor wire protocols, so
+-- no vendor owns it.
 --
 -- The map is authoritative operator configuration for azure and custom
 -- upstreams, stored per model in `config_json.models[].endpoints` and, for
@@ -35,6 +40,11 @@ SET config_json = json_set(
                 WHEN 'chatCompletions' THEN 'openaiChatCompletions'
                 WHEN 'responses' THEN 'openaiResponses'
                 WHEN 'messages' THEN 'anthropicMessages'
+                WHEN 'completions' THEN 'openaiCompletions'
+                WHEN 'embeddings' THEN 'openaiEmbeddings'
+                WHEN 'imagesGenerations' THEN 'openaiImagesGenerations'
+                WHEN 'imagesEdits' THEN 'openaiImagesEdits'
+                WHEN 'audioTranscriptions' THEN 'openaiAudioTranscriptions'
                 ELSE endpoint.key
               END,
               json(endpoint.value)
@@ -61,6 +71,11 @@ SET config_json = json_set(
         WHEN 'chatCompletions' THEN 'openaiChatCompletions'
         WHEN 'responses' THEN 'openaiResponses'
         WHEN 'messages' THEN 'anthropicMessages'
+        WHEN 'completions' THEN 'openaiCompletions'
+        WHEN 'embeddings' THEN 'openaiEmbeddings'
+        WHEN 'imagesGenerations' THEN 'openaiImagesGenerations'
+        WHEN 'imagesEdits' THEN 'openaiImagesEdits'
+        WHEN 'audioTranscriptions' THEN 'openaiAudioTranscriptions'
         ELSE endpoint.key
       END,
       json(endpoint.value)

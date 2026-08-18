@@ -59,10 +59,10 @@ export type {
   UpstreamCallOptions,
 } from './provider.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
-export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
+export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
-export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
-export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
+export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
+export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

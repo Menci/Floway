@@ -1,4 +1,4 @@
-import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, CompletionsUsage } from './index.ts';
+import type { OpenAICompletionsChoice, OpenAICompletionsResult, OpenAICompletionsStreamEvent, OpenAICompletionsUsage } from './index.ts';
 
 // Fold a /v1/completions streaming chunk sequence back into the
 // single-shot envelope used by the dashboard's dump renderer. The
@@ -6,12 +6,12 @@ import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, Comp
 // result, so unknown choice / chunk fields fall on the floor here by
 // design — the forensic view is the raw stream.
 
-export const reassembleCompletionsEvents = async (chunks: AsyncIterable<CompletionsStreamEvent>): Promise<CompletionsResult> => {
+export const reassembleOpenAICompletionsEvents = async (chunks: AsyncIterable<OpenAICompletionsStreamEvent>): Promise<OpenAICompletionsResult> => {
   let id = '';
   let model = '';
   let created = 0;
   let systemFingerprint: string | undefined;
-  let lastUsage: CompletionsUsage | undefined;
+  let lastUsage: OpenAICompletionsUsage | undefined;
 
   interface ChoiceAccumulator {
     text: string;
@@ -46,13 +46,13 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
     }
   }
 
-  const result: CompletionsResult = {
+  const result: OpenAICompletionsResult = {
     id,
     object: 'text_completion',
     created,
     model,
-    choices: [...choices.entries()].sort(([a], [b]) => a - b).map(([index, accumulator]): CompletionsChoice => {
-      const choice: CompletionsChoice = {
+    choices: [...choices.entries()].sort(([a], [b]) => a - b).map(([index, accumulator]): OpenAICompletionsChoice => {
+      const choice: OpenAICompletionsChoice = {
         index,
         text: accumulator.text,
         finish_reason: accumulator.finishReason,

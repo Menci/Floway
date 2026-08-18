@@ -23,7 +23,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 
 // Cache-read / cache-write token counts pulled from an OpenAI-shaped `usage`
 // block. The field name and nesting depth vary by upstream; this helper
-// hides the variants so the per-API extractors (openai-chat-completions, completions)
+// hides the variants so the per-API extractors (openai-chat-completions, openai-completions)
 // see a single normalized pair regardless of which provider answered.
 //
 // Cache-read candidates, in order of preference:
@@ -200,7 +200,7 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
 // charged on the bare metric rather than inventing a split. A present field
 // that is a non-number is treated as a malformed upstream payload (return
 // null) rather than silently coerced.
-export const tokenUsageFromImagesBody = (body: unknown): TokenUsage | null => {
+export const tokenUsageFromOpenAIImagesBody = (body: unknown): TokenUsage | null => {
   if (!body || typeof body !== 'object') return null;
   const { usage } = body as { usage?: unknown };
   if (!usage || typeof usage !== 'object') return null;

@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import {
   ollamaFetchOpenAIChatCompletions,
-  ollamaFetchAudioTranscriptions,
-  ollamaFetchEmbeddings,
+  ollamaFetchOpenAIAudioTranscriptions,
+  ollamaFetchOpenAIEmbeddings,
   ollamaFetchAnthropicMessages,
   ollamaFetchOpenAIResponses,
   ollamaFetchOpenAIResponsesCompact,
@@ -49,8 +49,8 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
       await ollamaFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await ollamaFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await ollamaFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchTags(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchShow(config, { method: 'POST', body: '{"name":"gpt-oss:120b"}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },

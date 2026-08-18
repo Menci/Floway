@@ -316,10 +316,10 @@ function SelectSection() {
       </StateLabel>
     </Row>
     <Row label="dropdown - multiselect">
-      <Dropdown multiselect defaultSelectedOptions={['chat', 'openaiResponses']} placeholder="Endpoints">
-        <Option text="OpenAI Chat Completions" value="chat">OpenAI Chat Completions</Option>
-        <Option text="OpenAI Responses" value="responses">OpenAI Responses</Option>
-        <Option text="Embeddings" value="embeddings">Embeddings</Option>
+      <Dropdown multiselect defaultSelectedOptions={['openaiChatCompletions', 'openaiResponses']} placeholder="Endpoints">
+        <Option text="OpenAI Chat Completions" value="openaiChatCompletions">OpenAI Chat Completions</Option>
+        <Option text="OpenAI Responses" value="openaiResponses">OpenAI Responses</Option>
+        <Option text="OpenAI Embeddings" value="openaiEmbeddings">OpenAI Embeddings</Option>
       </Dropdown>
     </Row>
     <Row label="combobox">
@@ -1034,7 +1034,7 @@ function BadgeTagSection() {
     <Row label="tag - rest, dismissible and disabled">
       <Tag>copilot</Tag>
       <Tag appearance="brand">openaiResponses</Tag>
-      <Tag appearance="outline">embeddings</Tag>
+      <Tag appearance="outline">openaiEmbeddings</Tag>
       <Tag appearance="filled">rerank</Tag>
       <Tag disabled>archived</Tag>
       <Tag dismissible dismissIcon={{ 'aria-label': 'Remove tag' }}>gpt-5-codex</Tag>

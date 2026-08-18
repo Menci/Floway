@@ -35,17 +35,17 @@ export const ollamaFetchAnthropicMessages = (config: OllamaUpstreamConfig, init:
   ollamaFetchInternal(config, '/v1/messages', init, options);
 export const ollamaFetchAnthropicMessagesCountTokens = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/messages/count_tokens', init, options);
-export const ollamaFetchEmbeddings = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAIEmbeddings = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/embeddings', init, options);
-export const ollamaFetchCompletions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAICompletions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/completions', init, options);
 // Stock Ollama mounts this OpenAI-compatible route, parses its multipart body,
 // and adapts the audio into an internal chat request. Capability discovery does
 // not advertise a dedicated transcription bit, so the provider exposes it only
-// through manual `audioTranscriptions` model entries.
+// through manual `openaiAudioTranscriptions` model entries.
 // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
 // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
-export const ollamaFetchAudioTranscriptions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAIAudioTranscriptions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/audio/transcriptions', init, options);
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/tags', init, options);
