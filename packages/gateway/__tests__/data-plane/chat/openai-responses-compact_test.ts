@@ -394,11 +394,16 @@ describe('the responses compaction chain', () => {
   // Copilot marks individual items for caching — while the record that body is built from is
   // deep-frozen. A dial that handed over a shallow copy throws at the first nested write, and
   // this operation would answer 502 where the upstream had said nothing at all.
-  it('hands the provider a body it can write into, children included', async () => {
+  // The record is frozen all the way down, and nothing copies it on the way out — a provider
+  // shapes the body it sends by rebuilding, which every boundary rule here does. A rule that
+  // reached into a child instead would throw, and this is what says so rather than leaving it
+  // to be discovered as a 502 from the one place that cannot explain it.
+  it('hands the provider a body no one can write into', async () => {
+    let refused: unknown;
     resolves([candidate({
       callOpenAIResponses: async (model, body, action) => {
         const item = (body as { input: Record<string, unknown>[] }).input[0]!;
-        item.copilot_cache_control = { type: 'ephemeral' };
+        try { item.copilot_cache_control = { type: 'ephemeral' }; } catch (error) { refused = error; }
         return await compacts({})(model, body, action);
       },
     })]);
@@ -406,5 +411,6 @@ describe('the responses compaction chain', () => {
     const { facts } = await compact();
 
     expect(facts['response.http.status']).toBe(200);
+    expect(refused).toBeInstanceOf(TypeError);
   });
 });

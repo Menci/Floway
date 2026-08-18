@@ -1,25 +1,27 @@
 // What a provider is handed when a stage dials it.
 //
-// The two sides of this boundary disagree about ownership, and both are right. A record's
-// values are frozen — a fact that could be edited after the event is not a fact — while a
-// provider's interceptors shape the body they are given in place, down to nested nodes:
-// Copilot writes `copilot_cache_control` onto individual messages, and its initiator rule
-// writes into a nested field of an Anthropic Messages payload.
+// The record's own children travel, by identity. One object is built here, and only because
+// this is where the addressed model is stamped and then dropped; everything under it is the
+// record's, frozen — a fact that could be edited after the event is not a fact — and a provider
+// shapes the body it sends by rebuilding rather than by writing into what it was given. So both
+// sides of this boundary agree and there is nothing to defend against.
 //
-// Spreading a frozen fact produces a fresh top level over frozen children, so those writes
-// throw — as a 502 carrying `Cannot add property …, object is not extensible`, raised at the
-// point in the stack least able to explain it. What crosses this boundary is therefore a copy
-// the provider owns outright, children included.
+// It was not always so, and the shape of the failure is worth keeping: three Copilot rules
+// wrote one level down, into a message or a content block, which against a frozen record threw
+// `Cannot add property …, object is not extensible` — as a 502, from the point in the stack
+// least able to explain it. A deep copy here absorbed that, at the cost of one pass over every
+// payload on every dial, and at the larger cost of making immutability something the gateway
+// worked around. The three rules rebuild now, and so does every alias overlay: an overlay that
+// wrote in place would be safe only for as long as this function happened to have rebuilt the
+// level it writes to, which is the same trap one level up.
 //
-// The copy costs one pass over the payload, beside the serialization the dial performs
-// immediately afterwards. What it buys is that a provider may keep being written the way every
-// provider here is already written.
+// So what is left is only the three things every wire was otherwise writing by hand.
 
 import type { ModelCandidate } from '@floway-dev/provider';
 
 /**
- * The body for this attempt: the record's request, copied for the provider, addressed to the
- * model the candidate resolved, with the alias' own rules applied over it.
+ * The body for this attempt: the record's request, addressed to the model the candidate
+ * resolved, with the alias' own rules applied over it.
  *
  * The id the client addressed does not travel. An alias is a gateway concept — the provider
  * re-stamps whatever it resolved upstream — so the key is dropped rather than forwarded, and
@@ -28,10 +30,10 @@ import type { ModelCandidate } from '@floway-dev/provider';
 export const bodyForAttempt = <T extends { readonly model: string }>(
   recorded: T,
   candidate: ModelCandidate,
-  applyRules: (body: T, rules: NonNullable<ModelCandidate['rules']>) => void,
+  applyRules: (body: T, rules: NonNullable<ModelCandidate['rules']>) => T,
 ): Omit<T, 'model'> => {
-  const payload = { ...structuredClone(recorded), model: candidate.model.id } as T;
-  if (candidate.rules !== undefined) applyRules(payload, candidate.rules);
+  const addressed = { ...recorded, model: candidate.model.id } as T;
+  const payload = candidate.rules === undefined ? addressed : applyRules(addressed, candidate.rules);
   const { model: _addressed, ...body } = payload;
   return body;
 };
