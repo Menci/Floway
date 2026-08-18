@@ -203,7 +203,7 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
       upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
     },
-    'responses.reasoning.encrypted_content',
+    'openai-responses.reasoning.encrypted_content',
   );
   const unwrap = vi.spyOn(ctx.affinity.codec, 'unwrap');
   const getStoredItem = vi.spyOn(store, 'getItemById');
@@ -579,7 +579,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
       upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
     },
-    'responses.reasoning.encrypted_content',
+    'openai-responses.reasoning.encrypted_content',
     { syntheticItem: true },
   );
 

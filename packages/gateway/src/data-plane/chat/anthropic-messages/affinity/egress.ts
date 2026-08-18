@@ -37,7 +37,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
         index: 0,
         content_block: {
           type: 'redacted_thinking',
-          data: await options.codec.wrap(undefined, options.affinity, 'messages.redacted_thinking.data'),
+          data: await options.codec.wrap(undefined, options.affinity, 'anthropic-messages.redacted_thinking.data'),
         },
       },
       { type: 'content_block_stop', index: 0 },
@@ -55,7 +55,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
         index: index + indexOffset,
         delta: {
           type: 'signature_delta',
-          signature: await options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature'),
+          signature: await options.codec.wrap(undefined, options.affinity, 'anthropic-messages.thinking.signature'),
         },
       };
     }
@@ -68,7 +68,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
       delta: {
         ...deltaExtras,
         type: 'signature_delta',
-        signature: await options.codec.wrap(signature, options.affinity, 'messages.thinking.signature'),
+        signature: await options.codec.wrap(signature, options.affinity, 'anthropic-messages.thinking.signature'),
       },
     };
   };
@@ -109,7 +109,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
         index,
         content_block: {
           ...event.content_block,
-          data: await options.codec.wrap(event.content_block.data, options.affinity, 'messages.redacted_thinking.data'),
+          data: await options.codec.wrap(event.content_block.data, options.affinity, 'anthropic-messages.redacted_thinking.data'),
         },
       });
       continue;
@@ -125,7 +125,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
           index: event.index + indexOffset,
           delta: {
             ...event.delta,
-            signature: await options.codec.wrap(event.delta.signature, options.affinity, 'messages.thinking.signature'),
+            signature: await options.codec.wrap(event.delta.signature, options.affinity, 'anthropic-messages.thinking.signature'),
           },
         });
       }

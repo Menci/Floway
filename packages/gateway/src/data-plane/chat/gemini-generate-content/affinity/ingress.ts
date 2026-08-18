@@ -21,7 +21,7 @@ export const analyzeGeminiGenerateContentAffinity = async (
     if (content.role !== 'model') continue;
     for (const [partIndex, part] of content.parts.entries()) {
       if (typeof part.thoughtSignature !== 'string') continue;
-      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini.part.thoughtSignature') });
+      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini-generate-content.part.thoughtSignature') });
     }
   }
 

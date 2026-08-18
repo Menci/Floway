@@ -9,7 +9,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction_summary' ? 'compaction' : itemType;
-const carrierDomain = (itemType: string, slot: string): string => `responses.${canonicalItemType(itemType)}.${slot}`;
+const carrierDomain = (itemType: string, slot: string): string => `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();

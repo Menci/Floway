@@ -17,9 +17,9 @@ export const analyzeAnthropicMessagesAffinity = async (
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const [blockIndex, block] of message.content.entries()) {
       if (block.type === 'thinking' && typeof block.signature === 'string') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, 'messages.thinking.signature') });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, 'anthropic-messages.thinking.signature') });
       } else if (block.type === 'redacted_thinking') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, 'messages.redacted_thinking.data') });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, 'anthropic-messages.redacted_thinking.data') });
       }
     }
   }

@@ -114,7 +114,7 @@ const zhHansCN = {
         emptyResponse: '（空响应）',
         noKey: '请先创建 API 密钥，再使用 Playground',
         noKeyOption: '没有 API 密钥',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'Responses', openaiChatCompletions: 'Chat Completions', anthropicMessages: 'Messages' },
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         edit: { title: '编辑消息', message: '消息', imageUrl: '图片 URL' },

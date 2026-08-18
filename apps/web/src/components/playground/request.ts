@@ -3,7 +3,7 @@ import type { ControlPlaneModel } from '../../api/types';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
 
-export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
+export type PlaygroundApi = 'openaiResponses' | 'openaiChatCompletions' | 'anthropicMessages';
 
 export interface PlaygroundMessage {
   id: string;
@@ -12,7 +12,7 @@ export interface PlaygroundMessage {
   imageUrl?: string;
 }
 
-export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
+export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiChatCompletions', 'anthropicMessages'];
 
 export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
@@ -27,9 +27,9 @@ export const defaultMaxOutputTokens = (model: ControlPlaneModel | null): number 
 };
 
 const reservedFields: Record<PlaygroundApi, readonly string[]> = {
-  chatCompletions: ['model', 'messages', 'stream'],
-  responses: ['model', 'input', 'instructions', 'stream'],
-  messages: ['model', 'messages', 'system', 'stream'],
+  openaiChatCompletions: ['model', 'messages', 'stream'],
+  openaiResponses: ['model', 'input', 'instructions', 'stream'],
+  anthropicMessages: ['model', 'messages', 'system', 'stream'],
 };
 
 export type CustomJsonResult =
@@ -125,9 +125,9 @@ const normalizeOpenAIResponsesBody = (body: BodyInit | null | undefined): BodyIn
 
 export const createWireFetch = (custom: Record<string, unknown>, api?: PlaygroundApi): typeof fetch => {
   return async (input, init) => {
-    const normalized = api === 'responses' ? normalizeOpenAIResponsesBody(init?.body) : init?.body;
+    const normalized = api === 'openaiResponses' ? normalizeOpenAIResponsesBody(init?.body) : init?.body;
     const response = await fetch(input, { ...init, body: mergeWireBody(normalized, custom) });
-    return api === 'messages' ? normalizeAnthropicMessagesStream(response) : response;
+    return api === 'anthropicMessages' ? normalizeAnthropicMessagesStream(response) : response;
   };
 };
 
@@ -136,7 +136,7 @@ export const generationOptions = (
   reasoningEffort: string | undefined,
   anthropicMessagesMaxTokens = ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
 ): Record<string, unknown> => {
-  if (api === 'messages') {
+  if (api === 'anthropicMessages') {
     return {
       max_tokens: anthropicMessagesMaxTokens,
       ...(reasoningEffort && {
@@ -146,7 +146,7 @@ export const generationOptions = (
     };
   }
 
-  if (api === 'responses') {
+  if (api === 'openaiResponses') {
     return { ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }) };
   }
 

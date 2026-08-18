@@ -166,7 +166,7 @@ const wrapGeminiGenerateContentEventAffinity = async (
 
     for (const part of candidate.content.parts) {
       if (part.thoughtSignature === undefined) continue;
-      part.thoughtSignature = await options.codec.wrap(part.thoughtSignature, options.affinity, 'gemini.part.thoughtSignature');
+      part.thoughtSignature = await options.codec.wrap(part.thoughtSignature, options.affinity, 'gemini-generate-content.part.thoughtSignature');
     }
 
     if (anchoredCandidates.has(candidate.index)) continue;
@@ -175,7 +175,7 @@ const wrapGeminiGenerateContentEventAffinity = async (
     } else if (firstContentIndex !== undefined && firstElementClosed) {
       candidate.content.parts[firstContentIndex] = {
         ...candidate.content.parts[firstContentIndex],
-        thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini.part.thoughtSignature'),
+        thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini-generate-content.part.thoughtSignature'),
       };
       anchoredCandidates.add(candidate.index);
     } else if (candidate.finishReason !== undefined) {
@@ -183,7 +183,7 @@ const wrapGeminiGenerateContentEventAffinity = async (
         thoughtSignature: await options.codec.wrap(
           undefined,
           options.affinity,
-          'gemini.part.thoughtSignature',
+          'gemini-generate-content.part.thoughtSignature',
         ),
       });
       anchoredCandidates.add(candidate.index);

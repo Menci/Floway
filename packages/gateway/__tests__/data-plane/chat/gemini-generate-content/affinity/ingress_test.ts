@@ -26,7 +26,7 @@ const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 test('removes originless affinity by protocol shape and preserves visible content and foreign signatures', async () => {
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini.part.thoughtSignature');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini-generate-content.part.thoughtSignature');
   const prepared = await analyzeGeminiGenerateContentAffinity({
     contents: [{
       role: 'model',
@@ -50,7 +50,7 @@ test.each([
   { text: '' },
   { thought: true },
 ])('removes metadata-only remnants after stripping an incompatible owned signature', async metadata => {
-  const owned = await codec.wrap('natural', targetFor(candidateA), 'gemini.part.thoughtSignature');
+  const owned = await codec.wrap('natural', targetFor(candidateA), 'gemini-generate-content.part.thoughtSignature');
   const prepared = await analyzeGeminiGenerateContentAffinity({
     contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
   }, codec);

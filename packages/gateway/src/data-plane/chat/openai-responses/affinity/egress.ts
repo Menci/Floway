@@ -6,7 +6,7 @@ const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${canonicalItemType(itemType)}.${slot}`;
+  `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const opaqueSlots = (item: OpenAIResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];

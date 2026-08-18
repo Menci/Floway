@@ -44,7 +44,7 @@ const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
 
 const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${canonicalItemType(itemType)}.${slot}`;
+  `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
 const itemInheritsRequiredTarget = (item: OpenAIResponsesInputItem): boolean =>
   ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);

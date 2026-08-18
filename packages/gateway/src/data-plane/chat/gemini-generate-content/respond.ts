@@ -136,8 +136,10 @@ const geminiGenerateContentErrorResponse = (status: number, message: string, deb
 const geminiGenerateContentApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiGenerateContentErrorResponse(error.status, apiErrorMessage(error));
 
 const geminiGenerateContentCollectErrorResponse = (error: unknown): Response => {
-  const geminiError = caughtGeminiGenerateContentErrorEvent(error);
-  return geminiError ? Response.json(geminiError, { status: googleRpcHttpStatusCode(geminiError.error.code) }) : geminiGenerateContentInternalRpcErrorResponse(502, error);
+  const geminiGenerateContentError = caughtGeminiGenerateContentErrorEvent(error);
+  return geminiGenerateContentError
+    ? Response.json(geminiGenerateContentError, { status: googleRpcHttpStatusCode(geminiGenerateContentError.error.code) })
+    : geminiGenerateContentInternalRpcErrorResponse(502, error);
 };
 
 // Recognizing / extracting an upstream-shaped Gemini error from a raw body or a

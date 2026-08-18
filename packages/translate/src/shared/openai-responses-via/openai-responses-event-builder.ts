@@ -1,13 +1,13 @@
-import type * as Responses from '@floway-dev/protocols/openai-responses';
+import type * as OpenAIResponses from '@floway-dev/protocols/openai-responses';
 
-type OpenAIResponsesOutputContentBlock = Responses.OpenAIResponsesOutputContentBlock;
-type OpenAIResponsesOutputCustomToolCall = Responses.OpenAIResponsesOutputCustomToolCall;
-type OpenAIResponsesOutputFunctionCall = Responses.OpenAIResponsesOutputFunctionCall;
-type OpenAIResponsesOutputItem = Responses.OpenAIResponsesOutputItem;
-type OpenAIResponsesOutputMessage = Responses.OpenAIResponsesOutputMessage;
-type OpenAIResponsesOutputReasoning = Responses.OpenAIResponsesOutputReasoning;
-type OpenAIResponsesResult = Responses.OpenAIResponsesResult;
-type OpenAIResponsesStreamEvent = Responses.OpenAIResponsesStreamEvent;
+type OpenAIResponsesOutputContentBlock = OpenAIResponses.OpenAIResponsesOutputContentBlock;
+type OpenAIResponsesOutputCustomToolCall = OpenAIResponses.OpenAIResponsesOutputCustomToolCall;
+type OpenAIResponsesOutputFunctionCall = OpenAIResponses.OpenAIResponsesOutputFunctionCall;
+type OpenAIResponsesOutputItem = OpenAIResponses.OpenAIResponsesOutputItem;
+type OpenAIResponsesOutputMessage = OpenAIResponses.OpenAIResponsesOutputMessage;
+type OpenAIResponsesOutputReasoning = OpenAIResponses.OpenAIResponsesOutputReasoning;
+type OpenAIResponsesResult = OpenAIResponses.OpenAIResponsesResult;
+type OpenAIResponsesStreamEvent = OpenAIResponses.OpenAIResponsesStreamEvent;
 
 export interface OpenAIResponsesSequenceState {
   sequenceNumber: number;
@@ -17,7 +17,7 @@ type OutputTextPart = Extract<OpenAIResponsesOutputContentBlock, { type: 'output
 type RefusalPart = Extract<OpenAIResponsesOutputContentBlock, { type: 'refusal' }>;
 type OpenAIResponsesUsage = NonNullable<OpenAIResponsesResult['usage']>;
 
-export const textPart = (text: string, annotations: Responses.OpenAIResponsesAnnotation[]): OutputTextPart => ({
+export const textPart = (text: string, annotations: OpenAIResponses.OpenAIResponsesAnnotation[]): OutputTextPart => ({
   type: 'output_text',
   text,
   annotations,
@@ -187,7 +187,7 @@ export const terminal = (state: OpenAIResponsesSequenceState, response: OpenAIRe
   case 'queued':
   case 'in_progress':
   case 'cancelled':
-    throw new TypeError(`Cannot emit a terminal OpenAI Responses event for status '${response.status}'`);
+    throw new TypeError(`Cannot emit a terminal OpenAI OpenAIResponses event for status '${response.status}'`);
   }
   return seq(state, [
     {

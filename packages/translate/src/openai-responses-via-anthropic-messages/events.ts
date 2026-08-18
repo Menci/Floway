@@ -1,5 +1,5 @@
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
-import * as responses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
+import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { anthropicMessagesRefusalOpenAIResponsesError } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
@@ -43,7 +43,7 @@ type OutputBlockInfo =
     itemId: string;
     thinkingText: string;
     // Genuine upstream reasoning signature, captured from `signature_delta`.
-    // Carried verbatim as the OpenAI Responses item's `encrypted_content` so it
+    // Carried verbatim as the OpenAI OpenAIResponses item's `encrypted_content` so it
     // round-trips back to the Anthropic Messages upstream's next-turn validation.
     encryptedContent?: string;
   }
@@ -54,7 +54,7 @@ type OutputBlockInfo =
     blockText: string;
     // Citations accumulated in emission order, then carried on the completed
     // content part. `annotation_index` is scoped to one content part and
-    // OpenAI Responses targets always use content_index=0 for our single-part
+    // OpenAI OpenAIResponses targets always use content_index=0 for our single-part
     // assistant message, so this array's length at push time is that index.
     annotations: OpenAIResponsesAnnotation[];
   }
@@ -100,7 +100,7 @@ const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, statu
   const thinkingTokens = state.usage.output_tokens_details?.thinking_tokens;
   const serviceTier = openAIServiceTierFromAnthropicMessagesUsage(state.usage);
 
-  return responses.result({
+  return openaiResponses.result({
     id: state.responseId,
     model: state.model,
     output: state.completedItems,
@@ -123,11 +123,11 @@ const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, statu
             },
           }
         : {}),
-      // Anthropic's `thinking_tokens` and OpenAI Responses' `reasoning_tokens` are the
+      // Anthropic's `thinking_tokens` and OpenAI OpenAIResponses' `reasoning_tokens` are the
       // same quantity: the reasoning share of the inclusive output-token total.
       // As with the input breakdown above, an upstream that reports none is
       // translated to absence rather than to a synthesized zero.
-      // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py#L21-L47
+      // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/openaiResponses/response_usage.py#L21-L47
       ...(thinkingTokens === undefined ? {} : { output_tokens_details: { reasoning_tokens: thinkingTokens } }),
     },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
@@ -141,7 +141,7 @@ const handleMessageStart = (event: AnthropicMessagesMessageStartEvent, state: An
 
   const response = buildResult(state, 'in_progress');
 
-  return responses.started(state, response);
+  return openaiResponses.started(state, response);
 };
 
 const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent, state: AnthropicMessagesToOpenAIResponsesStreamState): OpenAIResponsesStreamEvent[] => {
@@ -156,11 +156,11 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
       thinkingText: '',
     });
 
-    return responses.reasoningStart(state, outputIndex, itemId);
+    return openaiResponses.reasoningStart(state, outputIndex, itemId);
   }
   case 'redacted_thinking': {
     // A redacted upstream reasoning block carries an opaque signature in
-    // `data` and no readable text. Surface it as a OpenAI Responses reasoning item
+    // `data` and no readable text. Surface it as a OpenAI OpenAIResponses reasoning item
     // whose `encrypted_content` round-trips that opaque blob.
     const outputIndex = state.outputIndex++;
     const itemId = createRandomOpenAIResponsesItemId('reasoning');
@@ -172,7 +172,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
       encryptedContent: event.content_block.data,
     });
 
-    return responses.reasoningStart(state, outputIndex, itemId);
+    return openaiResponses.reasoningStart(state, outputIndex, itemId);
   }
   case 'text': {
     const outputIndex = state.outputIndex++;
@@ -185,7 +185,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
       annotations: [],
     });
 
-    return responses.textStart(state, outputIndex, itemId);
+    return openaiResponses.textStart(state, outputIndex, itemId);
   }
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
@@ -200,7 +200,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
         wrappedArguments: '',
       });
 
-      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
+      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
     }
 
     const itemId = createRandomOpenAIResponsesItemId('function_call');
@@ -216,7 +216,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
+    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
   }
   case 'fallback':
     state.model = event.content_block.to.model;
@@ -228,14 +228,14 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
 
 // Anthropic emits `citations_delta` against a text content block when the
 // model cites a structured `search_result` / `web_search_result` tool
-// result. We surface these as OpenAI Responses
+// result. We surface these as OpenAI OpenAIResponses
 // `response.output_text.annotation.added` events with inline
 // `url_citation` annotations.
 //
 // Offset approximation: Anthropic gives `start_block_index` /
 // `end_block_index` referring to indices inside our
 // `AnthropicMessagesSearchResultBlock.content` (the cited source's text, not the
-// model's reply). OpenAI Responses url_citation indices are character offsets
+// model's reply). OpenAI OpenAIResponses url_citation indices are character offsets
 // inside the model's reply. We approximate using cited_text length:
 // `end_index = blockText.length` (running char count emitted so far on
 // this content part), `start_index = max(0, end_index - cited_text.length)`.
@@ -273,7 +273,7 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
 
   info.annotations.push(annotation);
 
-  return responses.seq(state, [
+  return openaiResponses.seq(state, [
     {
       type: 'response.output_text.annotation.added',
       output_index: info.outputIndex,
@@ -293,10 +293,10 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
   case 'thinking':
     if (event.delta.type === 'thinking_delta') {
       info.thinkingText += event.delta.thinking;
-      return responses.reasoningDelta(state, info.outputIndex, info.itemId, event.delta.thinking);
+      return openaiResponses.reasoningDelta(state, info.outputIndex, info.itemId, event.delta.thinking);
     }
     if (event.delta.type === 'signature_delta') {
-      // The upstream owns this signature; carry it verbatim as the OpenAI Responses
+      // The upstream owns this signature; carry it verbatim as the OpenAI OpenAIResponses
       // item's `encrypted_content` (no gateway envelope) so the next turn's
       // upstream validation still passes.
       info.encryptedContent = event.delta.signature;
@@ -309,11 +309,11 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
     if (event.delta.type !== 'text_delta') return [];
     info.blockText += event.delta.text;
     state.accumulatedText += event.delta.text;
-    return responses.textDelta(state, info.outputIndex, info.itemId, event.delta.text);
+    return openaiResponses.textDelta(state, info.outputIndex, info.itemId, event.delta.text);
   case 'tool_use':
     if (event.delta.type !== 'input_json_delta') return [];
     info.toolArguments += event.delta.partial_json;
-    return responses.argumentsDelta(state, info.outputIndex, info.itemId, event.delta.partial_json);
+    return openaiResponses.argumentsDelta(state, info.outputIndex, info.itemId, event.delta.partial_json);
   case 'custom_tool_use':
     // Buffer the wrapped JSON argument blob without emitting a delta; we need
     // the complete value to extract the freeform `input` field at stop time.
@@ -333,36 +333,36 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
   if (info.type === 'thinking') {
     const summaryText = info.thinkingText;
     const itemId = info.itemId;
-    const item = responses.reasoningItem(itemId, summaryText, info.encryptedContent);
+    const item = openaiResponses.reasoningItem(itemId, summaryText, info.encryptedContent);
 
     state.completedItems.push(item);
 
-    return responses.reasoningDone(state, info.outputIndex, itemId, summaryText, item);
+    return openaiResponses.reasoningDone(state, info.outputIndex, itemId, summaryText, item);
   }
 
   if (info.type === 'text') {
-    const part = responses.textPart(info.blockText, info.annotations);
-    const item = responses.messageItem(info.itemId, 'completed', part);
+    const part = openaiResponses.textPart(info.blockText, info.annotations);
+    const item = openaiResponses.messageItem(info.itemId, 'completed', part);
 
     state.completedItems.push(item);
 
-    return responses.textDone(state, info.outputIndex, info.itemId, part, item);
+    return openaiResponses.textDone(state, info.outputIndex, info.itemId, part, item);
   }
 
   if (info.type === 'custom_tool_use') {
     const input = unwrapCustomToolInput(info.wrappedArguments);
-    const item = responses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
+    const item = openaiResponses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
 
     state.completedItems.push(item);
 
-    return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
+    return openaiResponses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
+  const item = openaiResponses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
 
   state.completedItems.push(item);
 
-  return responses.functionCallDone(state, info.outputIndex, info.itemId, info.toolArguments, item);
+  return openaiResponses.functionCallDone(state, info.outputIndex, info.itemId, info.toolArguments, item);
 };
 
 export const createAnthropicMessagesToOpenAIResponsesStreamState = (
@@ -411,9 +411,9 @@ export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: An
       : state.stopReason === 'max_tokens' ? 'incomplete' : 'completed';
     const response = buildResult(state, status);
 
-    return responses.terminal(state, response);
+    return openaiResponses.terminal(state, response);
   }
-  // Anthropic's `ping` is a transport keep-alive with no OpenAI Responses counterpart:
+  // Anthropic's `ping` is a transport keep-alive with no OpenAI OpenAIResponses counterpart:
   // every spec event is either a delta event or a state-machine event, and a
   // `ping` is neither.
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459
@@ -426,7 +426,7 @@ export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: An
   case 'ping':
     return [];
   case 'error':
-    return responses.seq(state, [
+    return openaiResponses.seq(state, [
       {
         type: 'error',
         message: event.error.message,

@@ -25,8 +25,8 @@ const targetFor = (value: ModelCandidate): AffinityTarget => ({
 test('removes synthetic blocks and strips incompatible signatures without hiding thinking', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
-  const signature = await codec.wrap('signature', targetFor(candidateA), 'messages.thinking.signature');
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
+  const signature = await codec.wrap('signature', targetFor(candidateA), 'anthropic-messages.thinking.signature');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
   const prepared = await analyzeAnthropicMessagesAffinity({
     model: 'model',
     max_tokens: 100,
@@ -59,8 +59,8 @@ test('removes synthetic blocks and strips incompatible signatures without hiding
 test('removes assistant messages emptied by affinity block stripping', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
-  const natural = await codec.wrap('natural', targetFor(candidateA), 'messages.redacted_thinking.data');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
+  const natural = await codec.wrap('natural', targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
 
   const syntheticPrepared = await analyzeAnthropicMessagesAffinity({
     model: 'model',

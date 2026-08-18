@@ -124,7 +124,7 @@ const en = {
         emptyResponse: '(empty response)',
         noKey: 'Create an API key before using the playground',
         noKeyOption: 'No API Keys',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'Responses', openaiChatCompletions: 'Chat Completions', anthropicMessages: 'Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
         edit: { title: 'Edit message', message: 'Message', imageUrl: 'Image URL' },

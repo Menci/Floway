@@ -11,9 +11,9 @@ import { catalogModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
   it('rejects invalid, non-object and reserved fields', () => {
-    expect(parseCustomJson('responses', '{').error).toBe('invalid');
-    expect(parseCustomJson('messages', '[]').error).toBe('object');
-    expect(parseCustomJson('chatCompletions', '{"stream":false}')).toMatchObject({ error: 'reserved', fields: ['stream'] });
+    expect(parseCustomJson('openaiResponses', '{').error).toBe('invalid');
+    expect(parseCustomJson('anthropicMessages', '[]').error).toBe('object');
+    expect(parseCustomJson('openaiChatCompletions', '{"stream":false}')).toMatchObject({ error: 'reserved', fields: ['stream'] });
   });
 
   it('overrides generated wire fields', () => {
@@ -24,19 +24,19 @@ describe('custom JSON', () => {
 
 describe('generation and capabilities', () => {
   it('names reasoning effort the way each protocol names it on the wire', () => {
-    expect(generationOptions('responses', 'high')).toEqual({ reasoning: { effort: 'high' } });
-    expect(generationOptions('chatCompletions', 'high')).toEqual({ reasoning_effort: 'high' });
-    expect(generationOptions('messages', 'max', 100))
+    expect(generationOptions('openaiResponses', 'high')).toEqual({ reasoning: { effort: 'high' } });
+    expect(generationOptions('openaiChatCompletions', 'high')).toEqual({ reasoning_effort: 'high' });
+    expect(generationOptions('anthropicMessages', 'max', 100))
       .toEqual({ max_tokens: 100, thinking: { type: 'enabled' }, output_config: { effort: 'max' } });
   });
 
   it('always caps Anthropic Messages output, which requires the field on the wire', () => {
-    expect(generationOptions('messages', undefined, 2048)).toEqual({ max_tokens: 2048 });
-    expect(generationOptions('responses', undefined)).toEqual({});
+    expect(generationOptions('anthropicMessages', undefined, 2048)).toEqual({ max_tokens: 2048 });
+    expect(generationOptions('openaiResponses', undefined)).toEqual({});
   });
 
   it('forwards an unknown reasoning effort rather than gating it', () => {
-    expect(generationOptions('chatCompletions', 'ludicrous')).toEqual({ reasoning_effort: 'ludicrous' });
+    expect(generationOptions('openaiChatCompletions', 'ludicrous')).toEqual({ reasoning_effort: 'ludicrous' });
   });
 
   it('reads image and output limits conservatively', () => {
