@@ -1,0 +1,605 @@
+import { beforeEach, test, vi } from 'vitest';
+
+import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
+import { initRepo } from '../../../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
+import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
+import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
+
+// Dirty integration harness: mock the model registry so the image backend is a
+// pair of in-test stubs, then drive the whole shim (function-tool rewrite,
+// ReAct loop, dispatch, streaming relay, output feedback) over a scripted
+// upstream. The stubs record every backend call so a test can assert what the
+// shim actually forwarded — most importantly that an image generated in turn 1
+// is re-collected as an edit source in turn 2.
+
+interface BackendStub {
+  generationsCalls: Record<string, unknown>[];
+  editsRequests: OpenAIImagesEditsRequest[];
+  nextGenerations: Response[];
+  nextEdits: Response[];
+  // When set, the next `enumerateModelCandidates` call returns this
+  // shape verbatim instead of the default single in-test candidate; lets
+  // a test drive `resolveImageCandidate`'s failure branches.
+  nextResolutionOverride: { candidates: readonly unknown[]; sawModel: boolean; failedUpstreams: readonly string[] } | null;
+}
+
+// Hoisted so the vi.mock factory below can close over it; tests mutate the
+// `next*` queues and read back the recorded calls.
+const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsRequests: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
+
+// Assigned per test in beforeEach and captured so the perf-attribution test
+// can read `repo.performance.listAll()` after the shim completes.
+let repo: InMemoryRepo;
+
+const defaultCandidates = vi.hoisted(() => () => [{
+  provider: {
+    upstreamId: 'u',
+    kind: 'custom',
+    name: 'mock-image',
+    disabledPublicModelIds: [],
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+    instance: {
+      callOpenAIImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
+        stub.generationsCalls.push(body);
+        const response = stub.nextGenerations.shift();
+        if (response === undefined) throw new Error('test did not enqueue a generations response');
+        return { response, modelKey: 'gpt-image-2' };
+      },
+      callOpenAIImagesEdits: async (_model: unknown, request: OpenAIImagesEditsRequest) => {
+        stub.editsRequests.push(request);
+        const response = stub.nextEdits.shift();
+        if (response === undefined) throw new Error('test did not enqueue an edits response');
+        return { response, modelKey: 'gpt-image-2' };
+      },
+    },
+  },
+  model: {
+    id: 'gpt-image-2',
+    endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
+    providerModels: {
+      u: {
+        id: 'gpt-image-2', limits: {}, kind: 'image',
+        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
+        enabledFlags: new Set<FlagId>(),
+      },
+    },
+  },
+  fetcher: (request: Request) => fetch(request),
+}]);
+
+vi.mock('../../../../../../src/data-plane/providers/resolution.ts', () => ({
+  enumerateModelCandidates: vi.fn(async () => {
+    const override = stub.nextResolutionOverride;
+    if (override !== null) {
+      stub.nextResolutionOverride = null;
+      return override;
+    }
+    return { candidates: defaultCandidates(), sawModel: true, failedUpstreams: [] };
+  }),
+}));
+
+// Imported AFTER vi.mock so the mocked registry is in effect.
+const { withOpenAIResponsesServerToolShim } = await import('../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts');
+const { imageGenerationServerTool } = await import('../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts');
+
+const shim = withOpenAIResponsesServerToolShim([imageGenerationServerTool]);
+
+const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', pricing: null };
+
+const emptyResult = (status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
+  id: 'upstream', object: 'response', model: 'orchestrator', output: [], output_text: '', status, error: null, incomplete_details: null,
+});
+
+const jsonResponse = (b64: string): Response =>
+  new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+
+const REMOTE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
+const remotePngResponse = (): Response => new Response(Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+
+const sseResponse = (lines: string[]): Response =>
+  new Response(lines.map(l => `data: ${l}\n\n`).join(''), { status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }) });
+
+const rateLimitResponse = (retryAfterMs: number | null): Response => {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (retryAfterMs !== null) headers['retry-after-ms'] = String(retryAfterMs);
+  return new Response(
+    JSON.stringify({ error: { code: 'RateLimitReached', type: 'image_generation_error', message: 'rate limited' } }),
+    { status: 429, headers },
+  );
+};
+
+// One scripted upstream turn: the orchestrator calls image_generation with the
+// given prompt, then the upstream completes.
+const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<OpenAIResponsesStreamEvent>[] => {
+  const args = JSON.stringify({ prompt });
+  return [
+    eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
+    eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: '', status: 'in_progress' } }),
+    eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: args, status: 'completed' } }),
+    eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
+  ] as ProtocolFrame<OpenAIResponsesStreamEvent>[];
+};
+
+const messageTurn = (text: string): ProtocolFrame<OpenAIResponsesStreamEvent>[] => [
+  eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
+  eventFrame({ type: 'response.output_item.added', output_index: 0, item: { type: 'message', role: 'assistant', content: [], status: 'in_progress' } }),
+  eventFrame({ type: 'response.output_item.done', output_index: 0, item: { type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] } }),
+  eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
+] as ProtocolFrame<OpenAIResponsesStreamEvent>[];
+
+const withResponseEcho = (
+  frames: ProtocolFrame<OpenAIResponsesStreamEvent>[],
+  tools: OpenAIResponsesTool[],
+  toolChoice?: OpenAIResponsesToolChoice,
+): ProtocolFrame<OpenAIResponsesStreamEvent>[] => frames.map(frame => {
+  if (frame.type !== 'event' || (frame.event.type !== 'response.created' && frame.event.type !== 'response.completed')) return frame;
+  return eventFrame({
+    ...frame.event,
+    response: {
+      ...frame.event.response,
+      tools,
+      ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
+    },
+  } as OpenAIResponsesStreamEvent);
+});
+
+const scriptedRun = (turns: ProtocolFrame<OpenAIResponsesStreamEvent>[][]) => {
+  let i = 0;
+  return async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
+    if (i >= turns.length) throw new Error(`unexpected run() call ${i + 1}; only ${turns.length} scripted`);
+    const frames = turns[i++];
+    const events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> = (async function* () { for (const f of frames) yield f; })();
+    return { type: 'events', events, modelIdentity: MODEL_IDENTITY } as EventResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
+  };
+};
+
+const makeCtx = (
+  input: unknown[],
+  action: 'generate' | 'edit' | 'auto' = 'auto',
+  extraTool: Record<string, unknown> = {},
+  toolChoice?: OpenAIResponsesToolChoice,
+): OpenAIResponsesInvocation => ({
+  candidate: stubModelCandidate({
+    enabledFlags: new Set(['responses-image-generation-shim']),
+    model: { id: 'm', endpoints: { openaiResponses: {} } },
+  }),
+  targetApi: 'openaiResponses',
+  payload: {
+    model: 'orchestrator',
+    input,
+    tools: [{ type: 'image_generation', action, ...extraTool }],
+    ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
+  } as never,
+  headers: new Headers(),
+  action: 'generate',
+});
+const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
+
+const drain = async (result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>): Promise<OpenAIResponsesStreamEvent[]> => {
+  if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);
+  const out: OpenAIResponsesStreamEvent[] = [];
+  for await (const f of result.events) if (f.type === 'event') out.push(f.event);
+  return out;
+};
+
+beforeEach(async () => {
+  repo = new InMemoryRepo();
+  // resolveImageCandidate still calls createPerRequestFetcher to satisfy the
+  // production code path. Seed the in-memory repo with the mocked candidate's
+  // upstream id so the fetcher mapper resolves it instead of throwing
+  // "unknown upstream id: u".
+  await repo.upstreams.save({
+    id: 'u',
+    kind: 'custom',
+    name: 'mock-image',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    modelsCache: null,
+    hue: 210,
+    config: {
+      baseUrl: 'https://unused.example.com',
+      authStyle: 'bearer',
+      ingressHeadersRules: [],
+      apiKey: 'unused',
+      endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
+      modelsFetch: { enabled: false, endpoint: '/models' },
+      models: [],
+    },
+    state: null,
+  });
+  initRepo(repo);
+  initImageProcessor(createInMemoryImageProcessor());
+  stub.generationsCalls = [];
+  stub.editsRequests = [];
+  stub.nextGenerations = [];
+  stub.nextEdits = [];
+  stub.nextResolutionOverride = null;
+});
+
+test('generates an image end-to-end and emits the native lifecycle', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')]; // "GEN"
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', {
+    size: '1024x1024',
+    quality: 'low',
+  }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('here it is'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 1);
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, size: '1024x1024', quality: 'low' });
+  assertEquals(stub.editsRequests.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; result: string; action: string } }).item;
+  assertEquals(item.status, 'completed');
+  assertEquals(item.result, 'R0VO');
+  assertEquals(item.action, 'generate');
+});
+
+test('restores a forced hosted choice when the terminal upstream echo omits it', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  const hostedChoice = { type: 'image_generation' } as const;
+  const invocation = makeCtx([], 'generate', { quality: 'high' }, hostedChoice);
+  const hostedTool = invocation.payload.tools![0];
+  const replacement = { type: 'function', name: 'image_generation', parameters: {}, strict: false } as OpenAIResponsesTool;
+  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: 'image_generation' }),
+    withResponseEcho(messageTurn('done'), [replacement]),
+  ]));
+  const events = await drain(result);
+
+  const completed = events.find(event => event.type === 'response.completed');
+  assert(completed?.type === 'response.completed');
+  assertEquals(completed.response.tools, [hostedTool]);
+  assertEquals(completed.response.tool_choice, hostedChoice);
+});
+
+test('relays real partial_image frames when partial_images > 0', async () => {
+  stub.nextGenerations = [sseResponse([
+    JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 0, b64_json: 'UDA=' }),
+    JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: 'UDE=' }),
+    JSON.stringify({ type: 'image_generation.completed', b64_json: 'RklO' }),
+  ])];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', { partial_images: 2 }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('done'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, stream: true, partial_images: 2 });
+  const partials = events.filter(e => e.type === 'response.image_generation_call.partial_image');
+  assertEquals(partials.length, 2);
+  assertEquals((partials[0] as { partial_image_b64: string }).partial_image_b64, 'UDA=');
+  assertEquals((partials[1] as { partial_image_index: number }).partial_image_index, 1);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assertEquals(((igcDone as { item: { result: string } }).item).result, 'RklO');
+});
+
+test('an image generated in turn 1 is re-collected as an edit source in turn 2', async () => {
+  // Turn 1 generates "AAAA"; the shim feeds it back as an input_image. Turn 2's
+  // call must therefore resolve to an EDIT whose image[] part carries those
+  // exact bytes — proving the dispatcher re-collects the live input rather than
+  // a frozen registration-time snapshot.
+  stub.nextGenerations = [jsonResponse('QUFBQQ==')]; // "AAAA"
+  stub.nextEdits = [jsonResponse('QkJCQg==')]; // "BBBB"
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw then border it' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    callTurn(0, 'call_2', 'add a black border'),
+    messageTurn('done'),
+  ]));
+  await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 1);
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  assertEquals(request.images.length, 1);
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  const bytes = await image.file.text();
+  assertEquals(bytes, 'AAAA');
+});
+
+test('a prefetched remote edit source remains visible to orchestration and is reused by the edits backend', async () => {
+  const fetched: string[] = [];
+  initExternalResourceFetcher(url => {
+    fetched.push(url.href);
+    return Promise.resolve(remotePngResponse());
+  });
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const invocation = makeCtx([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_image', image_url: 'https://example.com/source.png', detail: 'auto' }],
+  }], 'edit');
+  const baseRun = scriptedRun([
+    callTurn(0, 'call_1', 'edit the image'),
+    messageTurn('done'),
+  ]);
+  let orchestratorImageUrl: string | undefined;
+  const run = async () => {
+    if (orchestratorImageUrl === undefined) {
+      const item = invocation.payload.input[0];
+      if (item?.type === 'message' && Array.isArray(item.content)) {
+        const image = item.content.find(block => block.type === 'input_image');
+        if (image?.type === 'input_image') orchestratorImageUrl = image.image_url ?? undefined;
+      }
+    }
+    return await baseRun();
+  };
+
+  await drain(await shim(invocation, gatewayCtx(), run));
+
+  assertEquals(fetched, ['https://example.com/source.png']);
+  assertEquals(orchestratorImageUrl, 'https://example.com/source.png');
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  assertEquals(new Uint8Array(await image.file.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+});
+
+test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
+  let processorCalls = 0;
+  initImageProcessor({
+    compressToWebp: () => {
+      processorCalls += 1;
+      return Promise.resolve(new TextEncoder().encode('WEBP'));
+    },
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const result = await shim(makeCtx([], 'edit', {
+    input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
+  }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit from the mask'),
+    messageTurn('done'),
+  ]));
+  await drain(result);
+
+  assertEquals(processorCalls, 1);
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  const mask = request.mask;
+  assert(image.type === 'upload');
+  assert(mask?.type === 'upload');
+  assertEquals(image.file.type, 'image/webp');
+  assertEquals(mask.file.type, 'image/webp');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await mask.file.text(), 'WEBP');
+});
+
+test('identical GIF source and mask share one transcode', async () => {
+  let processorCalls = 0;
+  initImageProcessor({
+    compressToWebp: () => {
+      processorCalls += 1;
+      return Promise.resolve(new TextEncoder().encode('WEBP'));
+    },
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const result = await shim(makeCtx([{
+    type: 'message', role: 'user',
+    content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
+  }], 'edit', {
+    input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
+  }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit with the same mask'),
+    messageTurn('done'),
+  ]));
+  await drain(result);
+
+  assertEquals(processorCalls, 1);
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  assert(request.mask?.type === 'upload');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await request.mask.file.text(), 'WEBP');
+});
+
+test('image transcoding failure becomes a terminal image tool failure', async () => {
+  initImageProcessor({
+    compressToWebp: () => Promise.reject(new Error('codec down')),
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  const result = await shim(makeCtx([{
+    type: 'message', role: 'user',
+    content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
+  }], 'edit'), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit the image'),
+    messageTurn('done'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.editsRequests.length, 0);
+  const done = events.find(event => event.type === 'response.output_item.done'
+    && (event as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(done !== undefined);
+  const item = (done as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'server_error');
+  assertStringIncludes(item.error.message, 'codec down');
+});
+
+test('retries on 429 and surfaces the eventual success', async () => {
+  // Two 429s then success; the orchestrator should see one completed image_generation_call.
+  stub.nextGenerations = [
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+    jsonResponse('T0s='),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('done'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 3);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; result: string } }).item;
+  assertEquals(item.status, 'completed');
+  assertEquals(item.result, 'T0s=');
+});
+
+test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a failed item', async () => {
+  // 1 initial + MAX_RATE_LIMIT_RETRIES = 3 total 429s before giving up.
+  stub.nextGenerations = [
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 3);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; type: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'RateLimitReached');
+  assertEquals(item.error.type, 'image_generation_error');
+});
+
+test('does not retry non-rate-limit upstream failures', async () => {
+  stub.nextGenerations = [
+    new Response(
+      JSON.stringify({ error: { code: 'invalid_value', type: 'invalid_request_error', message: 'bad size' } }),
+      { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
+    ),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 1);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'invalid_value');
+});
+
+// resolveImageCandidate failure branches: each variant is normalized into
+// a terminal `image_generation_call` item with `status: 'failed'` and a
+// specific error.code so the orchestrator can distinguish unknown-model
+// from existing-but-unsupported.
+
+test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
+  stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  // Backend never reached: resolution fails before the upstream call.
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_found');
+  assert(item.error.message.includes("No upstream provides model 'gpt-image-2'"), `unexpected message: ${item.error.message}`);
+});
+
+test('resolveImageCandidate renders model_not_supported when sawModel=true but no candidate is an image kind', async () => {
+  // Mirrors the resolver's "id exists in some catalog but the kind filter
+  // dropped it" signal — sawModel=true, candidates=[].
+  stub.nextResolutionOverride = { candidates: [], sawModel: true, failedUpstreams: [] };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_supported');
+  assert(item.error.message.includes("Model 'gpt-image-2' is not an image model."), `unexpected message: ${item.error.message}`);
+});
+
+test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
+  // The resolver produced an image-kind candidate but its `endpoints` does
+  // not include the per-endpoint key the request needs (openaiImagesGenerations).
+  stub.nextResolutionOverride = {
+    candidates: [stubModelCandidate({
+      model: {
+        id: 'gpt-image-2',
+        kind: 'image',
+        endpoints: { openaiImagesEdits: {} },
+      },
+    })],
+    sawModel: true,
+    failedUpstreams: [],
+  };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_supported');
+  assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
+});
+
+test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  // Real scheduler: capture the promises the shim fires so the test can
+  // await them before querying the repo (the default no-op scheduler in
+  // `gatewayCtx()` would drop the recordSample write).
+  const pending: Promise<unknown>[] = [];
+  const ctx = mockChatGatewayCtx({
+    wantsStream: true,
+    backgroundScheduler: p => { pending.push(p); },
+  });
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('here it is'),
+  ]));
+  await drain(result);
+  await Promise.all(pending);
+
+  const perfRows = await repo.performance.listAll();
+  const imageRows = perfRows.filter(r => r.operation === 'image_generation');
+  assertEquals(imageRows.length, 1);
+  assertEquals(imageRows[0].upstream, 'u');
+  assertEquals(imageRows[0].keyId, 'key_test');
+  assertEquals(imageRows[0].model, 'gpt-image-2');
+  // The image shim runs on a local AttemptState distinct from the outer
+  // OpenAI Responses turn's — no image-call stamps may leak onto ctx.attempt.
+  assertEquals(ctx.attempt.upstreamCallStartedAt, null);
+  assertEquals(ctx.attempt.firstOutputTokenAt, null);
+  assertEquals(ctx.attempt.telemetry, undefined);
+});

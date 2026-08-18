@@ -8,9 +8,9 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { createRandomResponsesItemId, type ResponsesCompactionResult, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResult, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesInputContent, type OpenAIResponsesInputItem, type OpenAIResponsesInputMessage, type OpenAIResponsesOutputItem, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 
-export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
+export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
 // Native compact retains `user` + `assistant` + `developer` + `system` —
 // confirmed empirically against an OpenAI long fixture (287 user + 286
@@ -30,25 +30,25 @@ const encoder = new TextEncoder();
 // as `input_text` so the client can resend `output` verbatim as next-turn
 // `input`. Normalize unconditionally; non-text content passes through and costs
 // 0 tokens against the retained budget.
-const normalizeContent = (content: ResponsesInputMessage['content']): ResponsesInputContent[] => {
+const normalizeContent = (content: OpenAIResponsesInputMessage['content']): OpenAIResponsesInputContent[] => {
   if (typeof content === 'string') return [{ type: 'input_text', text: content }];
   return content.map(part => (part.type === 'output_text' ? { ...part, type: 'input_text' } : part));
 };
 
-const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMessage =>
+const isRetainedMessage = (item: OpenAIResponsesInputItem): item is OpenAIResponsesInputMessage =>
   item.type === 'message' && RETAINED_ROLES.has(item.role);
 
 // The retained items are input-shaped messages with canonical input content,
 // which is what `/responses/compact` echoes so the client can resend `output`
-// as the next turn's `input`. `ResponsesOutputItem` does not model user/system
+// as the next turn's `input`. `OpenAIResponsesOutputItem` does not model user/system
 // roles, so the final cast records that the compaction envelope's `output` is
 // deliberately input-shaped.
 //
 // Retained messages are newly synthesized output items, so their client-visible
 // producer IDs are assigned here instead of inherited from input. They are
 // resent as full content; the compaction blob carries next-turn state.
-export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesCompactionResult => {
-  const kept: ResponsesInputMessage[] = [];
+export const compactionResponse = (input: OpenAIResponsesInputItem[], generated: OpenAIResponsesResult): OpenAIResponsesCompactionResult => {
+  const kept: OpenAIResponsesInputMessage[] = [];
   let used = 0;
   for (let i = input.length - 1; i >= 0; i -= 1) {
     const item = input[i];
@@ -64,7 +64,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
 
     kept.push({
       type: 'message',
-      id: createRandomResponsesItemId('message'),
+      id: createRandomOpenAIResponsesItemId('message'),
       status: item.status ?? 'completed',
       role: item.role,
       content,
@@ -78,7 +78,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
   // spanning input size, tool items in the input, streaming, and chained
   // re-feed. The two are independent ciphertexts of 7800 and 8968 bytes, each
   // individually replayable — the first recovers the early turns, the second
-  // the full history. Every other Responses model on the same account returns
+  // the full history. Every other OpenAI Responses model on the same account returns
   // one. `CompactResource` declares `output` as an array with no `minItems`,
   // no `maxItems`, and no prose cardinality rule, and the client contract is to
   // resend the whole array as the next turn's `input`, so a segmented reply is
@@ -102,6 +102,6 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
   return {
     ...generated,
     object: 'response.compaction',
-    output: [...kept.reverse(), ...compactionItems] as unknown as ResponsesOutputItem[],
+    output: [...kept.reverse(), ...compactionItems] as unknown as OpenAIResponsesOutputItem[],
   };
 };

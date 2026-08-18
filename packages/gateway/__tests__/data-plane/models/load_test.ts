@@ -7,7 +7,7 @@ const base: InternalModel = {
   id: 'm1',
   kind: 'chat',
   limits: { max_context_window_tokens: 100000 },
-  endpoints: { chatCompletions: {} },
+  endpoints: { openaiChatCompletions: {} },
   providerModels: {},
 };
 
@@ -25,7 +25,7 @@ describe('toPublicModel', () => {
   });
 
   test('stamps the upstream endpoint map onto the wire entry verbatim', () => {
-    expect(toPublicModel(base).endpoints).toEqual({ chatCompletions: {} });
+    expect(toPublicModel(base).endpoints).toEqual({ openaiChatCompletions: {} });
   });
 });
 

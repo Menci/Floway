@@ -473,6 +473,61 @@ describe('what a stage is given', () => {
     expect(logged[0]).toMatchObject({ level: 'info', message: 'answering', fields: { words: 1 } });
   });
 
+  // The line names the stage that wrote it, so a reader holding only the log lines can tell
+  // them apart. `stageId` answers that too, but only for someone holding the rest of the run.
+  it('carries the stage name as the entry context', async () => {
+    const seen: Event[] = [];
+    const talkative = defineStage<Core<'in.words'>, Core<'out.result'>>({
+      name: 'talkative',
+      return: { provides: ['out.result'] },
+      execute: async (facts, use) => {
+        use.log.info('answering');
+        return move({ ...facts, 'out.result': { ok: 'said' } });
+      },
+    });
+    const pipeline = compose<Core<'in.words'>, Core<'out.result'>>('talk', [talkative]);
+    await run(pipeline, move({ 'in.words': ['a'] }), { dump: (e: Event) => { seen.push(e); } });
+    expect(seen.find(e => e.type === 'stage.log')).toMatchObject({ context: 'talkative' });
+  });
+
+  // A line refers to a stage by id, so it can only be read once that id has been introduced.
+  // Entering a stage is what mints it, and the entry event goes out before the stage body
+  // runs — so a log line can never arrive before the event that explains which stage it is.
+  it('emits a log line only after the event that introduced its stage', async () => {
+    const seen: Event[] = [];
+    const talkative = defineStage<Core<'in.words'>, Core<'in.words'>, Core<'out.result'>, Core<'out.result'>>({
+      name: 'talkative',
+      through: {
+        request: { needs: ['in.words'], consumes: [], provides: [] },
+        response: { needs: ['out.result'], consumes: [], provides: [] },
+      },
+      execute: async (facts, next, use) => {
+        use.log.info('on the way down');
+        const back = await next(facts);
+        use.log.info('on the way back');
+        return back;
+      },
+    });
+    const answers = defineStage<Core<'in.words'>, Core<'out.result'>>({
+      name: 'answers',
+      return: { provides: ['out.result'] },
+      execute: async (facts, use) => {
+        use.log.info('answering');
+        return move({ ...facts, 'out.result': { ok: 'said' } });
+      },
+    });
+    const pipeline = compose<Core<'in.words'>, Core<'out.result'>>('talk', [talkative, answers]);
+    await run(pipeline, move({ 'in.words': ['a'] }), { dump: (e: Event) => { seen.push(e); } });
+
+    const introduced = new Set<number>();
+    for (const event of seen) {
+      if (event.type === 'stage.entered') introduced.add(event.stageId);
+      if (event.type === 'stage.log') expect(introduced.has(event.stageId)).toBe(true);
+    }
+    // Both stages logged, and one of them on both sides of its descent.
+    expect(seen.filter(e => e.type === 'stage.log')).toHaveLength(3);
+  });
+
   // A stored line has to be a state that existed, for the same reason the record is frozen.
   it('snapshots a log line, so a later write by the caller cannot drift into it', async () => {
     const seen: Event[] = [];

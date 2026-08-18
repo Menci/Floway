@@ -107,7 +107,7 @@ export class DumpAccumulator {
   // shapes:
   //
   //   • `(status, headers)` — no HTTP Response object to tee. The WebSocket
-  //     Responses path uses this: its "response" is the stream of frames
+  //     OpenAI Responses path uses this: its "response" is the stream of frames
   //     already captured via `frame()`, while the send seam records their
   //     actual UTF-8 payload bytes via `recordSentPayloadBytes()`.
   //   • `(response)` — tees the response body so the client gets bytes
@@ -241,7 +241,7 @@ export class DumpAccumulator {
 
 // Returns null when the api key opts out of dumps; callers then skip all
 // per-request dump work. `method` is passed explicitly rather than read
-// off the request so the WebSocket Responses path can record each turn
+// off the request so the WebSocket OpenAI Responses path can record each turn
 // as `WS /v1/responses` rather than the upgrade's `GET`.
 export const openDumpAccumulator = (
   c: Context,

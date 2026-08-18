@@ -155,7 +155,7 @@ x-interaction-type: conversation-agent
 `packages/provider-copilot/src/auth.ts` is the source of truth for both header
 sets, their distinct version constants, extraction of `endpoints.api`, and
 data-plane dispatch in `copilotAuthedFetch`. Read the current values and flow
-from there rather than hardcoding them in probe scripts. For Messages probes
+from there rather than hardcoding them in probe scripts. For Anthropic Messages probes
 needing Claude beta features, also send `anthropic-beta: <feature-list>`.
 
 ## Constraints

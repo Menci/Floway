@@ -1,10 +1,10 @@
 export type {
-  ChatCompletionsInvocation,
-  GeminiInvocation,
+  OpenAIChatCompletionsInvocation,
+  GeminiGenerateContentInvocation,
   ChatTargetApi,
-  MessagesInvocation,
+  AnthropicMessagesInvocation,
   ModelCandidate,
-  ResponsesInvocation,
+  OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
 
@@ -52,17 +52,17 @@ export type {
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
-  MessagesUpstreamCallOptions,
-  ProviderResponsesResult,
+  AnthropicMessagesUpstreamCallOptions,
+  ProviderOpenAIResponsesResult,
   ProviderStreamResult,
-  ResponsesAction,
+  OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export { headersForMessagesCall } from './messages.ts';
-export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
+export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
+export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
-export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
-export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
+export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
+export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

@@ -21,7 +21,7 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
     apiKey: '',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false },
     models: [],
@@ -158,7 +158,7 @@ describe('Custom ingress header rules', () => {
 
     fireEvent.change(first, { target: { value: 'Anthropic-Beta' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.messagesOwned'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
     expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicateName'))).toBeNull();
 
     fireEvent.change(first, { target: { value: 'Authorization' } });

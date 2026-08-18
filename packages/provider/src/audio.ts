@@ -4,22 +4,22 @@
 // providers rebuild a fresh FormData for every candidate so retries never
 // reuse a consumed request body.
 
-export interface AudioTranscriptionFormEntry {
+export interface OpenAIAudioTranscriptionFormEntry {
   readonly name: string;
   readonly value: string | File;
 }
 
-export interface AudioTranscriptionRequest {
-  readonly entries: readonly AudioTranscriptionFormEntry[];
+export interface OpenAIAudioTranscriptionRequest {
+  readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
 }
 
-type AudioTranscriptionModelField =
+type OpenAIAudioTranscriptionModelField =
   | { readonly type: 'replace'; readonly value: string }
   | { readonly type: 'omit' };
 
-const serializeAudioTranscriptionRequest = (
-  request: AudioTranscriptionRequest,
-  modelField: AudioTranscriptionModelField,
+const serializeOpenAIAudioTranscriptionRequest = (
+  request: OpenAIAudioTranscriptionRequest,
+  modelField: OpenAIAudioTranscriptionModelField,
 ): FormData => {
   const form = new FormData();
   for (const entry of request.entries) {
@@ -34,11 +34,11 @@ const serializeAudioTranscriptionRequest = (
   return form;
 };
 
-export const serializeOpenAIAudioTranscriptionRequest = (
-  request: AudioTranscriptionRequest,
+export const serializeModelFieldOpenAIAudioTranscriptionRequest = (
+  request: OpenAIAudioTranscriptionRequest,
   model: string,
-): FormData => serializeAudioTranscriptionRequest(request, { type: 'replace', value: model });
+): FormData => serializeOpenAIAudioTranscriptionRequest(request, { type: 'replace', value: model });
 
-export const serializeModelPathAudioTranscriptionRequest = (
-  request: AudioTranscriptionRequest,
-): FormData => serializeAudioTranscriptionRequest(request, { type: 'omit' });
+export const serializeModelPathOpenAIAudioTranscriptionRequest = (
+  request: OpenAIAudioTranscriptionRequest,
+): FormData => serializeOpenAIAudioTranscriptionRequest(request, { type: 'omit' });

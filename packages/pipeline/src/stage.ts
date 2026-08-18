@@ -40,6 +40,21 @@ export type PassDecl<Rq extends object, Down extends object, Up extends object, 
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+/** One line, in the shape `@guiiai/logg` writes: a level, the context that produced it, the
+ *  message, and whatever structured fields came with it. The pipeline defines the shape it
+ *  needs and never the implementation, so a foundation package stays runtime-independent —
+ *  and a sink that speaks logg can take one of these unchanged.
+ *
+ *  `context` is the stage's name. A reader with only the log lines in front of it needs to
+ *  know which stage wrote them, and `stageId` alone answers that only for someone holding
+ *  the rest of the record. */
+export interface LogEntry {
+  readonly level: LogLevel;
+  readonly context: string;
+  readonly message: string;
+  readonly fields?: Readonly<Record<string, unknown>>;
+}
+
 /** Structured, to fit a logger like `@guiiai/logg`. The pipeline defines the shape it
  *  needs and never the implementation, so a foundation package stays runtime-independent. */
 export interface Logger {

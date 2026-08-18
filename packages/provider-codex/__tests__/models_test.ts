@@ -122,7 +122,7 @@ describe('codexRawToProviderModel', () => {
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     expect(m.id).toBe('gpt-5.4');
     expect(m.display_name).toBe('GPT-5.4');
-    expect(m.endpoints).toEqual({ responses: {} });
+    expect(m.endpoints).toEqual({ openaiResponses: {} });
     expect(m.kind).toBe('chat');
     expect(m.limits.max_context_window_tokens).toBe(272000);
     expect(m.owned_by).toBe('openai');
@@ -270,7 +270,7 @@ describe('Codex image capability', () => {
       owned_by: 'openai',
       kind: 'image',
       limits: {},
-      endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       enabledFlags: flags,
       pricing: {
         entries: [{

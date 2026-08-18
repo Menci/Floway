@@ -1,13 +1,13 @@
 import type { InternalModel, ProviderModel } from './model.ts';
 import type { Fetcher } from './options.ts';
-import type { Provider, ResponsesAction } from './provider.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { Provider, OpenAIResponsesAction } from './provider.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
+export type ChatTargetApi = 'anthropicMessages' | 'openaiResponses' | 'openaiChatCompletions';
 
 // One (provider, model) pair the resolver produced for an inbound id,
 // plus the per-request `Fetcher` minted for the provider's upstream. The
@@ -65,34 +65,34 @@ export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
 // carried into the boundary chain — so workarounds that only need to set
 // or drop a header stay at the owning interceptor boundary instead of
 // widening the provider call signature.
-export interface MessagesInvocation {
-  payload: MessagesPayload;
+export interface AnthropicMessagesInvocation {
+  payload: AnthropicMessagesPayload;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
-export interface ResponsesInvocation {
-  payload: CanonicalResponsesPayload;
+export interface OpenAIResponsesInvocation {
+  payload: CanonicalOpenAIResponsesPayload;
   // Mutable action tag — interceptors can flip 'compact' to 'generate' so the
   // inner provider call runs a normal summarization turn (see the
   // responses-compact-shim) and the gateway derives snapshot mode from the
   // post-chain action carried on the provider's tagged result.
-  action: ResponsesAction;
+  action: OpenAIResponsesAction;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
-export interface ChatCompletionsInvocation {
-  payload: ChatCompletionsPayload;
+export interface OpenAIChatCompletionsInvocation {
+  payload: OpenAIChatCompletionsPayload;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
-export interface GeminiInvocation {
-  payload: GeminiPayload;
+export interface GeminiGenerateContentInvocation {
+  payload: GeminiGenerateContentPayload;
   readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;

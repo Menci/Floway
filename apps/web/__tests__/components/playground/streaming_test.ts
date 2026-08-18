@@ -20,8 +20,8 @@ const collect = async (stream: AsyncGenerator<string>): Promise<string> => {
 describe('playground wire requests', () => {
   it.each([
     {
-      name: 'Responses',
-      api: 'responses' as const,
+      name: 'OpenAI Responses',
+      api: 'openaiResponses' as const,
       path: '/v1/responses',
       custom: { seed: 9 },
       events: [
@@ -31,8 +31,8 @@ describe('playground wire requests', () => {
       ],
     },
     {
-      name: 'Chat Completions',
-      api: 'chatCompletions' as const,
+      name: 'OpenAI Chat Completions',
+      api: 'openaiChatCompletions' as const,
       path: '/v1/chat/completions',
       custom: { seed: 9 },
       events: [
@@ -42,8 +42,8 @@ describe('playground wire requests', () => {
       ],
     },
     {
-      name: 'Messages',
-      api: 'messages' as const,
+      name: 'Anthropic Messages',
+      api: 'anthropicMessages' as const,
       path: '/v1/messages',
       custom: { metadata: { test: true } },
       events: [
@@ -94,8 +94,8 @@ describe('playground wire requests', () => {
       options: {},
       signal: new AbortController().signal,
     };
-    await collect(streamPlaygroundText({ ...request, api: 'messages', fetchImpl: createWireFetch({}, 'messages') }));
-    await collect(streamPlaygroundText({ ...request, api: 'chatCompletions', fetchImpl: createWireFetch({}, 'chatCompletions') }));
+    await collect(streamPlaygroundText({ ...request, api: 'anthropicMessages', fetchImpl: createWireFetch({}, 'anthropicMessages') }));
+    await collect(streamPlaygroundText({ ...request, api: 'openaiChatCompletions', fetchImpl: createWireFetch({}, 'openaiChatCompletions') }));
 
     expect(headers[0]).toMatchObject({ 'x-api-key': 'secret' });
     expect(headers[1]).toMatchObject({ authorization: 'Bearer secret' });
@@ -108,18 +108,18 @@ describe('playground wire requests', () => {
     ));
 
     await expect(collect(streamPlaygroundText({
-      api: 'chatCompletions',
+      api: 'openaiChatCompletions',
       apiKey: 'secret',
       model: 'test-model',
       system: '',
       messages: [{ id: '1', role: 'user', text: 'hello' }],
       options: {},
       signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'chatCompletions'),
+      fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
     }))).rejects.toThrow('upstream refused');
   });
 
-  it('surfaces a Responses failed envelope instead of returning empty text', async () => {
+  it('surfaces an OpenAI Responses failed envelope instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{
         type: 'response.failed',
@@ -138,14 +138,14 @@ describe('playground wire requests', () => {
     ));
 
     await expect(collect(streamPlaygroundText({
-      api: 'responses',
+      api: 'openaiResponses',
       apiKey: 'secret',
       model: 'test-model',
       system: '',
       messages: [{ id: '1', role: 'user', text: 'hello' }],
       options: {},
       signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'responses'),
+      fetchImpl: createWireFetch({}, 'openaiResponses'),
     }))).rejects.toThrow('generation failed');
   });
 
@@ -156,14 +156,14 @@ describe('playground wire requests', () => {
     ));
 
     await expect(collect(streamPlaygroundText({
-      api: 'responses',
+      api: 'openaiResponses',
       apiKey: 'secret',
       model: 'missing',
       system: '',
       messages: [{ id: '1', role: 'user', text: 'hello' }],
       options: {},
       signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'responses'),
+      fetchImpl: createWireFetch({}, 'openaiResponses'),
     }))).rejects.toThrow('no such model');
   });
 });

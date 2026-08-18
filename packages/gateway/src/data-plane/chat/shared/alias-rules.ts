@@ -8,26 +8,26 @@
 // native↔native and eliminates the fan-out of Floway-extension fields onto
 // each source IR.
 
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 
-export const applyRulesToUpstreamChatCompletions = (body: ChatCompletionsPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatCompletionsPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort } = rules.reasoning;
     if (effort !== undefined) body.reasoning_effort = effort;
-    // `budget_tokens`, `adaptive`, and `summary` have no native Chat
+    // `budget_tokens`, `adaptive`, and `summary` have no native OpenAI Chat Completions
     // Completions slot; drop silently.
   }
   if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamResponses = (body: ResponsesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort, summary } = rules.reasoning;
     if (effort !== undefined || summary !== undefined) {
@@ -38,7 +38,7 @@ export const applyRulesToUpstreamResponses = (body: ResponsesPayload, rules: Ali
         ...(summary !== undefined ? { summary } : {}),
       };
     }
-    // `budget_tokens` and `adaptive` have no native Responses slot; drop
+    // `budget_tokens` and `adaptive` have no native OpenAI Responses slot; drop
     // silently.
   }
   if (rules.verbosity !== undefined) {
@@ -47,7 +47,7 @@ export const applyRulesToUpstreamResponses = (body: ResponsesPayload, rules: Ali
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     // Anthropic stores explicit effort in `output_config.effort`; budget /
@@ -57,7 +57,7 @@ export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: Alias
     if (effort !== undefined) {
       body.output_config = { ...body.output_config, effort };
     }
-    const display = summary !== undefined ? mapSummaryToMessagesDisplay(summary) : undefined;
+    const display = summary !== undefined ? mapSummaryToAnthropicMessagesDisplay(summary) : undefined;
     const displayPart = display !== undefined ? { display } : {};
     if (adaptive === true) {
       // Adaptive auto-determines the budget; strip any client-set
@@ -73,13 +73,13 @@ export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: Alias
       body.thinking = { ...body.thinking, type: 'enabled', ...displayPart };
     }
   }
-  // `verbosity` has no native Messages slot; drop silently.
+  // `verbosity` has no native Anthropic Messages slot; drop silently.
   if (rules.serviceTier !== undefined) {
     // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
-    // `service_tier: 'fast'`; on a native Messages target the alias rule
+    // `service_tier: 'fast'`; on a native Anthropic Messages target the alias rule
     // `serviceTier: 'fast'` lands on `speed` so the upstream sees Fast Mode
     // through its native field. Other tier values pass through on
-    // `service_tier` since Messages's native enum (`auto`/`standard_only`)
+    // `service_tier` since Anthropic Messages's native enum (`auto`/`standard_only`)
     // doesn't model them. Whichever branch we take, clear the sibling field
     // so the upstream never sees two tiers in conflict.
     if (rules.serviceTier === 'fast') {
@@ -99,7 +99,7 @@ export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: Alias
 // Anthropic's account default takes over. Operator-typed values that match
 // neither vocabulary pass through verbatim — Anthropic rejects unknown
 // values at the wire, which is the explicit-failure path.
-const mapSummaryToMessagesDisplay = (summary: string): MessagesThinkingDisplay | undefined => {
+const mapSummaryToAnthropicMessagesDisplay = (summary: string): AnthropicMessagesThinkingDisplay | undefined => {
   switch (summary) {
   case 'concise':
   case 'detailed':
@@ -111,6 +111,6 @@ const mapSummaryToMessagesDisplay = (summary: string): MessagesThinkingDisplay |
   default:
     // Anthropic rejects unknown enum values at the wire, so passing an
     // operator-typed value verbatim is the explicit-failure path.
-    return summary as MessagesThinkingDisplay;
+    return summary as AnthropicMessagesThinkingDisplay;
   }
 };

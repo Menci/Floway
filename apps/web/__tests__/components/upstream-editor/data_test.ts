@@ -12,7 +12,7 @@ const record = upstreamRecord('up_custom', {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
     apiKey: '',
-    endpoints: { responses: {} },
+    endpoints: { openaiResponses: {} },
     ingressHeadersRules: [
       { key: 'x-pass', value: null },
       { key: 'x-empty', value: '' },

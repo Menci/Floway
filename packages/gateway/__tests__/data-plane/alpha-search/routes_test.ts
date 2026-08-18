@@ -171,9 +171,9 @@ describe('/alpha/search data plane', () => {
           authStyle: 'bearer',
           ingressHeadersRules: [],
           apiKey: 'search-secret',
-          endpoints: { responses: {} },
+          endpoints: { openaiResponses: {} },
           modelsFetch: { enabled: false },
-          models: [{ upstreamModelId: 'gpt-search', endpoints: { responses: {} } }],
+          models: [{ upstreamModelId: 'gpt-search', endpoints: { openaiResponses: {} } }],
         },
       }));
       const upstreamPayload = {

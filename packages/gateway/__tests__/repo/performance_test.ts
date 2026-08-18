@@ -23,7 +23,7 @@ const apiKey = (id: string, userId: number): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 });
 
 const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({

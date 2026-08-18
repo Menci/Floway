@@ -34,7 +34,7 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
   const config = {
     models: [{
       kind: 'chat',
-      endpoints: { responses: {} },
+      endpoints: { openaiResponses: {} },
       upstreamModelId: 'wire',
       pricing: { entries: [{ rates: { input_tokens: '0.01' } }] },
     }],
