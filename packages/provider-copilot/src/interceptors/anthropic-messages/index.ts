@@ -1,4 +1,4 @@
-// Copilot-only Messages workarounds. Each list is a boundary chain the
+// Copilot-only Anthropic Messages workarounds. Each list is a boundary chain the
 // Copilot provider runs inside its own `callX` methods, so the gateway main
 // flow never knows that Copilot has interceptors at all.
 
@@ -23,7 +23,7 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor, CopilotAnthropicMessa
 // payload):
 //   - rewriteContextWindowError wraps the whole chain so any upstream context-
 //     window failure surfaced from the terminal is rewritten into a
-//     Messages-shaped invalid_request_error before later interceptors see it.
+//     Anthropic-Messages-shaped invalid_request_error before later interceptors see it.
 //   - withCompactHeadersSet pins the compact/auto-continue intent first.
 //   - withClaudeAgentHeadersSet then overrides those intents (and the
 //     user-agent / copilot-integration-id) for Claude Code SDK proxy traffic.

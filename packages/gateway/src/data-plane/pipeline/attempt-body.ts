@@ -4,7 +4,7 @@
 // values are frozen — a fact that could be edited after the event is not a fact — while a
 // provider's interceptors shape the body they are given in place, down to nested nodes:
 // Copilot writes `copilot_cache_control` onto individual messages, and its initiator rule
-// writes into a nested field of a Messages payload.
+// writes into a nested field of an Anthropic Messages payload.
 //
 // Spreading a frozen fact produces a fresh top level over frozen children, so those writes
 // throw — as a 502 carrying `Cannot add property …, object is not extensible`, raised at the
