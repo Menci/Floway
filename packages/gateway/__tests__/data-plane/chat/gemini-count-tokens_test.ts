@@ -31,11 +31,11 @@ type CountTokens = (
 ) => Promise<ProviderCallResult>;
 
 const candidate = (
-  callMessagesCountTokens: CountTokens,
+  callAnthropicMessagesCountTokens: CountTokens,
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints } = {},
 ): ModelCandidate => {
   const upstreamId = overrides.upstreamId ?? 'up_a';
-  const endpoints = overrides.endpoints ?? { messages: {} };
+  const endpoints = overrides.endpoints ?? { anthropicMessages: {} };
   return {
     provider: {
       upstreamId, kind: 'claude-code', name: upstreamId,
@@ -43,7 +43,7 @@ const candidate = (
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callMessagesCountTokens: callMessagesCountTokens as never }),
+      instance: stubProvider({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
     },
     model: stubInternalModel(
       {
@@ -78,7 +78,7 @@ const count = async (
     geminiGenerateContentCountTokensPipeline(request),
     move({
       'ingress.http.headers': headers,
-      'ingress.chat.sourceProtocol': 'gemini',
+      'ingress.chat.sourceProtocol': 'geminiGenerateContent',
       'request.chat.geminiGenerateContent': request,
       'serve.model': 'gemini-model',
     }) as never,
@@ -205,7 +205,7 @@ describe('the gemini count-tokens chain', () => {
   // Only an upstream's own Messages endpoint measures, so a candidate that would serve
   // generation over a translated wire cannot serve this.
   it('refuses a candidate no wire can measure on, naming the action', async () => {
-    resolves([candidate(async () => answered({ input_tokens: 0 }), { endpoints: { chatCompletions: {} } })]);
+    resolves([candidate(async () => answered({ input_tokens: 0 }), { endpoints: { openaiChatCompletions: {} } })]);
 
     const { facts } = await count();
 

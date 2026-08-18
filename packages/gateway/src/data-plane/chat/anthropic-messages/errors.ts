@@ -8,7 +8,7 @@ import { generateAnthropicId } from '@floway-dev/protocols/anthropic-messages';
  *  Anthropic's own — `type` at the top, the error's own `type` inside, and a `request_id` a
  *  caller quotes back in a support thread — so it is the protocol's shape rather than the
  *  gateway's, and an OpenAI-shaped one would carry none of those fields. */
-export const renderMessagesError = (status: number, message: string): Record<string, unknown> => ({
+export const renderAnthropicMessagesError = (status: number, message: string): Record<string, unknown> => ({
   type: 'error',
   error: { type: anthropicErrorTypeForStatus(status), message },
   request_id: generateAnthropicId('req'),

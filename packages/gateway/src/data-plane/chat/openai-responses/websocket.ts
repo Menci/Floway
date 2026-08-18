@@ -10,7 +10,7 @@
 
 import type { Context } from 'hono';
 
-import { createResponsesWsSession, type StatefulResponsesStore } from './items/store.ts';
+import { createOpenAIResponsesWsSession, type StatefulOpenAIResponsesStore } from './items/store.ts';
 import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { TurnDump } from '../../../dump/turn-dump.ts';
@@ -29,11 +29,11 @@ import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
-import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -70,7 +70,7 @@ type OpenAIResponsesWebSocketUpgradeResolver = (
 
 let _responsesWebSocketUpgradeResolver: OpenAIResponsesWebSocketUpgradeResolver | null = null;
 
-export const initResponsesWebSocketUpgradeResolver = (
+export const initOpenAIResponsesWebSocketUpgradeResolver = (
   resolver: OpenAIResponsesWebSocketUpgradeResolver,
 ): void => {
   _responsesWebSocketUpgradeResolver = resolver;
@@ -99,7 +99,7 @@ export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Respon
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
 
-  const events = createResponsesWebSocketEvents(c);
+  const events = createOpenAIResponsesWebSocketEvents(c);
   if (_responsesWebSocketUpgradeResolver !== null) {
     return await _responsesWebSocketUpgradeResolver(c, events);
   }
@@ -116,13 +116,13 @@ export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Respon
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponsesWebSocketHandlers => {
+const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponsesWebSocketHandlers => {
   // The upgrade authenticates the connection, but every response.create is a
   // separate data-plane request. Codex deliberately reuses one socket across
   // turns, so retain the presented credential and resolve it again before each
   // turn rather than freezing key/user policy at upgrade time.
   const authenticatedRawKey = apiKeyFromContext(c).key;
-  const session = createResponsesWsSession();
+  const session = createOpenAIResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -217,15 +217,15 @@ interface OpenAIResponsesWsTurnFailure {
  * differ in is the services a chat run is given, which is why it hands those back in the shape
  * every chat entry hands them over in.
  */
-const openResponsesWebSocketTurn = (
+const openOpenAIResponsesWebSocketTurn = (
   c: AuthedContext,
   turn: {
-    readonly payload: CanonicalResponsesPayload;
+    readonly payload: CanonicalOpenAIResponsesPayload;
     readonly body: RequestBody;
     readonly headers: Ingress['headers'];
     readonly downstreamAbortController: AbortController;
     readonly backgroundScheduler: BackgroundScheduler;
-    readonly store: (apiKey: ApiKey, requestStartedAt: number) => StatefulResponsesStore;
+    readonly store: (apiKey: ApiKey, requestStartedAt: number) => StatefulOpenAIResponsesStore;
   },
 ): ChatPrologue => {
   // The frame is this turn's request body, so an operator reading the dashboard sees the
@@ -268,7 +268,7 @@ const openResponsesWebSocketTurn = (
 const handleClientMessage = async (
   c: AuthedContext,
   socket: OpenAIResponsesWebSocketSocket,
-  session: ReturnType<typeof createResponsesWsSession>,
+  session: ReturnType<typeof createOpenAIResponsesWsSession>,
   data: unknown,
   authenticatedRawKey: string,
   downstreamAbortController: AbortController,
@@ -340,7 +340,7 @@ const handleClientMessage = async (
     const payload = openaiResponsesPayloadFromClientSource(source);
     previousResponseId = payload.previous_response_id ?? undefined;
 
-    const prologue = openResponsesWebSocketTurn(c, {
+    const prologue = openOpenAIResponsesWebSocketTurn(c, {
       payload,
       body: requestBody,
       // The upgrade's own headers are the connection's, and every turn on it is dialled with
@@ -359,7 +359,7 @@ const handleClientMessage = async (
       openaiResponsesServePipeline(payload, 'events'),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'responses',
+        'ingress.chat.sourceProtocol': 'openaiResponses',
         // A turn on this transport always streams, whatever the client wrote.
         'ingress.chat.openaiResponses.wantsStream': true,
         'request.chat.openaiResponses': payload,
@@ -368,7 +368,7 @@ const handleClientMessage = async (
       prologue.services as never,
     );
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure });
+    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -417,17 +417,17 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
 };
 
 // The transport always streams, whatever the client sent.
-const openaiResponsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload =>
-  ({ ...canonicalizeResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
+const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
+  ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
 
 /** The chain hands its answer up at one key, and this entry assembled it to hand up events
  *  rather than the SSE frames an HTTP body is written from — so what is not a stream at that
  *  key is the one object arm this transport can see. */
 const isRenderedStream = (
   rendered: OpenAIResponsesFacts['response.chat.openaiResponses.rendered'],
-): rendered is AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>> => Symbol.asyncIterator in rendered;
+): rendered is AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => Symbol.asyncIterator in rendered;
 
-const respondResponsesWebSocket = async (input: {
+const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
@@ -458,8 +458,8 @@ const respondResponsesWebSocket = async (input: {
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
-    let terminalEvent: ClientResponsesStreamEvent | undefined;
-    const iterator = observeResponsesWebSocketFrames(rendered, state)[Symbol.asyncIterator]();
+    let terminalEvent: ClientOpenAIResponsesStreamEvent | undefined;
+    const iterator = observeOpenAIResponsesWebSocketFrames(rendered, state)[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
@@ -482,7 +482,7 @@ const respondResponsesWebSocket = async (input: {
 
         if (next.type === 'keep-alive') {
           // Extended reasoning turns go completely silent: upstream sends SSE
-          // `ping` events, `parseResponsesStream` drops them, and no frame at
+          // `ping` events, `parseOpenAIResponsesStream` drops them, and no frame at
           // all reaches this socket for minutes. A silent Workers WebSocket
           // does not reliably survive that. Cloudflare states the
           // teardown without naming a duration — "when no data is transmitted
@@ -580,12 +580,12 @@ const respondResponsesWebSocket = async (input: {
         // https://github.com/openai/codex/blob/acd540f1581bf30f963fccbcce43ac494102242c/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L792-L799
         if (terminalEvent !== undefined) continue;
 
-        if (isResponsesTerminalEvent(event)) {
+        if (isOpenAIResponsesTerminalEvent(event)) {
           terminalEvent = event;
           continue;
         }
 
-        if (!sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
+        if (!sendOpenAIResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
@@ -600,12 +600,12 @@ const respondResponsesWebSocket = async (input: {
     }
 
     if (terminalEvent === undefined) {
-      throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
+      throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
     // Renumbered here rather than where it was buffered: keep-alives can still
     // fire while the generator drains behind the terminal event, and each of
     // those takes a slot that has to land before the terminal event's own.
-    if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
+    if (!sendOpenAIResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
@@ -646,27 +646,27 @@ const respondResponsesWebSocket = async (input: {
 
 /** Reads the turn's own ending off the frames on their way to the socket. The record is not
  *  its business: the edge tees these same frames, so what reaches here is already recorded. */
-const observeResponsesWebSocketFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>,
+const observeOpenAIResponsesWebSocketFrames = async function* (
+  frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
   state: SourceStreamState,
-): AsyncGenerator<ProtocolFrame<ClientResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {
     if (frame.type === 'event') {
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';
       if (failed) state.failed = true;
-      if (isResponsesTerminalEvent(event) && !failed) state.completed = true;
+      if (isOpenAIResponsesTerminalEvent(event) && !failed) state.completed = true;
     }
     yield frame;
   }
 };
 
 type WsFrameRaceResult =
-  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>> }
+  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> }
   | { type: 'next-error'; error: unknown }
   | { type: 'keep-alive' };
 
-const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
+const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
   pendingNext.then(
     (result): WsFrameRaceResult => ({ type: 'frame', result }),
     (error): WsFrameRaceResult => ({ type: 'next-error', error }),
@@ -693,7 +693,7 @@ const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): P
 };
 
 interface DownstreamSequence {
-  renumber(event: ClientResponsesStreamEvent): ClientResponsesStreamEvent;
+  renumber(event: ClientOpenAIResponsesStreamEvent): ClientOpenAIResponsesStreamEvent;
   take(): number;
 }
 
@@ -780,9 +780,9 @@ const sendError = (
 // envelope is not a streaming event, and the keep-alive is a slug-prefixed
 // extension the union deliberately does not model. Both keep the untyped
 // `sendJson`.
-const sendResponsesEvent = (
+const sendOpenAIResponsesEvent = (
   socket: OpenAIResponsesWebSocketSocket,
-  event: ClientResponsesStreamEvent,
+  event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
   dump?: TurnDump | null,
 ): boolean => sendJson(socket, event, eventId, dump);

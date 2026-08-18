@@ -11,7 +11,7 @@
 
 import { expect, test } from 'vitest';
 
-import { copilotModels, requestApp, setupAppTest, sseResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const ANSWER = 'hello from copilot';
@@ -52,7 +52,7 @@ test('a turn reaches Copilot over its own Responses endpoint and comes back as o
     (path, body) => {
       expect(path).toBe('/responses');
       sent = body;
-      return sseResponsesResponse({
+      return sseOpenAIResponsesResponse({
         id: 'resp_route',
         object: 'response',
         model: 'gpt-responses',

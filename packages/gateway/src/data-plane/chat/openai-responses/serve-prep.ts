@@ -1,5 +1,5 @@
-import type { StatefulResponsesStore } from './items/store.ts';
-import type { CanonicalResponsesPayload } from '@floway-dev/protocols/openai-responses';
+import type { StatefulOpenAIResponsesStore } from './items/store.ts';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The stage that hydrates catches this and answers with the
@@ -28,9 +28,9 @@ export class PreviousResponseNotFoundError extends Error {
 // translated payloads coming in from another protocol's attempt never carry
 // `previous_response_id`, so this runs above the fork and never on a wire.
 export const expandPreviousResponseId = async (
-  payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore,
-): Promise<CanonicalResponsesPayload> => {
+  payload: CanonicalOpenAIResponsesPayload,
+  store: StatefulOpenAIResponsesStore,
+): Promise<CanonicalOpenAIResponsesPayload> => {
   const previousResponseId = payload.previous_response_id;
   if (previousResponseId === undefined || previousResponseId === null) return payload;
 

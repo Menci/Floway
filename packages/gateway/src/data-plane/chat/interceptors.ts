@@ -33,7 +33,7 @@ import type {
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 /** Removing a field inside a value is the same move as removing a fact, and a value that
  *  carried none of them comes back by identity so the rule costs nothing where it does not
@@ -161,7 +161,7 @@ const attemptIdentity = (attempt: AttemptSelector): string => `${attempt.upstrea
  *  are authoritative when flags overlap, and the last step affects only a system message
  *  that appears after the leading run — which is what "mid-conversation" means. The fold
  *  itself is `roleRewriter`; what is here is the walk over this protocol's messages. */
-export const applyRoleCompatibilityToChatCompletions = defineStage<
+export const applyRoleCompatibilityToOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -188,7 +188,7 @@ export const applyRoleCompatibilityToChatCompletions = defineStage<
       const rewrite = rolesFor(facts['route.attempt'].flags);
       if (rewrite === null) return facts;                       // the free do-nothing path
       const payload = facts['request.chat.openaiChatCompletions'];
-      const messages = rewriteChatCompletionsRoles(payload.messages, rewrite);
+      const messages = rewriteOpenAIChatCompletionsRoles(payload.messages, rewrite);
       // Written conditionally the whole way down, so a conversation this does not touch
       // comes back by identity and the layer costs what the rewrite actually changed.
       return messages === payload.messages
@@ -219,7 +219,7 @@ const rolesFor = (flags: readonly string[]): RoleRewrite | null => {
 
 type OpenAIChatCompletionsMessages = OpenAIChatCompletionsPayload['messages'];
 
-const rewriteChatCompletionsRoles = (messages: OpenAIChatCompletionsMessages, rewrite: RoleRewrite): OpenAIChatCompletionsMessages => {
+const rewriteOpenAIChatCompletionsRoles = (messages: OpenAIChatCompletionsMessages, rewrite: RoleRewrite): OpenAIChatCompletionsMessages => {
   const nextRole = roleRewriter(rewrite);
   return mapKeepingIdentity(messages, message => {
     const role = nextRole(message.role);
@@ -255,7 +255,7 @@ type RewrittenRole = 'system' | 'developer' | 'user';
 /** The reasoning sentinel a forced tool choice needs. Gated by its flag, and the sentinel
  *  is the gateway's canonical form — putting it on the wire in a vendor's shape is the
  *  vendor normalizer's job, which is why this runs above them. */
-export const disableReasoningOnForcedToolChoiceForChatCompletions = defineStage<
+export const disableReasoningOnForcedToolChoiceForOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -293,7 +293,7 @@ const isForcedToolChoice = (choice: OpenAIChatCompletionsPayload['tool_choice'])
 
 /** Drops a field the upstream would reject as an unknown argument. It runs above the vendor
  *  normalizers so each of them sees the already-stripped canonical payload. */
-export const stripPromptCacheKeyForChatCompletions = defineStage<
+export const stripPromptCacheKeyForOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -341,7 +341,7 @@ export const stripPromptCacheKeyForChatCompletions = defineStage<
  *
  * Reference: https://platform.openai.com/docs/api-reference/chat/create
  */
-export const includeUsageStreamOptionsForChatCompletions = defineStage<
+export const includeUsageStreamOptionsForOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -390,7 +390,7 @@ export const includeUsageStreamOptionsForChatCompletions = defineStage<
  * It runs above the vendor normalizers, so on the way back it sees a usage block whose cache
  * fields already carry OpenAI's names.
  */
-export const normalizeUsageForChatCompletions = defineStage<
+export const normalizeUsageForOpenAIChatCompletions = defineStage<
   Record<string, never>,
   Record<string, never>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -459,7 +459,7 @@ const withUsageOnItsOwnCarrier = async function* (
  * It runs below the vendor normalizers, so on the way back it reads usage whose cache fields
  * already carry OpenAI's names.
  */
-export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
+export const normalizeExclusiveCachedTokensForOpenAIChatCompletions = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -493,7 +493,7 @@ export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
         const identity = attemptIdentity(attempt);
         const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(
           facts['response.chat.openaiChatCompletions'],
-          frames => rewritingEvents(frames, chunk => foldChatCompletionsUsage(chunk, declaredExclusive, identity)),
+          frames => rewritingEvents(frames, chunk => foldOpenAIChatCompletionsUsage(chunk, declaredExclusive, identity)),
         );
         return answer === null ? facts : { ...facts, 'response.chat.openaiChatCompletions': move(answer) };
       },
@@ -503,21 +503,21 @@ export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
 
 /** Chat Completions carries usage on the chunk's own root and names the buckets
  *  `prompt_tokens` and `prompt_tokens_details.{cached_tokens, cache_creation_input_tokens}`. */
-const CHAT_COMPLETIONS_CACHE_BUCKETS: CacheBucketNames = {
+const OPENAI_CHAT_COMPLETIONS_CACHE_BUCKETS: CacheBucketNames = {
   input: 'prompt_tokens',
   output: 'completion_tokens',
   details: 'prompt_tokens_details',
   cacheWrite: ['cache_creation_input_tokens', 'cache_write_tokens'],
 };
 
-const foldChatCompletionsUsage = (
+const foldOpenAIChatCompletionsUsage = (
   chunk: OpenAIChatCompletionsStreamEvent,
   declaredExclusive: boolean,
   identity: string,
 ): OpenAIChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (usage === null) return chunk;
-  const folded = withCacheBucketsFolded(usage, CHAT_COMPLETIONS_CACHE_BUCKETS, declaredExclusive, identity);
+  const folded = withCacheBucketsFolded(usage, OPENAI_CHAT_COMPLETIONS_CACHE_BUCKETS, declaredExclusive, identity);
   return folded === usage ? chunk : { ...chunk, usage: folded as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
@@ -548,7 +548,7 @@ const foldChatCompletionsUsage = (
  * - https://api-docs.deepseek.com/guides/kv_cache
  * - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
  */
-export const vendorDeepSeekNormalizeForChatCompletions = defineStage<
+export const vendorDeepSeekNormalizeForOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -664,7 +664,7 @@ const deepSeekInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICh
  *  canonical sentinel. Its response shape matches OpenAI for the fields the gateway reads, so
  *  there is nothing to do on the way back.
  *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
-export const vendorQwenNormalizeForChatCompletions = defineStage<
+export const vendorQwenNormalizeForOpenAIChatCompletions = defineStage<
   Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
   Chat<'request.chat.openaiChatCompletions'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -702,7 +702,7 @@ export const vendorQwenNormalizeForChatCompletions = defineStage<
  *  rules above this one read OpenAI's `prompt_tokens_details.cached_tokens`, so it is put
  *  there. Kimi accepts the canonical request shape, so there is nothing to do on the way out.
  *  https://platform.kimi.com/docs/api/chat */
-export const vendorKimiNormalizeForChatCompletions = defineStage<
+export const vendorKimiNormalizeForOpenAIChatCompletions = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
   Chat<'response.chat.openaiChatCompletions'>,
@@ -772,7 +772,7 @@ type OpenAIChatCompletionsDeltaWithDeepSeekReasoning =
  * the same flag as the other protocols' fold but is not that fold: there is no leading run to
  * cross here, and no developer role to trade with.
  */
-export const applyRoleCompatibilityToMessages = defineStage<
+export const applyRoleCompatibilityToAnthropicMessages = defineStage<
   Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
   Chat<'request.chat.anthropicMessages'>,
   Chat<'response.chat.anthropicMessages'>,
@@ -808,7 +808,7 @@ export const applyRoleCompatibilityToMessages = defineStage<
 /** The reasoning sentinel a forced tool choice needs, in the shape this protocol has
  *  natively. `tool` and `any` are the forced choices; `auto` and `none` leave the model free
  *  to reason. */
-export const disableReasoningOnForcedToolChoiceForMessages = defineStage<
+export const disableReasoningOnForcedToolChoiceForAnthropicMessages = defineStage<
   Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
   Chat<'request.chat.anthropicMessages'>,
   Chat<'response.chat.anthropicMessages'>,
@@ -836,7 +836,7 @@ export const disableReasoningOnForcedToolChoiceForMessages = defineStage<
       const payload = facts['request.chat.anthropicMessages'];
       const choice = payload.tool_choice?.type;
       if (choice !== 'tool' && choice !== 'any') return facts;
-      return { ...facts, 'request.chat.anthropicMessages': move(withMessagesReasoningDisabled(payload)) };
+      return { ...facts, 'request.chat.anthropicMessages': move(withAnthropicMessagesReasoningDisabled(payload)) };
     },
   })),
 });
@@ -845,7 +845,7 @@ export const disableReasoningOnForcedToolChoiceForMessages = defineStage<
  *  with structured output on these upstreams, and it is thinking it does not compose with, so
  *  `output_config.format` has to survive. An `output_config` that held nothing but the effort
  *  is nothing at all once the effort is gone, so it goes rather than riding on empty. */
-const withMessagesReasoningDisabled = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
+const withAnthropicMessagesReasoningDisabled = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
   const { output_config, ...rest } = payload;
   const next: AnthropicMessagesPayload = { ...rest, thinking: { type: 'disabled' as const } };
   if (output_config !== undefined) {
@@ -873,7 +873,7 @@ const withMessagesReasoningDisabled = (payload: AnthropicMessagesPayload): Anthr
  * does with it is not documented anywhere primary — the observable part is that the CLI adds
  * *more* of these fields on its first-party path, so it reads as a client-attribution signal.
  */
-export const stripBillingAttributionFromMessages = defineStage<
+export const stripBillingAttributionFromAnthropicMessages = defineStage<
   Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
   Chat<'request.chat.anthropicMessages'>,
   Chat<'response.chat.anthropicMessages'>,
@@ -951,7 +951,7 @@ const scrubbedSystemPrompt = (system: AnthropicMessagesPayload['system']): Anthr
 /** Gemini file and code parts have no equivalent anywhere the translations reach, so they go
  *  at source and every target sees translatable parts. A part left holding nothing goes with
  *  them: it is not a part any more. */
-export const stripUnsupportedPartFieldsFromGemini = defineStage<
+export const stripUnsupportedPartFieldsFromGeminiGenerateContent = defineStage<
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'response.chat.geminiGenerateContent'>,
@@ -1014,7 +1014,7 @@ const stripContentParts = (content: GeminiGenerateContentContent): GeminiGenerat
  *  capabilities go — and a group left declaring no function goes with them, because a target
  *  emitter offered an empty group would be offered a tool that does nothing. `tools` itself
  *  goes when no group survived: an empty tool list is a different request from no tools. */
-export const stripUnsupportedToolsFromGemini = defineStage<
+export const stripUnsupportedToolsFromGeminiGenerateContent = defineStage<
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'response.chat.geminiGenerateContent'>,
@@ -1075,7 +1075,7 @@ const withUnsupportedToolsStripped = (payload: GeminiGenerateContentPayload): Ge
 /** Gemini safety controls are source-specific and have no matching control on every target
  *  path, so they go rather than have us pretend to enforce a policy we cannot honor
  *  end to end. */
-export const stripSafetySettingsFromGemini = defineStage<
+export const stripSafetySettingsFromGeminiGenerateContent = defineStage<
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'response.chat.geminiGenerateContent'>,
@@ -1108,7 +1108,7 @@ export const stripSafetySettingsFromGemini = defineStage<
  * So it rides in this stage's own closure rather than as a declaration: a response-side
  * `needs` can only name what the ending provides, which is the answer and not the turn.
  */
-export const suppressThoughtPartsFromGemini = defineStage<
+export const suppressThoughtPartsFromGeminiGenerateContent = defineStage<
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'request.chat.geminiGenerateContent'>,
   Chat<'response.chat.geminiGenerateContent'>,
@@ -1175,11 +1175,11 @@ const withoutThoughtParts = async function* (
       ...frame.event,
       ...(candidates === undefined ? {} : { candidates }),
     };
-    if (hasGeminiEventPayload(event)) yield eventFrame(event);
+    if (hasGeminiGenerateContentEventPayload(event)) yield eventFrame(event);
   }
 };
 
-const hasGeminiEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
+const hasGeminiGenerateContentEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
   if ('error' in event) return true;
   return (event.candidates?.length ?? 0) > 0
     || event.usageMetadata !== undefined
@@ -1193,7 +1193,7 @@ const hasGeminiEventPayload = (event: GeminiGenerateContentStreamEvent): boolean
  *  here is the walk over this protocol's input items. Only a message item carries a role, and
  *  an item that carries none still crosses the leading system run — a reasoning item between
  *  two system messages is what makes the second one mid-conversation. */
-export const applyRoleCompatibilityToResponses = defineStage<
+export const applyRoleCompatibilityToOpenAIResponses = defineStage<
   Chat<'request.chat.openaiResponses' | 'route.attempt'>,
   Chat<'request.chat.openaiResponses'>,
   Chat<'response.chat.openaiResponses'>,
@@ -1219,7 +1219,7 @@ export const applyRoleCompatibilityToResponses = defineStage<
       if (rewrite === null) return facts;                       // the free do-nothing path
       // The key holds what a client may send, whose `input` is a string or a list; this chain
       // runs on the canonical form the entry normalized it to, which is the one a wire takes.
-      const payload = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
+      const payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
       const nextRole = roleRewriter(rewrite);
       const input = mapKeepingIdentity(payload.input, (item): OpenAIResponsesInputItem => {
         if (item.type !== 'message') {
@@ -1241,7 +1241,7 @@ export const applyRoleCompatibilityToResponses = defineStage<
  *  rather than merged — a summary has no meaning once there is nothing to summarize — and
  *  the sentinel is the gateway's canonical form, which is why this runs above the vendor
  *  normalizers that put it on the wire in a vendor's shape. */
-export const disableReasoningOnForcedToolChoiceForResponses = defineStage<
+export const disableReasoningOnForcedToolChoiceForOpenAIResponses = defineStage<
   Chat<'request.chat.openaiResponses' | 'route.attempt'>,
   Chat<'request.chat.openaiResponses'>,
   Chat<'response.chat.openaiResponses'>,
@@ -1267,13 +1267,13 @@ export const disableReasoningOnForcedToolChoiceForResponses = defineStage<
         return facts;
       }
       const payload = facts['request.chat.openaiResponses'];
-      if (!isForcedResponsesToolChoice(payload.tool_choice)) return facts;
+      if (!isForcedOpenAIResponsesToolChoice(payload.tool_choice)) return facts;
       return { ...facts, 'request.chat.openaiResponses': move({ ...payload, reasoning: { effort: 'none' } }) };
     },
   })),
 });
 
-const isForcedResponsesToolChoice = (choice: OpenAIResponsesPayload['tool_choice']): boolean => {
+const isForcedOpenAIResponsesToolChoice = (choice: OpenAIResponsesPayload['tool_choice']): boolean => {
   if (choice === undefined || choice === null) return false;
   if (typeof choice === 'string') return choice === 'required';
   return true;
@@ -1281,7 +1281,7 @@ const isForcedResponsesToolChoice = (choice: OpenAIResponsesPayload['tool_choice
 
 /** Drops a field the upstream would reject as an unknown argument. It runs above the vendor
  *  normalizers so each of them sees the already-stripped canonical payload. */
-export const stripPromptCacheKeyForResponses = defineStage<
+export const stripPromptCacheKeyForOpenAIResponses = defineStage<
   Chat<'request.chat.openaiResponses' | 'route.attempt'>,
   Chat<'request.chat.openaiResponses'>,
   Chat<'response.chat.openaiResponses'>,
@@ -1323,7 +1323,7 @@ export const stripPromptCacheKeyForResponses = defineStage<
  * the contradictions that raise are documented at `foldsExclusiveCacheTokens` and at
  * `withCacheBucketsFolded`, which is the fold itself.
  */
-export const normalizeExclusiveCachedTokensForResponses = defineStage<
+export const normalizeExclusiveCachedTokensForOpenAIResponses = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
   Chat<'response.chat.openaiResponses'>,
@@ -1353,7 +1353,7 @@ export const normalizeExclusiveCachedTokensForResponses = defineStage<
         const identity = attemptIdentity(attempt);
         const answer = answerWithFrames<OpenAIResponsesStreamEvent>(
           facts['response.chat.openaiResponses'],
-          frames => rewritingEvents(frames, event => foldResponsesUsage(event, declaredExclusive, identity)),
+          frames => rewritingEvents(frames, event => foldOpenAIResponsesUsage(event, declaredExclusive, identity)),
         );
         return answer === null ? facts : { ...facts, 'response.chat.openaiResponses': move(answer) };
       },
@@ -1363,14 +1363,14 @@ export const normalizeExclusiveCachedTokensForResponses = defineStage<
 
 /** Responses carries usage on `event.response.usage` and names the buckets `input_tokens` and
  *  `input_tokens_details.{cached_tokens, cache_write_tokens}`. */
-const RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
+const OPENAI_RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
   input: 'input_tokens',
   output: 'output_tokens',
   details: 'input_tokens_details',
   cacheWrite: ['cache_write_tokens'],
 };
 
-const foldResponsesUsage = (
+const foldOpenAIResponsesUsage = (
   event: OpenAIResponsesStreamEvent,
   declaredExclusive: boolean,
   identity: string,
@@ -1379,7 +1379,7 @@ const foldResponsesUsage = (
   const response = asJsonObject(event.response);
   const usage = asJsonObject(response?.usage);
   if (response === null || usage === null) return event;
-  const folded = withCacheBucketsFolded(usage, RESPONSES_CACHE_BUCKETS, declaredExclusive, identity);
+  const folded = withCacheBucketsFolded(usage, OPENAI_RESPONSES_CACHE_BUCKETS, declaredExclusive, identity);
   if (folded === usage) return event;
   return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as OpenAIResponsesStreamEvent;
 };
@@ -1388,7 +1388,7 @@ const foldResponsesUsage = (
  *  with the canonical sentinel, so the sentinel is put into its wire form here — last among
  *  this chain's rewrites, because a vendor normalizer has the final say on the outbound body.
  *  https://api-docs.deepseek.com/zh-cn/guides/thinking_mode */
-export const vendorDeepSeekNormalizeForResponses = defineStage<
+export const vendorDeepSeekNormalizeForOpenAIResponses = defineStage<
   Chat<'request.chat.openaiResponses' | 'route.attempt'>,
   Chat<'request.chat.openaiResponses'>,
   Chat<'response.chat.openaiResponses'>,
@@ -1422,7 +1422,7 @@ export const vendorDeepSeekNormalizeForResponses = defineStage<
 
 /** Qwen says the same thing with a top-level `enable_thinking: false`.
  *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
-export const vendorQwenNormalizeForResponses = defineStage<
+export const vendorQwenNormalizeForOpenAIResponses = defineStage<
   Chat<'request.chat.openaiResponses' | 'route.attempt'>,
   Chat<'request.chat.openaiResponses'>,
   Chat<'response.chat.openaiResponses'>,

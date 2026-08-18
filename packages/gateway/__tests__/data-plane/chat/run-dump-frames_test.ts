@@ -15,7 +15,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseChatCompletionsResponse, sseResponsesResponse } from '../../test-utils/app.ts';
+import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse } from '../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 /** A Copilot seat, as far as a turn can see it: the editor version probe, the token exchange,
@@ -102,7 +102,7 @@ const ANSWER = 'hello there';
 const openaiChatCompletionsTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
   await withCopilot(
     [{ id: 'gpt-frames', supported_endpoints: ['/chat/completions'] }],
-    () => sseChatCompletionsResponse({
+    () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_frames',
       object: 'chat.completion',
       model: 'gpt-frames',
@@ -119,7 +119,7 @@ const openaiChatCompletionsTurn = (stream: boolean) => async (apiKey: string): P
 const openaiResponsesTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
   await withCopilot(
     [{ id: 'gpt-responses-frames', supported_endpoints: ['/responses'] }],
-    () => sseResponsesResponse({
+    () => sseOpenAIResponsesResponse({
       id: 'resp_frames',
       object: 'response',
       model: 'gpt-responses-frames',

@@ -15,7 +15,7 @@ import { withInteractionIdHeaderSet } from './set-interaction-id-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withCacheControlExtensionsStripped } from './strip-cache-control-extensions.ts';
 import { withEagerInputStreamingStripped } from './strip-eager-input-streaming.ts';
-import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoundaryInterceptor } from './types.ts';
+import type { CopilotAnthropicMessagesBoundaryInterceptor, CopilotAnthropicMessagesCountTokensBoundaryInterceptor } from './types.ts';
 
 // Order rationale, split into two lanes that run back-to-back:
 //
@@ -35,7 +35,7 @@ import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoun
 //   outgoing payload; withTopLevelCacheControlApplied runs before
 //   withCacheControlExtensionsStripped so the ported marker on the last
 //   cacheable block is cleaned in the same pass. withSpeedFast strips the
-//   client's `speed` field (already consumed by callMessages for raw-variant
+//   client's `speed` field (already consumed by callAnthropicMessages for raw-variant
 //   selection) and post-`run()` stamps `usage.speed='fast'` onto outbound
 //   message_start/message_delta events when Fast Mode was requested. The
 //   header lane closes by normalizing admitted caller beta intent, then adding
@@ -45,13 +45,13 @@ import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoun
 //   compact-tagged value above — that mirrors the pre-boundary target-side
 //   override.
 //
-// `withMessagesWebSearchShim` is intentionally NOT registered here. The shim
+// `withAnthropicMessagesWebSearchShim` is intentionally NOT registered here. The shim
 // is the gateway's rather than this provider's — it rewrites Anthropic's
 // native server tool into an ordinary client tool and runs the search itself,
 // which is work no provider boundary does. This provider opts into it by
 // listing `messages-web-search-shim` in its default flag set (see
 // COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
-export const COPILOT_MESSAGES_BOUNDARY = [
+export const COPILOT_ANTHROPIC_MESSAGES_BOUNDARY = [
   rewriteContextWindowError,
   withCompactHeadersSet,
   withClaudeAgentHeadersSet,
@@ -65,7 +65,7 @@ export const COPILOT_MESSAGES_BOUNDARY = [
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaNormalized,
-] as const satisfies readonly CopilotMessagesBoundaryInterceptor[];
+] as const satisfies readonly CopilotAnthropicMessagesBoundaryInterceptor[];
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
 // upstream Response. The Copilot provider applies vision detection,
@@ -79,9 +79,9 @@ export const COPILOT_MESSAGES_BOUNDARY = [
 // raw Response at all, and the remaining payload mutators and header setters
 // each answer something we observed on the generation endpoint, with no
 // equivalent need seen on count_tokens.
-export const COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY = [
+export const COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY = [
   withInlineImagesCompressed,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaNormalized,
-] as const satisfies readonly CopilotMessagesCountTokensBoundaryInterceptor[];
+] as const satisfies readonly CopilotAnthropicMessagesCountTokensBoundaryInterceptor[];

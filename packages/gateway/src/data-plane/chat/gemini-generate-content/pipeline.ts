@@ -1,18 +1,18 @@
 // Gemini as a pipeline — the same chain as Chat Completions, for the one source-only family.
 //
-//   emitGemini                       the edge: writes the answer in the shape the client asked for
+//   emitGeminiGenerateContent                       the edge: writes the answer in the shape the client asked for
 //   writeSettlement                  above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates            narrows to what can serve, in the order affinity asks for
 //   failover                         runs what follows once per candidate
 //   materializeAttempt               puts the payload this candidate is owed into the record
-//   the strippers, then requireGeminiTerminal
+//   the strippers, then requireGeminiGenerateContentTerminal
 //   dialChatWire                     the ending: picks this candidate's wire and hands into it
 //
 // Gemini is source-only. Nothing translates *into* it, so it contributes one pipeline rather
 // than two — a source role and no target role, and no other family's chain ever hands up
 // `response.chat.geminiGenerateContent`.
 //
-// It is also the one family with no wire of its own: the provider surface has no `callGemini`,
+// It is also the one family with no wire of its own: the provider surface has no `callGeminiGenerateContent`,
 // so every candidate is reached through a translation and all three wires are translated ones
 // — a handoff into Chat Completions, into Messages or into Responses, followed by that
 // protocol's own wire. Which one a candidate is dialled on is the picker's answer for that
@@ -22,7 +22,7 @@
 // spoke: the target protocol's own wire meters its own frames on their way into the
 // translation, so a figure the upstream stated is billed as stated. Where the *turn* ends is
 // a different question and is stated on the Gemini frames the client is handed, which is what
-// `requireGeminiTerminal` is for — a Chat Completions stream that closed cleanly without ever
+// `requireGeminiGenerateContentTerminal` is for — a Chat Completions stream that closed cleanly without ever
 // reporting a finish reason translates into candidates that never finish.
 //
 // `:countTokens` is not one of the three: it is a second operation over this protocol rather
@@ -47,9 +47,9 @@
 // maps to `INTERNAL`. That part is a departure from the replaced surface, which raised such a
 // status to 500.
 
-import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
-import { analyzeGeminiAffinity } from './affinity/ingress.ts';
-import { renderGeminiError } from './errors.ts';
+import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
+import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
+import { renderGeminiGenerateContentError } from './errors.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -60,10 +60,10 @@ import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.t
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
-  stripSafetySettingsFromGemini,
-  stripUnsupportedPartFieldsFromGemini,
-  stripUnsupportedToolsFromGemini,
-  suppressThoughtPartsFromGemini,
+  stripSafetySettingsFromGeminiGenerateContent,
+  stripUnsupportedPartFieldsFromGeminiGenerateContent,
+  stripUnsupportedToolsFromGeminiGenerateContent,
+  suppressThoughtPartsFromGeminiGenerateContent,
 } from '../interceptors.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
@@ -73,19 +73,19 @@ import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type Cha
 import { compose, defineStage, move, transform, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
-  collectGeminiProtocolEventsToResult,
+  collectGeminiGenerateContentProtocolEventsToResult,
   geminiGenerateContentProtocolFrameToSSEFrame,
-  GEMINI_MISSING_TERMINAL_MESSAGE,
-  isGeminiTerminalEvent,
+  GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
+  isGeminiGenerateContentTerminalEvent,
   type GeminiGenerateContentPayload,
   type GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
-import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
+import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
 /** `:generateContent` has no wire of its own, so the whole preference list is translated:
  *  Chat Completions first, then Messages, then Responses. */
-export const geminiGenerateContentTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
+export const geminiGenerateContentTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 /** What this family adds to the chat space. */
 export interface GeminiGenerateContentFacts extends ChatFacts {
@@ -108,14 +108,14 @@ type C<K extends keyof GeminiGenerateContentFacts> = { [P in K]: GeminiGenerateC
  * Collecting is therefore the edge's own work and not a second reading of the upstream: the
  * same frames that would have gone out are folded here instead.
  */
-const emitGemini = defineStage<
+const emitGeminiGenerateContent = defineStage<
   C<'ingress.chat.geminiGenerateContent.wantsStream'>,
   C<'ingress.chat.geminiGenerateContent.wantsStream'>,
   C<'ingress.chat.geminiGenerateContent.wantsStream' | 'response.chat.geminiGenerateContent' | 'response.http.headers'>,
   C<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'emitGemini',
+  name: 'emitGeminiGenerateContent',
   through: {
     request: {
       needs: ['ingress.chat.geminiGenerateContent.wantsStream'],
@@ -141,7 +141,7 @@ const emitGemini = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiError(answer.status, answer.message))),
+        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiGenerateContentError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }
@@ -159,7 +159,7 @@ const emitGemini = defineStage<
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
     const frames = recordFrames(
-      wrapGeminiAffinityEgress(
+      wrapGeminiGenerateContentAffinityEgress(
         answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
         affinityEgressOptions(use.gateway),
       ),
@@ -170,7 +170,7 @@ const emitGemini = defineStage<
         ...rest,
         'response.http.headers': forClient,
         'response.chat.geminiGenerateContent.rendered': move(
-          await collectGeminiProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+          await collectGeminiGenerateContentProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
         'response.http.status': 200,
       };
@@ -208,13 +208,13 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStre
  * It sits below the thought suppressor and above the fork: what it truncates is what the rules
  * above it then work on, which is the order the fused ending had.
  */
-const requireGeminiTerminal = defineStage<
+const requireGeminiGenerateContentTerminal = defineStage<
   Record<string, never>,
   Record<string, never>,
   C<'response.chat.geminiGenerateContent'>,
   C<'response.chat.geminiGenerateContent'>
 >({
-  name: 'requireGeminiTerminal',
+  name: 'requireGeminiGenerateContentTerminal',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: { needs: ['response.chat.geminiGenerateContent'], consumes: [], provides: ['response.chat.geminiGenerateContent'] },
@@ -249,9 +249,9 @@ const framesUntilTerminal = async function* (
 ): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   for await (const frame of frames) {
     yield frame;
-    if (frame.type === 'done' || isGeminiTerminalEvent(frame.event)) return;
+    if (frame.type === 'done' || isGeminiGenerateContentTerminalEvent(frame.event)) return;
   }
-  throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
+  throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
 };
 
 /** This family's own reading, which every wire under it hands up. */
@@ -262,30 +262,30 @@ const STREAMED_USAGE = 'response.chat.geminiGenerateContent.streamedUsage';
 const geminiGenerateContentWireFor = (target: ChatTargetApi, candidate: ModelCandidate): ChatWire => {
   const context = { model: candidate.model.id, fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens };
   switch (target) {
-  case 'chat-completions':
+  case 'openaiChatCompletions':
     return compose('geminiGenerateContentViaOpenAIChatCompletions', [
       handOff({
         from: { request: 'request.chat.geminiGenerateContent', response: 'response.chat.geminiGenerateContent' },
         to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
-        trip: async payload => await translateGeminiViaChatCompletions(payload, context),
+        trip: async payload => await translateGeminiGenerateContentViaOpenAIChatCompletions(payload, context),
       }),
       ...openaiChatCompletionsWire(STREAMED_USAGE),
     ]);
-  case 'messages':
+  case 'anthropicMessages':
     return compose('geminiGenerateContentViaAnthropicMessages', [
       handOff({
         from: { request: 'request.chat.geminiGenerateContent', response: 'response.chat.geminiGenerateContent' },
         to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
-        trip: async payload => await translateGeminiViaMessages(payload, context),
+        trip: async payload => await translateGeminiGenerateContentViaAnthropicMessages(payload, context),
       }),
       ...anthropicMessagesWire(STREAMED_USAGE),
     ]);
-  case 'responses':
+  case 'openaiResponses':
     return compose('geminiGenerateContentViaOpenAIResponses', [
       handOff({
         from: { request: 'request.chat.geminiGenerateContent', response: 'response.chat.geminiGenerateContent' },
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
-        trip: async payload => await translateGeminiViaResponses(payload, context),
+        trip: async payload => await translateGeminiGenerateContentViaOpenAIResponses(payload, context),
       }),
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
@@ -297,7 +297,7 @@ const geminiGenerateContentWireFor = (target: ChatTargetApi, candidate: ModelCan
  *  built from the request rather than being a constant. */
 const narrowing = (payload: GeminiGenerateContentPayload): ChatNarrowing<C<'response.chat.geminiGenerateContent' | 'response.chat.geminiGenerateContent.streamedUsage'>> => ({
   canServe: candidate => geminiGenerateContentTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeGeminiAffinity(payload, gateway.affinity.codec),
+  affinity: async gateway => await analyzeGeminiGenerateContentAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the Gemini generateContent endpoint.`,
   refuse: (status, message) => ({
     'response.chat.geminiGenerateContent': { status, message },
@@ -320,7 +320,7 @@ export type GeminiGenerateContentServeExit = C<
 
 export const geminiGenerateContentServePipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentServeEntry, GeminiGenerateContentServeExit> =>
   compose('geminiGenerateContentServe', [
-    emitGemini,
+    emitGeminiGenerateContent,
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
       handedUp => (handedUp as { 'response.chat.geminiGenerateContent.streamedUsage'?: unknown })['response.chat.geminiGenerateContent.streamedUsage'] !== null,
@@ -331,11 +331,11 @@ export const geminiGenerateContentServePipeline = (payload: GeminiGenerateConten
       owns: [],
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),
-    stripUnsupportedPartFieldsFromGemini,
-    stripUnsupportedToolsFromGemini,
-    stripSafetySettingsFromGemini,
-    suppressThoughtPartsFromGemini,
-    requireGeminiTerminal,
+    stripUnsupportedPartFieldsFromGeminiGenerateContent,
+    stripUnsupportedToolsFromGeminiGenerateContent,
+    stripSafetySettingsFromGeminiGenerateContent,
+    suppressThoughtPartsFromGeminiGenerateContent,
+    requireGeminiGenerateContentTerminal,
     dialChatWire({
       source: 'request.chat.geminiGenerateContent',
       needs: ['request.chat.geminiGenerateContent', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

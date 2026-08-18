@@ -20,8 +20,8 @@ import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
-import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { directFetcher, type FlagId, type ModelCandidate, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -33,13 +33,13 @@ let live: readonly ModelCandidate[] = [];
 
 const candidate = (
   calls: {
-    callResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderResponsesResult>;
-    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+    callOpenAIResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderOpenAIResponsesResult>;
+    callAnthropicMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
   const upstreamId = overrides.upstreamId ?? 'up_a';
-  const endpoints = overrides.endpoints ?? { responses: {} };
+  const endpoints = overrides.endpoints ?? { openaiResponses: {} };
   const enabledFlags = overrides.enabledFlags ?? new Set<FlagId>();
   return {
     provider: {
@@ -96,7 +96,7 @@ const completed = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAI
 
 // The upstream's own stream, as the provider hands it up: typed frames, and the `done` frame
 // its SSE transport ended on.
-const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderResponsesResult => ({
+const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderOpenAIResponsesResult => ({
   action: 'generate',
   ok: true,
   modelKey: 'responses-model-key',
@@ -138,28 +138,28 @@ const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unkno
 const payload = {
   model: 'responses-model',
   input: [{ type: 'message', role: 'user', content: 'hi' }],
-} as unknown as CanonicalResponsesPayload;
+} as unknown as CanonicalOpenAIResponsesPayload;
 
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
-let affinityPayload: CanonicalResponsesPayload = payload;
+let affinityPayload: CanonicalOpenAIResponsesPayload = payload;
 
 /** How many times the chain asked the resolver for that payload. One stage owns the reading;
  *  anything below it reads the record. */
 let asked = 0;
 
-const serve = async (wantsStream: boolean, request: CanonicalResponsesPayload = payload) =>
+const serve = async (wantsStream: boolean, request: CanonicalOpenAIResponsesPayload = payload) =>
   await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream, request);
 
 const serveWith = async (
   gateway: ReturnType<typeof mockChatGatewayCtx>,
   wantsStream: boolean,
-  request: CanonicalResponsesPayload = payload,
+  request: CanonicalOpenAIResponsesPayload = payload,
 ) => await run(
   openaiResponsesServePipeline(request),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
-    'ingress.chat.sourceProtocol': 'responses',
+    'ingress.chat.sourceProtocol': 'openaiResponses',
     'ingress.chat.openaiResponses.wantsStream': wantsStream,
     'request.chat.openaiResponses': request,
     'serve.model': 'responses-model',
@@ -218,7 +218,7 @@ const asksForCompaction = {
     { type: 'message', role: 'user', content: 'a long conversation' },
     { type: 'compaction_trigger' },
   ],
-} as unknown as CanonicalResponsesPayload;
+} as unknown as CanonicalOpenAIResponsesPayload;
 
 /** The compaction item out of what the client was answered with. */
 const compactionItem = (answered: Record<string, unknown>): { readonly encrypted_content: string } => {
@@ -264,9 +264,9 @@ describe('the responses chain', () => {
     affinityPayload = {
       ...payload,
       input: [{ type: 'message', role: 'user', content: 'rewritten' }],
-    } as CanonicalResponsesPayload;
+    } as CanonicalOpenAIResponsesPayload;
     resolves([candidate({
-      callResponses: async (_model, body, asks) => {
+      callOpenAIResponses: async (_model, body, asks) => {
         sent = body as Record<string, unknown>;
         action = asks;
         return stream(completed('hi'));
@@ -297,9 +297,9 @@ describe('the responses chain', () => {
         { type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'summary so far' }] },
         { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'and then?' }] },
       ],
-    } as unknown as CanonicalResponsesPayload;
+    } as unknown as CanonicalOpenAIResponsesPayload;
     resolves([candidate({
-      callResponses: async (_model, body) => {
+      callOpenAIResponses: async (_model, body) => {
         sent = body as Record<string, unknown>;
         return stream(completed('hi'));
       },
@@ -319,7 +319,7 @@ describe('the responses chain', () => {
   // Every event goes out under its own SSE name, and the client's stream ends on the literal
   // `[DONE]` the transport reads as the turn being over.
   it('writes the frames out when the client asked to stream', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
 
     const { facts } = await serve(true);
     const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
@@ -355,7 +355,7 @@ describe('the responses chain', () => {
   // this is what the client is given to carry back. A turn that handed back nothing would
   // leave the follow-up quoting it with no way to name the upstream that issued it.
   it('hands the turn-s own state back on an item of its own', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('hi'), completed('hi')) })]);
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
@@ -379,7 +379,7 @@ describe('the responses chain', () => {
   // the reading is taken off the frames the client itself drove.
   it('bills what the terminal event reported, once the frames have run out', async () => {
     resolves([candidate({
-      callResponses: async () => stream(
+      callOpenAIResponses: async () => stream(
         delta('hi'),
         completed('hi', { input_tokens: 11, output_tokens: 7, total_tokens: 18 }),
       ),
@@ -401,7 +401,7 @@ describe('the responses chain', () => {
   // Time to first token is measured where the token is — a lifecycle envelope is not one, and
   // a run that never stamps it is recorded as having produced nothing to time.
   it('stamps the first frame that carried a generated token', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('hi'), completed('hi')) })]);
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
@@ -415,7 +415,7 @@ describe('the responses chain', () => {
   // of the answer and the client is not shown it. Reading stops there, which also closes the
   // upstream rather than leaving the client's stream open behind a connection nobody reads.
   it('stops reading at the terminal event', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi'), delta(' and more')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('hi'), completed('hi'), delta(' and more')) })]);
 
     const { facts } = await serve(true);
     const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
@@ -434,7 +434,7 @@ describe('the responses chain', () => {
   // words — and the stream ends on that rather than on the terminator, because a stream that
   // ended on `[DONE]` is a stream that finished.
   it('tells a client already being streamed to that the stream never ended', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('hi')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('hi')) })]);
 
     const { facts } = await serve(true);
     const frames = await drain(facts['response.chat.openaiResponses.rendered']);
@@ -442,7 +442,7 @@ describe('the responses chain', () => {
     expect(frames.map(frame => frame.event)).toEqual(['response.output_text.delta', 'error']);
     expect(JSON.parse(frames[1]!.data)).toMatchObject({
       type: 'error',
-      error: { message: RESPONSES_MISSING_TERMINAL_MESSAGE },
+      error: { message: OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE },
     });
     // The client was answered, and the run still failed: what the frames said on the way out
     // is not what the row says the turn was.
@@ -452,7 +452,7 @@ describe('the responses chain', () => {
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to
   // stream is answered from the same frames — folded here rather than read a second time.
   it('folds the frames into one response when the client did not', async () => {
-    resolves([candidate({ callResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
 
     const { facts } = await serve(false);
 
@@ -480,7 +480,7 @@ describe('the responses chain', () => {
       usage: { input_tokens: 900, output_tokens: 40, total_tokens: 940 },
     };
     resolves([candidate({
-      callResponses: async () => ({
+      callOpenAIResponses: async () => ({
         action: 'compact', ok: true, modelKey: 'responses-model-key', result: compaction,
       }),
     })]);
@@ -498,7 +498,7 @@ describe('the responses chain', () => {
   // Content-length would misdescribe a body this gateway serialized itself; a vendor trace
   // is what a client and an operator both need to correlate a turn.
   it('forwards the upstream headers a client may see and drops the ones it may not', async () => {
-    resolves([candidate({ callResponses: async () => stream(completed('hi')) })]);
+    resolves([candidate({ callOpenAIResponses: async () => stream(completed('hi')) })]);
 
     const { facts } = await serve(true);
 
@@ -508,7 +508,7 @@ describe('the responses chain', () => {
 
   it('answers an upstream refusal with its own status and words', async () => {
     resolves([candidate({
-      callResponses: async () => ({
+      callOpenAIResponses: async () => ({
         action: 'generate',
         ok: false,
         modelKey: 'responses-model-key',
@@ -529,8 +529,8 @@ describe('the responses chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate({ callResponses: async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); } }, { upstreamId: 'up_dead' }),
-      candidate({ callResponses: async () => { tried.push('alive'); return stream(completed('hi')); } }, { upstreamId: 'up_alive' }),
+      candidate({ callOpenAIResponses: async () => { tried.push('dead'); throw new Error('ECONNREFUSED'); } }, { upstreamId: 'up_dead' }),
+      candidate({ callOpenAIResponses: async () => { tried.push('alive'); return stream(completed('hi')); } }, { upstreamId: 'up_alive' }),
     ]);
 
     const { facts } = await serve(false);
@@ -546,7 +546,7 @@ describe('the responses chain', () => {
   // answering the client with a 502 raised where nothing can explain it.
   it('hands the provider a body it can write into, children included', async () => {
     resolves([candidate({
-      callResponses: async (_model, body) => {
+      callOpenAIResponses: async (_model, body) => {
         const item = (body as { input: Record<string, unknown>[] }).input[0]!;
         item.copilot_cache_control = { type: 'ephemeral' };
         return stream(completed('hi'));
@@ -567,7 +567,7 @@ describe('the responses chain', () => {
     affinityPayload = asksForCompaction;
     resolves([candidate(
       {
-        callResponses: async (_model, body) => {
+        callOpenAIResponses: async (_model, body) => {
           sent = body as Record<string, unknown>;
           return stream(completed('CONDENSED SUMMARY'));
         },
@@ -597,7 +597,7 @@ describe('the responses chain', () => {
     let sent: Record<string, unknown> | undefined;
     resolves([candidate(
       {
-        callResponses: async (_model, body) => {
+        callOpenAIResponses: async (_model, body) => {
           sent = body as Record<string, unknown>;
           return stream(completed('hello'));
         },
@@ -627,7 +627,7 @@ describe('the responses chain', () => {
     };
     affinityPayload = asksForCompaction;
     resolves([candidate({
-      callResponses: async (_model, body) => {
+      callOpenAIResponses: async (_model, body) => {
         sent = body as Record<string, unknown>;
         return { action: 'compact', ok: true, modelKey: 'responses-model-key', result: upstreamCompaction };
       },
@@ -647,8 +647,8 @@ describe('the responses chain', () => {
     const seen: { body?: Record<string, unknown> } = {};
     affinityPayload = asksForCompaction;
     resolves([candidate(
-      { callMessages: anthropicMessagesTurn('CONDENSED SUMMARY', seen) },
-      { endpoints: { messages: {} } },
+      { callAnthropicMessages: anthropicMessagesTurn('CONDENSED SUMMARY', seen) },
+      { endpoints: { anthropicMessages: {} } },
     )]);
     const gateway = mockChatGatewayCtx({ wantsStream: false });
 
@@ -678,11 +678,11 @@ describe('the responses chain', () => {
         },
         { type: 'message', role: 'user', content: 'and then?' },
       ],
-    } as unknown as CanonicalResponsesPayload;
+    } as unknown as CanonicalOpenAIResponsesPayload;
     affinityPayload = continues;
     resolves([candidate(
       {
-        callResponses: async (_model, body) => {
+        callOpenAIResponses: async (_model, body) => {
           sent = body as Record<string, unknown>;
           return stream(completed('hi'));
         },
@@ -707,10 +707,10 @@ describe('the responses chain', () => {
     const continues = {
       ...payload,
       input: [{ type: 'compaction', id: 'cmp_prior', encrypted_content: encoded }],
-    } as unknown as CanonicalResponsesPayload;
+    } as unknown as CanonicalOpenAIResponsesPayload;
     affinityPayload = continues;
     resolves([candidate({
-      callResponses: async (_model, body) => {
+      callOpenAIResponses: async (_model, body) => {
         sent = body as Record<string, unknown>;
         return stream(completed('hi'));
       },

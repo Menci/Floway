@@ -3,7 +3,7 @@
 /** What a Gemini client is sent when a turn produced no content. `error.status` is the
  *  Google-RPC name and clients read it, so this shape is the protocol's rather than the
  *  gateway's — an OpenAI-shaped envelope would leave that field undefined. */
-export const renderGeminiError = (status: number, message: string): Record<string, unknown> => ({
+export const renderGeminiGenerateContentError = (status: number, message: string): Record<string, unknown> => ({
   error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) },
 });
 

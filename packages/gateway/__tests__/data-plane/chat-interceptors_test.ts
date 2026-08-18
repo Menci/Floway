@@ -8,28 +8,28 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  applyRoleCompatibilityToChatCompletions,
-  applyRoleCompatibilityToMessages,
-  applyRoleCompatibilityToResponses,
-  disableReasoningOnForcedToolChoiceForChatCompletions,
-  disableReasoningOnForcedToolChoiceForMessages,
-  disableReasoningOnForcedToolChoiceForResponses,
-  includeUsageStreamOptionsForChatCompletions,
-  normalizeExclusiveCachedTokensForChatCompletions,
-  normalizeExclusiveCachedTokensForResponses,
-  normalizeUsageForChatCompletions,
-  stripBillingAttributionFromMessages,
-  stripPromptCacheKeyForChatCompletions,
-  stripPromptCacheKeyForResponses,
-  stripSafetySettingsFromGemini,
-  stripUnsupportedPartFieldsFromGemini,
-  stripUnsupportedToolsFromGemini,
-  suppressThoughtPartsFromGemini,
-  vendorDeepSeekNormalizeForChatCompletions,
-  vendorDeepSeekNormalizeForResponses,
-  vendorKimiNormalizeForChatCompletions,
-  vendorQwenNormalizeForChatCompletions,
-  vendorQwenNormalizeForResponses,
+  applyRoleCompatibilityToOpenAIChatCompletions,
+  applyRoleCompatibilityToAnthropicMessages,
+  applyRoleCompatibilityToOpenAIResponses,
+  disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
+  disableReasoningOnForcedToolChoiceForAnthropicMessages,
+  disableReasoningOnForcedToolChoiceForOpenAIResponses,
+  includeUsageStreamOptionsForOpenAIChatCompletions,
+  normalizeExclusiveCachedTokensForOpenAIChatCompletions,
+  normalizeExclusiveCachedTokensForOpenAIResponses,
+  normalizeUsageForOpenAIChatCompletions,
+  stripBillingAttributionFromAnthropicMessages,
+  stripPromptCacheKeyForOpenAIChatCompletions,
+  stripPromptCacheKeyForOpenAIResponses,
+  stripSafetySettingsFromGeminiGenerateContent,
+  stripUnsupportedPartFieldsFromGeminiGenerateContent,
+  stripUnsupportedToolsFromGeminiGenerateContent,
+  suppressThoughtPartsFromGeminiGenerateContent,
+  vendorDeepSeekNormalizeForOpenAIChatCompletions,
+  vendorDeepSeekNormalizeForOpenAIResponses,
+  vendorKimiNormalizeForOpenAIChatCompletions,
+  vendorQwenNormalizeForOpenAIChatCompletions,
+  vendorQwenNormalizeForOpenAIResponses,
 } from '../../src/data-plane/chat/interceptors.ts';
 import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
@@ -122,7 +122,7 @@ const openaiResponsesPayload = (input: unknown[], rest: Record<string, unknown> 
 
 describe('the Chat Completions interceptors, as stages', () => {
   it('rewrites the roles its flags name, in the settled order', async () => {
-    const { down } = await runStage(applyRoleCompatibilityToChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
         { role: 'system', content: 'lead' },
         { role: 'user', content: 'hi' },
@@ -135,7 +135,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   });
 
   it('turns only a mid-conversation system message into a user one', async () => {
-    const { down } = await runStage(applyRoleCompatibilityToChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
         { role: 'system', content: 'lead' },
         { role: 'system', content: 'still lead' },
@@ -153,7 +153,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // the conversation and the dump stops being affordable.
   it('hands the same payload back by identity when no flag fires', async () => {
     const original = openaiChatCompletionsPayload([{ role: 'system', content: 'lead' }]);
-    const { down } = await runStage(applyRoleCompatibilityToChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
       'route.attempt': attemptWith(),
     });
@@ -162,7 +162,7 @@ describe('the Chat Completions interceptors, as stages', () => {
 
   it('hands the same payload back when a flag fires but changes nothing', async () => {
     const original = openaiChatCompletionsPayload([{ role: 'user', content: 'hi' }]);
-    const { down } = await runStage(applyRoleCompatibilityToChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
       'route.attempt': attemptWith('rewrite-system-to-developer'),
     });
@@ -174,7 +174,7 @@ describe('the Chat Completions interceptors, as stages', () => {
       index === 0 ? { role: 'system' as const, content: 'lead' } : { role: 'user' as const, content: `turn ${index}` }
     ));
     const original = openaiChatCompletionsPayload(messages);
-    const { down } = await runStage(applyRoleCompatibilityToChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
       'route.attempt': attemptWith('rewrite-system-to-developer'),
     });
@@ -184,14 +184,14 @@ describe('the Chat Completions interceptors, as stages', () => {
   });
 
   it('disables reasoning only when a tool choice is forced', async () => {
-    const { down: forced } = await runStage(disableReasoningOnForcedToolChoiceForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down: forced } = await runStage(disableReasoningOnForcedToolChoiceForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], { tool_choice: 'required' }),
       'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
     expect((forced['request.chat.openaiChatCompletions'] as OpenAIChatCompletionsPayload).reasoning_effort).toBe('none');
 
     const free = openaiChatCompletionsPayload([], { tool_choice: 'auto' });
-    const { down: untouched } = await runStage(disableReasoningOnForcedToolChoiceForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down: untouched } = await runStage(disableReasoningOnForcedToolChoiceForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': free,
       'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
@@ -199,7 +199,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   });
 
   it('removes the prompt cache key, and the key itself rather than its value', async () => {
-    const { down } = await runStage(stripPromptCacheKeyForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(stripPromptCacheKeyForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], { prompt_cache_key: 'k' } as Partial<OpenAIChatCompletionsPayload>),
       'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
@@ -210,7 +210,7 @@ describe('the Chat Completions interceptors, as stages', () => {
 
   it('leaves a payload that never had the key alone, by identity', async () => {
     const original = openaiChatCompletionsPayload([]);
-    const { down } = await runStage(stripPromptCacheKeyForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(stripPromptCacheKeyForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
       'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
@@ -220,14 +220,14 @@ describe('the Chat Completions interceptors, as stages', () => {
   // The usage chunk is what every stream here is billed from, so what the client asked for and
   // what the upstream is asked for differ — and this is the rule that makes them differ.
   it('asks the upstream for the usage chunk when the client sent no stream options', async () => {
-    const { down } = await runStage(includeUsageStreamOptionsForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(includeUsageStreamOptionsForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([]),
     });
     expect((down['request.chat.openaiChatCompletions'] as OpenAIChatCompletionsPayload).stream_options).toEqual({ include_usage: true });
   });
 
   it('asks for it over a client that asked for it to be left out', async () => {
-    const { down } = await runStage(includeUsageStreamOptionsForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(includeUsageStreamOptionsForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], { stream_options: { include_usage: false } }),
     });
     expect((down['request.chat.openaiChatCompletions'] as OpenAIChatCompletionsPayload).stream_options).toEqual({ include_usage: true });
@@ -236,7 +236,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // Everything else on `stream_options` is the client's own. An upstream that reads a key our
   // typed surface does not name still gets it.
   it('keeps the client-s other stream options while it forces the one it wants', async () => {
-    const { down } = await runStage(includeUsageStreamOptionsForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(includeUsageStreamOptionsForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], {
         stream_options: { extra: 'keep-me', include_usage: false } as unknown as OpenAIChatCompletionsPayload['stream_options'],
       }),
@@ -247,7 +247,7 @@ describe('the Chat Completions interceptors, as stages', () => {
 
   it('leaves a payload that already asked for it alone, by identity', async () => {
     const original = openaiChatCompletionsPayload([], { stream_options: { include_usage: true } });
-    const { down } = await runStage(includeUsageStreamOptionsForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(includeUsageStreamOptionsForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
     });
     expect(down['request.chat.openaiChatCompletions']).toBe(original);
@@ -256,7 +256,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // The spec puts the final usage on a carrier chunk of its own; an upstream that hangs it off
   // the last delta is split in two so that everything downstream reads the one shape.
   it('moves usage off the chunk that carried the last delta and onto a carrier of its own', async () => {
-    const { up } = await runStage(normalizeUsageForChatCompletions, 'response.chat.openaiChatCompletions', {},
+    const { up } = await runStage(normalizeUsageForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {},
       streamOf<OpenAIChatCompletionsStreamEvent>([eventFrame({
         id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'm',
         choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -285,7 +285,7 @@ describe('the Chat Completions interceptors, as stages', () => {
     } as unknown as OpenAIChatCompletionsStreamEvent);
     const done = doneFrame();
 
-    const { up } = await runStage(normalizeUsageForChatCompletions, 'response.chat.openaiChatCompletions', {},
+    const { up } = await runStage(normalizeUsageForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {},
       streamOf<OpenAIChatCompletionsStreamEvent>([carrier, content, done]));
     const frames = await drain<OpenAIChatCompletionsStreamEvent>(up['response.chat.openaiChatCompletions']);
 
@@ -295,7 +295,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // Naming a vendor's cache fields is the vendor stage's job, and it has already run by the
   // time the answer reaches this one. A chunk still carrying them is one no vendor claimed.
   it('leaves a vendor-s own cache fields where it found them', async () => {
-    const { up } = await runStage(normalizeUsageForChatCompletions, 'response.chat.openaiChatCompletions', {},
+    const { up } = await runStage(normalizeUsageForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {},
       streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
         prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_cache_hit_tokens: 70, cached_tokens: 25,
       })]));
@@ -310,7 +310,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // counts only what the cache did not serve, and `total_tokens` witnesses it whatever anyone
   // flagged.
   it('folds the cache buckets into the input total when the totals witness it', async () => {
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith(),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
       prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164, prompt_tokens_details: { cached_tokens: 13312 },
@@ -329,7 +329,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // input rather than the gate — and it arrives on the attempt this stage read on the way
   // down, so this is also what proves the closure carries it to the way back.
   it('folds on the flag alone when the chunk states no total, cache writes included', async () => {
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith('usage-exclusive-cached-tokens'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
       prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 120, cache_creation_input_tokens: 80 },
@@ -345,12 +345,12 @@ describe('the Chat Completions interceptors, as stages', () => {
     });
     const uncached = openaiChatCompletionsUsageChunk({ prompt_tokens: 40, completion_tokens: 1, total_tokens: 41 });
 
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith('usage-exclusive-cached-tokens'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([uncached]));
     expect(await drain<OpenAIChatCompletionsStreamEvent>(up['response.chat.openaiChatCompletions'])).toEqual([uncached]);
 
-    const { up: unflagged } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up: unflagged } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith(),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([inclusive]));
     expect(await drain<OpenAIChatCompletionsStreamEvent>(unflagged['response.chat.openaiChatCompletions'])).toEqual([inclusive]);
@@ -360,7 +360,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   // operator makes on that upstream. Neither may pass silently: one over-charges the input by
   // the whole cached prefix, the other underflows it.
   it('raises when the flag claims exclusive and the totals say inclusive', async () => {
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith('usage-exclusive-cached-tokens'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
       prompt_tokens: 1000, completion_tokens: 50, total_tokens: 1050, prompt_tokens_details: { cached_tokens: 400 },
@@ -371,7 +371,7 @@ describe('the Chat Completions interceptors, as stages', () => {
   });
 
   it('raises naming the flag when the cache counts underflow with no verdict', async () => {
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith(),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
       prompt_tokens: 479, completion_tokens: 373, prompt_tokens_details: { cached_tokens: 13312 },
@@ -383,7 +383,7 @@ describe('the Chat Completions interceptors, as stages', () => {
 
   it('leaves an answer that is not a stream alone, by identity', async () => {
     const answer = { kind: 'value' as const, body: null };
-    const { up } = await runStage(normalizeExclusiveCachedTokensForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith(),
     }, answer);
     expect(up['response.chat.openaiChatCompletions']).toBe(answer);
@@ -428,7 +428,7 @@ const assistantOf = (payload: unknown): Record<string, unknown> =>
 
 describe('the Chat Completions vendor dialects, as stages', () => {
   it('projects the canonical assistant reasoning onto the one field DeepSeek reads', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload(assistantReplay({
         reasoning_text: 'let me check the docs',
         reasoning_opaque: 'opaque-blob',
@@ -448,7 +448,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('writes that field from the summary items when the scalar is the thing that is missing', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload(assistantReplay({
         reasoning_items: [{
           type: 'reasoning', id: 'rs_1',
@@ -462,7 +462,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('strips the fields it cannot project even when there is nothing to project', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
         { role: 'user', content: 'first turn' },
         { role: 'assistant', content: 'answer', reasoning_items: [{ type: 'reasoning' }], reasoning_opaque: 'opaque-chain' },
@@ -478,7 +478,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('puts the reasoning sentinel into the shape DeepSeek reads', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], { reasoning_effort: 'none' }),
       'route.attempt': attemptWith('vendor-deepseek'),
     });
@@ -489,7 +489,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('puts the reasoning sentinel into the shape Qwen reads', async () => {
-    const { down } = await runStage(vendorQwenNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorQwenNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], { reasoning_effort: 'none' }),
       'route.attempt': attemptWith('vendor-qwen'),
     });
@@ -503,7 +503,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   // and DeepSeek and Qwen both take it in the canonical field.
   it('leaves a payload that asked for real reasoning alone, by identity', async () => {
     const original = openaiChatCompletionsPayload([], { reasoning_effort: 'high' });
-    for (const stage of [vendorDeepSeekNormalizeForChatCompletions, vendorQwenNormalizeForChatCompletions]) {
+    for (const stage of [vendorDeepSeekNormalizeForOpenAIChatCompletions, vendorQwenNormalizeForOpenAIChatCompletions]) {
       const { down } = await runStage(stage, 'response.chat.openaiChatCompletions', {
         'request.chat.openaiChatCompletions': original,
         'route.attempt': attemptWith('vendor-deepseek', 'vendor-qwen'),
@@ -515,7 +515,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   // DeepSeek's structured output takes `json_object` and nothing else, so the schema goes
   // rather than the request being refused for carrying it.
   it('downgrades a JSON schema to the JSON object DeepSeek supports', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([], {
         response_format: {
           type: 'json_schema',
@@ -530,7 +530,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
 
   it('leaves a payload already asking for a JSON object alone, by identity', async () => {
     const original = openaiChatCompletionsPayload([], { response_format: { type: 'json_object' } });
-    const { down } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': original,
       'route.attempt': attemptWith('vendor-deepseek'),
     });
@@ -538,7 +538,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('renames DeepSeek-s reasoning deltas to the canonical field', async () => {
-    const { up } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([]),
       'route.attempt': attemptWith('vendor-deepseek'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([
@@ -557,7 +557,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('rewrites DeepSeek-s cache-hit count into the field the rules above it read', async () => {
-    const { up } = await runStage(vendorDeepSeekNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([]),
       'route.attempt': attemptWith('vendor-deepseek'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
@@ -576,7 +576,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 
   it('rewrites Kimi-s flat cached count into that same field', async () => {
-    const { up } = await runStage(vendorKimiNormalizeForChatCompletions, 'response.chat.openaiChatCompletions', {
+    const { up } = await runStage(vendorKimiNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'route.attempt': attemptWith('vendor-kimi'),
     }, streamOf<OpenAIChatCompletionsStreamEvent>([openaiChatCompletionsUsageChunk({
       prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cached_tokens: 50,
@@ -594,8 +594,8 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   // array's own indices spread across it.
   it('replaces a details field that is not an object rather than spreading it', async () => {
     for (const [stage, flag, vendorField] of [
-      [vendorDeepSeekNormalizeForChatCompletions, 'vendor-deepseek', 'prompt_cache_hit_tokens'],
-      [vendorKimiNormalizeForChatCompletions, 'vendor-kimi', 'cached_tokens'],
+      [vendorDeepSeekNormalizeForOpenAIChatCompletions, 'vendor-deepseek', 'prompt_cache_hit_tokens'],
+      [vendorKimiNormalizeForOpenAIChatCompletions, 'vendor-kimi', 'cached_tokens'],
     ] as const) {
       const { up } = await runStage(stage, 'response.chat.openaiChatCompletions', {
         'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([]),
@@ -618,9 +618,9 @@ describe('the Chat Completions vendor dialects, as stages', () => {
       prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_cache_hit_tokens: 70, cached_tokens: 50,
     });
     for (const stage of [
-      vendorDeepSeekNormalizeForChatCompletions,
-      vendorQwenNormalizeForChatCompletions,
-      vendorKimiNormalizeForChatCompletions,
+      vendorDeepSeekNormalizeForOpenAIChatCompletions,
+      vendorQwenNormalizeForOpenAIChatCompletions,
+      vendorKimiNormalizeForOpenAIChatCompletions,
     ]) {
       const { down, up } = await runStage(stage, 'response.chat.openaiChatCompletions', {
         'request.chat.openaiChatCompletions': payload,
@@ -637,8 +637,8 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   it('lets an upstream stream failure through as it was thrown', async () => {
     const failure = new Error('upstream stream failed');
     for (const [stage, flag] of [
-      [vendorDeepSeekNormalizeForChatCompletions, 'vendor-deepseek'],
-      [vendorKimiNormalizeForChatCompletions, 'vendor-kimi'],
+      [vendorDeepSeekNormalizeForOpenAIChatCompletions, 'vendor-deepseek'],
+      [vendorKimiNormalizeForOpenAIChatCompletions, 'vendor-kimi'],
     ] as const) {
       const { up } = await runStage(stage, 'response.chat.openaiChatCompletions', {
         'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([]),
@@ -652,7 +652,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
 
 describe('the Messages interceptors, as stages', () => {
   it('turns every inline system message into a user one', async () => {
-    const { down } = await runStage(applyRoleCompatibilityToMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(applyRoleCompatibilityToAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([
         { role: 'system', content: 'lead' },
         { role: 'user', content: 'hi' },
@@ -668,7 +668,7 @@ describe('the Messages interceptors, as stages', () => {
 
   it('hands the same conversation back by identity when the flag does not fire', async () => {
     const original = anthropicMessagesPayload([{ role: 'system', content: 'lead' }]);
-    const { down } = await runStage(applyRoleCompatibilityToMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(applyRoleCompatibilityToAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': original,
       'route.attempt': attemptWith(),
     });
@@ -677,7 +677,7 @@ describe('the Messages interceptors, as stages', () => {
 
   it('hands the same conversation back when the flag fires but there is no system message', async () => {
     const original = anthropicMessagesPayload([{ role: 'user', content: 'hi' }]);
-    const { down } = await runStage(applyRoleCompatibilityToMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(applyRoleCompatibilityToAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': original,
       'route.attempt': attemptWith('rewrite-mid-conv-system-to-user'),
     });
@@ -685,7 +685,7 @@ describe('the Messages interceptors, as stages', () => {
   });
 
   it('disables thinking on a forced tool choice and leaves the structured-output format', async () => {
-    const { down } = await runStage(disableReasoningOnForcedToolChoiceForMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(disableReasoningOnForcedToolChoiceForAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([], {
         tool_choice: { type: 'any' },
         output_config: { effort: 'high', format: { type: 'json_schema', schema: {} } },
@@ -700,7 +700,7 @@ describe('the Messages interceptors, as stages', () => {
   });
 
   it('drops an output_config that held nothing but the effort', async () => {
-    const { down } = await runStage(disableReasoningOnForcedToolChoiceForMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(disableReasoningOnForcedToolChoiceForAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([], {
         tool_choice: { type: 'tool', name: 'f' },
         output_config: { effort: 'high' },
@@ -712,7 +712,7 @@ describe('the Messages interceptors, as stages', () => {
 
   it('leaves a free tool choice alone, by identity', async () => {
     const free = anthropicMessagesPayload([], { tool_choice: { type: 'auto' } });
-    const { down } = await runStage(disableReasoningOnForcedToolChoiceForMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(disableReasoningOnForcedToolChoiceForAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': free,
       'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
@@ -720,7 +720,7 @@ describe('the Messages interceptors, as stages', () => {
   });
 
   it('scrubs the billing header line and the per-turn hash out of the system prompt', async () => {
-    const { down } = await runStage(stripBillingAttributionFromMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(stripBillingAttributionFromAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([], {
         system: 'x-anthropic-billing-header: cch=abcdef12\nreal instructions\ncch=beef01;',
       }),
@@ -730,7 +730,7 @@ describe('the Messages interceptors, as stages', () => {
   });
 
   it('drops a system block the scrub emptied, and the field when nothing is left', async () => {
-    const { down } = await runStage(stripBillingAttributionFromMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(stripBillingAttributionFromAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([], {
         system: [{ type: 'text', text: 'x-anthropic-billing-header: cch=abcdef12' }],
       }),
@@ -743,7 +743,7 @@ describe('the Messages interceptors, as stages', () => {
 
   it('leaves a system prompt carrying no attribution block alone, by identity', async () => {
     const original = anthropicMessagesPayload([], { system: [{ type: 'text', text: 'real instructions' }] });
-    const { down } = await runStage(stripBillingAttributionFromMessages, 'response.chat.anthropicMessages', {
+    const { down } = await runStage(stripBillingAttributionFromAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': original,
       'route.attempt': attemptWith('strip-billing-attribution'),
     });
@@ -753,7 +753,7 @@ describe('the Messages interceptors, as stages', () => {
 
 describe('the Gemini interceptors, as stages', () => {
   it('drops the part fields no translation carries, and a part they were all of', async () => {
-    const { down } = await runStage(stripUnsupportedPartFieldsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripUnsupportedPartFieldsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {
         contents: [{
           role: 'user',
@@ -772,14 +772,14 @@ describe('the Gemini interceptors, as stages', () => {
 
   it('hands a payload carrying no unsupported part field back by identity', async () => {
     const original: GeminiGenerateContentPayload = { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] };
-    const { down } = await runStage(stripUnsupportedPartFieldsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripUnsupportedPartFieldsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': original,
     });
     expect(down['request.chat.geminiGenerateContent']).toBe(original);
   });
 
   it('keeps a tool group only for its function declarations', async () => {
-    const { down } = await runStage(stripUnsupportedToolsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {
         tools: [{ functionDeclarations: [{ name: 'f' }], googleSearch: {} }, { codeExecution: {} }],
       } satisfies GeminiGenerateContentPayload,
@@ -788,7 +788,7 @@ describe('the Gemini interceptors, as stages', () => {
   });
 
   it('removes the tool list itself when no group declared a function', async () => {
-    const { down } = await runStage(stripUnsupportedToolsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': { tools: [{ googleSearch: {} }] } satisfies GeminiGenerateContentPayload,
     });
     // An empty tool list is a different request from no tools at all.
@@ -797,20 +797,20 @@ describe('the Gemini interceptors, as stages', () => {
 
   it('hands a payload whose groups only declare functions back by identity', async () => {
     const original: GeminiGenerateContentPayload = { tools: [{ functionDeclarations: [{ name: 'f' }] }] };
-    const { down } = await runStage(stripUnsupportedToolsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripUnsupportedToolsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': original,
     });
     expect(down['request.chat.geminiGenerateContent']).toBe(original);
   });
 
   it('removes the safety settings, and leaves a payload that carries none alone', async () => {
-    const { down } = await runStage(stripSafetySettingsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down } = await runStage(stripSafetySettingsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': { safetySettings: [{ category: 'c', threshold: 't' }] } satisfies GeminiGenerateContentPayload,
     });
     expect('safetySettings' in (down['request.chat.geminiGenerateContent'] as GeminiGenerateContentPayload)).toBe(false);
 
     const original: GeminiGenerateContentPayload = { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] };
-    const { down: untouched } = await runStage(stripSafetySettingsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { down: untouched } = await runStage(stripSafetySettingsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': original,
     });
     expect(untouched['request.chat.geminiGenerateContent']).toBe(original);
@@ -827,7 +827,7 @@ describe('the Gemini interceptors, as stages', () => {
         }],
       }),
     ]);
-    const { up } = await runStage(suppressThoughtPartsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {} satisfies GeminiGenerateContentPayload,
     }, answer);
     const frames = await drain<GeminiGenerateContentStreamEvent>(up['response.chat.geminiGenerateContent']);
@@ -844,7 +844,7 @@ describe('the Gemini interceptors, as stages', () => {
     const answer = streamOf<GeminiGenerateContentStreamEvent>([
       eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'pondering', thought: true }] }, finishReason: 'STOP' }] }),
     ]);
-    const { up } = await runStage(suppressThoughtPartsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': { generationConfig: { thinkingConfig: { includeThoughts: true } } } satisfies GeminiGenerateContentPayload,
     }, answer);
     expect(up['response.chat.geminiGenerateContent']).toBe(answer);
@@ -852,7 +852,7 @@ describe('the Gemini interceptors, as stages', () => {
 
   it('leaves an answer that is not a stream alone, by identity', async () => {
     const answer = { kind: 'value' as const, body: null };
-    const { up } = await runStage(suppressThoughtPartsFromGemini, 'response.chat.geminiGenerateContent', {
+    const { up } = await runStage(suppressThoughtPartsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {} satisfies GeminiGenerateContentPayload,
     }, answer);
     expect(up['response.chat.geminiGenerateContent']).toBe(answer);
@@ -865,7 +865,7 @@ describe('the Responses interceptors, as stages', () => {
       .map(item => (item as { role?: unknown }).role);
 
   it('rewrites the roles its flags name, in the settled order', async () => {
-    const { down } = await runStage(applyRoleCompatibilityToResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': openaiResponsesPayload([
         { type: 'message', role: 'system', content: 'lead' },
         { type: 'message', role: 'user', content: 'hi' },
@@ -879,7 +879,7 @@ describe('the Responses interceptors, as stages', () => {
   // The ordering the rule depends on: an item with no role of its own still ends the leading
   // system run, which is what makes the system message after it mid-conversation.
   it('lets an item carrying no role cross the leading system run', async () => {
-    const { down } = await runStage(applyRoleCompatibilityToResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': openaiResponsesPayload([
         { type: 'message', role: 'system', content: 'lead' },
         { type: 'reasoning', id: 'rs_1', summary: [] },
@@ -892,7 +892,7 @@ describe('the Responses interceptors, as stages', () => {
 
   it('hands the same payload back by identity when no flag fires', async () => {
     const original = openaiResponsesPayload([{ type: 'message', role: 'system', content: 'lead' }]);
-    const { down } = await runStage(applyRoleCompatibilityToResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(applyRoleCompatibilityToOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': original,
       'route.attempt': attemptWith(),
     });
@@ -901,7 +901,7 @@ describe('the Responses interceptors, as stages', () => {
 
   it('disables reasoning on a required tool choice and on a named one', async () => {
     for (const toolChoice of ['required', { type: 'function', name: 'f' }]) {
-      const { down } = await runStage(disableReasoningOnForcedToolChoiceForResponses, 'response.chat.openaiResponses', {
+      const { down } = await runStage(disableReasoningOnForcedToolChoiceForOpenAIResponses, 'response.chat.openaiResponses', {
         'request.chat.openaiResponses': openaiResponsesPayload([], { tool_choice: toolChoice, reasoning: { effort: 'high', summary: 'auto' } }),
         'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
       });
@@ -913,7 +913,7 @@ describe('the Responses interceptors, as stages', () => {
 
   it('leaves an automatic tool choice alone, by identity', async () => {
     const free = openaiResponsesPayload([], { tool_choice: 'auto' });
-    const { down } = await runStage(disableReasoningOnForcedToolChoiceForResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(disableReasoningOnForcedToolChoiceForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': free,
       'route.attempt': attemptWith('disable-reasoning-on-forced-tool-choice'),
     });
@@ -921,14 +921,14 @@ describe('the Responses interceptors, as stages', () => {
   });
 
   it('removes the prompt cache key, and leaves a payload that never had it alone', async () => {
-    const { down } = await runStage(stripPromptCacheKeyForResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(stripPromptCacheKeyForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': openaiResponsesPayload([], { prompt_cache_key: 'k' }),
       'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
     expect('prompt_cache_key' in (down['request.chat.openaiResponses'] as OpenAIResponsesPayload)).toBe(false);
 
     const original = openaiResponsesPayload([]);
-    const { down: untouched } = await runStage(stripPromptCacheKeyForResponses, 'response.chat.openaiResponses', {
+    const { down: untouched } = await runStage(stripPromptCacheKeyForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': original,
       'route.attempt': attemptWith('strip-prompt-cache-key'),
     });
@@ -939,7 +939,7 @@ describe('the Responses interceptors, as stages', () => {
     // 100 + 50 + 10 = 160 reaches the stated total and 100 + 10 does not, so the upstream
     // reports the buckets outside the input count whatever anyone flagged.
     const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
-    const { up } = await runStage(normalizeExclusiveCachedTokensForResponses, 'response.chat.openaiResponses', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith(),
     }, answer);
     const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
@@ -951,7 +951,7 @@ describe('the Responses interceptors, as stages', () => {
   // down, so this is also what proves the closure carries it to the way back.
   it('folds on the flag alone when the response states no total', async () => {
     const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, input_tokens_details: { cached_tokens: 50, cache_write_tokens: 5 } })]);
-    const { up } = await runStage(normalizeExclusiveCachedTokensForResponses, 'response.chat.openaiResponses', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith('usage-exclusive-cached-tokens'),
     }, answer);
     const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
@@ -960,7 +960,7 @@ describe('the Responses interceptors, as stages', () => {
 
   it('hands a frame back by identity when the totals say the buckets are already inside', async () => {
     const frame = usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 110, input_tokens_details: { cached_tokens: 50 } });
-    const { up } = await runStage(normalizeExclusiveCachedTokensForResponses, 'response.chat.openaiResponses', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith(),
     }, streamOf<OpenAIResponsesStreamEvent>([frame]));
     const frames = await drain<OpenAIResponsesStreamEvent>(up['response.chat.openaiResponses']);
@@ -969,14 +969,14 @@ describe('the Responses interceptors, as stages', () => {
 
   it('leaves an answer that is not a stream alone, by identity', async () => {
     const answer = { kind: 'value' as const, body: null };
-    const { up } = await runStage(normalizeExclusiveCachedTokensForResponses, 'response.chat.openaiResponses', {
+    const { up } = await runStage(normalizeExclusiveCachedTokensForOpenAIResponses, 'response.chat.openaiResponses', {
       'route.attempt': attemptWith(),
     }, answer);
     expect(up['response.chat.openaiResponses']).toBe(answer);
   });
 
   it('puts the reasoning sentinel into the shape DeepSeek reads', async () => {
-    const { down } = await runStage(vendorDeepSeekNormalizeForResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': openaiResponsesPayload([], { reasoning: { effort: 'none' } }),
       'route.attempt': attemptWith('vendor-deepseek'),
     });
@@ -986,7 +986,7 @@ describe('the Responses interceptors, as stages', () => {
   });
 
   it('puts the reasoning sentinel into the shape Qwen reads', async () => {
-    const { down } = await runStage(vendorQwenNormalizeForResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(vendorQwenNormalizeForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': openaiResponsesPayload([], { reasoning: { effort: 'none' } }),
       'route.attempt': attemptWith('vendor-qwen'),
     });
@@ -1000,7 +1000,7 @@ describe('the Responses interceptors, as stages', () => {
     // the next upstream, and a rewrite that fired without the flag would put a Qwen field on a
     // wire that has never heard of it.
     const original = openaiResponsesPayload([], { reasoning: { effort: 'none' } });
-    const { down } = await runStage(vendorQwenNormalizeForResponses, 'response.chat.openaiResponses', {
+    const { down } = await runStage(vendorQwenNormalizeForOpenAIResponses, 'response.chat.openaiResponses', {
       'request.chat.openaiResponses': original,
       'route.attempt': attemptWith(),
     });
@@ -1009,7 +1009,7 @@ describe('the Responses interceptors, as stages', () => {
 
   it('leaves a payload that asked for real reasoning alone, by identity', async () => {
     const original = openaiResponsesPayload([], { reasoning: { effort: 'high' } });
-    for (const stage of [vendorDeepSeekNormalizeForResponses, vendorQwenNormalizeForResponses]) {
+    for (const stage of [vendorDeepSeekNormalizeForOpenAIResponses, vendorQwenNormalizeForOpenAIResponses]) {
       const { down } = await runStage(stage, 'response.chat.openaiResponses', {
         'request.chat.openaiResponses': original,
         'route.attempt': attemptWith('vendor-deepseek', 'vendor-qwen'),
@@ -1037,9 +1037,9 @@ const usageOf = (frame: ProtocolFrame<OpenAIResponsesStreamEvent>): Record<strin
 describe('a family\'s interceptor array, in the order its chain runs it', () => {
   it('assembles and runs the Messages array', async () => {
     const { down } = await runChain('response.chat.anthropicMessages', [
-      stripBillingAttributionFromMessages,
-      disableReasoningOnForcedToolChoiceForMessages,
-      applyRoleCompatibilityToMessages,
+      stripBillingAttributionFromAnthropicMessages,
+      disableReasoningOnForcedToolChoiceForAnthropicMessages,
+      applyRoleCompatibilityToAnthropicMessages,
     ], {
       'request.chat.anthropicMessages': anthropicMessagesPayload([{ role: 'system', content: 'inline' }], {
         system: 'x-anthropic-billing-header: cch=abcdef12\nreal instructions',
@@ -1062,10 +1062,10 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
       eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'pondering', thought: true }, { text: 'the answer' }] }, finishReason: 'STOP' }] }),
     ]);
     const { down, up } = await runChain('response.chat.geminiGenerateContent', [
-      stripUnsupportedPartFieldsFromGemini,
-      stripUnsupportedToolsFromGemini,
-      stripSafetySettingsFromGemini,
-      suppressThoughtPartsFromGemini,
+      stripUnsupportedPartFieldsFromGeminiGenerateContent,
+      stripUnsupportedToolsFromGeminiGenerateContent,
+      stripSafetySettingsFromGeminiGenerateContent,
+      suppressThoughtPartsFromGeminiGenerateContent,
     ], {
       'request.chat.geminiGenerateContent': {
         contents: [{ role: 'user', parts: [{ text: 'hi', fileData: { mimeType: 'text/plain', fileUri: 'u' } }] }],
@@ -1088,12 +1088,12 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
   it('assembles and runs the Responses array, the vendor normalizers last', async () => {
     const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
     const { down, up } = await runChain('response.chat.openaiResponses', [
-      disableReasoningOnForcedToolChoiceForResponses,
-      applyRoleCompatibilityToResponses,
-      stripPromptCacheKeyForResponses,
-      normalizeExclusiveCachedTokensForResponses,
-      vendorDeepSeekNormalizeForResponses,
-      vendorQwenNormalizeForResponses,
+      disableReasoningOnForcedToolChoiceForOpenAIResponses,
+      applyRoleCompatibilityToOpenAIResponses,
+      stripPromptCacheKeyForOpenAIResponses,
+      normalizeExclusiveCachedTokensForOpenAIResponses,
+      vendorDeepSeekNormalizeForOpenAIResponses,
+      vendorQwenNormalizeForOpenAIResponses,
     ], {
       'request.chat.openaiResponses': openaiResponsesPayload([
         { type: 'message', role: 'system', content: 'lead' },
@@ -1133,13 +1133,13 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
       },
     } as unknown as OpenAIChatCompletionsStreamEvent)]);
     const { down, up } = await runChain('response.chat.openaiChatCompletions', [
-      includeUsageStreamOptionsForChatCompletions,
-      normalizeUsageForChatCompletions,
-      applyRoleCompatibilityToChatCompletions,
-      normalizeExclusiveCachedTokensForChatCompletions,
-      vendorDeepSeekNormalizeForChatCompletions,
-      vendorQwenNormalizeForChatCompletions,
-      vendorKimiNormalizeForChatCompletions,
+      includeUsageStreamOptionsForOpenAIChatCompletions,
+      normalizeUsageForOpenAIChatCompletions,
+      applyRoleCompatibilityToOpenAIChatCompletions,
+      normalizeExclusiveCachedTokensForOpenAIChatCompletions,
+      vendorDeepSeekNormalizeForOpenAIChatCompletions,
+      vendorQwenNormalizeForOpenAIChatCompletions,
+      vendorKimiNormalizeForOpenAIChatCompletions,
     ], {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
         { role: 'system', content: 'lead' },

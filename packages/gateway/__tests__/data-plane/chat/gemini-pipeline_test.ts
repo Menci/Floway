@@ -13,7 +13,7 @@ import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
+import { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -38,20 +38,20 @@ const resolveAttempt = (selector: { readonly upstreamId: string }): ModelCandida
   return found;
 };
 
-type CallChatCompletions = (
+type CallOpenAIChatCompletions = (
   model: unknown,
   body: unknown,
   signal: AbortSignal | undefined,
   opts: UpstreamCallOptions,
 ) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 
-const candidate = (upstream: string, callChatCompletions: CallChatCompletions): ModelCandidate => {
-  const endpoints = { chatCompletions: {} };
+const candidate = (upstream: string, callOpenAIChatCompletions: CallOpenAIChatCompletions): ModelCandidate => {
+  const endpoints = { openaiChatCompletions: {} };
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callChatCompletions: callChatCompletions as never }),
+      instance: stubProvider({ callOpenAIChatCompletions: callOpenAIChatCompletions as never }),
     },
     model: stubInternalModel({ id: 'gemini-2.5-pro', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'gemini-2.5-pro', endpoints }) } }, upstream),
     fetcher: directFetcher,
@@ -151,7 +151,7 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: 
 
 const entryFacts = (overrides: Record<string, unknown> = {}) => ({
   'ingress.chat.geminiGenerateContent.wantsStream': true,
-  'ingress.chat.sourceProtocol': 'gemini',
+  'ingress.chat.sourceProtocol': 'geminiGenerateContent',
   'ingress.http.headers': [],
   'request.chat.geminiGenerateContent': payload,
   'serve.model': 'gemini-2.5-pro',
@@ -401,7 +401,7 @@ describe('the gemini pipeline', () => {
 
     const { facts, drain } = await serve(entryFacts());
 
-    await expect(collect(facts['response.chat.geminiGenerateContent.rendered'])).rejects.toThrow(GEMINI_MISSING_TERMINAL_MESSAGE);
+    await expect(collect(facts['response.chat.geminiGenerateContent.rendered'])).rejects.toThrow(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
     await drain();
   });
 });

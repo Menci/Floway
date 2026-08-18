@@ -1,12 +1,12 @@
 // Gemini's `:countTokens` as a pipeline.
 //
-//   emitGeminiTokenCount     the edge: writes the measurement, or the refusal, as one body
+//   emitGeminiGenerateContentTokenCount     the edge: writes the measurement, or the refusal, as one body
 //   writeSettlement          above the fork, so a measurement is sampled once however many it tried
 //   resolveChatCandidates    narrows to what can serve, in the order affinity asks for
 //   failover                 runs what follows once per candidate
 //   materializeAttempt       puts the payload this candidate is owed into the record
 //   the three strippers      the same protocol-shape cleanups generation applies
-//   measureGeminiAsMessages  the pair: asks the question in Messages and reads the answer back
+//   measureGeminiGenerateContentAsAnthropicMessages  the pair: asks the question in Messages and reads the answer back
 //   the Messages count wire  the ending, shared with `/v1/messages/count_tokens`
 //
 // A second **operation** over this protocol rather than another wire under
@@ -25,8 +25,8 @@
 // cannot be sent, so it goes at source. The thought suppressor does not — it rewrites a
 // stream, and a measurement has none.
 
-import { analyzeGeminiAffinity } from './affinity/ingress.ts';
-import { renderGeminiError } from './errors.ts';
+import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
+import { renderGeminiGenerateContentError } from './errors.ts';
 import type { GeminiGenerateContentFacts } from './pipeline.ts';
 import { asJsonObject, readJsonNumber } from '../../../shared/json-helpers.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -34,20 +34,20 @@ import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import {
-  stripSafetySettingsFromGemini,
-  stripUnsupportedPartFieldsFromGemini,
-  stripUnsupportedToolsFromGemini,
+  stripSafetySettingsFromGeminiGenerateContent,
+  stripUnsupportedPartFieldsFromGeminiGenerateContent,
+  stripUnsupportedToolsFromGeminiGenerateContent,
 } from '../interceptors.ts';
 import { anthropicMessagesCountTokensWire, type TokenCountAnswer } from '../anthropic-messages/count-tokens.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { translateGeminiViaMessages, TranslatorInputError } from '@floway-dev/translate';
+import { translateGeminiGenerateContentViaAnthropicMessages, TranslatorInputError } from '@floway-dev/translate';
 
 /** Counting is reachable only over an upstream's own Messages endpoint: no other protocol
  *  answers the question, and no translation invents an answer. */
-export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['messages']);
+export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']);
 
 type Counted<K extends 'response.chat.geminiGenerateContent' | 'response.chat.anthropicMessages'> = { [P in K]: TokenCountAnswer };
 
@@ -58,14 +58,14 @@ type G<K extends keyof GeminiGenerateContentFacts> = { [P in K]: GeminiGenerateC
  * stream: what this decides is only whether the client is shown the count or the refusal that
  * stands in for it.
  */
-const emitGeminiTokenCount = defineStage<
+const emitGeminiGenerateContentTokenCount = defineStage<
   Record<string, never>,
   Record<string, never>,
   Counted<'response.chat.geminiGenerateContent'> & G<'response.http.headers'>,
   G<'response.chat.geminiGenerateContent.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'emitGeminiTokenCount',
+  name: 'emitGeminiGenerateContentTokenCount',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
@@ -87,7 +87,7 @@ const emitGeminiTokenCount = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiError(answer.status, answer.message))),
+        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiGenerateContentError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }
@@ -110,7 +110,7 @@ const emitGeminiTokenCount = defineStage<
  * It carries the `return` trait for the same reason a handoff does — a body the target
  * protocol cannot represent is answered here rather than measured.
  */
-const measureGeminiAsMessages = defineStage<
+const measureGeminiGenerateContentAsAnthropicMessages = defineStage<
   G<'request.chat.geminiGenerateContent' | 'route.attempt'>,
   G<'request.chat.anthropicMessages'>,
   Counted<'response.chat.anthropicMessages'>,
@@ -118,7 +118,7 @@ const measureGeminiAsMessages = defineStage<
   Counted<'response.chat.geminiGenerateContent'> & G<'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'measureGeminiAsMessages',
+  name: 'measureGeminiGenerateContentAsAnthropicMessages',
   through: {
     request: {
       needs: ['request.chat.geminiGenerateContent', 'route.attempt'],
@@ -138,7 +138,7 @@ const measureGeminiAsMessages = defineStage<
 
     let trip;
     try {
-      trip = await translateGeminiViaMessages(asked, {
+      trip = await translateGeminiGenerateContentViaAnthropicMessages(asked, {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       });
@@ -165,7 +165,7 @@ const measureGeminiAsMessages = defineStage<
 
     const back = await next({ ...down, 'request.chat.anthropicMessages': move(target) });
     const { 'response.chat.anthropicMessages': counted, ...up } = back;
-    return { ...up, 'response.chat.geminiGenerateContent': move(asGeminiTokenCount(counted)) };
+    return { ...up, 'response.chat.geminiGenerateContent': move(asGeminiGenerateContentTokenCount(counted)) };
   },
 });
 
@@ -177,7 +177,7 @@ const measureGeminiAsMessages = defineStage<
  * protocol calls `totalTokens`; a body carrying neither is an answer this gateway cannot
  * read, which is the gateway failing to serve rather than anything the client can fix.
  */
-const asGeminiTokenCount = (counted: TokenCountAnswer): TokenCountAnswer => {
+const asGeminiGenerateContentTokenCount = (counted: TokenCountAnswer): TokenCountAnswer => {
   if (isFailure(counted)) {
     return {
       ...counted,
@@ -197,7 +197,7 @@ const asGeminiTokenCount = (counted: TokenCountAnswer): TokenCountAnswer => {
  *  built from the request rather than being a constant. */
 const narrowing = (payload: GeminiGenerateContentPayload): ChatNarrowing<Counted<'response.chat.geminiGenerateContent'>> => ({
   canServe: candidate => geminiGenerateContentCountTokensTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeGeminiAffinity(payload, gateway.affinity.codec),
+  affinity: async gateway => await analyzeGeminiGenerateContentAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support countTokens.`,
   refuse: (status, message) => ({ 'response.chat.geminiGenerateContent': { status, message } }),
   refuses: ['response.chat.geminiGenerateContent'],
@@ -213,7 +213,7 @@ export type GeminiGenerateContentCountTokensExit = G<
 
 export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerateContentPayload): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
   compose('geminiGenerateContentCountTokens', [
-    emitGeminiTokenCount,
+    emitGeminiGenerateContentTokenCount,
     // A measurement goes through settlement like every other run. It provides an empty
     // billed set because nothing here is billable today, not because the operation is
     // exempt — an upstream that began charging for it would provide a non-empty one and
@@ -225,9 +225,9 @@ export const geminiGenerateContentCountTokensPipeline = (payload: GeminiGenerate
       owns: [],
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),
-    stripUnsupportedPartFieldsFromGemini,
-    stripUnsupportedToolsFromGemini,
-    stripSafetySettingsFromGemini,
-    measureGeminiAsMessages,
+    stripUnsupportedPartFieldsFromGeminiGenerateContent,
+    stripUnsupportedToolsFromGeminiGenerateContent,
+    stripSafetySettingsFromGeminiGenerateContent,
+    measureGeminiGenerateContentAsAnthropicMessages,
     ...anthropicMessagesCountTokensWire,
   ]);

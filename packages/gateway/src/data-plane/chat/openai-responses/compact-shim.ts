@@ -34,7 +34,7 @@
 
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
-import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -221,7 +221,7 @@ export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upst
 // Exported because the pipeline's compaction chain sends the same turn — one
 // definition is what keeps the simulated compaction identical whichever entry
 // asked for it.
-export const summarizationTurnFor = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => {
+export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
   // Strip compaction_trigger so the upstream sees a plain generate turn
   // against SUMMARIZATION_PROMPT.
   const historyItems = payload.input.filter(item => item.type !== 'compaction_trigger');

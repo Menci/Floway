@@ -7,13 +7,13 @@
 // it over, and turn what the run answered with into a response. Everything between is stages.
 
 import { geminiGenerateContentCountTokensPipeline } from './count-tokens.ts';
-import { renderGeminiError } from './errors.ts';
+import { renderGeminiGenerateContentError } from './errors.ts';
 import { geminiGenerateContentServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
-import { createNonResponsesSourceStore } from '../openai-responses/items/store.ts';
+import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { move } from '@floway-dev/pipeline';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -30,9 +30,9 @@ interface GeminiGenerateContentModelAction {
 // SDKs send it).
 /** A refusal about the route itself. It is answered before a model is resolved, so there is no
  *  attempt to record and nothing for a run to hold beyond the refusal. */
-const unknownAction = (message: string): Response => Response.json(renderGeminiError(404, message), { status: 404 });
+const unknownAction = (message: string): Response => Response.json(renderGeminiGenerateContentError(404, message), { status: 404 });
 
-const parseGeminiModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
+const parseGeminiGenerateContentModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
   if (!modelAction) return unknownAction('Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
   if (separator <= 0 || separator === modelAction.length - 1) return unknownAction(`Unknown Gemini model action: ${modelAction}`);
@@ -42,7 +42,7 @@ const parseGeminiModelAction = (modelAction: string | undefined): GeminiGenerate
 // `:countTokens` can carry either `contents` directly or a nested
 // `generateContentRequest` envelope (Google's SDK shape). Normalize both to a
 // single `GeminiGenerateContentPayload` for the rest of the chain.
-const parseGeminiCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
+const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
   const shape = (body ?? {}) as { contents?: GeminiGenerateContentContent[]; generateContentRequest?: GeminiGenerateContentPayload };
   return shape.generateContentRequest ?? { contents: shape.contents };
 };
@@ -52,11 +52,11 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiGenerateContentPayl
 // means the sub-handlers see a validated `(model, action)` pair and never
 // need to re-emit "Unknown Gemini model action" on already-validated input.
 export const geminiGenerateContentHttp = async (c: AuthedContext): Promise<Response> => {
-  const parsed = parseGeminiModelAction(c.req.param('modelAction'));
+  const parsed = parseGeminiGenerateContentModelAction(c.req.param('modelAction'));
   if (parsed instanceof Response) return parsed;
-  if (parsed.action === 'countTokens') return await runGeminiCountTokens(c, parsed.model);
+  if (parsed.action === 'countTokens') return await runGeminiGenerateContentCountTokens(c, parsed.model);
   if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
-    return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
+    return await runGeminiGenerateContentGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
   }
   return unknownAction(`Unknown Gemini model action: ${parsed.action}`);
 };
@@ -77,10 +77,10 @@ const readRequest = <T>(bytes: Uint8Array, project: (body: unknown) => T): { typ
 const refuse = (c: AuthedContext, ingress: Ingress, message: string): Response => {
   const refused = openPrologue(c, ingress, { wantsStream: false });
   refused.gateway.dump?.error('gateway');
-  return finalizeGatewayResponse(refused.gateway, Response.json(renderGeminiError(400, message), { status: 400 }));
+  return finalizeGatewayResponse(refused.gateway, Response.json(renderGeminiGenerateContentError(400, message), { status: 400 }));
 };
 
-const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
+const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
   const ingress = await readIngress(c);
   const request = readRequest(ingress.body.bytes, (body): GeminiGenerateContentPayload => body as GeminiGenerateContentPayload);
   if (request.type === 'invalid') return refuse(c, ingress, request.message);
@@ -89,7 +89,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   const prologue = openChatPrologue(c, ingress, {
     wantsStream,
     model,
-    storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+    storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
   });
 
   return await serveThrough(
@@ -98,7 +98,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
     geminiGenerateContentServePipeline(payload),
     move({
       'ingress.http.headers': prologue.headers,
-      'ingress.chat.sourceProtocol': 'gemini',
+      'ingress.chat.sourceProtocol': 'geminiGenerateContent',
       'ingress.chat.geminiGenerateContent.wantsStream': wantsStream,
       'request.chat.geminiGenerateContent': payload,
       // Gemini carries the model in the path rather than the body, so the id the run
@@ -114,16 +114,16 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   );
 };
 
-const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
+const runGeminiGenerateContentCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
   const ingress = await readIngress(c);
-  const request = readRequest(ingress.body.bytes, parseGeminiCountTokensPayload);
+  const request = readRequest(ingress.body.bytes, parseGeminiGenerateContentCountTokensPayload);
   if (request.type === 'invalid') return refuse(c, ingress, request.message);
 
   const { payload } = request;
   const prologue = openChatPrologue(c, ingress, {
     wantsStream: false,
     model,
-    storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+    storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
   });
 
   return await serveThrough(
@@ -132,7 +132,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
     geminiGenerateContentCountTokensPipeline(payload),
     move({
       'ingress.http.headers': prologue.headers,
-      'ingress.chat.sourceProtocol': 'gemini',
+      'ingress.chat.sourceProtocol': 'geminiGenerateContent',
       'request.chat.geminiGenerateContent': payload,
       'serve.model': model,
     }) as never,

@@ -11,7 +11,7 @@ import { enumerateModelCandidates } from '../../../src/data-plane/providers/reso
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -24,16 +24,16 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
-  callChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>,
+  callOpenAIChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>,
   upstreamId = 'up_a',
   flags: readonly FlagId[] = [],
 ): ModelCandidate => {
-  const endpoints = { chatCompletions: {} };
+  const endpoints = { openaiChatCompletions: {} };
   return {
     provider: {
       upstreamId, kind: 'custom', name: upstreamId, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callChatCompletions }),
+      instance: stubProvider({ callOpenAIChatCompletions }),
     },
     model: stubInternalModel(
       {
@@ -100,7 +100,7 @@ const serveWith = async (
   openaiChatCompletionsServePipeline(payload),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
-    'ingress.chat.sourceProtocol': 'chatCompletions',
+    'ingress.chat.sourceProtocol': 'openaiChatCompletions',
     'ingress.chat.openaiChatCompletions.wantsStream': wantsStream,
     'ingress.chat.openaiChatCompletions.wantsUsageChunk': wantsUsageChunk,
     'request.chat.openaiChatCompletions': payload,
@@ -422,7 +422,7 @@ describe('the chat completions chain', () => {
       for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
     };
 
-    await expect(drain()).rejects.toThrow(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+    await expect(drain()).rejects.toThrow(OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
   });
 
   // Anything an upstream keeps sending after its terminator is not part of the answer.

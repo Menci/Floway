@@ -31,7 +31,7 @@ type CountTokens = (
 ) => Promise<ProviderCallResult>;
 
 const candidate = (
-  callMessagesCountTokens: CountTokens,
+  callAnthropicMessagesCountTokens: CountTokens,
   overrides: {
     upstreamId?: string;
     endpoints?: ModelEndpoints;
@@ -40,7 +40,7 @@ const candidate = (
   } = {},
 ): ModelCandidate => {
   const upstreamId = overrides.upstreamId ?? 'up_a';
-  const endpoints = overrides.endpoints ?? { messages: {} };
+  const endpoints = overrides.endpoints ?? { anthropicMessages: {} };
   const enabledFlags = overrides.enabledFlags ?? new Set<FlagId>();
   return {
     provider: {
@@ -49,7 +49,7 @@ const candidate = (
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callMessagesCountTokens: callMessagesCountTokens as never }),
+      instance: stubProvider({ callAnthropicMessagesCountTokens: callAnthropicMessagesCountTokens as never }),
     },
     model: stubInternalModel(
       {
@@ -88,7 +88,7 @@ const count = async (
     anthropicMessagesCountTokensPipeline(request),
     move({
       'ingress.http.headers': headers,
-      'ingress.chat.sourceProtocol': 'messages',
+      'ingress.chat.sourceProtocol': 'anthropicMessages',
       'request.chat.anthropicMessages': request,
       'serve.model': request.model,
     }) as never,
@@ -314,7 +314,7 @@ describe('the messages count-tokens chain', () => {
   // candidate that would serve generation over a translated wire cannot serve this, and the
   // refusal names the endpoint the client actually addressed.
   it('refuses a candidate no wire can measure on, naming the count endpoint', async () => {
-    resolves([candidate(async () => counted(0), { endpoints: { chatCompletions: {} } })]);
+    resolves([candidate(async () => counted(0), { endpoints: { openaiChatCompletions: {} } })]);
 
     const { facts } = await count();
 

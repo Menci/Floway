@@ -32,7 +32,7 @@ const upstream = (models: Parameters<typeof copilotModels>[0]) => async (request
 
 // A `functionResponse` part in model content: a shape Gemini defines and neither target protocol
 // has anywhere to put, so the translator refuses it rather than dropping it.
-const untranslatableGeminiBody = {
+const untranslatableGeminiGenerateContentBody = {
   contents: [
     { role: 'model', parts: [{ functionResponse: { name: 'f', response: { ok: true } } }] },
     { role: 'user', parts: [{ text: 'hi' }] },
@@ -60,7 +60,7 @@ test('a body the target protocol cannot carry is refused in the client own proto
       await assertGoogleRpcRefusal(await requestApp('/v1beta/models/gpt-translate:generateContent', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify(untranslatableGeminiBody),
+        body: JSON.stringify(untranslatableGeminiGenerateContentBody),
       }));
     },
   );
@@ -80,7 +80,7 @@ test('a body the counting wire cannot carry is refused in the client own protoco
       await assertGoogleRpcRefusal(await requestApp('/v1beta/models/claude-count:countTokens', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify(untranslatableGeminiBody),
+        body: JSON.stringify(untranslatableGeminiGenerateContentBody),
       }));
     },
   );

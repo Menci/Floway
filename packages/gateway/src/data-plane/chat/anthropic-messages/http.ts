@@ -7,13 +7,13 @@
 // stages.
 
 import { anthropicMessagesCountTokensPipeline } from './count-tokens.ts';
-import { renderMessagesError } from './errors.ts';
+import { renderAnthropicMessagesError } from './errors.ts';
 import { anthropicMessagesKeepAlive, anthropicMessagesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
-import { createNonResponsesSourceStore } from '../openai-responses/items/store.ts';
+import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { move } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
@@ -62,7 +62,7 @@ export const anthropicMessagesHttp = {
     const ingress = await readIngress(c);
     const request = readRequest(ingress.body.bytes);
     if (request.type === 'invalid') {
-      return refuse(c, ingress, Response.json(renderMessagesError(400, request.message), { status: 400 }));
+      return refuse(c, ingress, Response.json(renderAnthropicMessagesError(400, request.message), { status: 400 }));
     }
 
     const { payload } = request;
@@ -73,7 +73,7 @@ export const anthropicMessagesHttp = {
     const prologue = openChatPrologue(c, ingress, {
       wantsStream,
       model: payload.model,
-      storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+      storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
     });
 
     return await serveThrough(
@@ -82,7 +82,7 @@ export const anthropicMessagesHttp = {
       anthropicMessagesServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'messages',
+        'ingress.chat.sourceProtocol': 'anthropicMessages',
         'ingress.chat.anthropicMessages.wantsStream': wantsStream,
         'request.chat.anthropicMessages': payload,
         'serve.model': payload.model,
@@ -102,7 +102,7 @@ export const anthropicMessagesHttp = {
     const ingress = await readIngress(c);
     const request = readRequest(ingress.body.bytes);
     if (request.type === 'invalid') {
-      return refuse(c, ingress, Response.json(renderMessagesError(400, request.message), { status: 400 }));
+      return refuse(c, ingress, Response.json(renderAnthropicMessagesError(400, request.message), { status: 400 }));
     }
 
     const { payload } = request;
@@ -112,7 +112,7 @@ export const anthropicMessagesHttp = {
     const prologue = openChatPrologue(c, ingress, {
       wantsStream: false,
       model: payload.model,
-      storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+      storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
     });
 
     return await serveThrough(
@@ -121,7 +121,7 @@ export const anthropicMessagesHttp = {
       anthropicMessagesCountTokensPipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'messages',
+        'ingress.chat.sourceProtocol': 'anthropicMessages',
         'request.chat.anthropicMessages': payload,
         'serve.model': payload.model,
       }) as never,

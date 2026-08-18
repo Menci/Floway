@@ -1,6 +1,6 @@
 // Messages as a pipeline, on the chain Chat Completions established.
 //
-//   emitMessages           the edge: writes the answer in the shape the client asked for
+//   emitAnthropicMessages           the edge: writes the answer in the shape the client asked for
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
@@ -20,11 +20,11 @@
 // nothing. Only its request half survives on a live path, in the counting chain. The code is kept
 // so that porting it starts from something rather than from nothing.
 
-import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
-import { analyzeMessagesAffinity } from './affinity/ingress.ts';
-import { renderMessagesError } from './errors.ts';
+import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
+import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
+import { renderAnthropicMessagesError } from './errors.ts';
 import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
-import { createMessagesBillableUsageReader } from './usage.ts';
+import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
@@ -40,32 +40,32 @@ import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.t
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
-  applyRoleCompatibilityToMessages,
-  disableReasoningOnForcedToolChoiceForMessages,
-  stripBillingAttributionFromMessages,
+  applyRoleCompatibilityToAnthropicMessages,
+  disableReasoningOnForcedToolChoiceForAnthropicMessages,
+  stripBillingAttributionFromAnthropicMessages,
 } from '../interceptors.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
+import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import { sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
-  collectMessagesProtocolEventsToResult,
+  collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
-  MESSAGES_MISSING_TERMINAL_MESSAGE,
+  ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE,
   parseAnthropicBetaHeader,
   type AnthropicMessagesPayload,
   type AnthropicMessagesStreamEvent,
 } from '@floway-dev/protocols/anthropic-messages';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
-import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
+import { translateAnthropicMessagesViaOpenAIChatCompletions, translateAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
 
 /** `/v1/messages` prefers its own wire, then the translated Responses path, then the
  *  translated Chat Completions path. */
-export const anthropicMessagesTarget = chatTargetPicker(['messages', 'responses', 'chat-completions']);
+export const anthropicMessagesTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
 
 /** What this family adds to the chat space. */
 export interface AnthropicMessagesFacts extends ChatFacts {
@@ -89,14 +89,14 @@ type M<K extends keyof AnthropicMessagesFacts> = { [P in K]: AnthropicMessagesFa
  * reassembly. Neither shape can answer with half a message: the ending fails a stream that
  * ran out before `message_stop`, whichever of the two the client asked for.
  */
-const emitMessages = defineStage<
+const emitAnthropicMessages = defineStage<
   M<'ingress.chat.anthropicMessages.wantsStream'>,
   M<'ingress.chat.anthropicMessages.wantsStream'>,
   M<'ingress.chat.anthropicMessages.wantsStream' | 'response.chat.anthropicMessages' | 'response.http.headers'>,
   M<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'emitMessages',
+  name: 'emitAnthropicMessages',
   through: {
     request: { needs: ['ingress.chat.anthropicMessages.wantsStream'], consumes: [], provides: [] },
     response: {
@@ -118,7 +118,7 @@ const emitMessages = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.anthropicMessages.rendered': move(renderFailure(answer, () => renderMessagesError(answer.status, answer.message))),
+        'response.chat.anthropicMessages.rendered': move(renderFailure(answer, () => renderAnthropicMessagesError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }
@@ -136,7 +136,7 @@ const emitMessages = defineStage<
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
     const frames = recordFrames(
-      wrapMessagesAffinityEgress(
+      wrapAnthropicMessagesAffinityEgress(
         answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
         affinityEgressOptions(use.gateway),
       ),
@@ -147,7 +147,7 @@ const emitMessages = defineStage<
         ...rest,
         'response.http.headers': forClient,
         'response.chat.anthropicMessages.rendered': move(
-          await collectMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+          await collectAnthropicMessagesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
         'response.http.status': 200,
       };
@@ -252,12 +252,12 @@ const answerClaudeCodeProbe = defineStage<
   },
 });
 
-const callMessagesUpstream = (streamedUsage: string) => defineStage<
+const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
   M<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
   M<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
-  name: 'callMessagesUpstream',
+  name: 'callAnthropicMessagesUpstream',
   return: {
     provides: [
       'response.chat.anthropicMessages',
@@ -276,7 +276,7 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
     // every stage between the fork and here has rewritten it — or, on a translated wire, what
     // the handoff put here. A thinking signature was rewritten for the upstream that will see
     // it, and one that no upstream but the issuer can read was dropped rather than sent on.
-    const body = bodyForAttempt(facts['request.chat.anthropicMessages'], candidate, applyRulesToUpstreamMessages);
+    const body = bodyForAttempt(facts['request.chat.anthropicMessages'], candidate, applyRulesToUpstreamAnthropicMessages);
 
     // The client's own headers reach the upstream from the record, not from a live request
     // object: what a provider is allowed to forward is filtered per provider, and the dump
@@ -286,14 +286,14 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
     // a translation asked for nothing on this wire, so the field is read off and then dropped
     // whichever protocol sent it.
     const headers = new Headers(facts['ingress.http.headers'].map(([name, value]): [string, string] => [name, value]));
-    const anthropicBeta = facts['ingress.chat.sourceProtocol'] === 'messages'
+    const anthropicBeta = facts['ingress.chat.sourceProtocol'] === 'anthropicMessages'
       ? parseAnthropicBetaHeader(headers.get('anthropic-beta'))
       : [];
     headers.delete('anthropic-beta');
 
     let result;
     try {
-      result = await candidate.provider.instance.callMessages(
+      result = await candidate.provider.instance.callAnthropicMessages(
         providerModelOf(candidate),
         body,
         use.gateway.abortSignal,
@@ -338,7 +338,7 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterMessages(result.events, identity, use.gateway.attempt);
+    const metered = meterAnthropicMessages(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.anthropicMessages': { kind: 'stream' as const, frames: metered.frames },
@@ -359,10 +359,10 @@ const callMessagesUpstream = (streamedUsage: string) => defineStage<
  * that leaves for another protocol.
  */
 export const anthropicMessagesWire = (streamedUsage: string): readonly Stage[] => [
-  stripBillingAttributionFromMessages,
-  disableReasoningOnForcedToolChoiceForMessages,
-  applyRoleCompatibilityToMessages,
-  callMessagesUpstream(streamedUsage),
+  stripBillingAttributionFromAnthropicMessages,
+  disableReasoningOnForcedToolChoiceForAnthropicMessages,
+  applyRoleCompatibilityToAnthropicMessages,
+  callAnthropicMessagesUpstream(streamedUsage),
 ];
 
 /** This family's own reading, which every wire under it hands up. */
@@ -372,23 +372,23 @@ const STREAMED_USAGE = 'response.chat.anthropicMessages.streamedUsage';
  *  one is a handoff and then the target protocol's own wire. */
 const anthropicMessagesWireFor = (target: ChatTargetApi, candidate: ModelCandidate): ChatWire => {
   switch (target) {
-  case 'messages':
+  case 'anthropicMessages':
     return compose('anthropicMessagesNative', anthropicMessagesWire(STREAMED_USAGE));
-  case 'responses':
+  case 'openaiResponses':
     return compose('anthropicMessagesViaOpenAIResponses', [
       handOff({
         from: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
-        trip: async payload => await translateMessagesViaResponses(payload, { model: candidate.model.id }),
+        trip: async payload => await translateAnthropicMessagesViaOpenAIResponses(payload, { model: candidate.model.id }),
       }),
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
-  case 'chat-completions':
+  case 'openaiChatCompletions':
     return compose('anthropicMessagesViaOpenAIChatCompletions', [
       handOff({
         from: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
         to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
-        trip: async payload => await translateMessagesViaChatCompletions(payload, { model: candidate.model.id }),
+        trip: async payload => await translateAnthropicMessagesViaOpenAIChatCompletions(payload, { model: candidate.model.id }),
       }),
       ...openaiChatCompletionsWire(STREAMED_USAGE),
     ]);
@@ -399,7 +399,7 @@ const anthropicMessagesWireFor = (target: ChatTargetApi, candidate: ModelCandida
  *  pass and the client's stream is what drives it. Anthropic states input accounting on
  *  `message_start` and output accounting on `message_delta`, so the reader that merges the
  *  two is per-stream state and is made here rather than shared. */
-const meterMessages = (
+const meterAnthropicMessages = (
   source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
@@ -409,14 +409,14 @@ const meterMessages = (
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
-  const readBillableUsage = createMessagesBillableUsageReader();
+  const readBillableUsage = createAnthropicMessagesBillableUsageReader();
   const generator = (async function* () {
     let reported: BillableUsage | undefined;
     try {
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
         // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'messages')) {
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'anthropicMessages')) {
           attempt.firstOutputTokenAt = performance.now();
         }
         if (frame.type === 'event') {
@@ -427,11 +427,11 @@ const meterMessages = (
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past `message_stop` would otherwise hold the client's stream open
         // with it; returning here closes the read, which cancels the upstream.
-        if (isMessagesTerminalFrame(frame)) { sawTerminal = true; return; }
+        if (isAnthropicMessagesTerminalFrame(frame)) { sawTerminal = true; return; }
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // message was never stopped and never failed.
-      throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
+      throw new Error(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
@@ -445,7 +445,7 @@ const meterMessages = (
 /** What ends a Messages turn. Anthropic's own stream terminator is an event rather than a
  *  transport sentinel, and a stream that failed mid-turn says so with `error` in place of the
  *  `message_stop` that will now never come. */
-const isMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>): boolean =>
+const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>): boolean =>
   frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 /** What one attempt is billable for. An upstream that reported nothing leaves no quantities
@@ -464,7 +464,7 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
  *  built from the request rather than being a constant. */
 const narrowing = (payload: AnthropicMessagesPayload): ChatNarrowing<M<'response.chat.anthropicMessages' | 'response.chat.anthropicMessages.streamedUsage'>> => ({
   canServe: candidate => anthropicMessagesTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeMessagesAffinity(payload, gateway.affinity.codec),
+  affinity: async gateway => await analyzeAnthropicMessagesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /messages endpoint.`,
   refuse: (status, message) => ({
     'response.chat.anthropicMessages': { status, message },
@@ -492,7 +492,7 @@ export type AnthropicMessagesServeExit = M<
 
 export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload): Pipeline<AnthropicMessagesServeEntry, AnthropicMessagesServeExit> =>
   compose('anthropicMessagesServe', [
-    emitMessages,
+    emitAnthropicMessages,
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
       handedUp => (handedUp as { 'response.chat.anthropicMessages.streamedUsage'?: unknown })['response.chat.anthropicMessages.streamedUsage'] !== null,

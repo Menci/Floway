@@ -10,7 +10,7 @@
 import { expect, test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { copilotModels, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse } from '../../test-utils/app.ts';
+import { copilotModels, parseSSEText, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -38,7 +38,7 @@ const withCopilot = async <T>(
 
 /** The answer a Chat Completions upstream gives, as the SSE every chat endpoint really speaks. */
 const upstreamTurn = (model: string): Response =>
-  sseChatCompletionsResponse({
+  sseOpenAIChatCompletionsResponse({
     id: 'chatcmpl_route',
     object: 'chat.completion',
     created: 1_772_000_000,
@@ -190,7 +190,7 @@ test('a turn dialled over the Messages wire still answers the client in Chat Com
     (path, body) => {
       expect(path).toBe('/v1/messages');
       expect(body.stream).toBe(true);
-      return sseMessagesResponse({
+      return sseAnthropicMessagesResponse({
         id: 'msg_route',
         type: 'message',
         role: 'assistant',

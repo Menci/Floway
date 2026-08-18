@@ -14,7 +14,7 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
-import { createNonResponsesSourceStore } from '../openai-responses/items/store.ts';
+import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { move } from '@floway-dev/pipeline';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -48,7 +48,7 @@ export const openaiChatCompletionsHttp = {
     const prologue = openChatPrologue(c, ingress, {
       wantsStream,
       model: payload.model,
-      storeFactory: apiKey => createNonResponsesSourceStore(apiKey.id),
+      storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
     });
 
     return await serveThrough(
@@ -57,7 +57,7 @@ export const openaiChatCompletionsHttp = {
       openaiChatCompletionsServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'chatCompletions',
+        'ingress.chat.sourceProtocol': 'openaiChatCompletions',
         'ingress.chat.openaiChatCompletions.wantsStream': wantsStream,
         'ingress.chat.openaiChatCompletions.wantsUsageChunk': payload.stream_options?.include_usage === true,
         'request.chat.openaiChatCompletions': payload,

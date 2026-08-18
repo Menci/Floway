@@ -7,10 +7,10 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { copilotModels, flushAsyncWork, requestApp, setupAppTest, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const withResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
+const withOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
@@ -22,7 +22,7 @@ const withResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: 'resp_run_dump',
           object: 'response',
           model: 'gpt-direct-responses',
@@ -42,7 +42,7 @@ test('POST /v1/responses records the run it was, not an empty record', async () 
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
-  await withResponsesUpstream(async () => {
+  await withOpenAIResponsesUpstream(async () => {
     const response = await requestApp('/v1/responses', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },

@@ -1,6 +1,6 @@
 // Responses as a pipeline, on the chain Chat Completions established.
 //
-//   emitResponses          the edge: writes the answer in the shape the client asked for
+//   emitOpenAIResponses          the edge: writes the answer in the shape the client asked for
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   hydrateStoredItems     the stored-items membrane, on the way in
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
@@ -15,7 +15,7 @@
 // translated ones — Responses via Messages and Responses via Chat Completions — each a
 // handoff followed by that protocol's own wire. What sits *in* a wire rather than above the
 // fork is a rule that speaks about that wire: the role rewrite and the cache-bucket fold both
-// do, which is why their interceptor forms stood down on `ctx.targetApi !== 'responses'`, and
+// do, which is why their interceptor forms stood down on `ctx.targetApi !== 'openaiResponses'`, and
 // position says it here instead.
 //
 // Two transports enter here — `POST /v1/responses` and the WebSocket one — and the only thing
@@ -33,7 +33,7 @@
 //     `generate`; what the ending answers with is the branch the provider says it ran, which
 //     is why the envelope a compaction is arrives somewhere rather than nowhere.
 //   - the server-tool shims. They never became stages and the interceptor array that ran them
-//     is gone, so `withResponsesServerToolShim` and the two tools under it are reachable only
+//     is gone, so `withOpenAIResponsesServerToolShim` and the two tools under it are reachable only
 //     from their own tests: a turn declaring a hosted `web_search` or `image_generation` tool
 //     reaches the upstream unshimmed, and the two flags that gate them do nothing. The code is
 //     kept so that porting it starts from something rather than from nothing. Nothing in a
@@ -44,8 +44,8 @@
 // pipeline: an upstream that refused is answered in its own words, with the status it sent,
 // rather than being quoted back inside an envelope this gateway wrote.
 
-import { analyzeResponsesAffinity } from './affinity/ingress.ts';
-import { wrapResponsesClientEgress } from './client-output.ts';
+import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
+import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import {
   buildCompactionEnvelope,
   containsCompactionTrigger,
@@ -55,11 +55,11 @@ import {
   summaryTextFrom,
 } from './compact-shim.ts';
 import type { OpenAIResponsesServeFailure } from './errors.ts';
-import { hydrateResponsesPayload } from './items/hydrate.ts';
+import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
-import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
+import { billableUsageFromOpenAIResponsesEvent, billableUsageFromOpenAIResponsesResult } from './usage.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
@@ -75,15 +75,15 @@ import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.t
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
-  applyRoleCompatibilityToResponses,
-  disableReasoningOnForcedToolChoiceForResponses,
-  normalizeExclusiveCachedTokensForResponses,
-  stripPromptCacheKeyForResponses,
-  vendorDeepSeekNormalizeForResponses,
-  vendorQwenNormalizeForResponses,
+  applyRoleCompatibilityToOpenAIResponses,
+  disableReasoningOnForcedToolChoiceForOpenAIResponses,
+  normalizeExclusiveCachedTokensForOpenAIResponses,
+  stripPromptCacheKeyForOpenAIResponses,
+  vendorDeepSeekNormalizeForOpenAIResponses,
+  vendorQwenNormalizeForOpenAIResponses,
 } from '../interceptors.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
-import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
+import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
@@ -92,23 +92,23 @@ import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type Cha
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
-  collectResponsesProtocolEventsToResult,
-  createRandomResponsesItemId,
-  isResponsesTerminalEvent,
+  collectOpenAIResponsesProtocolEventsToResult,
+  createRandomOpenAIResponsesItemId,
+  isOpenAIResponsesTerminalEvent,
   openaiResponsesProtocolFrameToSSEFrame,
-  RESPONSES_MISSING_TERMINAL_MESSAGE,
-  type CanonicalResponsesPayload,
+  OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE,
+  type CanonicalOpenAIResponsesPayload,
   type ClientResponseResource,
-  type ClientResponsesStreamEvent,
+  type ClientOpenAIResponsesStreamEvent,
   type OpenAIResponsesOutputItem,
   type OpenAIResponsesStreamEvent,
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, toInternalDebugError, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
-import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
+import { translateOpenAIResponsesViaOpenAIChatCompletions, translateOpenAIResponsesViaAnthropicMessages } from '@floway-dev/translate';
 
 /** `/v1/responses` prefers its own wire, then the translated Messages path, then the
  *  translated Chat Completions path. */
-export const openaiResponsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
+export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
 
 /** How the transport that opened the run frames a streamed answer. Both carry this
  *  protocol's own events and neither adds or drops one: SSE is the format an HTTP body is
@@ -129,7 +129,7 @@ export interface OpenAIResponsesFacts extends ChatFacts {
   /** What the client is actually sent — an object when it asked for one, and the stream it
    *  asked to be streamed, in the framing its transport writes. The edge provides it, so a
    *  dump shows what the client received. */
-  'response.chat.openaiResponses.rendered': Record<string, unknown> | AsyncIterable<SseFrame> | AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>;
+  'response.chat.openaiResponses.rendered': Record<string, unknown> | AsyncIterable<SseFrame> | AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
   'response.chat.openaiResponses.streamedUsage': Promise<StreamOutcome> | null;
@@ -155,14 +155,14 @@ type R<K extends keyof OpenAIResponsesFacts> = { [P in K]: OpenAIResponsesFacts[
  * Only the last step differs: `renderSSE` is a wire format written over an HTTP body, and a
  * transport that frames each event itself takes the events it would have been written from.
  */
-const emitResponses = (client: CanonicalResponsesPayload, framing: OpenAIResponsesStreamFraming) => defineStage<
+const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, framing: OpenAIResponsesStreamFraming) => defineStage<
   R<'ingress.chat.openaiResponses.wantsStream'>,
   R<'ingress.chat.openaiResponses.wantsStream'>,
   R<'ingress.chat.openaiResponses.wantsStream' | 'response.chat.openaiResponses' | 'response.http.headers'>,
   R<'response.chat.openaiResponses.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'emitResponses',
+  name: 'emitOpenAIResponses',
   through: {
     request: { needs: ['ingress.chat.openaiResponses.wantsStream'], consumes: [], provides: [] },
     response: {
@@ -209,7 +209,7 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: OpenAIRespons
     // id beneath one response id this gateway minted, and the resource completed to what the
     // schema requires of it. It runs before the fold rather than beside it, so a client that
     // did not ask to stream is answered with the object the persisted frames add up to.
-    const egress = wrapResponsesClientEgress(
+    const egress = wrapOpenAIResponsesClientEgress(
       answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
       use.gateway,
       client,
@@ -230,7 +230,7 @@ const emitResponses = (client: CanonicalResponsesPayload, framing: OpenAIRespons
           ...rest,
           'response.http.headers': forClient,
           'response.chat.openaiResponses.rendered': move(
-            await collectResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+            await collectOpenAIResponsesProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
           ),
           'response.http.status': 200,
         };
@@ -278,7 +278,7 @@ export const internalErrorEnvelope = (error: unknown): Record<string, unknown> =
  *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L170-L177
  *  https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
  *  https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98 */
-const streamErrorEvent = (error: unknown): ClientResponsesStreamEvent => {
+const streamErrorEvent = (error: unknown): ClientOpenAIResponsesStreamEvent => {
   const debug = toInternalDebugError(error);
   return {
     type: 'error',
@@ -290,17 +290,17 @@ const streamErrorEvent = (error: unknown): ClientResponsesStreamEvent => {
       cause: debug.cause,
       target_api: debug.target_api,
     },
-  } as unknown as ClientResponsesStreamEvent;
+  } as unknown as ClientOpenAIResponsesStreamEvent;
 };
 
 /** "Any error incurred while streaming will be followed by a `response.failed` event."
  *  https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430 */
-const streamFailedEvent = (announced: ClientResponseResource, error: unknown): ClientResponsesStreamEvent => {
+const streamFailedEvent = (announced: ClientResponseResource, error: unknown): ClientOpenAIResponsesStreamEvent => {
   const debug = toInternalDebugError(error);
   return {
     type: 'response.failed',
     response: { ...announced, status: 'failed', error: { code: debug.type, message: debug.message } },
-  } as ClientResponsesStreamEvent;
+  } as ClientOpenAIResponsesStreamEvent;
 };
 
 /** Every Responses event has an SSE form of its own, so the render is a straight map. What
@@ -314,7 +314,7 @@ const streamFailedEvent = (announced: ClientResponseResource, error: unknown): C
  *  a stream that ran out before saying how it ended. The status went out with the headers, so
  *  the failure has to be said in the protocol's own words, and it is said *instead of* the
  *  terminator: a stream that ended on `[DONE]` is a stream that finished. */
-const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
+const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     // The last resource the client was shown, which is the one a `response.failed` restates:
     // the id it names has to be the id the client already saw this turn under.
@@ -344,12 +344,12 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEven
  * chain above it reads — which is what makes it interchangeable with a translated chain: both
  * hand up `response.chat.openaiResponses`, and the stage above cannot tell which ran.
  */
-const callResponsesUpstream = (streamedUsage: string) => defineStage<
+const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
   R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
   R<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
-  name: 'callResponsesUpstream',
+  name: 'callOpenAIResponsesUpstream',
   return: {
     provides: [
       'response.chat.openaiResponses',
@@ -372,12 +372,12 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
     //
     // The key holds what a client may send, whose `input` is a string or a list; this chain
     // runs on the canonical form the entry normalized it to, which is the one a wire takes.
-    const asked = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
-    const body = bodyForAttempt(asked, candidate, applyRulesToUpstreamResponses);
+    const asked = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
+    const body = bodyForAttempt(asked, candidate, applyRulesToUpstreamOpenAIResponses);
 
     let result;
     try {
-      result = await candidate.provider.instance.callResponses(
+      result = await candidate.provider.instance.callOpenAIResponses(
         providerModelOf(candidate),
         body,
         'generate',
@@ -436,12 +436,12 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
         ...facts,
         'response.chat.openaiResponses': { kind: 'value' as const, body: result.result },
         [streamedUsage]: null,
-        'response.usage.billable': [billedResponsesEntity(identity, billableUsageFromResponsesResult(result.result) ?? undefined)],
+        'response.usage.billable': [billedOpenAIResponsesEntity(identity, billableUsageFromOpenAIResponsesResult(result.result) ?? undefined)],
         'response.http.headers': [],
       });
     }
 
-    const metered = meterResponses(result.events, identity, use.gateway.attempt);
+    const metered = meterOpenAIResponses(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.openaiResponses': { kind: 'stream' as const, frames: metered.frames },
@@ -464,20 +464,20 @@ const callResponsesUpstream = (streamedUsage: string) => defineStage<
  * on assistant content, so a turn that leaves for Messages or Chat Completions never carried
  * the disagreement in the first place.
  */
-const normalizeAssistantContentForResponses = defineStage<
+const normalizeAssistantContentForOpenAIResponses = defineStage<
   R<'request.chat.openaiResponses'>,
   R<'request.chat.openaiResponses'>,
   Record<string, never>,
   Record<string, never>,
   ChatServices
 >({
-  name: 'normalizeAssistantContentForResponses',
+  name: 'normalizeAssistantContentForOpenAIResponses',
   through: {
     request: { needs: ['request.chat.openaiResponses'], consumes: [], provides: ['request.chat.openaiResponses'] },
     response: { needs: [], consumes: [], provides: [] },
   },
   execute: async (facts, next) => {
-    const payload = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
+    const payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
     const input = normalizeAssistantInputText(payload.input);
     // A rewrite that changed nothing hands the same payload on, so the record shows no
     // change where none happened.
@@ -500,51 +500,51 @@ const normalizeAssistantContentForResponses = defineStage<
  * subject to the same three.
  */
 export const openaiResponsesWireRules: readonly Stage[] = [
-  normalizeAssistantContentForResponses,
-  disableReasoningOnForcedToolChoiceForResponses,
-  applyRoleCompatibilityToResponses,
-  stripPromptCacheKeyForResponses,
-  normalizeExclusiveCachedTokensForResponses,
-  vendorDeepSeekNormalizeForResponses,
-  vendorQwenNormalizeForResponses,
+  normalizeAssistantContentForOpenAIResponses,
+  disableReasoningOnForcedToolChoiceForOpenAIResponses,
+  applyRoleCompatibilityToOpenAIResponses,
+  stripPromptCacheKeyForOpenAIResponses,
+  normalizeExclusiveCachedTokensForOpenAIResponses,
+  vendorDeepSeekNormalizeForOpenAIResponses,
+  vendorQwenNormalizeForOpenAIResponses,
 ];
 
 /** The Responses wire, as the chain that dials it. */
 export const openaiResponsesWire = (streamedUsage: string): readonly Stage[] => [
   ...openaiResponsesWireRules,
-  callResponsesUpstream(streamedUsage),
+  callOpenAIResponsesUpstream(streamedUsage),
 ];
 
 /** This family's own reading, which every wire under it hands up. */
-export const RESPONSES_STREAMED_USAGE = 'response.chat.openaiResponses.streamedUsage';
+export const OPENAI_RESPONSES_STREAMED_USAGE = 'response.chat.openaiResponses.streamedUsage';
 
 /** The three wires `/v1/responses` can be served on. Its own is the bare wire; each translated
  *  one is a handoff and then the target protocol's own wire. */
 export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
-  case 'responses':
-    return compose('openaiResponsesNative', openaiResponsesWire(RESPONSES_STREAMED_USAGE));
-  case 'messages':
+  case 'openaiResponses':
+    return compose('openaiResponsesNative', openaiResponsesWire(OPENAI_RESPONSES_STREAMED_USAGE));
+  case 'anthropicMessages':
     return compose('openaiResponsesViaAnthropicMessages', [
       handOff({
         from: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
-        trip: async payload => await translateResponsesViaMessages(payload, {
+        trip: async payload => await translateOpenAIResponsesViaAnthropicMessages(payload, {
           model: candidate.model.id,
           fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
           loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
         }),
       }),
-      ...anthropicMessagesWire(RESPONSES_STREAMED_USAGE),
+      ...anthropicMessagesWire(OPENAI_RESPONSES_STREAMED_USAGE),
     ]);
-  case 'chat-completions':
+  case 'openaiChatCompletions':
     return compose('openaiResponsesViaOpenAIChatCompletions', [
       handOff({
         from: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
-        trip: async payload => await translateResponsesViaChatCompletions(payload, { model: candidate.model.id }),
+        trip: async payload => await translateOpenAIResponsesViaOpenAIChatCompletions(payload, { model: candidate.model.id }),
       }),
-      ...openaiChatCompletionsWire(RESPONSES_STREAMED_USAGE),
+      ...openaiChatCompletionsWire(OPENAI_RESPONSES_STREAMED_USAGE),
     ]);
   }
 };
@@ -553,7 +553,7 @@ export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCa
  *  pass and the client's stream is what drives it. Responses states its counts on the
  *  lifecycle envelopes, and only one carrying real counts replaces the running figure, so an
  *  envelope that states none cannot wipe a good reading. */
-const meterResponses = (
+const meterOpenAIResponses = (
   source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
@@ -569,21 +569,21 @@ const meterResponses = (
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
         // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'responses')) {
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'openaiResponses')) {
           attempt.firstOutputTokenAt = performance.now();
         }
         if (frame.type !== 'event') {
           yield frame;
           continue;
         }
-        const usage = billableUsageFromResponsesEvent(frame.event);
+        const usage = billableUsageFromOpenAIResponsesEvent(frame.event);
         if (usage !== null) reported = usage;
         // Read off the frame rather than off having been resumed past it. The stage that
         // stores the turn's items stops reading at the terminal event, so the resumption
         // never comes: what this loop would learn from it is already true when the frame
         // arrives, and the turn ended the way the upstream said it did whether or not
         // anything downstream asked for another.
-        if (isResponsesTerminalEvent(frame.event)) sawTerminal = true;
+        if (isOpenAIResponsesTerminalEvent(frame.event)) sawTerminal = true;
         yield frame;
         // The turn is over, so there is nothing further to read. An upstream that holds the
         // connection open past its terminal event would otherwise hold the client's stream
@@ -592,12 +592,12 @@ const meterResponses = (
       }
       // Frames ran out with no terminal event, which is a turn nobody can answer from: the
       // response was never stated complete, incomplete or failed.
-      throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
+      throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal event, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
       // billable whatever happened to the downstream half.
-      settle({ billable: [billedResponsesEntity(identity, reported)], failed: !sawTerminal });
+      settle({ billable: [billedOpenAIResponsesEntity(identity, reported)], failed: !sawTerminal });
     }
   })();
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
@@ -611,7 +611,7 @@ const meterResponses = (
  *  because on this protocol it is not a quantity but a rate selector — `service_tier` states
  *  the tier the turn was actually served at, and that is the pricing entry it is billed
  *  under. */
-export const billedResponsesEntity = (identity: TelemetryModelIdentity, usage: BillableUsage | undefined): BillableEntity => {
+export const billedOpenAIResponsesEntity = (identity: TelemetryModelIdentity, usage: BillableUsage | undefined): BillableEntity => {
   if (usage === undefined) return { identity, quantities: {} };
   const measurement = tokenUsageMeasurement(tokenUsageFromBillableUsage(usage));
   return { identity, quantities: measurement.quantities, pricingFacts: measurement.pricingFacts };
@@ -626,9 +626,9 @@ export const billedResponsesEntity = (identity: TelemetryModelIdentity, usage: B
  *  client never sent, and a turn is pinned by what its items carry. The narrowing is built
  *  at assembly, before any fact exists, so the membrane hands the prepared payload across
  *  through the run's own cell rather than through the record. */
-export const openaiResponsesNarrowing = (prepared: () => CanonicalResponsesPayload): ChatNarrowing<R<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage'>> => ({
+export const openaiResponsesNarrowing = (prepared: () => CanonicalOpenAIResponsesPayload): ChatNarrowing<R<'response.chat.openaiResponses' | 'response.chat.openaiResponses.streamedUsage'>> => ({
   canServe: candidate => openaiResponsesTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeResponsesAffinity(prepared(), gateway.affinity.codec),
+  affinity: async gateway => await analyzeOpenAIResponsesAffinity(prepared(), gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /responses endpoint.`,
   refuse: (status, message, reason) => ({
     'response.chat.openaiResponses.streamedUsage': null,
@@ -684,8 +684,8 @@ const refuseStoredItems = (
  * it carries the `return` trait alongside `through`.
  */
 export const hydrateStoredItems = (
-  client: CanonicalResponsesPayload,
-  prepared: (payload: CanonicalResponsesPayload) => void,
+  client: CanonicalOpenAIResponsesPayload,
+  prepared: (payload: CanonicalOpenAIResponsesPayload) => void,
 ) => defineStage<
   R<'request.chat.openaiResponses'>,
   R<'request.chat.openaiResponses' | 'request.chat.openaiResponses.privatePayloads'>,
@@ -715,9 +715,9 @@ export const hydrateStoredItems = (
     const store = use.gateway.store;
     // The key holds what a client may send, whose `input` is a string or a list; this chain
     // runs on the canonical form the entry normalized it to.
-    const asked = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
+    const asked = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
 
-    let expanded: CanonicalResponsesPayload;
+    let expanded: CanonicalOpenAIResponsesPayload;
     try {
       expanded = await expandPreviousResponseId(asked, store);
     } catch (error) {
@@ -735,9 +735,9 @@ export const hydrateStoredItems = (
     // read by item hash as well, so a body repeated verbatim finds the row it already made.
     await store.loadInputItems(expanded.input, client.input);
 
-    let hydrated: ReturnType<typeof hydrateResponsesPayload>;
+    let hydrated: ReturnType<typeof hydrateOpenAIResponsesPayload>;
     try {
-      hydrated = hydrateResponsesPayload(expanded, store);
+      hydrated = hydrateOpenAIResponsesPayload(expanded, store);
     } catch (error) {
       const failure = tryCatchChatServeFailure<OpenAIResponsesServeFailure>(error);
       if (failure?.kind !== 'item-not-found') throw error;
@@ -811,7 +811,7 @@ export const beginStoredAttempt = defineStage<
  * would have produced for it.
  */
 export const simulatesCompaction = (candidate: ModelCandidate, attempt: AttemptSelector): boolean =>
-  openaiResponsesTarget.pick(candidate.model.endpoints) !== 'responses'
+  openaiResponsesTarget.pick(candidate.model.endpoints) !== 'openaiResponses'
   || attempt.flags.includes('responses-compact-shim');
 
 /**
@@ -848,7 +848,7 @@ export const expandShimCompactions = defineStage<
     }
     // The key holds what a client may send, whose `input` is a string or a list; this chain
     // runs on the canonical form the entry normalized it to.
-    const payload = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
+    const payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
     const expanded = expandShimCompactionItems(payload);
     // A turn carrying none of ours hands the same payload on, so the record shows no change
     // where none happened.
@@ -899,7 +899,7 @@ export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
   },
   execute: async (facts, next, use) => {
     if (!asked(facts, use)) return await next(facts);
-    const payload = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
+    const payload = facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload;
     const back = await next({ ...facts, 'request.chat.openaiResponses': move(summarizationTurnFor(payload)) });
 
     const answer = back['response.chat.openaiResponses'];
@@ -921,7 +921,7 @@ export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
         yield frame;
       }
     })();
-    const collected = await collectResponsesProtocolEventsToResult(observed);
+    const collected = await collectOpenAIResponsesProtocolEventsToResult(observed);
 
     const summaryText = summaryTextFrom(closed, collected.output);
     if (summaryText.length === 0) {
@@ -931,7 +931,7 @@ export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
       return { ...back, 'response.chat.openaiResponses': move({ status: 502, message: EMPTY_SUMMARY_MESSAGE }) };
     }
 
-    const synthesized = buildCompactionEnvelope(createRandomResponsesItemId('compaction'), summaryText, collected);
+    const synthesized = buildCompactionEnvelope(createRandomOpenAIResponsesItemId('compaction'), summaryText, collected);
     return { ...back, 'response.chat.openaiResponses': move({ kind: 'stream' as const, frames: syntheticEventsFromResult(synthesized) }) };
   },
 });
@@ -946,7 +946,7 @@ export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
  * native Responses upstream does with it.
  */
 const asksForCompaction: CompactionAsk = (facts, use) =>
-  containsCompactionTrigger((facts['request.chat.openaiResponses'] as CanonicalResponsesPayload).input)
+  containsCompactionTrigger((facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload).input)
   && simulatesCompaction(use.resolveAttempt(facts['route.attempt']), facts['route.attempt']);
 
 export type OpenAIResponsesServeEntry = R<
@@ -960,7 +960,7 @@ export type OpenAIResponsesServeExit = R<
 >;
 
 export const openaiResponsesServePipeline = (
-  payload: CanonicalResponsesPayload,
+  payload: CanonicalOpenAIResponsesPayload,
   // SSE is what a run is written in when nothing else claims its frames, which is every
   // entry over an HTTP body; the WebSocket transport says so because it writes its own.
   framing: OpenAIResponsesStreamFraming = 'sse',
@@ -971,7 +971,7 @@ export const openaiResponsesServePipeline = (
   // is the whole of what is known about the turn.
   let prepared = payload;
   return compose('openaiResponsesServe', [
-    emitResponses(payload, framing),
+    emitOpenAIResponses(payload, framing),
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
       handedUp => (handedUp as { 'response.chat.openaiResponses.streamedUsage'?: unknown })['response.chat.openaiResponses.streamedUsage'] !== null,
@@ -989,7 +989,7 @@ export const openaiResponsesServePipeline = (
     dialChatWire({
       source: 'request.chat.openaiResponses',
       needs: ['request.chat.openaiResponses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
-      provides: ['response.chat.openaiResponses', RESPONSES_STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      provides: ['response.chat.openaiResponses', OPENAI_RESPONSES_STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
       pick: endpoints => openaiResponsesTarget.pick(endpoints),
       wire: openaiResponsesWireFor,
     }),

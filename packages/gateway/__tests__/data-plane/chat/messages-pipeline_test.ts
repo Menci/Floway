@@ -14,7 +14,7 @@ import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { directFetcher, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -25,15 +25,15 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 
 let live: readonly ModelCandidate[] = [];
 
-type CallMessages = (
+type CallAnthropicMessages = (
   model: unknown,
   body: unknown,
   signal: AbortSignal | undefined,
   opts: AnthropicMessagesUpstreamCallOptions,
 ) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
 
-const candidate = (callMessages: CallMessages, upstreamId = 'up_a'): ModelCandidate => {
-  const endpoints = { messages: {} };
+const candidate = (callAnthropicMessages: CallAnthropicMessages, upstreamId = 'up_a'): ModelCandidate => {
+  const endpoints = { anthropicMessages: {} };
   return {
     provider: {
       upstreamId, kind: 'claude-code', name: upstreamId,
@@ -41,7 +41,7 @@ const candidate = (callMessages: CallMessages, upstreamId = 'up_a'): ModelCandid
       // rather than proving only that the allowlist did.
       inboundHeaderAllowlist: [/^(anthropic-beta|x-trace)$/],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callMessages: callMessages as never }),
+      instance: stubProvider({ callAnthropicMessages: callAnthropicMessages as never }),
     },
     model: stubInternalModel(
       { id: 'claude-model', endpoints, providerModels: { [upstreamId]: stubProviderModel({ id: 'claude-model', endpoints }) } },
@@ -111,7 +111,7 @@ const serveWith = async (
   anthropicMessagesServePipeline(payload),
   move({
     'ingress.http.headers': headers,
-    'ingress.chat.sourceProtocol': 'messages',
+    'ingress.chat.sourceProtocol': 'anthropicMessages',
     'ingress.chat.anthropicMessages.wantsStream': wantsStream,
     'request.chat.anthropicMessages': payload,
     'serve.model': 'claude-model',
@@ -391,6 +391,6 @@ describe('the messages chain', () => {
 
     const { facts } = await serve(true);
 
-    await expect(collect(facts['response.chat.anthropicMessages.rendered'])).rejects.toThrow(MESSAGES_MISSING_TERMINAL_MESSAGE);
+    await expect(collect(facts['response.chat.anthropicMessages.rendered'])).rejects.toThrow(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE);
   });
 });

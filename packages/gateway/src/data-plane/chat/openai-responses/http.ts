@@ -8,15 +8,15 @@
 // answered by the chain on both routes rather than caught as a throw on either.
 
 import { openaiResponsesCompactPipeline } from './compact.ts';
-import { createResponsesHttpStore } from './items/store.ts';
+import { createOpenAIResponsesHttpStore } from './items/store.ts';
 import { openaiResponsesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
 import { move } from '@floway-dev/pipeline';
-import type { CanonicalResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
-import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 /** The read, as a value rather than a throw, because a pipelined entry decides what to do
  *  about a body it could not read before it opens a run rather than after one unwound.
@@ -26,10 +26,10 @@ import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/
  *  can make: `input` and `input[0]` are different sentences, and a body with no `model` is
  *  refused in words OpenAI's own clients already parse. */
 const readRequest = (bytes: Uint8Array):
-  | { type: 'ok'; payload: CanonicalResponsesPayload }
+  | { type: 'ok'; payload: CanonicalOpenAIResponsesPayload }
   | { type: 'invalid'; message: string; param?: string; code?: string } => {
   try {
-    return { type: 'ok', payload: canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as OpenAIResponsesRequestPayload) };
+    return { type: 'ok', payload: canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as OpenAIResponsesRequestPayload) };
   } catch (error) {
     if (!(error instanceof TranslatorInputError)) {
       return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
@@ -78,7 +78,7 @@ export const openaiResponsesHttp = {
     const prologue = openChatPrologue(c, ingress, {
       wantsStream,
       model: payload.model,
-      storeFactory: (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
+      storeFactory: (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
     });
 
     return await serveThrough(
@@ -87,7 +87,7 @@ export const openaiResponsesHttp = {
       openaiResponsesServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'responses',
+        'ingress.chat.sourceProtocol': 'openaiResponses',
         'ingress.chat.openaiResponses.wantsStream': wantsStream,
         'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
@@ -110,7 +110,7 @@ export const openaiResponsesHttp = {
     const prologue = openChatPrologue(c, ingress, {
       wantsStream: false,
       model: payload.model,
-      storeFactory: (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
+      storeFactory: (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
     });
 
     return await serveThrough(
@@ -119,7 +119,7 @@ export const openaiResponsesHttp = {
       openaiResponsesCompactPipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
-        'ingress.chat.sourceProtocol': 'responses',
+        'ingress.chat.sourceProtocol': 'openaiResponses',
         'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
       }) as never,

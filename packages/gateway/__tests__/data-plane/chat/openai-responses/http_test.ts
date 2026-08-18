@@ -544,9 +544,9 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
 
 test('POST /v1/responses replays a stored turn when the next one names it as previous_response_id', async () => {
   installRepo();
-  const observedBodies: Array<Omit<CanonicalResponsesPayload, 'model'>> = [];
-  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
-    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
+  const observedBodies: Array<Omit<CanonicalOpenAIResponsesPayload, 'model'>> = [];
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
     return {
       action: 'generate', ok: true,
       events: makeProviderEvents(completedEvents(`resp_upstream_${observedBodies.length}`)),
@@ -554,7 +554,7 @@ test('POST /v1/responses replays a stored turn when the next one names it as pre
       headers: new Headers(),
     };
   });
-  const candidate = makeCandidate({ callResponses });
+  const candidate = makeCandidate({ callOpenAIResponses });
   queueResolution([candidate]);
   queueResolution([candidate]);
   const app = makeApp();

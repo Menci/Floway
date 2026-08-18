@@ -75,7 +75,7 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
   return app;
 };
 
-const makeMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] => [
+const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEvent[] => [
   {
     type: 'message_start',
     message: {
@@ -104,13 +104,13 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
-    callMessages: overrides.callMessages,
-    callMessagesCountTokens: overrides.callMessagesCountTokens,
+    callAnthropicMessages: overrides.callAnthropicMessages,
+    callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
   });
   return {
     provider: {
@@ -124,10 +124,10 @@ const makeCandidate = (overrides: {
 
 test('POST /v1/messages streams a successful SSE body', async () => {
   installRepo();
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ callMessages })]);
+  queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
@@ -140,15 +140,15 @@ test('POST /v1/messages streams a successful SSE body', async () => {
   const body = await response.text();
   assert(body.includes('event: message_start'));
   assert(body.includes('event: message_stop'));
-  assertEquals(callMessages.mock.calls.length, 1);
+  assertEquals(callAnthropicMessages.mock.calls.length, 1);
 });
 
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ callMessages })]);
+  queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
@@ -164,10 +164,10 @@ test('POST /v1/messages returns a single JSON body when stream is omitted', asyn
 
 test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
   const repo = installRepo();
-  const callMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
     throw new Error('the probe reached the upstream');
   });
-  queueCandidates([makeCandidate({ callMessages })]);
+  queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
@@ -187,7 +187,7 @@ test('POST /v1/messages answers the Claude Code model-validation probe without c
   assertEquals(body.stop_reason, 'max_tokens');
   assertEquals(body.usage.input_tokens, 0);
   assertEquals(body.usage.output_tokens, 0);
-  assertEquals(callMessages.mock.calls.length, 0);
+  assertEquals(callAnthropicMessages.mock.calls.length, 0);
 
   // The turn is recorded as served, at zero cost, and contributes no latency
   // sample — there was no upstream call to measure.
@@ -221,11 +221,11 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
   const repo = installRepo();
-  const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
-  queueCandidates([makeCandidate({ callMessagesCountTokens })]);
+  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
 
   const response = await makeApp().request('/v1/messages/count_tokens', {
     method: 'POST',
@@ -236,7 +236,7 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(response.status, 200);
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
-  assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 
   // A measurement goes through settlement like every other run. It names no billed entity —
   // nothing here is billable today — but the row is written, because "count_tokens is exempt
@@ -258,10 +258,10 @@ test('POST /v1/messages forwards upstream response headers end-to-end (streaming
     'connection': 'close',
     'set-cookie': 'session=secret',
   });
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
   }));
-  queueCandidates([makeCandidate({ callMessages })]);
+  queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
@@ -289,10 +289,10 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
     'anthropic-ratelimit-unified-status': 'allowed',
     'cf-ray': 'cf_ray_e2e',
   });
-  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
   }));
-  queueCandidates([makeCandidate({ callMessages })]);
+  queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
@@ -311,7 +311,7 @@ test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when 
   // anthropicMessagesGenerateTarget (messages > responses > chat-completions) rejects
   // it, leaving zero viable candidates, and with sawModel=true the serve
   // renders model-unsupported as a 400.
-  queueCandidates([makeCandidate({ endpoints: { completions: {} } })]);
+  queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',

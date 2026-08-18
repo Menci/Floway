@@ -13,14 +13,14 @@ import {
   SUMMARY_PREFIX,
 } from '../../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
-import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const turnFor = (payload: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload =>
-  summarizationTurnFor({ model: 'test-model', input: [], ...payload } as CanonicalResponsesPayload);
+const turnFor = (payload: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload =>
+  summarizationTurnFor({ model: 'test-model', input: [], ...payload } as CanonicalOpenAIResponsesPayload);
 
 /** The items a turn was rewritten into, as the assertions below read them. */
-const itemsOf = (payload: CanonicalResponsesPayload): { type: string; role?: string; content?: { type: string; text: string }[] }[] =>
+const itemsOf = (payload: CanonicalOpenAIResponsesPayload): { type: string; role?: string; content?: { type: string; text: string }[] }[] =>
   payload.input as { type: string; role?: string; content?: { type: string; text: string }[] }[];
 
 /** What the summarization turn produced, as an upstream states it. */

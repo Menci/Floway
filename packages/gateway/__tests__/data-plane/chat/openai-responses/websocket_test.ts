@@ -2,14 +2,14 @@ import type { ExecutionContext } from 'hono';
 import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
-import { hashResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
+import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -65,7 +65,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
+const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
@@ -105,7 +105,7 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
   }
 };
 
-const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
+const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
@@ -117,7 +117,7 @@ const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promis
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: 'resp_ws_policy_refresh',
           object: 'response',
           model: 'gpt-direct-responses',
@@ -132,7 +132,7 @@ const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promis
     run,
   );
 
-const completeResponsesTurn = async (
+const completeOpenAIResponsesTurn = async (
   client: TestWorkerWebSocket,
   eventId: string,
 ): Promise<void> => {
@@ -162,7 +162,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: 'resp_ws',
           object: 'response',
           model: 'gpt-direct-responses',
@@ -175,7 +175,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const raw = recordRawMessages(client);
       const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
 
@@ -215,12 +215,12 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
   const { apiKey, repo } = await setupAppTest();
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
 
-      await completeResponsesTurn(client, 'capture-after-enable');
+      await completeOpenAIResponsesTurn(client, 'capture-after-enable');
       await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
 
       const stored = dumps.stored[0];
@@ -256,14 +256,14 @@ test('Responses WebSocket stops capturing on the next turn when dump retention i
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
-      await completeResponsesTurn(client, 'captured-before-disable');
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      await completeOpenAIResponsesTurn(client, 'captured-before-disable');
       await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
 
       await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
-      await completeResponsesTurn(client, 'not-captured-after-disable');
+      await completeOpenAIResponsesTurn(client, 'not-captured-after-disable');
 
       assertEquals(dumps.stored.length, 1);
       client.close();
@@ -276,12 +276,12 @@ test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
-        await completeResponsesTurn(client, '响应-byte-count');
+        await completeOpenAIResponsesTurn(client, '响应-byte-count');
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
 
         const expectedBytes = recorded.messages.reduce(
@@ -316,12 +316,12 @@ test('Responses WebSocket records one frame per event it sent', async () => {
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
-        await completeResponsesTurn(client, 'one-frame-per-event');
+        await completeOpenAIResponsesTurn(client, 'one-frame-per-event');
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
 
         // A keep-alive is the transport's own idle write rather than a frame of the turn, so
@@ -349,10 +349,10 @@ test('Responses WebSocket settles a streamed turn once, with what the chain read
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
-      await completeResponsesTurn(client, 'settled-turn');
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      await completeOpenAIResponsesTurn(client, 'settled-turn');
       client.close();
     }),
   );
@@ -380,9 +380,9 @@ test('Responses WebSocket settles a streamed turn once, with what the chain read
 test('Responses WebSocket rejects the next turn after its API key is rotated', async () => {
   const { apiKey, repo } = await setupAppTest();
 
-  await withSuccessfulResponsesUpstream(
+  await withSuccessfulOpenAIResponsesUpstream(
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       await repo.apiKeys.save({ ...apiKey, key: 'rotated-api-key' });
       const received = waitForMessages(client, messages => messages.length === 1);
 
@@ -424,7 +424,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
           return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
         }
         if (url.pathname === '/responses') {
-          return sseResponsesResponse({
+          return sseOpenAIResponsesResponse({
             id: 'resp_ws_persist_failure',
             object: 'response',
             model: 'gpt-direct-responses',
@@ -443,7 +443,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectResponsesWebSocket(apiKey.key);
+        const client = await connectOpenAIResponsesWebSocket(apiKey.key);
         const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
 
         client.send(JSON.stringify({
@@ -547,7 +547,7 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const messages: Record<string, unknown>[] = [];
       const onMessage = (event: Event): void => {
         messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
@@ -620,7 +620,7 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
 test('Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
   const { apiKey } = await setupAppTest();
   await withWorkerWebSocketRuntime(async () => {
-    const client = await connectResponsesWebSocket(apiKey.key);
+    const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const received = waitForMessages(client, messages => messages.length === 1);
 
     client.send(JSON.stringify({ type: 'session.update', event_id: 'evt_bad' }));
@@ -641,7 +641,7 @@ test('Responses WebSocket returns OpenAI-style error envelopes for unsupported c
 test('Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
   const { apiKey } = await setupAppTest();
   await withWorkerWebSocketRuntime(async () => {
-    const client = await connectResponsesWebSocket(apiKey.key);
+    const client = await connectOpenAIResponsesWebSocket(apiKey.key);
     const invalidJson = waitForMessages(client, messages => messages.length === 1);
 
     client.send('{bad json');
@@ -732,7 +732,7 @@ test('Responses WebSocket forwards HTTP failures with status, error.code, and ev
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const received = waitForMessages(client, messages => messages.length === 1);
 
       client.send(JSON.stringify({
@@ -774,7 +774,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const recorded = recordRawMessages(client);
       try {
         const received = waitForMessages(client, messages => messages.length === 1);
@@ -819,7 +819,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       if (url.pathname === '/responses') {
         upstreamBodies.push(JSON.parse(await request.text()));
         const turn = upstreamBodies.length;
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_ws_store_false_${turn}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -837,7 +837,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
@@ -859,7 +859,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assert(firstOutput.item.id !== 'assistant_ws_store_false_1', 'expected Copilot to replace the raw message id');
       assertEquals(await repo.openaiResponsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
-        await repo.openaiResponsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
+        await repo.openaiResponsesItems.lookupManyByItemHash(apiKey.id, [await hashOpenAIResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
         [],
       );
 
@@ -886,7 +886,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         ['message', 'user', 'follow-up'],
       ]);
 
-      const sessionB = await connectResponsesWebSocket(apiKey.key);
+      const sessionB = await connectOpenAIResponsesWebSocket(apiKey.key);
       const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
@@ -938,7 +938,7 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
             headers: { 'content-type': 'Application/Problem+JSON; charset=utf-8' },
           });
         }
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_ws_evict_${responseCalls}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -956,7 +956,7 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
@@ -1051,7 +1051,7 @@ test('Responses WebSocket evicts a continuation that failed through a streamed t
             { data: '[DONE]' },
           ]);
         }
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_ws_evict_streamed_${responseCalls}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -1069,7 +1069,7 @@ test('Responses WebSocket evicts a continuation that failed through a streamed t
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
@@ -1137,7 +1137,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
       }
       if (url.pathname === '/responses') {
         turn += 1;
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_ws_durable_${turn}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -1155,7 +1155,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
       const firstMessages = await firstTerminal;
@@ -1230,7 +1230,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
           }), { headers: { 'content-type': 'text/event-stream' } });
         }
         resolveSecondBody(body);
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: 'resp_second',
           object: 'response',
           model: 'gpt-direct-responses',
@@ -1245,7 +1245,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       try {
-        firstClient = await connectResponsesWebSocket(apiKey.key);
+        firstClient = await connectOpenAIResponsesWebSocket(apiKey.key);
         const firstItemDone = waitForMessages(firstClient, messages =>
           messages.some(message => message.type === 'response.output_item.done'));
         firstClient.send(JSON.stringify({
@@ -1259,7 +1259,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
         assert(done.item.encrypted_content !== originalReasoning.encrypted_content);
         firstClient.close();
 
-        secondClient = await connectResponsesWebSocket(apiKey.key);
+        secondClient = await connectOpenAIResponsesWebSocket(apiKey.key);
         secondClient.send(JSON.stringify({
           type: 'response.create',
           response: {
@@ -1281,8 +1281,8 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
   );
 });
 
-// Exercises the session-level item cache directly: createResponsesWsSession
-// builds a per-session MemoryStatefulResponsesBacking that mirrors every
+// Exercises the session-level item cache directly: createOpenAIResponsesWsSession
+// builds a per-session MemoryStatefulOpenAIResponsesBacking that mirrors every
 // durable write. Wiping the D1-backed repo between turns proves the second
 // message resolves the prior snapshot purely from in-RAM session cache.
 // A fresh WS session after the repo wipe MUST NOT see it (the cache is
@@ -1304,7 +1304,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       if (url.pathname === '/responses') {
         upstreamBodies.push(JSON.parse(await request.text()));
         const turn = upstreamBodies.length;
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_session_${turn}`,
           object: 'response',
           model: 'gpt-direct-responses',
@@ -1322,7 +1322,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const sessionA = await connectResponsesWebSocket(apiKey.key);
+      const sessionA = await connectOpenAIResponsesWebSocket(apiKey.key);
       const firstTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
         type: 'response.create',
@@ -1371,7 +1371,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
 
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.
-      const sessionB = await connectResponsesWebSocket(apiKey.key);
+      const sessionB = await connectOpenAIResponsesWebSocket(apiKey.key);
       const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
@@ -1400,9 +1400,9 @@ test('Responses WebSocket session-level store: second message resolves prior ite
 
 test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
   const { apiKey } = await setupAppTest();
-  let resolveResponsesStarted: (() => void) | undefined;
+  let resolveOpenAIResponsesStarted: (() => void) | undefined;
   const openaiResponsesStarted = new Promise<void>(resolve => {
-    resolveResponsesStarted = resolve;
+    resolveOpenAIResponsesStarted = resolve;
   });
   let resolveUpstreamAborted: (() => void) | undefined;
   const upstreamAborted = new Promise<void>(resolve => {
@@ -1420,11 +1420,11 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        resolveResponsesStarted?.();
+        resolveOpenAIResponsesStarted?.();
         return await new Promise<Response>(resolve => {
           request.signal.addEventListener('abort', () => {
             resolveUpstreamAborted?.();
-            resolve(sseResponsesResponse({
+            resolve(sseOpenAIResponsesResponse({
               id: 'resp_ws_abort',
               object: 'response',
               model: 'gpt-direct-responses',
@@ -1438,7 +1438,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       client.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -1459,7 +1459,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
 // alongside its sendError / dump.failed / dump.finalize it calls
 // `recordFailedRequest(ctx, ctx.attempt.telemetry)`, and the row lands attributed
 // to the candidate that was being dialled when it threw. The throw here is a real
-// one: a refusal whose body cannot be read. `callResponsesUpstream` stamps this
+// one: a refusal whose body cannot be read. `callOpenAIResponsesUpstream` stamps this
 // candidate's telemetry before it dials and then reads the refusal's own words, so
 // the read's rejection is a mid-attempt throw with attribution already in place.
 test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
@@ -1486,7 +1486,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectResponsesWebSocket(apiKey.key);
+      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
       const received = waitForMessages(client, messages => messages.length === 1);
       client.send(JSON.stringify({
         type: 'response.create',
@@ -1547,7 +1547,7 @@ test('Responses WebSocket dispatches each Codex turn with the metadata blob that
       if (url.pathname === '/backend-api/codex/responses') {
         upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
         const turn = upstreamBodies.length;
-        return sseResponsesResponse({
+        return sseOpenAIResponsesResponse({
           id: `resp_codex_ws_${turn}`,
           object: 'response',
           model: 'gpt-5.4',
@@ -1565,7 +1565,7 @@ test('Responses WebSocket dispatches each Codex turn with the metadata blob that
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const socket = await connectResponsesWebSocket(apiKey.key, {
+      const socket = await connectOpenAIResponsesWebSocket(apiKey.key, {
         'session-id': 'codex-session',
         'thread-id': 'codex-thread',
         'x-codex-window-id': 'codex-thread:0',

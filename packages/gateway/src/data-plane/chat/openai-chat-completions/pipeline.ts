@@ -1,6 +1,6 @@
 // Chat Completions as a pipeline — the reference chain for the chat families.
 //
-//   emitChatCompletions        the edge: writes the answer in the shape the client asked for
+//   emitOpenAIChatCompletions        the edge: writes the answer in the shape the client asked for
 //   writeSettlement            above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates      narrows to what can serve, in the order affinity asks for
 //   failover                   runs what follows once per candidate
@@ -15,14 +15,14 @@
 //
 // What sits *in* a wire rather than above the fork is the other half of the arrangement. A
 // rule that speaks about an upstream's Chat Completions endpoint — the role rewrite does,
-// which is why its interceptor form stood down on `ctx.targetApi !== 'chat-completions'` —
+// which is why its interceptor form stood down on `ctx.targetApi !== 'openaiChatCompletions'` —
 // belongs to the wire and not to the source chain, so a turn that leaves for another
 // protocol never carries it. Said by position rather than by a guard: a stage below the fork
 // runs only when this is the wire the fork chose.
 
-import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
-import { analyzeChatCompletionsAffinity } from './affinity/ingress.ts';
-import { billableUsageFromChatCompletionsEvent } from './usage.ts';
+import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
+import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
+import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import { recordFrames } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
@@ -37,40 +37,40 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
-  applyRoleCompatibilityToChatCompletions,
-  disableReasoningOnForcedToolChoiceForChatCompletions,
-  includeUsageStreamOptionsForChatCompletions,
-  normalizeExclusiveCachedTokensForChatCompletions,
-  normalizeUsageForChatCompletions,
-  stripPromptCacheKeyForChatCompletions,
-  vendorDeepSeekNormalizeForChatCompletions,
-  vendorKimiNormalizeForChatCompletions,
-  vendorQwenNormalizeForChatCompletions,
+  applyRoleCompatibilityToOpenAIChatCompletions,
+  disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
+  includeUsageStreamOptionsForOpenAIChatCompletions,
+  normalizeExclusiveCachedTokensForOpenAIChatCompletions,
+  normalizeUsageForOpenAIChatCompletions,
+  stripPromptCacheKeyForOpenAIChatCompletions,
+  vendorDeepSeekNormalizeForOpenAIChatCompletions,
+  vendorKimiNormalizeForOpenAIChatCompletions,
+  vendorQwenNormalizeForOpenAIChatCompletions,
 } from '../interceptors.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
+import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import {
-  CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
+  OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
   openaiChatCompletionsErrorPayloadMessage,
   openaiChatCompletionsProtocolFrameToSSEFrame,
-  collectChatCompletionsProtocolEventsToResult,
+  collectOpenAIChatCompletionsProtocolEventsToResult,
   type OpenAIChatCompletionsPayload,
   type OpenAIChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-chat-completions';
 import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
-import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
+import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
 /** `/v1/chat/completions` prefers its own wire, then the translated Messages path, then the
  *  translated Responses path. */
-export const openaiChatCompletionsTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
+export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 /** What this family adds to the chat space. */
 export interface OpenAIChatCompletionsFacts extends ChatFacts {
@@ -92,7 +92,7 @@ type C<K extends keyof OpenAIChatCompletionsFacts> = { [P in K]: OpenAIChatCompl
  * Collecting is therefore the edge's own work and not a second reading of the upstream: the
  * same frames that would have gone out are folded here instead.
  */
-const emitChatCompletions = defineStage<
+const emitOpenAIChatCompletions = defineStage<
   C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
@@ -100,7 +100,7 @@ const emitChatCompletions = defineStage<
   C<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
-  name: 'emitChatCompletions',
+  name: 'emitOpenAIChatCompletions',
   through: {
     request: {
       needs: ['ingress.chat.openaiChatCompletions.wantsStream', 'ingress.chat.openaiChatCompletions.wantsUsageChunk'],
@@ -147,7 +147,7 @@ const emitChatCompletions = defineStage<
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
     const frames = recordFrames(
-      wrapChatCompletionsAffinityEgress(
+      wrapOpenAIChatCompletionsAffinityEgress(
         answer.frames as AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
         affinityEgressOptions(use.gateway),
       ),
@@ -158,7 +158,7 @@ const emitChatCompletions = defineStage<
         ...rest,
         'response.http.headers': forClient,
         'response.chat.openaiChatCompletions.rendered': move(
-          await collectChatCompletionsProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
+          await collectOpenAIChatCompletionsProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
         'response.http.status': 200,
       };
@@ -197,12 +197,12 @@ const renderSSE = (
  * spoke, and where that reading lands is the *source* family's own key rather than this
  * protocol's — so it is built with it rather than naming one of its own.
  */
-const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
+const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage<
   C<'request.chat.openaiChatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
   C<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
-  name: 'callChatCompletionsUpstream',
+  name: 'callOpenAIChatCompletionsUpstream',
   return: {
     provides: [
       'response.chat.openaiChatCompletions',
@@ -220,11 +220,11 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
     // What the record holds by now: the payload affinity materialized for this candidate,
     // as every stage between the fork and here has rewritten it — or, on a translated wire,
     // what the handoff put here.
-    const body = bodyForAttempt(facts['request.chat.openaiChatCompletions'], candidate, applyRulesToUpstreamChatCompletions);
+    const body = bodyForAttempt(facts['request.chat.openaiChatCompletions'], candidate, applyRulesToUpstreamOpenAIChatCompletions);
 
     let result;
     try {
-      result = await candidate.provider.instance.callChatCompletions(
+      result = await candidate.provider.instance.callOpenAIChatCompletions(
         providerModelOf(candidate),
         body,
         use.gateway.abortSignal,
@@ -272,7 +272,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterChatCompletions(result.events, identity, use.gateway.attempt);
+    const metered = meterOpenAIChatCompletions(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
       'response.chat.openaiChatCompletions': { kind: 'stream' as const, frames: metered.frames },
@@ -307,16 +307,16 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
  * and the field an upstream would reject is gone before a vendor rewrites what is left.
  */
 export const openaiChatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
-  includeUsageStreamOptionsForChatCompletions,
-  normalizeUsageForChatCompletions,
-  disableReasoningOnForcedToolChoiceForChatCompletions,
-  applyRoleCompatibilityToChatCompletions,
-  stripPromptCacheKeyForChatCompletions,
-  normalizeExclusiveCachedTokensForChatCompletions,
-  vendorDeepSeekNormalizeForChatCompletions,
-  vendorQwenNormalizeForChatCompletions,
-  vendorKimiNormalizeForChatCompletions,
-  callChatCompletionsUpstream(streamedUsage),
+  includeUsageStreamOptionsForOpenAIChatCompletions,
+  normalizeUsageForOpenAIChatCompletions,
+  disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
+  applyRoleCompatibilityToOpenAIChatCompletions,
+  stripPromptCacheKeyForOpenAIChatCompletions,
+  normalizeExclusiveCachedTokensForOpenAIChatCompletions,
+  vendorDeepSeekNormalizeForOpenAIChatCompletions,
+  vendorQwenNormalizeForOpenAIChatCompletions,
+  vendorKimiNormalizeForOpenAIChatCompletions,
+  callOpenAIChatCompletionsUpstream(streamedUsage),
 ];
 
 /** This family's own reading, which every wire under it hands up. */
@@ -326,14 +326,14 @@ const STREAMED_USAGE = 'response.chat.openaiChatCompletions.streamedUsage';
  *  translated one is a handoff and then the target protocol's own wire. */
 const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
-  case 'chat-completions':
+  case 'openaiChatCompletions':
     return compose('openaiChatCompletionsNative', openaiChatCompletionsWire(STREAMED_USAGE));
-  case 'messages':
+  case 'anthropicMessages':
     return compose('openaiChatCompletionsViaAnthropicMessages', [
       handOff({
         from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
         to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
-        trip: async payload => await translateChatCompletionsViaMessages(payload, {
+        trip: async payload => await translateOpenAIChatCompletionsViaAnthropicMessages(payload, {
           model: candidate.model.id,
           fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
           loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
@@ -341,12 +341,12 @@ const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCan
       }),
       ...anthropicMessagesWire(STREAMED_USAGE),
     ]);
-  case 'responses':
+  case 'openaiResponses':
     return compose('openaiChatCompletionsViaOpenAIResponses', [
       handOff({
         from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
         to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
-        trip: async payload => await translateChatCompletionsViaResponses(payload, { model: candidate.model.id }),
+        trip: async payload => await translateOpenAIChatCompletionsViaOpenAIResponses(payload, { model: candidate.model.id }),
       }),
       ...openaiResponsesWire(STREAMED_USAGE),
     ]);
@@ -356,7 +356,7 @@ const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCan
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
  *  pass and the client's stream is what drives it. Only a report carrying real counts
  *  replaces the running figure, so a trailing empty usage frame cannot wipe a good one. */
-const meterChatCompletions = (
+const meterOpenAIChatCompletions = (
   source: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
@@ -372,11 +372,11 @@ const meterChatCompletions = (
       for await (const frame of source) {
         // Time to first token is measured where the token is, which is the only place that
         // knows a frame carries generated content rather than the envelope around it.
-        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'chat-completions')) {
+        if (attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, 'openaiChatCompletions')) {
           attempt.firstOutputTokenAt = performance.now();
         }
         if (frame.type === 'event') {
-          const usage = billableUsageFromChatCompletionsEvent(frame.event);
+          const usage = billableUsageFromOpenAIChatCompletionsEvent(frame.event);
           if (usage !== null) reported = usage;
         }
         yield frame;
@@ -386,7 +386,7 @@ const meterChatCompletions = (
       }
       // A stream that ran out without saying it ended is not a turn that finished. Serving
       // what arrived would present a truncated answer as a whole one.
-      throw new Error(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
+      throw new Error(OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
     } finally {
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are
@@ -418,7 +418,7 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
  *  built from the request rather than being a constant. */
 const narrowing = (payload: OpenAIChatCompletionsPayload): ChatNarrowing<C<'response.chat.openaiChatCompletions' | 'response.chat.openaiChatCompletions.streamedUsage'>> => ({
   canServe: candidate => openaiChatCompletionsTarget.canServe(candidate.model.endpoints),
-  affinity: async gateway => await analyzeChatCompletionsAffinity(payload, gateway.affinity.codec),
+  affinity: async gateway => await analyzeOpenAIChatCompletionsAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /chat/completions endpoint.`,
   refuse: (status, message, reason) => ({
     'response.chat.openaiChatCompletions.streamedUsage': null,
@@ -452,7 +452,7 @@ export type OpenAIChatCompletionsServeExit = C<
 
 export const openaiChatCompletionsServePipeline = (payload: OpenAIChatCompletionsPayload): Pipeline<OpenAIChatCompletionsServeEntry, OpenAIChatCompletionsServeExit> =>
   compose('openaiChatCompletionsServe', [
-    emitChatCompletions,
+    emitOpenAIChatCompletions,
     writeSettlement(
       handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
       handedUp => (handedUp as { 'response.chat.openaiChatCompletions.streamedUsage'?: unknown })['response.chat.openaiChatCompletions.streamedUsage'] !== null,
