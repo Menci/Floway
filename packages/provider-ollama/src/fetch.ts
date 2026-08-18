@@ -25,15 +25,15 @@ const ollamaFetchInternal = async (
   return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
 };
 
-export const ollamaFetchChatCompletions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAIChatCompletions = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/chat/completions', init, options);
-export const ollamaFetchResponses = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAIResponses = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/responses', init, options);
-export const ollamaFetchResponsesCompact = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchOpenAIResponsesCompact = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/responses/compact', init, options);
-export const ollamaFetchMessages = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchAnthropicMessages = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/messages', init, options);
-export const ollamaFetchMessagesCountTokens = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const ollamaFetchAnthropicMessagesCountTokens = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/messages/count_tokens', init, options);
 export const ollamaFetchEmbeddings = (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/embeddings', init, options);

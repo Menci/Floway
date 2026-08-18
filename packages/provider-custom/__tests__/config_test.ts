@@ -16,7 +16,7 @@ const baseRecord: UpstreamRecord = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,
@@ -35,7 +35,7 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
       ...(baseRecord.config as Record<string, unknown>),
       modelsFetch: { enabled: false },
       models: [
-        { upstreamModelId: 'pinned', endpoints: { chatCompletions: {} }, display_name: 'Pinned' },
+        { upstreamModelId: 'pinned', endpoints: { openaiChatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
@@ -82,7 +82,7 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
     [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
-    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
+    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Anthropic Messages protocol'],
     [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
     [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
     [[{ key: 'X-Forwarded-Port', value: null }], 'x-forwarded-port is owned by the HTTP transport'],
@@ -267,7 +267,7 @@ test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () =>
     config: {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
@@ -301,7 +301,7 @@ test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () 
         config: {
           baseUrl: 'https://custom.example.com',
           authStyle: 'bearer',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           ingressHeadersRules: [],
         },
       }),

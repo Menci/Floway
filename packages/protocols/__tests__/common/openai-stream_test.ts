@@ -44,7 +44,7 @@ test('isOpenAIUsageOnlyEventShape rejects the finish-reason chunk even with plac
   );
 });
 
-test('isOpenAIUsageOnlyEventShape rejects chat-completions delta chunks with content', () => {
+test('isOpenAIUsageOnlyEventShape rejects openai-chat-completions delta chunks with content', () => {
   assertEquals(
     isOpenAIUsageOnlyEventShape({
       choices: [{ index: 0, delta: { role: 'assistant', content: 'hi' } }],

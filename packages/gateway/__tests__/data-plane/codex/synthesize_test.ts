@@ -9,7 +9,7 @@ const base: InternalModel = {
   display_name: 'DeepSeek V4 Pro',
   kind: 'chat',
   limits: { max_context_window_tokens: 128000 },
-  endpoints: { chatCompletions: {} },
+  endpoints: { openaiChatCompletions: {} },
   providerModels: {},
 };
 

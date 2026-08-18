@@ -3,7 +3,7 @@ import type { FlagDefaults } from '@floway-dev/provider';
 // Exhaustive flag defaults for Claude.ai (Claude Code) subscription
 // upstreams.
 //
-// * Hosted-tool shims stay off — Claude Code's Messages passthrough
+// * Hosted-tool shims stay off — Claude Code's Anthropic Messages passthrough
 //   forwards caller bytes verbatim, so a gateway-side shim would silently
 //   rewrite a request the operator deliberately let through unchanged.
 // * `responses-compact-shim` defaults on: Anthropic Messages has no

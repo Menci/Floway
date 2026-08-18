@@ -13,7 +13,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   name: overrides.id,
   enabled: true,
   updatedAt: overrides.createdAt,
-  config: { nested: { value: overrides.id }, endpoints: { chatCompletions: {} } },
+  config: { nested: { value: overrides.id }, endpoints: { openaiChatCompletions: {} } },
   state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -71,7 +71,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { nested: { value: 'updated' }, endpoints: { responses: {} } },
+    config: { nested: { value: 'updated' }, endpoints: { openaiResponses: {} } },
     flagOverrides: { 'strip-prompt-cache-key': true },
     disabledPublicModelIds: [],
   });
@@ -165,7 +165,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 2,
     createdAt: '2026-05-21T10:00:02.000Z',
     updatedAt: '2026-05-21T10:00:02.000Z',
-    config: { baseUrl: 'https://custom.example/v1', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://custom.example/v1', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { openaiChatCompletions: {} } },
     flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -206,7 +206,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { baseUrl: 'https://updated.example/v1', authStyle: 'bearer', apiKey: 'sk-updated', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://updated.example/v1', authStyle: 'bearer', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
     flagOverrides: { 'messages-web-search-shim': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -394,7 +394,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
-    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { chatCompletions: {} }, modelsFetch: { enabled: true } },
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -895,8 +895,8 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
     // faithful old catalog even though current hydration treats it as cold.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)
             VALUES
-              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":["vendor-deepseek"]}]', NULL),
-              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","limits":{},"kind":"chat","endpoints":{"responses":{}},"enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
+              ('up_clean', 4, 1785643896263, '[{"id":"cached-model","limits":{},"kind":"chat","endpoints":{"openaiResponses":{}},"enabledFlags":["vendor-deepseek"]}]', NULL),
+              ('up_failed', 4, 1785643797798, '[{"id":"stale-model","limits":{},"kind":"chat","endpoints":{"openaiResponses":{}},"enabledFlags":[]}]', '{"message":"boom","at":1785643800000}')`);
 
     applySqlJsFile(db, '0072_fold_models_cache.sql');
 
@@ -914,7 +914,7 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
         cache: {
           revision: 4,
           fetchedAt: 1785643896263,
-          models: [{ id: 'cached-model', limits: {}, kind: 'chat', endpoints: { responses: {} }, enabledFlags: ['vendor-deepseek'] }],
+          models: [{ id: 'cached-model', limits: {}, kind: 'chat', endpoints: { openaiResponses: {} }, enabledFlags: ['vendor-deepseek'] }],
           lastError: null,
         },
       },
@@ -924,7 +924,7 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
         cache: {
           revision: 4,
           fetchedAt: 1785643797798,
-          models: [{ id: 'stale-model', limits: {}, kind: 'chat', endpoints: { responses: {} }, enabledFlags: [] }],
+          models: [{ id: 'stale-model', limits: {}, kind: 'chat', endpoints: { openaiResponses: {} }, enabledFlags: [] }],
           lastError: { message: 'boom', at: 1785643800000 },
         },
       },

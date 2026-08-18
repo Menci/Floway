@@ -285,7 +285,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 

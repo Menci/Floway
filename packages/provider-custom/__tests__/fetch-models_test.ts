@@ -22,7 +22,7 @@ const upstreamRecord = () => ({
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'token',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,

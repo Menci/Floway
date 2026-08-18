@@ -1,6 +1,6 @@
 import type { AlphaSearchDispatcher } from './upstream.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
-import type { ResponsesInputItem, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
+import type { OpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 
 interface UpstreamErrorDetails {
   message: string;
@@ -38,8 +38,8 @@ export const executeAlphaSearch = async ({
   sessionId: string;
   commands: Record<string, unknown>;
   settings: Record<string, unknown>;
-  input: ResponsesInputItem[];
-  action: ResponsesWebSearchAction;
+  input: OpenAIResponsesInputItem[];
+  action: OpenAIResponsesWebSearchAction;
   signal: AbortSignal | undefined;
 }): Promise<WebSearchCallIR> => {
   const response = await dispatcher({
@@ -72,7 +72,7 @@ export const executeAlphaSearch = async ({
     // Alpha results are opaque UI metadata (`ref_id`, `domain`, optional
     // thumbnail) and live responses do not include the hosted-search
     // `snippet` field. The model-facing output is the only lossless bridge;
-    // this explicitly synthetic entry serves Responses clients that request
+    // this explicitly synthetic entry serves OpenAI Responses clients that request
     // `web_search_call.results` without pretending alpha DTOs were preserved.
     results: body.output === ''
       ? []

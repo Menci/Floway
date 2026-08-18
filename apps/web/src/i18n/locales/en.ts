@@ -124,7 +124,7 @@ const en = {
         emptyResponse: '(empty response)',
         noKey: 'Create an API key before using the playground',
         noKeyOption: 'No API Keys',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'OpenAI Responses', openaiChatCompletions: 'OpenAI Chat Completions', anthropicMessages: 'Anthropic Messages' },
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
         edit: { title: 'Edit message', message: 'Message', imageUrl: 'Image URL' },
@@ -201,9 +201,9 @@ const en = {
         endpointNames: {
           openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
-          openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses compaction', openAiResponsesWs: 'Responses WebSocket',
+          openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses compaction', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',
-          geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent (SSE)', geminiCount: 'Gemini countTokens',
+          geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent (SSE)', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex alpha search',
@@ -359,8 +359,8 @@ const en = {
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
           viewCapturedRequests: 'View captured requests',
-          responsesRetention: 'Stateful Responses retention',
-          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
+          openaiResponsesRetention: 'Stateful OpenAI Responses retention',
+          openaiResponsesRetentionHint: 'How long this key\'s OpenAI Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
         },
@@ -389,10 +389,10 @@ const en = {
               'Saving will delete this key\'s captured requests.',
           warningShrink:
               'Saving will delete captured requests older than the new window.',
-          responsesWarningDisable:
-              'Saving will delete this key\'s stored Responses items. A follow-up request that references one by id will no longer find it.',
-          responsesWarningShrink:
-              'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
+          openaiResponsesWarningDisable:
+              'Saving will delete this key\'s stored OpenAI Responses items. A follow-up request that references one by id will no longer find it.',
+          openaiResponsesWarningShrink:
+              'Saving will delete stored OpenAI Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
           title: 'Set Up Your Agents',
@@ -575,7 +575,7 @@ const en = {
           validation: {
             invalidName: 'Enter a valid HTTP header name.',
             duplicateName: 'Each header name can appear only once.',
-            messagesOwned: 'The Messages protocol manages this header.',
+            anthropicMessagesOwned: 'The Anthropic Messages protocol manages this header.',
             transportOwned: 'Floway’s HTTP transport manages this header.',
             invalidValue: 'Enter a valid HTTP header value without control characters.',
           },
@@ -629,24 +629,24 @@ const en = {
                   "Kimi's API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.",
             },
             'messages-web-search-shim': {
-              label: 'Messages Web Search Shim',
+              label: 'Anthropic Messages Web Search Shim',
               description:
                   'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Messages API.',
             },
             'responses-web-search-shim': {
-              label: 'Responses Web Search Shim',
+              label: 'OpenAI Responses Web Search Shim',
               description:
-                  'The Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Responses API.',
+                  'The OpenAI Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
             'responses-image-generation-shim': {
-              label: 'Responses Image Generation Shim',
+              label: 'OpenAI Responses Image Generation Shim',
               description:
-                  'The Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the Responses API.',
+                  'The OpenAI Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
             'responses-compact-shim': {
-              label: 'Responses Context Compaction Shim',
+              label: 'OpenAI Responses Context Compaction Shim',
               description:
-                  "The Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the Responses API.",
+                  "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
@@ -656,7 +656,7 @@ const en = {
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
-                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
+                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Anthropic Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
             },
             'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
@@ -1138,7 +1138,7 @@ const en = {
       searchConfig: {
         heading: 'Search Provider',
         description:
-            'Configure web search providers for Anthropic Messages / Responses API tool calling',
+            'Configure web search providers for Anthropic Messages / OpenAI Responses API tool calling',
         providerLabel: 'Provider',
         providerHint: 'The service that answers web search tool calls',
         provider: {
@@ -1149,7 +1149,7 @@ const en = {
         },
         passthrough: {
           title: 'Passthrough OpenAI search',
-          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream',
+          description: 'Route /alpha/search and OpenAI Responses hosted search through a selected Codex or OpenAI-compatible upstream',
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',

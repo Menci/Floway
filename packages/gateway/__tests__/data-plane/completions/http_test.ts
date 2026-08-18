@@ -207,7 +207,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  // A custom upstream that only exposes chatCompletions on the model.
+  // A custom upstream that only exposes openaiChatCompletions on the model.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
     config: {
@@ -219,7 +219,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
       modelsFetch: { enabled: false },
       models: [{
         upstreamModelId: 'davinci-002',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
       }],
     },
   }));
@@ -268,7 +268,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
 // Dual-path coverage: usage + performance + dump telemetry must land
 // equivalently on both the non-streaming JSON and the streaming SSE
 // branches. The handler does not force `stream: true` upstream the way
-// chat-completions does (no interceptor framework to feed), so the two
+// openai-chat-completions does (no interceptor framework to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
 test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {

@@ -28,7 +28,7 @@ const createDatabase = async (): Promise<string> => {
       ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
   `);
   const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
-  const config = { models: [{ kind: 'chat', endpoints: { responses: {} }, upstreamModelId: 'wire', pricing }] };
+  const config = { models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing }] };
   db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify(config), null);
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

@@ -95,7 +95,7 @@ test('/api/performance/overview narrows the whole aggregate to the actor under g
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -134,7 +134,7 @@ test('/api/performance/overview keeps API-key axes actor-scoped under a cross-us
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -201,7 +201,7 @@ test('/api/performance/overview aggregates over every user\'s keys', async () =>
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -238,7 +238,7 @@ test('/api/performance/overview gives a non-admin the global aggregate without p
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -297,7 +297,7 @@ test('/api/performance/overview narrows an administrator to their own keys under
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -361,7 +361,7 @@ test('/api/performance/overview userRows split rows per user', async () => {
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -398,7 +398,7 @@ test('/api/performance/overview series stays per-model under a cross-user breakd
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -628,7 +628,7 @@ test('/api/performance/overview surfaces soft-deleted keys metadata to their own
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   const response = await requestApp(

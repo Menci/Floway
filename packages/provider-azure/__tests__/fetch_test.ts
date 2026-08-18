@@ -2,14 +2,14 @@ import { test } from 'vitest';
 
 import { assertAzureUpstreamRecord } from '../src/config.ts';
 import {
-  azureFetchChatCompletions,
+  azureFetchOpenAIChatCompletions,
   azureFetchAudioTranscriptions,
   azureFetchEmbeddings,
   azureFetchImagesGenerations,
-  azureFetchMessages,
-  azureFetchMessagesCountTokens,
-  azureFetchResponses,
-  azureFetchResponsesCompact,
+  azureFetchAnthropicMessages,
+  azureFetchAnthropicMessagesCountTokens,
+  azureFetchOpenAIResponses,
+  azureFetchOpenAIResponsesCompact,
 } from '../src/fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
@@ -29,7 +29,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
       },
     ],
   },
@@ -57,9 +57,9 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await azureFetchEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
@@ -144,7 +144,7 @@ test('endpoint that already includes /openai/v1 routes through unchanged', async
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -160,7 +160,7 @@ test('Foundry project endpoints route OpenAI v1 calls under the project base', a
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          endpoints: { responses: {} },
+          endpoints: { openaiResponses: {} },
         },
       ],
     },
@@ -173,7 +173,7 @@ test('Foundry project endpoints route OpenAI v1 calls under the project base', a
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -189,7 +189,7 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          endpoints: { responses: {}, messages: {} },
+          endpoints: { openaiResponses: {}, anthropicMessages: {} },
         },
       ],
     },
@@ -202,8 +202,8 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -222,7 +222,7 @@ test('native Anthropic calls land on the resource Anthropic base when a project 
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },
@@ -235,7 +235,7 @@ test('native Anthropic calls land on the resource Anthropic base when a project 
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -251,7 +251,7 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },
@@ -270,8 +270,8 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: new Headers({ 'anthropic-beta': 'context-1m' }), fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: new Headers({ 'anthropic-beta': 'context-1m' }), fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -302,7 +302,7 @@ test('Foundry Anthropic messages target URI is accepted and splits per surface',
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },
@@ -315,7 +315,7 @@ test('Foundry Anthropic messages target URI is accepted and splits per surface',
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
