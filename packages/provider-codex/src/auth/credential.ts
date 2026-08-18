@@ -1,6 +1,6 @@
 import type { CodexAccountIdentity } from '../config.ts';
-import { parseCodexTokenClaims, tryParseCodexAccessTokenClaims, type CodexTokenClaims } from './jwt.ts';
 import { optionalString, requireString } from './guards.ts';
+import { parseCodexTokenClaims, tryParseCodexAccessTokenClaims, type CodexTokenClaims } from './jwt.ts';
 
 // The one shape every import source funnels through. JSON exports, the OAuth
 // callback, and hand-typed fields all differ in what they carry, so they state

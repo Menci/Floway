@@ -1,8 +1,8 @@
 import type { CodexUpstreamConfig } from '../config.ts';
 import type { CodexUpstreamState } from '../state.ts';
 import { normalizeCodexCredential, type CodexCredentialInput, type NormalizedCodexCredential } from './credential.ts';
-import { codexTokenExpiresAt, exchangeCodexAuthorizationCode } from './oauth.ts';
 import { isObject, optionalString, requireObject, requireString } from './guards.ts';
+import { codexTokenExpiresAt, exchangeCodexAuthorizationCode } from './oauth.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
 export interface CodexImportResult {
