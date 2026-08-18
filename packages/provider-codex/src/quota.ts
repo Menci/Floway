@@ -1,4 +1,4 @@
-import { isUnsafeObjectKey } from './auth/parse-helpers.ts';
+import { isUnsafeObjectKey } from './auth/guards.ts';
 import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount, type CodexQuotaSnapshot, type CodexQuotaSnapshotMap } from './state.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 

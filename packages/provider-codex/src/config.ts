@@ -1,4 +1,4 @@
-import { assertAllowedObjectKeys, assertStringOrNull } from './auth/parse-helpers.ts';
+import { assertAllowedObjectKeys, assertStringOrNull } from './auth/guards.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 // One Codex account's operator-managed identity, derived from explicit import

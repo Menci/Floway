@@ -2,7 +2,7 @@
 // Writes happen via UpstreamRepo.saveState, which read-modify-writes the row
 // and replays the mutator whenever a concurrent writer wins.
 
-import { assertAllowedObjectKeys, assertStringOrNull, isUnsafeObjectKey } from './auth/parse-helpers.ts';
+import { assertAllowedObjectKeys, assertStringOrNull, isUnsafeObjectKey } from './auth/guards.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';

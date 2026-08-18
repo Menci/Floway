@@ -1,6 +1,6 @@
 import { CodexAccessOnlyCredentialError, codexPlanObservation, ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, type CodexPlanObservation } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
-import { isObject } from './auth/parse-helpers.ts';
+import { isObject } from './auth/guards.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,

@@ -5,7 +5,7 @@
 // an OAuth id_token has all of them, a sub2api export may have none, and an
 // access token may not be a JWT at all.
 
-import { isObject } from './parse-helpers.ts';
+import { isObject } from './guards.ts';
 import { decodeCanonicalBase64url } from '@floway-dev/protocols/common';
 
 export interface CodexTokenClaims {
