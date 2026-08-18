@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-generate-content-via-anthropic-messages/events.ts';
+import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const messageStart = (usage: AnthropicMessagesResult['usage'] = { input_tokens: 0, output_tokens: 0 }): AnthropicMessagesStreamEvent => ({

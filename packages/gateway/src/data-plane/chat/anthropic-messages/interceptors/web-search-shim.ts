@@ -6,7 +6,6 @@ import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantInputContentBlock,
@@ -25,6 +24,7 @@ import type {
   AnthropicMessagesWebSearchToolResultError,
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const MAX_QUERY_LENGTH = 1000;

@@ -6,8 +6,8 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 export interface AnthropicMessagesServeGenerateArgs {

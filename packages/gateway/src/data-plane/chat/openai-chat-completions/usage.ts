@@ -1,5 +1,5 @@
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['usage']>;
 

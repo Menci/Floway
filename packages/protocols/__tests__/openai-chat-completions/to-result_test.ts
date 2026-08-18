@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { doneFrame, eventFrame } from '../../src/common/index.ts';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } from '../../src/openai-chat-completions/index.ts';
 import { collectOpenAIChatCompletionsProtocolEventsToResult } from '../../src/openai-chat-completions/to-result.ts';
-import { doneFrame, eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic Chat chunks', async () => {

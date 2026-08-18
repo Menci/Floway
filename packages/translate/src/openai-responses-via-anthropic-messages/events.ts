@@ -3,7 +3,6 @@ import * as openaiResponses from '../shared/openai-responses-via/openai-response
 import { anthropicMessagesRefusalOpenAIResponsesError } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
 import { inclusiveAnthropicMessagesInputUsage } from '../shared/via-anthropic-messages/usage.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   mergeAnthropicMessagesUsageSnapshot,
   anthropicMessagesUsageSnapshot,
@@ -19,6 +18,7 @@ import type {
   AnthropicMessagesTextCitation,
   AnthropicMessagesUsageSnapshot,
 } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesAnnotation, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 const UPSTREAM_ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Anthropic Messages stream ended without a message_stop event.';

@@ -17,7 +17,6 @@ import type { WebSearchProvider, WebSearchProviderResult } from '../../../../../
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -30,6 +29,7 @@ import type {
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
+import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertExists, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {

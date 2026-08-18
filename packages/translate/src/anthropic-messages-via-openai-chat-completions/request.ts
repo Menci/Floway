@@ -1,12 +1,11 @@
-import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { filterAnthropicMessagesClientTools } from '../shared/anthropic-messages-via/client-tools.ts';
 import { resolveAnthropicMessagesReasoningEffort } from '../shared/anthropic-messages-via/reasoning-effort.ts';
 import { openAIServiceTierFromAnthropicMessages } from '../shared/anthropic-messages-via/service-tier.ts';
 import { openAiJsonSchemaCoreFromAnthropicMessagesFormat } from '../shared/anthropic-messages-via/structured-output.ts';
 import { flattenAnthropicMessagesToolResult } from '../shared/anthropic-messages-via/tool-result.ts';
 import { normalizeAnthropicMessagesToolInputSchema } from '../shared/anthropic-messages-via/tool-schema.ts';
+import { type OpenAIChatCompletionsScalarReasoning, openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock } from '../shared/openai-chat-completions-and-anthropic-messages/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantMessage,
@@ -21,6 +20,7 @@ import type {
   AnthropicMessagesUserContentBlock,
   AnthropicMessagesUserMessage,
 } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsContentPart, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
 
 const toOpenAIChatCompletionsContent = (content: string | AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantContentBlock[]): string | OpenAIChatCompletionsContentPart[] | null => {
   if (typeof content === 'string') return content;

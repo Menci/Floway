@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { eventFrame } from '../../src/common/index.ts';
 import type { AnthropicMessagesResult, AnthropicMessagesStreamEvent } from '../../src/anthropic-messages/index.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '../../src/anthropic-messages/to-result.ts';
+import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectAnthropicMessagesProtocolEventsToResult reassembles synthetic Anthropic Messages events', async () => {

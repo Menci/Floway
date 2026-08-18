@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/openai-responses-via-anthropic-messages/events.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {

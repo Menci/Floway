@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { type CopilotCacheableMessage, withCacheControlMarkersAttached } from '../../../src/interceptors/openai-chat-completions/attach-cache-control-markers.ts';
 import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';

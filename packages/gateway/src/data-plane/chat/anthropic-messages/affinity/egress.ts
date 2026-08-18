@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface OpenBlock {
   readonly type: string;

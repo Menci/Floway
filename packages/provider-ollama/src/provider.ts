@@ -33,9 +33,9 @@ import { ollamaFetchAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollam
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe } from './usage-probe.ts';
-import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
+import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 

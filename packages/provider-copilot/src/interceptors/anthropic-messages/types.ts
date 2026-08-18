@@ -1,6 +1,6 @@
 import type { Interceptor } from '@floway-dev/interceptor';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 
 // Boundary ctx for Copilot Anthropic Messages interceptors. The chain runs inside

@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { withReasoningDisabledOnForcedToolChoice } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/disable-reasoning-on-forced-tool-choice.ts';
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 

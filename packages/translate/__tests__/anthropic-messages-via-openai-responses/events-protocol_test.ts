@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/anthropic-messages-via-openai-responses/events.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 

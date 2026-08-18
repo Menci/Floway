@@ -1,7 +1,7 @@
 
 import type { ControlPlaneModel } from '../../api/types';
-import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
+import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 
 export type PlaygroundApi = 'openaiResponses' | 'openaiChatCompletions' | 'anthropicMessages';
 

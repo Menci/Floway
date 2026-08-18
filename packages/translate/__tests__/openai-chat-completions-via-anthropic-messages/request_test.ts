@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/openai-chat-completions-via-anthropic-messages/request.ts';
 import type { RemoteImageLoader } from '../../src/types.ts';
-import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesAssistantContentBlock,
@@ -15,6 +14,7 @@ import {
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 // ── Helpers ──

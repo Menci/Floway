@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { eventFrame } from '../../src/common/index.ts';
 import type { AnthropicMessagesStreamEvent } from '../../src/anthropic-messages/index.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '../../src/anthropic-messages/to-sse.ts';
+import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning termination', () => {

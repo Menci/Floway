@@ -1,10 +1,10 @@
 import type { InternalModel, ProviderModel } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { Provider, OpenAIResponsesAction } from './provider.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 export type ChatTargetApi = 'messages' | 'responses' | 'openai-chat-completions';

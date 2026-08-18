@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { withCacheControlExtensionsStripped } from '../../../src/interceptors/anthropic-messages/strip-cache-control-extensions.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';

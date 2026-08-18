@@ -1,6 +1,6 @@
 import type { RemoteImageLoader } from '../../types.ts';
-import { encodeBase64, mediaTypeEssence } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesImageBlock } from '@floway-dev/protocols/anthropic-messages';
+import { encodeBase64, mediaTypeEssence } from '@floway-dev/protocols/common';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 

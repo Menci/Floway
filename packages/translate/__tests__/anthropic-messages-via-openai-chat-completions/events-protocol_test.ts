@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertRejects } from '@floway-dev/test-utils';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {

@@ -2,8 +2,8 @@ import { packReasoningSignature } from '../shared/anthropic-messages-and-openai-
 import { isContextExceededError } from '../shared/anthropic-messages-via/context-window-error.ts';
 import { createOpenAIResponsesOutputOrderState, recordOpenAIResponsesOutputOrderEvent, type OpenAIResponsesOutputOrderState, shouldDeferForEarlierOpenAIResponsesOutput } from '../shared/via-openai-responses/openai-responses-stream-order.ts';
 import { openaiResponsesPartKey } from '../shared/via-openai-responses/openai-responses-stream.ts';
-import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent, type AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 const mapOpenAIResponsesStopReason = (response: OpenAIResponsesResult): AnthropicMessagesResult['stop_reason'] => {

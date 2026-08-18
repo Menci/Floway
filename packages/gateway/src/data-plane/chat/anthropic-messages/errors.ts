@@ -1,7 +1,7 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { generateAnthropicId, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 

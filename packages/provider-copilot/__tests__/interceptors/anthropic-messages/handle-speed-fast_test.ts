@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { withSpeedFast } from '../../../src/interceptors/anthropic-messages/handle-speed-fast.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';

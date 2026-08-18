@@ -4,8 +4,8 @@ import { expect, test } from 'vitest';
 import { respondOpenAIChatCompletions } from '../../../../src/data-plane/chat/openai-chat-completions/respond.ts';
 import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 

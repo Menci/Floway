@@ -1,7 +1,7 @@
 import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside

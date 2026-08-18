@@ -1,7 +1,7 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { openAiErrorResult, type ChatServeFailure } from '../shared/errors.ts';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 

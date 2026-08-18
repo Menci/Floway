@@ -1,7 +1,7 @@
 import type { AnthropicMessagesBoundaryCtx, CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import { copilotRawModelId } from '../../model-name.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesStreamEvent, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 

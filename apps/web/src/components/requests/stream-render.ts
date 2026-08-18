@@ -1,9 +1,9 @@
 import { errorMessage } from '../../lib/error-message';
 import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import {
-  openaiChatCompletionsProtocolFrameToSSEFrame,
-  collectOpenAIChatCompletionsProtocolEventsToResult,
-} from '@floway-dev/protocols/openai-chat-completions';
+  collectAnthropicMessagesProtocolEventsToResult,
+  anthropicMessagesProtocolFrameToSSEFrame,
+} from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   completionsProtocolFrameToSSEFrame,
@@ -16,9 +16,9 @@ import {
   type GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
 import {
-  collectAnthropicMessagesProtocolEventsToResult,
-  anthropicMessagesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/anthropic-messages';
+  openaiChatCompletionsProtocolFrameToSSEFrame,
+  collectOpenAIChatCompletionsProtocolEventsToResult,
+} from '@floway-dev/protocols/openai-chat-completions';
 import {
   collectOpenAIResponsesProtocolEventsToResult,
   openaiResponsesProtocolFrameToSSEFrame,

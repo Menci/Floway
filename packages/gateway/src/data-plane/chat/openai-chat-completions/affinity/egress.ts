@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 interface ChoiceState {
   opaque?: string;
