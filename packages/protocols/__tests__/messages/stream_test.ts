@@ -65,3 +65,18 @@ test('parseMessagesStream rejects malformed Messages SSE JSON', async () => {
     'Malformed upstream Messages SSE JSON for event "message_delta": not json',
   );
 });
+
+test('parseMessagesStream observes raw SSE frames before decoding them', async () => {
+  const observed: Array<{ event?: string; data: string }> = [];
+  await collect(parseMessagesStream(sseFrameBody(
+    sseFrame('', 'ping'),
+    sseFrame('{"type":"message_stop"}', 'message_stop'),
+  ), {
+    onSseFrame: frame => observed.push({ event: frame.event, data: frame.data }),
+  }));
+
+  assertEquals(observed, [
+    { event: 'ping', data: '' },
+    { event: 'message_stop', data: '{"type":"message_stop"}' },
+  ]);
+});

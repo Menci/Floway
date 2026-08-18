@@ -128,6 +128,10 @@ const errorJson = (status: number, body: unknown, extraHeaders: Record<string, s
 
 const minimalBody = { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hi' }] };
 
+const drain = async <T>(events: AsyncIterable<T>): Promise<void> => {
+  for await (const _event of events) {}
+};
+
 describe('callClaudeCodeMessages — pre-fetch gates', () => {
   test('non-active account → synthetic 503', async () => {
     seedAccount({ state: 'session_terminated', stateMessage: 'revoked' });
@@ -294,6 +298,70 @@ describe('callClaudeCodeMessages — wire body', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages?beta=true');
+  });
+});
+
+describe('callClaudeCodeMessages — incomplete stream diagnostics', () => {
+  test('logs upstream trace headers and last raw SSE frames when message_stop is absent', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start"}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{"text":"partial"}}\n\n'));
+          controller.close();
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream',
+          'request-id': 'req_trace',
+          'cf-ray': 'ray_trace',
+          traceresponse: 'trace_response',
+        },
+      },
+    ));
+
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await drain(result.events);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = warn.mock.calls[0]![0] as string;
+    expect(line).toContain('claude_code_messages_stream_incomplete');
+    expect(line).toContain('upstream_id=up_cc');
+    expect(line).toContain('request_id=req_trace');
+    expect(line).toContain('cf_ray=ray_trace');
+    expect(line).toContain('trace_response=trace_response');
+    expect(line).toContain('raw_sse_frames=2');
+    expect(line).toContain('terminal_event=null');
+    expect(line).toContain('message_delta');
+  });
+
+  test('does not log a complete Messages stream', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: message_stop\ndata: {"type":"message_stop"}\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ));
+
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await drain(result.events);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
