@@ -591,7 +591,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
+      await provider.callOpenAIEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
 

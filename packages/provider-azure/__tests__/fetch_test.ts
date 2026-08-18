@@ -3,9 +3,9 @@ import { test } from 'vitest';
 import { assertAzureUpstreamRecord } from '../src/config.ts';
 import {
   azureFetchOpenAIChatCompletions,
-  azureFetchAudioTranscriptions,
-  azureFetchEmbeddings,
-  azureFetchImagesGenerations,
+  azureFetchOpenAIAudioTranscriptions,
+  azureFetchOpenAIEmbeddings,
+  azureFetchOpenAIImagesGenerations,
   azureFetchAnthropicMessages,
   azureFetchAnthropicMessagesCountTokens,
   azureFetchOpenAIResponses,
@@ -29,7 +29,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
       },
     ],
   },
@@ -60,7 +60,7 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
       await azureFetchOpenAIChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await azureFetchOpenAIResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await azureFetchOpenAIResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -94,7 +94,7 @@ test('image transports append the Azure preview api-version', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchImagesGenerations(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchOpenAIImagesGenerations(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -121,7 +121,7 @@ test('audio transcription selects the deployment on every admitted endpoint shap
         return new Response('{}', { status: 200 });
       },
       async () => {
-        await azureFetchAudioTranscriptions(config, 'transcribe deployment', { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+        await azureFetchOpenAIAudioTranscriptions(config, 'transcribe deployment', { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       },
     );
     assertEquals(seenUrl, expected);

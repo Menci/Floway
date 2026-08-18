@@ -330,8 +330,8 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   installRepo();
   const callOpenAIResponses = vi.fn();
   // openaiResponsesTarget prefers responses > messages > openai-chat-completions; an
-  // endpoints-only `completions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callOpenAIResponses })]);
+  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIResponses })]);
 
   const result = await openaiResponsesServe.generate({
     payload: makePayload({ model: 'wrong-endpoint-model' }),
@@ -370,8 +370,8 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
   installRepo();
   const callOpenAIResponses = vi.fn();
   // openaiResponsesTarget prefers responses > messages > openai-chat-completions; an
-  // endpoints-only `completions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callOpenAIResponses })]);
+  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIResponses })]);
 
   const result = await openaiResponsesServe.compact({
     payload: compactPayload({ model: 'wrong-endpoint-model' }),

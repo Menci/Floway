@@ -313,7 +313,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
-            endpoints: { embeddings: {} },
+            endpoints: { openaiEmbeddings: {} },
           },
           {
             id: 'gpt-image-2',
@@ -322,7 +322,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'gpt-image-2',
             limits: {},
             kind: 'image',
-            endpoints: { imagesGenerations: {}, imagesEdits: {} },
+            endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
           },
         ],
       });

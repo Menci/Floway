@@ -254,7 +254,7 @@ test('manual runtime kind follows transcription endpoints when stored kind is st
     models: [{
       upstreamModelId: 'raw-transcriber',
       kind: 'chat',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
     }],
   }));
   const [model] = await instance.instance.getProvidedModels(directFetcher);
@@ -357,7 +357,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
+      await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );
 
@@ -421,7 +421,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   );
 });
 
-test('Custom provider callImagesGenerations posts JSON with model re-injected', async () => {
+test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injected', async () => {
   let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
   await withMockedFetch(
     async request => {
@@ -436,7 +436,7 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
     async () => {
       const provider = createCustomProvider(buildCustomUpstream());
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
+      const result = await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },

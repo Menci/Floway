@@ -3,7 +3,7 @@ import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
-import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
+import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
@@ -20,7 +20,7 @@ import {
   type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type Fetcher, type ImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -905,7 +905,7 @@ interface ShimState {
 }
 
 const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
-  const usage = tokenUsageFromImagesBody(responseBody);
+  const usage = tokenUsageFromOpenAIImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
     model: model.id,
@@ -942,7 +942,7 @@ const buildEditsRequest = (
   sources: readonly PreparedImageSource[],
   mask: PreparedImageSource | undefined,
   stream: boolean,
-): ImagesEditsRequest => {
+): OpenAIImagesEditsRequest => {
   const parameters: Record<string, string | number | boolean> = {
     prompt,
     n: 1,
@@ -983,7 +983,7 @@ const resolveImageCandidate = async (
   isEdit: boolean,
   state: ShimState,
 ): Promise<{ ok: true; candidate: ModelCandidate } | { ok: false; error: ImageError }> => {
-  const endpointKey = isEdit ? 'imagesEdits' : 'imagesGenerations';
+  const endpointKey = isEdit ? 'openaiImagesEdits' : 'openaiImagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
@@ -1074,7 +1074,7 @@ const issueImageCall = async (
   model: ProviderModel,
   fetcher: Fetcher,
   prompt: string,
-  editRequest: ImagesEditsRequest | null,
+  editRequest: OpenAIImagesEditsRequest | null,
   config: ImageGenerationConfig,
   state: ShimState,
   stream: boolean,
@@ -1093,8 +1093,8 @@ const issueImageCall = async (
       wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (editRequest === null
-      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
+      ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
+      : provider.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -1260,7 +1260,7 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    let editRequest: ImagesEditsRequest | null = null;
+    let editRequest: OpenAIImagesEditsRequest | null = null;
     if (isEdit) {
       const prepared = await prepareEditRequest(sources, state.config);
       editRequest = buildEditsRequest(prompt, state.config, prepared.sources, prepared.mask, wantsPartials);

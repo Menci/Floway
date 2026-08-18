@@ -136,10 +136,10 @@ test('generate routes a native OpenAI Chat Completions candidate end to end', as
 test('generate filters out candidates that do not expose any chat-completions-target endpoint', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn();
-  // `completions:{}` is not in the openaiChatCompletionsTarget preference list
+  // `openaiCompletions:{}` is not in the openaiChatCompletionsTarget preference list
   // (`openai-chat-completions` > `messages` > `responses`), so the picker rejects
   // this candidate.
-  queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { completions: {} }, callOpenAIChatCompletions })]);
+  queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { openaiCompletions: {} }, callOpenAIChatCompletions })]);
 
   const result = await openaiChatCompletionsServe.generate({
     payload: makePayload(),

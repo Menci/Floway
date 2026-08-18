@@ -282,11 +282,11 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
 
 test('POST /v1beta/models/:model:generateContent renders the Gemini-generateContent-shaped model-unsupported 400 when no candidate matches the gemini-generate-content-generate picker', async () => {
   installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
   // geminiGenerateContentGenerateTarget (openai-chat-completions > messages > responses) rejects
   // it, leaving zero viable candidates, and with sawModel=true the serve
   // renders model-unsupported as a 400.
-  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} } })]);
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} } })]);
 
   const response = await makeApp().request('/v1beta/models/wrong-endpoint-model:generateContent', {
     method: 'POST',

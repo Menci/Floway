@@ -298,11 +298,11 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
 
 test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {
   installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
   // anthropicMessagesGenerateTarget (messages > responses > openai-chat-completions) rejects
   // it, leaving zero viable candidates, and with sawModel=true the serve
   // renders model-unsupported as a 400.
-  queueCandidates([makeCandidate({ endpoints: { completions: {} } })]);
+  queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',

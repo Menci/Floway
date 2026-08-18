@@ -1,6 +1,6 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
-import { azureFetchAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
+import { azureFetchOpenAIAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchOpenAICompletions, azureFetchOpenAIEmbeddings, azureFetchOpenAIImagesEdits, azureFetchOpenAIImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
 import { AZURE_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -8,7 +8,7 @@ import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-me
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type ProviderInstance, type Provider, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -64,7 +64,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         };
       }));
     },
-    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
+    callOpenAICompletions: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAICompletions, model, body, signal, opts.headers, opts),
     callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchOpenAIChatCompletions, model, body, signal, opts.headers, parseOpenAIChatCompletionsStream, opts),
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       const ctx: OpenAIResponsesBoundaryCtx = {
@@ -103,18 +103,18 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     },
     callAnthropicMessages: (model, body, signal, opts) => callStreaming(azureFetchAnthropicMessages, model, body, signal, headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta), parseAnthropicMessagesStream, opts),
     callAnthropicMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchAnthropicMessagesCountTokens, model, body, signal, headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta), opts),
-    callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
-    callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
-    callImagesEdits: async (model, request, signal, opts) => {
+    callOpenAIEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAIEmbeddings, model, body, signal, opts.headers, opts),
+    callOpenAIImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAIImagesGenerations, model, body, signal, opts.headers, opts),
+    callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      const response = await azureFetchOpenAIImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
-    callAudioTranscriptions: async (model, request, signal, opts) => {
+    callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
-      const body = serializeModelPathAudioTranscriptionRequest(request);
-      const response = await azureFetchAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      const body = serializeModelPathOpenAIAudioTranscriptionRequest(request);
+      const response = await azureFetchOpenAIAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
     callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),

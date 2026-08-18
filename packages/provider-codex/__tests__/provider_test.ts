@@ -115,7 +115,7 @@ describe('createCodexProvider', () => {
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     expect(models[0].endpoints).toEqual({ openaiResponses: {} });
-    expect(models[2]).toMatchObject({ kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });
@@ -258,16 +258,16 @@ describe('createCodexProvider', () => {
     if (!result.ok) expect(result.response.status).toBe(503);
   });
 
-  test('callImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
+  test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       created: 1,
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const options = noopUpstreamCallOptions();
     options.headers.set('x-codex-image-turn-id', 'turn-image');
-    const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
+    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
     expect(result.response.status).toBe(200);
     expect(result.modelKey).toBe('gpt-image-2');
     const [url, init] = fetchSpy.mock.calls[0];
@@ -279,27 +279,27 @@ describe('createCodexProvider', () => {
     expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
   });
 
-  test('callImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
+  test('callOpenAIImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const freeRecord: UpstreamRecord = {
       ...baseRecord,
       config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
     };
     const instance = createCodexProvider(freeRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
-    const result = await instance.instance.callImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
     expect(result.response.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test('callImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
+  test('callOpenAIImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
     const freeRecord: UpstreamRecord = {
       ...baseRecord,
       config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
     };
     const instance = createCodexProvider(freeRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
-    const result = await instance.instance.callImagesEdits(model, {
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await instance.instance.callOpenAIImagesEdits(model, {
       images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
       parameters: { prompt: 'edit' },
     }, undefined, noopUpstreamCallOptions());
@@ -309,16 +309,16 @@ describe('createCodexProvider', () => {
     });
   });
 
-  test('callImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
+  test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       created: 1,
       data: [{ b64_json: 'ZWRpdA==' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const options = noopUpstreamCallOptions();
     options.headers.set('originator', 'chatgpt_cca');
-    const result = await instance.instance.callImagesEdits(model, {
+    const result = await instance.instance.callOpenAIImagesEdits(model, {
       images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
@@ -334,8 +334,8 @@ describe('createCodexProvider', () => {
   });
 
   test.each([
-    'callEmbeddings',
-    'callAudioTranscriptions',
+    'callOpenAIEmbeddings',
+    'callOpenAIAudioTranscriptions',
     'callOpenAIChatCompletions',
     'callAnthropicMessagesCountTokens',
     'callAnthropicMessages',

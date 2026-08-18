@@ -108,7 +108,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(items[0].config.apiKey, undefined);
 });
 
-// `completions` must survive request validation as a complete endpoint map;
+// `openaiCompletions` must survive request validation as a complete endpoint map;
 // stripping it would make this otherwise valid model fail provider validation.
 test('POST /api/upstreams accepts a custom model whose only endpoint is /completions', async () => {
   const { repo, adminSession } = await setupAppTest();
@@ -121,13 +121,13 @@ test('POST /api/upstreams accepts a custom model whose only endpoint is /complet
       ingressHeadersRules: [],
       endpoints: {},
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'davinci-002', endpoints: { completions: {} } }],
+      models: [{ upstreamModelId: 'davinci-002', endpoints: { openaiCompletions: {} } }],
     },
   })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.config.models[0].endpoints, { completions: {} });
+  assertEquals(created.config.models[0].endpoints, { openaiCompletions: {} });
 });
 
 test('POST /api/upstreams validates Azure models and redacts API keys', async () => {
@@ -579,10 +579,10 @@ test('POST /api/upstreams/list-models projects an ollama draft into UpstreamMode
       assertEquals(ids, ['gpt-oss:120b', 'nomic-embed-text:latest']);
       const gptoss = body.data.find(m => m.upstreamModelId === 'gpt-oss:120b')!;
       assertEquals(gptoss.kind, 'chat');
-      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['anthropicMessages', 'completions', 'openaiChatCompletions', 'openaiResponses']);
+      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
       const embed = body.data.find(m => m.upstreamModelId === 'nomic-embed-text:latest')!;
       assertEquals(embed.kind, 'embedding');
-      assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['embeddings']);
+      assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['openaiEmbeddings']);
     },
   );
 });
