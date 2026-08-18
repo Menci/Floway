@@ -9,6 +9,16 @@ import { describe, expect, it } from 'vitest';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
+const gzip = async (text: string): Promise<Uint8Array> =>
+  new Uint8Array(await new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    }).pipeThrough(new CompressionStream('gzip') as never),
+  ).arrayBuffer());
+
 describe('parseHttpResponse — status-line grammar', () => {
   it('accepts HTTP/1.0 200 OK', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n'));
@@ -840,6 +850,38 @@ describe('toWebResponse', () => {
     expect(r.status).toBe(204);
     expect(r.statusText).toBe('No Content Here');
     expect(r.body).toBeNull();
+  });
+
+  it('decodes a gzip body and removes stale content-coding framing headers', async () => {
+    const compressed = await gzip('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    const head = new TextEncoder().encode(
+      `HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.byteLength}\r\n\r\n`,
+    );
+    const bytes = new Uint8Array(head.byteLength + compressed.byteLength);
+    bytes.set(head);
+    bytes.set(compressed, head.byteLength);
+    const response = toWebResponse(await parseHttpResponse(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    })));
+
+    expect(await response.text()).toBe('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBeNull();
+  });
+
+  it('rejects a content coding the socket transport cannot decode', async () => {
+    await expect(async () => {
+      toWebResponse(await parseHttpResponse(respondAndEnd(
+        'HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n',
+      )));
+    }).rejects.toMatchObject({
+      name: 'HttpProtocolError',
+      code: 'UNSUPPORTED_CONTENT_ENCODING',
+      message: expect.stringContaining('br'),
+    });
   });
 
   it('throws BAD_STATUS_LINE when handed a status the Fetch standard refuses to model', () => {

@@ -9,6 +9,7 @@ import {
   replaceSoleAccount,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
+import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
@@ -22,6 +23,8 @@ import {
 } from '@floway-dev/provider';
 
 const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
+const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
 
 export interface CallClaudeCodeMessagesOptions {
   upstreamId: string;
@@ -57,6 +60,56 @@ const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Re
       headers: { 'content-type': 'application/json', 'retry-after': String(retryAfterSeconds) },
     },
   );
+};
+
+const oneLineError = (error: unknown): string => {
+  const message = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim();
+  return message.length > 512 ? `${message.slice(0, 509)}...` : message;
+};
+
+interface StreamDiagnosticFrame {
+  event: string | null;
+  data: string;
+}
+
+const observedClaudeCodeMessagesStream = async function* (
+  events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
+  options: {
+    upstreamId: string;
+    model: string;
+    headers: Headers;
+    signal: AbortSignal | undefined;
+    frames: StreamDiagnosticFrame[];
+    rawFrameCount: () => number;
+  },
+): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+  let terminalEvent: 'message_stop' | 'error' | null = null;
+  let streamError: unknown;
+  try {
+    for await (const frame of events) {
+      if (frame.type === 'event') {
+        if (frame.event.type === 'message_stop') terminalEvent = 'message_stop';
+        else if (frame.event.type === 'error') terminalEvent = 'error';
+      }
+      yield frame;
+    }
+  } catch (error) {
+    streamError = error;
+    throw error;
+  } finally {
+    if (options.signal?.aborted || (terminalEvent !== null && streamError === undefined)) return;
+    logWarn('claude_code_messages_stream_incomplete', {
+      upstream_id: options.upstreamId,
+      model: options.model,
+      request_id: options.headers.get('request-id'),
+      cf_ray: options.headers.get('cf-ray'),
+      trace_response: options.headers.get('traceresponse'),
+      raw_sse_frames: options.rawFrameCount(),
+      terminal_event: terminalEvent,
+      error: streamError === undefined ? null : oneLineError(streamError),
+      last_sse_frames: JSON.stringify(options.frames),
+    });
+  }
 };
 
 // `anthropic-ratelimit-unified-status: rejected` paired with a future
@@ -364,6 +417,19 @@ const performUpstreamCall = async (
   accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+  let responseHeaders: Headers | undefined;
+  let rawSseFrameCount = 0;
+  const rawSseFrames: StreamDiagnosticFrame[] = [];
+  const observeRawSseFrame = (frame: SseFrame): void => {
+    rawSseFrameCount += 1;
+    rawSseFrames.push({
+      event: frame.event ?? null,
+      data: frame.data.length > STREAM_DIAGNOSTIC_FRAME_DATA_CHARS
+        ? `${frame.data.slice(0, STREAM_DIAGNOSTIC_FRAME_DATA_CHARS - 3)}...`
+        : frame.data,
+    });
+    if (rawSseFrames.length > STREAM_DIAGNOSTIC_FRAME_LIMIT) rawSseFrames.shift();
+  };
   let headers: Record<string, string>;
   if (opts.shaped) {
     // The gateway already reduced ordinary headers to the Claude Code module's
@@ -393,6 +459,7 @@ const performUpstreamCall = async (
     body: jsonRequestBody(wireBody),
     signal: opts.signal,
   })).then(response => {
+    responseHeaders = response.headers;
     // `opts.call.waitUntil` is set by the gateway on Workers so the
     // runtime keeps the worker alive past the response (without it, the
     // persist promise gets cancelled the moment the response returns).
@@ -412,7 +479,12 @@ const performUpstreamCall = async (
     return response;
   });
 
-  const result = await streamingProviderCall(upstreamFetch, parseMessagesStream, upstreamModelId, opts.signal);
+  const result = await streamingProviderCall(
+    upstreamFetch,
+    (body, parserOptions) => parseMessagesStream(body, { ...parserOptions, onSseFrame: observeRawSseFrame }),
+    upstreamModelId,
+    opts.signal,
+  );
 
   if (!result.ok && result.response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
     // Cached token rejected; invalidate so the next mint reads stale=null,
@@ -429,5 +501,16 @@ const performUpstreamCall = async (
     return await performUpstreamCall(opts, upstreamModelId, ensured, true);
   }
 
-  return result;
+  if (!result.ok) return result;
+  return {
+    ...result,
+    events: observedClaudeCodeMessagesStream(result.events, {
+      upstreamId: opts.upstreamId,
+      model: upstreamModelId,
+      headers: responseHeaders ?? result.headers ?? new Headers(),
+      signal: opts.signal,
+      frames: rawSseFrames,
+      rawFrameCount: () => rawSseFrameCount,
+    }),
+  };
 };
