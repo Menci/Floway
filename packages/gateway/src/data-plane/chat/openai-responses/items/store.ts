@@ -135,7 +135,7 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
     if (itemIds.length === 0) return;
     const uniqueRows = [...new Set(itemIds)].map(id => {
       const row = this.loadedItems.get(id);
-      if (row === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
+      if (row === undefined) throw new Error(`OpenAI Responses snapshot item disappeared before commit: ${id}`);
       return row;
     });
     await this.commitItems(uniqueRows);
@@ -335,7 +335,7 @@ export class MemoryStatefulOpenAIResponsesBacking implements StatefulOpenAIRespo
     const existing = items.map(item => this.items.get(scopedOpenAIResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
+      throw new Error(`OpenAI Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
     }
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredOpenAIResponsesItem(items[index], existing[index]!);

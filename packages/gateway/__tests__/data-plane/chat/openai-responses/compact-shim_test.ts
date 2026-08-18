@@ -1,6 +1,6 @@
 // What a simulated compaction is made of. The rules that use these run as stages and are
-// tested where they run — `responses-pipeline_test.ts` for the generate chain and
-// `responses-compact_test.ts` for the compaction chain; what is written down here is the
+// tested where they run — `openai-responses-pipeline_test.ts` for the generate chain and
+// `openai-responses-compact_test.ts` for the compaction chain; what is written down here is the
 // substance those stages send and pack.
 
 import { test } from 'vitest';

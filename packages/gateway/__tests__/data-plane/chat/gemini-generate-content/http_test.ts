@@ -102,7 +102,7 @@ const makeCandidate = (overrides: {
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
   // When the test fixes `endpoints` directly, use it verbatim — that lets a
   // test pin a wrong-endpoint shape the picker rejects. Otherwise synthesize
-  // a single-endpoint map from `targetApi` so the gemini serve layer's
+  // a single-endpoint map from `targetApi` so the Gemini generateContent serve layer's
   // picker (openai-chat-completions first, then messages, then responses) lands on
   // the requested wire.
   const endpoints = overrides.endpoints ?? (targetApi === 'openaiChatCompletions'

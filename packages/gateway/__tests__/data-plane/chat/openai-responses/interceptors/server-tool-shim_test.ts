@@ -444,7 +444,7 @@ const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[
 
 // ── Activation gating ──────────────────────────────────────────────────
 
-test('shim no-ops when targetApi=responses and flag is off', async () => {
+test('shim no-ops when targetApi=openaiResponses and flag is off', async () => {
   const { backend } = makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -463,7 +463,7 @@ test('shim no-ops when targetApi=responses and flag is off', async () => {
   assertEquals(result.type, 'events');
 });
 
-test('shim activates when targetApi=responses and flag is on', async () => {
+test('shim activates when targetApi=openaiResponses and flag is on', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -479,7 +479,7 @@ test('shim activates when targetApi=responses and flag is on', async () => {
   assertEquals((inv.payload.tools?.[0] as { name: string }).name, SHIM_TOOL_NAME);
 });
 
-test('shim activates when targetApi=messages and flag is off', async () => {
+test('shim activates when targetApi=anthropicMessages and flag is off', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({ targetApi: 'anthropicMessages', enabledFlags: new Set<FlagId>() });

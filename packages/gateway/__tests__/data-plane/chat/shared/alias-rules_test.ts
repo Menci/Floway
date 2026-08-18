@@ -80,7 +80,7 @@ test('openai-chat-completions: alias rules overwrite existing IR fields', () => 
 
 // ── OpenAI Responses target ──
 
-test('responses: empty rules leave the payload unchanged', () => {
+test('openai-responses: empty rules leave the payload unchanged', () => {
   const body = resPayload({ reasoning: { effort: 'high' }, text: { verbosity: 'low' }, service_tier: 'priority' });
   applyRulesToUpstreamOpenAIResponses(body, {});
   assertEquals(body.reasoning?.effort, 'high');
@@ -88,7 +88,7 @@ test('responses: empty rules leave the payload unchanged', () => {
   assertEquals(body.service_tier, 'priority');
 });
 
-test('responses: rules stamp every supported native field onto the IR', () => {
+test('openai-responses: rules stamp every supported native field onto the IR', () => {
   const body = resPayload();
   applyRulesToUpstreamOpenAIResponses(body, {
     reasoning: { effort: 'high', summary: 'concise' },
@@ -101,7 +101,7 @@ test('responses: rules stamp every supported native field onto the IR', () => {
   assertEquals(body.service_tier, 'flex');
 });
 
-test('responses: budget_tokens / adaptive have no native slot — silently dropped', () => {
+test('openai-responses: budget_tokens / adaptive have no native slot — silently dropped', () => {
   const body = resPayload();
   applyRulesToUpstreamOpenAIResponses(body, {
     reasoning: { budget_tokens: 1024, adaptive: true },
@@ -111,7 +111,7 @@ test('responses: budget_tokens / adaptive have no native slot — silently dropp
   assertEquals('adaptive_thinking' in body, false);
 });
 
-test('responses: alias rules overwrite owned fields while preserving reasoning.context', () => {
+test('openai-responses: alias rules overwrite owned fields while preserving reasoning.context', () => {
   const body = resPayload({
     reasoning: { effort: 'low', summary: 'auto', context: 'future_mode' },
     service_tier: 'default',
@@ -129,7 +129,7 @@ test('responses: alias rules overwrite owned fields while preserving reasoning.c
 
 // ── Anthropic Messages target ──
 
-test('messages: empty rules leave the payload unchanged', () => {
+test('anthropic-messages: empty rules leave the payload unchanged', () => {
   const body = msgPayload({ output_config: { effort: 'high' }, thinking: { type: 'enabled', budget_tokens: 512 }, speed: 'fast' });
   applyRulesToUpstreamAnthropicMessages(body, {});
   assertEquals(body.output_config?.effort, 'high');
@@ -137,7 +137,7 @@ test('messages: empty rules leave the payload unchanged', () => {
   assertEquals(body.speed, 'fast');
 });
 
-test('messages: effort lands on output_config, budget+adaptive land on thinking', () => {
+test('anthropic-messages: effort lands on output_config, budget+adaptive land on thinking', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, {
     reasoning: { effort: 'high', budget_tokens: 2048 },
@@ -147,38 +147,38 @@ test('messages: effort lands on output_config, budget+adaptive land on thinking'
   assertEquals(body.thinking?.budget_tokens, 2048);
 });
 
-test('messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
+test('anthropic-messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { verbosity: 'low' });
   assertEquals('verbosity' in body, false);
 });
 
-test('messages: summary=concise|detailed collapses onto thinking.display=summarized (enables thinking)', () => {
+test('anthropic-messages: summary=concise|detailed collapses onto thinking.display=summarized (enables thinking)', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'concise' } });
   assertEquals(body.thinking?.type, 'enabled');
   assertEquals(body.thinking?.display, 'summarized');
 });
 
-test('messages: summary=omitted collapses onto thinking.display=omitted', () => {
+test('anthropic-messages: summary=omitted collapses onto thinking.display=omitted', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
   assertEquals(body.thinking?.display, 'omitted');
 });
 
-test('messages: summary=auto is a no-op (Anthropic default takes over)', () => {
+test('anthropic-messages: summary=auto is a no-op (Anthropic default takes over)', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'auto' } });
   assertEquals(body.thinking, undefined);
 });
 
-test('messages: adaptive=true sets thinking.type=adaptive and ignores budget_tokens', () => {
+test('anthropic-messages: adaptive=true sets thinking.type=adaptive and ignores budget_tokens', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { adaptive: true, budget_tokens: 4096 } });
   assertEquals(body.thinking?.type, 'adaptive');
 });
 
-test('messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
+test('anthropic-messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
   const body = msgPayload();
   body.thinking = { type: 'enabled', budget_tokens: 5000 };
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { adaptive: true } });
@@ -189,21 +189,21 @@ test('messages: adaptive=true strips a client-set budget_tokens from body.thinki
   assertEquals((body.thinking as { budget_tokens?: number }).budget_tokens, undefined);
 });
 
-test('messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', () => {
+test('anthropic-messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'fast' });
   assertEquals(body.speed, 'fast');
   assertEquals(body.service_tier, undefined);
 });
 
-test('messages: non-fast serviceTier lands on service_tier directly', () => {
+test('anthropic-messages: non-fast serviceTier lands on service_tier directly', () => {
   const body = msgPayload();
   applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
   assertEquals(body.service_tier, 'priority');
   assertEquals(body.speed, undefined);
 });
 
-test('messages: serviceTier=fast clears a pre-existing body.service_tier on the same payload', () => {
+test('anthropic-messages: serviceTier=fast clears a pre-existing body.service_tier on the same payload', () => {
   // Upstream must never see both `speed` and `service_tier` set on the
   // same request — Anthropic treats them as alternates and the wire
   // semantics for a conflict are undefined. The overlay clears the
@@ -214,14 +214,14 @@ test('messages: serviceTier=fast clears a pre-existing body.service_tier on the 
   assertEquals(body.service_tier, undefined);
 });
 
-test('messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
+test('anthropic-messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
   const body = msgPayload({ speed: 'fast' });
   applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
   assertEquals(body.service_tier, 'priority');
   assertEquals(body.speed, undefined);
 });
 
-test('messages: alias rules overwrite existing thinking + output_config fields', () => {
+test('anthropic-messages: alias rules overwrite existing thinking + output_config fields', () => {
   const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
   assertEquals(body.output_config?.effort, 'xhigh');

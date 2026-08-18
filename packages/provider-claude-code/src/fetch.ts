@@ -21,7 +21,7 @@ import {
   type ProviderStreamResult,
 } from '@floway-dev/provider';
 
-const ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
 
 export interface CallClaudeCodeAnthropicMessagesOptions {
   upstreamId: string;
@@ -387,7 +387,7 @@ const performUpstreamCall = async (
   // and the real Claude Code client always sets `stream: true`.
   const wireBody: AnthropicMessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
-  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT, {
+  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
     body: jsonRequestBody(wireBody),

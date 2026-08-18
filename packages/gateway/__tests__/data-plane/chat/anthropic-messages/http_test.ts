@@ -305,7 +305,7 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
 });
 
-test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {
+test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the anthropic-messages-generate picker', async () => {
   installRepo();
   // Queue a chat-kind candidate whose endpoints expose only `completions` —
   // anthropicMessagesGenerateTarget (messages > responses > chat-completions) rejects

@@ -631,7 +631,7 @@ const en = {
             'messages-web-search-shim': {
               label: 'Anthropic Messages Web Search Shim',
               description:
-                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Messages API.',
+                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
             },
             'responses-web-search-shim': {
               label: 'OpenAI Responses Web Search Shim',

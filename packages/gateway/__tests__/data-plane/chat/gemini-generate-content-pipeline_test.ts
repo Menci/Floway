@@ -185,7 +185,7 @@ const affinityCarriers = (events: readonly GeminiGenerateContentResult[]): reado
   events.flatMap(event => (event.candidates ?? []).flatMap(candidate =>
     candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
 
-describe('the gemini pipeline', () => {
+describe('the Gemini generateContent pipeline', () => {
   // The whole entry contract, and it does not mention `request.chat.geminiGenerateContent`: the turn the
   // wire translates is not the one the caller handed in but the one materializeAttempt put
   // into the record below the fork, which is where a per-candidate payload can exist at all.

@@ -4,7 +4,7 @@
 // The rules that use these are stages: `simulatesCompaction` says which candidates'
 // compactions are the shim's to make, `expandShimCompactions` puts a blob of ours back into
 // the items it stood for, and `summarizeForCompaction` sends the turn built here and packs
-// what comes back (`responses/pipeline.ts`). Both of this protocol's chains compose them,
+// what comes back (`openai-responses/pipeline.ts`). Both of this protocol's chains compose them,
 // because a compaction the shim wrote is issued through one entry — `/v1/responses/compact`,
 // or a generate turn whose input ends in a `compaction_trigger` — and echoed back into the
 // other by the client that received it.

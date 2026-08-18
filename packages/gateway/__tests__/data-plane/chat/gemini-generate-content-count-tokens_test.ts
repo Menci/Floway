@@ -106,7 +106,7 @@ beforeEach(() => {
   } as never);
 });
 
-describe('the gemini count-tokens chain', () => {
+describe('the Gemini generateContent count-tokens chain', () => {
   // Gemini generateContent has no endpoint that answers this, so the question is asked in Anthropic Messages and the
   // counts are read back out under the name this protocol gives them.
   it('asks the question in Anthropic Messages and answers in Google-s own envelope', async () => {

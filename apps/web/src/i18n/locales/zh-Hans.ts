@@ -601,7 +601,7 @@ const zhHansCN = {
             'messages-web-search-shim': {
               label: 'Anthropic Messages 网页搜索兼容层',
               description:
-                  'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
+                  'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Anthropic Messages API 时，此开关被视为开启。',
             },
             'responses-web-search-shim': {
               label: 'OpenAI Responses 网页搜索兼容层',

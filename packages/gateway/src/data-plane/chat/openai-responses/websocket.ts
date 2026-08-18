@@ -638,7 +638,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
       // nothing at all. Both settle here. For the abandoned turn the eviction is inert — the
       // connection-local cache dies with the socket.
       turnFailure.evict();
-      ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+      ctx.dump?.failed(`openai-responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     }
     ctx.dump?.finalize(failed ? 500 : 200, 0);
   }
@@ -747,7 +747,7 @@ const normalizeErrorBody = (body: unknown, status: number): Record<string, unkno
     : status >= 500 ? 'server_error' : 'invalid_request_error';
   const message = typeof source.message === 'string'
     ? source.message
-    : `Responses request failed with status ${status}.`;
+    : `OpenAI Responses request failed with status ${status}.`;
   return {
     ...source,
     type,
