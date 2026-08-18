@@ -1,7 +1,6 @@
 // Compact-shim — what a `response.compaction` envelope is made of, where no upstream wire
 // makes one.
 //
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 // The rules that use these are stages: `simulatesCompaction` says which candidates'
 // compactions are the shim's to make, `expandShimCompactions` puts a blob of ours back into
 // the items it stood for, and `summarizeForCompaction` sends the turn built here and packs
@@ -9,21 +8,6 @@
 // because a compaction the shim wrote is issued through one entry — `/v1/responses/compact`,
 // or a generate turn whose input ends in a `compaction_trigger` — and echoed back into the
 // other by the client that received it.
-========
-// Engagement is the OR of two conditions:
-//   1. The per-upstream `responses-compact-shim` flag is on. This is the
-//      operator-controlled opt-in for OpenAI-Responses-target upstreams that
-//      already answer a compact request themselves — natively through
-//      `/responses/compact` (codex / azure / custom), or by replaying
-//      `RemoteCompactionV2` over `/responses` (copilot) — but where we still
-//      want shim-synthesized envelopes.
-//   2. The candidate's `targetApi` is not `responses`. When the upstream is
-//      Anthropic Messages or OpenAI Chat Completions, the translation layer has no concept
-//      of a `compaction` output item or a `compaction_trigger` input item.
-//      The shim is structurally required regardless of the flag — without
-//      it, a `compaction_trigger` item would reach the translator and
-//      crash on the unknown variant.
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
 //
 // What is here is the shim's own substance:
 //
@@ -48,20 +32,9 @@
 // selectively turn the flag off for the codex / copilot / azure / custom upstreams that
 // answer compact themselves.
 
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
-========
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
-import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { syntheticEventsFromResult } from '../items/output.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesInputItem, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -184,21 +157,12 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 
 // ── Outbound summarization ────────────────────────────────────────────────────
 
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
-========
-type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
-
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
 // The spec makes the item lifecycle the authority and requires nothing of the
 // terminal's `output`; a Codex upstream states an `output` that omits the
 // assistant message it just closed. A turn that closed nothing falls back to
 // the terminal, as the client-facing egress does.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 export const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
-========
-const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated: readonly OpenAIResponsesOutputItem[]): string => {
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
   const items = closed.size === 0
     ? stated
     : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
@@ -212,11 +176,7 @@ const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated:
   return parts.join('');
 };
 
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
-========
-const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
   // The prefix lives inside the blob so it round-trips atomically with the
   // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
   // one message and reads it as "another LLM's handoff", not as the human
@@ -256,18 +216,12 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
   };
 };
 
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 // The turn a compaction is simulated with: the compactor's own prompt, the
 // history that is being compacted, and a nudge to produce the summary now.
 // Exported because the pipeline's compaction chain sends the same turn — one
 // definition is what keeps the simulated compaction identical whichever entry
 // asked for it.
 export const summarizationTurnFor = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => {
-========
-const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
-  const originalPayload = ctx.payload;
-
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
   // Strip compaction_trigger so the upstream sees a plain generate turn
   // against SUMMARIZATION_PROMPT.
   const historyItems = payload.input.filter(item => item.type !== 'compaction_trigger');
@@ -332,7 +286,6 @@ const simulateCompaction = async (ctx: OpenAIResponsesInvocation, gatewayCtx: Ch
     // conversation history.
     store: false,
   };
-<<<<<<<< HEAD:packages/gateway/src/data-plane/chat/openai-responses/compact-shim.ts
 };
 
 // A summarization that closed no assistant text produced no summary, and a
@@ -342,72 +295,3 @@ export const EMPTY_SUMMARY_MESSAGE = 'Responses compact shim: the summarization 
 
 export const containsCompactionTrigger = (input: readonly ResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
-========
-  // Pivot the action so the inner dispatch routes to the upstream's
-  // generate wire instead of its compact wire. The mutation is one-way:
-  // the project's interceptor convention is that every `ctx.*` write
-  // propagates downstream and is never restored on the way out. Post-chain
-  // consumers keep their own captured copies of inputs they care about.
-  ctx.action = 'generate';
-
-  const upstreamResult = await run();
-
-  if (upstreamResult.type !== 'events') {
-    // api-error / internal-error from the upstream propagate so the client
-    // learns the compaction failed rather than receiving a silent empty
-    // envelope.
-    return upstreamResult;
-  }
-
-  const closedItems = new Map<number, OpenAIResponsesOutputItem>();
-  const observed = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-    for await (const frame of upstreamResult.events) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        closedItems.set(frame.event.output_index, frame.event.item);
-      }
-      yield frame;
-    }
-  })();
-
-  const collected = await collectOpenAIResponsesProtocolEventsToResult(observed);
-  const summaryText = summaryTextFrom(closedItems, collected.output);
-  // A compaction blob is the whole of what the next turn inherits, so an empty
-  // one silently discards the conversation.
-  if (summaryText.length === 0) {
-    throw new Error('OpenAI Responses compact shim: the summarization turn closed no assistant text to summarize');
-  }
-  const cmpId = createRandomOpenAIResponsesItemId('compaction');
-  const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
-
-  // A real generate turn backs this envelope, so its own `incomplete` or
-  // `failed` status must reach the terminal event.
-  return {
-    ...upstreamResult,
-    events: syntheticEventsFromResult(synthesized),
-  };
-};
-
-export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
-  input.some(item => item.type === 'compaction_trigger');
-
-export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {
-  // The shim is engaged when the operator turned it on for this upstream,
-  // OR when the upstream's targetApi is not OpenAI Responses (Anthropic Messages /
-  // OpenAI Chat Completions have no compaction wire and would crash on the
-  // unknown `compaction_trigger` input variant).
-  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
-  const structurallyRequired = ctx.targetApi !== 'openaiResponses';
-  if (!flagOn && !structurallyRequired) return await run();
-
-  // Inbound: expand any prior shim-encoded compactions back into their
-  // original items so the upstream sees the summarized history.
-  ctx.payload = expandShimCompactionItems(ctx.payload);
-
-  // Compact-shaped requests are either the native `/responses/compact`
-  // action or a `generate` call whose input ends in a `compaction_trigger`.
-  const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
-  if (!isCompactShaped) return await run();
-
-  return await simulateCompaction(ctx, gatewayCtx, run);
-};
->>>>>>>> feat/pipeline-non-chat:packages/gateway/src/data-plane/chat/openai-responses/interceptors/compact-shim.ts
