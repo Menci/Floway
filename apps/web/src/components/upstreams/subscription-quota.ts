@@ -1,7 +1,7 @@
 // The thresholds are stated once for every subscription upstream, so a reading
 // that colours a bar in the editor colours the ring beside it in the list the
 // same way.
-export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
+const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 const CRITICAL_USAGE_THRESHOLD_PERCENT = 90;
 
 export type QuotaSeverity = 'normal' | 'heavy' | 'critical';
@@ -28,6 +28,18 @@ export const WALL_CLOCK_REFRESH_MS = 60_000;
 
 // No windows means nothing is known, which is not the same reading as zero.
 export const heaviestPercent = (percents: number[]): number | null => percents.length ? Math.max(...percents) : null;
+
+export type UsageHeavyOrActive =
+  | { tone: 'warning'; reason: 'heavy'; percent: number }
+  | { tone: 'success'; reason: 'active' };
+
+// The threshold rule every subscription upstream shares: the heaviest window at
+// or above the heavy threshold reads as heavy, and anything else -- including no
+// window at all -- reads as active.
+export const usageStatusFromHeaviest = (heaviest: number | null): UsageHeavyOrActive =>
+  heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT
+    ? { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) }
+    : { tone: 'success', reason: 'active' };
 
 // A window is named by the length it covers rather than by the field it arrived
 // in, so the five hours a Codex header states in minutes and the five hours

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseCodexIdTokenClaims } from '../../src/auth/jwt.ts';
+import { parseCodexTokenClaims, tryParseCodexAccessTokenClaims } from '../../src/auth/jwt.ts';
 
 // Helper builds a minimal JWT with given payload. Signature segment is fake.
 const encodeBase64Url = (text: string): string => {
@@ -16,8 +16,8 @@ const makeJwt = (payload: unknown): string => {
   return `${header}.${body}.fake-signature`;
 };
 
-describe('parseCodexIdTokenClaims', () => {
-  test('extracts all identity claims', () => {
+describe('parseCodexTokenClaims', () => {
+  test('extracts every identity claim a full id_token carries', () => {
     const token = makeJwt({
       'https://api.openai.com/auth': {
         chatgpt_plan_type: 'plus',
@@ -26,51 +26,61 @@ describe('parseCodexIdTokenClaims', () => {
       },
       'https://api.openai.com/profile': { email: 'a@b.com' },
     });
-    expect(parseCodexIdTokenClaims(token)).toEqual({
+    expect(parseCodexTokenClaims(token, 'id_token')).toEqual({
       email: 'a@b.com',
       chatgptAccountId: 'acc_123',
       chatgptUserId: 'user-abc',
       planType: 'plus',
+      expiresAt: null,
     });
   });
 
-  test('rejects token without 3 segments', () => {
-    expect(() => parseCodexIdTokenClaims('not.a.jwt.really')).toThrow(/3 segments/);
-    expect(() => parseCodexIdTokenClaims('one.two')).toThrow(/3 segments/);
+  test('reports a claim the token does not carry as null', () => {
+    expect(parseCodexTokenClaims(makeJwt({}), 'id_token')).toEqual({
+      email: null,
+      chatgptAccountId: null,
+      chatgptUserId: null,
+      planType: null,
+      expiresAt: null,
+    });
   });
 
-  test('rejects token whose payload is not base64url-decodable JSON', () => {
-    expect(() => parseCodexIdTokenClaims('aaa.!!!.bbb')).toThrow();
+  test('converts exp seconds to milliseconds', () => {
+    expect(parseCodexTokenClaims(makeJwt({ exp: 2_000_000_000 })).expiresAt).toBe(2_000_000_000_000);
   });
 
-  test('rejects token missing required claims', () => {
-    const noAccountId = makeJwt({
-      'https://api.openai.com/auth': { chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
-      'https://api.openai.com/profile': { email: 'a@b' },
-    });
-    expect(() => parseCodexIdTokenClaims(noAccountId)).toThrow(/chatgpt_account_id/);
+  test('rejects a token without 3 segments', () => {
+    expect(() => parseCodexTokenClaims('not.a.jwt.really', 'id_token')).toThrow(/3 segments/);
+    expect(() => parseCodexTokenClaims('one.two', 'id_token')).toThrow(/3 segments/);
+  });
 
-    const noEmail = makeJwt({
-      'https://api.openai.com/auth': { chatgpt_account_id: 'a', chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
-    });
-    expect(() => parseCodexIdTokenClaims(noEmail)).toThrow(/email/);
+  test('rejects a token whose payload is not base64url-decodable JSON', () => {
+    expect(() => parseCodexTokenClaims('aaa.!!!.bbb', 'id_token')).toThrow();
   });
 
   test('accepts top-level email when /profile is absent (observed real-world id_token shape)', () => {
     const token = makeJwt({
-      'https://api.openai.com/auth': { chatgpt_account_id: 'a', chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
+      'https://api.openai.com/auth': { chatgpt_account_id: 'a' },
       email: 'top-level@example.com',
     });
-    expect(parseCodexIdTokenClaims(token).email).toBe('top-level@example.com');
+    expect(parseCodexTokenClaims(token, 'id_token').email).toBe('top-level@example.com');
   });
 
   test('handles base64url padding-free encoding (real OpenAI tokens have no padding)', () => {
     // encodeBase64Url already strips padding, matching real OpenAI tokens.
-    const token = makeJwt({
-      'https://api.openai.com/auth': { chatgpt_account_id: 'a', chatgpt_user_id: 'u', chatgpt_plan_type: 'plus' },
-      'https://api.openai.com/profile': { email: 'a@b' },
-    });
-    expect(parseCodexIdTokenClaims(token).chatgptAccountId).toBe('a');
+    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'a' } });
+    expect(parseCodexTokenClaims(token, 'id_token').chatgptAccountId).toBe('a');
+  });
+});
+
+describe('tryParseCodexAccessTokenClaims', () => {
+  test('reads an opaque access token as carrying no claims rather than failing', () => {
+    expect(tryParseCodexAccessTokenClaims('opaque-access-token')).toBeNull();
+  });
+
+  test('reads claims off an access token that is a JWT', () => {
+    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_from_access' } });
+    expect(tryParseCodexAccessTokenClaims(token)?.chatgptAccountId).toBe('acc_from_access');
   });
 
   test('rejects noncanonical JWT payload encodings', () => {
@@ -81,8 +91,8 @@ describe('parseCodexIdTokenClaims', () => {
     });
     const [header, payload, signature] = token.split('.');
     expect(payload?.endsWith('Q')).toBe(true);
-    expect(() => parseCodexIdTokenClaims(`${header}.${payload}=.${signature}`)).toThrow();
-    expect(() => parseCodexIdTokenClaims(`${header}.${payload}\n.${signature}`)).toThrow();
-    expect(() => parseCodexIdTokenClaims(`${header}.${payload!.slice(0, -1)}R.${signature}`)).toThrow();
+    expect(() => parseCodexTokenClaims(`${header}.${payload}=.${signature}`, 'access_token')).toThrow();
+    expect(() => parseCodexTokenClaims(`${header}.${payload}\n.${signature}`, 'access_token')).toThrow();
+    expect(() => parseCodexTokenClaims(`${header}.${payload!.slice(0, -1)}R.${signature}`, 'access_token')).toThrow();
   });
 });

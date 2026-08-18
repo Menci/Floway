@@ -103,6 +103,12 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
         ...(account.state_message !== undefined ? { state_message: account.state_message } : {}),
         state_updated_at: account.state_updated_at,
         refresh_token_set: hasSecret(account.refresh_token),
+        // The bearer stays server-only; its timing is what lets the dashboard
+        // explain why a credential is or is not usable right now. Mirrors what
+        // the Claude Code branch below exposes for the same reason.
+        accessToken: account.accessToken === null
+          ? null
+          : { expiresAt: account.accessToken.expiresAt, refreshedAt: account.accessToken.refreshedAt },
       })),
     };
     return { ...base, kind: 'codex', config: clone(upstream.config), state };

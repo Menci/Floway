@@ -23,13 +23,15 @@ export interface CodexRawModel {
 }
 
 // `fetcher` is required so the catalog refresh traverses the same proxy/
-// dial chain configured for request-time traffic.
-export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
+// dial chain configured for request-time traffic. A null account id omits the
+// header entirely — the upstream reads an absent header as "whichever account
+// this bearer belongs to", where an empty one is a malformed value.
+export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string | null; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
   const response = await opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
     method: 'GET',
     headers: {
       authorization: `Bearer ${opts.accessToken}`,
-      'chatgpt-account-id': opts.accountId,
+      ...(opts.accountId === null ? {} : { 'chatgpt-account-id': opts.accountId }),
       originator: CODEX_ORIGINATOR,
       'user-agent': CODEX_USER_AGENT,
       accept: 'application/json',

@@ -1,17 +1,17 @@
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { dateTime } from '../../lib/format-time';
-import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { shortAccountId } from '../upstreams/account-id';
-import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries } from '../upstreams/codex-account';
+import { accountStatus, type CodexRecord, codexRenewable, findCredential, latestCredits, planLabel, quotaEntries } from '../upstreams/codex-account';
 import { ProviderIcon } from '../upstreams/provider-badge';
-import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
+import { QuotaProgressRow } from '../upstreams/quota-progress-row';
+import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
-const { Badge, ProgressBar, Text } = fluentComponents;
+const { Badge, Text } = fluentComponents;
 
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
@@ -30,27 +30,43 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       ? t('dashboard.upstreamEditor.codex.status.rateLimited', { time: dateTime(status.until, locale) })
       : t(`dashboard.upstreamEditor.codex.status.${status.reason}`);
 
+  const renewable = credential === null ? null : codexRenewable(credential);
+  const accountId = account.chatgptAccountId;
+  const expiresAt = credential?.accessToken?.expiresAt ?? null;
+  const bearerLabel = expiresAt !== null
+    ? t('dashboard.upstreamEditor.codex.expires', { time: dateTime(new Date(expiresAt).toISOString(), locale) })
+    : renewable === false
+      ? t('dashboard.upstreamEditor.codex.expiryUnknownAccessOnly')
+      : t('dashboard.upstreamEditor.codex.expiryUnknown');
+
   return <section className="grid gap-4">
     <div className="flex items-start gap-3">
       <ProviderIcon kind="codex" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
-        <Text block weight="semibold" truncate wrap={false}>{account.email}</Text>
+        <Text block weight="semibold" truncate wrap={false}>{account.email ?? t('dashboard.upstreamEditor.codex.unknownEmail')}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone="accent">{account.planType}</StatusBadge>
+          <StatusBadge tone="accent">{planLabel(account) ?? t('dashboard.upstreamEditor.codex.unknownPlan')}</StatusBadge>
+          {renewable !== null && <StatusBadge tone={renewable ? 'success' : 'warning'}>
+            {t(renewable ? 'dashboard.upstreamEditor.codex.renewable' : 'dashboard.upstreamEditor.codex.accessOnly')}
+          </StatusBadge>}
           {credits?.credits_has_credits === false
             ? <StatusBadge tone="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</StatusBadge>
             : credits?.credits_balance !== undefined && <Badge appearance="outline" size="large">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
-          <TruncationTooltip content={account.chatgptAccountId} relationship="description">
-            {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{shortAccountId(account.chatgptAccountId)}</Text>}
-          </TruncationTooltip>
+          {accountId === null
+            ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.unknownAccountId')}</Text>
+            : <TruncationTooltip content={accountId} relationship="description">
+                {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{shortAccountId(accountId)}</Text>}
+              </TruncationTooltip>}
         </div>
       </div>
       <StatusBadge tone={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
+
+    {credential && <Text size={200} className="text-fui-fg3">{bearerLabel}</Text>}
 
     {entries.length === 0
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>
@@ -62,22 +78,17 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>
           {entry.windows.map(item => {
-            const percent = clampPercent(item.percent);
-            return <div className="grid gap-1" key={item.key}>
-              <div className="flex items-baseline justify-between gap-3">
-                <Text size={200}>{t(`dashboard.upstreamEditor.codex.window.${item.key}`)}</Text>
-                <div className="flex items-baseline gap-2">
-                  <Text size={200} className="text-fui-fg2">{percentText(percent)}</Text>
-                  {item.windowMinutes !== null && <Text size={200} className="text-fui-fg3">
-                    {t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}
-                  </Text>}
-                </div>
-              </div>
-              <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
-              {item.resetAt && <Text size={200} className="text-fui-fg3">
+            return <QuotaProgressRow
+              key={item.key}
+              label={t(`dashboard.upstreamEditor.codex.window.${item.key}`)}
+              percent={item.percent}
+              right={item.windowMinutes !== null && <Text size={200} className="text-fui-fg3">
+                {t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}
+              </Text>}
+              footer={item.resetAt && <Text size={200} className="text-fui-fg3">
                 {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt, locale) })}
               </Text>}
-            </div>;
+            />;
           })}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {entry.rateLimitedUntil && <Text size={200} className="text-fui-fg3">

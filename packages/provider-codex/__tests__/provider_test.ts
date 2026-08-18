@@ -33,6 +33,11 @@ const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken):
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
 });
 
+const accessOnlyRecord = (entry: CodexAccessTokenEntry): UpstreamRecord => ({
+  ...baseRecord,
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
+});
+
 let current: UpstreamRecord | null;
 let repo: UpstreamStateRepoStub;
 
@@ -118,6 +123,25 @@ describe('createCodexProvider', () => {
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
+  });
+
+  test('getProvidedModels uses an unknown-expiry access-only token without an OAuth refresh', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: null, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const models = await createCodexProvider(record).instance.getProvidedModels(directFetcher);
+    // Unknown plan fails open, so the provider-owned image model is surfaced too.
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_only');
+  });
+
+  test('getProvidedModels reports an expired access-only token before fetching', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(createCodexProvider(record).instance.getProvidedModels(directFetcher)).rejects.toThrow(/expired.*re-import/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
