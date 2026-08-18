@@ -285,7 +285,7 @@ describe('the gemini pipeline', () => {
     expect(carried).toHaveLength(1);
     // It names the upstream that answered, sealed under this run's own secret — which is what
     // lets the next turn be pinned to it.
-    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'gemini.part.thoughtSignature')).toMatchObject({
+    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'gemini-generate-content.part.thoughtSignature')).toMatchObject({
       kind: 'owned',
       affinity: { upstreamId: 'up_a', modelId: 'gemini-2.5-pro' },
     });

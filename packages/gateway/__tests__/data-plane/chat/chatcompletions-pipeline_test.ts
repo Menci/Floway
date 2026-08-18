@@ -201,7 +201,7 @@ describe('the chat completions chain', () => {
     expect(carried).toHaveLength(1);
     // It names the upstream that answered, sealed under this run's own secret — which is what
     // lets the next turn be pinned to it.
-    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'chat-completions.reasoning_opaque')).toMatchObject({
+    expect(await gateway.affinity.codec.unwrap(carried[0]!, 'openai-chat-completions.reasoning_opaque')).toMatchObject({
       kind: 'owned',
       affinity: { upstreamId: 'up_a', modelId: 'chat-model' },
     });

@@ -694,7 +694,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(invalidInputMessage.error, {
       type: 'invalid_request_error',
       code: 'invalid_request_error',
-      message: 'Responses input must be a string or an array.',
+      message: 'OpenAI Responses input must be a string or an array.',
       param: 'input',
     });
 
@@ -712,7 +712,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
-        message: 'Untyped Responses input items require a valid role and content.',
+        message: 'Untyped OpenAI Responses input items require a valid role and content.',
         param: 'input[0]',
       },
     }]);

@@ -234,7 +234,7 @@ const summaryIn = async (
   gateway: ReturnType<typeof mockChatGatewayCtx>,
   encryptedContent: string,
 ): Promise<string> => {
-  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'responses.compaction.encrypted_content');
+  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'openai-responses.compaction.encrypted_content');
   if (carrier.kind !== 'owned' || carrier.value === undefined) throw new Error('expected the turn-s own carrier around the blob');
   const items = decodeBase64UrlJson(carrier.value) as { content: { text: string }[] }[] | null;
   if (items === null) throw new Error('expected a shim-encoded compaction blob');
@@ -368,7 +368,7 @@ describe('the responses chain', () => {
     // It names the upstream that answered, sealed under this run's own secret — which is what
     // lets the next turn be pinned to it. The item is ours rather than the upstream's, and it
     // says so, so a turn quoting it back is not read as reasoning the upstream produced.
-    expect(await gateway.affinity.codec.unwrap(carrier[0]!.encrypted_content!, 'responses.reasoning.encrypted_content')).toMatchObject({
+    expect(await gateway.affinity.codec.unwrap(carrier[0]!.encrypted_content!, 'openai-responses.reasoning.encrypted_content')).toMatchObject({
       kind: 'owned',
       syntheticItem: true,
       affinity: { upstreamId: 'up_a', modelId: 'responses-model' },

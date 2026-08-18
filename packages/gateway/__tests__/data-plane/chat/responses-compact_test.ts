@@ -186,7 +186,7 @@ const rendered = (facts: Record<string, unknown>): Record<string, unknown> =>
  *  own state is sealed around it on the way out — that is what pins the next turn to the
  *  upstream that issued this one — so the carrier is opened before the blob is read. */
 const summaryIn = async (encryptedContent: string): Promise<string> => {
-  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'responses.compaction.encrypted_content');
+  const carrier = await gateway.affinity.codec.unwrap(encryptedContent, 'openai-responses.compaction.encrypted_content');
   if (carrier.kind !== 'owned' || carrier.value === undefined) throw new Error('expected the turn-s own carrier around the blob');
   const items = decodeBase64UrlJson(carrier.value) as { content: { text: string }[] }[] | null;
   if (items === null) throw new Error('expected a shim-encoded compaction blob');

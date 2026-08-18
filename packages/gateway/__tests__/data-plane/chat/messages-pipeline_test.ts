@@ -236,7 +236,7 @@ describe('the messages chain', () => {
     expect(carrier).toHaveLength(1);
     // It names the upstream that answered, sealed under this run's own secret — which is what
     // lets the next turn be pinned to it.
-    expect(await gateway.affinity.codec.unwrap(carrier[0]!.content_block!.data, 'messages.redacted_thinking.data')).toMatchObject({
+    expect(await gateway.affinity.codec.unwrap(carrier[0]!.content_block!.data, 'anthropic-messages.redacted_thinking.data')).toMatchObject({
       kind: 'owned',
       affinity: { upstreamId: 'up_a', modelId: 'claude-model' },
     });

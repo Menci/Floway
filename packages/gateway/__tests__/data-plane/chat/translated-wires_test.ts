@@ -547,7 +547,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
     });
 
     expect(() => compose('leaving', [leaving, ...anthropicMessagesWire('r')]))
-      .toThrow(/needs request\.chat\.messages, which handOff:.* consumed above it/);
+      .toThrow(/needs request\.chat\.anthropicMessages, which handOff:.* consumed above it/);
     expect(() => compose('arriving', [arriving, ...anthropicMessagesWire('r')])).not.toThrow();
   });
 });
