@@ -1727,3 +1727,25 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
   }));
   assertEquals(result.status, 200);
 });
+
+// An export taken before the protocols were spelled out in full carries the old
+// endpoint keys. The import refuses it and names the key that was not understood,
+// which is how an operator learns the backup predates the rename rather than
+// discovering it from an upstream that serves nothing. The refusal comes from the
+// runtime validator rather than the request schema — the schema alone would strip
+// an unknown key silently, so this asserts the path, not the shape.
+test('an import naming an endpoint this build does not know is refused, not silently emptied', async () => {
+  const { app } = setup();
+
+  const exported = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
+  const stale = latestImportData({
+    upstreams: [{
+      ...exported,
+      config: { ...(exported.config as unknown as Record<string, unknown>), endpoints: { chatCompletions: {} } },
+    }],
+  });
+
+  const result = await doImport(app, 'replace', stale);
+  assertEquals(result.status, 400);
+  assertEquals(JSON.stringify(result.body).includes('chatCompletions'), true);
+});
