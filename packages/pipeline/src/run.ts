@@ -260,9 +260,18 @@ const loggerFor = (services: object, name: string, stageId: number, scope: RunSc
   const sink = (services as RunServices).log;
   const line = (level: LogLevel) =>
     (message: string, fields?: Readonly<Record<string, unknown>>): void => {
-      const stamped = { stage: name, ...fields };
-      sink?.[level](message, stamped);
-      scope.emit({ type: 'stage.log', stageId, level, message, fields: Object.freeze({ ...fields }) });
+      // The global sink is handed the stage as an ordinary field, because a `Logger` has
+      // nowhere else to put it; the record gets it as `context`, which is where a logg
+      // entry carries the same thing.
+      sink?.[level](message, { stage: name, ...fields });
+      scope.emit({
+        type: 'stage.log',
+        stageId,
+        level,
+        context: name,
+        message,
+        ...(fields === undefined ? {} : { fields: Object.freeze({ ...fields }) }),
+      });
     };
   return { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') };
 };
