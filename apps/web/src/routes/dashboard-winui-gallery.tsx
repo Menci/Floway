@@ -318,7 +318,7 @@ function SelectSection() {
     <Row label="dropdown - multiselect">
       <Dropdown multiselect defaultSelectedOptions={['chat', 'openaiResponses']} placeholder="Endpoints">
         <Option text="OpenAI Chat Completions" value="chat">OpenAI Chat Completions</Option>
-        <Option text="OpenAI Responses" value="responses">Responses</Option>
+        <Option text="OpenAI Responses" value="responses">OpenAI Responses</Option>
         <Option text="Embeddings" value="embeddings">Embeddings</Option>
       </Dropdown>
     </Row>
@@ -556,7 +556,7 @@ function MenuSection() {
         <MenuPopover>
           <MenuList>
             <MenuItemRadio name="protocol" value="chat">OpenAI Chat Completions</MenuItemRadio>
-            <MenuItemRadio name="protocol" value="responses">Responses</MenuItemRadio>
+            <MenuItemRadio name="protocol" value="responses">OpenAI Responses</MenuItemRadio>
             <MenuDivider />
             <MenuItemCheckbox name="stream" value="on">Stream the response</MenuItemCheckbox>
             <MenuItemCheckbox disabled name="stream" value="usage">Include usage (disabled)</MenuItemCheckbox>
@@ -1033,7 +1033,7 @@ function BadgeTagSection() {
     </Row>
     <Row label="tag - rest, dismissible and disabled">
       <Tag>copilot</Tag>
-      <Tag appearance="brand">responses</Tag>
+      <Tag appearance="brand">openaiResponses</Tag>
       <Tag appearance="outline">embeddings</Tag>
       <Tag appearance="filled">rerank</Tag>
       <Tag disabled>archived</Tag>
