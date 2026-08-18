@@ -741,3 +741,51 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
   // the error row lands against up_b.
   assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });
+
+test('Claude Code generation decodes at most one synthetic model-id prefix before resolution', async () => {
+  installRepo();
+  for (const [requested, resolved] of [
+    ['claude-code!gpt-5', 'gpt-5'],
+    ['claude-code!claude-code!gpt-5', 'claude-code!gpt-5'],
+    ['claude-haiku-4-5', 'claude-haiku-4-5'],
+  ] as const) {
+    queueResolution([], { sawModel: false });
+    const payload = makePayload({ model: requested });
+
+    await messagesServe.generate({
+      payload,
+      ctx: makeGatewayCtx(),
+      headers: new Headers({ 'user-agent': 'claude-cli/2.1.211 (external, cli)' }),
+    });
+
+    assertEquals(lastResolveCall.model, resolved);
+    assertEquals(payload.model, requested);
+  }
+});
+
+test('Claude Code count_tokens decodes its synthetic model id before resolution', async () => {
+  installRepo();
+  queueResolution([], { sawModel: false });
+
+  await messagesServe.countTokens({
+    payload: makePayload({ model: 'claude-code!gpt-5' }),
+    ctx: makeGatewayCtx(),
+    headers: new Headers({ 'user-agent': 'claude-cli/2.1.211' }),
+  });
+
+  assertEquals(lastResolveCall.model, 'gpt-5');
+});
+
+test('non-inference User-Agents preserve literal synthetic-looking model ids', async () => {
+  installRepo();
+  for (const userAgent of [undefined, 'claude-code/2.1.211', 'openai-python/2.0.0']) {
+    queueResolution([], { sawModel: false });
+    const headers = new Headers(userAgent === undefined ? undefined : { 'user-agent': userAgent });
+    await messagesServe.generate({
+      payload: makePayload({ model: 'claude-code!gpt-5' }),
+      ctx: makeGatewayCtx(),
+      headers,
+    });
+    assertEquals(lastResolveCall.model, 'claude-code!gpt-5');
+  }
+});

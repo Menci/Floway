@@ -5,6 +5,7 @@
 
 import type { Context } from 'hono';
 
+import { encodeClaudeCodeModelId } from './claude-code-prefix.ts';
 import { loadModels } from './load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -32,7 +33,23 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // the suffix remains a discovery-protocol representation of the advertised
 // context limit, not a cross-provider header-forwarding policy.
 //
-// (2) Mirroring the official shape (instead of the OpenAI-Anthropic
+// (2) The picker only accepts discovered ids matching
+// `/^(claude|anthropic)/i` — Anthropic documents this at
+// https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
+// ("ignores entries whose `id` doesn't begin with `claude` or
+// `anthropic`"); see ./claude-code-prefix.ts for the extracted predicate
+// and the second, built-in-family-collision filter it pairs with. Any
+// non-Anthropic model advertised through gateway discovery is silently
+// dropped from the menu unless its id starts with one of those two
+// prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX` on those ids so
+// the picker admits them; because the picker renders `display_name`
+// (with id as a fallback), the original label the operator configured
+// is what the user sees. The Messages entry boundary decodes exactly one
+// prefix layer when the same id comes back from a `claude-cli/*` inference
+// request, so generic model resolution remains unaware of this client
+// compatibility projection.
+//
+// (3) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future
 // Anthropic-native picker consume the payload verbatim. `capabilities`
 // is nullable per the SDK type; we do not track every dimension the
@@ -49,10 +66,17 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/models.ts
 const toClaudeCodeCatalog = (response: PublicModelsResponse) => {
   const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
-  const data = response.data.map(model => {
+  // The CLI's `/model` picker is a chat surface — embedding and image models
+  // in the response only clutter the menu. Mirrors the same chat-only narrow
+  // already done by the Codex CLI discovery handler at ../codex/models.ts
+  // and by `loadGeminiModels` at ./gemini.ts.
+  const data = response.data.filter(model => model.kind === 'chat').map(model => {
     const max = model.limits.max_context_window_tokens;
+    // Encode the raw id before [1m] is appended, so the CLI's suffix strip
+    // lands on exactly the reversible discovery id.
+    const encoded = encodeClaudeCodeModelId(model.id);
     return {
-      id: max !== undefined && max >= 1_000_000 ? `${model.id}[1m]` : model.id,
+      id: max !== undefined && max >= 1_000_000 ? `${encoded}[1m]` : encoded,
       type: 'model' as const,
       display_name: model.display_name,
       created_at: model.created_at ?? CREATED_AT_UNKNOWN,
