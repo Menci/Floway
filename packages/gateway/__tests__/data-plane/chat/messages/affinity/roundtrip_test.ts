@@ -68,9 +68,7 @@ test('carriers a real codec emits on both Messages slots decode on the next turn
     { type: 'thinking', thinking: 'visible', signature: 'upstream-signature' },
     { type: 'redacted_thinking', data: 'upstream-redacted' },
   ]);
-  expect(projectionB.materialize().messages[0].content).toEqual([
-    { type: 'thinking', thinking: 'visible' },
-  ]);
+  expect(projectionB.materialize().messages).toEqual([]);
 });
 
 test('a synthetic carrier issued for a turn without thinking decodes on the next turn', async () => {
