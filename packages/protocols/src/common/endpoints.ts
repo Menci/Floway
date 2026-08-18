@@ -32,14 +32,14 @@ export interface ModelEndpoints {
   // never translate it to or from the three chat endpoints below, so it has
   // no endpoint-specific metadata. Orthogonal to `openaiChatCompletions`: a
   // model can declare any non-empty subset.
-  completions?: {};
+  openaiCompletions?: {};
   openaiChatCompletions?: {};
   openaiResponses?: {};
   anthropicMessages?: {};
-  embeddings?: {};
-  imagesGenerations?: {};
-  imagesEdits?: {};
-  audioTranscriptions?: {};
+  openaiEmbeddings?: {};
+  openaiImagesGenerations?: {};
+  openaiImagesEdits?: {};
+  openaiAudioTranscriptions?: {};
   rerank?: {};
 }
 
@@ -47,15 +47,16 @@ export interface ModelEndpoints {
 // addressed by identity rather than as a presence map.
 export type ModelEndpointKey = keyof ModelEndpoints;
 
-// Derive the high-level model kind from the supported endpoints. `embeddings`
-// implies embedding, `imagesGenerations`/`imagesEdits` implies image, `rerank`
-// implies rerank, `audioTranscriptions` implies transcription, and generation
-// protocols imply chat. Mixed endpoint sets use this first-match order for the
+// Derive the high-level model kind from the supported endpoints.
+// `openaiEmbeddings` implies embedding,
+// `openaiImagesGenerations`/`openaiImagesEdits` implies image, `rerank`
+// implies rerank, `openaiAudioTranscriptions` implies transcription, and
+// generation protocols imply chat. Mixed endpoint sets use this first-match order for the
 // single kind while dispatch continues to narrow on each endpoint's presence.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
-  if (endpoints.embeddings) return 'embedding';
-  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  if (endpoints.openaiEmbeddings) return 'embedding';
+  if (endpoints.openaiImagesGenerations || endpoints.openaiImagesEdits) return 'image';
   if (endpoints.rerank) return 'rerank';
-  if (endpoints.audioTranscriptions) return 'transcription';
+  if (endpoints.openaiAudioTranscriptions) return 'transcription';
   return 'chat';
 };

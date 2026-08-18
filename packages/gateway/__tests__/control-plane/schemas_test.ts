@@ -22,7 +22,7 @@ describe('upstreamModelSchema chat', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'transcription';
-    model.endpoints = { audioTranscriptions: {} };
+    model.endpoints = { openaiAudioTranscriptions: {} };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
@@ -95,7 +95,7 @@ describe('upstreamModelSchema chat', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
     model.kind = 'embedding';
-    model.endpoints = { embeddings: {} };
+    model.endpoints = { openaiEmbeddings: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });

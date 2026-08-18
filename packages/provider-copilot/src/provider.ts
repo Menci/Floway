@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -68,13 +68,13 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
     return 'anthropicMessages';
   case '/embeddings':
   case '/v1/embeddings':
-    return 'embeddings';
+    return 'openaiEmbeddings';
   case '/images/generations':
   case '/v1/images/generations':
-    return 'imagesGenerations';
+    return 'openaiImagesGenerations';
   case '/images/edits':
   case '/v1/images/edits':
-    return 'imagesEdits';
+    return 'openaiImagesEdits';
   default:
     return undefined;
   }
@@ -88,7 +88,7 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
   if (endpoint === 'openaiChatCompletions') {
     return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
   }
-  if (endpoint === 'embeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
+  if (endpoint === 'openaiEmbeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
   return false;
 };
 
@@ -105,7 +105,7 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
     return { openaiChatCompletions: {} };
   }
 
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'embeddings')) ? { embeddings: {} } : {};
+  return rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings')) ? { openaiEmbeddings: {} } : {};
 };
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
@@ -142,7 +142,7 @@ const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: Mo
   return resolveCopilotRawModel({ object: 'list', data: rawModels }, model.id, hints) ?? rawModels[0];
 };
 
-const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, unknown> => {
+const copilotOpenAIEmbeddingsBody = (body: Record<string, unknown>): Record<string, unknown> => {
   if (typeof body.input !== 'string') return body;
 
   // OpenAI-compatible clients may send scalar string input, but Copilot's
@@ -328,9 +328,9 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },
-    // Copilot's catalog never declares endpoints.completions, so this
+    // Copilot's catalog never declares endpoints.openaiCompletions, so this
     // stub is unreachable; the rejection surfaces a routing bug.
-    callCompletions: rejectUnsupported('callCompletions'),
+    callOpenAICompletions: rejectUnsupported('callOpenAICompletions'),
     callOpenAIChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'openaiChatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: OpenAIChatCompletionsBoundaryCtx = {
@@ -457,12 +457,12 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       );
       return { response, modelKey: rawModel.id };
     },
-    callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
+    callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), opts.headers, opts),
     // Copilot has no /images/* upstream; catalog never emits a kind='image'
     // model, so these stubs are unreachable.
-    callImagesGenerations: rejectUnsupported('callImagesGenerations'),
-    callImagesEdits: rejectUnsupported('callImagesEdits'),
-    callAudioTranscriptions: rejectUnsupported('callAudioTranscriptions'),
+    callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
+    callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
+    callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
   };
 

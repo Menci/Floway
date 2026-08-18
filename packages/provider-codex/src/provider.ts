@@ -2,7 +2,7 @@ import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts'
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
-import { callCodexAlphaSearch, callCodexImagesEdits, callCodexImagesGenerations, callCodexOpenAIResponses, callCodexOpenAIResponsesCompact, type CodexCallEffects } from './fetch.ts';
+import { callCodexAlphaSearch, callCodexOpenAIImagesEdits, callCodexOpenAIImagesGenerations, callCodexOpenAIResponses, callCodexOpenAIResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { codexImageProviderModel, codexPlanSupportsImages, codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
@@ -163,18 +163,18 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     // a stray dispatch must still surface as a structured 405.
     callAnthropicMessages: () => unsupportedStreamResult(),
     callAnthropicMessagesCountTokens: () => unsupportedCallResult(),
-    callCompletions: () => unsupportedCallResult(),
+    callOpenAICompletions: () => unsupportedCallResult(),
     callOpenAIChatCompletions: () => unsupportedStreamResult(),
-    callEmbeddings: () => unsupportedCallResult(),
-    callImagesGenerations: async (model, body, signal, opts) => {
+    callOpenAIEmbeddings: () => unsupportedCallResult(),
+    callOpenAIImagesGenerations: async (model, body, signal, opts) => {
       const { account } = await readActiveAccount();
-      return await callCodexImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType });
+      return await callCodexOpenAIImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType });
     },
-    callImagesEdits: async (model, request, signal, opts) => {
+    callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const { account } = await readActiveAccount();
-      return await callCodexImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType });
+      return await callCodexOpenAIImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType });
     },
-    callAudioTranscriptions: () => unsupportedCallResult(),
+    callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
   };
 

@@ -198,7 +198,7 @@ describe('modelsField metadata integration', () => {
   test('derives transcription kind from the audio transcription endpoint', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
     }], 'p');
     expect(model.kind).toBe('transcription');
   });
@@ -207,17 +207,17 @@ describe('modelsField metadata integration', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
       kind: 'chat',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
     }], 'p');
     expect(model.kind).toBe('chat');
-    expect(model.endpoints).toEqual({ audioTranscriptions: {} });
+    expect(model.endpoints).toEqual({ openaiAudioTranscriptions: {} });
   });
 
   test('rejects chat on non-chat kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'm',
       kind: 'embedding',
-      endpoints: { embeddings: {} },
+      endpoints: { openaiEmbeddings: {} },
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p')).toThrow(/chat .* only allowed when kind/);
   });
@@ -363,11 +363,11 @@ test('modelsField rejects an unsupported endpoint key', () => {
 });
 
 test('modelsField derives kind from endpoints when omitted', () => {
-  const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { embeddings: {} } }], 'custom');
+  const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { openaiEmbeddings: {} } }], 'custom');
   assertEquals(embedding.kind, 'embedding');
-  const [image] = modelsField([{ upstreamModelId: 'i', endpoints: { imagesGenerations: {}, imagesEdits: {} } }], 'custom');
+  const [image] = modelsField([{ upstreamModelId: 'i', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } }], 'custom');
   assertEquals(image.kind, 'image');
-  const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { audioTranscriptions: {} } }], 'custom');
+  const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { openaiAudioTranscriptions: {} } }], 'custom');
   assertEquals(audio.kind, 'transcription');
   const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { openaiResponses: {} } }], 'custom');
   assertEquals(chat.kind, 'chat');
@@ -375,7 +375,7 @@ test('modelsField derives kind from endpoints when omitted', () => {
 
 test('modelsField accepts a valid kind and rejects an unknown one', () => {
   const models = modelsField(
-    [{ upstreamModelId: 'm', kind: 'embedding', endpoints: { embeddings: {} } }],
+    [{ upstreamModelId: 'm', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
     'custom',
   );
   assertEquals(models[0].kind, 'embedding');

@@ -7,9 +7,9 @@
 //
 // Capability → endpoints mapping:
 //   capabilities includes "embedding" → kind: 'embedding',
-//                                       endpoints: { embeddings: {} }
+//                                       endpoints: { openaiEmbeddings: {} }
 //   otherwise (chat / vision / tools / thinking) → kind: 'chat',
-//                                       endpoints: { completions, openaiChatCompletions, openaiResponses, anthropicMessages }
+//                                       endpoints: { openaiCompletions, openaiChatCompletions, openaiResponses, anthropicMessages }
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
@@ -29,7 +29,7 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe } from './usage-probe.ts';
@@ -37,7 +37,7 @@ import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-me
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -46,8 +46,8 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 // Vision / tool / thinking capabilities live alongside `embedding` in the
 // /api/show response. Embedding is the only one that drives a different
 // kind/endpoints projection — the others are request-time signals.
-const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
+const CHAT_ENDPOINTS: ModelEndpoints = { openaiCompletions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
+const EMBEDDING_ENDPOINTS: ModelEndpoints = { openaiEmbeddings: {} };
 
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
@@ -171,7 +171,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       );
       return [...manualModels, ...auto];
     },
-    callCompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchCompletions, model, body, signal, opts)),
+    callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, opts)),
     callOpenAIChatCompletions: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchOpenAIChatCompletions, model, body, signal, parseOpenAIChatCompletionsStream, opts)),
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       switch (action) {
@@ -199,15 +199,15 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     },
     callAnthropicMessages: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchAnthropicMessages, model, body, signal, parseAnthropicMessagesStream, { ...opts, headers: headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta) })),
     callAnthropicMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchAnthropicMessagesCountTokens, model, body, signal, { ...opts, headers: headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta) }),
-    callEmbeddings: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchEmbeddings, model, body, signal, opts)),
+    callOpenAIEmbeddings: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAIEmbeddings, model, body, signal, opts)),
     // Ollama serves no image-generation endpoint; reject if the gateway ever
     // routes one here. /v1/images/* is not exposed by the upstream binary.
-    callImagesGenerations: rejectUnsupported('callImagesGenerations'),
-    callImagesEdits: rejectUnsupported('callImagesEdits'),
-    callAudioTranscriptions: async (model, request, signal, opts) => {
+    callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
+    callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
+    callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
-      const body = serializeOpenAIAudioTranscriptionRequest(request, rawModelId);
-      const response = await withProbes(opts, ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
+      const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
+      const response = await withProbes(opts, ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),

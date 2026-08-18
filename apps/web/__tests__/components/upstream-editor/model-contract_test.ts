@@ -14,7 +14,7 @@ describe('custom discovered model projection', () => {
       ],
     }, { openaiChatCompletions: {} });
 
-    expect(models[0]?.endpoints).toEqual({ audioTranscriptions: {} });
+    expect(models[0]?.endpoints).toEqual({ openaiAudioTranscriptions: {} });
     expect(models[1]?.endpoints).toEqual({ rerank: {} });
   });
 
@@ -22,10 +22,10 @@ describe('custom discovered model projection', () => {
     const models = discoveredModelsFromResponse({
       kind: 'custom',
       data: [{ id: 'bge-m3' }, { id: 'talker', kind: 'chat' }],
-    }, { embeddings: {} });
+    }, { openaiEmbeddings: {} });
 
-    expect(models[0]?.endpoints).toEqual({ embeddings: {} });
-    expect(models[1]?.endpoints).toEqual({ embeddings: {} });
+    expect(models[0]?.endpoints).toEqual({ openaiEmbeddings: {} });
+    expect(models[1]?.endpoints).toEqual({ openaiEmbeddings: {} });
   });
 
   it('preserves chat metadata exactly when the configured endpoints resolve to chat', () => {
@@ -35,7 +35,7 @@ describe('custom discovered model projection', () => {
     } satisfies NonNullable<UpstreamModelConfig['chat']>;
 
     const chatModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { openaiResponses: {} });
-    const embeddingModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { embeddings: {} });
+    const embeddingModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { openaiEmbeddings: {} });
 
     expect(chatModel[0]?.chat).toEqual(chat);
     expect(embeddingModel[0]?.chat).toBeUndefined();

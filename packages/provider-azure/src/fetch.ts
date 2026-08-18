@@ -45,7 +45,7 @@ const azureFetchInternal = async (
   return await azureFetchUrl(config, surface, parsed.href, init, options);
 };
 
-const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
+const azureDeploymentScopedOpenAIAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
   const url = new URL(config.endpoint);
   url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
   url.search = '';
@@ -60,16 +60,16 @@ export const azureFetchOpenAIResponses = (config: AzureUpstreamConfig, init: Fet
   azureFetchInternal(config, 'openai', '/responses', init, options);
 export const azureFetchOpenAIResponsesCompact = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/responses/compact', init, options);
-export const azureFetchEmbeddings = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIEmbeddings = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/embeddings', init, options);
-export const azureFetchCompletions = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAICompletions = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/completions', init, options);
 // gpt-image-2 (released 2026-04-21) and the gpt-image-1 family are exposed
 // only under Azure's preview lifecycle today. We will drop the query suffix
 // once Azure promotes the image endpoints to the GA default.
-export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIImagesGenerations = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
-export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIImagesEdits = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
 // Azure selects the transcription deployment in the operation path, so the
 // multipart body must omit `model`. The 2025-04 preview route covers both
@@ -77,8 +77,8 @@ export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: FetchIn
 // reduce to their resource host before this operation-specific path is set.
 // https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
 // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
-export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options);
+export const azureFetchOpenAIAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+  azureFetchUrl(config, 'openai', azureDeploymentScopedOpenAIAudioTranscriptionUrl(config, deployment), init, options);
 export const azureFetchAnthropicMessages = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchAnthropicMessagesCountTokens = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

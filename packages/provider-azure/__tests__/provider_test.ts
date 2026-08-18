@@ -13,7 +13,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
       {
         upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-public',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
         display_name: 'GPT Public',
         limits: { max_context_window_tokens: 128000 },
       },
@@ -59,7 +59,7 @@ test('createAzureProvider projects configured models into upstream models', asyn
       {
         id: 'gpt-public',
         displayName: 'GPT Public',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
         providerData: { upstreamModelId: 'gpt-prod' },
       },
       {
@@ -100,7 +100,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
           }],
         }],
       }, 'generate', undefined, noopUpstreamCallOptions());
-      const embeddings = await instance.instance.callEmbeddings(providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
+      const embeddings = await instance.instance.callOpenAIEmbeddings(providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
       assertEquals(chat.modelKey, 'gpt-prod');
       assertEquals(responses.modelKey, 'gpt-prod');
@@ -422,7 +422,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       }],
     },
     state: null,
@@ -440,8 +440,8 @@ test('createAzureProvider exposes image models and routes generations with api-v
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
       assertEquals(models[0].kind, 'image');
-      assertEquals(models[0].endpoints, { imagesGenerations: {}, imagesEdits: {} });
-      const result = await provider.instance.callImagesGenerations(models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
+      assertEquals(models[0].endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
+      const result = await provider.instance.callOpenAIImagesGenerations(models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -451,7 +451,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
   assertEquals(observedBody?.prompt, 'hello');
 });
 
-test('createAzureProvider callImagesEdits posts multipart with model replaced by upstream model id and api-version=preview', async () => {
+test('createAzureProvider callOpenAIImagesEdits posts multipart with model replaced by upstream model id and api-version=preview', async () => {
   const record: UpstreamRecord = {
     id: 'az-image',
     kind: 'azure',
@@ -471,7 +471,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        endpoints: { imagesEdits: {} },
+        endpoints: { openaiImagesEdits: {} },
       }],
     },
     state: null,
@@ -488,7 +488,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     async () => {
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callImagesEdits(models[0], {
+      const result = await provider.instance.callOpenAIImagesEdits(models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{
           type: 'upload',
@@ -504,12 +504,12 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
   assertEquals(observedForm?.get('prompt'), 'replace sky');
 });
 
-test('createAzureProvider callAudioTranscriptions selects the deployment in the URL', async () => {
+test('createAzureProvider callOpenAIAudioTranscriptions selects the deployment in the URL', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'azkey',
-      models: [{ upstreamModelId: 'transcribe-deployment', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'transcribe-deployment', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   });
   let observedUrl: string | undefined;
@@ -523,7 +523,7 @@ test('createAzureProvider callAudioTranscriptions selects the deployment in the 
     async () => {
       const provider = createAzureProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callAudioTranscriptions(model, {
+      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' }) },
           { name: 'model', value: 'public-model' },
@@ -538,12 +538,12 @@ test('createAzureProvider callAudioTranscriptions selects the deployment in the 
   assertEquals(observedForm?.get('response_format'), 'vtt');
 });
 
-test('createAzureProvider callAudioTranscriptions reduces a Foundry endpoint to the deployment route', async () => {
+test('createAzureProvider callOpenAIAudioTranscriptions reduces a Foundry endpoint to the deployment route', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
       apiKey: 'azkey',
-      models: [{ upstreamModelId: 'gpt-4o-transcribe', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'gpt-4o-transcribe', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   });
   let observedUrl: string | undefined;
@@ -557,7 +557,7 @@ test('createAzureProvider callAudioTranscriptions reduces a Foundry endpoint to 
     async () => {
       const provider = createAzureProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callAudioTranscriptions(model, {
+      await provider.instance.callOpenAIAudioTranscriptions(model, {
         entries: [
           { name: 'model', value: 'public-model' },
           { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },

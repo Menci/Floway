@@ -33,7 +33,7 @@ export const apiDocsEndpoints = [
   endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
   endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
 
-  endpoint('completions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
+  endpoint('openaiCompletions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
   endpoint('openaiChatCompletions', { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),
   endpoint('openaiResponses', { group: 'generation', name: 'openAiResponses', docs: `${openAi}/responses/create` }),
   endpoint('openaiResponsesCompact', { group: 'generation', name: 'openAiCompact', docs: `${openAi}/responses/compact` }),
@@ -44,10 +44,10 @@ export const apiDocsEndpoints = [
   endpoint('geminiGenerateContentAction', { group: 'generation', name: 'geminiGenerateContentStream', docs: 'https://ai.google.dev/api/generate-content', path: geminiGenerateContentActionPath('streamGenerateContent') }),
   endpoint('geminiGenerateContentAction', { group: 'generation', name: 'geminiGenerateContentCount', docs: 'https://ai.google.dev/api/tokens', path: geminiGenerateContentActionPath('countTokens') }),
 
-  endpoint('embeddings', { group: 'media', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` }),
-  endpoint('imagesGenerations', { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
-  endpoint('imagesEdits', { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
-  endpoint('audioTranscriptions', { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
+  endpoint('openaiEmbeddings', { group: 'media', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` }),
+  endpoint('openaiImagesGenerations', { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
+  endpoint('openaiImagesEdits', { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
+  endpoint('openaiAudioTranscriptions', { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
 
   endpoint('cohereV1Rerank', { group: 'rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' }),
   endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),

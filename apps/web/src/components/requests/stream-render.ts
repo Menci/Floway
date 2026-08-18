@@ -6,11 +6,6 @@ import {
 } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
-  completionsProtocolFrameToSSEFrame,
-  reassembleCompletionsEvents,
-  type CompletionsStreamEvent,
-} from '@floway-dev/protocols/completions';
-import {
   collectGeminiGenerateContentProtocolEventsToResult,
   geminiGenerateContentProtocolFrameToSSEFrame,
   type GeminiGenerateContentStreamEvent,
@@ -20,11 +15,16 @@ import {
   collectOpenAIChatCompletionsProtocolEventsToResult,
 } from '@floway-dev/protocols/openai-chat-completions';
 import {
+  openaiCompletionsProtocolFrameToSSEFrame,
+  reassembleOpenAICompletionsEvents,
+  type OpenAICompletionsStreamEvent,
+} from '@floway-dev/protocols/openai-completions';
+import {
   collectOpenAIResponsesProtocolEventsToResult,
   openaiResponsesProtocolFrameToSSEFrame,
 } from '@floway-dev/protocols/openai-responses';
 
-export type CollectKind = 'completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
+export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 
 export interface CollectedStream {
   result: unknown | null;
@@ -43,7 +43,7 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/messages')) return 'anthropic-messages';
   if (path.includes('/responses')) return 'openai-responses';
   if (path.includes('/chat/completions')) return 'openai-chat-completions';
-  if (path.includes('/completions')) return 'completions';
+  if (path.includes('/completions')) return 'openai-completions';
   if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini-generate-content';
   return null;
 };
@@ -65,14 +65,14 @@ export const collectStream = async (kind: CollectKind, events: DumpStreamEvent[]
       return complete(await collectOpenAIResponsesProtocolEventsToResult(frames(events) as never), events);
     case 'gemini-generate-content':
       return complete(await collectGeminiGenerateContentProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>), events);
-    case 'completions': {
+    case 'openai-completions': {
       const stream = (async function* () {
         for (const { frame } of events) {
-          const typed = frame as ProtocolFrame<CompletionsStreamEvent>;
+          const typed = frame as ProtocolFrame<OpenAICompletionsStreamEvent>;
           if (typed.type === 'event') yield typed.event;
         }
       })();
-      return complete(await reassembleCompletionsEvents(stream), events);
+      return complete(await reassembleOpenAICompletionsEvents(stream), events);
     }
     }
   } catch (error) {
@@ -107,7 +107,7 @@ const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): Ss
   try {
     switch (kind) {
     case 'openai-chat-completions': return openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
-    case 'completions': return completionsProtocolFrameToSSEFrame(frame as never);
+    case 'openai-completions': return openaiCompletionsProtocolFrameToSSEFrame(frame as never);
     case 'anthropic-messages': return anthropicMessagesProtocolFrameToSSEFrame(frame as never);
     case 'openai-responses': return openaiResponsesProtocolFrameToSSEFrame(frame as never);
     case 'gemini-generate-content': return geminiGenerateContentProtocolFrameToSSEFrame(frame as never);

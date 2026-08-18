@@ -351,7 +351,7 @@ describe('synthesizeListedAliases', () => {
     })];
     const realModels = [
       // Target a serves the three chat endpoints + /completions.
-      realModel({ id: 'a', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {}, completions: {} } }),
+      realModel({ id: 'a', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {}, openaiCompletions: {} } }),
       // Target b only serves the three chat endpoints.
       realModel({ id: 'b', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} } }),
     ];
@@ -362,7 +362,7 @@ describe('synthesizeListedAliases', () => {
       openaiChatCompletions: {},
       anthropicMessages: {},
       openaiResponses: {},
-      completions: {},
+      openaiCompletions: {},
     });
   });
 
@@ -375,11 +375,11 @@ describe('synthesizeListedAliases', () => {
       ],
     })];
     const realModels = [
-      realModel({ id: 'gen', kind: 'image', endpoints: { imagesGenerations: {} } }),
-      realModel({ id: 'edit', kind: 'image', endpoints: { imagesEdits: {} } }),
+      realModel({ id: 'gen', kind: 'image', endpoints: { openaiImagesGenerations: {} } }),
+      realModel({ id: 'edit', kind: 'image', endpoints: { openaiImagesEdits: {} } }),
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
-    expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
+    expect(entry.endpoints).toEqual({ openaiImagesGenerations: {}, openaiImagesEdits: {} });
   });
 
   test('endpoints is an empty list (no entry emitted) when no target is currently available', () => {

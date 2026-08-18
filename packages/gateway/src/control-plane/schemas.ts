@@ -48,14 +48,14 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 // One concept, all endpoints — the runtime validators enforce presence/emptiness
 // rules.
 const modelEndpointsSchema = z.object({
-  completions: z.object({}).optional(),
+  openaiCompletions: z.object({}).optional(),
   openaiChatCompletions: z.object({}).optional(),
   openaiResponses: z.object({}).optional(),
   anthropicMessages: z.object({}).optional(),
-  embeddings: z.object({}).optional(),
-  imagesGenerations: z.object({}).optional(),
-  imagesEdits: z.object({}).optional(),
-  audioTranscriptions: z.object({}).optional(),
+  openaiEmbeddings: z.object({}).optional(),
+  openaiImagesGenerations: z.object({}).optional(),
+  openaiImagesEdits: z.object({}).optional(),
+  openaiAudioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
 });
 

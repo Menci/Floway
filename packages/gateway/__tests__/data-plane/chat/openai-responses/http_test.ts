@@ -642,11 +642,11 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
 
 test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {
   installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
   // openaiResponsesTarget (responses > messages > openai-chat-completions) rejects it,
   // leaving zero viable candidates, and with sawModel=true the serve renders
   // model-unsupported as a 400.
-  queueResolution([makeCandidate({ endpoints: { completions: {} } })]);
+  queueResolution([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',

@@ -3,8 +3,8 @@ import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ALPHA_SEARCH_PATH,
-  CODEX_IMAGES_EDITS_PATH,
-  CODEX_IMAGES_GENERATIONS_PATH,
+  CODEX_OPENAI_IMAGES_EDITS_PATH,
+  CODEX_OPENAI_IMAGES_GENERATIONS_PATH,
   CODEX_ORIGINATOR,
   CODEX_OPENAI_RESPONSES_COMPACT_PATH,
   CODEX_OPENAI_RESPONSES_PATH,
@@ -19,10 +19,10 @@ import {
 } from './quota.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
-import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
+import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
-import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type ImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
+import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
@@ -62,13 +62,13 @@ export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
   body: Record<string, unknown>;
 }
 
-export interface CallCodexImagesGenerationsOptions extends CodexBackendCallBase {
-  body: Omit<ImagesGenerationsPayload, 'model'>;
+export interface CallCodexOpenAIImagesGenerationsOptions extends CodexBackendCallBase {
+  body: Omit<OpenAIImagesGenerationsPayload, 'model'>;
   fallbackPlanType: string;
 }
 
-export interface CallCodexImagesEditsOptions extends CodexBackendCallBase {
-  request: ImagesEditsRequest;
+export interface CallCodexOpenAIImagesEditsOptions extends CodexBackendCallBase {
+  request: OpenAIImagesEditsRequest;
   fallbackPlanType: string;
 }
 
@@ -94,23 +94,23 @@ export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): P
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
-export const callCodexImagesGenerations = async (opts: CallCodexImagesGenerationsOptions): Promise<ProviderCallResult> => {
+export const callCodexOpenAIImagesGenerations = async (opts: CallCodexOpenAIImagesGenerationsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
   const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
+  return await performImageCall(opts, ready.accessToken, CODEX_OPENAI_IMAGES_GENERATIONS_PATH, { ...opts.body, model: opts.model.id }, turnId, effectivePlan, false);
 };
 
-export const callCodexImagesEdits = async (opts: CallCodexImagesEditsOptions): Promise<ProviderCallResult> => {
+export const callCodexOpenAIImagesEdits = async (opts: CallCodexOpenAIImagesEditsOptions): Promise<ProviderCallResult> => {
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
   const effectivePlan = accessTokenPlan(ready.accessToken) ?? { planType: opts.fallbackPlanType };
   if (!codexPlanSupportsImages(effectivePlan.planType)) return imageUnavailableResult(opts.model.id);
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
-  return await performImageCall(opts, ready.accessToken, CODEX_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
+  return await performImageCall(opts, ready.accessToken, CODEX_OPENAI_IMAGES_EDITS_PATH, body, turnId, effectivePlan, false);
 };
 
 const accessTokenPlan = (entry: CodexAccessTokenEntry): CodexPlanObservation | null =>
