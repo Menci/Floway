@@ -79,18 +79,13 @@ const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
 /**
  * The epilogue: what the run answered with, as a response.
  *
- * This family writes its own rather than going through `serveThrough`, on two counts that
- * belong to the seam rather than to it.
- *
- * A carried document goes out under the upstream's own media type, and that includes the
- * upstream which declared none — a value `Rendered.contentType` cannot hold.
- *
- * And a transcription's stream states its own outcome in its last event, which is exactly the
- * shape `serveThrough`'s open decision on truncated streams names as the fix: the family's
- * meter reports how the stream ended, because it is the one place that knows. `DeferredUsage`
- * carries only what was billed, so this family settles its own — the write still registered
- * while the request is live, on a promise that resolves with both. Give the seam these two
- * and this handler is `serveThrough` again.
+ * It is `serveThrough` like every other family, and it took two things at the seam to make it
+ * one. A carried document goes out under the upstream's own media type, including the upstream
+ * that declared none — so `Rendered.contentType` carries a null and the seam answers without
+ * the header rather than inventing one. And a transcription's stream states its own outcome in
+ * its last event, which the family's meter reads because it is the one place that knows — so
+ * what `DeferredUsage` hands back is both what was billed and whether the stream finished,
+ * settled from one promise while the request is still live.
  */
 export const openaiAudioTranscriptions = async (c: Context): Promise<Response> => {
   const ingress = await readIngress(c);

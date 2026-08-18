@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
@@ -403,4 +403,49 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   // what is asserted is that the numbers are in the stream, not the shape they took in it.
   const stored = new TextDecoder().decode(runRecordOf(dumpStubs.stored[0]!.record).events);
   assertEquals(stored.includes('"prompt_tokens":4'), true);
+});
+
+// A run that threw is the turn that most needs explaining and used to be the one that left
+// nothing behind: the record is closed at the seam, so an exception escaping past it lost the
+// whole thing — no row, no events, no reason. It is answered there now, with the same envelope
+// the app's own handler writes.
+test('/v1/completions a run that threw is recorded, with the reason and a debuggable body', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerOpenAICompletionsUpstream(repo);
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  // Read inside `resolveCandidates`, which is a stage — so the throw happens with the run
+  // open and a record already accumulating.
+  repo.modelAliases.getByName = () => Promise.reject(new Error('alias lookup exploded'));
+
+  try {
+    const response = await requestApp('/v1/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+    });
+
+    assertEquals(response.status, 500);
+    const body = await response.json() as { error: { type: string; message: string; stack?: string } };
+    assertEquals(body.error.type, 'internal_error');
+    assertEquals(body.error.message, 'alias lookup exploded');
+    assertExists(body.error.stack);
+  } finally {
+    errorSpy.mockRestore();
+  }
+
+  await flushAsyncWork();
+
+  assertEquals(dumpStubs.stored.length, 1);
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
+  assertEquals(dump.meta.status, 500);
+  // The model the client asked for survives an outright failure, and the reason is on the row
+  // rather than only in the answer the client happened to receive.
+  assertEquals(dump.meta.model, 'davinci-002');
+  assertEquals(dump.meta.error, { kind: 'failed', reason: 'alias lookup exploded' });
+  // And the stages the run did get through are in it, which is what makes the record worth
+  // keeping: it says how far the turn got before it threw.
+  assertEquals(eventsOf(dump).some(event => event.type === 'stage.entered'), true);
 });
