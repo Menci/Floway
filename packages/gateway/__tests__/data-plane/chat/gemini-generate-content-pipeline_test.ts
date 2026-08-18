@@ -11,9 +11,9 @@ import { enumerateModelCandidates } from '../../../src/data-plane/providers/reso
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 

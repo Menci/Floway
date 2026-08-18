@@ -34,6 +34,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
+import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
@@ -47,7 +48,6 @@ import {
   vendorKimiNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
 } from '../interceptors.ts';
-import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
@@ -56,6 +56,7 @@ import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
+import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
   openaiChatCompletionsErrorPayloadMessage,
@@ -64,7 +65,6 @@ import {
   type OpenAIChatCompletionsPayload,
   type OpenAIChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-chat-completions';
-import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 

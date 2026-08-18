@@ -14,19 +14,19 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
+import { anthropicMessagesServePipeline, anthropicMessagesWire } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
 import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { handOff } from '../../../src/data-plane/chat/handoff.ts';
-import { anthropicMessagesServePipeline, anthropicMessagesWire } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
 import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { compose, move, run, type Pipeline } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
-import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderOpenAIResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';

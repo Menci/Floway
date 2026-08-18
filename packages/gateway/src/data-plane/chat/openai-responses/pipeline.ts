@@ -71,7 +71,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
+import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
@@ -82,7 +82,7 @@ import {
   vendorDeepSeekNormalizeForOpenAIResponses,
   vendorQwenNormalizeForOpenAIResponses,
 } from '../interceptors.ts';
-import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';

@@ -1,7 +1,7 @@
 import type { AnthropicMessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
 // Claude Code answers "is this model usable?" by generating one token against

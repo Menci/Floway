@@ -33,10 +33,10 @@ import {
 } from '../../src/data-plane/chat/interceptors.ts';
 import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 /** What an attempt is, to a stage that only reads flags. The selector carries them as data,

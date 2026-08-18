@@ -35,12 +35,12 @@ import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
+import { anthropicMessagesCountTokensWire, type TokenCountAnswer } from '../anthropic-messages/count-tokens.ts';
 import {
   stripSafetySettingsFromGeminiGenerateContent,
   stripUnsupportedPartFieldsFromGeminiGenerateContent,
   stripUnsupportedToolsFromGeminiGenerateContent,
 } from '../interceptors.ts';
-import { anthropicMessagesCountTokensWire, type TokenCountAnswer } from '../anthropic-messages/count-tokens.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';

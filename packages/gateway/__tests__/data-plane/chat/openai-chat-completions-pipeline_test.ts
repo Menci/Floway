@@ -11,8 +11,8 @@ import { enumerateModelCandidates } from '../../../src/data-plane/providers/reso
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import { OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
+import { OPENAI_CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 

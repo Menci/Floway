@@ -36,7 +36,6 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
@@ -44,6 +43,7 @@ import {
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   stripBillingAttributionFromAnthropicMessages,
 } from '../interceptors.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
@@ -51,7 +51,6 @@ import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
-import { sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import {
   collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
@@ -60,6 +59,7 @@ import {
   type AnthropicMessagesPayload,
   type AnthropicMessagesStreamEvent,
 } from '@floway-dev/protocols/anthropic-messages';
+import { sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateAnthropicMessagesViaOpenAIChatCompletions, translateAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
 

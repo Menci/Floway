@@ -11,8 +11,8 @@ import { enumerateModelCandidates } from '../../../src/data-plane/providers/reso
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
 import { type FlagId, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderCallResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 

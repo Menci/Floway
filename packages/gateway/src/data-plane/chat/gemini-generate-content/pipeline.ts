@@ -57,7 +57,7 @@ import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
+import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
 import {
@@ -66,7 +66,7 @@ import {
   stripUnsupportedToolsFromGeminiGenerateContent,
   suppressThoughtPartsFromGeminiGenerateContent,
 } from '../interceptors.ts';
-import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';

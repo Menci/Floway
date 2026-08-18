@@ -24,15 +24,15 @@ import { asJsonObject, type JsonObject, readJsonNumber } from '../../shared/json
 import { isFailure, type AttemptSelector } from '../pipeline/facts.ts';
 import { foldsExclusiveCacheTokens } from '../shared/telemetry/usage.ts';
 import { defineStage, move, transform } from '@floway-dev/pipeline';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
 import type {
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsPayload,
   OpenAIChatCompletionsReasoningItem,
   OpenAIChatCompletionsStreamEvent,
 } from '@floway-dev/protocols/openai-chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 /** Removing a field inside a value is the same move as removing a fact, and a value that

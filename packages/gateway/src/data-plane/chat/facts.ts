@@ -11,9 +11,9 @@
 // `wantsStream` is four disjoint keys rather than one shared one.
 
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** The four protocols a client can speak here. Gemini generateContent is source-only: nothing translates
