@@ -120,7 +120,7 @@ export const openaiResponsesAttempt = {
   },
 
   // Narrowing wrapper for cross-protocol translation callers
-  // (Anthropic Messages/Gemini/ChatCompletions translating into OpenAI Responses) and the
+  // (Anthropic Messages/Gemini/OpenAI Chat Completions translating into OpenAI Responses) and the
   // native HTTP/WS generate entry — both always run in generate mode and
   // want the ExecuteResult branch. The compact branch is a contract
   // violation here; an interceptor that pivoted generate→compact would

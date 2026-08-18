@@ -31,7 +31,7 @@ const msgPayload = (overrides: Partial<AnthropicMessagesPayload> = {}): Anthropi
   ...overrides,
 });
 
-// ── ChatCompletions target ──
+// ── OpenAI Chat Completions target ──
 
 test('openai-chat-completions: empty rules leave the payload unchanged', () => {
   const body = ccPayload({ reasoning_effort: 'high', verbosity: 'low', service_tier: 'priority' });

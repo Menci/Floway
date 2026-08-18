@@ -453,7 +453,7 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
   // happens inside the resolver.
   assertEquals(lastResolveCall.model, 'gemini-fast');
   // Alias rules land on the terminal wire target's native slots — for a
-  // Gemini→ChatCompletions traversal that is `reasoning_effort` and
+  // Gemini→OpenAI Chat Completions traversal that is `reasoning_effort` and
   // `verbosity`. Rules that lack a native CC slot (budget_tokens) drop.
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'high');

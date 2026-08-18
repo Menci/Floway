@@ -54,7 +54,7 @@ export interface ProviderRerankCallResult extends ProviderCallResult {
   target: RerankTarget;
 }
 
-// Streaming endpoints (Anthropic Messages / OpenAI Responses / ChatCompletions) return decoded
+// Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
 // protocol frames directly — the provider drives the upstream fetch, parses
 // the SSE wire via @floway-dev/protocols, and emits the typed event stream.
 // `ok: true` optionally carries the raw upstream `Headers` so the source-side
