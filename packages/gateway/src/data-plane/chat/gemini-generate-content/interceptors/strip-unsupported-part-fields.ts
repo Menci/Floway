@@ -2,8 +2,8 @@ import type { GeminiGenerateContentInterceptor } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
- * Gemini file/code parts have no current equivalent in the upstream target
- * graph. Drop them at source so every Gemini route target sees translatable
+ * Gemini generateContent file/code parts have no current equivalent in the upstream target
+ * graph. Drop them at source so every Gemini generateContent route target sees translatable
  * parts.
  */
 const stripPartFields = (parts: GeminiGenerateContentPart[]): GeminiGenerateContentPart[] =>

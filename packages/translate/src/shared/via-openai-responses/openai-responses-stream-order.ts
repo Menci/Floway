@@ -14,7 +14,7 @@ export const createOpenAIResponsesOutputOrderState = (): OpenAIResponsesOutputOr
 
 const getOutputIndex = (event: OpenAIResponsesStreamEvent): number | undefined => ('output_index' in event && typeof event.output_index === 'number' ? event.output_index : undefined);
 
-// OpenAI Responses can interleave deltas for multiple output items. Downstream Chat
+// OpenAI Responses can interleave deltas for multiple output items. Downstream OpenAI Chat Completions
 // scalar reasoning and Anthropic content blocks are not safely retractable once
 // emitted, so visible later-output events wait for earlier tracked items to end.
 export const shouldDeferForEarlierOpenAIResponsesOutput = (event: OpenAIResponsesStreamEvent, state: OpenAIResponsesOutputOrderState): boolean => {

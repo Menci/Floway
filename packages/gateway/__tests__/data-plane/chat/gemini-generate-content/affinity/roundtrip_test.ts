@@ -38,7 +38,7 @@ const modelContents = async (
     for await (const frame of source) if (frame.type === 'event') yield frame.event;
   };
   const result = await reassembleGeminiGenerateContentEvents(events());
-  if (result.candidates === undefined) throw new Error('Expected reassembled Gemini candidates');
+  if (result.candidates === undefined) throw new Error('Expected reassembled Gemini generateContent candidates');
   return result.candidates.map(reassembled => reassembled.content);
 };
 

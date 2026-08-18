@@ -1057,7 +1057,7 @@ test('tools preserve explicit strict values', async () => {
   );
 });
 
-test('tools omit strict when Chat omitted strict', async () => {
+test('tools omit strict when OpenAI Chat Completions omitted strict', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],

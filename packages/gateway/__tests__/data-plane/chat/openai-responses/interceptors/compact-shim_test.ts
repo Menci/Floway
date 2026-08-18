@@ -393,9 +393,9 @@ test('compact + flag off: passes through to run() unchanged', async () => {
 // targetApi is not 'openaiResponses'. The compact-shape check inside (action ===
 // 'compact' OR input contains compaction_trigger) decides whether to simulate
 // or just pass the request through. Together these gates make the shim
-// structurally required on non-OpenAI-Responses upstreams (Anthropic Messages / Chat
-// Completions translation has no `compaction_trigger` variant) while keeping
-// the flag as the operator opt-in for OpenAI-Responses-target upstreams.
+// structurally required on non-OpenAI-Responses upstreams (Anthropic Messages /
+// OpenAI Chat Completions translation has no `compaction_trigger` variant) while
+// keeping the flag as the operator opt-in for OpenAI-Responses-target upstreams.
 
 test('generate + compaction_trigger + flag off + messages target: shim simulates (structurally required)', async () => {
   const inv = makeInvocation(

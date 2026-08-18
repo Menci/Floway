@@ -3,7 +3,7 @@ import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/proto
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
 
-// Gemini pays one upstream event of TTFT/inter-event latency. Within one event
+// Gemini generateContent pays one upstream event of TTFT/inter-event latency. Within one event
 // repeated snapshots collapse to one signature on the element's first
 // content-bearing Part; across events the window can move a late signature
 // back only onto the immediately preceding buffered chunk.
@@ -224,7 +224,7 @@ const normalizeElementSignature = (parts: GeminiGenerateContentPart[], indexes: 
   });
   if (signatures.length === 0) return;
   const targetIndex = indexes.find(index => hasPartContent(parts[index])) ?? indexes.at(-1);
-  if (targetIndex === undefined) throw new Error('Gemini signature group has no target Part');
+  if (targetIndex === undefined) throw new Error('Gemini generateContent signature group has no target Part');
   for (const index of indexes) delete parts[index].thoughtSignature;
   parts[targetIndex].thoughtSignature = signatures[signatures.length - 1];
 };

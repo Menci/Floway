@@ -31,7 +31,7 @@ import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-norm
 //     an unknown argument (e.g. Azure DeepSeek). Runs before vendor
 //     normalizers so vendor-specific translation sees the already-stripped
 //     canonical payload.
-//   - withExclusiveCachedTokensNormalized: unconditional on a Chat
+//   - withExclusiveCachedTokensNormalized: unconditional on an OpenAI Chat Completions
 //     Completions target. Folds the cache buckets back into `prompt_tokens`
 //     whenever `total_tokens` witnesses that the upstream reports them
 //     alongside it, and consults `usage-exclusive-cached-tokens` for the

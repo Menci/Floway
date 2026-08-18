@@ -142,7 +142,7 @@ test('buildTargetRequest never invents reasoning.context from reasoning_effort',
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('buildTargetRequest omits store when Chat omits store', () => {
+test('buildTargetRequest omits store when OpenAI Chat Completions omits store', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
@@ -151,7 +151,7 @@ test('buildTargetRequest omits store when Chat omits store', () => {
   assertFalse('store' in result);
 });
 
-test('buildTargetRequest omits tool_choice when Chat omits it', () => {
+test('buildTargetRequest omits tool_choice when OpenAI Chat Completions omits it', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
@@ -161,7 +161,7 @@ test('buildTargetRequest omits tool_choice when Chat omits it', () => {
   assertFalse('tool_choice' in result);
 });
 
-test('buildTargetRequest omits tool_choice when Chat carries no tools to apply it to', () => {
+test('buildTargetRequest omits tool_choice when OpenAI Chat Completions carries no tools to apply it to', () => {
   for (const tools of [undefined, null, []]) {
     const result = buildTargetRequest({
       model: 'gpt-test',

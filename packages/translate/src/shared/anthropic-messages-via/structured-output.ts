@@ -1,4 +1,4 @@
-// Synthesises an OpenAI json_schema core from a Anthropic Messages
+// Synthesises an OpenAI json_schema core from an Anthropic Messages
 // `output_config.format`, consumed by `anthropic-messages-via-openai-responses` and
 // `anthropic-messages-via-openai-chat-completions`. Anthropic's shape only carries
 // `{ type: 'json_schema', schema }`; OpenAI requires a `name`, so we mint the
@@ -10,7 +10,7 @@
 // rather than silently coerced.
 //
 // The reverse direction (OpenAI response-format → Anthropic Messages) is the source
-// protocol's own wire shape — flat for OpenAI Responses, nested for Chat — so each
+// protocol's own wire shape — flat for OpenAI Responses, nested for OpenAI Chat Completions — so each
 // `*-via-anthropic-messages` builder extracts it inline rather than sharing a parser.
 //
 // Anthropic spec: https://platform.claude.com/docs/en/build-with-claude/structured-outputs

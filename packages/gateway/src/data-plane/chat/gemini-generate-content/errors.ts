@@ -42,7 +42,7 @@ const geminiGenerateContentRpcErrorResult = (status: number, message: string, pe
 
 // Translator surfaced a caller-input violation (unsupported content part,
 // disallowed role, missing required field, etc.). Render as a 400
-// INVALID_ARGUMENT envelope so the caller sees a Gemini-shaped failure
+// INVALID_ARGUMENT envelope so the caller sees a Gemini-generateContent-shaped failure
 // instead of the internal-error 500 envelope. `performance` carries the
 // throwing candidate's telemetry attribution when the throw fired
 // mid-attempt (see AttemptState.telemetry).

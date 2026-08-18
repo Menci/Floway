@@ -7,8 +7,8 @@
 // Outbound (request → upstream):
 //
 // - `reasoning_effort: 'none'` is the gateway's canonical "no reasoning"
-//   sentinel (produced when a Anthropic Messages source had `thinking: { type:
-//   'disabled' }`, when a Chat source sent it literally, etc.). DeepSeek
+//   sentinel (produced when an Anthropic Messages source had `thinking: { type:
+//   'disabled' }`, when an OpenAI Chat Completions source sent it literally, etc.). DeepSeek
 //   doesn't accept 'none' in its `reasoning_effort` enum and instead uses
 //   a top-level `thinking: { type: 'disabled' }` field. We strip the
 //   sentinel and emit the DeepSeek form.

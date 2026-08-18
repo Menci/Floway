@@ -190,7 +190,7 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
   if (generationConfig.stopSequences !== undefined) {
     request.stop_sequences = generationConfig.stopSequences;
   }
-  // Gemini's `responseSchema` is the bare JSON Schema; Anthropic carries it
+  // Gemini generateContent's `responseSchema` is the bare JSON Schema; Anthropic carries it
   // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
   // application/json` without a schema has no Anthropic equivalent and is
   // dropped — the routing fallback degrades gracefully rather than fails.
@@ -202,7 +202,7 @@ const applyGenerationConfig = (request: AnthropicMessagesPayload, generationConf
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
   if (parameters !== undefined) return parameters;
 
-  // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini function
+  // AnthropicMessagesClientTool requires input_schema, so parameterless Gemini generateContent function
   // declarations use the smallest object schema rather than dropping the tool.
   return { type: 'object', properties: {} };
 };
@@ -223,7 +223,7 @@ export const buildTargetRequest = (
   model: string,
   options: { fallbackMaxOutputTokens?: number },
 ): AnthropicMessagesPayload => {
-  // Gemini can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
+  // Gemini generateContent can omit maxOutputTokens, but AnthropicMessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
   // fall back to the gateway policy default shared with the other
   // `*-via-anthropic-messages` translators.

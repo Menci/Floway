@@ -51,7 +51,7 @@ interface FunctionCallOutputProjection {
   liftedImageContent: OpenAIChatCompletionsContentPart[];
 }
 
-// Chat tool messages admit only strings or text parts, while OpenAI Responses tool
+// OpenAI Chat Completions tool messages admit only strings or text parts, while OpenAI Responses tool
 // output also admits images. Keep every tool result contiguous with its
 // assistant tool-call group, then lift its images into one following user
 // message so vision targets receive a legal, usable shape.
@@ -139,7 +139,7 @@ const buildOpenAIChatCompletionsResponseFormat = (text: OpenAIResponsesPayload['
   if (text === undefined) return undefined;
   if (text === null) return null;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
-  // absence into an explicit Chat `response_format: null`.
+  // absence into an explicit OpenAI Chat Completions `response_format: null`.
   const format = text.format;
   if (!Object.hasOwn(text, 'format') || format === undefined) return undefined;
   if (format === null) return null;

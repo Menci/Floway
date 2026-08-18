@@ -49,7 +49,7 @@ test('collectGeminiGenerateContentProtocolEventsToResult consumes preterminal ev
   assertEquals(consumed, 2);
 });
 
-test('collectGeminiGenerateContentProtocolEventsToResult throws Gemini error events', async () => {
+test('collectGeminiGenerateContentProtocolEventsToResult throws Gemini generateContent error events', async () => {
   const errorEvent = {
     error: {
       code: 429,

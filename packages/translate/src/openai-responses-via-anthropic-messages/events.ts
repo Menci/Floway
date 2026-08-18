@@ -160,7 +160,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
   }
   case 'redacted_thinking': {
     // A redacted upstream reasoning block carries an opaque signature in
-    // `data` and no readable text. Surface it as a OpenAI Responses reasoning item
+    // `data` and no readable text. Surface it as an OpenAI Responses reasoning item
     // whose `encrypted_content` round-trips that opaque blob.
     const outputIndex = state.outputIndex++;
     const itemId = createRandomOpenAIResponsesItemId('reasoning');

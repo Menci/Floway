@@ -119,7 +119,7 @@ describe('playground wire requests', () => {
     }))).rejects.toThrow('upstream refused');
   });
 
-  it('surfaces a OpenAI Responses failed envelope instead of returning empty text', async () => {
+  it('surfaces an OpenAI Responses failed envelope instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{
         type: 'response.failed',

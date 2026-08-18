@@ -20,7 +20,7 @@ export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatComple
   if (hasReasoning(rules)) {
     const { effort } = rules.reasoning;
     if (effort !== undefined) body.reasoning_effort = effort;
-    // `budget_tokens`, `adaptive`, and `summary` have no native Chat
+    // `budget_tokens`, `adaptive`, and `summary` have no native OpenAI Chat Completions
     // Completions slot; drop silently.
   }
   if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;

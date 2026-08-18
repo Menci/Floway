@@ -15,7 +15,7 @@ import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, t
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
-// Renders a OpenAI Responses failure that never opened a stream. Separate entry
+// Renders an OpenAI Responses failure that never opened a stream. Separate entry
 // because a request that fails before its payload parses has no payload to
 // answer with, and the events path below requires one.
 export const respondOpenAIResponsesFailure = (

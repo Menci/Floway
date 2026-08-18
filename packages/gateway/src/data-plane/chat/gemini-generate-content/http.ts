@@ -17,7 +17,7 @@ interface GeminiGenerateContentModelAction {
   readonly action: string;
 }
 
-// The Gemini wire API encodes both the model id and the action in one path
+// The Gemini generateContent wire API encodes both the model id and the action in one path
 // segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
 // captures everything after `/v1beta/models/` in a single `modelAction` param;
 // we split on the trailing `:` here so each entry sees just the action and
@@ -47,13 +47,13 @@ const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, projec
   }
 };
 
-// Surfaces a pre-stream throw as a Gemini-RPC envelope, routing through
+// Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
 // `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
 // HTTP handlers do. `TranslatorInputError` renders a 400 INVALID_ARGUMENT
 // envelope (caller-input violation). A `ProviderModelsUnavailableError`
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
-// `internal-error` result rendered as the Gemini internal-error envelope
+// `internal-error` result rendered as the Gemini generateContent internal-error envelope
 // (status, code, message, stack, cause, target_api). The throwing-
 // candidate telemetry stamped in serve.ts survives onto the error row via
 // `ctx.attempt.telemetry` so a mid-attempt throw still lands in

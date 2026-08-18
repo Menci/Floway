@@ -409,7 +409,7 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
       state.reasoningItemsSeen = true;
 
       if (hadPendingScalarReasoning) {
-        // Chat stream composition can emit legacy scalar reasoning first and a
+        // OpenAI Chat Completions stream composition can emit legacy scalar reasoning first and a
         // richer item-level `reasoning_items[]` carrier later. OpenAI Responses SSE
         // items are not retractable, so scalar reasoning remains buffered until
         // either a carrier replaces it or finalization commits it.

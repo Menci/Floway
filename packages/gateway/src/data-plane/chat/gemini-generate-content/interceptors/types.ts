@@ -11,7 +11,7 @@ export type GeminiGenerateContentInterceptor = Interceptor<
 >;
 
 // countTokens is a one-shot, non-streaming HTTP exchange — the terminal
-// returns a `PlainResult` carrying the reshaped Gemini envelope, not an event
+// returns a `PlainResult` carrying the reshaped Gemini generateContent envelope, not an event
 // stream. The interceptor chain still runs against a `GeminiGenerateContentInvocation` so
 // payload-shaped reads stay symmetric with the generate path. Interceptors
 // registered here MUST be pure header/payload mutators; post-`run()` result

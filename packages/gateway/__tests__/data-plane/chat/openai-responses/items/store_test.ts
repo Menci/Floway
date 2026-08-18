@@ -342,7 +342,7 @@ describe('StatefulOpenAIResponsesStore', () => {
   });
 
   test('non-OpenAI-Responses-source store holds request-private tool state but persists and reads nothing', async () => {
-    // Translated sources (Anthropic Messages/Gemini/Chat) still run the server-tool shim,
+    // Translated sources (Anthropic Messages/Gemini generateContent/OpenAI Chat Completions) still run the server-tool shim,
     // whose per-attempt private-payload scratchpad lives on the store; the
     // no-backing store keeps that working without any durable state.
     const store = createNonOpenAIResponsesSourceStore('key-a');

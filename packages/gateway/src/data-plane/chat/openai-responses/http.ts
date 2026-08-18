@@ -32,7 +32,7 @@ const previousResponseNotFoundResponse = (id: string): Response =>
   );
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as a OpenAI-Responses-shaped 502 with the same internal-error envelope the
+// etc.) as an OpenAI-Responses-shaped 502 with the same internal-error envelope the
 // in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic. The

@@ -95,7 +95,7 @@ const assertRawModel = (value: unknown): CodexRawModel => {
   return raw;
 };
 
-// Every entry returned by the remote Codex catalog is a OpenAI Responses chat model.
+// Every entry returned by the remote Codex catalog is an OpenAI Responses chat model.
 // Pricing is looked up from the per-slug table in pricing.ts so the dashboard
 // can report a notional API-rate price even though Codex itself bills as a
 // flat-fee subscription. Provider-owned models such as gpt-image-2 are added

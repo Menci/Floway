@@ -4,7 +4,7 @@ import type { GeminiGenerateContentFinishReason, GeminiGenerateContentPart, Gemi
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputFunctionCall, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 // OpenAI Responses input_tokens already includes input_tokens_details.cached_tokens,
-// matching Gemini's inclusive promptTokenCount semantics. Pass both through
+// matching Gemini generateContent's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-generate-content-via-anthropic-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
 const mapUsage = (response: OpenAIResponsesResult): GeminiGenerateContentUsageMetadata | undefined => {

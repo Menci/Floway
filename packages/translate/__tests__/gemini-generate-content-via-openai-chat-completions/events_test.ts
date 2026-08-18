@@ -254,7 +254,7 @@ test('translateToSourceEvents preserves multiple choices that finish in separate
   ]);
 });
 
-test('translateToSourceEvents throws on upstream Chat error payloads', async () => {
+test('translateToSourceEvents throws on upstream OpenAI Chat Completions error payloads', async () => {
   await assertRejects(
     async () =>
       await drain([
@@ -268,7 +268,7 @@ test('translateToSourceEvents throws on upstream Chat error payloads', async () 
   );
 });
 
-test('translateToSourceEvents preserves Chat cache and tier billing facts', async () => {
+test('translateToSourceEvents preserves OpenAI Chat Completions cache and tier billing facts', async () => {
   const usage = {
     prompt_tokens: 100,
     completion_tokens: 8,

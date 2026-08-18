@@ -53,7 +53,7 @@ export const translateOpenAIChatCompletionsReasoningItems = <T extends OpenAIRes
   if (!reasoningItems?.length) return null;
 
   // `reasoning_items[]` is a LiteLLM-inspired compatibility workaround for
-  // carrying multiple readable OpenAI Responses reasoning summaries through Chat.
+  // carrying multiple readable OpenAI Responses reasoning summaries through OpenAI Chat Completions.
   // Scalars remain first-group only.
   // References:
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L59-L104

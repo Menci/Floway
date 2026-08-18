@@ -29,7 +29,7 @@ import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-
  *    schema rejection, no behavioral difference beyond cache priming.
  *
  * Primes every source path routed through Copilot OpenAI Chat Completions — native
- * Chat, Anthropic-Messages-via-Chat, OpenAI-Responses-via-Chat, and Gemini-via-Chat.
+ * OpenAI Chat Completions, Anthropic-Messages-via-OpenAI-Chat-Completions, OpenAI-Responses-via-OpenAI-Chat-Completions, and Gemini-generateContent-via-OpenAI-Chat-Completions.
  *
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/9be0eb602f1ffee7597741c9af9bc66a68e1a241/src/routes/messages/api-flows.ts#L381-L432

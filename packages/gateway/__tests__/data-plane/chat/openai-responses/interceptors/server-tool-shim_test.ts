@@ -649,7 +649,7 @@ test('translated source with a no-backing store still replays private search sta
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation();
-  // A non-OpenAI-Responses source (Anthropic Messages/Gemini/Chat) translated into a OpenAI Responses
+  // A non-OpenAI-Responses source (Anthropic Messages/Gemini generateContent/OpenAI Chat Completions) translated into an OpenAI Responses
   // upstream carries a no-backing store, not a persisting one; the shim's
   // request-private replay must still round-trip within the single request.
   const ctx = mockChatGatewayCtx({ apiKeyId: 'k1', wantsStream: true, store: createNonOpenAIResponsesSourceStore('k1') });

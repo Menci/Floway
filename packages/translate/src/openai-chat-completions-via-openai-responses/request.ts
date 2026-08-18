@@ -10,8 +10,8 @@ const translateChatTools = (tools?: OpenAIChatCompletionsTool[] | null): OpenAIR
         type: 'function',
         name: tool.function.name,
         parameters: tool.function.parameters ?? { type: 'object', properties: {} },
-        // Chat function tools are non-strict by default while OpenAI Responses function
-        // tools default strict; make omission explicit to preserve Chat semantics.
+        // OpenAI Chat Completions function tools are non-strict by default while OpenAI Responses function
+        // tools default strict; make omission explicit to preserve OpenAI Chat Completions semantics.
         strict: tool.function.strict ?? false,
         ...(tool.function.description ? { description: tool.function.description } : {}),
       }))
@@ -49,7 +49,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
   let hoistSystemPrefix = true;
 
   for (const message of payload.messages) {
-    // Only the initial Chat `system` prefix maps cleanly to OpenAI Responses
+    // Only the initial OpenAI Chat Completions `system` prefix maps cleanly to OpenAI Responses
     // `instructions`; later `system` and `developer` turns are
     // chronology-bearing input items.
     if (hoistSystemPrefix && message.role === 'system') {
@@ -135,7 +135,7 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
 
   const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: payload.response_format };
 
-  // Chat's `reasoning_effort: 'none'` disables reasoning without a OpenAI Responses
+  // OpenAI Chat Completions' `reasoning_effort: 'none'` disables reasoning without an OpenAI Responses
   // equivalent (OpenAI Responses `reasoning.effort` has no 'none' member); drop the
   // field instead of forwarding a value the upstream rejects.
   const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
@@ -157,12 +157,12 @@ export const buildTargetRequest = (payload: OpenAIChatCompletionsPayload): Canon
     // https://github.com/Wei-Shaw/sub2api/issues/4819
     // https://github.com/jlcodes99/cockpit-tools/issues/1727
     ...(payload.tool_choice != null && payload.tools?.length ? { tool_choice: translateChatToolChoice(payload.tool_choice) } : {}),
-    // Same-purpose OpenAI fields are normal Chat/OpenAI Responses adapter surface;
+    // Same-purpose OpenAI fields are normal OpenAI Chat Completions/OpenAI Responses adapter surface;
     // provider-specific policy filtering belongs at the target boundary, not in
     // pairwise translation.
     ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
     stream: true,
-    // Preserve Chat's omitted `store` as omitted instead of synthesizing
+    // Preserve OpenAI Chat Completions' omitted `store` as omitted instead of synthesizing
     // `store: false`. OpenAI's migration guide treats storage as the default
     // behavior for both OpenAI Responses and new OpenAI Chat Completions accounts; callers
     // disable it explicitly with `store: false`.

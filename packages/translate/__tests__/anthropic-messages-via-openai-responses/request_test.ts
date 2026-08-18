@@ -490,7 +490,7 @@ test('buildTargetRequest rejects an unknown user content block type', () => {
   );
 });
 
-test('buildTargetRequest emits in-array role:"system" inline as a OpenAI Responses message input item', () => {
+test('buildTargetRequest emits in-array role:"system" inline as an OpenAI Responses message input item', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,

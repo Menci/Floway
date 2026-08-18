@@ -174,7 +174,7 @@ export const translateAnthropicMessagesEventToOpenAIChatCompletionsChunks = (eve
       // `url_citation` annotation type, no `tool_result.search_result` block
       // shape). Blanket-drop every citation delta — the cited text already
       // appears inline in earlier `text_delta` events that the model wrote,
-      // so the downstream Chat client still sees the substantive content,
+      // so the downstream OpenAI Chat Completions client still sees the substantive content,
       // just without per-span source attribution. Permanent limitation; the
       // OpenAI-Responses-shape translator at
       // `openai-responses-via-anthropic-messages/events.ts:handleTextCitation` DOES translate

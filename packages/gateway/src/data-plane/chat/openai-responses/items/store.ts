@@ -387,8 +387,8 @@ export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolic
   });
 };
 
-// Non-OpenAI-Responses sources (Anthropic Messages / Gemini / OpenAI Chat Completions) never persist
-// OpenAI Responses items, even when translation enters a OpenAI Responses attempt — but the
+// Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat Completions) never persist
+// OpenAI Responses items, even when translation enters an OpenAI Responses attempt — but the
 // server-tool shim still runs there, and its request-private payload
 // scratchpad lives on the store. So they get a store with no backing: it holds
 // per-attempt state in memory and reads/writes nothing durable, keeping the

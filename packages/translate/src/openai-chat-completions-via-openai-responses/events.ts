@@ -102,7 +102,7 @@ const flushReadyDeferredChatChunks = (state: OpenAIResponsesToOpenAIChatCompleti
 };
 
 const shouldProjectScalarReasoning = (outputIndex: number, state: OpenAIResponsesToOpenAIChatCompletionsStreamState): boolean => {
-  // Chat scalar reasoning is a compatibility projection, not an ordered
+  // OpenAI Chat Completions scalar reasoning is a compatibility projection, not an ordered
   // reasoning IR; once the first OpenAI Responses reasoning output is chosen, later
   // reasoning outputs only travel through `reasoning_items[]`.
   state.firstScalarReasoningOutputIndex ??= outputIndex;
@@ -430,7 +430,7 @@ const chatErrorPayloadFromOpenAIResponsesFailure = (event: Extract<OpenAIRespons
 
 const chatErrorFrameFromOpenAIResponsesFatalEvent = (event: OpenAIResponsesStreamEvent): ProtocolFrame<OpenAIChatCompletionsStreamEvent> | undefined => {
   if (event.type === 'error') {
-    // OpenAI-compatible Chat streams can carry top-level error payloads;
+    // OpenAI-compatible Chat Completions streams can carry top-level error payloads;
     // OpenAIChatCompletionsStreamEvent only models successful chunk payloads.
     return eventFrame(chatErrorPayloadFromOpenAIResponsesError(event as Extract<OpenAIResponsesStreamEvent, { type: 'error' }>) as unknown as OpenAIChatCompletionsStreamEvent);
   }

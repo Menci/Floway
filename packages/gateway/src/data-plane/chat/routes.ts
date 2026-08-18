@@ -16,7 +16,7 @@ export const mountChatRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.anthropicMessages, (method, path) => app.on(method, path, anthropicMessagesHttp.generate));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.anthropicMessagesCountTokens, (method, path) => app.on(method, path, anthropicMessagesHttp.countTokens));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiResponsesWebSocket, (method, path) => app.on(method, path, openaiResponsesWebSocket));
-  // Gemini encodes both the model id and the action in one path segment
+  // Gemini generateContent encodes both the model id and the action in one path segment
   // (e.g. `models/gemini-2.5-pro:streamGenerateContent`); `geminiGenerateContentHttp`
   // splits on the trailing `:` and fans out to the right sub-endpoint.
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.geminiGenerateContentAction, (method, path) => app.on(method, path, geminiGenerateContentHttp));

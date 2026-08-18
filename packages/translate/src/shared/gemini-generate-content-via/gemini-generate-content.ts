@@ -54,11 +54,11 @@ export const geminiGenerateContentPartKind = (part: GeminiGenerateContentPart): 
   const presentFields = GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS.filter(field => part[field] !== undefined);
   if (presentFields.length === 1) return GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND[presentFields[0]];
   if (presentFields.length > 1) {
-    throw new Error(`Gemini part sets conflicting content fields: ${presentFields.join(', ')}.`);
+    throw new Error(`Gemini generateContent part sets conflicting content fields: ${presentFields.join(', ')}.`);
   }
   if (part.thoughtSignature !== undefined) return null;
   const keys = Object.keys(part);
-  throw new Error(`Gemini part has no recognized content. Keys present: ${keys.length ? keys.join(', ') : '(none)'}.`);
+  throw new Error(`Gemini generateContent part has no recognized content. Keys present: ${keys.length ? keys.join(', ') : '(none)'}.`);
 };
 
 export const geminiGenerateContentPartText = (part: GeminiGenerateContentPart): string | null => (typeof part.text === 'string' ? part.text : null);
@@ -117,13 +117,13 @@ export const geminiGenerateContentFunctionResponsePart = (part: GeminiGenerateCo
 
 // Reasoning effort is freeform on the inbound IRs — the gateway never
 // enum-gates these values at the wire boundary — so the translate-side
-// mappers below return whatever Gemini surfaced for `thinkingLevel` /
+// mappers below return whatever Gemini generateContent surfaced for `thinkingLevel` /
 // derived from `thinkingBudget` verbatim.
 
 export const geminiGenerateContentThinkingLevelEffort = (thinkingConfig?: GeminiGenerateContentThinkingConfig): string | undefined =>
   thinkingConfig?.thinkingLevel;
 
-// Bucket Gemini's numeric `thinkingBudget` back onto the discrete
+// Bucket Gemini generateContent's numeric `thinkingBudget` back onto the discrete
 // `reasoning_effort` axis when the target protocol has no numeric budget
 // slot (OpenAI Chat Completions, OpenAI Responses). Google publishes per-model
 // budget ranges but not effort-name thresholds; the 2048 / 8192 bin
@@ -219,7 +219,7 @@ export const parseStrictJsonObject = (json: string, subject: string): Record<str
   return parsed;
 };
 
-// Shape a single-candidate Gemini stream event. Lives in shared because both
+// Shape a single-candidate Gemini generateContent stream event. Lives in shared because both
 // gemini-generate-content-via-anthropic-messages and gemini-generate-content-via-openai-responses produce the same envelope.
 export const geminiGenerateContentCandidateEvent = (parts: GeminiGenerateContentPart[], finishReason?: GeminiGenerateContentFinishReason, usageMetadata?: GeminiGenerateContentUsageMetadata, finishMessage?: string): GeminiGenerateContentStreamEvent => ({
   candidates: [

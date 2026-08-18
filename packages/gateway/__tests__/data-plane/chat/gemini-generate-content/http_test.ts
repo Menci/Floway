@@ -161,7 +161,7 @@ test('POST /v1beta/models/:model:generateContent returns a single JSON body for 
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
 });
 
-test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini SSE body', async () => {
+test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generateContent SSE body', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
@@ -181,7 +181,7 @@ test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini SSE body
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
 });
 
-test('POST /v1beta/models/:model:countTokens returns the Gemini totalTokens envelope', async () => {
+test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent totalTokens envelope', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 23 }), {
@@ -280,7 +280,7 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
   assertEquals(resolvedModel, stubInternalModel().id);
 });
 
-test('POST /v1beta/models/:model:generateContent renders the Gemini-shaped model-unsupported 400 when no candidate matches the gemini-generate-content-generate picker', async () => {
+test('POST /v1beta/models/:model:generateContent renders the Gemini-generateContent-shaped model-unsupported 400 when no candidate matches the gemini-generate-content-generate picker', async () => {
   installRepo();
   // Queue a chat-kind candidate whose endpoints expose only `completions` —
   // geminiGenerateContentGenerateTarget (openai-chat-completions > messages > responses) rejects

@@ -142,7 +142,7 @@ test('response.created service_tier survives when the terminal response omits it
   assertEquals(events.at(-1)?.service_tier, 'priority');
 });
 
-test('OpenAI Responses to Chat translation rejects malformed inclusive cache counts', async () => {
+test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed inclusive cache counts', async () => {
   async function* stream() {
     yield toProtocolFrame({
       type: 'response.completed',
@@ -341,7 +341,7 @@ test('translateToSourceEvents stops after OpenAI Responses terminal completion',
   assertEquals(doneCount, 1);
 });
 
-test('translateToSourceEvents translates OpenAI Responses error events to Chat errors', async () => {
+test('translateToSourceEvents translates OpenAI Responses error events to OpenAI Chat Completions errors', async () => {
   async function* stream() {
     yield toProtocolFrame({
       type: 'error',
@@ -362,7 +362,7 @@ test('translateToSourceEvents translates OpenAI Responses error events to Chat e
   });
 });
 
-test('translateToSourceEvents translates OpenAI Responses failed terminal events to Chat errors', async () => {
+test('translateToSourceEvents translates OpenAI Responses failed terminal events to OpenAI Chat Completions errors', async () => {
   async function* stream() {
     yield toProtocolFrame({
       type: 'response.failed',

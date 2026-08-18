@@ -4,11 +4,11 @@ import { stripUnsupportedTools } from './strip-unsupported-tools.ts';
 import { suppressThoughtParts } from './suppress-thought-parts.ts';
 import type { GeminiGenerateContentCountTokensInterceptor, GeminiGenerateContentInterceptor } from './types.ts';
 
-// Unified Gemini interceptor list for `generate`. All four entries below are
-// unconditional protocol-shape cleanups required because Gemini-shape requests
+// Unified Gemini generateContent interceptor list for `generate`. All four entries below are
+// unconditional protocol-shape cleanups required because Gemini-generateContent-shape requests
 // cannot ride verbatim through other targets, plus the post-stream thought
-// suppression that hides Gemini-native thought parts unless the caller opted
-// in. There is no target-side companion list — Gemini has no native upstream
+// suppression that hides Gemini-generateContent-native thought parts unless the caller opted
+// in. There is no target-side companion list — Gemini generateContent has no native upstream
 // in our provider API, so everything happens on the source side regardless of
 // the chosen target.
 export const geminiGenerateContentInterceptors: readonly GeminiGenerateContentInterceptor[] = [
@@ -18,9 +18,9 @@ export const geminiGenerateContentInterceptors: readonly GeminiGenerateContentIn
   suppressThoughtParts,
 ];
 
-// countTokens always translates Gemini → Anthropic Messages and calls the Anthropic Messages
+// countTokens always translates Gemini generateContent → Anthropic Messages and calls the Anthropic Messages
 // count_tokens upstream, which returns a raw `Response` rather than an event
-// stream. The shipped Gemini interceptors all either mutate the payload pre-
+// stream. The shipped Gemini generateContent interceptors all either mutate the payload pre-
 // dispatch (acceptable) or wrap the post-`run()` event stream (incompatible
 // with the count-tokens result shape). `geminiGenerateContentAttempt.countTokens` applies
 // the payload-mutators inline before handing the translated payload to the

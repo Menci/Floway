@@ -364,7 +364,7 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
-test('countTokens translates Gemini to Anthropic Messages count_tokens and returns the Gemini envelope', async () => {
+test('countTokens translates Gemini generateContent to Anthropic Messages count_tokens and returns the Gemini generateContent envelope', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 17 }), {
@@ -453,7 +453,7 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
   // happens inside the resolver.
   assertEquals(lastResolveCall.model, 'gemini-fast');
   // Alias rules land on the terminal wire target's native slots — for a
-  // Gemini→OpenAI Chat Completions traversal that is `reasoning_effort` and
+  // Gemini generateContent→OpenAI Chat Completions traversal that is `reasoning_effort` and
   // `verbosity`. Rules that lack a native CC slot (budget_tokens) drop.
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'high');

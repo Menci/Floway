@@ -10,7 +10,7 @@ import type { Fetcher, InternalModel } from '@floway-dev/provider';
 // endpoints the upstreams serve this model on, not the inbound routes a
 // client may call. Translation widens the chat keys: any one of
 // `openaiChatCompletions` / `anthropicMessages` / `openaiResponses` makes the model reachable from
-// all four inbound chat routes, and the Gemini route has no key of its own.
+// all four inbound chat routes, and the Gemini generateContent route has no key of its own.
 // When the row is an alias-synthesized one, `aliasedFrom` is emitted verbatim
 // from the internal shape (they share the same fields); the real branch never
 // carries it, so the sidecar is present exactly on alias rows.

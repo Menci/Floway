@@ -444,7 +444,7 @@ test('message_delta with refusal → refusal delta and finish_reason stop', () =
   ]);
 });
 
-test('fallback block updates subsequent Chat chunks to the serving model', () => {
+test('fallback block updates subsequent OpenAI Chat Completions chunks to the serving model', () => {
   const state = createAnthropicMessagesToOpenAIChatCompletionsStreamState();
   translateAnthropicMessagesEventToOpenAIChatCompletionsChunks(MSG_START, state);
   const result = translateAnthropicMessagesEventToOpenAIChatCompletionsChunks({
@@ -721,7 +721,7 @@ test('full redacted_thinking + text stream scenario', () => {
   assertEquals(d[2].content, 'Response');
 });
 
-test('later reasoning blocks are ignored for Chat scalar streaming', () => {
+test('later reasoning blocks are ignored for OpenAI Chat Completions scalar streaming', () => {
   const d = deltas([
     MSG_START,
     {
@@ -763,7 +763,7 @@ test('later reasoning blocks are ignored for Chat scalar streaming', () => {
   assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['sig_1']);
 });
 
-test('first redacted_thinking block suppresses later readable thinking in Chat scalar streaming', () => {
+test('first redacted_thinking block suppresses later readable thinking in OpenAI Chat Completions scalar streaming', () => {
   const d = deltas([
     MSG_START,
     {

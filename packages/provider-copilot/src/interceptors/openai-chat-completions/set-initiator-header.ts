@@ -8,16 +8,16 @@ import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts
  * is driving the turn.
  *
  * OpenAI Responses tool-output images expose a deliberate translation loss here:
- * Chat tool messages cannot carry image parts, so translation lifts them into
- * a legal user message after the contiguous tool results. The Chat wire role
+ * OpenAI Chat Completions tool messages cannot carry image parts, so translation lifts them into
+ * a legal user message after the contiguous tool results. The OpenAI Chat Completions wire role
  * remains authoritative, and that turn is therefore reported as user-initiated
  * even though its image originated in tool output. Preserving the source-side
  * provenance would require a contradictory out-of-band signal.
  *
  * Official clients do not offer one wire-derived rule to copy. VS Code keeps
- * image content on a private multimodal `role: "tool"` Chat message and lifts
+ * image content on a private multimodal `role: "tool"` OpenAI Chat Completions message and lifts
  * only for OpenAI Responses, while initiator provenance can travel separately from
- * serialized roles. Floway has neither private Chat tool-image syntax nor
+ * serialized roles. Floway has neither private OpenAI Chat Completions tool-image syntax nor
  * client loop metadata; this remains a payload-shape heuristic, and translated
  * or synthetic final user messages can therefore be classified differently
  * from their source-side turn.

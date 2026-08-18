@@ -11,7 +11,7 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   }
 };
 
-test('translateToSourceEvents rejects Chat streams without DONE', async () => {
+test('translateToSourceEvents rejects OpenAI Chat Completions streams without DONE', async () => {
   async function* stream() {
     yield eventFrame({
       id: 'chatcmpl_truncated',

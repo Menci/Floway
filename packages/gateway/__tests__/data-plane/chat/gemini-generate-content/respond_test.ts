@@ -26,7 +26,7 @@ const requestGeminiGenerateContentResponse = async (result: ExecuteResult<Protoc
   return await app.request('/');
 };
 
-test('respondGeminiGenerateContent preserves non-stream Gemini error event HTTP code', async () => {
+test('respondGeminiGenerateContent preserves non-stream Gemini generateContent error event HTTP code', async () => {
   const errorEvent: GeminiGenerateContentErrorResponse = {
     error: {
       code: 504,

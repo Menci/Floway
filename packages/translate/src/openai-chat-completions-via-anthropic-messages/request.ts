@@ -211,12 +211,12 @@ export const buildTargetRequest = async (payload: OpenAIChatCompletionsPayload, 
   applyLastToolCacheBreakpoint(tools);
   applyLastMessageCacheBreakpoint(messages);
 
-  // Merge Chat `reasoning_effort` + `response_format` into a single Anthropic Messages
+  // Merge OpenAI Chat Completions `reasoning_effort` + `response_format` into a single Anthropic Messages
   // `output_config` so a chat-source structured-output request survives
-  // routing through a Anthropic Messages target. `reasoning_effort: 'none'` lands on
+  // routing through an Anthropic Messages target. `reasoning_effort: 'none'` lands on
   // `thinking` instead of `output_config`, and `format` still rides along.
   //
-  // Chat nests json_schema details (`response_format = { type: 'json_schema',
+  // OpenAI Chat Completions nests json_schema details (`response_format = { type: 'json_schema',
   // json_schema: { schema } }`); `json_object` / `text` / absent have no
   // Anthropic Messages equivalent and drop.
   const { thinking, effort: reasoningEffort } = anthropicMessagesReasoningFieldsFromEffort(payload.reasoning_effort);

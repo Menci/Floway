@@ -2,7 +2,7 @@ import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { OpenAIChatCompletionsContentPart } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesInputContent } from '@floway-dev/protocols/openai-responses';
 
-// Chat and OpenAI Responses text arrays are transport fragments of one message, not
+// OpenAI Chat Completions and OpenAI Responses text arrays are transport fragments of one message, not
 // paragraph blocks. Preserve the existing no-separator flattening.
 const contentPartText = (part: OpenAIChatCompletionsContentPart | OpenAIResponsesInputContent): string | null => (part.type === 'text' || part.type === 'input_text' || part.type === 'output_text' ? part.text : null);
 
@@ -55,7 +55,7 @@ export const openaiResponsesContentToOpenAIChatCompletionsContent = (content: st
               type: 'image_url',
               image_url: {
                 url: part.image_url,
-                // Both protocols read an absent `detail` as `auto`, and Chat
+                // Both protocols read an absent `detail` as `auto`, and OpenAI Chat Completions
                 // Completions has no null member, so an absent or null value
                 // becomes an omitted key. Anything else is the upstream's to
                 // accept or reject.

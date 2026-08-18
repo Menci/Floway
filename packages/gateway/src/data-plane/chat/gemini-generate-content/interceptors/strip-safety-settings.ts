@@ -1,7 +1,7 @@
 import type { GeminiGenerateContentInterceptor } from './types.ts';
 
 /**
- * Gemini safety controls are source-specific and have no matching control on
+ * Gemini generateContent safety controls are source-specific and have no matching control on
  * every target path. Drop them so we don't pretend to enforce a policy we
  * cannot honor end-to-end.
  */

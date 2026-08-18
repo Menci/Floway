@@ -2,7 +2,7 @@ import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEve
 import { reassembleGeminiGenerateContentEvents } from './reassemble.ts';
 import type { ProtocolFrame } from '../common/index.ts';
 
-export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a terminal event.';
+export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generateContent stream ended without a terminal event.';
 
 export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentStreamEvent): event is GeminiGenerateContentErrorResponse => 'error' in event;
 

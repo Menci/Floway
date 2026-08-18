@@ -7,7 +7,8 @@ import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/ope
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside
  * `function.arguments` deltas until `max_tokens`, never producing valid JSON.
  * Detect that pattern per tool call and abort by throwing, so every source
- * (native Chat, plus Anthropic Messages/Gemini/OpenAI Responses sources translated via Chat)
+ * (native OpenAI Chat Completions, plus Anthropic Messages/Gemini generateContent/OpenAI Responses
+ * sources translated via OpenAI Chat Completions)
  * sees the gateway's standard upstream-error path.
  *
  * The OpenAI Chat Completions protocol cannot express a stream error in-band: the

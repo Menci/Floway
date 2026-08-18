@@ -2,7 +2,7 @@ import type { GeminiGenerateContentInterceptor } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
- * Only function declarations are currently translatable from Gemini tool
+ * Only function declarations are currently translatable from Gemini generateContent tool
  * groups. Strip the rest after target planning so target emitters never see
  * unsupported tool capabilities.
  */

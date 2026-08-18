@@ -162,7 +162,7 @@ test('generate translates through OpenAI Responses when targetApi is responses',
   assertEquals(callOpenAIResponses.mock.calls.length, 1);
 });
 
-test('countTokens translates Gemini to Anthropic Messages count_tokens and reshapes to totalTokens envelope', async () => {
+test('countTokens translates Gemini generateContent to Anthropic Messages count_tokens and reshapes to totalTokens envelope', async () => {
   installRepo();
   let upstreamBody: Record<string, unknown> | undefined;
   let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;

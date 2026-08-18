@@ -31,7 +31,7 @@ const immediateCodec: AffinityEgressCodec = {
   wrap: async value => `wrapped:${value ?? 'synthetic'}`,
 };
 
-describe('Gemini affinity egress', () => {
+describe('Gemini generateContent affinity egress', () => {
   test('buffers one event and wraps a natural signature on its content-bearing part', async () => {
     const codec = new DelayedCodec();
     const output = wrapGeminiGenerateContentAffinityEgress(frames([eventFrame({

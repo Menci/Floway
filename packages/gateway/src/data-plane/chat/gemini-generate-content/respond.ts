@@ -16,7 +16,7 @@ import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_M
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
-// Renders an upstream Gemini result into the client HTTP/SSE response, in the
+// Renders an upstream Gemini generateContent result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
 // always answers as HTTP; an events result drains to one JSON body
 // (non-streaming) or is proxied frame by frame (streaming).
@@ -142,7 +142,7 @@ const geminiGenerateContentCollectErrorResponse = (error: unknown): Response => 
     : geminiGenerateContentInternalRpcErrorResponse(502, error);
 };
 
-// Recognizing / extracting an upstream-shaped Gemini error from a raw body or a
+// Recognizing / extracting an upstream-shaped Gemini generateContent error from a raw body or a
 // thrown cause, so a native Google error is forwarded verbatim rather than
 // re-wrapped.
 const parseJson = (value: string): unknown => {
@@ -173,7 +173,7 @@ const googleRpcErrorPassthroughResponse = (error: ApiErrorResult): Response | nu
 
 const apiErrorMessage = (error: ApiErrorResult): string => {
   const body = decodeApiErrorBody(error).trim();
-  return body || 'Upstream Gemini request failed.';
+  return body || 'Upstream Gemini generateContent request failed.';
 };
 
 const caughtGeminiGenerateContentErrorEvent = (error: unknown): GeminiGenerateContentErrorResponse | null => {

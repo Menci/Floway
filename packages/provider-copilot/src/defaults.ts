@@ -13,7 +13,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // Copilot has no native compact endpoint. The provider replays
   // `RemoteCompactionV2` through `/responses` with `stream: false` and a
   // trailing `compaction_trigger`, so this default leaves the gateway compact
-  // shim off. The shim still engages on its own whenever a OpenAI Responses request
+  // shim off. The shim still engages on its own whenever an OpenAI Responses request
   // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
   // has a compaction wire.
   'responses-compact-shim': false,

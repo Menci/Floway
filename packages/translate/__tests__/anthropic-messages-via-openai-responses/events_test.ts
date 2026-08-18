@@ -19,7 +19,7 @@ const failedResponse = (code: string, message: string): OpenAIResponsesResult =>
 test.each([
   ['cyber_policy', 'cyber'],
   ['bio_policy', 'bio'],
-] as const)('OpenAI Responses %s failure becomes a Anthropic Messages %s refusal', (code, category) => {
+] as const)('OpenAI Responses %s failure becomes an Anthropic Messages %s refusal', (code, category) => {
   const state = createOpenAIResponsesToAnthropicMessagesStreamState();
   const events = translateOpenAIResponsesStreamEventToAnthropicMessagesEvents({
     type: 'response.failed',

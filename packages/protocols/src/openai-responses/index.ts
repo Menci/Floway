@@ -58,7 +58,7 @@ export interface OpenAIResponsesPayload {
   prompt_cache_retention?: OpenAIResponsesPromptCacheRetention | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
-  // Request knobs Floway itself never acts on. On a OpenAI-Responses-native target
+  // Request knobs Floway itself never acts on. On an OpenAI-Responses-native target
   // they ride to the upstream in the forwarded body and come back echoed; no
   // translate pair carries them, so on a translated target the client-facing
   // echo can only come from the request. Declaring them keeps that echo honest

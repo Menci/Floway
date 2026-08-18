@@ -333,7 +333,7 @@ const syntheticPrologueResponse = (
   status: 'queued' | 'in_progress',
 ): OpenAIResponsesResult => {
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize a OpenAI Responses prologue envelope before an upstream response snapshot is captured.');
+    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses prologue envelope before an upstream response snapshot is captured.');
   }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
@@ -476,7 +476,7 @@ export const consumeTurnStreaming = async function* (
 
   const ensureModel = (): string => {
     if (merge.lastSeenModel === null) {
-      throw new Error('Server-tool shim cannot synthesize a OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
+      throw new Error('Server-tool shim cannot synthesize an OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
     }
     return merge.lastSeenModel;
   };
@@ -801,10 +801,10 @@ const synthesizeTerminalEnvelope = (
   active: readonly ActiveServerTool[],
 ): ProtocolFrame<OpenAIResponsesStreamEvent> => {
   if (state.lastSeenModel === null) {
-    throw new Error('Server-tool shim cannot synthesize a OpenAI Responses terminal envelope before upstream `response.created` reports a model.');
+    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` reports a model.');
   }
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize a OpenAI Responses terminal envelope before upstream `response.created` is captured.');
+    throw new Error('Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before upstream `response.created` is captured.');
   }
   const output = materializeAccumulatedOutput(state);
   const usage = usageForWire(state);

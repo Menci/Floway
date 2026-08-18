@@ -319,7 +319,7 @@ test('translateToSourceEvents throws on Anthropic Messages error events', async 
   );
 });
 
-test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTokenCount and cachedContentTokenCount', async () => {
+test('translateToSourceEvents folds Anthropic cache fields into Gemini generateContent promptTokenCount and cachedContentTokenCount', async () => {
   const frames = await collect([
     eventFrame(
       messageStart({

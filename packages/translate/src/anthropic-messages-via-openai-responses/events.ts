@@ -401,7 +401,7 @@ const handleCompleted = (response: OpenAIResponsesResult, state: OpenAIResponses
 // context_length_exceeded`; some Copilot fronts surface a stream `error`
 // event with the same code). We rewrite those into the same Anthropic
 // `invalid_request_error` + `prompt is too long:` envelope the unary path
-// uses, so a Anthropic Messages client (Claude Code in particular) recognizes the
+// uses, so an Anthropic Messages client (Claude Code in particular) recognizes the
 // condition and triggers auto-compaction whether the failure arrived
 // pre-stream or mid-stream.
 const handleStreamError = (

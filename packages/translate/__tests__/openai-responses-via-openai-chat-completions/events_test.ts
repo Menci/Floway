@@ -206,7 +206,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents maps usage on i
 test.each([
   [{ cache_write_tokens: 2 }, 2],
   [{ cache_creation_input_tokens: 3, cache_write_tokens: 2 }, 3],
-] as const)('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents maps Chat cache-write detail %o', (promptTokensDetails, expectedWrite) => {
+] as const)('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents maps OpenAI Chat Completions cache-write detail %o', (promptTokensDetails, expectedWrite) => {
   const events = translate([
     chunk({ role: 'assistant' }),
     chunk({}, 'stop', {
@@ -242,7 +242,7 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents preserves respo
   assertEquals(completed?.response.service_tier, 'priority');
 });
 
-test('translateToSourceEvents rejects Chat streams without DONE', async () => {
+test('translateToSourceEvents rejects OpenAI Chat Completions streams without DONE', async () => {
   async function* stream() {
     yield eventFrame({
       id: 'chatcmpl_truncated',

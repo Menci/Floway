@@ -195,7 +195,7 @@ test('buildTargetRequest maps generation config, JSON schema, and reasoning cont
   assertEquals(buildTargetRequest({ generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test').text, { format: { type: 'json_object' } });
 });
 
-test('buildTargetRequest never invents reasoning.context from Gemini thinking controls', () => {
+test('buildTargetRequest never invents reasoning.context from Gemini generateContent thinking controls', () => {
   const result = buildTargetRequest({
     generationConfig: {
       thinkingConfig: { thinkingLevel: 'high', includeThoughts: true },

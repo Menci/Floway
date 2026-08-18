@@ -439,7 +439,7 @@ export const translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents = (chu
   return events;
 };
 
-// Call once after the upstream Chat stream is exhausted. Some final Anthropic Messages SSE
+// Call once after the upstream OpenAI Chat Completions stream is exhausted. Some final Anthropic Messages SSE
 // events are intentionally buffered until end-of-stream so late usage and
 // opaque-only reasoning can be emitted in valid block/message order.
 export const flushOpenAIChatCompletionsToAnthropicMessagesEvents = (state: OpenAIChatCompletionsToAnthropicMessagesStreamState): AnthropicMessagesStreamEvent[] => {

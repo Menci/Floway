@@ -185,7 +185,7 @@ test('generate translates through the Anthropic Messages target when only that e
   assertEquals(anthropicBeta, []);
 });
 
-test('generate injects the platform external-image loader into Chat-to-Anthropic-Messages translation', async () => {
+test('generate injects the platform external-image loader into OpenAI-Chat-Completions-to-Anthropic-Messages translation', async () => {
   installRepo();
   initExternalResourceFetcher(url => {
     assertEquals(url.href, 'https://example.com/image.png');

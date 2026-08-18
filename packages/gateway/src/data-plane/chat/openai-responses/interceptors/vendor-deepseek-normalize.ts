@@ -5,13 +5,13 @@
 // Outbound (request → upstream):
 //
 // - `reasoning.effort: 'none'` is the gateway's canonical "no reasoning"
-//   sentinel (produced when a Anthropic Messages source had `thinking: { type:
+//   sentinel (produced when an Anthropic Messages source had `thinking: { type:
 //   'disabled' }`, etc.). DeepSeek uses a top-level
 //   `thinking: { type: 'disabled' }` field instead. We strip the entire
 //   `reasoning` object and emit the DeepSeek form.
 //
 // Inbound: nothing today — the OpenAI-Responses-target dialect quirks that exist
-// on Chat (assistant `reasoning_content` field, `prompt_cache_*_tokens`
+// on OpenAI Chat Completions (assistant `reasoning_content` field, `prompt_cache_*_tokens`
 // usage) have no OpenAI-Responses-shape equivalent that has surfaced. Add hooks
 // here if vendor-specific OpenAI Responses inbound rewrites become necessary.
 //

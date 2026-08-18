@@ -47,7 +47,7 @@ interface AnthropicMessagesToGeminiGenerateContentStreamState extends GeminiGene
   toolUses: Record<number, AnthropicMessagesToolUseDraft>;
 }
 
-// Gemini's `promptTokenCount` is an inclusive total that already contains the
+// Gemini generateContent's `promptTokenCount` is an inclusive total that already contains the
 // cached prefix, and `cachedContentTokenCount` is the breakdown of that share
 // rather than an extra bucket — so the folded Anthropic total goes out whole
 // and cache reads are re-surfaced alongside it, not subtracted from it.

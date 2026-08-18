@@ -36,7 +36,7 @@ const rejectBodyBetaResponse = (payload: AnthropicMessagesPayload): Response | n
 };
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as a Anthropic-Messages-shaped 502 with the same internal-error envelope the
+// etc.) as an Anthropic-Messages-shaped 502 with the same internal-error envelope the
 // in-flow `internal-error` ExecuteResult produces. The caller passes its
 // outer `ctx` when one was already constructed (so the dump row preserves
 // the model attribution the request-time `requestedModel` stamped, and the

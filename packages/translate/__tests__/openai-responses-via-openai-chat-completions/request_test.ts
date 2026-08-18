@@ -905,7 +905,7 @@ test('buildTargetRequest co-emits reasoning.effort onto reasoning_effort and ser
   assertEquals(result.target.service_tier, 'priority');
 });
 
-test('buildTargetRequest drops reasoning.summary (Chat has no slot)', () => {
+test('buildTargetRequest drops reasoning.summary (OpenAI Chat Completions has no slot)', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],

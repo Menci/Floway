@@ -21,7 +21,7 @@ test('an absent effort selects neither slot', () => {
   assertEquals(anthropicMessagesReasoningFieldsFromEffort(''), {});
 });
 
-// The two helpers are inverses: what `anthropic-messages-via` reads off a Anthropic Messages
+// The two helpers are inverses: what `anthropic-messages-via` reads off an Anthropic Messages
 // payload is what `via-anthropic-messages` must put back. Disabled thinking is the case
 // where the two protocols disagree on which slot holds the intent, so it is
 // the one worth pinning.

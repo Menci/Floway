@@ -2,8 +2,8 @@ import type { AnthropicMessagesUsage, AnthropicMessagesUsageIteration, Anthropic
 
 /**
  * Anthropic Messages requires `max_tokens`, but the OpenAI Chat Completions, OpenAI Responses, and
- * Gemini sources may omit their output-token cap. When we translate one of
- * those sources to a Anthropic Messages target, the data-plane prefers the model's
+ * Gemini generateContent sources may omit their output-token cap. When we translate one of
+ * those sources to an Anthropic Messages target, the data-plane prefers the model's
  * advertised `/models` output cap (`limits.max_output_tokens`); this
  * constant is the last-resort gateway policy default when both the source
  * payload and the model capability are silent.

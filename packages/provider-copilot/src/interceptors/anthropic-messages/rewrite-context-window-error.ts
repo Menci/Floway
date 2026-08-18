@@ -15,7 +15,7 @@ const isContextWindowError = (text: string): boolean => text.includes('Request b
  * translate-layer rewriter because Copilot's Anthropic Messages endpoint never
  * traverses the `anthropic-messages-via-*` translation pairs — the Copilot Anthropic Messages
  * substring set here (`Request body is too large...`) is disjoint from
- * the OpenAI Responses/Chat shapes those pairs match on.
+ * the OpenAI Responses/OpenAI Chat Completions shapes those pairs match on.
  */
 export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryInterceptor = async (_ctx, _env, run) => {
   const result = await run();

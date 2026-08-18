@@ -69,7 +69,7 @@ type PendingAssistantMessage = {
 };
 
 const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: AnthropicMessagesAssistantContentBlock): void => {
-  // Chat scalar reasoning cannot represent ordered interleaved Anthropic Messages
+  // OpenAI Chat Completions scalar reasoning cannot represent ordered interleaved Anthropic Messages
   // thinking blocks. Project only the first source-order group so readable text
   // is never paired with an opaque signature from a later block.
   pending.scalarReasoning ??= openaiChatCompletionsScalarReasoningFromAnthropicMessagesBlock(block);
@@ -124,7 +124,7 @@ const translateAnthropicMessagesUser = (message: AnthropicMessagesUserMessage, m
 
   for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_result') {
-      // Preserving source chronology matters more than keeping one Chat message,
+      // Preserving source chronology matters more than keeping one OpenAI Chat Completions message,
       // so interleaved user content and tool results become alternating messages.
       flushPendingUserBlocks();
       messages.push({

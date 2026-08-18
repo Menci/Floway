@@ -36,7 +36,7 @@ const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<Pr
 };
 
 /**
- * Hide Gemini thought-summary parts unless the caller explicitly opted in via
+ * Hide Gemini generateContent thought-summary parts unless the caller explicitly opted in via
  * `generationConfig.thinkingConfig.includeThoughts === true`.
  */
 export const suppressThoughtParts: GeminiGenerateContentInterceptor = async (ctx, _gatewayCtx, run) => {

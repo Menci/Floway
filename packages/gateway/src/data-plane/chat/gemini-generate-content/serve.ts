@@ -13,7 +13,7 @@ import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 export interface GeminiGenerateContentServeGenerateArgs {
   readonly payload: GeminiGenerateContentPayload;
   readonly ctx: ChatGatewayCtx;
-  // Per-request model id (Gemini carries it in the URL path, not the body),
+  // Per-request model id (Gemini generateContent carries it in the URL path, not the body),
   // resolved by the HTTP entry and threaded through here so candidate
   // enumeration and failure rendering all see the same value.
   readonly model: string;
@@ -43,7 +43,7 @@ export const geminiGenerateContentServe = {
     if ('kind' in selection) return renderGeminiGenerateContentFailure(selection, 'generate');
     if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
-    // Gemini carries the requested model in its URL, so affinity preparation
+    // Gemini generateContent carries the requested model in its URL, so affinity preparation
     // owns each candidate payload while dispatch uses the candidate's canonical model.
     return await iterateCandidates(
       selection.candidates,

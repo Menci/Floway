@@ -20,10 +20,10 @@ import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
  * that header on Claude Code SDK proxy traffic.
  *
  * Do not put this identity on translated OpenAI Chat Completions / OpenAI Responses targets.
- * The real VS Code path forces a Anthropic Messages API request, and caozhiyuan's gateway
+ * The real VS Code path forces an Anthropic Messages API request, and caozhiyuan's gateway
  * applies the same helper only in its `/v1/messages` Copilot caller. Copilot's
- * Chat endpoint treats the full messages-proxy + Claude Code UA + no-integration
- * shape as `integrator: claude-code`, which can hide non-Claude Chat models.
+ * OpenAI Chat Completions endpoint treats the full messages-proxy + Claude Code UA + no-integration
+ * shape as `integrator: claude-code`, which can hide non-Claude OpenAI Chat Completions models.
  *
  * `claude-opus-4-8` is currently excluded: that model's upstream WAF returns
  * a generic 403 ("Access to this endpoint is forbidden") whenever a request

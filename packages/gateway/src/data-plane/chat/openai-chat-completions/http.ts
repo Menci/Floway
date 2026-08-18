@@ -14,7 +14,7 @@ import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider'
 import { TranslatorInputError } from '@floway-dev/translate';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as a Chat Completions-shaped 502 with the same internal-error
+// etc.) as an OpenAI Chat Completions-shaped 502 with the same internal-error
 // envelope the in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
@@ -32,7 +32,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-// Pre-stream caller-input failure raised by a translator → Chat
+// Pre-stream caller-input failure raised by a translator → an OpenAI Chat
 // Completions-shaped 400 invalid_request_error envelope. Anything else
 // falls through to the internal-error 502 path.
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {

@@ -4,7 +4,7 @@ import { createRandomOpenAIResponsesItemId, type OpenAIResponsesInputReasoning, 
 export type AnthropicMessagesReasoningBlock = AnthropicMessagesThinkingBlock | AnthropicMessagesRedactedThinkingBlock;
 
 /**
- * Pack a OpenAI Responses reasoning item's `id` and `encrypted_content` into an
+ * Pack an OpenAI Responses reasoning item's `id` and `encrypted_content` into an
  * Anthropic `thinking.signature` / `redacted_thinking.data` string using
  * `${encrypted_content}@${id}`.
  *
@@ -12,14 +12,14 @@ export type AnthropicMessagesReasoningBlock = AnthropicMessagesThinkingBlock | A
  * `(account, item_id)` and rejects a next-turn submission whose `id` does not
  * match the id baked into the blob with `400 invalid_request_body: "Encrypted
  * content item_id did not match the target item id."`. Anthropic `thinking` /
- * `redacted_thinking` blocks have no id slot, so when we project a OpenAI Responses
- * reasoning item into a Anthropic Messages carrier for a downstream Anthropic Messages CLIENT we
+ * `redacted_thinking` blocks have no id slot, so when we project an OpenAI Responses
+ * reasoning item into an Anthropic Messages carrier for a downstream Anthropic Messages CLIENT we
  * must smuggle the original OpenAI Responses id alongside the blob, then recover it
  * when that client echoes the carrier back. We adopt the `${encrypted_content}@${id}`
  * layout used by the gateway implementations referenced below, so signatures
  * stay interchangeable if a user switches gateways mid-session.
  *
- * `encryptedContent` may be empty: a OpenAI-Responses-origin reasoning item can have
+ * `encryptedContent` may be empty: an OpenAI-Responses-origin reasoning item can have
  * an id but no opaque content (we never auto-request
  * `reasoning.encrypted_content`), in which case `@rs_abc` is a valid,
  * round-trippable carrier.
@@ -43,7 +43,7 @@ export const packReasoningSignature = (id: string, encryptedContent: string): st
  *
  * - `enc@rs_1` → `{ id: 'rs_1', encryptedContent: 'enc' }`.
  * - `@rs_1` → `{ id: 'rs_1', encryptedContent: '' }` — empty front half is a
- *   valid packing (a OpenAI Responses reasoning with an id but no opaque content).
+ *   valid packing (an OpenAI Responses reasoning with an id but no opaque content).
  * - `opaque-sig` (no `@`) → `{ id: null, encryptedContent: 'opaque-sig' }` —
  *   a genuine upstream signature (native Anthropic encrypted reasoning, or a
  *   base64 blob that contains no `@`). It is preserved verbatim and the caller
@@ -63,8 +63,8 @@ const unpackReasoningSignature = (signature: string): { id: string | null; encry
 };
 
 /**
- * Project a Anthropic Messages reasoning carrier echoed by a downstream Anthropic Messages CLIENT
- * into a OpenAI Responses reasoning item bound for the OpenAI Responses UPSTREAM. Unpacks the
+ * Project an Anthropic Messages reasoning carrier echoed by a downstream Anthropic Messages CLIENT
+ * into an OpenAI Responses reasoning item bound for the OpenAI Responses UPSTREAM. Unpacks the
  * carrier so the upstream sees the original id and a clean `encrypted_content`
  * blob. A fresh random id is used when the carrier holds a genuine (unpacked)
  * upstream signature.
@@ -83,7 +83,7 @@ export const anthropicMessagesReasoningBlockToOpenAIResponsesReasoning = (block:
 };
 
 /**
- * Project a OpenAI Responses reasoning item into a Anthropic Messages reasoning carrier bound
+ * Project an OpenAI Responses reasoning item into an Anthropic Messages reasoning carrier bound
  * for a real Anthropic Messages UPSTREAM. Unlike {@link packReasoningSignature}, which
  * wraps the blob in a gateway envelope for a downstream Anthropic Messages CLIENT, this
  * sends the GENUINE signature only — the upstream owns and validates that
@@ -91,7 +91,7 @@ export const anthropicMessagesReasoningBlockToOpenAIResponsesReasoning = (block:
  * `thinking.signature` when there is readable text, else as
  * `redacted_thinking.data`.
  *
- * No-opaque sub-case: a OpenAI-Responses-origin reasoning with an id but no
+ * No-opaque sub-case: an OpenAI-Responses-origin reasoning with an id but no
  * `encrypted_content` (we never auto-request it) has nothing the upstream can
  * verify. We stay honest — emit readable `thinking` with no signature when
  * there is text, and drop the item entirely when there is neither text nor an

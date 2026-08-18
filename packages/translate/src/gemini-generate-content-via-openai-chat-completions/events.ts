@@ -21,7 +21,7 @@ const mapFinishReason = (finishReason: OpenAIChatCompletionsStreamChoice['finish
 };
 
 // OpenAI prompt_tokens already includes prompt_tokens_details.cached_tokens,
-// matching Gemini's inclusive promptTokenCount semantics. Pass both through
+// matching Gemini generateContent's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-generate-content-via-anthropic-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
 const mapUsage = (
@@ -34,7 +34,7 @@ const mapUsage = (
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
-  // Validated, not consumed: Gemini's `promptTokenCount` carries the same
+  // Validated, not consumed: Gemini generateContent's `promptTokenCount` carries the same
   // inclusive total and `cachedContentTokenCount` the same subset of it, so
   // there is nothing to recompute. The assertion is this package's own, on the
   // contract its output type declares.

@@ -965,7 +965,7 @@ test('Anthropic Messages fallback block changes the OpenAI Responses serving mod
   assertEquals(completed?.response.output, []);
 });
 
-test('an upstream ping is consumed without emitting a OpenAI Responses event or advancing the sequence', () => {
+test('an upstream ping is consumed without emitting an OpenAI Responses event or advancing the sequence', () => {
   const state = createAnthropicMessagesToOpenAIResponsesStreamState('resp_test', 'claude-test');
 
   const before = translateAnthropicMessagesEventToOpenAIResponsesEvents(

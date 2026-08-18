@@ -25,7 +25,7 @@ const usageChunk = (): OpenAIChatCompletionsStreamEvent => ({
   },
 });
 
-test('Chat refusal deltas become Anthropic Messages refusal stop details', () => {
+test('OpenAI Chat Completions refusal deltas become Anthropic Messages refusal stop details', () => {
   const state = createOpenAIChatCompletionsToAnthropicMessagesStreamState();
   const events = [
     ...translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents(chunk({ role: 'assistant', content: null, refusal: '' }), state),
