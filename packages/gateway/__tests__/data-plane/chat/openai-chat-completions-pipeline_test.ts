@@ -344,6 +344,16 @@ describe('the chat completions chain', () => {
       total_tokens: 14164,
       prompt_tokens_details: { cached_tokens: 13312 },
     });
+    // And the row is written from that same frame rather than from the vendor's own. The
+    // reading is taken above every rule, so what is billed and what is shown cannot disagree —
+    // metering at the dial would bill the 479 DeepSeek called the input and lose the cached
+    // prefix entirely, against the 13791 the client was just shown.
+    const outcome = await facts['response.chat.openaiChatCompletions.streamedUsage']!;
+    expect(outcome.billable[0]!.quantities).toEqual({
+      input_tokens: '479',
+      input_cache_read_tokens: '13312',
+      output_tokens: '373',
+    });
   });
 
   // The other two dialects the wire composes, each stating it in a different direction: Qwen

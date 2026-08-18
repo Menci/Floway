@@ -82,6 +82,7 @@ import {
   vendorDeepSeekNormalizeForOpenAIResponses,
   vendorQwenNormalizeForOpenAIResponses,
 } from '../interceptors.ts';
+import { meterChatWire } from '../meter.ts';
 import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
@@ -344,16 +345,15 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStre
  * chain above it reads — which is what makes it interchangeable with a translated chain: both
  * hand up `response.chat.openaiResponses`, and the stage above cannot tell which ran.
  */
-const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
+const callOpenAIResponsesUpstream = defineStage<
   R<'request.chat.openaiResponses' | 'route.attempt' | 'ingress.http.headers'>,
-  R<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
+  R<'response.chat.openaiResponses' | 'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'callOpenAIResponsesUpstream',
   return: {
     provides: [
       'response.chat.openaiResponses',
-      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -394,7 +394,6 @@ const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
       return move({
         ...facts,
         'response.chat.openaiResponses': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -417,7 +416,6 @@ const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -435,17 +433,14 @@ const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
       return move({
         ...facts,
         'response.chat.openaiResponses': { kind: 'value' as const, body: result.result },
-        [streamedUsage]: null,
         'response.usage.billable': [billedOpenAIResponsesEntity(identity, billableUsageFromOpenAIResponsesResult(result.result) ?? undefined)],
         'response.http.headers': [],
       });
     }
 
-    const metered = meterOpenAIResponses(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
-      'response.chat.openaiResponses': { kind: 'stream' as const, frames: metered.frames },
-      [streamedUsage]: metered.outcome,
+      'response.chat.openaiResponses': { kind: 'stream' as const, frames: result.events },
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -509,10 +504,17 @@ export const openaiResponsesWireRules: readonly Stage[] = [
   vendorQwenNormalizeForOpenAIResponses,
 ];
 
-/** The OpenAI Responses wire, as the chain that dials it. */
+/** The OpenAI Responses wire, as the chain that dials it. The meter is above every rule, which
+ *  is what makes the figure it bills the one the client is shown. */
 export const openaiResponsesWire = (streamedUsage: string): readonly Stage[] => [
+  meterChatWire({
+    wire: 'openaiResponses',
+    answer: 'response.chat.openaiResponses',
+    streamedUsage,
+    read: meterOpenAIResponses,
+  }),
   ...openaiResponsesWireRules,
-  callOpenAIResponsesUpstream(streamedUsage),
+  callOpenAIResponsesUpstream,
 ];
 
 /** This family's own reading, which every wire under it hands up. */

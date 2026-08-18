@@ -398,6 +398,39 @@ describe('the responses chain', () => {
     expect(billable[0]!.pricingFacts).toMatchObject({ inputTokens: 11 });
   });
 
+  // The reading is taken above the wire's rules, so what the row is written from is the same
+  // frame the client was shown. An upstream counting its cached prefix outside the input total
+  // is where the two would otherwise come apart: 479 + 13312 + 373 is the 14164 it states, so
+  // the fold restores OpenAI's inclusive contract before anything reads the numbers.
+  it('bills the usage its rules settled rather than the one the upstream sent', async () => {
+    resolves([candidate({
+      callOpenAIResponses: async () => stream(
+        delta('hi'),
+        completed('hi', {
+          input_tokens: 479, output_tokens: 373, total_tokens: 14164,
+          input_tokens_details: { cached_tokens: 13312 },
+        } as OpenAIResponsesResult['usage']),
+      ),
+    })]);
+
+    const { facts } = await serve(true);
+    const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
+    const terminal = frames
+      .filter(frame => frame.event === 'response.completed')
+      .map(frame => JSON.parse(frame.data) as { response: OpenAIResponsesResult });
+
+    // What the client was shown: the cached prefix folded back into the input total.
+    expect(terminal[0]!.response.usage).toMatchObject({ input_tokens: 13791, output_tokens: 373 });
+    // And what the row is written from, which is that same figure split onto the two metrics a
+    // cache read is priced on. Metering at the dial would bill 479 and lose the prefix.
+    const outcome = await facts['response.chat.openaiResponses.streamedUsage']!;
+    expect(outcome.billable[0]!.quantities).toEqual({
+      input_tokens: '479',
+      input_cache_read_tokens: '13312',
+      output_tokens: '373',
+    });
+  });
+
   // Time to first token is measured where the token is — a lifecycle envelope is not one, and
   // a run that never stamps it is recorded as having produced nothing to time.
   it('stamps the first frame that carried a generated token', async () => {

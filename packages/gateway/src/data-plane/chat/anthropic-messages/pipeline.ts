@@ -43,6 +43,7 @@ import {
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   stripBillingAttributionFromAnthropicMessages,
 } from '../interceptors.ts';
+import { meterChatWire } from '../meter.ts';
 import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
@@ -252,16 +253,20 @@ const answerClaudeCodeProbe = defineStage<
   },
 });
 
-const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
+/**
+ * The wire. What it hands up is the upstream's own frames, unread: the reading is taken at the
+ * top of the wire, above every rule that rewrites them, so nothing here has the means to
+ * produce a figure the client will not be shown.
+ */
+const callAnthropicMessagesUpstream = defineStage<
   M<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
-  M<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
+  M<'response.chat.anthropicMessages' | 'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'callAnthropicMessagesUpstream',
   return: {
     provides: [
       'response.chat.anthropicMessages',
-      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -306,7 +311,6 @@ const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
       return move({
         ...facts,
         'response.chat.anthropicMessages': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -329,7 +333,6 @@ const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -338,11 +341,9 @@ const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterAnthropicMessages(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
-      'response.chat.anthropicMessages': { kind: 'stream' as const, frames: metered.frames },
-      [streamedUsage]: metered.outcome,
+      'response.chat.anthropicMessages': { kind: 'stream' as const, frames: result.events },
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -357,12 +358,21 @@ const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
  * speaks about *this* wire belong here. The system-role rewrite states what an upstream's Anthropic Messages
  * endpoint accepts, so it applies to whatever body this wire actually sends and to nothing
  * that leaves for another protocol.
+ *
+ * The meter is above every one of them, which is what makes the figure it bills the one the
+ * client is shown.
  */
 export const anthropicMessagesWire = (streamedUsage: string): readonly Stage[] => [
+  meterChatWire({
+    wire: 'anthropicMessages',
+    answer: 'response.chat.anthropicMessages',
+    streamedUsage,
+    read: meterAnthropicMessages,
+  }),
   stripBillingAttributionFromAnthropicMessages,
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   applyRoleCompatibilityToAnthropicMessages,
-  callAnthropicMessagesUpstream(streamedUsage),
+  callAnthropicMessagesUpstream,
 ];
 
 /** This family's own reading, which every wire under it hands up. */

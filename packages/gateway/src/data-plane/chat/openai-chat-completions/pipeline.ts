@@ -48,6 +48,7 @@ import {
   vendorKimiNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
 } from '../interceptors.ts';
+import { meterChatWire } from '../meter.ts';
 import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
@@ -193,20 +194,19 @@ const renderSSE = (
  * chain: both hand up `response.chat.openaiChatCompletions`, and the stage above cannot tell which
  * ran.
  *
- * `streamedUsage` is the one key it is told. A wire hands up one reading whatever protocol it
- * spoke, and where that reading lands is the *source* family's own key rather than this
- * protocol's — so it is built with it rather than naming one of its own.
+ * What it hands up is the upstream's own frames, unread. The reading is taken at the top of the
+ * wire, above every rule that rewrites them, so nothing here has the means to produce a figure
+ * the client will not be shown.
  */
-const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage<
+const callOpenAIChatCompletionsUpstream = defineStage<
   C<'request.chat.openaiChatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
-  C<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
+  C<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'callOpenAIChatCompletionsUpstream',
   return: {
     provides: [
       'response.chat.openaiChatCompletions',
-      streamedUsage,
       'response.usage.billable',
       'response.http.headers',
     ],
@@ -240,7 +240,6 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
       return move({
         ...facts,
         'response.chat.openaiChatCompletions': { status: 502, message: error instanceof Error ? error.message : String(error) },
-        [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
       });
@@ -263,7 +262,6 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
         },
-        [streamedUsage]: null,
         'response.usage.billable': called,
         'response.http.headers': [...result.response.headers],
       });
@@ -272,11 +270,9 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
     // This candidate answered, so it is the one a follow-up turn carrying our own state
     // must come back to.
     use.selectAffinity(candidate);
-    const metered = meterOpenAIChatCompletions(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
-      'response.chat.openaiChatCompletions': { kind: 'stream' as const, frames: metered.frames },
-      [streamedUsage]: metered.outcome,
+      'response.chat.openaiChatCompletions': { kind: 'stream' as const, frames: result.events },
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
     });
@@ -298,7 +294,8 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
  * usage chunk is asked for above everything, and coming back the vendor dialects have the
  * first say — the generic rules above them then read a body already in OpenAI-canonical form,
  * with the cache-bucket fold seeing cache fields under OpenAI's names and the carrier split
- * seeing usage the fold has already settled.
+ * seeing usage the fold has already settled. The meter is above all of them, which is what
+ * makes the figure it bills the one the client is shown.
  *
  * `disableReasoningOnForcedToolChoice` and `stripPromptCacheKey` are here rather than above
  * the fork, because both speak about what an upstream's OpenAI Chat Completions endpoint accepts —
@@ -307,6 +304,12 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
  * and the field an upstream would reject is gone before a vendor rewrites what is left.
  */
 export const openaiChatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
+  meterChatWire({
+    wire: 'openaiChatCompletions',
+    answer: 'response.chat.openaiChatCompletions',
+    streamedUsage,
+    read: meterOpenAIChatCompletions,
+  }),
   includeUsageStreamOptionsForOpenAIChatCompletions,
   normalizeUsageForOpenAIChatCompletions,
   disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
@@ -316,7 +319,7 @@ export const openaiChatCompletionsWire = (streamedUsage: string): readonly Stage
   vendorDeepSeekNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
   vendorKimiNormalizeForOpenAIChatCompletions,
-  callOpenAIChatCompletionsUpstream(streamedUsage),
+  callOpenAIChatCompletionsUpstream,
 ];
 
 /** This family's own reading, which every wire under it hands up. */
