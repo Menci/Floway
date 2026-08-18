@@ -490,7 +490,7 @@ test('mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage omits cache_read_inp
 });
 
 // OpenAI-shaped upstreams reuse prompt_tokens_details to surface Anthropic-style
-// cache_creation_input_tokens. The Chat-side total already includes both cache
+// cache_creation_input_tokens. The OpenAI-Chat-Completions-side total already includes both cache
 // buckets (cached_tokens reads + cache_creation writes), mirroring how
 // prompt_tokens already includes cached_tokens. We subtract both buckets from
 // input_tokens and surface cache_creation_input_tokens on the way out so

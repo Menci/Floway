@@ -5,7 +5,7 @@ import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } fr
 import { collectOpenAIChatCompletionsProtocolEventsToResult } from '../../src/openai-chat-completions/to-result.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic Chat chunks', async () => {
+test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic OpenAI Chat Completions chunks', async () => {
   const expected: OpenAIChatCompletionsResult = {
     id: 'chatcmpl_1',
     object: 'chat.completion',
@@ -52,7 +52,7 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult reassembles synthetic C
   assertEquals(await collectOpenAIChatCompletionsProtocolEventsToResult(events()), expected);
 });
 
-test('collectOpenAIChatCompletionsProtocolEventsToResult rejects Chat streams without DONE', async () => {
+test('collectOpenAIChatCompletionsProtocolEventsToResult rejects OpenAI Chat Completions streams without DONE', async () => {
   async function* events() {
     yield eventFrame({
       id: 'chatcmpl_truncated',

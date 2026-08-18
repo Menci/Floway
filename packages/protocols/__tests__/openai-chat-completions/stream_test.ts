@@ -10,7 +10,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-test('parseOpenAIChatCompletionsStream parses Chat SSE chunks and done sentinel', async () => {
+test('parseOpenAIChatCompletionsStream parses OpenAI Chat Completions SSE chunks and done sentinel', async () => {
   const frames = await collect(parseOpenAIChatCompletionsStream(sseFrameBody(
     sseFrame(
       JSON.stringify({
@@ -51,7 +51,7 @@ test('parseOpenAIChatCompletionsStream parses Chat SSE chunks and done sentinel'
   ]);
 });
 
-test('parseOpenAIChatCompletionsStream rejects malformed Chat SSE JSON', async () => {
+test('parseOpenAIChatCompletionsStream rejects malformed OpenAI Chat Completions SSE JSON', async () => {
   await assertRejects(
     async () => {
       await collect(parseOpenAIChatCompletionsStream(sseFrameBody(
@@ -63,7 +63,7 @@ test('parseOpenAIChatCompletionsStream rejects malformed Chat SSE JSON', async (
   );
 });
 
-test('parseOpenAIChatCompletionsStream rejects upstream Chat SSE error payloads', async () => {
+test('parseOpenAIChatCompletionsStream rejects upstream OpenAI Chat Completions SSE error payloads', async () => {
   await assertRejects(
     async () => {
       await collect(parseOpenAIChatCompletionsStream(sseFrameBody(

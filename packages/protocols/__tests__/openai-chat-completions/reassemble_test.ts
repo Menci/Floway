@@ -64,7 +64,7 @@ test('reassembleOpenAIChatCompletionsEvents reassembles text response', async ()
   assertEquals(result.usage?.prompt_tokens, 10);
 });
 
-test('reassembleOpenAIChatCompletionsEvents rejects upstream Chat error payloads', async () => {
+test('reassembleOpenAIChatCompletionsEvents rejects upstream OpenAI Chat Completions error payloads', async () => {
   const body = makeEvents([
     {
       data: {

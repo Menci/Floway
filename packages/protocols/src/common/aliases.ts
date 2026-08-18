@@ -34,7 +34,7 @@ export type AliasSelection = 'random' | 'first-available';
 // can pin any string the upstream understands.
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | (string & {});
 
-// Reasoning-summary verbosity hint emitted on the OpenAI Responses / Chat surface.
+// Reasoning-summary verbosity hint emitted on the OpenAI Responses / OpenAI Chat Completions surface.
 // Same open-literal shape as `ReasoningEffort`.
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none' | (string & {});
 

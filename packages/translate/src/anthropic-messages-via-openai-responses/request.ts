@@ -185,7 +185,7 @@ const translateTools = (tools: AnthropicMessagesClientTool[] | undefined): OpenA
     type: 'function',
     name: tool.name,
     parameters: normalizeAnthropicMessagesToolInputSchema(tool.input_schema),
-    // OpenAI Responses tools default stricter than Anthropic/Chat-style function tools,
+    // OpenAI Responses tools default stricter than Anthropic/OpenAI-Chat-Completions-style function tools,
     // so omitted source strictness is made explicit as false.
     strict: tool.strict ?? false,
     ...(tool.description ? { description: tool.description } : {}),

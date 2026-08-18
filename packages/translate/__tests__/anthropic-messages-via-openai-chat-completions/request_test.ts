@@ -521,7 +521,7 @@ test('buildTargetRequest rejects an unknown message role', () => {
   );
 });
 
-test('buildTargetRequest drops Anthropic-only knobs that have no Chat-completions slot', () => {
+test('buildTargetRequest drops Anthropic-only knobs that have no OpenAI-Chat-Completions slot', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
@@ -530,7 +530,7 @@ test('buildTargetRequest drops Anthropic-only knobs that have no Chat-completion
   });
 
   // Only the OpenAI-canonical effort axis survives; budget_tokens and display
-  // have no Chat-completions equivalent and translate emits nothing for
+  // have no OpenAI-Chat-Completions equivalent and translate emits nothing for
   // them. `speed` has its own bridge test below and is intentionally
   // excluded here.
   assertEquals(result.reasoning_effort, 'medium');
