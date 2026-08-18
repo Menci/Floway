@@ -89,7 +89,6 @@ export const prepareResponsesServePlan = async (args: {
     kind: 'chat',
     scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
-    clientDisconnectSignal: ctx.clientDisconnectSignal,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   await store.loadInputItems(prepared.input, payload.input);

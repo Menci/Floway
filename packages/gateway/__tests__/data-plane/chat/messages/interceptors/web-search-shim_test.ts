@@ -13,7 +13,7 @@ import {
   withMessagesWebSearchShim,
 } from '../../../../../src/data-plane/chat/messages/interceptors/web-search-shim.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
-import type { WebSearchProvider, WebSearchProviderLifecycle, WebSearchProviderResult } from '../../../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchProvider, WebSearchProviderResult } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -826,53 +826,18 @@ const collectStreamEvents = async (
   return events;
 };
 
-const TEST_WEB_SEARCH_LIFECYCLE: WebSearchProviderLifecycle = {
-  clientDisconnectSignal: new AbortController().signal,
-  backgroundScheduler: () => {},
-};
-
 const runStreamingShim = (
   events: MessagesStreamEvent[],
   state: MessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
-  lifecycle: WebSearchProviderLifecycle = TEST_WEB_SEARCH_LIFECYCLE,
 ) =>
   collectStreamEvents(
     rewriteMessagesWebSearchEventsToNative(
       toAsyncIterable(events.map(event => ({ type: 'event' as const, event }))),
       state,
       provider,
-      lifecycle,
     ),
   );
-
-test('messages web-search shim blocks a provider dispatch after client disconnect', async () => {
-  const controller = new AbortController();
-  const reason = new Error('client disconnected');
-  controller.abort(reason);
-  let searches = 0;
-  const provider = activeProvider(searchOnlyProvider(() => {
-    searches += 1;
-    return Promise.resolve({ type: 'ok', results: [] });
-  }));
-
-  let caught: unknown;
-  try {
-    await runStreamingShim(
-      [upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'toolu_1', 'react'), ...upstreamMessageEnd()],
-      activeMessagesWebSearchShimState(),
-      provider,
-      {
-        clientDisconnectSignal: controller.signal,
-        backgroundScheduler: () => {},
-      },
-    );
-  } catch (error) {
-    caught = error;
-  }
-  assertEquals(caught, reason);
-  assertEquals(searches, 0);
-});
 
 test('rewriteMessagesWebSearchEventsToNative single web search emits server_tool_use/result pair around text', async () => {
   const events = await runStreamingShim(

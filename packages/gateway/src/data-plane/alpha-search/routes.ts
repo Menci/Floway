@@ -99,7 +99,6 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
       upstreamIds: effectiveUpstreamIdsFromContext(c),
       scheduler: backgroundSchedulerFromContext(c),
       runtimeLocation: getRuntimeLocation(c.req.raw),
-      clientDisconnectSignal: c.req.raw.signal,
     });
     const headers = new Headers();
     const turnMetadata = c.req.header('x-codex-turn-metadata');
@@ -125,12 +124,11 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
     },
     filters: filtersFromSettings(body.settings),
     apiKeyId: apiKeyFromContext(c).id,
-    backgroundScheduler: backgroundSchedulerFromContext(c),
     pageCache: new Map(),
     // Codex renders `output` as plain text; the search-action sources list
     // is a Responses wire concern with no place here.
     includeSearchActionSources: false,
-    clientDisconnectSignal: c.req.raw.signal,
+    signal: c.req.raw.signal,
   };
 
   const parsed = parseWebSearchOperations(body.commands ?? {});
