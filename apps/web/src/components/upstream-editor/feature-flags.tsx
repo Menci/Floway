@@ -20,6 +20,7 @@ const flagGroupById = {
   'responses-image-generation-shim': 'shims',
   'responses-compact-shim': 'shims',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
+  'empty-tools-tool-choice-none': 'apiCompatibility',
   'rewrite-mid-conv-system-to-user': 'apiCompatibility',
   'rewrite-developer-to-system': 'apiCompatibility',
   'rewrite-system-to-developer': 'apiCompatibility',
