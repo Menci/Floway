@@ -11,6 +11,7 @@
 //   failover                  runs what follows once per candidate
 //   callOpenAIImagesUpstream  the ending: dials, and provides what came back
 
+import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
@@ -150,9 +151,14 @@ const rendered = (answer: OpenAIImagesFacts['response.openaiImages.canonical']):
     : isFrames(answer) ? renderSSE(answer)
       : renderOpenAIImagesResponse(answer);
 
-const renderSSE = (frames: OpenAIImagesFrames): AsyncIterable<SseFrame> => view((async function* () {
-  for await (const event of frames) yield openaiImagesStreamEventToSSEFrame(event);
-})());
+const renderSSE = (frames: OpenAIImagesFrames): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const event of frames) yield openaiImagesStreamEventToSSEFrame(event);
+  })(),
+});
 
 /**
  * The ending. It dials, reads what came back on the shape the request asked for, and provides
@@ -256,15 +262,12 @@ const callOpenAIImagesUpstream = defineStage<
       // folding the events as they pass — so the reading costs one pass and the client's own
       // stream is what drives it. What it finds arrives with the completed event, long after
       // this stage has handed up, which is why the entity above carries no quantities.
-      const metered = meterFrames(
-        result.response.body,
-        identity,
-        use.gateway.abortSignal,
-        event => { use.gateway.dump?.frame(eventFrame(event)); },
-      );
+      const metered = meterFrames(result.response.body, identity, use.gateway.abortSignal);
       return move({
         ...facts,
-        'response.openaiImages.canonical': metered.frames,
+        // This protocol's stream is bare events rather than protocol frames, so the record is
+        // told how one becomes a frame instead of being left to assume.
+        'response.openaiImages.canonical': recordStream(metered.frames, use.gateway.dump, eventFrame),
         'response.openaiImages.streamedUsage': metered.outcome,
         'response.http.headers': headers,
         // Releasing this body is reading those events to the end: they are one reader over one
@@ -314,7 +317,6 @@ const meterFrames = (
   body: ReadableStream<Uint8Array>,
   identity: TelemetryModelIdentity,
   signal: AbortSignal | undefined,
-  record: (event: OpenAIImagesStreamEvent) => void,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
   const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
@@ -325,9 +327,6 @@ const meterFrames = (
     let usage: CanonicalOpenAIImagesUsage | undefined;
     try {
       for await (const event of parseOpenAIImagesStream(body, { signal })) {
-        // What the upstream sent, before the edge decides what the client sees — a dump reader
-        // is owed the events that arrived.
-        record(event);
         if (isOpenAIImagesTerminalEvent(event)) {
           usage = parseOpenAIImagesUsage(event);
           sawTerminal = true;

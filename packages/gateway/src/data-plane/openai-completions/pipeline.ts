@@ -13,6 +13,7 @@
 //                                  answer plus what is billable
 
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
+import { recordStream, streamReferenceOf, type TurnDump } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
@@ -144,12 +145,17 @@ const rendered = (
     : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
       : answer;
 
-const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => view((async function* () {
-  for await (const frame of frames) {
-    if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
-    yield openaiCompletionsProtocolFrameToSSEFrame(frame);
-  }
-})());
+const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) {
+      if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
+      yield openaiCompletionsProtocolFrameToSSEFrame(frame);
+    }
+  })(),
+});
 
 /**
  * The ending. It dials, reads what came back on the shape the request asked for, and
@@ -216,7 +222,7 @@ const callOpenAICompletionsUpstream = defineStage<
       telemetryModelIdentity(candidate, result.modelKey),
       candidate,
       use.gateway.abortSignal,
-      frame => { use.gateway.dump?.frame(frame); },
+      use.gateway.dump,
     );
     return move({
       ...facts,
@@ -247,7 +253,7 @@ const readUpstream = async (
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
   signal: AbortSignal | undefined,
-  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
+  dump: TurnDump | null,
 ): Promise<UpstreamAnswer> => {
   // An upstream was called and reported nothing — which is what every arm but a read usage
   // block leaves standing, and is a different statement from reporting zero.
@@ -282,9 +288,9 @@ const readUpstream = async (
   // the frames as they pass — so the reading costs one pass and the client's own stream is
   // what drives it. What it finds arrives with the last frame, long after this stage has
   // handed up, which is why the entity above carries no quantities.
-  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate, record);
+  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate);
   return {
-    payload: metered.frames,
+    payload: recordStream(metered.frames, dump),
     streamedUsage: metered.outcome,
     billable: called,
     // Releasing this body is draining those frames: they are one reader over one connection,
@@ -330,7 +336,6 @@ const meterFrames = (
   source: AsyncIterable<ProtocolFrame<OpenAICompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
-  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
   const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
@@ -349,11 +354,8 @@ const meterFrames = (
           if (root.service_tier !== undefined) tier = root.service_tier;
           if (isOpenAIUsageOnlyEventShape(frame.event)) usage = root.usage;
         }
-        // What the upstream sent, before the edge decides what the client sees — a dump
-        // reader is owed the frames that arrived, including the one metering asked for.
         // The transport's own terminator is this protocol's end-of-turn.
         if (frame.type === 'done') sawTerminal = true;
-        record(frame);
         yield frame;
       }
     } finally {

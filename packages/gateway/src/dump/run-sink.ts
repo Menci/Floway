@@ -15,11 +15,12 @@
 
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
+import type { StreamRecording } from './turn-dump.ts';
 import type { DumpMetadata } from './types.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createRunEncoder, toNdjson, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { createRunEncoder, streamFact, toNdjson, type DumpEvent, type Event } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -39,6 +40,8 @@ export class RunDump {
   private readonly encode = createRunEncoder();
   private readonly events: DumpEvent[] = [];
   private sentPayloadBytes = 0;
+  private streams = 0;
+  private answerStream: StreamRecording | undefined;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -71,12 +74,30 @@ export class RunDump {
    * A frame the client was sent, as the event the format names for one.
    *
    * The edge dump kept a frame log of its own; here a frame is content about a stream, so it
-   * is `stream.frame` and it folds through the same encoder as everything else. One stream
-   * per turn is what the endpoints this carries produce, so the id is fixed — a family that
-   * opens two would need to say which, and none does.
+   * is `stream.frame` and it folds through the same encoder as everything else. A frame pushed
+   * without opening a stream first belongs to the run's first one, which is what a transport
+   * writing single synthesized frames alongside its answer is doing.
    */
   frame(frame: ProtocolFrame<unknown>): void {
-    this.sink({ type: 'stream.frame', streamId: 1, frames: [frame] });
+    this.answerStream ??= this.openStream();
+    this.answerStream.frame(frame);
+  }
+
+  /**
+   * Begins recording one stream, under an id of its own.
+   *
+   * The id is what makes the frames resolvable: the fact holding the stream carries
+   * `{"$stream": n}` and every frame event names the same `n`, so a run that opened two — a
+   * sub-request's stream beside the answer's — keeps them apart. `end` says the record of that
+   * stream is complete, and a client that stopped reading never reaches it.
+   */
+  openStream(): StreamRecording {
+    const streamId = ++this.streams;
+    return {
+      frame: frame => { this.sink({ type: 'stream.frame', streamId, frames: [frame] }); },
+      end: () => { this.sink({ type: 'stream.end', streamId }); },
+      fact: streamFact(streamId),
+    };
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {

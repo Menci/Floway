@@ -13,6 +13,7 @@
 //   callOpenAIAudioTranscriptionUpstream  the ending: dials, reads what came back, and
 //                                         provides the answer plus what is billable
 
+import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
@@ -24,7 +25,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defineStage, move, own, type Logger, type Owned, type Pipeline } from '@floway-dev/pipeline';
-import { isEventStreamMediaType, parseDecimalString, parseSSEStream, renderErrorEnvelope, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isEventStreamMediaType, parseDecimalString, parseSSEStream, renderErrorEnvelope, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   isOpenAIAudioTranscriptionDoneEvent,
   parseOpenAIAudioTranscription,
@@ -167,10 +168,14 @@ const emitOpenAIAudioTranscription = defineStage<
   },
 });
 
-const renderSSE = (events: OpenAIAudioTranscriptionEvents): AsyncIterable<SseFrame> =>
-  viewOf((async function* () {
+const renderSSE = (events: OpenAIAudioTranscriptionEvents): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the events the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(events),
+  [Symbol.asyncIterator]: () => (async function* () {
     for await (const event of events) yield sseFrame(JSON.stringify(event));
-  })());
+  })(),
+});
 
 /**
  * The ending. It dials, reads what came back in the rendering the request asked for, and
@@ -280,7 +285,9 @@ const callOpenAIAudioTranscriptionUpstream = defineStage<
       const metered = meterEvents(result.response.body, identity, use.gateway.abortSignal, use.log);
       return move({
         ...facts,
-        'response.openaiAudioTranscription.canonical': metered.events,
+        // This protocol's stream is bare events rather than protocol frames, so the record is
+        // told how one becomes a frame instead of being left to assume.
+        'response.openaiAudioTranscription.canonical': recordStream(metered.events, use.gateway.dump, eventFrame),
         'response.openaiAudioTranscription.mediaType': mediaType,
         'response.openaiAudioTranscription.streamedOutcome': metered.outcome,
         'response.usage.billable': called,

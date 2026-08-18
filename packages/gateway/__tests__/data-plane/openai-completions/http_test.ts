@@ -403,6 +403,17 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   // what is asserted is that the numbers are in the stream, not the shape they took in it.
   const stored = new TextDecoder().decode(runRecordOf(dumpStubs.stored[0]!.record).events);
   assertEquals(stored.includes('"prompt_tokens":4'), true);
+
+  // The stream is named, and every frame says which stream it belongs to — the id is
+  // allocated per stream rather than fixed, so a run that opened two would keep them apart.
+  const streamIds = new Set(events.filter(event => event.type === 'stream.frame').map(event => event.streamId));
+  assertEquals([...streamIds], [1]);
+  // And the record of it is complete. A client that stopped reading would leave the frames it
+  // did get and no terminator, which is how a reader tells the two apart.
+  assertEquals(events.filter(event => event.type === 'stream.end'), [{ type: 'stream.end', streamId: 1 }]);
+  // The facts that hold the stream point at it: the answer the ending provided, and the
+  // framing the edge built for the client over the same frames.
+  assertEquals(stored.includes('"$stream":1'), true);
 });
 
 // A run that threw is the turn that most needs explaining and used to be the one that left
