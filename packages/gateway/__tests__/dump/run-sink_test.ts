@@ -19,7 +19,7 @@ const apiKey = (dumpRetentionSeconds: number | null): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 });
 
 const requestBody = { bytes: new TextEncoder().encode('{"input":"hi"}'), streamError: null };

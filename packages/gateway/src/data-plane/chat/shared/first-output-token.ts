@@ -10,14 +10,14 @@ export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: C
 
   const event = frame.event as Record<string, unknown> & { type?: unknown; choices?: unknown };
 
-  if (targetApi === 'messages') return isMessagesOutputEvent(event);
-  if (targetApi === 'responses') return isResponsesOutputEvent(event);
-  return isChatCompletionsOutputEvent(event);
+  if (targetApi === 'anthropicMessages') return isAnthropicMessagesOutputEvent(event);
+  if (targetApi === 'openaiResponses') return isOpenAIResponsesOutputEvent(event);
+  return isOpenAIChatCompletionsOutputEvent(event);
 };
 
 const nonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
-const isMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {
+const isAnthropicMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {
   if (event.type !== 'content_block_delta') return false;
   const delta = (event as { delta?: Record<string, unknown> & { type?: unknown } }).delta;
   if (!delta || typeof delta !== 'object') return false;
@@ -30,7 +30,7 @@ const isMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown
   }
 };
 
-const RESPONSES_OUTPUT_EVENT_TYPES = new Set([
+const OPENAI_RESPONSES_OUTPUT_EVENT_TYPES = new Set([
   'response.output_text.delta',
   'response.function_call_arguments.delta',
   'response.custom_tool_call_input.delta',
@@ -39,12 +39,12 @@ const RESPONSES_OUTPUT_EVENT_TYPES = new Set([
   'response.reasoning_summary_text.delta',
 ]);
 
-const isResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {
-  if (typeof event.type !== 'string' || !RESPONSES_OUTPUT_EVENT_TYPES.has(event.type)) return false;
+const isOpenAIResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {
+  if (typeof event.type !== 'string' || !OPENAI_RESPONSES_OUTPUT_EVENT_TYPES.has(event.type)) return false;
   return nonEmptyString((event as { delta?: unknown }).delta);
 };
 
-const isChatCompletionsOutputEvent = (event: Record<string, unknown> & { choices?: unknown }): boolean => {
+const isOpenAIChatCompletionsOutputEvent = (event: Record<string, unknown> & { choices?: unknown }): boolean => {
   const choices = event.choices;
   if (!Array.isArray(choices) || choices.length === 0) return false;
   const delta = (choices[0] as { delta?: Record<string, unknown> }).delta;

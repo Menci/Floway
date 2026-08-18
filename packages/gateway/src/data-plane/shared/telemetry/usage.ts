@@ -23,7 +23,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 
 // Cache-read / cache-write token counts pulled from an OpenAI-shaped `usage`
 // block. The field name and nesting depth vary by upstream; this helper
-// hides the variants so the per-API extractors (chat-completions, completions)
+// hides the variants so the per-API extractors (openai-chat-completions, completions)
 // see a single normalized pair regardless of which provider answered.
 //
 // Cache-read candidates, in order of preference:
@@ -37,7 +37,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 //
 // Cache-write candidates, in order of preference:
 //   - `prompt_tokens_details.cache_creation_input_tokens` — the Anthropic
-//     messages → chat-completions translation pair forwards the native
+//     messages → openai-chat-completions translation pair forwards the native
 //     Anthropic field name under OpenAI's wrapper.
 //   - `prompt_tokens_details.cache_write_tokens`           — OpenRouter
 //     (Anthropic / Gemini-explicit / Alibaba-routed).

@@ -9,7 +9,7 @@ interface CustomIngressHeaderRuleDraft {
 
 const nameMessages = {
   invalid: 'dashboard.upstreamEditor.headers.validation.invalidName',
-  'messages-owned': 'dashboard.upstreamEditor.headers.validation.messagesOwned',
+  'anthropic-messages-owned': 'dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned',
   'transport-owned': 'dashboard.upstreamEditor.headers.validation.transportOwned',
 } as const;
 

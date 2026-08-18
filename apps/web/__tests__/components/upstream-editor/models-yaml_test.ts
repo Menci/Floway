@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseModels, serializeModels } from '../../../src/components/upstream-editor/models-yaml';
 
-const CHAT_MODEL = { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { chatCompletions: {} } } as const;
+const CHAT_MODEL = { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } } as const;
 const RERANK_MODEL = { upstreamModelId: 'rerank-v2', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } } as const;
 
 describe('models YAML round trip', () => {
@@ -12,7 +12,7 @@ describe('models YAML round trip', () => {
   });
 
   it('accepts a hand-written YAML list', () => {
-    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    chatCompletions: {}\n', { allowRerank: false });
+    const parsed = parseModels('- upstreamModelId: gpt-5\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n', { allowRerank: false });
     expect(parsed.ok).toBe(true);
   });
 });

@@ -24,18 +24,18 @@ export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind 
 // Structured endpoint map. A key being present means the model is served by
 // that endpoint; its value object carries endpoint-specific metadata, if any.
 // Sub-paths derived from a base endpoint
-// (`/messages/count_tokens` from `messages`, `/responses/compact` from
-// `responses`) are not modeled separately — presence of the base endpoint
-// implies them.
+// (`/messages/count_tokens` from `anthropicMessages`, `/responses/compact`
+// from `openaiResponses`) are not modeled separately — presence of the base
+// endpoint implies them.
 export interface ModelEndpoints {
   // OpenAI text completions (`/v1/completions`). Passthrough only — we
   // never translate it to or from the three chat endpoints below, so it has
-  // no endpoint-specific metadata. Orthogonal to `chatCompletions`: a model can
-  // declare any non-empty subset.
+  // no endpoint-specific metadata. Orthogonal to `openaiChatCompletions`: a
+  // model can declare any non-empty subset.
   completions?: {};
-  chatCompletions?: {};
-  responses?: {};
-  messages?: {};
+  openaiChatCompletions?: {};
+  openaiResponses?: {};
+  anthropicMessages?: {};
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};

@@ -5,7 +5,7 @@
 //
 //   { type: 'stage.entered', stageId, name, parentStageId, facts }
 //   { type: 'stage.leaved',  stageId, facts }
-//   { type: 'stage.log',     stageId, level, message, fields }
+//   { type: 'stage.log',     stageId, level, context, message, fields }
 //   { type: 'object',        fromObjectId, nodes: [ … ] }
 //   { type: 'stream.frame',  streamId, frames: [ … ] }
 //   { type: 'stream.end',    streamId }
@@ -21,7 +21,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { base64 } from '@scure/base';
 
 import type { Facts } from './facts.ts';
-import type { LogLevel } from './stage.ts';
+import type { LogEntry, LogLevel } from './stage.ts';
 
 /** What the runner produces, with facts still as live objects. */
 export type Event =
@@ -30,7 +30,7 @@ export type Event =
   /** What that stage's own logger wrote. A log line is content about a stage, like the
    *  rest, and it has to be somewhere: every stage gets a logger and with a dump open its
    *  lines are stored into that stage's record as well as going to the global sink. */
-  | { readonly type: 'stage.log'; readonly stageId: number; readonly level: LogLevel; readonly message: string; readonly fields?: Readonly<Record<string, unknown>> }
+  | ({ readonly type: 'stage.log'; readonly stageId: number } & LogEntry)
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly unknown[] }
   | { readonly type: 'stream.end'; readonly streamId: number };
 
@@ -130,7 +130,7 @@ export type Stored =
 export type DumpEvent =
   | { readonly type: 'stage.entered'; readonly stageId: number; readonly name: string; readonly parentStageId: number | null; readonly facts?: Record<string, Stored> }
   | { readonly type: 'stage.leaved'; readonly stageId: number; readonly facts: Record<string, Stored> }
-  | { readonly type: 'stage.log'; readonly stageId: number; readonly level: LogLevel; readonly message: string; readonly fields?: Record<string, Stored> }
+  | { readonly type: 'stage.log'; readonly stageId: number; readonly level: LogLevel; readonly context: string; readonly message: string; readonly fields?: Record<string, Stored> }
   | { readonly type: 'object'; readonly fromObjectId: number; readonly nodes: readonly Stored[] }
   | { readonly type: 'stream.frame'; readonly streamId: number; readonly frames: readonly Stored[] }
   | { readonly type: 'stream.end'; readonly streamId: number };
@@ -271,6 +271,7 @@ export const createRunEncoder = (options?: { readonly shareStringsFrom?: number 
         type: 'stage.log',
         stageId: event.stageId,
         level: event.level,
+        context: event.context,
         message: event.message,
         ...(fields === undefined ? {} : { fields }),
       });

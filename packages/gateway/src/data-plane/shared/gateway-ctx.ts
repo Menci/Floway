@@ -57,16 +57,16 @@ export interface CreateGatewayCtxOptions {
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
   // snapshot reflects the exact bytes the handler parsed. WebSocket
-  // upgrades carry no HTTP body — the WS Responses path passes the
+  // upgrades carry no HTTP body — the WS OpenAI Responses path passes the
   // per-turn JSON message bytes here so the dump captures the turn's
   // input verbatim.
   requestBody: RequestBody;
   // Override the HTTP method recorded on the dump's request snapshot. The
-  // WS Responses path uses `'WS'` so a dumped turn reads as
+  // WS OpenAI Responses path uses `'WS'` so a dumped turn reads as
   // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
   method?: string;
   // The model id parsed from the request payload (or from the URL on
-  // Gemini's routes), stamped on the dump immediately so even an
+  // Gemini generateContent's routes), stamped on the dump immediately so even an
   // outright-error turn carries model attribution. Omit only on error
   // fallback paths where payload parsing itself failed.
   model?: string;
@@ -74,7 +74,7 @@ export interface CreateGatewayCtxOptions {
   // telemetry, performance recording, usage recording). Provided by the
   // call site so the correct lifetime binding is chosen: HTTP handlers
   // pass `backgroundSchedulerFromContext(c)` (the runtime's fetch-scoped
-  // scheduler); the WS Responses transport builds a session-scoped
+  // scheduler); the WS OpenAI Responses transport builds a session-scoped
   // scheduler backed by one lifetime `waitUntil` registered while the
   // fetch handler is still active, so per-message tasks fired after the
   // 101 upgrade has returned still complete.

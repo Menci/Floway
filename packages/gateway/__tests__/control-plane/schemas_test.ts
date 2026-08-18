@@ -12,7 +12,7 @@ const baseAzure = {
     models: [{
       upstreamModelId: 'm',
       kind: 'chat' as const,
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     }],
   },
 };
@@ -184,7 +184,7 @@ describe('upstreamModelSchema rerank', () => {
     expect(createUpstreamBody.safeParse(chat).success).toBe(true);
 
     const mixed = customRerank();
-    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
+    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, openaiChatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
   });
 });

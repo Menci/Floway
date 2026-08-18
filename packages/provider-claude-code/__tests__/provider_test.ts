@@ -4,14 +4,14 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.t
 import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
-import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols/messages';
-import { initProviderRepo, type FlagId, type MessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
+import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
+import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
-type WireMessagesPayload = MessagesPayload & {
-  system: MessagesTextBlock[];
+type WireAnthropicMessagesPayload = AnthropicMessagesPayload & {
+  system: AnthropicMessagesTextBlock[];
   metadata: { user_id: string };
 };
 
@@ -90,8 +90,8 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
-const cliClientCallOpts = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
-  ...noopMessagesUpstreamCallOptions(),
+const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptions> = {}): AnthropicMessagesUpstreamCallOptions => ({
+  ...noopAnthropicMessagesUpstreamCallOptions(),
   headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
@@ -149,7 +149,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('getProvidedModels stamps the effective flag set onto every model', async () => {
     // claude-code's provider defaults leave `strip-billing-attribution` off
     // (Anthropic reads the block to bill against the user's plan) and turn
-    // `responses-compact-shim` on (Messages has no native compact wire).
+    // `responses-compact-shim` on (Anthropic Messages has no native compact wire).
     // Both should be reflected on every emitted model's enabledFlags.
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
@@ -175,16 +175,16 @@ describe('createClaudeCodeProvider — factory surface', () => {
   });
 });
 
-describe('createClaudeCodeProvider — callMessages routes through chain', () => {
+describe('createClaudeCodeProvider — callAnthropicMessages routes through chain', () => {
   test('unshaped request runs the re-mimicry chain (3-block system, pinned UA, metadata.user_id)', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.instance.callMessages(
+    await instance.instance.callAnthropicMessages(
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      noopMessagesUpstreamCallOptions(),
+      noopAnthropicMessagesUpstreamCallOptions(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -192,7 +192,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(wireHeaders.get('user-agent')).toMatch(/^claude-cli\//);
     expect(wireHeaders.get('anthropic-beta')).toBeTruthy();
 
-    const body = await readJsonRequest(init) as WireMessagesPayload;
+    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
     expect(Array.isArray(body.system)).toBe(true);
     expect(body.system).toHaveLength(3);
     expect(body.system[0].text).toMatch(/^x-anthropic-billing-header:/);
@@ -207,7 +207,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
-    await instance.instance.callMessages(
+    await instance.instance.callAnthropicMessages(
       sonnetProviderModel,
       {
         max_tokens: 16,
@@ -220,7 +220,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = await readJsonRequest(init) as WireMessagesPayload;
+    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
     // System stays as the operator sent it — the chain did NOT mutate to
     // the 3-block re-mimicry shape.
     expect(body.system).toHaveLength(1);
@@ -242,15 +242,15 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.instance.callMessages(
+    await instance.instance.callAnthropicMessages(
       sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      { ...noopMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
+      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = await readJsonRequest(init) as WireMessagesPayload;
+    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
     // Re-mimicry ran: system was rebuilt into the 3-block shape.
     expect(body.system).toHaveLength(3);
   });

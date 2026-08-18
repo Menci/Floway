@@ -2,12 +2,12 @@ import { test } from 'vitest';
 
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import {
-  ollamaFetchChatCompletions,
+  ollamaFetchOpenAIChatCompletions,
   ollamaFetchAudioTranscriptions,
   ollamaFetchEmbeddings,
-  ollamaFetchMessages,
-  ollamaFetchResponses,
-  ollamaFetchResponsesCompact,
+  ollamaFetchAnthropicMessages,
+  ollamaFetchOpenAIResponses,
+  ollamaFetchOpenAIResponsesCompact,
   ollamaFetchShow,
   ollamaFetchTags,
 } from '../src/fetch.ts';
@@ -45,10 +45,10 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await ollamaFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await ollamaFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await ollamaFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchTags(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
@@ -77,7 +77,7 @@ test('Authorization: Bearer is set when apiKey is configured', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
   assertEquals(auth, 'Bearer ollama_test');
@@ -95,7 +95,7 @@ test('Authorization header is omitted entirely when apiKey is absent (local daem
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
   assertEquals(auth, null);
@@ -110,7 +110,7 @@ test('Content-Type defaults to application/json for JSON bodies', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
   assertEquals(contentType, 'application/json');

@@ -1,10 +1,10 @@
-export type CustomIngressHeaderNameIssue = 'invalid' | 'messages-owned' | 'transport-owned';
+export type CustomIngressHeaderNameIssue = 'invalid' | 'anthropic-messages-owned' | 'transport-owned';
 
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.2
 const HTTP_FIELD_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
-const MESSAGES_OWNED_HEADER_NAMES = new Set(['anthropic-beta']);
+const ANTHROPIC_MESSAGES_OWNED_HEADER_NAMES = new Set(['anthropic-beta']);
 
 // These names belong to the gateway/provider transport boundary, not the
 // upstream application protocol. Sending body metadata after Floway has
@@ -61,7 +61,7 @@ const TRANSPORT_OWNED_HEADER_PREFIXES = [
 export const customIngressHeaderNameIssue = (value: string): CustomIngressHeaderNameIssue | null => {
   const name = value.trim().toLowerCase();
   if (!HTTP_FIELD_NAME_PATTERN.test(name)) return 'invalid';
-  if (MESSAGES_OWNED_HEADER_NAMES.has(name)) return 'messages-owned';
+  if (ANTHROPIC_MESSAGES_OWNED_HEADER_NAMES.has(name)) return 'anthropic-messages-owned';
   if (TRANSPORT_OWNED_HEADER_NAMES.has(name) || TRANSPORT_OWNED_HEADER_PREFIXES.some(prefix => name.startsWith(prefix))) {
     return 'transport-owned';
   }

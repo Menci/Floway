@@ -23,9 +23,9 @@ import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const { Button, DialogActions, DialogTitle, Field } = fluentComponents;
 
-interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
+interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; openaiResponsesRetention: Exclude<RetentionValue, null> }
 
-const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
+const OPENAI_RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
 const DUMP_RETENTION_PRESETS = [
   { seconds: 3600 },
@@ -34,7 +34,7 @@ const DUMP_RETENTION_PRESETS = [
   { seconds: 7 * 86400 },
 ] as const;
 
-const RESPONSES_RETENTION_PRESETS = [
+const OPENAI_RESPONSES_RETENTION_PRESETS = [
   { seconds: 7 * 86400 },
   { seconds: 30 * 86400 },
 ] as const;
@@ -77,14 +77,14 @@ export function KeyDialog(props: KeyDialogProps) {
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
           dumpRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
-          responsesRetention: z.union([z.number(), z.literal('invalid')]),
+          openaiResponsesRetention: z.union([z.number(), z.literal('invalid')]),
         })
         .superRefine((value, ctx) => {
           refineUpstreamAccess(value, ctx);
           // Rotation always re-reads the source; creation is the only other
           // moment a key's own text is set.
           if (isCreate) refineKeySource(value, ctx);
-          for (const field of ['dumpRetention', 'responsesRetention'] as const) {
+          for (const field of ['dumpRetention', 'openaiResponsesRetention'] as const) {
             if (value[field] === 'invalid') {
               ctx.addIssue({
                 code: 'custom',
@@ -115,10 +115,10 @@ export function KeyDialog(props: KeyDialogProps) {
     'dashboard.apiKeys.retention.warning',
     t,
   );
-  const responsesRetentionWarning = retentionWarningText(
+  const openaiResponsesRetentionWarning = retentionWarningText(
     apiKey?.responses_retention_seconds ?? null,
-    values.responsesRetention,
-    'dashboard.apiKeys.retention.responsesWarning',
+    values.openaiResponsesRetention,
+    'dashboard.apiKeys.retention.openaiResponsesWarning',
     t,
   );
 
@@ -133,7 +133,7 @@ export function KeyDialog(props: KeyDialogProps) {
         name: values.name.trim(),
         upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
         dump_retention_seconds: parsedRetention(values.dumpRetention),
-        responses_retention_seconds: parsedRetention(values.responsesRetention),
+        responses_retention_seconds: parsedRetention(values.openaiResponsesRetention),
       };
       const mutationKind = isCreate ? 'create' : 'edit';
       const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
@@ -253,26 +253,26 @@ export function KeyDialog(props: KeyDialogProps) {
 
       <Controller
         control={control}
-        name="responsesRetention"
+        name="openaiResponsesRetention"
         render={({ field }) => (
           <>
             <RetentionField
               defaultUnit="d"
-              description={t('dashboard.apiKeys.form.responsesRetentionHint')}
+              description={t('dashboard.apiKeys.form.openaiResponsesRetentionHint')}
               disabled={saving}
               icon={<Database24Regular />}
-              label={t('dashboard.apiKeys.form.responsesRetention')}
-              maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
+              label={t('dashboard.apiKeys.form.openaiResponsesRetention')}
+              maximumSeconds={OPENAI_RESPONSES_RETENTION_MAX_SECONDS}
               minimumSeconds={86400}
               multipleOfSeconds={86400}
               offLabel={t('dashboard.apiKeys.retention.offPersist')}
               offValue={0}
-              presets={RESPONSES_RETENTION_PRESETS}
+              presets={OPENAI_RESPONSES_RETENTION_PRESETS}
               value={field.value}
               onChange={field.onChange}
             />
-            {responsesRetentionWarning !== null && (
-              <OutcomeMessageBar intent="warning">{responsesRetentionWarning}</OutcomeMessageBar>
+            {openaiResponsesRetentionWarning !== null && (
+              <OutcomeMessageBar intent="warning">{openaiResponsesRetentionWarning}</OutcomeMessageBar>
             )}
           </>
         )}
@@ -293,7 +293,7 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
     upstreamOverride: apiKey?.upstream_ids !== null && apiKey?.upstream_ids !== undefined,
     upstreamIds: apiKey?.upstream_ids ?? [],
     dumpRetention: apiKey?.dump_retention_seconds ?? null,
-    responsesRetention: apiKey?.responses_retention_seconds ?? 0,
+    openaiResponsesRetention: apiKey?.responses_retention_seconds ?? 0,
   };
 };
 
@@ -302,7 +302,7 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
 const retentionWarningText = (
   previous: number | null,
   next: number | null | 'invalid',
-  prefix: 'dashboard.apiKeys.retention.warning' | 'dashboard.apiKeys.retention.responsesWarning',
+  prefix: 'dashboard.apiKeys.retention.warning' | 'dashboard.apiKeys.retention.openaiResponsesWarning',
   t: TFunction,
 ) => {
   if (previous === null || previous === 0 || next === 'invalid') return null;

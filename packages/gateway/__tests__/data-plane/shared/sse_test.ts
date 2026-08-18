@@ -128,7 +128,7 @@ test('writeSSEFrames emits SSE comment keepalive frames while idle', async () =>
   }
 });
 
-test('writeSSEFrames emits Messages ping keepalive frames while idle', async () => {
+test('writeSSEFrames emits Anthropic Messages ping keepalive frames while idle', async () => {
   const time = new FakeTime();
   const idle = createIdleSSEEvents();
 

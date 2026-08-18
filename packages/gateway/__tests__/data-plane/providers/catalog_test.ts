@@ -143,7 +143,7 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
 
       assertEquals(model?.display_name, 'Shared Model');
       // The merged endpoint surface is the OR of both upstreams' endpoint maps.
-      assertEquals(model?.endpoints, { messages: {}, chatCompletions: {} });
+      assertEquals(model?.endpoints, { anthropicMessages: {}, openaiChatCompletions: {} });
       assertEquals(model?.kind, 'chat');
       // `providerData` (the per-provider wire id carrier) belongs to the
       // provider-emitted ProviderModel, not the gateway-merged catalog row.
@@ -156,8 +156,8 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       // outer `endpoints` but never rewrites the per-upstream capability
       // each provider originally advertised.
       assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
-      assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { messages: {} });
-      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { chatCompletions: {} });
+      assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { anthropicMessages: {} });
+      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
       // `enabledFlags` is required on every ProviderModel — proves the
       // stored value is the provider-emitted shape (not a projected
       // subset).
@@ -167,14 +167,14 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
-      assertEquals(resolved.candidates[0]?.model.endpoints, { messages: {} });
-      assertEquals(resolved.candidates[1]?.model.endpoints, { chatCompletions: {} });
+      assertEquals(resolved.candidates[0]?.model.endpoints, { anthropicMessages: {} });
+      assertEquals(resolved.candidates[1]?.model.endpoints, { openaiChatCompletions: {} });
       // Each enumerated candidate seeds `providerModels[provider.upstreamId]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
       assertEquals(Object.keys(realProviderModels(resolved.candidates[0]?.model)), ['up_copilot']);
       assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
-      assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { messages: {} });
-      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { chatCompletions: {} });
+      assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { anthropicMessages: {} });
+      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
     },
   );
 });
@@ -194,7 +194,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-key',
-      models: over.models.map(m => ({ ...m, endpoints: { chatCompletions: {} } })),
+      models: over.models.map(m => ({ ...m, endpoints: { openaiChatCompletions: {} } })),
     },
     state: null,
     flagOverrides: {},
@@ -261,7 +261,7 @@ test('catalog assembly fans out per-upstream catalog fetches in parallel', async
       id: u.id,
       name: u.id,
       sortOrder: index,
-      config: { baseUrl: `https://${u.host}`, authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: `https://${u.host}`, authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
   }
 
@@ -304,19 +304,19 @@ test('catalog assembly: a rejected provider does not block other providers', asy
     id: 'up_ok_1',
     name: 'OK 1',
     sortOrder: 1,
-    config: { baseUrl: 'https://ok1.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://ok1.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 2,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok_2',
     name: 'OK 2',
     sortOrder: 3,
-    config: { baseUrl: 'https://ok2.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://ok2.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -350,7 +350,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
 
     await withMockedFetch(
@@ -374,7 +374,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_prefixed',
       sortOrder: 1,
-      config: { baseUrl: 'https://prefixed.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://prefixed.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
 
@@ -421,7 +421,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual_addressable',
       sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     }));
 
@@ -461,12 +461,12 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 2,
-      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
 
@@ -516,7 +516,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
 
@@ -554,7 +554,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
       disabledPublicModelIds: ['gpt-4o'],
     }));
@@ -594,19 +594,19 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_short_prefix',
       sortOrder: 1,
-      config: { baseUrl: 'https://short.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://short.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'aa/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_long_prefix',
       sortOrder: 2,
-      config: { baseUrl: 'https://long.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://long.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'aa/bb/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_bare',
       sortOrder: 3,
-      config: { baseUrl: 'https://bare.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://bare.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
 
     await withMockedFetch(

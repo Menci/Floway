@@ -19,7 +19,7 @@ export * from './detection.ts';
 export * from './headers.ts';
 export * from './log.ts';
 export * from './quota.ts';
-export * from './interceptors/messages/system-blocks.ts';
+export * from './interceptors/anthropic-messages/system-blocks.ts';
 export * from './pricing.ts';
 export * from './fetch.ts';
 export * from './provider.ts';

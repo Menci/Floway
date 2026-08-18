@@ -103,7 +103,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
       authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
     },
   }));
 

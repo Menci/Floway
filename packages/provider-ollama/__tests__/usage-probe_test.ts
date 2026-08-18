@@ -128,7 +128,7 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: () => void): Promi
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callChatCompletions(
+      await provider.instance.callOpenAIChatCompletions(
         stubProviderModel({ providerData: 'gpt-oss:120b' }),
         { messages: [] },
         undefined,
@@ -165,7 +165,7 @@ test('token counting leaves the account windows untouched and arms no probe', as
       return new Response('{"input_tokens":1}', { status: 200 });
     },
     async () => {
-      await provider.instance.callMessagesCountTokens(
+      await provider.instance.callAnthropicMessagesCountTokens(
         stubProviderModel({ providerData: 'gpt-oss:120b' }),
         { messages: [], max_tokens: 16 },
         undefined,

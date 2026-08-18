@@ -7,7 +7,7 @@ const model = (upstreamModelId: string, publicModelId?: string): UpstreamModelCo
   upstreamModelId,
   ...(publicModelId === undefined ? {} : { publicModelId }),
   kind: 'chat',
-  endpoints: { chatCompletions: {} },
+  endpoints: { openaiChatCompletions: {} },
 });
 
 describe('disabled model options', () => {

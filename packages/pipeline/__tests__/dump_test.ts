@@ -133,7 +133,7 @@ describe('the dump encoding', () => {
   });
 
   it('carries a log line with its structured fields', () => {
-    const events: Event[] = [{ type: 'stage.log', stageId: 4, level: 'warn', message: 'slow', fields: { ms: 1200 } }];
+    const events: Event[] = [{ type: 'stage.log', stageId: 4, level: 'warn', context: 'callUpstream', message: 'slow', fields: { ms: 1200 } }];
     const [encoded] = encodeRun(events).filter(e => e.type === 'stage.log');
     expect(encoded).toMatchObject({ stageId: 4, level: 'warn', message: 'slow', fields: { ms: 1200 } });
   });

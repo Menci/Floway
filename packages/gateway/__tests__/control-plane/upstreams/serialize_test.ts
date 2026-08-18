@@ -34,9 +34,9 @@ const custom: UpstreamRecord = {
     authStyle: 'bearer',
     ingressHeadersRules: [{ key: 'x-route', value: '' }],
     apiKey: 'sk-secret-token-12345',
-    endpoints: { chatCompletions: {}, responses: {} },
+    endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },
-    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
   state: null,
 };
@@ -56,10 +56,10 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(config.baseUrl, 'https://api.example.com');
   assertEquals('apiKey' in config, false);
   assertEquals(config.apiKeySet, true);
-  assertEquals(config.endpoints, { chatCompletions: {}, responses: {} });
+  assertEquals(config.endpoints, { openaiChatCompletions: {}, openaiResponses: {} });
   assertEquals(config.ingressHeadersRules, [{ key: 'x-route', value: '' }]);
   assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }]);
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
 });
 
 test('upstreamRecordToJson redacts Azure API keys inside config', () => {
@@ -70,7 +70,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-secret',
-      models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }],
+      models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
     },
   });
   if (result.kind !== 'azure') throw new Error('Expected an Azure response');
@@ -78,7 +78,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   assertEquals(config.endpoint, 'https://example.openai.azure.com');
   assertEquals('apiKey' in config, false);
   assertEquals(config.apiKeySet, true);
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }]);
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
 });
 
 test('upstreamRecordToJson redacts Copilot GitHub token inside config and exposes the state baseUrl', () => {

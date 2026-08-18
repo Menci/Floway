@@ -49,9 +49,9 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 // rules.
 const modelEndpointsSchema = z.object({
   completions: z.object({}).optional(),
-  chatCompletions: z.object({}).optional(),
-  responses: z.object({}).optional(),
-  messages: z.object({}).optional(),
+  openaiChatCompletions: z.object({}).optional(),
+  openaiResponses: z.object({}).optional(),
+  anthropicMessages: z.object({}).optional(),
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),
@@ -272,8 +272,8 @@ export const changeOwnPasswordBody = z.object({
 // rather than letting them through as de-facto "never expire".
 const dumpRetentionSecondsSchema = z.number().int().positive().max(RETENTION_MAX_SECONDS).nullable();
 // Keep the wire/storage unit aligned with dump retention while requiring the
-// dashboard's whole-day Responses contract at every control-plane boundary.
-const responsesRetentionSecondsSchema = z.union([
+// dashboard's whole-day OpenAI Responses contract at every control-plane boundary.
+const openaiResponsesRetentionSecondsSchema = z.union([
   z.literal(0),
   z.number().int().min(SECONDS_PER_DAY).max(RETENTION_MAX_SECONDS).multipleOf(SECONDS_PER_DAY),
 ]);
@@ -292,7 +292,7 @@ export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
 });
 
@@ -302,7 +302,7 @@ export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
 });
 
 // --- upstreams ---
@@ -595,7 +595,7 @@ const chatAliasReasoningSchema = z.object({
   summary: z.string().min(1).optional(),
 }).strict().refine(
   // `adaptive` and a pinned `budget_tokens` are mutually exclusive on the
-  // Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
+  // Anthropic Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
   // only the `enabled` branch carries a `budget_tokens`. Storing both on the
   // same rule would silently discard the budget at overlay time.
   r => !(r.adaptive === true && r.budget_tokens !== undefined),

@@ -18,9 +18,9 @@ const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'store
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
   completions: endpointSchema.optional(),
-  chatCompletions: endpointSchema.optional(),
-  responses: endpointSchema.optional(),
-  messages: endpointSchema.optional(),
+  openaiChatCompletions: endpointSchema.optional(),
+  openaiResponses: endpointSchema.optional(),
+  anthropicMessages: endpointSchema.optional(),
   embeddings: endpointSchema.optional(),
   imagesGenerations: endpointSchema.optional(),
   imagesEdits: endpointSchema.optional(),

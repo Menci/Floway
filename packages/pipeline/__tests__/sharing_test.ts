@@ -9,7 +9,7 @@ import type { Handed } from '../src/index.ts';
 
 interface Message { readonly role: string; readonly content: string }
 type Payload = { readonly messages: readonly Message[] };
-type Facts = { readonly 'request.chat.chatCompletions': Payload };
+type Facts = { readonly 'request.chat.openaiChatCompletions': Payload };
 
 const conversation = (turns: number): Payload => move({
   messages: [
@@ -36,15 +36,15 @@ const sharedWith = (before: unknown, after: unknown): number => {
 const careful = defineStage<Facts, Facts, object, object>({
   name: 'careful',
   through: {
-    request: { needs: ['request.chat.chatCompletions'], consumes: [], provides: ['request.chat.chatCompletions'] },
+    request: { needs: ['request.chat.openaiChatCompletions'], consumes: [], provides: ['request.chat.openaiChatCompletions'] },
     response: { needs: [], consumes: [], provides: [] },
   },
   execute: transform(() => ({
     request: (facts): Handed<Facts> => {
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       return {
         ...facts,
-        'request.chat.chatCompletions': move({
+        'request.chat.openaiChatCompletions': move({
           ...payload,
           messages: payload.messages.map(m => (m.role === 'system' ? { ...m, role: 'developer' } : m)),
         }),
@@ -93,11 +93,11 @@ describe('structural sharing', () => {
       execute: (facts: Facts, next: (h: Facts) => Promise<object>, use: object) => Promise<object>;
     };
     return erased.execute(
-      { 'request.chat.chatCompletions': before },
+      { 'request.chat.openaiChatCompletions': before },
       async h => { handed = h; return {}; },
       { log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } },
     ).then(() => {
-      const after = handed!['request.chat.chatCompletions'];
+      const after = handed!['request.chat.openaiChatCompletions'];
       expect(nodes(after) - sharedWith(before, after)).toBe(3);
     });
   });

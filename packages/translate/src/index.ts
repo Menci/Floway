@@ -1,13 +1,13 @@
-export { translateMessagesViaResponses } from './messages-via-responses/translate.ts';
-export { translateMessagesViaChatCompletions } from './messages-via-chat-completions/translate.ts';
-export { translateResponsesViaMessages } from './responses-via-messages/translate.ts';
-export { translateResponsesViaChatCompletions } from './responses-via-chat-completions/translate.ts';
-export { translateChatCompletionsViaMessages } from './chat-completions-via-messages/translate.ts';
-export { translateChatCompletionsViaResponses } from './chat-completions-via-responses/translate.ts';
-export { translateGeminiViaMessages } from './gemini-via-messages/translate.ts';
-export { translateGeminiViaResponses } from './gemini-via-responses/translate.ts';
-export { translateGeminiViaChatCompletions } from './gemini-via-chat-completions/translate.ts';
+export { translateAnthropicMessagesViaOpenAIResponses } from './anthropic-messages-via-openai-responses/translate.ts';
+export { translateAnthropicMessagesViaOpenAIChatCompletions } from './anthropic-messages-via-openai-chat-completions/translate.ts';
+export { translateOpenAIResponsesViaAnthropicMessages } from './openai-responses-via-anthropic-messages/translate.ts';
+export { translateOpenAIResponsesViaOpenAIChatCompletions } from './openai-responses-via-openai-chat-completions/translate.ts';
+export { translateOpenAIChatCompletionsViaAnthropicMessages } from './openai-chat-completions-via-anthropic-messages/translate.ts';
+export { translateOpenAIChatCompletionsViaOpenAIResponses } from './openai-chat-completions-via-openai-responses/translate.ts';
+export { translateGeminiGenerateContentViaAnthropicMessages } from './gemini-generate-content-via-anthropic-messages/translate.ts';
+export { translateGeminiGenerateContentViaOpenAIResponses } from './gemini-generate-content-via-openai-responses/translate.ts';
+export { translateGeminiGenerateContentViaOpenAIChatCompletions } from './gemini-generate-content-via-openai-chat-completions/translate.ts';
 
-export { canonicalizeResponsesPayload } from './canonicalize-responses-payload.ts';
+export { canonicalizeOpenAIResponsesPayload } from './canonicalize-openai-responses-payload.ts';
 export type { RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslateTripResult, TranslationContext } from './types.ts';
 export { TranslatorInputError } from './translator-input-error.ts';
