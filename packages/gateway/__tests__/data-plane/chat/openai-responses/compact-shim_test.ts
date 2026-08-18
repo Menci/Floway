@@ -11,9 +11,9 @@ import {
   summarizationTurnFor,
   summaryTextFrom,
   SUMMARY_PREFIX,
-} from '../../../../src/data-plane/chat/responses/compact-shim.ts';
+} from '../../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const turnFor = (payload: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload =>
@@ -24,7 +24,7 @@ const itemsOf = (payload: CanonicalResponsesPayload): { type: string; role?: str
   payload.input as { type: string; role?: string; content?: { type: string; text: string }[] }[];
 
 /** What the summarization turn produced, as an upstream states it. */
-const summarized = (text: string, overrides: Partial<ResponsesResult> = {}): ResponsesResult => ({
+const summarized = (text: string, overrides: Partial<OpenAIResponsesResult> = {}): OpenAIResponsesResult => ({
   id: 'resp_fake_upstream',
   object: 'response',
   model: 'test-upstream-model',
@@ -185,7 +185,7 @@ test('a history ending on an assistant message gets a synthetic terminal user pr
 // ── The summary, and the envelope it is packed into ──────────────────────────
 
 test('the summary is the item the turn closed, not the output its terminal stated', () => {
-  const message: ResponsesOutputItem = {
+  const message: OpenAIResponsesOutputItem = {
     type: 'message',
     id: 'msg_1',
     role: 'assistant',
@@ -228,7 +228,7 @@ test("the upstream's `output_text` SDK alias is dropped from the synthesized env
   const envelope = buildCompactionEnvelope(
     'cmp_1',
     'THE SUMMARY',
-    summarized('THE SUMMARY', { output_text: 'THE SUMMARY' } as Partial<ResponsesResult>),
+    summarized('THE SUMMARY', { output_text: 'THE SUMMARY' } as Partial<OpenAIResponsesResult>),
   );
 
   assertEquals(envelope.output_text, undefined);
@@ -257,7 +257,7 @@ test('round-trip: what one turn packed is what the next turn is sent', () => {
   // with the summary message, carrying the handoff prefix baked in at encode time.
   const expanded = expandShimCompactionItems({
     model: 'test-model',
-    input: [{ type: 'compaction', id: item.id, encrypted_content: item.encrypted_content } as unknown as ResponsesInputItem],
+    input: [{ type: 'compaction', id: item.id, encrypted_content: item.encrypted_content } as unknown as OpenAIResponsesInputItem],
   });
 
   const items = expanded.input as { type: string; role: string; content: { type: string; text: string }[] }[];

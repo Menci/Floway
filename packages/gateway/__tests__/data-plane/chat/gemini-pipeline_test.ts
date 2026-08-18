@@ -6,14 +6,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
+import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiPayload, type GeminiResult } from '@floway-dev/protocols/gemini';
+import { GEMINI_MISSING_TERMINAL_MESSAGE, type GeminiGenerateContentPayload, type GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import { directFetcher, type ModelCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -43,7 +43,7 @@ type CallChatCompletions = (
   body: unknown,
   signal: AbortSignal | undefined,
   opts: UpstreamCallOptions,
-) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 
 const candidate = (upstream: string, callChatCompletions: CallChatCompletions): ModelCandidate => {
   const endpoints = { chatCompletions: {} };
@@ -58,21 +58,21 @@ const candidate = (upstream: string, callChatCompletions: CallChatCompletions): 
   };
 };
 
-const chunk = (delta: Record<string, unknown>, finishReason?: string): ProtocolFrame<ChatCompletionsStreamEvent> =>
+const chunk = (delta: Record<string, unknown>, finishReason?: string): ProtocolFrame<OpenAIChatCompletionsStreamEvent> =>
   eventFrame({
     id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'gemini-2.5-pro',
     choices: [{ index: 0, delta, ...(finishReason === undefined ? {} : { finish_reason: finishReason }) }],
-  } as ChatCompletionsStreamEvent);
+  } as OpenAIChatCompletionsStreamEvent);
 
-const usageChunk: ProtocolFrame<ChatCompletionsStreamEvent> = eventFrame({
+const usageChunk: ProtocolFrame<OpenAIChatCompletionsStreamEvent> = eventFrame({
   id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'gemini-2.5-pro',
   choices: [],
   usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
-} as ChatCompletionsStreamEvent);
+} as OpenAIChatCompletionsStreamEvent);
 
 /** One whole turn on the wire below: two content deltas, the figures the upstream metered,
  *  and the sentinel that ends it. */
-const turn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
+const turn = (): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     yield chunk({ content: 'he' });
     yield chunk({ content: 'llo' }, 'stop');
@@ -83,7 +83,7 @@ const turn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
 
 /** The wire below closed cleanly and never finished the turn: no choice ever carried a
  *  finish reason, so nothing that comes out of the translation is a Gemini terminal event. */
-const unfinishedTurn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
+const unfinishedTurn = (): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     yield chunk({ content: 'he' });
     yield doneFrame();
@@ -91,9 +91,9 @@ const unfinishedTurn = (): AsyncIterable<ProtocolFrame<ChatCompletionsStreamEven
 });
 
 const streamed = (
-  events: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+  events: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   headers?: Headers,
-): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
   ok: true, events, modelKey: 'gemini-2.5-pro-key', ...(headers === undefined ? {} : { headers }),
 });
 
@@ -101,7 +101,7 @@ const payload = { contents: [{ role: 'user' as const, parts: [{ text: 'hello' }]
 
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  turn the client sent, which is the point: carried state is rewritten per candidate. */
-let affinityPayload: GeminiPayload = payload;
+let affinityPayload: GeminiGenerateContentPayload = payload;
 
 /** How many times the chain asked the resolver for that turn. One stage owns the reading;
  *  anything below it reads the record. */
@@ -131,10 +131,10 @@ beforeEach(() => {
 });
 
 const serve = async (facts: Record<string, unknown>) =>
-  await serveWith(mockChatGatewayCtx({ wantsStream: facts['ingress.chat.gemini.wantsStream'] === true }), facts);
+  await serveWith(mockChatGatewayCtx({ wantsStream: facts['ingress.chat.geminiGenerateContent.wantsStream'] === true }), facts);
 
 const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: Record<string, unknown>) => await run(
-  geminiServePipeline(payload),
+  geminiGenerateContentServePipeline(payload),
   move(facts) as never,
   {
     gateway,
@@ -150,10 +150,10 @@ const serveWith = async (gateway: ReturnType<typeof mockChatGatewayCtx>, facts: 
 );
 
 const entryFacts = (overrides: Record<string, unknown> = {}) => ({
-  'ingress.chat.gemini.wantsStream': true,
+  'ingress.chat.geminiGenerateContent.wantsStream': true,
   'ingress.chat.sourceProtocol': 'gemini',
   'ingress.http.headers': [],
-  'request.chat.gemini': payload,
+  'request.chat.geminiGenerateContent': payload,
   'serve.model': 'gemini-2.5-pro',
   ...overrides,
 });
@@ -167,7 +167,7 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
 /** The turn's own answer. The carrier the edge writes back rides as a `thoughtSignature` on
  *  a Part rather than as an event of its own, so taking it off leaves what Gemini itself
  *  said. */
-const withoutCarrier = (event: GeminiResult): GeminiResult => ({
+const withoutCarrier = (event: GeminiGenerateContentResult): GeminiGenerateContentResult => ({
   ...event,
   ...(event.candidates === undefined ? {} : {
     candidates: event.candidates.map(candidate => ({
@@ -181,19 +181,19 @@ const withoutCarrier = (event: GeminiResult): GeminiResult => ({
 });
 
 /** Every piece of this turn's own state the client was handed back. */
-const affinityCarriers = (events: readonly GeminiResult[]): readonly string[] =>
+const affinityCarriers = (events: readonly GeminiGenerateContentResult[]): readonly string[] =>
   events.flatMap(event => (event.candidates ?? []).flatMap(candidate =>
     candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
 
 describe('the gemini pipeline', () => {
-  // The whole entry contract, and it does not mention `request.chat.gemini`: the turn the
+  // The whole entry contract, and it does not mention `request.chat.geminiGenerateContent`: the turn the
   // wire translates is not the one the caller handed in but the one materializeAttempt put
   // into the record below the fork, which is where a per-candidate payload can exist at all.
   // The two `ingress.*` keys are there because the fork declares what the wire under it
   // reads — a wire is built against a candidate, so assembly cannot ask one itself.
   it('assembles, and asks its caller only for what the descending stages need', () => {
-    expect([...geminiServePipeline(payload).entryNeeds].sort()).toEqual([
-      'ingress.chat.gemini.wantsStream',
+    expect([...geminiGenerateContentServePipeline(payload).entryNeeds].sort()).toEqual([
+      'ingress.chat.geminiGenerateContent.wantsStream',
       'ingress.chat.sourceProtocol',
       'ingress.http.headers',
       'serve.model',
@@ -211,8 +211,8 @@ describe('the gemini pipeline', () => {
 
     // The answer comes back before the drain runs, which is what lets a streaming family
     // hand its stream on: the frames are still there to read.
-    expect((await collect(facts['response.chat.gemini.rendered']))
-      .map(frame => withoutCarrier(JSON.parse(frame.data) as GeminiResult))).toEqual([
+    expect((await collect(facts['response.chat.geminiGenerateContent.rendered']))
+      .map(frame => withoutCarrier(JSON.parse(frame.data) as GeminiGenerateContentResult))).toEqual([
       { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }] } }] },
       {
         candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'llo' }] }, finishReason: 'STOP' }],
@@ -242,13 +242,13 @@ describe('the gemini pipeline', () => {
     resolves([dialled]);
 
     const { facts, drain } = await serve(entryFacts());
-    await collect(facts['response.chat.gemini.rendered']);
+    await collect(facts['response.chat.geminiGenerateContent.rendered']);
 
-    // The handoff consumed `request.chat.gemini` and provided the wire's own key, so what the
+    // The handoff consumed `request.chat.geminiGenerateContent` and provided the wire's own key, so what the
     // record still carries below the fork is the translated turn and not the Gemini one — the
     // whole of what a translation is, said in the fact space.
-    expect((facts as Record<string, unknown>)['request.chat.gemini']).toBeUndefined();
-    expect((facts as Record<string, unknown>)['request.chat.chatCompletions'])
+    expect((facts as Record<string, unknown>)['request.chat.geminiGenerateContent']).toBeUndefined();
+    expect((facts as Record<string, unknown>)['request.chat.openaiChatCompletions'])
       .toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
     expect(asked).toBe(1);
     expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
@@ -259,11 +259,11 @@ describe('the gemini pipeline', () => {
   it('folds the frames into one Gemini result for a client that did not ask to stream', async () => {
     resolves([candidate('up_a', async () => streamed(turn()))]);
 
-    const { facts, drain } = await serve(entryFacts({ 'ingress.chat.gemini.wantsStream': false }));
+    const { facts, drain } = await serve(entryFacts({ 'ingress.chat.geminiGenerateContent.wantsStream': false }));
 
     // The two chunks stay two Parts: the carrier signs the Part it rides on, and merging a
     // signed Part into its neighbour would spread that signature over text it does not cover.
-    expect(withoutCarrier(facts['response.chat.gemini.rendered'] as GeminiResult)).toEqual({
+    expect(withoutCarrier(facts['response.chat.geminiGenerateContent.rendered'] as GeminiGenerateContentResult)).toEqual({
       candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'he' }, { text: 'llo' }] }, finishReason: 'STOP' }],
       usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 7, totalTokenCount: 12 },
     });
@@ -279,8 +279,8 @@ describe('the gemini pipeline', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts, drain } = await serveWith(gateway, entryFacts());
-    const frames = await collect(facts['response.chat.gemini.rendered']);
-    const carried = affinityCarriers(frames.map(frame => JSON.parse(frame.data) as GeminiResult));
+    const frames = await collect(facts['response.chat.geminiGenerateContent.rendered']);
+    const carried = affinityCarriers(frames.map(frame => JSON.parse(frame.data) as GeminiGenerateContentResult));
 
     expect(carried).toHaveLength(1);
     // It names the upstream that answered, sealed under this run's own secret — which is what
@@ -313,7 +313,7 @@ describe('the gemini pipeline', () => {
     // because every Gemini wire is a translation and the object that came back was written by
     // whatever protocol the candidate was dialled on.
     expect(facts['response.http.status']).toBe(400);
-    const rendered = facts['response.chat.gemini.rendered'] as { error: { code: number; message: string; status: string } };
+    const rendered = facts['response.chat.geminiGenerateContent.rendered'] as { error: { code: number; message: string; status: string } };
     expect(rendered.error.code).toBe(400);
     expect(rendered.error.status).toBe('INVALID_ARGUMENT');
     expect(rendered.error.message).toContain('no');
@@ -331,7 +331,7 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     expect(facts['response.http.status']).toBe(502);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ error: { code: 502, message: 'socket hang up', status: 'UNAVAILABLE' } });
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({ error: { code: 502, message: 'socket hang up', status: 'UNAVAILABLE' } });
     // A dial that never completed reached no upstream, so nothing was billed and there are no
     // headers to carry.
     expect(facts['response.usage.billable']).toEqual([]);
@@ -349,7 +349,7 @@ describe('the gemini pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     expect(facts['response.http.headers']).toEqual([['x-request-id', 'req_1']]);
-    await collect(facts['response.chat.gemini.rendered']);
+    await collect(facts['response.chat.geminiGenerateContent.rendered']);
     await drain();
   });
 
@@ -361,11 +361,11 @@ describe('the gemini pipeline', () => {
     resolves([candidate('up_a', async () => streamed(turn()))]);
 
     const { facts, drain } = await serve(entryFacts());
-    await collect(facts['response.chat.gemini.rendered']);
+    await collect(facts['response.chat.geminiGenerateContent.rendered']);
     await drain();
 
     expect(recorded.usage).toHaveLength(0);
-    const usage = facts['response.chat.gemini.streamedUsage'];
+    const usage = facts['response.chat.geminiGenerateContent.streamedUsage'];
     expect(usage).not.toBeNull();
     const outcome = await usage!;
     const billable = outcome.billable;
@@ -387,7 +387,7 @@ describe('the gemini pipeline', () => {
 
     const { facts, drain } = await serveWith(gateway, entryFacts());
     expect(gateway.attempt.firstOutputTokenAt).toBeNull();
-    await collect(facts['response.chat.gemini.rendered']);
+    await collect(facts['response.chat.geminiGenerateContent.rendered']);
 
     expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
     await drain();
@@ -401,7 +401,7 @@ describe('the gemini pipeline', () => {
 
     const { facts, drain } = await serve(entryFacts());
 
-    await expect(collect(facts['response.chat.gemini.rendered'])).rejects.toThrow(GEMINI_MISSING_TERMINAL_MESSAGE);
+    await expect(collect(facts['response.chat.geminiGenerateContent.rendered'])).rejects.toThrow(GEMINI_MISSING_TERMINAL_MESSAGE);
     await drain();
   });
 });

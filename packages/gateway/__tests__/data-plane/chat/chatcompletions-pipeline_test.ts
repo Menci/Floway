@@ -6,12 +6,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
+import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
-import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -24,7 +24,7 @@ vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal 
 let live: readonly ModelCandidate[] = [];
 
 const candidate = (
-  callChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>,
+  callChatCompletions: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>,
   upstreamId = 'up_a',
   flags: readonly FlagId[] = [],
 ): ModelCandidate => {
@@ -52,7 +52,7 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] } as never);
 };
 
-const chunk = (text: string): ChatCompletionsStreamEvent => ({
+const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
   id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
   choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
 });
@@ -61,11 +61,11 @@ const chunk = (text: string): ChatCompletionsStreamEvent => ({
  *  chunk whose delta holds nothing but `reasoning_opaque`. */
 const affinityCarrier = (frame: SseFrame): string | undefined => {
   if (frame.data === '[DONE]') return undefined;
-  return (JSON.parse(frame.data) as ChatCompletionsStreamEvent).choices[0]?.delta.reasoning_opaque ?? undefined;
+  return (JSON.parse(frame.data) as OpenAIChatCompletionsStreamEvent).choices[0]?.delta.reasoning_opaque ?? undefined;
 };
 
 /** A stream that stops without ever saying it ended — what a dropped upstream looks like. */
-const truncated = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+const truncated = (...events: readonly OpenAIChatCompletionsStreamEvent[]): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
   ok: true,
   modelKey: 'chat-model-key',
   headers: new Headers(),
@@ -74,7 +74,7 @@ const truncated = (...events: readonly ChatCompletionsStreamEvent[]): ProviderSt
   })(),
 });
 
-const stream = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+const stream = (...events: readonly OpenAIChatCompletionsStreamEvent[]): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
   ok: true,
   modelKey: 'chat-model-key',
   headers: new Headers({ 'x-request-id': 'req-1', 'content-length': '99' }),
@@ -84,11 +84,11 @@ const stream = (...events: readonly ChatCompletionsStreamEvent[]): ProviderStrea
   })(),
 });
 
-const payload = { model: 'chat-model', messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
+const payload = { model: 'chat-model', messages: [{ role: 'user', content: 'hi' }] } as unknown as OpenAIChatCompletionsPayload;
 
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
-let affinityPayload: ChatCompletionsPayload = payload;
+let affinityPayload: OpenAIChatCompletionsPayload = payload;
 
 const serve = async (wantsStream: boolean) => await serveWith(mockChatGatewayCtx({ wantsStream }), wantsStream);
 
@@ -97,13 +97,13 @@ const serveWith = async (
   wantsStream: boolean,
   wantsUsageChunk = false,
 ) => await run(
-  chatCompletionsServePipeline(payload),
+  openaiChatCompletionsServePipeline(payload),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
     'ingress.chat.sourceProtocol': 'chatCompletions',
-    'ingress.chat.chatCompletions.wantsStream': wantsStream,
-    'ingress.chat.chatCompletions.wantsUsageChunk': wantsUsageChunk,
-    'request.chat.chatCompletions': payload,
+    'ingress.chat.openaiChatCompletions.wantsStream': wantsStream,
+    'ingress.chat.openaiChatCompletions.wantsUsageChunk': wantsUsageChunk,
+    'request.chat.openaiChatCompletions': payload,
     'serve.model': 'chat-model',
   }) as never,
   {
@@ -140,7 +140,7 @@ describe('the chat completions chain', () => {
     affinityPayload = {
       ...payload,
       messages: [{ role: 'system', content: 'be brief' }, { role: 'user', content: 'hi' }],
-    } as unknown as ChatCompletionsPayload;
+    } as unknown as OpenAIChatCompletionsPayload;
     resolves([candidate(async (_model, body) => {
       sent = body as { messages: { role: string }[] };
       return stream(chunk('hi'));
@@ -156,7 +156,7 @@ describe('the chat completions chain', () => {
   // that goes out is the one it materialized rather than the one the client sent.
   it('sends the payload affinity materialized for the candidate it dialled', async () => {
     let sent: Record<string, unknown> | undefined;
-    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as ChatCompletionsPayload;
+    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as OpenAIChatCompletionsPayload;
     resolves([candidate(async (_model, body) => {
       sent = body as Record<string, unknown>;
       return stream(chunk('hi'));
@@ -174,7 +174,7 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serve(true);
     const frames: SseFrame[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
 
     expect(facts['response.http.status']).toBe(200);
     // The carrier the edge writes has a test of its own below; what the protocol itself
@@ -195,7 +195,7 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serveWith(gateway, true);
     const frames: SseFrame[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
     const carried = frames.flatMap(frame => affinityCarrier(frame) ?? []);
 
     expect(carried).toHaveLength(1);
@@ -213,7 +213,7 @@ describe('the chat completions chain', () => {
     resolves([candidate(async () => stream(chunk('he'), chunk('llo')))]);
 
     const { facts } = await serve(false);
-    const rendered = facts['response.chat.chatCompletions.rendered'] as { choices: { message: { content: string } }[] };
+    const rendered = facts['response.chat.openaiChatCompletions.rendered'] as { choices: { message: { content: string } }[] };
 
     expect(facts['response.http.status']).toBe(200);
     expect(rendered.choices[0]!.message.content).toBe('hello');
@@ -242,7 +242,7 @@ describe('the chat completions chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(429);
-    expect(facts['response.chat.chatCompletions.rendered']).toEqual({ error: { message: 'slow down' } });
+    expect(facts['response.chat.openaiChatCompletions.rendered']).toEqual({ error: { message: 'slow down' } });
   });
 
   // What the upstream reported is per token category and what is billed is per metric name;
@@ -251,11 +251,11 @@ describe('the chat completions chain', () => {
     resolves([candidate(async () => stream(chunk('hi'), {
       id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
       choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 },
-    } as unknown as ChatCompletionsStreamEvent))]);
+    } as unknown as OpenAIChatCompletionsStreamEvent))]);
 
     const { facts } = await serve(true);
-    for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
-    const outcome = await facts['response.chat.chatCompletions.streamedUsage']!;
+    for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
+    const outcome = await facts['response.chat.openaiChatCompletions.streamedUsage']!;
 
     expect(outcome.billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
     // A rate can depend on the tier and on how much input there was; both are selector
@@ -278,7 +278,7 @@ describe('the chat completions chain', () => {
         ? stream(chunk('hi'), {
             id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
             choices: [], usage: { prompt_tokens: 11, completion_tokens: 4, total_tokens: 15 },
-          } as unknown as ChatCompletionsStreamEvent)
+          } as unknown as OpenAIChatCompletionsStreamEvent)
         : stream(chunk('hi'));
     })]);
 
@@ -286,8 +286,8 @@ describe('the chat completions chain', () => {
     // the two questions come apart: the upstream is asked for it regardless.
     const { facts } = await serve(true);
     const frames: SseFrame[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
-    const outcome = await facts['response.chat.chatCompletions.streamedUsage']!;
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    const outcome = await facts['response.chat.openaiChatCompletions.streamedUsage']!;
 
     expect(asked).toEqual({ include_usage: true });
     expect(outcome.billable[0]!.quantities).toMatchObject({ input_tokens: '11', output_tokens: '4' });
@@ -296,7 +296,7 @@ describe('the chat completions chain', () => {
   });
 
   // The wire's response-direction rules, on the wire that owns them, in the order it composes
-  // them — which is a property of the array in `chatCompletionsWire` and of nothing else. A
+  // them — which is a property of the array in `openaiChatCompletionsWire` and of nothing else. A
   // DeepSeek-shaped upstream reporting the exclusive cache convention exercises all three at
   // once, and each one's input is what the one below it left: the vendor rename, then the fold
   // that reads the renamed field, then the split that puts the settled usage on a carrier.
@@ -305,7 +305,7 @@ describe('the chat completions chain', () => {
       {
         id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
         choices: [{ index: 0, delta: { reasoning_content: 'pondering' }, finish_reason: null }],
-      } as unknown as ChatCompletionsStreamEvent,
+      } as unknown as OpenAIChatCompletionsStreamEvent,
       {
         id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
         // Hung off the final delta rather than sent on a carrier, in DeepSeek's own cache
@@ -316,14 +316,14 @@ describe('the chat completions chain', () => {
           prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164,
           prompt_cache_hit_tokens: 13312, prompt_cache_miss_tokens: 479,
         },
-      } as unknown as ChatCompletionsStreamEvent,
+      } as unknown as OpenAIChatCompletionsStreamEvent,
     ), 'up_a', ['vendor-deepseek'])]);
 
     const { facts } = await serveWith(mockChatGatewayCtx({ wantsStream: true }), true, true);
-    const written: ChatCompletionsStreamEvent[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) {
+    const written: OpenAIChatCompletionsStreamEvent[] = [];
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) {
       if (frame.data !== '[DONE]' && affinityCarrier(frame) === undefined) {
-        written.push(JSON.parse(frame.data) as ChatCompletionsStreamEvent);
+        written.push(JSON.parse(frame.data) as OpenAIChatCompletionsStreamEvent);
       }
     }
 
@@ -352,20 +352,20 @@ describe('the chat completions chain', () => {
   // carries one of them.
   it('serves the request-side and response-side vendor dialects the wire also composes', async () => {
     let sent: Record<string, unknown> | undefined;
-    affinityPayload = { ...payload, reasoning_effort: 'none' } as ChatCompletionsPayload;
+    affinityPayload = { ...payload, reasoning_effort: 'none' } as OpenAIChatCompletionsPayload;
     resolves([candidate(async (_model, body) => {
       sent = body as Record<string, unknown>;
       return stream(chunk('hi'), {
         id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
         choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, cached_tokens: 30 },
-      } as unknown as ChatCompletionsStreamEvent);
+      } as unknown as OpenAIChatCompletionsStreamEvent);
     }, 'up_a', ['vendor-qwen', 'vendor-kimi'])]);
 
     const { facts } = await serveWith(mockChatGatewayCtx({ wantsStream: true }), true, true);
-    const written: ChatCompletionsStreamEvent[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) {
+    const written: OpenAIChatCompletionsStreamEvent[] = [];
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) {
       if (frame.data !== '[DONE]' && affinityCarrier(frame) === undefined) {
-        written.push(JSON.parse(frame.data) as ChatCompletionsStreamEvent);
+        written.push(JSON.parse(frame.data) as OpenAIChatCompletionsStreamEvent);
       }
     }
     affinityPayload = payload;
@@ -392,7 +392,7 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serveWith(gateway, true);
     expect(gateway.attempt.firstOutputTokenAt).toBeNull();
-    for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
+    for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* drain */ }
 
     expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
   });
@@ -406,7 +406,7 @@ describe('the chat completions chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.chatCompletions.rendered']).toEqual({
+    expect(facts['response.chat.openaiChatCompletions.rendered']).toEqual({
       error: { message: 'Model chat-model does not support the /chat/completions endpoint.', type: 'invalid_request_error' },
     });
   });
@@ -419,7 +419,7 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serve(true);
     const drain = async (): Promise<void> => {
-      for await (const _frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
+      for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
     };
 
     await expect(drain()).rejects.toThrow(CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE);
@@ -431,7 +431,7 @@ describe('the chat completions chain', () => {
 
     const { facts } = await serve(true);
     const frames: SseFrame[] = [];
-    for await (const frame of facts['response.chat.chatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
 
     expect(frames.at(-1)!.data).toBe('[DONE]');
   });

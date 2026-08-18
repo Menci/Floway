@@ -4,10 +4,10 @@
  *  Google-RPC name and clients read it, so this shape is the protocol's rather than the
  *  gateway's — an OpenAI-shaped envelope would leave that field undefined. */
 export const renderGeminiError = (status: number, message: string): Record<string, unknown> => ({
-  error: { code: status, message, status: geminiStatusForHttpStatus(status) },
+  error: { code: status, message, status: geminiGenerateContentStatusForHttpStatus(status) },
 });
 
-export const geminiStatusForHttpStatus = (status: number): string => {
+export const geminiGenerateContentStatusForHttpStatus = (status: number): string => {
   switch (status) {
   case 400:
     return 'INVALID_ARGUMENT';

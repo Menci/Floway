@@ -565,7 +565,7 @@ test('POST /v1/responses replays a stored turn when the next one names it as pre
     body: JSON.stringify({ model: 'test-model', input: 'hello', store: true }),
   });
   assertEquals(first.status, 200);
-  const stored = await first.json() as ResponsesResult;
+  const stored = await first.json() as OpenAIResponsesResult;
 
   const second = await app.request('/v1/responses', {
     method: 'POST',

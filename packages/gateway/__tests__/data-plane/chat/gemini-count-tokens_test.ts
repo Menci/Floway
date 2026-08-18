@@ -5,15 +5,15 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { geminiCountTokensPipeline } from '../../../src/data-plane/chat/gemini/count-tokens.ts';
+import { geminiGenerateContentCountTokensPipeline } from '../../../src/data-plane/chat/gemini-generate-content/count-tokens.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { MessagesUpstreamCallOptions, ModelCandidate, ProviderCallResult } from '@floway-dev/provider';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesUpstreamCallOptions, ModelCandidate, ProviderCallResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -27,7 +27,7 @@ type CountTokens = (
   model: unknown,
   body: unknown,
   signal: AbortSignal | undefined,
-  opts: MessagesUpstreamCallOptions,
+  opts: AnthropicMessagesUpstreamCallOptions,
 ) => Promise<ProviderCallResult>;
 
 const candidate = (
@@ -67,19 +67,19 @@ const answered = (body: unknown): ProviderCallResult => ({
   modelKey: 'claude-model-key',
 });
 
-const payload: GeminiPayload = { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] };
+const payload: GeminiGenerateContentPayload = { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] };
 
 const count = async (
-  request: GeminiPayload = payload,
+  request: GeminiGenerateContentPayload = payload,
   headers: readonly (readonly [string, string])[] = [],
 ) => {
   const gateway = mockChatGatewayCtx({ wantsStream: false });
   return await run(
-    geminiCountTokensPipeline(request),
+    geminiGenerateContentCountTokensPipeline(request),
     move({
       'ingress.http.headers': headers,
       'ingress.chat.sourceProtocol': 'gemini',
-      'request.chat.gemini': request,
+      'request.chat.geminiGenerateContent': request,
       'serve.model': 'gemini-model',
     }) as never,
     {
@@ -110,18 +110,18 @@ describe('the gemini count-tokens chain', () => {
   // Gemini has no endpoint that answers this, so the question is asked in Messages and the
   // counts are read back out under the name this protocol gives them.
   it('asks the question in Messages and answers in Google-s own envelope', async () => {
-    let sent: MessagesPayload | undefined;
+    let sent: AnthropicMessagesPayload | undefined;
     let seenModel: { readonly id: string } | undefined;
     resolves([candidate(async (model, body) => {
       seenModel = model as { readonly id: string };
-      sent = body as MessagesPayload;
+      sent = body as AnthropicMessagesPayload;
       return answered({ input_tokens: 42 });
     })]);
 
     const { facts } = await count({ ...payload, systemInstruction: { parts: [{ text: 'system' }] } });
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.gemini.rendered']).toEqual({ totalTokens: 42 });
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({ totalTokens: 42 });
     expect(seenModel?.id).toBe('claude-model');
     expect(sent?.system).toBeDefined();
     expect(sent?.messages).toMatchObject([{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]);
@@ -136,7 +136,7 @@ describe('the gemini count-tokens chain', () => {
 
     const { facts } = await count();
 
-    expect(facts['response.chat.gemini.rendered']).toEqual({ totalTokens: 19 });
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({ totalTokens: 19 });
   });
 
   // A body carrying neither figure is an answer this gateway cannot read, which is the
@@ -153,7 +153,7 @@ describe('the gemini count-tokens chain', () => {
 
     expect(tried).toEqual(['odd', 'odder']);
     expect(facts['response.http.status']).toBe(502);
-    expect(facts['response.chat.gemini.rendered']).toEqual({
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({
       error: { code: 502, message: 'Invalid upstream token counting response.', status: 'UNAVAILABLE' },
     });
   });
@@ -162,16 +162,16 @@ describe('the gemini count-tokens chain', () => {
   // candidate answers — and a count taken before the strip would measure a request the
   // translator would refuse.
   it('strips what no translation carries before asking', async () => {
-    let sent: MessagesPayload | undefined;
-    resolves([candidate(async (_model, body) => { sent = body as MessagesPayload; return answered({ input_tokens: 5 }); })]);
+    let sent: AnthropicMessagesPayload | undefined;
+    resolves([candidate(async (_model, body) => { sent = body as AnthropicMessagesPayload; return answered({ input_tokens: 5 }); })]);
 
     const { facts } = await count({
       contents: [{ role: 'user', parts: [{ text: 'hi' }, { fileData: { fileUri: 'gs://x', mimeType: 'text/plain' } }] }],
       tools: [{ googleSearch: {} }],
       safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }],
-    } as unknown as GeminiPayload);
+    } as unknown as GeminiGenerateContentPayload);
 
-    expect(facts['response.chat.gemini.rendered']).toEqual({ totalTokens: 5 });
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({ totalTokens: 5 });
     // A tool group left declaring no function is not a tool group, so `tools` goes with it.
     expect(sent).not.toHaveProperty('tools');
     expect(JSON.stringify(sent)).not.toContain('fileData');
@@ -181,7 +181,7 @@ describe('the gemini count-tokens chain', () => {
   // Anthropic's beta flags are the client's own only when the client spoke that protocol, and
   // a Gemini turn asked for nothing on that wire.
   it('does not carry another protocol-s beta flags across the boundary', async () => {
-    let seen: MessagesUpstreamCallOptions | undefined;
+    let seen: AnthropicMessagesUpstreamCallOptions | undefined;
     resolves([candidate(async (_model, _body, _signal, opts) => { seen = opts; return answered({ input_tokens: 1 }); })]);
 
     await count(payload, [['anthropic-beta', 'must-not-cross-source-protocols'], ['x-trace', 'abc']]);
@@ -197,7 +197,7 @@ describe('the gemini count-tokens chain', () => {
     const { facts } = await count();
 
     expect(facts['response.http.status']).toBe(503);
-    expect(facts['response.chat.gemini.rendered']).toEqual({
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({
       error: { code: 503, message: 'Upstream token counting request failed.', status: 'UNAVAILABLE' },
     });
   });
@@ -210,7 +210,7 @@ describe('the gemini count-tokens chain', () => {
     const { facts } = await count();
 
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.gemini.rendered']).toEqual({
+    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({
       error: { code: 400, message: 'Model gemini-model does not support countTokens.', status: 'INVALID_ARGUMENT' },
     });
   });

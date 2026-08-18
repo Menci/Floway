@@ -14,20 +14,20 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { chatCompletionsServePipeline } from '../../../src/data-plane/chat/chat-completions/pipeline.ts';
-import { geminiServePipeline } from '../../../src/data-plane/chat/gemini/pipeline.ts';
+import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
+import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { handOff } from '../../../src/data-plane/chat/handoff.ts';
-import { messagesServePipeline, messagesWire } from '../../../src/data-plane/chat/messages/pipeline.ts';
-import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
+import { anthropicMessagesServePipeline, anthropicMessagesWire } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { compose, move, run, type Pipeline } from '@floway-dev/pipeline';
-import type { ChatCompletionsPayload, ChatCompletionsResult, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsResult, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints } from '@floway-dev/protocols/common';
-import type { GeminiPayload, GeminiResult } from '@floway-dev/protocols/gemini';
-import { PROMPT_TOO_LONG_MESSAGE, type MessagesPayload, type MessagesResult, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesResult, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { CanonicalResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -46,8 +46,8 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
 };
 
 interface Calls {
-  readonly callChatCompletions?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  readonly callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  readonly callChatCompletions?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  readonly callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   readonly callResponses?: (model: unknown, body: unknown) => Promise<ProviderResponsesResult>;
 }
 
@@ -78,7 +78,7 @@ const candidate = (
 
 // ── What each wire answers with ───────────────────────────────────────────────────────────
 
-const chatCompletionsTurn = (text: string): ProviderStreamResult<ChatCompletionsStreamEvent> => ({
+const openaiChatCompletionsTurn = (text: string): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
   ok: true,
   modelKey: 'k',
   headers: new Headers(),
@@ -86,16 +86,16 @@ const chatCompletionsTurn = (text: string): ProviderStreamResult<ChatCompletions
     yield eventFrame({
       id: 'c1', object: 'chat.completion.chunk', created: 1, model: MODEL,
       choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }],
-    } as ChatCompletionsStreamEvent);
+    } as OpenAIChatCompletionsStreamEvent);
     yield eventFrame({
       id: 'c1', object: 'chat.completion.chunk', created: 1, model: MODEL,
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-    } as ChatCompletionsStreamEvent);
+    } as OpenAIChatCompletionsStreamEvent);
     yield doneFrame();
   })(),
 });
 
-const messagesTurn = (text: string): ProviderStreamResult<MessagesStreamEvent> => ({
+const anthropicMessagesTurn = (text: string): ProviderStreamResult<AnthropicMessagesStreamEvent> => ({
   ok: true,
   modelKey: 'k',
   headers: new Headers(),
@@ -106,17 +106,17 @@ const messagesTurn = (text: string): ProviderStreamResult<MessagesStreamEvent> =
         id: 'msg_1', type: 'message', role: 'assistant', content: [], model: MODEL,
         stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 },
       },
-    } as MessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as MessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } as MessagesStreamEvent);
-    yield eventFrame({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent);
-    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } } as MessagesStreamEvent);
-    yield eventFrame({ type: 'message_stop' } as MessagesStreamEvent);
+    } as AnthropicMessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } } as AnthropicMessagesStreamEvent);
+    yield eventFrame({ type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent);
+    yield eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 2 } } as AnthropicMessagesStreamEvent);
+    yield eventFrame({ type: 'message_stop' } as AnthropicMessagesStreamEvent);
     yield doneFrame();
   })(),
 });
 
-const responsesResult = (text: string): ResponsesResult => ({
+const openaiResponsesResult = (text: string): OpenAIResponsesResult => ({
   id: 'resp_1',
   object: 'response',
   model: MODEL,
@@ -129,7 +129,7 @@ const responsesResult = (text: string): ResponsesResult => ({
   incomplete_details: null,
 });
 
-const responsesTurn = (text: string): ProviderResponsesResult => ({
+const openaiResponsesTurn = (text: string): ProviderResponsesResult => ({
   action: 'generate',
   ok: true,
   modelKey: 'k',
@@ -140,18 +140,18 @@ const responsesTurn = (text: string): ProviderResponsesResult => ({
       sequence_number: 1,
       output_index: 0,
       item: { type: 'message', id: 'msg_1', role: 'assistant', status: 'in_progress', content: [] },
-    } as ResponsesStreamEvent);
+    } as OpenAIResponsesStreamEvent);
     yield eventFrame({
       type: 'response.output_text.delta',
       sequence_number: 2, item_id: 'msg_1', output_index: 0, content_index: 0, delta: text,
-    } as ResponsesStreamEvent);
-    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: responsesResult(text) } as ResponsesStreamEvent);
+    } as OpenAIResponsesStreamEvent);
+    yield eventFrame({ type: 'response.completed', sequence_number: 3, response: openaiResponsesResult(text) } as OpenAIResponsesStreamEvent);
     yield doneFrame();
   })(),
 });
 
 /** A refusal, in the words an OpenAI-shaped upstream uses for a turn that will not fit. */
-const contextExceeded = async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+const contextExceeded = async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
   ok: false,
   modelKey: 'k',
   response: Response.json(
@@ -183,68 +183,68 @@ const serve = async <Entry extends object, Exit extends object>(
   } as never);
 };
 
-const chatCompletionsPayload = { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } as unknown as ChatCompletionsPayload;
-const messagesPayload = { model: MODEL, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as MessagesPayload;
-const responsesPayload = { model: MODEL, input: [{ type: 'message', role: 'user', content: 'hi' }] } as unknown as CanonicalResponsesPayload;
-const geminiPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiPayload;
+const openaiChatCompletionsPayload = { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } as unknown as OpenAIChatCompletionsPayload;
+const anthropicMessagesPayload = { model: MODEL, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as AnthropicMessagesPayload;
+const openaiResponsesPayload = { model: MODEL, input: [{ type: 'message', role: 'user', content: 'hi' }] } as unknown as CanonicalResponsesPayload;
+const geminiGenerateContentPayload = { contents: [{ role: 'user' as const, parts: [{ text: 'hi' }] }] } satisfies GeminiGenerateContentPayload;
 
-const serveChatCompletions = async (payload: ChatCompletionsPayload = chatCompletionsPayload) =>
-  await serve(chatCompletionsServePipeline(payload), {
+const serveChatCompletions = async (payload: OpenAIChatCompletionsPayload = openaiChatCompletionsPayload) =>
+  await serve(openaiChatCompletionsServePipeline(payload), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'chatCompletions',
-    'ingress.chat.chatCompletions.wantsStream': false,
-    'ingress.chat.chatCompletions.wantsUsageChunk': false,
-    'request.chat.chatCompletions': payload,
+    'ingress.chat.openaiChatCompletions.wantsStream': false,
+    'ingress.chat.openaiChatCompletions.wantsUsageChunk': false,
+    'request.chat.openaiChatCompletions': payload,
     'serve.model': MODEL,
   }, payload);
 
-const serveMessages = async (payload: MessagesPayload = messagesPayload) =>
-  await serve(messagesServePipeline(payload), {
+const serveMessages = async (payload: AnthropicMessagesPayload = anthropicMessagesPayload) =>
+  await serve(anthropicMessagesServePipeline(payload), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'messages',
-    'ingress.chat.messages.wantsStream': false,
-    'request.chat.messages': payload,
+    'ingress.chat.anthropicMessages.wantsStream': false,
+    'request.chat.anthropicMessages': payload,
     'serve.model': MODEL,
   }, payload);
 
-const serveResponses = async (payload: CanonicalResponsesPayload = responsesPayload) =>
-  await serve(responsesServePipeline(payload), {
+const serveResponses = async (payload: CanonicalResponsesPayload = openaiResponsesPayload) =>
+  await serve(openaiResponsesServePipeline(payload), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'responses',
-    'ingress.chat.responses.wantsStream': false,
-    'request.chat.responses': payload,
+    'ingress.chat.openaiResponses.wantsStream': false,
+    'request.chat.openaiResponses': payload,
     'serve.model': MODEL,
   }, payload);
 
-const serveGemini = async (payload: GeminiPayload = geminiPayload) =>
-  await serve(geminiServePipeline(payload), {
+const serveGemini = async (payload: GeminiGenerateContentPayload = geminiGenerateContentPayload) =>
+  await serve(geminiGenerateContentServePipeline(payload), {
     'ingress.http.headers': [],
     'ingress.chat.sourceProtocol': 'gemini',
-    'ingress.chat.gemini.wantsStream': false,
-    'request.chat.gemini': payload,
+    'ingress.chat.geminiGenerateContent.wantsStream': false,
+    'request.chat.geminiGenerateContent': payload,
     'serve.model': MODEL,
   }, payload);
 
 // ── What the client was answered with, per protocol ───────────────────────────────────────
 
-const chatCompletionsText = (rendered: unknown): string | null | undefined =>
-  (rendered as ChatCompletionsResult).choices[0]?.message.content as string | null | undefined;
+const openaiChatCompletionsText = (rendered: unknown): string | null | undefined =>
+  (rendered as OpenAIChatCompletionsResult).choices[0]?.message.content as string | null | undefined;
 
 /** The answer's own text, past the carrier the edge writes back: on this protocol the turn's
  *  state rides as a redacted-thinking block at the head of the content. */
-const messagesText = (rendered: unknown): string | undefined => {
-  const block = (rendered as MessagesResult).content.find(part => part.type === 'text');
+const anthropicMessagesText = (rendered: unknown): string | undefined => {
+  const block = (rendered as AnthropicMessagesResult).content.find(part => part.type === 'text');
   return block?.type === 'text' ? block.text : undefined;
 };
 
-const responsesText = (rendered: unknown): string | undefined => {
-  const item = (rendered as ResponsesResult).output.find(output => output.type === 'message');
+const openaiResponsesText = (rendered: unknown): string | undefined => {
+  const item = (rendered as OpenAIResponsesResult).output.find(output => output.type === 'message');
   const part = item?.type === 'message' ? item.content[0] : undefined;
   return part?.type === 'output_text' ? part.text : undefined;
 };
 
-const geminiText = (rendered: unknown): string | undefined =>
-  (rendered as GeminiResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
+const geminiGenerateContentText = (rendered: unknown): string | undefined =>
+  (rendered as GeminiGenerateContentResult).candidates?.[0]?.content.parts.map(part => part.text ?? '').join('');
 
 beforeEach(() => {
   vi.mocked(enumerateModelCandidates).mockReset();
@@ -256,103 +256,103 @@ beforeEach(() => {
 
 describe('a chat family reaching a candidate over another protocol', () => {
   it('serves /v1/chat/completions on a Messages-only candidate', async () => {
-    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    const callMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { messages: {} }, { callMessages })]);
 
     const { facts, drain } = await serveChatCompletions();
 
     expect(callMessages).toHaveBeenCalledTimes(1);
     expect(facts['response.http.status']).toBe(200);
-    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('hello');
+    expect(openaiChatCompletionsText(facts['response.chat.openaiChatCompletions.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves /v1/chat/completions on a Responses-only candidate', async () => {
-    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    const callResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { responses: {} }, { callResponses })]);
 
     const { facts, drain } = await serveChatCompletions();
 
     expect(callResponses).toHaveBeenCalledTimes(1);
-    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('hello');
+    expect(openaiChatCompletionsText(facts['response.chat.openaiChatCompletions.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves /v1/messages on a Responses-only candidate', async () => {
-    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    const callResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { responses: {} }, { callResponses })]);
 
     const { facts, drain } = await serveMessages();
 
     expect(callResponses).toHaveBeenCalledTimes(1);
-    expect(messagesText(facts['response.chat.messages.rendered'])).toBe('hello');
+    expect(anthropicMessagesText(facts['response.chat.anthropicMessages.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves /v1/messages on a Chat Completions-only candidate', async () => {
-    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    const callChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
 
     const { facts, drain } = await serveMessages();
 
     expect(callChatCompletions).toHaveBeenCalledTimes(1);
-    expect(messagesText(facts['response.chat.messages.rendered'])).toBe('hello');
+    expect(anthropicMessagesText(facts['response.chat.anthropicMessages.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves /v1/responses on a Messages-only candidate', async () => {
-    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    const callMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { messages: {} }, { callMessages })]);
 
     const { facts, drain } = await serveResponses();
 
     expect(callMessages).toHaveBeenCalledTimes(1);
-    expect(responsesText(facts['response.chat.responses.rendered'])).toBe('hello');
+    expect(openaiResponsesText(facts['response.chat.openaiResponses.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves /v1/responses on a Chat Completions-only candidate', async () => {
-    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    const callChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
 
     const { facts, drain } = await serveResponses();
 
     expect(callChatCompletions).toHaveBeenCalledTimes(1);
-    expect(responsesText(facts['response.chat.responses.rendered'])).toBe('hello');
+    expect(openaiResponsesText(facts['response.chat.openaiResponses.rendered'])).toBe('hello');
     await drain();
   });
 
   // Gemini has no wire of its own, so all three of its rows are translated ones.
   it('serves :generateContent on a Chat Completions-only candidate', async () => {
-    const callChatCompletions = vi.fn(async () => chatCompletionsTurn('hello'));
+    const callChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { chatCompletions: {} }, { callChatCompletions })]);
 
     const { facts, drain } = await serveGemini();
 
     expect(callChatCompletions).toHaveBeenCalledTimes(1);
-    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    expect(geminiGenerateContentText(facts['response.chat.geminiGenerateContent.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves :generateContent on a Messages-only candidate', async () => {
-    const callMessages = vi.fn(async () => messagesTurn('hello'));
+    const callMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { messages: {} }, { callMessages })]);
 
     const { facts, drain } = await serveGemini();
 
     expect(callMessages).toHaveBeenCalledTimes(1);
-    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    expect(geminiGenerateContentText(facts['response.chat.geminiGenerateContent.rendered'])).toBe('hello');
     await drain();
   });
 
   it('serves :generateContent on a Responses-only candidate', async () => {
-    const callResponses = vi.fn(async () => responsesTurn('hello'));
+    const callResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { responses: {} }, { callResponses })]);
 
     const { facts, drain } = await serveGemini();
 
     expect(callResponses).toHaveBeenCalledTimes(1);
-    expect(geminiText(facts['response.chat.gemini.rendered'])).toBe('hello');
+    expect(geminiGenerateContentText(facts['response.chat.geminiGenerateContent.rendered'])).toBe('hello');
     await drain();
   });
 });
@@ -366,7 +366,7 @@ describe('the fork over wires', () => {
     const callChatCompletions = vi.fn(async () => ({
       ok: false as const, modelKey: 'k', response: Response.json({ error: { message: 'slow down' } }, { status: 429 }),
     }));
-    const callMessages = vi.fn(async () => messagesTurn('second'));
+    const callMessages = vi.fn(async () => anthropicMessagesTurn('second'));
     resolves([
       candidate('up_a', { chatCompletions: {} }, { callChatCompletions }),
       candidate('up_b', { messages: {} }, { callMessages }),
@@ -377,7 +377,7 @@ describe('the fork over wires', () => {
     expect(callChatCompletions).toHaveBeenCalledTimes(1);
     expect(callMessages).toHaveBeenCalledTimes(1);
     expect(facts['response.http.status']).toBe(200);
-    expect(chatCompletionsText(facts['response.chat.chatCompletions.rendered'])).toBe('second');
+    expect(openaiChatCompletionsText(facts['response.chat.openaiChatCompletions.rendered'])).toBe('second');
     await drain();
   });
 
@@ -390,7 +390,7 @@ describe('the fork over wires', () => {
     const { facts, drain } = await serveMessages();
 
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.messages.rendered']).toEqual({
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
       error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
     });
@@ -411,7 +411,7 @@ describe('the fork over wires', () => {
     const { facts, drain } = await serveMessages();
 
     expect(facts['response.http.status']).toBe(403);
-    const rendered = facts['response.chat.messages.rendered'] as { type: string; error: { type: string; message: string } };
+    const rendered = facts['response.chat.anthropicMessages.rendered'] as { type: string; error: { type: string; message: string } };
     expect(rendered.type).toBe('error');
     expect(rendered.error.type).toBe('permission_error');
     // The upstream's own words survive as the sentence, which is what the replaced surface did
@@ -427,7 +427,7 @@ describe('the fork over wires', () => {
 
     const { facts, drain } = await serveMessages();
 
-    expect(facts['response.chat.messages.rendered']).toEqual({
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
       error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
     });
@@ -447,14 +447,14 @@ describe('a rule that speaks about one protocol-s wire', () => {
       model: MODEL,
       max_tokens: 64,
       messages: [{ role: 'system', content: 'lead' }, { role: 'user', content: 'hi' }],
-    } as unknown as MessagesPayload;
+    } as unknown as AnthropicMessagesPayload;
     resolves([candidate(
       'up_a',
       { chatCompletions: {} },
       {
         callChatCompletions: async (_model, body) => {
           sent = body as { messages: { role: string }[] };
-          return chatCompletionsTurn('hello');
+          return openaiChatCompletionsTurn('hello');
         },
       },
       ['rewrite-mid-conv-system-to-user'],
@@ -475,7 +475,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
     resolves([candidate('up_a', { chatCompletions: {} }, {
       callChatCompletions: async (_model, body) => {
         sent = body as { stream_options?: unknown };
-        return chatCompletionsTurn('hello');
+        return openaiChatCompletionsTurn('hello');
       },
     })]);
 
@@ -493,17 +493,17 @@ describe('a rule that speaks about one protocol-s wire', () => {
     resolves([candidate('up_a', { messages: {} }, {
       callMessages: async (_model, body) => {
         sent = body as { system?: unknown };
-        return messagesTurn('hello');
+        return anthropicMessagesTurn('hello');
       },
     }, ['strip-billing-attribution'])]);
 
     const { drain } = await serveChatCompletions({
-      ...chatCompletionsPayload,
+      ...openaiChatCompletionsPayload,
       messages: [
         { role: 'system', content: 'be brief\nx-anthropic-billing-header: acct-42' },
         { role: 'user', content: 'hi' },
       ],
-    } as ChatCompletionsPayload);
+    } as OpenAIChatCompletionsPayload);
 
     expect(String(JSON.stringify(sent?.system))).not.toContain('x-anthropic-billing-header');
     await drain();
@@ -518,7 +518,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
     resolves([candidate('up_a', { messages: {} }, {
       callMessages: async (_model, body) => {
         sent = body as Record<string, unknown>;
-        return messagesTurn('hello');
+        return anthropicMessagesTurn('hello');
       },
     })]);
 
@@ -536,18 +536,18 @@ describe('a rule that speaks about one protocol-s wire', () => {
   // translated turn is that the rule lives in the wire's own chain.
   it('cannot be placed in a chain whose payload a handoff consumed', () => {
     const leaving = handOff({
-      from: { request: 'request.chat.messages', response: 'response.chat.messages' },
-      to: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
+      from: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
+      to: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
       trip: () => { throw new Error('not dialled'); },
     });
     const arriving = handOff({
-      from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
-      to: { request: 'request.chat.messages', response: 'response.chat.messages' },
+      from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
+      to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
       trip: () => { throw new Error('not dialled'); },
     });
 
-    expect(() => compose('leaving', [leaving, ...messagesWire('r')]))
+    expect(() => compose('leaving', [leaving, ...anthropicMessagesWire('r')]))
       .toThrow(/needs request\.chat\.messages, which handOff:.* consumed above it/);
-    expect(() => compose('arriving', [arriving, ...messagesWire('r')])).not.toThrow();
+    expect(() => compose('arriving', [arriving, ...anthropicMessagesWire('r')])).not.toThrow();
   });
 });

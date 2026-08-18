@@ -1,6 +1,6 @@
 // POST /v1/chat/completions, served through the pipeline.
 //
-// The handler is a prologue and an epilogue around `chatCompletionsServePipeline`: read what
+// The handler is a prologue and an epilogue around `openaiChatCompletionsServePipeline`: read what
 // the client sent, hand it over, and turn what the run answered with into a response.
 // Everything between is stages.
 //
@@ -9,26 +9,26 @@
 // the run has to be opened knowing, and whether it asked to be shown the usage chunk that
 // metering asks the upstream for on every streaming turn.
 
-import { chatCompletionsServePipeline } from './pipeline.ts';
+import { openaiChatCompletionsServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { move } from '@floway-dev/pipeline';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 /** A body the gateway could not read is reported in the words the protocol's own clients
  *  parse, rather than as a fault of the gateway's. */
-const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: ChatCompletionsPayload } | { type: 'invalid'; message: string } => {
+const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: OpenAIChatCompletionsPayload } | { type: 'invalid'; message: string } => {
   try {
-    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as ChatCompletionsPayload };
+    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as OpenAIChatCompletionsPayload };
   } catch (error) {
     return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
 };
 
-export const chatCompletionsHttp = {
+export const openaiChatCompletionsHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const ingress = await readIngress(c);
     const request = readRequest(ingress.body.bytes);
@@ -54,21 +54,21 @@ export const chatCompletionsHttp = {
     return await serveThrough(
       c,
       prologue,
-      chatCompletionsServePipeline(payload),
+      openaiChatCompletionsServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'chatCompletions',
-        'ingress.chat.chatCompletions.wantsStream': wantsStream,
-        'ingress.chat.chatCompletions.wantsUsageChunk': payload.stream_options?.include_usage === true,
-        'request.chat.chatCompletions': payload,
+        'ingress.chat.openaiChatCompletions.wantsStream': wantsStream,
+        'ingress.chat.openaiChatCompletions.wantsUsageChunk': payload.stream_options?.include_usage === true,
+        'request.chat.openaiChatCompletions': payload,
         'serve.model': payload.model,
       }) as never,
       facts => {
-        const rendered = facts['response.chat.chatCompletions.rendered'];
+        const rendered = facts['response.chat.openaiChatCompletions.rendered'];
         if (isFrames(rendered)) return { frames: rendered };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.chatCompletions.streamedUsage'],
+      facts => facts['response.chat.openaiChatCompletions.streamedUsage'],
     );
   },
 };

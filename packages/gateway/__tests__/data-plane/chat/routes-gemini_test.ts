@@ -40,7 +40,7 @@ const withCopilot = async <T>(
 
 /** The answer a Chat Completions upstream gives, as the SSE every chat endpoint really speaks.
  *  Gemini's first-preference wire, so this is what most of these turns are dialled on. */
-const chatCompletionsTurn = (): Response =>
+const openaiChatCompletionsTurn = (): Response =>
   sseChatCompletionsResponse({
     id: 'chatcmpl_route',
     object: 'chat.completion',
@@ -57,14 +57,14 @@ const post = async (apiKey: string, modelAction: string): Promise<Response> =>
     body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
   });
 
-interface GeminiEvent {
+interface GeminiGenerateContentEvent {
   readonly candidates?: readonly {
     readonly content: { readonly parts: readonly { readonly text?: string }[] };
     readonly finishReason?: string;
   }[];
 }
 
-const geminiText = (event: GeminiEvent): string =>
+const geminiGenerateContentText = (event: GeminiGenerateContentEvent): string =>
   (event.candidates ?? []).flatMap(candidate => candidate.content.parts.map(part => part.text ?? '')).join('');
 
 test('a streaming turn reaches the client as Gemini SSE, ending on the frame that states a finish reason', async () => {
@@ -78,7 +78,7 @@ test('a streaming turn reaches the client as Gemini SSE, ending on the frame tha
       // Chat Completions body, streaming because every chat endpoint here does.
       expect(body.messages).toBeDefined();
       expect(body.stream).toBe(true);
-      return chatCompletionsTurn();
+      return openaiChatCompletionsTurn();
     },
     async () => await post(apiKey.key, 'gpt-route:streamGenerateContent'),
   );
@@ -90,9 +90,9 @@ test('a streaming turn reaches the client as Gemini SSE, ending on the frame tha
   expect(frames.length > 0).toBe(true);
   // One JSON object per `data:` line, and no sentinel — Gemini has none to write, so a `[DONE]`
   // here would be a frame no Google client can parse.
-  const events = frames.map(frame => JSON.parse(frame.data) as GeminiEvent);
+  const events = frames.map(frame => JSON.parse(frame.data) as GeminiGenerateContentEvent);
   for (const frame of frames) expect(frame.event).toBe('message');
-  expect(events.map(geminiText).join('')).toBe(ANSWER);
+  expect(events.map(geminiGenerateContentText).join('')).toBe(ANSWER);
   // The turn's end is stated on the frames the client is handed, not on the wire below them.
   expect(events.at(-1)?.candidates?.[0]?.finishReason).toBe('STOP');
   expect(events.slice(0, -1).every(event => event.candidates?.[0]?.finishReason === undefined)).toBe(true);
@@ -103,17 +103,17 @@ test('a non-streaming turn reaches the client as one assembled Gemini body', asy
 
   const response = await withCopilot(
     [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],
-    () => chatCompletionsTurn(),
+    () => openaiChatCompletionsTurn(),
     async () => await post(apiKey.key, 'gpt-route:generateContent'),
   );
 
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
 
-  const body = await response.json() as GeminiEvent & { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+  const body = await response.json() as GeminiGenerateContentEvent & { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
   expect(body.candidates).toHaveLength(1);
   expect(body.candidates?.[0].finishReason).toBe('STOP');
-  expect(geminiText(body)).toBe(ANSWER);
+  expect(geminiGenerateContentText(body)).toBe(ANSWER);
   // What the upstream metered is stated to the client too, in this protocol's own names.
   expect(body.usageMetadata?.promptTokenCount).toBe(21);
   expect(body.usageMetadata?.candidatesTokenCount).toBe(3);
@@ -171,7 +171,7 @@ test('a served turn writes one usage row carrying the tokens the upstream report
 
   const response = await withCopilot(
     [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],
-    () => chatCompletionsTurn(),
+    () => openaiChatCompletionsTurn(),
     async () => {
       const answer = await post(apiKey.key, 'gpt-route:streamGenerateContent');
       // A stream's numbers arrive with its last chunk, so the row is written after the client
@@ -220,10 +220,10 @@ test('a turn dialled over the Messages wire still answers the client in Gemini',
   );
 
   expect(response.status).toBe(200);
-  const body = await response.json() as GeminiEvent;
+  const body = await response.json() as GeminiGenerateContentEvent;
   expect(body.candidates).toHaveLength(1);
   expect(body.candidates?.[0].finishReason).toBe('STOP');
-  expect(geminiText(body)).toBe(ANSWER);
+  expect(geminiGenerateContentText(body)).toBe(ANSWER);
 
   await flushBackground();
   const rows = await repo.usage.listAll();

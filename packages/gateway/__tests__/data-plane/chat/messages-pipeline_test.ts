@@ -8,14 +8,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { messagesServePipeline } from '../../../src/data-plane/chat/messages/pipeline.ts';
+import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import { MESSAGES_MISSING_TERMINAL_MESSAGE, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { directFetcher, type MessagesUpstreamCallOptions, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import { MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { directFetcher, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -29,8 +29,8 @@ type CallMessages = (
   model: unknown,
   body: unknown,
   signal: AbortSignal | undefined,
-  opts: MessagesUpstreamCallOptions,
-) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  opts: AnthropicMessagesUpstreamCallOptions,
+) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
 
 const candidate = (callMessages: CallMessages, upstreamId = 'up_a'): ModelCandidate => {
   const endpoints = { messages: {} };
@@ -80,21 +80,21 @@ const turn = (...text: readonly string[]): readonly unknown[] =>
 const truncatedTurn = (...text: readonly string[]): readonly unknown[] =>
   turn(...text).filter(event => event !== messageStop);
 
-const stream = (events: readonly unknown[]): ProviderStreamResult<MessagesStreamEvent> => ({
+const stream = (events: readonly unknown[]): ProviderStreamResult<AnthropicMessagesStreamEvent> => ({
   ok: true,
   modelKey: 'claude-model-key',
   headers: new Headers({ 'x-request-id': 'req-1', 'content-length': '99' }),
   events: (async function* () {
-    for (const event of events) yield { type: 'event' as const, event: event as MessagesStreamEvent };
+    for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
     yield { type: 'done' as const };
   })(),
 });
 
-const payload = { model: 'claude-model', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as MessagesPayload;
+const payload = { model: 'claude-model', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as AnthropicMessagesPayload;
 
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
-let affinityPayload: MessagesPayload = payload;
+let affinityPayload: AnthropicMessagesPayload = payload;
 
 /** How many times the chain asked the resolver for that payload. One stage owns the reading;
  *  anything below it reads the record. */
@@ -108,12 +108,12 @@ const serveWith = async (
   wantsStream: boolean,
   headers: readonly (readonly [string, string])[] = [],
 ) => await run(
-  messagesServePipeline(payload),
+  anthropicMessagesServePipeline(payload),
   move({
     'ingress.http.headers': headers,
     'ingress.chat.sourceProtocol': 'messages',
-    'ingress.chat.messages.wantsStream': wantsStream,
-    'request.chat.messages': payload,
+    'ingress.chat.anthropicMessages.wantsStream': wantsStream,
+    'request.chat.anthropicMessages': payload,
     'serve.model': 'claude-model',
   }) as never,
   {
@@ -186,7 +186,7 @@ describe('the messages chain', () => {
   // the chain had touched.
   it('puts the payload this attempt is owed into the record, and sends that', async () => {
     let sent: Record<string, unknown> | undefined;
-    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as MessagesPayload;
+    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as AnthropicMessagesPayload;
     resolves([candidate(async (_model, body) => {
       sent = body as Record<string, unknown>;
       return stream(turn('hi'));
@@ -197,7 +197,7 @@ describe('the messages chain', () => {
     // The exit contract names what the run answers with, and the request the chain sent is
     // not that — but the record carries every key in flight, so what was sent is still there
     // to read.
-    expect((facts as Record<string, unknown>)['request.chat.messages']).toBe(affinityPayload);
+    expect((facts as Record<string, unknown>)['request.chat.anthropicMessages']).toBe(affinityPayload);
     expect(asked).toBe(1);
     // The id the client addressed does not travel: the provider re-stamps what it resolved.
     expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
@@ -210,7 +210,7 @@ describe('the messages chain', () => {
     resolves([candidate(async () => stream(turn('he', 'llo')))]);
 
     const { facts } = await serve(true);
-    const frames = withoutCarrier(await collect(facts['response.chat.messages.rendered']));
+    const frames = withoutCarrier(await collect(facts['response.chat.anthropicMessages.rendered']));
 
     expect(facts['response.http.status']).toBe(200);
     expect(frames.map(frame => frame.event)).toEqual([
@@ -228,7 +228,7 @@ describe('the messages chain', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
-    const frames = await collect(facts['response.chat.messages.rendered']);
+    const frames = await collect(facts['response.chat.anthropicMessages.rendered']);
     const carrier = frames
       .map(frame => JSON.parse(frame.data) as { readonly type: string; readonly content_block?: { readonly type: string; readonly data: string } })
       .filter(event => event.type === 'content_block_start' && event.content_block?.type === 'redacted_thinking');
@@ -248,7 +248,7 @@ describe('the messages chain', () => {
     resolves([candidate(async () => stream(turn('he', 'llo')))]);
 
     const { facts } = await serve(false);
-    const rendered = facts['response.chat.messages.rendered'] as {
+    const rendered = facts['response.chat.anthropicMessages.rendered'] as {
       readonly type: string;
       readonly content: readonly { readonly type: string; readonly text?: string }[];
       readonly stop_reason: string;
@@ -285,7 +285,7 @@ describe('the messages chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(429);
-    expect(facts['response.chat.messages.rendered']).toEqual({
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
       error: { type: 'rate_limit_error', message: 'slow down' },
     });
@@ -304,14 +304,14 @@ describe('the messages chain', () => {
 
     expect(tried).toEqual(['dead', 'alive']);
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.messages.rendered']).toMatchObject({ type: 'message' });
+    expect(facts['response.chat.anthropicMessages.rendered']).toMatchObject({ type: 'message' });
   });
 
   // Anthropic beta flags have a typed path of their own precisely so no provider's header
   // allowlist can admit them and no other source protocol can leak them in — so the field is
   // read off the client's request and does not travel beside itself.
   it('hands the beta flags over on their own path and not as a header', async () => {
-    let seen: MessagesUpstreamCallOptions | undefined;
+    let seen: AnthropicMessagesUpstreamCallOptions | undefined;
     resolves([candidate(async (_model, _body, _signal, opts) => {
       seen = opts;
       return stream(turn('hi'));
@@ -341,8 +341,8 @@ describe('the messages chain', () => {
       { identity: { model: 'claude-model', upstream: 'up_a', modelKey: 'claude-model-key', pricing: null }, quantities: {} },
     ]);
 
-    await collect(facts['response.chat.messages.rendered']);
-    const outcome = await facts['response.chat.messages.streamedUsage']!;
+    await collect(facts['response.chat.anthropicMessages.rendered']);
+    const outcome = await facts['response.chat.anthropicMessages.streamedUsage']!;
     const billable = outcome.billable;
 
     expect(billable[0]).toMatchObject({
@@ -363,7 +363,7 @@ describe('the messages chain', () => {
 
     const { facts } = await serveWith(gateway, true);
     expect(gateway.attempt.firstOutputTokenAt).toBeNull();
-    await collect(facts['response.chat.messages.rendered']);
+    await collect(facts['response.chat.anthropicMessages.rendered']);
 
     expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
   });
@@ -375,7 +375,7 @@ describe('the messages chain', () => {
     resolves([candidate(async () => stream([...turn('hi'), textDelta(' and more')]))]);
 
     const { facts } = await serve(true);
-    const frames = withoutCarrier(await collect(facts['response.chat.messages.rendered']));
+    const frames = withoutCarrier(await collect(facts['response.chat.anthropicMessages.rendered']));
 
     expect(frames.map(frame => frame.event)).toEqual([
       'message_start', 'content_block_start', 'content_block_delta',
@@ -391,6 +391,6 @@ describe('the messages chain', () => {
 
     const { facts } = await serve(true);
 
-    await expect(collect(facts['response.chat.messages.rendered'])).rejects.toThrow(MESSAGES_MISSING_TERMINAL_MESSAGE);
+    await expect(collect(facts['response.chat.anthropicMessages.rendered'])).rejects.toThrow(MESSAGES_MISSING_TERMINAL_MESSAGE);
   });
 });

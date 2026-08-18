@@ -6,14 +6,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { messagesCountTokensPipeline } from '../../../src/data-plane/chat/messages/count-tokens.ts';
+import { anthropicMessagesCountTokensPipeline } from '../../../src/data-plane/chat/anthropic-messages/count-tokens.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import { type FlagId, type MessagesUpstreamCallOptions, type ModelCandidate, type ProviderCallResult } from '@floway-dev/provider';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { type FlagId, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, type ProviderCallResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 vi.mock('../../../src/data-plane/providers/resolution.ts', async importOriginal => ({
@@ -27,7 +27,7 @@ type CountTokens = (
   model: unknown,
   body: unknown,
   signal: AbortSignal | undefined,
-  opts: MessagesUpstreamCallOptions,
+  opts: AnthropicMessagesUpstreamCallOptions,
 ) => Promise<ProviderCallResult>;
 
 const candidate = (
@@ -73,23 +73,23 @@ const counted = (input: number): ProviderCallResult => ({
   modelKey: 'claude-model-key',
 });
 
-const payload = { model: 'claude-model', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as MessagesPayload;
+const payload = { model: 'claude-model', max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] } as unknown as AnthropicMessagesPayload;
 
 /** What affinity materialized for the candidate about to be dialled. It differs from the
  *  payload the client sent, which is the point: carried state is rewritten per candidate. */
-let affinityPayload: MessagesPayload = payload;
+let affinityPayload: AnthropicMessagesPayload = payload;
 
 const count = async (
-  request: MessagesPayload = payload,
+  request: AnthropicMessagesPayload = payload,
   headers: readonly (readonly [string, string])[] = [],
 ) => {
   const gateway = mockChatGatewayCtx({ wantsStream: false });
   return await run(
-    messagesCountTokensPipeline(request),
+    anthropicMessagesCountTokensPipeline(request),
     move({
       'ingress.http.headers': headers,
       'ingress.chat.sourceProtocol': 'messages',
-      'request.chat.messages': request,
+      'request.chat.anthropicMessages': request,
       'serve.model': request.model,
     }) as never,
     {
@@ -124,7 +124,7 @@ describe('the messages count-tokens chain', () => {
   it('measures the payload this attempt is owed, under the id the upstream resolved', async () => {
     let sent: Record<string, unknown> | undefined;
     let seenModel: { readonly id: string } | undefined;
-    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as MessagesPayload;
+    affinityPayload = { ...payload, messages: [{ role: 'user', content: 'rewritten' }] } as AnthropicMessagesPayload;
     resolves([candidate(async (model, body) => {
       seenModel = model as { readonly id: string };
       sent = body as Record<string, unknown>;
@@ -134,7 +134,7 @@ describe('the messages count-tokens chain', () => {
     const { facts } = await count();
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.messages.rendered']).toEqual({ input_tokens: 11 });
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({ input_tokens: 11 });
     expect(seenModel?.id).toBe('claude-model');
     expect(sent).toMatchObject({ messages: [{ role: 'user', content: 'rewritten' }] });
     // The id the client addressed does not travel: the provider re-stamps what it resolved.
@@ -158,7 +158,7 @@ describe('the messages count-tokens chain', () => {
       thinking: { type: 'enabled', budget_tokens: 1024 },
       output_config: { effort: 'high' },
       tool_choice: { type: 'tool', name: 'lookup' },
-    } as unknown as MessagesPayload;
+    } as unknown as AnthropicMessagesPayload;
     resolves([candidate(async (_model, body) => { sent = body as Record<string, unknown>; return counted(9); }, {
       enabledFlags: new Set<FlagId>([
         'strip-billing-attribution',
@@ -185,10 +185,10 @@ describe('the messages count-tokens chain', () => {
   // ordinary client tool — so a count taken on the client's own body would measure a request
   // nobody is sent.
   it('measures the client-tool shape the web-search shim would actually send', async () => {
-    let sent: MessagesPayload | undefined;
-    const asked = { ...payload, tools: [{ type: 'web_search_20260209', max_uses: 3 }] } as unknown as MessagesPayload;
+    let sent: AnthropicMessagesPayload | undefined;
+    const asked = { ...payload, tools: [{ type: 'web_search_20260209', max_uses: 3 }] } as unknown as AnthropicMessagesPayload;
     affinityPayload = asked;
-    resolves([candidate(async (_model, body) => { sent = body as MessagesPayload; return counted(13); }, {
+    resolves([candidate(async (_model, body) => { sent = body as AnthropicMessagesPayload; return counted(13); }, {
       enabledFlags: new Set<FlagId>(['messages-web-search-shim']),
     })]);
 
@@ -213,7 +213,7 @@ describe('the messages count-tokens chain', () => {
         { type: 'web_search_20260209' },
         { type: 'web_search_20250305' },
       ],
-    } as unknown as MessagesPayload;
+    } as unknown as AnthropicMessagesPayload;
     affinityPayload = asked;
     let dialled = 0;
     resolves([candidate(async () => { dialled += 1; return counted(0); }, {
@@ -224,7 +224,7 @@ describe('the messages count-tokens chain', () => {
 
     expect(dialled).toBe(0);
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.messages.rendered']).toMatchObject({
+    expect(facts['response.chat.anthropicMessages.rendered']).toMatchObject({
       type: 'error',
       error: { type: 'invalid_request_error', message: 'Only one native web search tool definition is supported per request.' },
     });
@@ -233,10 +233,10 @@ describe('the messages count-tokens chain', () => {
   // The flag is the whole of the gate here: counting has only the native wire, so the
   // structural half of the shim's condition — a translated target — can never hold.
   it('leaves the native tool alone on a candidate the shim is off for', async () => {
-    let sent: MessagesPayload | undefined;
-    const asked = { ...payload, tools: [{ type: 'web_search_20260209', max_uses: 3 }] } as unknown as MessagesPayload;
+    let sent: AnthropicMessagesPayload | undefined;
+    const asked = { ...payload, tools: [{ type: 'web_search_20260209', max_uses: 3 }] } as unknown as AnthropicMessagesPayload;
     affinityPayload = asked;
-    resolves([candidate(async (_model, body) => { sent = body as MessagesPayload; return counted(13); })]);
+    resolves([candidate(async (_model, body) => { sent = body as AnthropicMessagesPayload; return counted(13); })]);
 
     await count(asked);
 
@@ -246,7 +246,7 @@ describe('the messages count-tokens chain', () => {
   // Anthropic beta flags have a typed path of their own precisely so no provider's header
   // allowlist can admit them, and a measurement asks the same question generation does.
   it('hands the beta flags over on their own path and not as a header', async () => {
-    let seen: MessagesUpstreamCallOptions | undefined;
+    let seen: AnthropicMessagesUpstreamCallOptions | undefined;
     resolves([candidate(async (_model, _body, _signal, opts) => { seen = opts; return counted(5); })]);
 
     await count(payload, [
@@ -275,7 +275,7 @@ describe('the messages count-tokens chain', () => {
 
     expect(tried).toEqual(['busy', 'free']);
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.messages.rendered']).toEqual({ input_tokens: 42 });
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({ input_tokens: 42 });
   });
 
   it('answers the last refusal in the upstream-s own status and words', async () => {
@@ -289,7 +289,7 @@ describe('the messages count-tokens chain', () => {
     const { facts } = await count();
 
     expect(facts['response.http.status']).toBe(429);
-    expect(facts['response.chat.messages.rendered']).toEqual({
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({
       type: 'error',
       error: { type: 'rate_limit_error', message: 'slow down' },
     });
@@ -307,7 +307,7 @@ describe('the messages count-tokens chain', () => {
     const { facts } = await count();
 
     expect(tried).toEqual(['dead', 'alive']);
-    expect(facts['response.chat.messages.rendered']).toEqual({ input_tokens: 7 });
+    expect(facts['response.chat.anthropicMessages.rendered']).toEqual({ input_tokens: 7 });
   });
 
   // Only a native Messages endpoint measures — no translation carries the question — so a
@@ -319,7 +319,7 @@ describe('the messages count-tokens chain', () => {
     const { facts } = await count();
 
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.chat.messages.rendered']).toMatchObject({
+    expect(facts['response.chat.anthropicMessages.rendered']).toMatchObject({
       error: {
         type: 'invalid_request_error',
         message: 'Model claude-model does not support the /messages/count_tokens endpoint.',

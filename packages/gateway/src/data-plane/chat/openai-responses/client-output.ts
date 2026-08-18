@@ -6,11 +6,11 @@ import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ClientResponsesStreamEvent, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ClientResponsesStreamEvent, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 // Unix seconds, from the gateway's own request-start instant, so both resources
 // date a turn the same way.
-export const responsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(ctx.requestStartedAt / 1000);
+export const openaiResponsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(ctx.requestStartedAt / 1000);
 
 // The item lifecycle first resolves any partial terminal restatement. Affinity
 // then wraps routing metadata, and the client-output boundary stores each
@@ -18,9 +18,9 @@ export const responsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(ctx.re
 // ID to the downstream stream and snapshot. Every native Responses turn goes
 // through this half, whichever resource it answers with.
 export const wrapResponsesStatefulOutput = (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   ctx: ChatGatewayCtx,
-): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
+): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>> => {
   const withObservedOutput = wrapResponsesObservedOutput(frames);
   const withAffinity = wrapResponsesAffinityEgress(withObservedOutput, affinityEgressOptions(ctx));
   return wrapResponsesClientOutput(withAffinity, {
@@ -33,12 +33,12 @@ export const wrapResponsesStatefulOutput = (
 // completion. `/responses/compact` answers with `CompactResource`, so it stops
 // at the stateful half and completes that resource itself.
 export const wrapResponsesClientEgress = (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   ctx: ChatGatewayCtx,
   request: CanonicalResponsesPayload,
 ): AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>> =>
   wrapResponseResourceCompletion(wrapResponsesStatefulOutput(frames, ctx), {
     request,
-    createdAt: responsesCreatedAt(ctx),
+    createdAt: openaiResponsesCreatedAt(ctx),
     stored: ctx.store.writesState,
   });

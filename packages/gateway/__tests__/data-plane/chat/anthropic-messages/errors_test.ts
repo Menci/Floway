@@ -5,7 +5,7 @@
 
 import { test } from 'vitest';
 
-import { renderMessagesError } from '../../../../src/data-plane/chat/messages/errors.ts';
+import { renderMessagesError } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('renders an Anthropic invalid_request_error envelope with a top-level request_id', () => {

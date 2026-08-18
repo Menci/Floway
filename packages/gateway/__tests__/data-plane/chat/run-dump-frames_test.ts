@@ -99,7 +99,7 @@ const closedItemTypes = (frames: readonly unknown[]): readonly string[] =>
 
 const ANSWER = 'hello there';
 
-const chatCompletionsTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
+const openaiChatCompletionsTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
   await withCopilot(
     [{ id: 'gpt-frames', supported_endpoints: ['/chat/completions'] }],
     () => sseChatCompletionsResponse({
@@ -116,7 +116,7 @@ const chatCompletionsTurn = (stream: boolean) => async (apiKey: string): Promise
     }),
   );
 
-const responsesTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
+const openaiResponsesTurn = (stream: boolean) => async (apiKey: string): Promise<Response> =>
   await withCopilot(
     [{ id: 'gpt-responses-frames', supported_endpoints: ['/responses'] }],
     () => sseResponsesResponse({
@@ -173,21 +173,21 @@ const compactionTurn = async (apiKey: string): Promise<Response> =>
   );
 
 test('a streamed chat turn records the frames it served', async () => {
-  assertFramesCarry(await framesRecordedBy(chatCompletionsTurn(true)), ANSWER);
+  assertFramesCarry(await framesRecordedBy(openaiChatCompletionsTurn(true)), ANSWER);
 });
 
 test('a collected chat turn records the frames it was assembled from', async () => {
   // 「流式请求前端看到流+前端组装结果，非流式请求前端看到流+原始组装结果」 — the frames are
   // recorded either way, which is what lets the operator see the stream behind a single body.
-  assertFramesCarry(await framesRecordedBy(chatCompletionsTurn(false)), ANSWER);
+  assertFramesCarry(await framesRecordedBy(openaiChatCompletionsTurn(false)), ANSWER);
 });
 
 test('a streamed responses turn records the frames it served', async () => {
-  assertFramesCarry(await framesRecordedBy(responsesTurn(true)), ANSWER);
+  assertFramesCarry(await framesRecordedBy(openaiResponsesTurn(true)), ANSWER);
 });
 
 test('a collected responses turn records the frames it was assembled from', async () => {
-  assertFramesCarry(await framesRecordedBy(responsesTurn(false)), ANSWER);
+  assertFramesCarry(await framesRecordedBy(openaiResponsesTurn(false)), ANSWER);
 });
 
 test('a compaction records the frames its resource was assembled from', async () => {

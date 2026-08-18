@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 
 import { createResponsesWsSession, type StatefulResponsesStore } from './items/store.ts';
-import { responsesServePipeline, type ResponsesFacts, type ResponsesServeExit } from './pipeline.ts';
+import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { TurnDump } from '../../../dump/turn-dump.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
@@ -29,8 +29,8 @@ import { SourceStreamState } from '../shared/source-stream-state.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesRequestPayload } from '@floway-dev/protocols/responses';
+import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
@@ -39,7 +39,7 @@ interface WorkerWebSocket extends WebSocket {
   accept(): void;
 }
 
-interface ResponsesWebSocketSocket {
+interface OpenAIResponsesWebSocketSocket {
   readonly readyState: number;
   send(data: string): void;
 }
@@ -57,21 +57,21 @@ const UTF8_ENCODER = new TextEncoder();
 // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/resources/responses/ws-base.ts#L346-L371
 export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
-interface ResponsesWebSocketHandlers {
-  onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
-  onClose(event: unknown, socket: ResponsesWebSocketSocket): void;
-  onError(event: unknown, socket: ResponsesWebSocketSocket): void;
+interface OpenAIResponsesWebSocketHandlers {
+  onMessage(event: { readonly data: unknown }, socket: OpenAIResponsesWebSocketSocket): void;
+  onClose(event: unknown, socket: OpenAIResponsesWebSocketSocket): void;
+  onError(event: unknown, socket: OpenAIResponsesWebSocketSocket): void;
 }
 
-type ResponsesWebSocketUpgradeResolver = (
+type OpenAIResponsesWebSocketUpgradeResolver = (
   c: Context,
-  events: ResponsesWebSocketHandlers,
+  events: OpenAIResponsesWebSocketHandlers,
 ) => Response | Promise<Response>;
 
-let _responsesWebSocketUpgradeResolver: ResponsesWebSocketUpgradeResolver | null = null;
+let _responsesWebSocketUpgradeResolver: OpenAIResponsesWebSocketUpgradeResolver | null = null;
 
 export const initResponsesWebSocketUpgradeResolver = (
-  resolver: ResponsesWebSocketUpgradeResolver,
+  resolver: OpenAIResponsesWebSocketUpgradeResolver,
 ): void => {
   _responsesWebSocketUpgradeResolver = resolver;
 };
@@ -87,14 +87,14 @@ declare const WebSocketPair: {
 // `response.create`; the nested `response` envelope of Realtime-style clients
 // is an extension we also accept, and prefer when present.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L99-L115
-type ResponsesWebSocketClientEvent = Partial<ResponsesRequestPayload> & {
+type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayload> & {
   type: string;
   event_id?: string;
-  response?: Partial<ResponsesRequestPayload>;
+  response?: Partial<OpenAIResponsesRequestPayload>;
   [key: string]: unknown;
 };
 
-export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => {
+export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
@@ -116,7 +116,7 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+const createResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponsesWebSocketHandlers => {
   // The upgrade authenticates the connection, but every response.create is a
   // separate data-plane request. Codex deliberately reuses one socket across
   // turns, so retain the presented credential and resolve it again before each
@@ -200,7 +200,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   };
 };
 
-interface ResponsesWsTurnFailure {
+interface OpenAIResponsesWsTurnFailure {
   evict(): void;
   fail(status: number, error: Record<string, unknown>): void;
 }
@@ -267,7 +267,7 @@ const openResponsesWebSocketTurn = (
 
 const handleClientMessage = async (
   c: AuthedContext,
-  socket: ResponsesWebSocketSocket,
+  socket: OpenAIResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
   authenticatedRawKey: string,
@@ -291,7 +291,7 @@ const handleClientMessage = async (
   // envelope, including the refusals the chain hands back as a body rather than a stream; the
   // streaming loop's `finally` covers the turn that ends failed without one. A throw inside
   // the loop is the single path that takes both, and `Map.delete` makes the second call inert.
-  const turnFailure: ResponsesWsTurnFailure = {
+  const turnFailure: OpenAIResponsesWsTurnFailure = {
     evict: () => {
       if (ctx === undefined || previousResponseId === undefined) return;
       session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
@@ -337,7 +337,7 @@ const handleClientMessage = async (
     const source = message.response && typeof message.response === 'object'
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
-    const payload = responsesPayloadFromClientSource(source);
+    const payload = openaiResponsesPayloadFromClientSource(source);
     previousResponseId = payload.previous_response_id ?? undefined;
 
     const prologue = openResponsesWebSocketTurn(c, {
@@ -356,13 +356,13 @@ const handleClientMessage = async (
     const { facts, drain } = await run(
       // The transport frames its own answer, so the edge hands up the events rather than the
       // SSE a body would have been written from.
-      responsesServePipeline(payload, 'events'),
+      openaiResponsesServePipeline(payload, 'events'),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'responses',
         // A turn on this transport always streams, whatever the client wrote.
-        'ingress.chat.responses.wantsStream': true,
-        'request.chat.responses': payload,
+        'ingress.chat.openaiResponses.wantsStream': true,
+        'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
       }) as never,
       prologue.services as never,
@@ -409,38 +409,38 @@ const wsDataToBytes = (data: unknown): Uint8Array => {
   throw new WebSocketClientMessageError(`Unsupported WebSocket message data: ${typeof data}`);
 };
 
-const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent => {
+const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientEvent => {
   if (!parsed || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') {
     throw new WebSocketClientMessageError('WebSocket message must be a JSON object with a string type.');
   }
-  return parsed as ResponsesWebSocketClientEvent;
+  return parsed as OpenAIResponsesWebSocketClientEvent;
 };
 
 // The transport always streams, whatever the client sent.
-const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload =>
-  ({ ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true });
+const openaiResponsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload =>
+  ({ ...canonicalizeResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
 
 /** The chain hands its answer up at one key, and this entry assembled it to hand up events
  *  rather than the SSE frames an HTTP body is written from — so what is not a stream at that
  *  key is the one object arm this transport can see. */
 const isRenderedStream = (
-  rendered: ResponsesFacts['response.chat.responses.rendered'],
+  rendered: OpenAIResponsesFacts['response.chat.openaiResponses.rendered'],
 ): rendered is AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>> => Symbol.asyncIterator in rendered;
 
 const respondResponsesWebSocket = async (input: {
-  readonly socket: ResponsesWebSocketSocket;
+  readonly socket: OpenAIResponsesWebSocketSocket;
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
   readonly prologue: ChatPrologue;
-  readonly facts: ResponsesServeExit;
+  readonly facts: OpenAIResponsesServeExit;
   readonly drain: () => Promise<void>;
-  readonly turnFailure: ResponsesWsTurnFailure;
+  readonly turnFailure: OpenAIResponsesWsTurnFailure;
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure } = input;
   const ctx = prologue.gateway;
   const status = facts['response.http.status'];
-  const rendered = facts['response.chat.responses.rendered'];
+  const rendered = facts['response.chat.openaiResponses.rendered'];
 
   if (!isRenderedStream(rendered)) {
     // A body at the rendered key is a refusal — the upstream's own, or one the chain made
@@ -625,7 +625,7 @@ const respondResponsesWebSocket = async (input: {
     // What the turn billed, as the chain read it off the upstream's own events while they
     // passed. The answer is already on the socket by now, so it is settled here rather than
     // handed to the background the way an entry that returns a response has to.
-    const streamedUsage = facts['response.chat.responses.streamedUsage'];
+    const streamedUsage = facts['response.chat.openaiResponses.streamedUsage'];
     if (streamedUsage !== null) {
       const outcome = await streamedUsage;
       settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
@@ -763,7 +763,7 @@ const normalizeErrorBody = (body: unknown, status: number): Record<string, unkno
 // leaves the top level open, so `sendJson` may add `event_id` beside them.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/schema/components/schemas/WebSocketErrorEvent.json#L47
 const sendError = (
-  socket: ResponsesWebSocketSocket,
+  socket: OpenAIResponsesWebSocketSocket,
   status: number,
   error: Record<string, unknown>,
   eventId?: string,
@@ -781,14 +781,14 @@ const sendError = (
 // extension the union deliberately does not model. Both keep the untyped
 // `sendJson`.
 const sendResponsesEvent = (
-  socket: ResponsesWebSocketSocket,
+  socket: OpenAIResponsesWebSocketSocket,
   event: ClientResponsesStreamEvent,
   eventId?: string,
   dump?: TurnDump | null,
 ): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
-  socket: ResponsesWebSocketSocket,
+  socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
   dump?: TurnDump | null,

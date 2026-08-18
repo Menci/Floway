@@ -1,4 +1,4 @@
-import { generateAnthropicId } from '@floway-dev/protocols/messages';
+import { generateAnthropicId } from '@floway-dev/protocols/anthropic-messages';
 
 // Anthropic's own error envelope. The byte shape matches Anthropic-direct:
 // `{type:'error', error:{type, message}, request_id}` with `request_id` at the

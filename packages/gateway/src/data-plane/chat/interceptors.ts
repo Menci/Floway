@@ -25,15 +25,15 @@ import { isFailure, type AttemptSelector } from '../pipeline/facts.ts';
 import { foldsExclusiveCacheTokens } from '../shared/telemetry/usage.ts';
 import { defineStage, move, transform } from '@floway-dev/pipeline';
 import type {
-  ChatCompletionsMessage,
-  ChatCompletionsPayload,
-  ChatCompletionsReasoningItem,
-  ChatCompletionsStreamEvent,
-} from '@floway-dev/protocols/chat-completions';
+  OpenAIChatCompletionsMessage,
+  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionsReasoningItem,
+  OpenAIChatCompletionsStreamEvent,
+} from '@floway-dev/protocols/openai-chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiContent, GeminiPayload, GeminiStreamEvent, GeminiToolGroup } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { GeminiGenerateContentContent, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 /** Removing a field inside a value is the same move as removing a fact, and a value that
  *  carried none of them comes back by identity so the rule costs nothing where it does not
@@ -162,38 +162,38 @@ const attemptIdentity = (attempt: AttemptSelector): string => `${attempt.upstrea
  *  that appears after the leading run — which is what "mid-conversation" means. The fold
  *  itself is `roleRewriter`; what is here is the walk over this protocol's messages. */
 export const applyRoleCompatibilityToChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'applyRoleCompatibility',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      needs: ['request.chat.openaiChatCompletions', 'route.attempt'],
       consumes: [],
       // Declared even though it will not always be written: a stage that only modifies a
       // field need not write on every run, and `provides \ needs` is the set that must be.
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
-    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiChatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     request: facts => {
       const rewrite = rolesFor(facts['route.attempt'].flags);
       if (rewrite === null) return facts;                       // the free do-nothing path
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       const messages = rewriteChatCompletionsRoles(payload.messages, rewrite);
       // Written conditionally the whole way down, so a conversation this does not touch
       // comes back by identity and the layer costs what the rewrite actually changed.
       return messages === payload.messages
         ? facts
-        : { ...facts, 'request.chat.chatCompletions': move({ ...payload, messages }) };
+        : { ...facts, 'request.chat.openaiChatCompletions': move({ ...payload, messages }) };
     },
   })),
 });
@@ -217,9 +217,9 @@ const rolesFor = (flags: readonly string[]): RoleRewrite | null => {
     : null;
 };
 
-type ChatCompletionsMessages = ChatCompletionsPayload['messages'];
+type OpenAIChatCompletionsMessages = OpenAIChatCompletionsPayload['messages'];
 
-const rewriteChatCompletionsRoles = (messages: ChatCompletionsMessages, rewrite: RoleRewrite): ChatCompletionsMessages => {
+const rewriteChatCompletionsRoles = (messages: OpenAIChatCompletionsMessages, rewrite: RoleRewrite): OpenAIChatCompletionsMessages => {
   const nextRole = roleRewriter(rewrite);
   return mapKeepingIdentity(messages, message => {
     const role = nextRole(message.role);
@@ -256,69 +256,69 @@ type RewrittenRole = 'system' | 'developer' | 'user';
  *  is the gateway's canonical form — putting it on the wire in a vendor's shape is the
  *  vendor normalizer's job, which is why this runs above them. */
 export const disableReasoningOnForcedToolChoiceForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'disableReasoningOnForcedToolChoice',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      needs: ['request.chat.openaiChatCompletions', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
-    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiChatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('disable-reasoning-on-forced-tool-choice')) {
         return facts;
       }
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       if (!isForcedToolChoice(payload.tool_choice)) return facts;
-      return { ...facts, 'request.chat.chatCompletions': move({ ...payload, reasoning_effort: 'none' }) };
+      return { ...facts, 'request.chat.openaiChatCompletions': move({ ...payload, reasoning_effort: 'none' }) };
     },
   })),
 });
 
 /** `required`, or a named function. `auto` and `none` leave the model free to reason. */
-const isForcedToolChoice = (choice: ChatCompletionsPayload['tool_choice']): boolean =>
+const isForcedToolChoice = (choice: OpenAIChatCompletionsPayload['tool_choice']): boolean =>
   choice === 'required' || (typeof choice === 'object' && choice !== null);
 
 /** Drops a field the upstream would reject as an unknown argument. It runs above the vendor
  *  normalizers so each of them sees the already-stripped canonical payload. */
 export const stripPromptCacheKeyForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'stripPromptCacheKey',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      needs: ['request.chat.openaiChatCompletions', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
-    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiChatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('strip-prompt-cache-key')) return facts;
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       const stripped = withoutKeys(payload, ['prompt_cache_key']);
-      return stripped === payload ? facts : { ...facts, 'request.chat.chatCompletions': move(stripped) };
+      return stripped === payload ? facts : { ...facts, 'request.chat.openaiChatCompletions': move(stripped) };
     },
   })),
 });
@@ -330,7 +330,7 @@ export const stripPromptCacheKeyForChatCompletions = defineStage<
  * is on, and the gateway meters every stream from those frames — so what the client asked for
  * and what the upstream is asked for differ here, which is the one thing this rule exists to
  * say. Nothing downstream has to thread the client's original value through, because it is a
- * fact of its own: `ingress.chat.chatCompletions.wantsUsageChunk` describes the request that
+ * fact of its own: `ingress.chat.openaiChatCompletions.wantsUsageChunk` describes the request that
  * arrived and survives this rewrite, and the edge reads it to decide who is shown the chunk.
  *
  * It belongs to the wire rather than to the source chain because it names a field of *this*
@@ -342,34 +342,34 @@ export const stripPromptCacheKeyForChatCompletions = defineStage<
  * Reference: https://platform.openai.com/docs/api-reference/chat/create
  */
 export const includeUsageStreamOptionsForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'includeUsageStreamOptions',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions'],
+      needs: ['request.chat.openaiChatCompletions'],
       consumes: [],
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
-    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiChatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     request: facts => {
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       if (payload.stream_options?.include_usage === true) return facts;
       // Whatever else the client put on `stream_options` is its own and stays; only the one
       // field the gateway has an interest in is written.
       return {
         ...facts,
-        'request.chat.chatCompletions': move({
+        'request.chat.openaiChatCompletions': move({
           ...payload,
           stream_options: { ...payload.stream_options, include_usage: true },
         }),
@@ -393,27 +393,27 @@ export const includeUsageStreamOptionsForChatCompletions = defineStage<
 export const normalizeUsageForChatCompletions = defineStage<
   Record<string, never>,
   Record<string, never>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'normalizeUsage',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.chatCompletions'],
+      needs: ['response.chat.openaiChatCompletions'],
       consumes: [],
-      provides: ['response.chat.chatCompletions'],
+      provides: ['response.chat.openaiChatCompletions'],
     },
   },
   execute: transform<
     Record<string, never>,
     Record<string, never>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     response: facts => {
-      const answer = answerWithFrames<ChatCompletionsStreamEvent>(facts['response.chat.chatCompletions'], withUsageOnItsOwnCarrier);
-      return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+      const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(facts['response.chat.openaiChatCompletions'], withUsageOnItsOwnCarrier);
+      return answer === null ? facts : { ...facts, 'response.chat.openaiChatCompletions': move(answer) };
     },
   })),
 });
@@ -421,8 +421,8 @@ export const normalizeUsageForChatCompletions = defineStage<
 /** One chunk in, two out — and only for the chunk that carried both, which is why this is not
  *  a one-for-one event rewrite. */
 const withUsageOnItsOwnCarrier = async function* (
-  frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
+  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -462,23 +462,23 @@ const withUsageOnItsOwnCarrier = async function* (
 export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'normalizeExclusiveCachedTokens',
   through: {
     request: { needs: ['route.attempt'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.chatCompletions'],
+      needs: ['response.chat.openaiChatCompletions'],
       consumes: [],
-      provides: ['response.chat.chatCompletions'],
+      provides: ['response.chat.openaiChatCompletions'],
     },
   },
   execute: transform<
     Chat<'route.attempt'>,
     Chat<'route.attempt'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => {
     // Which attempt this is gets read on the way down and spoken about on the way back, which
     // is the order `transform` runs the two halves in.
@@ -491,11 +491,11 @@ export const normalizeExclusiveCachedTokensForChatCompletions = defineStage<
       response: facts => {
         const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
         const identity = attemptIdentity(attempt);
-        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
-          facts['response.chat.chatCompletions'],
+        const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(
+          facts['response.chat.openaiChatCompletions'],
           frames => rewritingEvents(frames, chunk => foldChatCompletionsUsage(chunk, declaredExclusive, identity)),
         );
-        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+        return answer === null ? facts : { ...facts, 'response.chat.openaiChatCompletions': move(answer) };
       },
     };
   }),
@@ -511,14 +511,14 @@ const CHAT_COMPLETIONS_CACHE_BUCKETS: CacheBucketNames = {
 };
 
 const foldChatCompletionsUsage = (
-  chunk: ChatCompletionsStreamEvent,
+  chunk: OpenAIChatCompletionsStreamEvent,
   declaredExclusive: boolean,
   identity: string,
-): ChatCompletionsStreamEvent => {
+): OpenAIChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (usage === null) return chunk;
   const folded = withCacheBucketsFolded(usage, CHAT_COMPLETIONS_CACHE_BUCKETS, declaredExclusive, identity);
-  return folded === usage ? chunk : { ...chunk, usage: folded as unknown as ChatCompletionsStreamEvent['usage'] };
+  return folded === usage ? chunk : { ...chunk, usage: folded as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
 // ── Chat Completions vendor dialects ──────────────────────────────────────────────────────
@@ -549,29 +549,29 @@ const foldChatCompletionsUsage = (
  * - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
  */
 export const vendorDeepSeekNormalizeForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'vendorDeepSeekNormalize',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      needs: ['request.chat.openaiChatCompletions', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
     response: {
-      needs: ['response.chat.chatCompletions'],
+      needs: ['response.chat.openaiChatCompletions'],
       consumes: [],
-      provides: ['response.chat.chatCompletions'],
+      provides: ['response.chat.openaiChatCompletions'],
     },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => {
     // Whether this vendor's dialect applies at all is read on the way down and acted on in
     // both directions, which is the order `transform` runs the two halves in.
@@ -580,25 +580,25 @@ export const vendorDeepSeekNormalizeForChatCompletions = defineStage<
       request: facts => {
         enabled = facts['route.attempt'].flags.includes('vendor-deepseek');
         if (!enabled) return facts;
-        const payload = facts['request.chat.chatCompletions'];
+        const payload = facts['request.chat.openaiChatCompletions'];
         const normalized = deepSeekOutbound(payload);
-        return normalized === payload ? facts : { ...facts, 'request.chat.chatCompletions': move(normalized) };
+        return normalized === payload ? facts : { ...facts, 'request.chat.openaiChatCompletions': move(normalized) };
       },
       response: facts => {
         if (!enabled) return facts;
-        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
-          facts['response.chat.chatCompletions'],
+        const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(
+          facts['response.chat.openaiChatCompletions'],
           frames => rewritingEvents(frames, chunk => deepSeekInboundUsage(deepSeekInboundDeltas(chunk))),
         );
-        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+        return answer === null ? facts : { ...facts, 'response.chat.openaiChatCompletions': move(answer) };
       },
     };
   }),
 });
 
-const deepSeekOutbound = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
+const deepSeekOutbound = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
   const withThinking = payload.reasoning_effort === 'none'
-    ? { ...withoutKeys(payload, ['reasoning_effort']), thinking: { type: 'disabled' } } satisfies ChatCompletionsPayloadWithDeepSeekThinking
+    ? { ...withoutKeys(payload, ['reasoning_effort']), thinking: { type: 'disabled' } } satisfies OpenAIChatCompletionsPayloadWithDeepSeekThinking
     : payload;
   const withResponseFormat = withThinking.response_format?.type === 'json_schema'
     ? { ...withThinking, response_format: { type: 'json_object' } }
@@ -610,27 +610,27 @@ const deepSeekOutbound = (payload: ChatCompletionsPayload): ChatCompletionsPaylo
 /** The reasoning DeepSeek reads, and only that: `reasoning_opaque` is the OpenAI-canonical
  *  signature for cross-turn replay and DeepSeek does not accept it, so it goes with the two
  *  fields that are projected onto `reasoning_content`. */
-const deepSeekAssistantReasoning = (message: ChatCompletionsMessage): ChatCompletionsMessage => {
+const deepSeekAssistantReasoning = (message: OpenAIChatCompletionsMessage): OpenAIChatCompletionsMessage => {
   const stripped = withoutKeys(message, ['reasoning_text', 'reasoning_opaque', 'reasoning_items']);
   if (stripped === message) return message;
   const text = typeof message.reasoning_text === 'string'
     ? message.reasoning_text
     : deepSeekReasoningFromItems(message.reasoning_items);
   if (text === undefined) return stripped;
-  const projected: ChatCompletionsMessageWithDeepSeekReasoning = { ...stripped, reasoning_content: text };
+  const projected: OpenAIChatCompletionsMessageWithDeepSeekReasoning = { ...stripped, reasoning_content: text };
   return projected;
 };
 
 /** The newer OpenAI shape carries reasoning as summary items; DeepSeek documents only the
  *  scalar, so what summaries there are become it. */
-const deepSeekReasoningFromItems = (items: ChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
+const deepSeekReasoningFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
   const parts = items?.flatMap(item => item.summary?.map(summary => summary.text) ?? []) ?? [];
   return parts.length > 0 ? parts.join('') : undefined;
 };
 
-const deepSeekInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+const deepSeekInboundDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   const choices = mapKeepingIdentity(chunk.choices, choice => {
-    const delta = choice.delta as ChatCompletionsDeltaWithDeepSeekReasoning;
+    const delta = choice.delta as OpenAIChatCompletionsDeltaWithDeepSeekReasoning;
     if (typeof delta.reasoning_content !== 'string') return choice;
     const stripped = withoutKeys(delta, ['reasoning_content']);
     return {
@@ -648,7 +648,7 @@ const deepSeekInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletio
  *  https://api-docs.deepseek.com/guides/kv_cache */
 const DEEPSEEK_CACHE_FIELDS = ['prompt_cache_hit_tokens', 'prompt_cache_miss_tokens'] as const;
 
-const deepSeekInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+const deepSeekInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (usage === null) return chunk;
   const stripped = withoutKeys(usage, DEEPSEEK_CACHE_FIELDS);
@@ -657,7 +657,7 @@ const deepSeekInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletion
   const next: JsonObject = hit == null
     ? stripped
     : { ...stripped, prompt_tokens_details: { ...(asJsonObject(usage.prompt_tokens_details) ?? {}), cached_tokens: hit } };
-  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
+  return { ...chunk, usage: next as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
 /** Qwen says "no reasoning" with a top-level `enable_thinking: false` rather than with the
@@ -665,35 +665,35 @@ const deepSeekInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletion
  *  there is nothing to do on the way back.
  *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
 export const vendorQwenNormalizeForChatCompletions = defineStage<
-  Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-  Chat<'request.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+  Chat<'request.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'vendorQwenNormalize',
   through: {
     request: {
-      needs: ['request.chat.chatCompletions', 'route.attempt'],
+      needs: ['request.chat.openaiChatCompletions', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.chatCompletions'],
+      provides: ['request.chat.openaiChatCompletions'],
     },
-    response: { needs: ['response.chat.chatCompletions'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiChatCompletions'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.chatCompletions' | 'route.attempt'>,
-    Chat<'request.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'request.chat.openaiChatCompletions' | 'route.attempt'>,
+    Chat<'request.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('vendor-qwen')) return facts;
-      const payload = facts['request.chat.chatCompletions'];
+      const payload = facts['request.chat.openaiChatCompletions'];
       if (payload.reasoning_effort !== 'none') return facts;
-      const normalized: ChatCompletionsPayloadWithQwenThinking = {
+      const normalized: OpenAIChatCompletionsPayloadWithQwenThinking = {
         ...withoutKeys(payload, ['reasoning_effort']),
         enable_thinking: false,
       };
-      return { ...facts, 'request.chat.chatCompletions': move(normalized) };
+      return { ...facts, 'request.chat.openaiChatCompletions': move(normalized) };
     },
   })),
 });
@@ -705,23 +705,23 @@ export const vendorQwenNormalizeForChatCompletions = defineStage<
 export const vendorKimiNormalizeForChatCompletions = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
-  Chat<'response.chat.chatCompletions'>,
-  Chat<'response.chat.chatCompletions'>
+  Chat<'response.chat.openaiChatCompletions'>,
+  Chat<'response.chat.openaiChatCompletions'>
 >({
   name: 'vendorKimiNormalize',
   through: {
     request: { needs: ['route.attempt'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.chatCompletions'],
+      needs: ['response.chat.openaiChatCompletions'],
       consumes: [],
-      provides: ['response.chat.chatCompletions'],
+      provides: ['response.chat.openaiChatCompletions'],
     },
   },
   execute: transform<
     Chat<'route.attempt'>,
     Chat<'route.attempt'>,
-    Chat<'response.chat.chatCompletions'>,
-    Chat<'response.chat.chatCompletions'>
+    Chat<'response.chat.openaiChatCompletions'>,
+    Chat<'response.chat.openaiChatCompletions'>
   >(() => {
     let enabled = false;
     return {
@@ -731,17 +731,17 @@ export const vendorKimiNormalizeForChatCompletions = defineStage<
       },
       response: facts => {
         if (!enabled) return facts;
-        const answer = answerWithFrames<ChatCompletionsStreamEvent>(
-          facts['response.chat.chatCompletions'],
+        const answer = answerWithFrames<OpenAIChatCompletionsStreamEvent>(
+          facts['response.chat.openaiChatCompletions'],
           frames => rewritingEvents(frames, kimiInboundUsage),
         );
-        return answer === null ? facts : { ...facts, 'response.chat.chatCompletions': move(answer) };
+        return answer === null ? facts : { ...facts, 'response.chat.openaiChatCompletions': move(answer) };
       },
     };
   }),
 });
 
-const kimiInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
+const kimiInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (usage === null) return chunk;
   const cached = readJsonNumber(usage.cached_tokens);
@@ -750,17 +750,17 @@ const kimiInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStr
     ...withoutKeys(usage, ['cached_tokens']),
     prompt_tokens_details: { ...(asJsonObject(usage.prompt_tokens_details) ?? {}), cached_tokens: cached },
   };
-  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
+  return { ...chunk, usage: next as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
 /** None of the three fields is a Chat Completions field, so each is declared beside the vendor
  *  that reads it rather than widening the protocol's own types. */
-type ChatCompletionsPayloadWithDeepSeekThinking = Omit<ChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
-type ChatCompletionsPayloadWithQwenThinking = Omit<ChatCompletionsPayload, 'reasoning_effort'> & { enable_thinking: false };
-type ChatCompletionsMessageWithDeepSeekReasoning =
-  Omit<ChatCompletionsMessage, 'reasoning_text' | 'reasoning_opaque' | 'reasoning_items'> & { reasoning_content: string };
-type ChatCompletionsDeltaWithDeepSeekReasoning =
-  ChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
+type OpenAIChatCompletionsPayloadWithDeepSeekThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
+type OpenAIChatCompletionsPayloadWithQwenThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { enable_thinking: false };
+type OpenAIChatCompletionsMessageWithDeepSeekReasoning =
+  Omit<OpenAIChatCompletionsMessage, 'reasoning_text' | 'reasoning_opaque' | 'reasoning_items'> & { reasoning_content: string };
+type OpenAIChatCompletionsDeltaWithDeepSeekReasoning =
+  OpenAIChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
 
 // ── Messages ──────────────────────────────────────────────────────────────────────────────
 
@@ -773,34 +773,34 @@ type ChatCompletionsDeltaWithDeepSeekReasoning =
  * cross here, and no developer role to trade with.
  */
 export const applyRoleCompatibilityToMessages = defineStage<
-  Chat<'request.chat.messages' | 'route.attempt'>,
-  Chat<'request.chat.messages'>,
-  Chat<'response.chat.messages'>,
-  Chat<'response.chat.messages'>
+  Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+  Chat<'request.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>
 >({
   name: 'applyRoleCompatibility',
   through: {
     request: {
-      needs: ['request.chat.messages', 'route.attempt'],
+      needs: ['request.chat.anthropicMessages', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.messages'],
+      provides: ['request.chat.anthropicMessages'],
     },
-    response: { needs: ['response.chat.messages'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.anthropicMessages'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.messages' | 'route.attempt'>,
-    Chat<'request.chat.messages'>,
-    Chat<'response.chat.messages'>,
-    Chat<'response.chat.messages'>
+    Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+    Chat<'request.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('rewrite-mid-conv-system-to-user')) return facts;
-      const payload = facts['request.chat.messages'];
+      const payload = facts['request.chat.anthropicMessages'];
       const messages = mapKeepingIdentity(payload.messages, message =>
         message.role === 'system' ? { role: 'user' as const, content: message.content } : message);
       return messages === payload.messages
         ? facts
-        : { ...facts, 'request.chat.messages': move({ ...payload, messages }) };
+        : { ...facts, 'request.chat.anthropicMessages': move({ ...payload, messages }) };
     },
   })),
 });
@@ -809,34 +809,34 @@ export const applyRoleCompatibilityToMessages = defineStage<
  *  natively. `tool` and `any` are the forced choices; `auto` and `none` leave the model free
  *  to reason. */
 export const disableReasoningOnForcedToolChoiceForMessages = defineStage<
-  Chat<'request.chat.messages' | 'route.attempt'>,
-  Chat<'request.chat.messages'>,
-  Chat<'response.chat.messages'>,
-  Chat<'response.chat.messages'>
+  Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+  Chat<'request.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>
 >({
   name: 'disableReasoningOnForcedToolChoice',
   through: {
     request: {
-      needs: ['request.chat.messages', 'route.attempt'],
+      needs: ['request.chat.anthropicMessages', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.messages'],
+      provides: ['request.chat.anthropicMessages'],
     },
-    response: { needs: ['response.chat.messages'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.anthropicMessages'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.messages' | 'route.attempt'>,
-    Chat<'request.chat.messages'>,
-    Chat<'response.chat.messages'>,
-    Chat<'response.chat.messages'>
+    Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+    Chat<'request.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('disable-reasoning-on-forced-tool-choice')) {
         return facts;
       }
-      const payload = facts['request.chat.messages'];
+      const payload = facts['request.chat.anthropicMessages'];
       const choice = payload.tool_choice?.type;
       if (choice !== 'tool' && choice !== 'any') return facts;
-      return { ...facts, 'request.chat.messages': move(withMessagesReasoningDisabled(payload)) };
+      return { ...facts, 'request.chat.anthropicMessages': move(withMessagesReasoningDisabled(payload)) };
     },
   })),
 });
@@ -845,9 +845,9 @@ export const disableReasoningOnForcedToolChoiceForMessages = defineStage<
  *  with structured output on these upstreams, and it is thinking it does not compose with, so
  *  `output_config.format` has to survive. An `output_config` that held nothing but the effort
  *  is nothing at all once the effort is gone, so it goes rather than riding on empty. */
-const withMessagesReasoningDisabled = (payload: MessagesPayload): MessagesPayload => {
+const withMessagesReasoningDisabled = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
   const { output_config, ...rest } = payload;
-  const next: MessagesPayload = { ...rest, thinking: { type: 'disabled' as const } };
+  const next: AnthropicMessagesPayload = { ...rest, thinking: { type: 'disabled' as const } };
   if (output_config !== undefined) {
     const remaining = withoutKeys(output_config, ['effort']);
     if (Object.keys(remaining).length > 0) next.output_config = remaining;
@@ -874,35 +874,35 @@ const withMessagesReasoningDisabled = (payload: MessagesPayload): MessagesPayloa
  * *more* of these fields on its first-party path, so it reads as a client-attribution signal.
  */
 export const stripBillingAttributionFromMessages = defineStage<
-  Chat<'request.chat.messages' | 'route.attempt'>,
-  Chat<'request.chat.messages'>,
-  Chat<'response.chat.messages'>,
-  Chat<'response.chat.messages'>
+  Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+  Chat<'request.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>,
+  Chat<'response.chat.anthropicMessages'>
 >({
   name: 'stripBillingAttribution',
   through: {
     request: {
-      needs: ['request.chat.messages', 'route.attempt'],
+      needs: ['request.chat.anthropicMessages', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.messages'],
+      provides: ['request.chat.anthropicMessages'],
     },
-    response: { needs: ['response.chat.messages'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.anthropicMessages'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.messages' | 'route.attempt'>,
-    Chat<'request.chat.messages'>,
-    Chat<'response.chat.messages'>,
-    Chat<'response.chat.messages'>
+    Chat<'request.chat.anthropicMessages' | 'route.attempt'>,
+    Chat<'request.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>,
+    Chat<'response.chat.anthropicMessages'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('strip-billing-attribution')) return facts;
-      const payload = facts['request.chat.messages'];
+      const payload = facts['request.chat.anthropicMessages'];
       const system = scrubbedSystemPrompt(payload.system);
       if (system === payload.system) return facts;
       const withoutSystem = withoutKeys(payload, ['system']);
       return {
         ...facts,
-        'request.chat.messages': move(system === undefined ? withoutSystem : { ...withoutSystem, system }),
+        'request.chat.anthropicMessages': move(system === undefined ? withoutSystem : { ...withoutSystem, system }),
       };
     },
   })),
@@ -921,7 +921,7 @@ const scrubText = (text: string): string =>
 /** What is left of the system prompt once the block is out of it: the value that came in when
  *  there was nothing to scrub, and `undefined` when nothing at all is left — an empty system
  *  prompt is not a system prompt, so the field goes rather than riding on empty. */
-const scrubbedSystemPrompt = (system: MessagesPayload['system']): MessagesPayload['system'] => {
+const scrubbedSystemPrompt = (system: AnthropicMessagesPayload['system']): AnthropicMessagesPayload['system'] => {
   if (system === undefined) return undefined;
   if (typeof system === 'string') {
     const scrubbed = scrubText(system);
@@ -952,26 +952,26 @@ const scrubbedSystemPrompt = (system: MessagesPayload['system']): MessagesPayloa
  *  at source and every target sees translatable parts. A part left holding nothing goes with
  *  them: it is not a part any more. */
 export const stripUnsupportedPartFieldsFromGemini = defineStage<
-  Chat<'request.chat.gemini'>,
-  Chat<'request.chat.gemini'>,
-  Chat<'response.chat.gemini'>,
-  Chat<'response.chat.gemini'>
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>
 >({
   name: 'stripUnsupportedPartFields',
   through: {
-    request: { needs: ['request.chat.gemini'], consumes: [], provides: ['request.chat.gemini'] },
-    response: { needs: ['response.chat.gemini'], consumes: [], provides: [] },
+    request: { needs: ['request.chat.geminiGenerateContent'], consumes: [], provides: ['request.chat.geminiGenerateContent'] },
+    response: { needs: ['response.chat.geminiGenerateContent'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.gemini'>,
-    Chat<'request.chat.gemini'>,
-    Chat<'response.chat.gemini'>,
-    Chat<'response.chat.gemini'>
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>
   >(() => ({
     request: facts => {
-      const payload = facts['request.chat.gemini'];
+      const payload = facts['request.chat.geminiGenerateContent'];
       const stripped = withUnsupportedPartFieldsStripped(payload);
-      return stripped === payload ? facts : { ...facts, 'request.chat.gemini': move(stripped) };
+      return stripped === payload ? facts : { ...facts, 'request.chat.geminiGenerateContent': move(stripped) };
     },
   })),
 });
@@ -984,7 +984,7 @@ export const stripUnsupportedPartFieldsFromGemini = defineStage<
  *  https://ai.google.dev/gemini-api/docs/code-execution */
 const UNSUPPORTED_GEMINI_PART_FIELDS = ['fileData', 'executableCode', 'codeExecutionResult'] as const;
 
-const withUnsupportedPartFieldsStripped = (payload: GeminiPayload): GeminiPayload => {
+const withUnsupportedPartFieldsStripped = (payload: GeminiGenerateContentPayload): GeminiGenerateContentPayload => {
   const contents = payload.contents === undefined
     ? undefined
     : mapKeepingIdentity(payload.contents, stripContentParts);
@@ -999,7 +999,7 @@ const withUnsupportedPartFieldsStripped = (payload: GeminiPayload): GeminiPayloa
   };
 };
 
-const stripContentParts = (content: GeminiContent): GeminiContent => {
+const stripContentParts = (content: GeminiGenerateContentContent): GeminiGenerateContentContent => {
   let changed = false;
   const parts = content.parts.flatMap(part => {
     const stripped = withoutKeys(part, UNSUPPORTED_GEMINI_PART_FIELDS);
@@ -1015,26 +1015,26 @@ const stripContentParts = (content: GeminiContent): GeminiContent => {
  *  emitter offered an empty group would be offered a tool that does nothing. `tools` itself
  *  goes when no group survived: an empty tool list is a different request from no tools. */
 export const stripUnsupportedToolsFromGemini = defineStage<
-  Chat<'request.chat.gemini'>,
-  Chat<'request.chat.gemini'>,
-  Chat<'response.chat.gemini'>,
-  Chat<'response.chat.gemini'>
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>
 >({
   name: 'stripUnsupportedTools',
   through: {
-    request: { needs: ['request.chat.gemini'], consumes: [], provides: ['request.chat.gemini'] },
-    response: { needs: ['response.chat.gemini'], consumes: [], provides: [] },
+    request: { needs: ['request.chat.geminiGenerateContent'], consumes: [], provides: ['request.chat.geminiGenerateContent'] },
+    response: { needs: ['response.chat.geminiGenerateContent'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.gemini'>,
-    Chat<'request.chat.gemini'>,
-    Chat<'response.chat.gemini'>,
-    Chat<'response.chat.gemini'>
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>
   >(() => ({
     request: facts => {
-      const payload = facts['request.chat.gemini'];
+      const payload = facts['request.chat.geminiGenerateContent'];
       const stripped = withUnsupportedToolsStripped(payload);
-      return stripped === payload ? facts : { ...facts, 'request.chat.gemini': move(stripped) };
+      return stripped === payload ? facts : { ...facts, 'request.chat.geminiGenerateContent': move(stripped) };
     },
   })),
 });
@@ -1057,11 +1057,11 @@ const UNSUPPORTED_GEMINI_TOOL_CAPABILITIES = [
   'googleMaps',
 ] as const;
 
-const withUnsupportedToolsStripped = (payload: GeminiPayload): GeminiPayload => {
+const withUnsupportedToolsStripped = (payload: GeminiGenerateContentPayload): GeminiGenerateContentPayload => {
   const { tools } = payload;
   if (tools === undefined) return payload;
   let changed = false;
-  const kept: GeminiToolGroup[] = [];
+  const kept: GeminiGenerateContentToolGroup[] = [];
   for (const tool of tools) {
     const stripped = withoutKeys(tool, UNSUPPORTED_GEMINI_TOOL_CAPABILITIES);
     if (stripped !== tool) changed = true;
@@ -1076,26 +1076,26 @@ const withUnsupportedToolsStripped = (payload: GeminiPayload): GeminiPayload => 
  *  path, so they go rather than have us pretend to enforce a policy we cannot honor
  *  end to end. */
 export const stripSafetySettingsFromGemini = defineStage<
-  Chat<'request.chat.gemini'>,
-  Chat<'request.chat.gemini'>,
-  Chat<'response.chat.gemini'>,
-  Chat<'response.chat.gemini'>
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>
 >({
   name: 'stripSafetySettings',
   through: {
-    request: { needs: ['request.chat.gemini'], consumes: [], provides: ['request.chat.gemini'] },
-    response: { needs: ['response.chat.gemini'], consumes: [], provides: [] },
+    request: { needs: ['request.chat.geminiGenerateContent'], consumes: [], provides: ['request.chat.geminiGenerateContent'] },
+    response: { needs: ['response.chat.geminiGenerateContent'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.gemini'>,
-    Chat<'request.chat.gemini'>,
-    Chat<'response.chat.gemini'>,
-    Chat<'response.chat.gemini'>
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>
   >(() => ({
     request: facts => {
-      const payload = facts['request.chat.gemini'];
+      const payload = facts['request.chat.geminiGenerateContent'];
       const stripped = withoutKeys(payload, ['safetySettings']);
-      return stripped === payload ? facts : { ...facts, 'request.chat.gemini': move(stripped) };
+      return stripped === payload ? facts : { ...facts, 'request.chat.geminiGenerateContent': move(stripped) };
     },
   })),
 });
@@ -1109,40 +1109,40 @@ export const stripSafetySettingsFromGemini = defineStage<
  * `needs` can only name what the ending provides, which is the answer and not the turn.
  */
 export const suppressThoughtPartsFromGemini = defineStage<
-  Chat<'request.chat.gemini'>,
-  Chat<'request.chat.gemini'>,
-  Chat<'response.chat.gemini'>,
-  Chat<'response.chat.gemini'>
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'request.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>,
+  Chat<'response.chat.geminiGenerateContent'>
 >({
   name: 'suppressThoughtParts',
   through: {
-    request: { needs: ['request.chat.gemini'], consumes: [], provides: [] },
-    response: { needs: ['response.chat.gemini'], consumes: [], provides: ['response.chat.gemini'] },
+    request: { needs: ['request.chat.geminiGenerateContent'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.geminiGenerateContent'], consumes: [], provides: ['response.chat.geminiGenerateContent'] },
   },
   execute: transform<
-    Chat<'request.chat.gemini'>,
-    Chat<'request.chat.gemini'>,
-    Chat<'response.chat.gemini'>,
-    Chat<'response.chat.gemini'>
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'request.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>,
+    Chat<'response.chat.geminiGenerateContent'>
   >(() => {
     // Assigned on the way down and read on the way back, which is the order `transform` runs
     // the two halves in.
     let includeThoughts!: boolean;
     return {
       request: facts => {
-        includeThoughts = facts['request.chat.gemini'].generationConfig?.thinkingConfig?.includeThoughts === true;
+        includeThoughts = facts['request.chat.geminiGenerateContent'].generationConfig?.thinkingConfig?.includeThoughts === true;
         return facts;
       },
       response: facts => {
         if (includeThoughts) return facts;
-        const answer = facts['response.chat.gemini'];
+        const answer = facts['response.chat.geminiGenerateContent'];
         // A refusal and a collected body have no thought parts to hide, and telling the three
         // apart is reading a value rather than dispatching on a declaration.
         if (isFailure(answer) || answer.kind !== 'stream') return facts;
-        const frames = answer.frames as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>;
+        const frames = answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>;
         return {
           ...facts,
-          'response.chat.gemini': move({
+          'response.chat.geminiGenerateContent': move({
             kind: 'stream' as const,
             frames: { [Symbol.asyncIterator]: () => withoutThoughtParts(frames) },
           }),
@@ -1157,8 +1157,8 @@ export const suppressThoughtPartsFromGemini = defineStage<
  *  both is what keeps a stream of pure thought from reaching the client as a stream of
  *  empties. */
 const withoutThoughtParts = async function* (
-  frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
+  frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
   for await (const frame of frames) {
     if (frame.type !== 'event' || 'error' in frame.event) {
       yield frame;
@@ -1171,7 +1171,7 @@ const withoutThoughtParts = async function* (
       return [{ ...candidate, content: { ...candidate.content, parts } }];
     });
 
-    const event: GeminiStreamEvent = {
+    const event: GeminiGenerateContentStreamEvent = {
       ...frame.event,
       ...(candidates === undefined ? {} : { candidates }),
     };
@@ -1179,7 +1179,7 @@ const withoutThoughtParts = async function* (
   }
 };
 
-const hasGeminiEventPayload = (event: GeminiStreamEvent): boolean => {
+const hasGeminiEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
   if ('error' in event) return true;
   return (event.candidates?.length ?? 0) > 0
     || event.usageMetadata !== undefined
@@ -1194,34 +1194,34 @@ const hasGeminiEventPayload = (event: GeminiStreamEvent): boolean => {
  *  an item that carries none still crosses the leading system run — a reasoning item between
  *  two system messages is what makes the second one mid-conversation. */
 export const applyRoleCompatibilityToResponses = defineStage<
-  Chat<'request.chat.responses' | 'route.attempt'>,
-  Chat<'request.chat.responses'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+  Chat<'request.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'applyRoleCompatibility',
   through: {
     request: {
-      needs: ['request.chat.responses', 'route.attempt'],
+      needs: ['request.chat.openaiResponses', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.responses'],
+      provides: ['request.chat.openaiResponses'],
     },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.responses' | 'route.attempt'>,
-    Chat<'request.chat.responses'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+    Chat<'request.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => ({
     request: facts => {
       const rewrite = rolesFor(facts['route.attempt'].flags);
       if (rewrite === null) return facts;                       // the free do-nothing path
       // The key holds what a client may send, whose `input` is a string or a list; this chain
       // runs on the canonical form the entry normalized it to, which is the one a wire takes.
-      const payload = facts['request.chat.responses'] as CanonicalResponsesPayload;
+      const payload = facts['request.chat.openaiResponses'] as CanonicalResponsesPayload;
       const nextRole = roleRewriter(rewrite);
-      const input = mapKeepingIdentity(payload.input, (item): ResponsesInputItem => {
+      const input = mapKeepingIdentity(payload.input, (item): OpenAIResponsesInputItem => {
         if (item.type !== 'message') {
           nextRole(undefined);
           return item;
@@ -1231,7 +1231,7 @@ export const applyRoleCompatibilityToResponses = defineStage<
       });
       return input === payload.input
         ? facts
-        : { ...facts, 'request.chat.responses': move({ ...payload, input }) };
+        : { ...facts, 'request.chat.openaiResponses': move({ ...payload, input }) };
     },
   })),
 });
@@ -1242,38 +1242,38 @@ export const applyRoleCompatibilityToResponses = defineStage<
  *  the sentinel is the gateway's canonical form, which is why this runs above the vendor
  *  normalizers that put it on the wire in a vendor's shape. */
 export const disableReasoningOnForcedToolChoiceForResponses = defineStage<
-  Chat<'request.chat.responses' | 'route.attempt'>,
-  Chat<'request.chat.responses'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+  Chat<'request.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'disableReasoningOnForcedToolChoice',
   through: {
     request: {
-      needs: ['request.chat.responses', 'route.attempt'],
+      needs: ['request.chat.openaiResponses', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.responses'],
+      provides: ['request.chat.openaiResponses'],
     },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.responses' | 'route.attempt'>,
-    Chat<'request.chat.responses'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+    Chat<'request.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('disable-reasoning-on-forced-tool-choice')) {
         return facts;
       }
-      const payload = facts['request.chat.responses'];
+      const payload = facts['request.chat.openaiResponses'];
       if (!isForcedResponsesToolChoice(payload.tool_choice)) return facts;
-      return { ...facts, 'request.chat.responses': move({ ...payload, reasoning: { effort: 'none' } }) };
+      return { ...facts, 'request.chat.openaiResponses': move({ ...payload, reasoning: { effort: 'none' } }) };
     },
   })),
 });
 
-const isForcedResponsesToolChoice = (choice: ResponsesPayload['tool_choice']): boolean => {
+const isForcedResponsesToolChoice = (choice: OpenAIResponsesPayload['tool_choice']): boolean => {
   if (choice === undefined || choice === null) return false;
   if (typeof choice === 'string') return choice === 'required';
   return true;
@@ -1282,31 +1282,31 @@ const isForcedResponsesToolChoice = (choice: ResponsesPayload['tool_choice']): b
 /** Drops a field the upstream would reject as an unknown argument. It runs above the vendor
  *  normalizers so each of them sees the already-stripped canonical payload. */
 export const stripPromptCacheKeyForResponses = defineStage<
-  Chat<'request.chat.responses' | 'route.attempt'>,
-  Chat<'request.chat.responses'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+  Chat<'request.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'stripPromptCacheKey',
   through: {
     request: {
-      needs: ['request.chat.responses', 'route.attempt'],
+      needs: ['request.chat.openaiResponses', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.responses'],
+      provides: ['request.chat.openaiResponses'],
     },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.responses' | 'route.attempt'>,
-    Chat<'request.chat.responses'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+    Chat<'request.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('strip-prompt-cache-key')) return facts;
-      const payload = facts['request.chat.responses'];
+      const payload = facts['request.chat.openaiResponses'];
       const stripped = withoutKeys(payload, ['prompt_cache_key']);
-      return stripped === payload ? facts : { ...facts, 'request.chat.responses': move(stripped) };
+      return stripped === payload ? facts : { ...facts, 'request.chat.openaiResponses': move(stripped) };
     },
   })),
 });
@@ -1326,19 +1326,19 @@ export const stripPromptCacheKeyForResponses = defineStage<
 export const normalizeExclusiveCachedTokensForResponses = defineStage<
   Chat<'route.attempt'>,
   Chat<'route.attempt'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'normalizeExclusiveCachedTokens',
   through: {
     request: { needs: ['route.attempt'], consumes: [], provides: [] },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: ['response.chat.responses'] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: ['response.chat.openaiResponses'] },
   },
   execute: transform<
     Chat<'route.attempt'>,
     Chat<'route.attempt'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => {
     // Which attempt this is gets read on the way down and spoken about on the way back, which
     // is the order `transform` runs the two halves in.
@@ -1351,11 +1351,11 @@ export const normalizeExclusiveCachedTokensForResponses = defineStage<
       response: facts => {
         const declaredExclusive = attempt.flags.includes('usage-exclusive-cached-tokens');
         const identity = attemptIdentity(attempt);
-        const answer = answerWithFrames<ResponsesStreamEvent>(
-          facts['response.chat.responses'],
+        const answer = answerWithFrames<OpenAIResponsesStreamEvent>(
+          facts['response.chat.openaiResponses'],
           frames => rewritingEvents(frames, event => foldResponsesUsage(event, declaredExclusive, identity)),
         );
-        return answer === null ? facts : { ...facts, 'response.chat.responses': move(answer) };
+        return answer === null ? facts : { ...facts, 'response.chat.openaiResponses': move(answer) };
       },
     };
   }),
@@ -1371,17 +1371,17 @@ const RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
 };
 
 const foldResponsesUsage = (
-  event: ResponsesStreamEvent,
+  event: OpenAIResponsesStreamEvent,
   declaredExclusive: boolean,
   identity: string,
-): ResponsesStreamEvent => {
+): OpenAIResponsesStreamEvent => {
   if (!('response' in event)) return event;
   const response = asJsonObject(event.response);
   const usage = asJsonObject(response?.usage);
   if (response === null || usage === null) return event;
   const folded = withCacheBucketsFolded(usage, RESPONSES_CACHE_BUCKETS, declaredExclusive, identity);
   if (folded === usage) return event;
-  return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as ResponsesStreamEvent;
+  return { ...event, response: { ...response, usage: folded } as JsonObject } as unknown as OpenAIResponsesStreamEvent;
 };
 
 /** DeepSeek says "no reasoning" with a top-level `thinking: { type: 'disabled' }` rather than
@@ -1389,33 +1389,33 @@ const foldResponsesUsage = (
  *  this chain's rewrites, because a vendor normalizer has the final say on the outbound body.
  *  https://api-docs.deepseek.com/zh-cn/guides/thinking_mode */
 export const vendorDeepSeekNormalizeForResponses = defineStage<
-  Chat<'request.chat.responses' | 'route.attempt'>,
-  Chat<'request.chat.responses'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+  Chat<'request.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'vendorDeepSeekNormalize',
   through: {
     request: {
-      needs: ['request.chat.responses', 'route.attempt'],
+      needs: ['request.chat.openaiResponses', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.responses'],
+      provides: ['request.chat.openaiResponses'],
     },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.responses' | 'route.attempt'>,
-    Chat<'request.chat.responses'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+    Chat<'request.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('vendor-deepseek')) return facts;
-      const payload = facts['request.chat.responses'];
+      const payload = facts['request.chat.openaiResponses'];
       if (payload.reasoning?.effort !== 'none') return facts;
       const { reasoning, ...rest } = payload;
-      const normalized: ResponsesPayloadWithDeepSeekThinking = { ...rest, thinking: { type: 'disabled' } };
-      return { ...facts, 'request.chat.responses': move(normalized) };
+      const normalized: OpenAIResponsesPayloadWithDeepSeekThinking = { ...rest, thinking: { type: 'disabled' } };
+      return { ...facts, 'request.chat.openaiResponses': move(normalized) };
     },
   })),
 });
@@ -1423,38 +1423,38 @@ export const vendorDeepSeekNormalizeForResponses = defineStage<
 /** Qwen says the same thing with a top-level `enable_thinking: false`.
  *  https://www.alibabacloud.com/help/en/model-studio/deep-thinking */
 export const vendorQwenNormalizeForResponses = defineStage<
-  Chat<'request.chat.responses' | 'route.attempt'>,
-  Chat<'request.chat.responses'>,
-  Chat<'response.chat.responses'>,
-  Chat<'response.chat.responses'>
+  Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+  Chat<'request.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>,
+  Chat<'response.chat.openaiResponses'>
 >({
   name: 'vendorQwenNormalize',
   through: {
     request: {
-      needs: ['request.chat.responses', 'route.attempt'],
+      needs: ['request.chat.openaiResponses', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.responses'],
+      provides: ['request.chat.openaiResponses'],
     },
-    response: { needs: ['response.chat.responses'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.openaiResponses'], consumes: [], provides: [] },
   },
   execute: transform<
-    Chat<'request.chat.responses' | 'route.attempt'>,
-    Chat<'request.chat.responses'>,
-    Chat<'response.chat.responses'>,
-    Chat<'response.chat.responses'>
+    Chat<'request.chat.openaiResponses' | 'route.attempt'>,
+    Chat<'request.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>,
+    Chat<'response.chat.openaiResponses'>
   >(() => ({
     request: facts => {
       if (!facts['route.attempt'].flags.includes('vendor-qwen')) return facts;
-      const payload = facts['request.chat.responses'];
+      const payload = facts['request.chat.openaiResponses'];
       if (payload.reasoning?.effort !== 'none') return facts;
       const { reasoning, ...rest } = payload;
-      const normalized: ResponsesPayloadWithQwenThinking = { ...rest, enable_thinking: false };
-      return { ...facts, 'request.chat.responses': move(normalized) };
+      const normalized: OpenAIResponsesPayloadWithQwenThinking = { ...rest, enable_thinking: false };
+      return { ...facts, 'request.chat.openaiResponses': move(normalized) };
     },
   })),
 });
 
 /** Neither field is a Responses field, so each is declared beside the vendor that reads it
  *  rather than widening the protocol's own request type. */
-type ResponsesPayloadWithDeepSeekThinking = Omit<ResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };
-type ResponsesPayloadWithQwenThinking = Omit<ResponsesPayload, 'reasoning'> & { enable_thinking: false };
+type OpenAIResponsesPayloadWithDeepSeekThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };
+type OpenAIResponsesPayloadWithQwenThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { enable_thinking: false };

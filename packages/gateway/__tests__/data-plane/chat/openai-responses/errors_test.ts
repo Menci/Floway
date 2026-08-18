@@ -4,12 +4,12 @@
 
 import { test } from 'vitest';
 
-import type { ResponsesServeFailure } from '../../../../src/data-plane/chat/responses/errors.ts';
+import type { OpenAIResponsesServeFailure } from '../../../../src/data-plane/chat/openai-responses/errors.ts';
 import { throwChatServeFailure, tryCatchChatServeFailure } from '../../../../src/data-plane/chat/shared/errors.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('round-trips the Responses-only item-not-found failure through throw/catch', () => {
-  const failure: ResponsesServeFailure = { kind: 'item-not-found', itemId: 'msg_abc' };
+  const failure: OpenAIResponsesServeFailure = { kind: 'item-not-found', itemId: 'msg_abc' };
   const error = assertThrows(() => throwChatServeFailure(failure));
-  assertEquals(tryCatchChatServeFailure<ResponsesServeFailure>(error), failure);
+  assertEquals(tryCatchChatServeFailure<OpenAIResponsesServeFailure>(error), failure);
 });

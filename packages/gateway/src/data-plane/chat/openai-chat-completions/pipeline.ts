@@ -10,7 +10,7 @@
 // The wire a candidate is dialled on is chosen per candidate rather than at assembly, and
 // because failover re-runs the whole suffix the next candidate re-picks its own. Its own
 // wire is a bare ending; the two translated ones are a handoff and then that protocol's own
-// wire, and all three hand up `response.chat.chatCompletions` — so the stage above cannot
+// wire, and all three hand up `response.chat.openaiChatCompletions` — so the stage above cannot
 // tell which ran.
 //
 // What sits *in* a wire rather than above the fork is the other half of the arrangement. A
@@ -47,8 +47,8 @@ import {
   vendorKimiNormalizeForChatCompletions,
   vendorQwenNormalizeForChatCompletions,
 } from '../interceptors.ts';
-import { messagesWire } from '../messages/pipeline.ts';
-import { responsesWire } from '../responses/pipeline.ts';
+import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
+import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
@@ -58,31 +58,31 @@ import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type Cha
 import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import {
   CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE,
-  chatCompletionsErrorPayloadMessage,
-  chatCompletionsProtocolFrameToSSEFrame,
+  openaiChatCompletionsErrorPayloadMessage,
+  openaiChatCompletionsProtocolFrameToSSEFrame,
   collectChatCompletionsProtocolEventsToResult,
-  type ChatCompletionsPayload,
-  type ChatCompletionsStreamEvent,
-} from '@floway-dev/protocols/chat-completions';
+  type OpenAIChatCompletionsPayload,
+  type OpenAIChatCompletionsStreamEvent,
+} from '@floway-dev/protocols/openai-chat-completions';
 import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 
 /** `/v1/chat/completions` prefers its own wire, then the translated Messages path, then the
  *  translated Responses path. */
-export const chatCompletionsTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
+export const openaiChatCompletionsTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
 
 /** What this family adds to the chat space. */
-export interface ChatCompletionsFacts extends ChatFacts {
+export interface OpenAIChatCompletionsFacts extends ChatFacts {
   /** What the client is actually sent — an object when it asked for one, SSE frames when it
    *  asked to stream. The edge provides it, so a dump shows what the client received. */
-  'response.chat.chatCompletions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  'response.chat.openaiChatCompletions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.chatCompletions.streamedUsage': Promise<StreamOutcome> | null;
+  'response.chat.openaiChatCompletions.streamedUsage': Promise<StreamOutcome> | null;
 }
 
-type C<K extends keyof ChatCompletionsFacts> = { [P in K]: ChatCompletionsFacts[P] };
+type C<K extends keyof OpenAIChatCompletionsFacts> = { [P in K]: OpenAIChatCompletionsFacts[P] };
 
 /**
  * The outermost edge. A chat answer is always a stream by the time it reaches here — the
@@ -93,29 +93,29 @@ type C<K extends keyof ChatCompletionsFacts> = { [P in K]: ChatCompletionsFacts[
  * same frames that would have gone out are folded here instead.
  */
 const emitChatCompletions = defineStage<
-  C<'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'>,
-  C<'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'>,
-  C<'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'
-    | 'response.chat.chatCompletions' | 'response.http.headers'>,
-  C<'response.chat.chatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
+  C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
+  C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
+  C<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
+    | 'response.chat.openaiChatCompletions' | 'response.http.headers'>,
+  C<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'emitChatCompletions',
   through: {
     request: {
-      needs: ['ingress.chat.chatCompletions.wantsStream', 'ingress.chat.chatCompletions.wantsUsageChunk'],
+      needs: ['ingress.chat.openaiChatCompletions.wantsStream', 'ingress.chat.openaiChatCompletions.wantsUsageChunk'],
       consumes: [],
       provides: [],
     },
     response: {
-      needs: ['response.chat.chatCompletions', 'response.http.headers'],
-      consumes: ['response.chat.chatCompletions', 'response.http.headers'],
-      provides: ['response.chat.chatCompletions.rendered', 'response.http.status', 'response.http.headers'],
+      needs: ['response.chat.openaiChatCompletions', 'response.http.headers'],
+      consumes: ['response.chat.openaiChatCompletions', 'response.http.headers'],
+      provides: ['response.chat.openaiChatCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next, use) => {
     const back = await next(facts);
-    const { 'response.chat.chatCompletions': answer, 'response.http.headers': headers, ...rest } = back;
+    const { 'response.chat.openaiChatCompletions': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
@@ -126,7 +126,7 @@ const emitChatCompletions = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.chatCompletions.rendered': move(renderFailure(
+        'response.chat.openaiChatCompletions.rendered': move(renderFailure(
           answer,
           () => ({ error: { message: answer.message, type: 'api_error' } }),
         )),
@@ -137,7 +137,7 @@ const emitChatCompletions = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.chatCompletions.rendered': move(answer.body as Record<string, unknown>),
+        'response.chat.openaiChatCompletions.rendered': move(answer.body as Record<string, unknown>),
         'response.http.status': 200,
       };
     }
@@ -148,16 +148,16 @@ const emitChatCompletions = defineStage<
     // the frames — below the fold, and there would be nothing left to rewrite.
     const frames = recordFrames(
       wrapChatCompletionsAffinityEgress(
-        answer.frames as AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+        answer.frames as AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
         affinityEgressOptions(use.gateway),
       ),
       use.gateway.dump,
     );
-    if (!back['ingress.chat.chatCompletions.wantsStream']) {
+    if (!back['ingress.chat.openaiChatCompletions.wantsStream']) {
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.chatCompletions.rendered': move(
+        'response.chat.openaiChatCompletions.rendered': move(
           await collectChatCompletionsProtocolEventsToResult(frames) as unknown as Record<string, unknown>,
         ),
         'response.http.status': 200,
@@ -166,7 +166,7 @@ const emitChatCompletions = defineStage<
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.chatCompletions.rendered': move(renderSSE(frames, back['ingress.chat.chatCompletions.wantsUsageChunk'])),
+      'response.chat.openaiChatCompletions.rendered': move(renderSSE(frames, back['ingress.chat.openaiChatCompletions.wantsUsageChunk'])),
       'response.http.status': 200,
     };
   },
@@ -176,12 +176,12 @@ const emitChatCompletions = defineStage<
  *  is shown it is the client's own question. The protocol owns which frame that is, and says
  *  so by writing no frame at all. */
 const renderSSE = (
-  frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   includeUsageChunk: boolean,
 ): AsyncIterable<SseFrame> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
-      const written = chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
+      const written = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
       if (written !== null) yield written;
     }
   })(),
@@ -190,7 +190,7 @@ const renderSSE = (
 /**
  * The wire. It dials Chat Completions and provides the answer at whichever family's response
  * key the chain above it reads — which is what makes it interchangeable with a translated
- * chain: both hand up `response.chat.chatCompletions`, and the stage above cannot tell which
+ * chain: both hand up `response.chat.openaiChatCompletions`, and the stage above cannot tell which
  * ran.
  *
  * `streamedUsage` is the one key it is told. A wire hands up one reading whatever protocol it
@@ -198,14 +198,14 @@ const renderSSE = (
  * protocol's — so it is built with it rather than naming one of its own.
  */
 const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
-  C<'request.chat.chatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
-  C<'response.chat.chatCompletions' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
+  C<'request.chat.openaiChatCompletions' | 'route.attempt' | 'ingress.http.headers'>,
+  C<'response.chat.openaiChatCompletions' | 'response.usage.billable' | 'response.http.headers'> & Record<string, unknown>,
   ChatServices
 >({
   name: 'callChatCompletionsUpstream',
   return: {
     provides: [
-      'response.chat.chatCompletions',
+      'response.chat.openaiChatCompletions',
       streamedUsage,
       'response.usage.billable',
       'response.http.headers',
@@ -220,7 +220,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
     // What the record holds by now: the payload affinity materialized for this candidate,
     // as every stage between the fork and here has rewritten it — or, on a translated wire,
     // what the handoff put here.
-    const body = bodyForAttempt(facts['request.chat.chatCompletions'], candidate, applyRulesToUpstreamChatCompletions);
+    const body = bodyForAttempt(facts['request.chat.openaiChatCompletions'], candidate, applyRulesToUpstreamChatCompletions);
 
     let result;
     try {
@@ -239,7 +239,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
       // no headers to carry. What it leaves behind is the performance row settlement writes.
       return move({
         ...facts,
-        'response.chat.chatCompletions': { status: 502, message: error instanceof Error ? error.message : String(error) },
+        'response.chat.openaiChatCompletions': { status: 502, message: error instanceof Error ? error.message : String(error) },
         [streamedUsage]: null,
         'response.usage.billable': [],
         'response.http.headers': [],
@@ -258,7 +258,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
       try { parsed = JSON.parse(text) as unknown; } catch { parsed = undefined; }
       return move({
         ...facts,
-        'response.chat.chatCompletions': {
+        'response.chat.openaiChatCompletions': {
           status: result.response.status,
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
@@ -275,7 +275,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
     const metered = meterChatCompletions(result.events, identity, use.gateway.attempt);
     return move({
       ...facts,
-      'response.chat.chatCompletions': { kind: 'stream' as const, frames: metered.frames },
+      'response.chat.openaiChatCompletions': { kind: 'stream' as const, frames: metered.frames },
       [streamedUsage]: metered.outcome,
       'response.usage.billable': called,
       'response.http.headers': [...(result.headers ?? new Headers())],
@@ -306,7 +306,7 @@ const callChatCompletionsUpstream = (streamedUsage: string) => defineStage<
  * dialect on the request path: the canonical sentinel is emitted before a vendor spells it,
  * and the field an upstream would reject is gone before a vendor rewrites what is left.
  */
-export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
+export const openaiChatCompletionsWire = (streamedUsage: string): readonly Stage[] => [
   includeUsageStreamOptionsForChatCompletions,
   normalizeUsageForChatCompletions,
   disableReasoningOnForcedToolChoiceForChatCompletions,
@@ -320,35 +320,35 @@ export const chatCompletionsWire = (streamedUsage: string): readonly Stage[] => 
 ];
 
 /** This family's own reading, which every wire under it hands up. */
-const STREAMED_USAGE = 'response.chat.chatCompletions.streamedUsage';
+const STREAMED_USAGE = 'response.chat.openaiChatCompletions.streamedUsage';
 
 /** The three wires `/v1/chat/completions` can be served on. Its own is the bare wire; each
  *  translated one is a handoff and then the target protocol's own wire. */
-const chatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
   case 'chat-completions':
-    return compose('chatCompletionsNative', chatCompletionsWire(STREAMED_USAGE));
+    return compose('openaiChatCompletionsNative', openaiChatCompletionsWire(STREAMED_USAGE));
   case 'messages':
-    return compose('chatCompletionsViaMessages', [
+    return compose('openaiChatCompletionsViaAnthropicMessages', [
       handOff({
-        from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
-        to: { request: 'request.chat.messages', response: 'response.chat.messages' },
+        from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
+        to: { request: 'request.chat.anthropicMessages', response: 'response.chat.anthropicMessages' },
         trip: async payload => await translateChatCompletionsViaMessages(payload, {
           model: candidate.model.id,
           fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
           loadRemoteImage: createExternalImageLoader(use.gateway.abortSignal),
         }),
       }),
-      ...messagesWire(STREAMED_USAGE),
+      ...anthropicMessagesWire(STREAMED_USAGE),
     ]);
   case 'responses':
-    return compose('chatCompletionsViaResponses', [
+    return compose('openaiChatCompletionsViaOpenAIResponses', [
       handOff({
-        from: { request: 'request.chat.chatCompletions', response: 'response.chat.chatCompletions' },
-        to: { request: 'request.chat.responses', response: 'response.chat.responses' },
+        from: { request: 'request.chat.openaiChatCompletions', response: 'response.chat.openaiChatCompletions' },
+        to: { request: 'request.chat.openaiResponses', response: 'response.chat.openaiResponses' },
         trip: async payload => await translateChatCompletionsViaResponses(payload, { model: candidate.model.id }),
       }),
-      ...responsesWire(STREAMED_USAGE),
+      ...openaiResponsesWire(STREAMED_USAGE),
     ]);
   }
 };
@@ -357,10 +357,10 @@ const chatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate
  *  pass and the client's stream is what drives it. Only a report carrying real counts
  *  replaces the running figure, so a trailing empty usage frame cannot wipe a good one. */
 const meterChatCompletions = (
-  source: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
+  source: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
   let settle!: (outcome: StreamOutcome) => void;
   const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
   // Running out without the terminal frame is what "it did not finish" means, and it is known
@@ -399,8 +399,8 @@ const meterChatCompletions = (
 
 /** The frame that says this turn is over: the transport's own terminator, or an error the
  *  upstream wrote into the stream instead of finishing it. */
-const isTerminal = (frame: ProtocolFrame<ChatCompletionsStreamEvent>): boolean =>
-  frame.type === 'done' || (frame.type === 'event' && chatCompletionsErrorPayloadMessage(frame.event) !== null);
+const isTerminal = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>): boolean =>
+  frame.type === 'done' || (frame.type === 'event' && openaiChatCompletionsErrorPayloadMessage(frame.event) !== null);
 
 /** What one attempt is billable for. An upstream that reported nothing leaves no quantities
  *  at all, which is a different statement from reporting zero — and a rate can depend on the
@@ -416,13 +416,13 @@ const billedEntity = (usage: BillableUsage | undefined, identity: TelemetryModel
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
-const narrowing = (payload: ChatCompletionsPayload): ChatNarrowing<C<'response.chat.chatCompletions' | 'response.chat.chatCompletions.streamedUsage'>> => ({
-  canServe: candidate => chatCompletionsTarget.canServe(candidate.model.endpoints),
+const narrowing = (payload: OpenAIChatCompletionsPayload): ChatNarrowing<C<'response.chat.openaiChatCompletions' | 'response.chat.openaiChatCompletions.streamedUsage'>> => ({
+  canServe: candidate => openaiChatCompletionsTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeChatCompletionsAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /chat/completions endpoint.`,
   refuse: (status, message, reason) => ({
-    'response.chat.chatCompletions.streamedUsage': null,
-    'response.chat.chatCompletions': {
+    'response.chat.openaiChatCompletions.streamedUsage': null,
+    'response.chat.openaiChatCompletions': {
       status,
       message,
       // What an OpenAI client reads: the condition's own type, and for a turn whose carried
@@ -436,38 +436,38 @@ const narrowing = (payload: ChatCompletionsPayload): ChatNarrowing<C<'response.c
       },
     },
   }),
-  refuses: ['response.chat.chatCompletions', 'response.chat.chatCompletions.streamedUsage'],
+  refuses: ['response.chat.openaiChatCompletions', 'response.chat.openaiChatCompletions.streamedUsage'],
 });
 
-export type ChatCompletionsServeEntry = C<
+export type OpenAIChatCompletionsServeEntry = C<
   'ingress.http.headers' | 'ingress.chat.sourceProtocol'
-  | 'ingress.chat.chatCompletions.wantsStream' | 'ingress.chat.chatCompletions.wantsUsageChunk'
-  | 'request.chat.chatCompletions' | 'serve.model'
+  | 'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
+  | 'request.chat.openaiChatCompletions' | 'serve.model'
 >;
 
-export type ChatCompletionsServeExit = C<
-  'response.chat.chatCompletions.rendered' | 'response.chat.chatCompletions.streamedUsage'
+export type OpenAIChatCompletionsServeExit = C<
+  'response.chat.openaiChatCompletions.rendered' | 'response.chat.openaiChatCompletions.streamedUsage'
   | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'
 >;
 
-export const chatCompletionsServePipeline = (payload: ChatCompletionsPayload): Pipeline<ChatCompletionsServeEntry, ChatCompletionsServeExit> =>
-  compose('chatCompletionsServe', [
+export const openaiChatCompletionsServePipeline = (payload: OpenAIChatCompletionsPayload): Pipeline<OpenAIChatCompletionsServeEntry, OpenAIChatCompletionsServeExit> =>
+  compose('openaiChatCompletionsServe', [
     emitChatCompletions,
     writeSettlement(
-      handedUp => isFailure((handedUp as { 'response.chat.chatCompletions'?: unknown })['response.chat.chatCompletions']),
-      handedUp => (handedUp as { 'response.chat.chatCompletions.streamedUsage'?: unknown })['response.chat.chatCompletions.streamedUsage'] !== null,
+      handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
+      handedUp => (handedUp as { 'response.chat.openaiChatCompletions.streamedUsage'?: unknown })['response.chat.openaiChatCompletions.streamedUsage'] !== null,
     ),
     resolveChatCandidates(narrowing(payload)),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.chatCompletions'?: unknown })['response.chat.chatCompletions']),
+      failed: handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
       owns: [],
     }),
-    materializeAttempt('request.chat.chatCompletions'),
+    materializeAttempt('request.chat.openaiChatCompletions'),
     dialChatWire({
-      source: 'request.chat.chatCompletions',
-      needs: ['request.chat.chatCompletions', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
-      provides: ['response.chat.chatCompletions', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
-      pick: endpoints => chatCompletionsTarget.pick(endpoints),
-      wire: chatCompletionsWireFor,
+      source: 'request.chat.openaiChatCompletions',
+      needs: ['request.chat.openaiChatCompletions', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
+      provides: ['response.chat.openaiChatCompletions', STREAMED_USAGE, 'response.usage.billable', 'response.http.headers'],
+      pick: endpoints => openaiChatCompletionsTarget.pick(endpoints),
+      wire: openaiChatCompletionsWireFor,
     }),
   ]);

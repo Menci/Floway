@@ -2,8 +2,8 @@ import type { ExecutionContext } from 'hono';
 import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
-import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
-import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
+import { hashResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
+import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
@@ -411,7 +411,7 @@ test('Responses WebSocket rejects the next turn after its API key is rotated', a
 
 test('Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
-  const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
   try {
     await withMockedFetch(
       async request => {
@@ -851,15 +851,15 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstResponseId = terminalResponseId(firstMessages);
 
       assert(firstResponseId !== 'resp_ws_store_false_1', 'expected the source boundary to replace the upstream response id');
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
+      assertEquals(await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
       const firstOutput = firstMessages.find(message =>
         message.type === 'response.output_item.done'
         && (message as { item?: { type?: unknown } }).item?.type === 'message') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
       assert(firstOutput.item.id !== 'assistant_ws_store_false_1', 'expected Copilot to replace the raw message id');
-      assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
+      assertEquals(await repo.openaiResponsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
+        await repo.openaiResponsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
         [],
       );
 
@@ -876,7 +876,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       }));
       const secondMessages = await followupTerminal;
       const secondResponseId = terminalResponseId(secondMessages);
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId, 0), null);
+      assertEquals(await repo.openaiResponsesSnapshots.lookup(apiKey.id, secondResponseId, 0), null);
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
@@ -1172,8 +1172,8 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
     }),
   );
 
-  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId!, 0);
-  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId!, 0);
+  const firstSnapshot = await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId!, 0);
+  const secondSnapshot = await repo.openaiResponsesSnapshots.lookup(apiKey.id, secondResponseId!, 0);
   assertExists(firstSnapshot);
   assertExists(secondSnapshot);
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
@@ -1336,10 +1336,10 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // The first turn wrote to both the durable repo and the session-local
       // cache. Wipe the repo to prove the next lookup comes from the cache
       // alone.
-      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0));
-      await repo.responsesSnapshots.deleteAll();
-      await repo.responsesItems.deleteAll();
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
+      assertExists(await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0));
+      await repo.openaiResponsesSnapshots.deleteAll();
+      await repo.openaiResponsesItems.deleteAll();
+      assertEquals(await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
 
       const secondTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
@@ -1363,11 +1363,11 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         ['message', 'user', 'turn two input'],
       ]);
 
-      const restored = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0);
+      const restored = await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0);
       assertExists(restored);
-      assertEquals((await repo.responsesItems.lookupMany(apiKey.id, restored.itemIds, 0)).length, restored.itemIds.length);
-      await repo.responsesSnapshots.deleteAll();
-      await repo.responsesItems.deleteAll();
+      assertEquals((await repo.openaiResponsesItems.lookupMany(apiKey.id, restored.itemIds, 0)).length, restored.itemIds.length);
+      await repo.openaiResponsesSnapshots.deleteAll();
+      await repo.openaiResponsesItems.deleteAll();
 
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.
@@ -1401,7 +1401,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
 test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
   const { apiKey } = await setupAppTest();
   let resolveResponsesStarted: (() => void) | undefined;
-  const responsesStarted = new Promise<void>(resolve => {
+  const openaiResponsesStarted = new Promise<void>(resolve => {
     resolveResponsesStarted = resolve;
   });
   let resolveUpstreamAborted: (() => void) | undefined;
@@ -1447,7 +1447,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
         },
       }));
 
-      await responsesStarted;
+      await openaiResponsesStarted;
       client.close();
       await upstreamAborted;
     }),

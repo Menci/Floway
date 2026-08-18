@@ -1,7 +1,7 @@
-import type { MessagesInterceptor } from './types.ts';
+import type { AnthropicMessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { generateAnthropicId, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
 // Claude Code answers "is this model usable?" by generating one token against
@@ -68,7 +68,7 @@ const PROBE_PROMPTS: ReadonlySet<string> = new Set(['Hi', 'test']);
 // The whole conversation of a probe. `model_validation` sends its prompt as a
 // single ephemeral text block and the credential check sends the bare-string
 // form; both shapes are current. Anything longer is a real turn.
-const soleUserPromptOf = (payload: MessagesPayload): string | null => {
+const soleUserPromptOf = (payload: AnthropicMessagesPayload): string | null => {
   if (payload.messages.length !== 1) return null;
   const message = payload.messages[0]!;
   if (message.role !== 'user') return null;
@@ -79,7 +79,7 @@ const soleUserPromptOf = (payload: MessagesPayload): string | null => {
   return block.type === 'text' ? block.text : null;
 };
 
-export const isClaudeCodeProbe = (payload: MessagesPayload, headers: Headers): boolean => {
+export const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: Headers): boolean => {
   if (payload.max_tokens !== 1) return false;
   // Every real Claude Code turn ships the session's tools; the one-token
   // probes never do.
@@ -95,7 +95,7 @@ export const isClaudeCodeProbe = (payload: MessagesPayload, headers: Headers): b
 // usage block is load-bearing — the validation path dereferences
 // `usage.input_tokens` / `usage.output_tokens` unconditionally, and a missing
 // `usage` throws inside the CLI and reads as a failed probe.
-export const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+export const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {
   yield eventFrame({
     type: 'message_start',
     message: {
@@ -118,10 +118,10 @@ export const probeFrames = async function* (model: string): AsyncGenerator<Proto
 // the turn contributes a latency sample, and a turn that never dialed the
 // upstream has no latency to report. The usage row still lands, at zero, so
 // the request itself stays visible in the dashboard.
-const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> =>
+const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
   eventResult(probeFrames(model), telemetryModelIdentity(candidate, providerModelOf(candidate).id));
 
-export const answerClaudeCodeProbe: MessagesInterceptor = async (ctx, _gatewayCtx, run) =>
+export const answerClaudeCodeProbe: AnthropicMessagesInterceptor = async (ctx, _gatewayCtx, run) =>
   isClaudeCodeProbe(ctx.payload, ctx.headers)
     ? probeResult(ctx.candidate, ctx.payload.model)
     : await run();

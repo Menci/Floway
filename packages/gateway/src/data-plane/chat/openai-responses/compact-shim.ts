@@ -34,7 +34,7 @@
 
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, OpenAIResponsesInputItem, OpenAIResponsesOutputItem, OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -162,7 +162,7 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
 // assistant message it just closed. A turn that closed nothing falls back to
 // the terminal, as the client-facing egress does.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-export const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
+export const summaryTextFrom = (closed: Map<number, OpenAIResponsesOutputItem>, stated: readonly OpenAIResponsesOutputItem[]): string => {
   const items = closed.size === 0
     ? stated
     : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
@@ -176,7 +176,7 @@ export const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated
   return parts.join('');
 };
 
-export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
+export const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: OpenAIResponsesResult): OpenAIResponsesResult => {
   // The prefix lives inside the blob so it round-trips atomically with the
   // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
   // one message and reads it as "another LLM's handoff", not as the human
@@ -293,5 +293,5 @@ export const summarizationTurnFor = (payload: CanonicalResponsesPayload): Canoni
 // silently discards the conversation.
 export const EMPTY_SUMMARY_MESSAGE = 'Responses compact shim: the summarization turn closed no assistant text to summarize';
 
-export const containsCompactionTrigger = (input: readonly ResponsesInputItem[]): boolean =>
+export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');

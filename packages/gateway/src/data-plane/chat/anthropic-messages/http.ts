@@ -6,20 +6,20 @@
 // hand it over, and turn what the run answered with into a response. Everything between is
 // stages.
 
-import { messagesCountTokensPipeline } from './count-tokens.ts';
+import { anthropicMessagesCountTokensPipeline } from './count-tokens.ts';
 import { renderMessagesError } from './errors.ts';
-import { messagesKeepAlive, messagesServePipeline } from './pipeline.ts';
+import { anthropicMessagesKeepAlive, anthropicMessagesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { move } from '@floway-dev/pipeline';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 // Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
-const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
+const rejectBodyBetaResponse = (payload: AnthropicMessagesPayload): Response | null => {
   const record = payload as unknown as Record<string, unknown>;
   const param = Object.hasOwn(record, 'anthropic_beta')
     ? 'anthropic_beta'
@@ -41,9 +41,9 @@ const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
 
 /** A body the gateway could not read is reported in the words this protocol's own clients
  *  parse, rather than as a fault of the gateway's. */
-const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: MessagesPayload } | { type: 'invalid'; message: string } => {
+const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: AnthropicMessagesPayload } | { type: 'invalid'; message: string } => {
   try {
-    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as MessagesPayload };
+    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as AnthropicMessagesPayload };
   } catch (error) {
     return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
@@ -57,7 +57,7 @@ const refuse = (c: AuthedContext, ingress: Ingress, response: Response): Respons
   return finalizeGatewayResponse(refused.gateway, response);
 };
 
-export const messagesHttp = {
+export const anthropicMessagesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const ingress = await readIngress(c);
     const request = readRequest(ingress.body.bytes);
@@ -79,22 +79,22 @@ export const messagesHttp = {
     return await serveThrough(
       c,
       prologue,
-      messagesServePipeline(payload),
+      anthropicMessagesServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'messages',
-        'ingress.chat.messages.wantsStream': wantsStream,
-        'request.chat.messages': payload,
+        'ingress.chat.anthropicMessages.wantsStream': wantsStream,
+        'request.chat.anthropicMessages': payload,
         'serve.model': payload.model,
       }) as never,
       facts => {
-        const rendered = facts['response.chat.messages.rendered'];
+        const rendered = facts['response.chat.anthropicMessages.rendered'];
         // Anthropic defines a `ping` event and its clients read one, so an idle connection is
         // held open with that rather than with a comment no client sees.
-        if (isFrames(rendered)) return { frames: rendered, keepAlive: messagesKeepAlive };
+        if (isFrames(rendered)) return { frames: rendered, keepAlive: anthropicMessagesKeepAlive };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.messages.streamedUsage'],
+      facts => facts['response.chat.anthropicMessages.streamedUsage'],
     );
   },
 
@@ -118,15 +118,15 @@ export const messagesHttp = {
     return await serveThrough(
       c,
       prologue,
-      messagesCountTokensPipeline(payload),
+      anthropicMessagesCountTokensPipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'messages',
-        'request.chat.messages': payload,
+        'request.chat.anthropicMessages': payload,
         'serve.model': payload.model,
       }) as never,
       // A measurement is one body however the turn went, so there is never a stream to write.
-      facts => ({ body: JSON.stringify(facts['response.chat.messages.rendered']), contentType: 'application/json' }),
+      facts => ({ body: JSON.stringify(facts['response.chat.anthropicMessages.rendered']), contentType: 'application/json' }),
     );
   },
 };

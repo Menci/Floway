@@ -11,10 +11,10 @@
 // `wantsStream` is four disjoint keys rather than one shared one.
 
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** The four protocols a client can speak here. Gemini is source-only: nothing translates
  *  into it, so by the ruling it contributes one pipeline rather than two — a source role
@@ -31,27 +31,27 @@ export interface ChatFacts extends GatewayFacts {
   'ingress.chat.sourceProtocol': ChatSourceProtocol;
   /** What the client asked for, per protocol and disjoint, because a translated request
    *  must not inherit the target protocol's answer to a question the client never asked. */
-  'ingress.chat.chatCompletions.wantsStream': boolean;
-  'ingress.chat.messages.wantsStream': boolean;
-  'ingress.chat.responses.wantsStream': boolean;
-  'ingress.chat.gemini.wantsStream': boolean;
+  'ingress.chat.openaiChatCompletions.wantsStream': boolean;
+  'ingress.chat.anthropicMessages.wantsStream': boolean;
+  'ingress.chat.openaiResponses.wantsStream': boolean;
+  'ingress.chat.geminiGenerateContent.wantsStream': boolean;
   /** Whether the client wants the usage chunk it would otherwise never see. The gateway
    *  always asks the upstream for one; this decides who is shown it. */
-  'ingress.chat.chatCompletions.wantsUsageChunk': boolean;
+  'ingress.chat.openaiChatCompletions.wantsUsageChunk': boolean;
 
   /** One key per protocol. A translation consumes one and provides another, which is the
    *  whole of what a protocol handoff is. */
-  'request.chat.chatCompletions': ChatCompletionsPayload;
-  'request.chat.messages': MessagesPayload;
-  'request.chat.responses': ResponsesPayload;
-  'request.chat.gemini': GeminiPayload;
+  'request.chat.openaiChatCompletions': OpenAIChatCompletionsPayload;
+  'request.chat.anthropicMessages': AnthropicMessagesPayload;
+  'request.chat.openaiResponses': OpenAIResponsesPayload;
+  'request.chat.geminiGenerateContent': GeminiGenerateContentPayload;
 
   /** A stream, a value and a failure sit at one key, so telling them apart is reading a
    *  value and no declaration ever mentions which arm is there. */
-  'response.chat.chatCompletions': ChatAnswer;
-  'response.chat.messages': ChatAnswer;
-  'response.chat.responses': ChatAnswer;
-  'response.chat.gemini': ChatAnswer;
+  'response.chat.openaiChatCompletions': ChatAnswer;
+  'response.chat.anthropicMessages': ChatAnswer;
+  'response.chat.openaiResponses': ChatAnswer;
+  'response.chat.geminiGenerateContent': ChatAnswer;
 }
 
 /** What comes back at a protocol's response key. The frame type is the protocol's own; the

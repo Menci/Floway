@@ -9,16 +9,16 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/compact-shim.ts';
-import { responsesCompactPipeline } from '../../../src/data-plane/chat/responses/compact.ts';
+import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
+import { openaiResponsesCompactPipeline } from '../../../src/data-plane/chat/openai-responses/compact.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { CanonicalResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -32,7 +32,7 @@ let live: readonly ModelCandidate[] = [];
 const candidate = (
   calls: {
     callResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderResponsesResult>;
-    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
@@ -67,7 +67,7 @@ const USAGE = { input_tokens: 12, output_tokens: 3, total_tokens: 15 };
 
 /** What a native compaction upstream answers with: `CompactResource` states no `status`, no
  *  `model` and no `error`. */
-const compaction = (overrides: Partial<ResponsesCompactionResult> = {}): ResponsesCompactionResult => ({
+const compaction = (overrides: Partial<OpenAIResponsesCompactionResult> = {}): OpenAIResponsesCompactionResult => ({
   id: 'resp_upstream_compaction',
   object: 'response.compaction',
   output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'OPAQUE_NATIVE_BLOB' } as unknown as never],
@@ -77,7 +77,7 @@ const compaction = (overrides: Partial<ResponsesCompactionResult> = {}): Respons
 
 const compacts = (
   seen: { body?: Record<string, unknown>; action?: unknown },
-  overrides: Partial<ResponsesCompactionResult> = {},
+  overrides: Partial<OpenAIResponsesCompactionResult> = {},
 ) => async (_model: unknown, body: unknown, action: unknown): Promise<ProviderResponsesResult> => {
   seen.body = body as Record<string, unknown>;
   seen.action = action;
@@ -89,7 +89,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
   async (_model: unknown, body: unknown, action: unknown): Promise<ProviderResponsesResult> => {
     seen.body = body as Record<string, unknown>;
     seen.action = action;
-    const response: ResponsesResult = {
+    const response: OpenAIResponsesResult = {
       id: 'resp_summary',
       object: 'response',
       model: 'responses-model',
@@ -105,7 +105,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
     return {
       action: 'generate', ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        yield { type: 'event' as const, event: { type: 'response.completed', sequence_number: 0, response } as ResponsesStreamEvent };
+        yield { type: 'event' as const, event: { type: 'response.completed', sequence_number: 0, response } as OpenAIResponsesStreamEvent };
         yield { type: 'done' as const };
       })(),
     };
@@ -113,8 +113,8 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
 
 /** The same turn over the Messages wire, which is the only way a Messages-only candidate can
  *  be reached: the compaction crosses into that protocol and its frames come back translated. */
-const messagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
-  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
+  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
     seen.body = body as Record<string, unknown>;
     const events: unknown[] = [
       {
@@ -133,7 +133,7 @@ const messagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {
     return {
       ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        for (const event of events) yield { type: 'event' as const, event: event as MessagesStreamEvent };
+        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
         yield { type: 'done' as const };
       })(),
     };
@@ -152,11 +152,11 @@ let gateway = mockChatGatewayCtx({ wantsStream: false });
 const compact = async (request: CanonicalResponsesPayload = payload) => {
   gateway = mockChatGatewayCtx({ wantsStream: false });
   const outcome = await run(
-    responsesCompactPipeline(request),
+    openaiResponsesCompactPipeline(request),
     move({
       'ingress.http.headers': [] as readonly (readonly [string, string])[],
       'ingress.chat.sourceProtocol': 'responses',
-      'request.chat.responses': request,
+      'request.chat.openaiResponses': request,
       'serve.model': request.model,
     }) as never,
     {
@@ -174,13 +174,13 @@ const compact = async (request: CanonicalResponsesPayload = payload) => {
     } as never,
   );
   // What the epilogue would settle from, once the run has answered.
-  const pending = outcome.facts['response.chat.responses.streamedUsage'];
+  const pending = outcome.facts['response.chat.openaiResponses.streamedUsage'];
   if (pending !== null) settlements.push(await pending);
   return outcome;
 };
 
 const rendered = (facts: Record<string, unknown>): Record<string, unknown> =>
-  facts['response.chat.responses.rendered'] as Record<string, unknown>;
+  facts['response.chat.openaiResponses.rendered'] as Record<string, unknown>;
 
 /** The summary a simulated compaction packed into the item the client is handed. The turn's
  *  own state is sealed around it on the way out — that is what pins the next turn to the
@@ -199,8 +199,8 @@ beforeEach(() => {
   initRepo({
     usage: { record: async () => {} },
     performance: { recordNeutral: async () => {}, recordZeroOutputError: async () => {} },
-    responsesSnapshots: { lookup: async () => null, put: async () => {} },
-    responsesItems: { lookupMany: async () => [], putMany: async () => {} },
+    openaiResponsesSnapshots: { lookup: async () => null, put: async () => {} },
+    openaiResponsesItems: { lookupMany: async () => [], putMany: async () => {} },
   } as never);
 });
 
@@ -244,7 +244,7 @@ describe('the responses compaction chain', () => {
   // wire generation would have used — which is the whole of what the action pivot was.
   it('simulates a compaction over a candidate with no compaction wire', async () => {
     const seen: { body?: Record<string, unknown> } = {};
-    resolves([candidate({ callMessages: messagesTurn('CONDENSED SUMMARY', seen) }, { endpoints: { messages: {} } })]);
+    resolves([candidate({ callMessages: anthropicMessagesTurn('CONDENSED SUMMARY', seen) }, { endpoints: { messages: {} } })]);
 
     const { facts } = await compact({
       ...payload,
@@ -371,7 +371,7 @@ describe('the responses compaction chain', () => {
   // the upstream actually ran — and a compaction that surfaced as failed belongs in the error
   // column rather than masquerading as a success.
   it('settles a compaction whose turn failed as a failure', async () => {
-    resolves([candidate({ callResponses: compacts({}, { status: 'failed' } as Partial<ResponsesCompactionResult>) })]);
+    resolves([candidate({ callResponses: compacts({}, { status: 'failed' } as Partial<OpenAIResponsesCompactionResult>) })]);
 
     await compact();
 

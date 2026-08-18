@@ -7,15 +7,15 @@
 // the stored-items membrane included — which is why a continuation that does not resolve is
 // answered by the chain on both routes rather than caught as a throw on either.
 
-import { responsesCompactPipeline } from './compact.ts';
+import { openaiResponsesCompactPipeline } from './compact.ts';
 import { createResponsesHttpStore } from './items/store.ts';
-import { responsesServePipeline } from './pipeline.ts';
+import { openaiResponsesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { openChatPrologue } from '../prologue.ts';
 import { move } from '@floway-dev/pipeline';
-import type { CanonicalResponsesPayload, ResponsesRequestPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 /** The read, as a value rather than a throw, because a pipelined entry decides what to do
@@ -29,7 +29,7 @@ const readRequest = (bytes: Uint8Array):
   | { type: 'ok'; payload: CanonicalResponsesPayload }
   | { type: 'invalid'; message: string; param?: string; code?: string } => {
   try {
-    return { type: 'ok', payload: canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as ResponsesRequestPayload) };
+    return { type: 'ok', payload: canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as OpenAIResponsesRequestPayload) };
   } catch (error) {
     if (!(error instanceof TranslatorInputError)) {
       return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
@@ -67,7 +67,7 @@ const refuse = (c: AuthedContext, ingress: Ingress, invalid: { message: string; 
   return finalizeGatewayResponse(refused.gateway, invalidRequestResponse(invalid));
 };
 
-export const responsesHttp = {
+export const openaiResponsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const ingress = await readIngress(c);
     const request = readRequest(ingress.body.bytes);
@@ -84,20 +84,20 @@ export const responsesHttp = {
     return await serveThrough(
       c,
       prologue,
-      responsesServePipeline(payload),
+      openaiResponsesServePipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'responses',
-        'ingress.chat.responses.wantsStream': wantsStream,
-        'request.chat.responses': payload,
+        'ingress.chat.openaiResponses.wantsStream': wantsStream,
+        'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
       }) as never,
       facts => {
-        const rendered = facts['response.chat.responses.rendered'];
+        const rendered = facts['response.chat.openaiResponses.rendered'];
         if (isFrames(rendered)) return { frames: rendered };
         return { body: JSON.stringify(rendered), contentType: 'application/json' };
       },
-      facts => facts['response.chat.responses.streamedUsage'],
+      facts => facts['response.chat.openaiResponses.streamedUsage'],
     );
   },
 
@@ -116,17 +116,17 @@ export const responsesHttp = {
     return await serveThrough(
       c,
       prologue,
-      responsesCompactPipeline(payload),
+      openaiResponsesCompactPipeline(payload),
       move({
         'ingress.http.headers': prologue.headers,
         'ingress.chat.sourceProtocol': 'responses',
-        'request.chat.responses': payload,
+        'request.chat.openaiResponses': payload,
         'serve.model': payload.model,
       }) as never,
       // A compaction is one resource however the turn went, so there is never a stream to
       // write: the frames it came as were read into that resource before the run answered.
-      facts => ({ body: JSON.stringify(facts['response.chat.responses.rendered']), contentType: 'application/json' }),
-      facts => facts['response.chat.responses.streamedUsage'],
+      facts => ({ body: JSON.stringify(facts['response.chat.openaiResponses.rendered']), contentType: 'application/json' }),
+      facts => facts['response.chat.openaiResponses.streamedUsage'],
     );
   },
 };

@@ -11,16 +11,16 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/responses/compact-shim.ts';
-import { responsesServePipeline } from '../../../src/data-plane/chat/responses/pipeline.ts';
+import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
+import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { move, run } from '@floway-dev/pipeline';
 import type { ModelEndpoints, SseFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalResponsesPayload, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { directFetcher, type FlagId, type ModelCandidate, type ProviderResponsesResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -34,7 +34,7 @@ let live: readonly ModelCandidate[] = [];
 const candidate = (
   calls: {
     callResponses?: (model: unknown, body: unknown, action: unknown) => Promise<ProviderResponsesResult>;
-    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+    callMessages?: (model: unknown, body: unknown) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   },
   overrides: { upstreamId?: string; endpoints?: ModelEndpoints; enabledFlags?: ReadonlySet<FlagId> } = {},
 ): ModelCandidate => {
@@ -65,7 +65,7 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] } as never);
 };
 
-const delta = (text: string): ResponsesStreamEvent => ({
+const delta = (text: string): OpenAIResponsesStreamEvent => ({
   type: 'response.output_text.delta',
   sequence_number: 1,
   item_id: 'msg_1',
@@ -74,7 +74,7 @@ const delta = (text: string): ResponsesStreamEvent => ({
   delta: text,
 });
 
-const result = (text: string, usage?: ResponsesResult['usage']): ResponsesResult => ({
+const result = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAIResponsesResult => ({
   id: 'resp_1',
   object: 'response',
   model: 'responses-model',
@@ -88,7 +88,7 @@ const result = (text: string, usage?: ResponsesResult['usage']): ResponsesResult
   ...(usage === undefined ? {} : { usage }),
 });
 
-const completed = (text: string, usage?: ResponsesResult['usage']): ResponsesStreamEvent => ({
+const completed = (text: string, usage?: OpenAIResponsesResult['usage']): OpenAIResponsesStreamEvent => ({
   type: 'response.completed',
   sequence_number: 2,
   response: result(text, usage),
@@ -96,7 +96,7 @@ const completed = (text: string, usage?: ResponsesResult['usage']): ResponsesStr
 
 // The upstream's own stream, as the provider hands it up: typed frames, and the `done` frame
 // its SSE transport ended on.
-const stream = (...events: readonly ResponsesStreamEvent[]): ProviderResponsesResult => ({
+const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderResponsesResult => ({
   action: 'generate',
   ok: true,
   modelKey: 'responses-model-key',
@@ -109,8 +109,8 @@ const stream = (...events: readonly ResponsesStreamEvent[]): ProviderResponsesRe
 
 /** One assistant message over the Messages wire, which is the only way a Messages-only
  *  candidate can be reached: the turn crosses into that protocol and comes back translated. */
-const messagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
-  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
+  async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
     seen.body = body as Record<string, unknown>;
     const events: unknown[] = [
       {
@@ -129,7 +129,7 @@ const messagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {
     return {
       ok: true, modelKey: 'responses-model-key', headers: new Headers(),
       events: (async function* () {
-        for (const event of events) yield { type: 'event' as const, event: event as MessagesStreamEvent };
+        for (const event of events) yield { type: 'event' as const, event: event as AnthropicMessagesStreamEvent };
         yield { type: 'done' as const };
       })(),
     };
@@ -156,12 +156,12 @@ const serveWith = async (
   wantsStream: boolean,
   request: CanonicalResponsesPayload = payload,
 ) => await run(
-  responsesServePipeline(request),
+  openaiResponsesServePipeline(request),
   move({
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
     'ingress.chat.sourceProtocol': 'responses',
-    'ingress.chat.responses.wantsStream': wantsStream,
-    'request.chat.responses': request,
+    'ingress.chat.openaiResponses.wantsStream': wantsStream,
+    'request.chat.openaiResponses': request,
     'serve.model': 'responses-model',
   }) as never,
   {
@@ -190,10 +190,10 @@ const drain = async (rendered: unknown): Promise<SseFrame[]> => {
 // The carrier the edge writes back is a reasoning item holding this turn's own state. The
 // message this turn answers with cannot hold it, so the carrier gets an output slot of its
 // own at the head of the answer: two frames, and a slot in every snapshot that follows them.
-const isCarrierItem = (item: ResponsesOutputItem): boolean => item.type === 'reasoning';
+const isCarrierItem = (item: OpenAIResponsesOutputItem): boolean => item.type === 'reasoning';
 
 /** The turn's own answer, with the carrier's item taken back out. */
-const withoutCarrierItem = (response: ResponsesResult): ResponsesResult =>
+const withoutCarrierItem = (response: OpenAIResponsesResult): OpenAIResponsesResult =>
   ({ ...response, output: response.output.filter(item => !isCarrierItem(item)) });
 
 /** The turn's own frames. The two sequence numbers the carrier's frames spent stay spent —
@@ -201,7 +201,7 @@ const withoutCarrierItem = (response: ResponsesResult): ResponsesResult =>
 const withoutCarrier = (frames: readonly SseFrame[]): readonly SseFrame[] =>
   frames.flatMap(frame => {
     if (frame.data === '[DONE]') return [frame];
-    const event = JSON.parse(frame.data) as ResponsesStreamEvent;
+    const event = JSON.parse(frame.data) as OpenAIResponsesStreamEvent;
     if (
       (event.type === 'response.output_item.added' || event.type === 'response.output_item.done')
       && isCarrierItem(event.item)
@@ -278,7 +278,7 @@ describe('the responses chain', () => {
     // The exit contract names what the run answers with, and the request the chain sent is
     // not that — but the record carries every key in flight, so what was sent is still there
     // to read.
-    expect((facts as Record<string, unknown>)['request.chat.responses']).toBe(affinityPayload);
+    expect((facts as Record<string, unknown>)['request.chat.openaiResponses']).toBe(affinityPayload);
     expect(asked).toBe(1);
     expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: 'rewritten' }] });
     expect(sent).not.toHaveProperty('model');
@@ -322,7 +322,7 @@ describe('the responses chain', () => {
     resolves([candidate({ callResponses: async () => stream(delta('he'), delta('llo'), completed('hello')) })]);
 
     const { facts } = await serve(true);
-    const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
+    const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
 
     expect(facts['response.http.status']).toBe(200);
     expect(frames.map(frame => frame.event)).toEqual([
@@ -340,7 +340,7 @@ describe('the responses chain', () => {
     // The terminal event is the upstream's, restated: the membrane at the edge stamps the
     // envelope id this gateway minted for the turn and completes the resource to what the
     // schema requires of it, so the deltas ride through untouched and this one does not.
-    const terminal = JSON.parse(frames[2]!.data) as { sequence_number: number; response: ResponsesResult };
+    const terminal = JSON.parse(frames[2]!.data) as { sequence_number: number; response: OpenAIResponsesResult };
     // The carrier's own two frames went out ahead of it under two sequence numbers of their
     // own, so the terminal event is numbered where they left it.
     expect(terminal.sequence_number).toBe(4);
@@ -359,9 +359,9 @@ describe('the responses chain', () => {
     const gateway = mockChatGatewayCtx({ wantsStream: true });
 
     const { facts } = await serveWith(gateway, true);
-    const frames = await drain(facts['response.chat.responses.rendered']);
+    const frames = await drain(facts['response.chat.openaiResponses.rendered']);
     const answered = frames.find(frame => frame.event === 'response.completed');
-    const carrier = (JSON.parse(answered!.data) as { readonly response: ResponsesResult }).response.output
+    const carrier = (JSON.parse(answered!.data) as { readonly response: OpenAIResponsesResult }).response.output
       .filter(item => item.type === 'reasoning');
 
     expect(carrier).toHaveLength(1);
@@ -386,8 +386,8 @@ describe('the responses chain', () => {
     })]);
 
     const { facts } = await serve(true);
-    await drain(facts['response.chat.responses.rendered']);
-    const outcome = await facts['response.chat.responses.streamedUsage']!;
+    await drain(facts['response.chat.openaiResponses.rendered']);
+    const outcome = await facts['response.chat.openaiResponses.streamedUsage']!;
     const billable = outcome.billable;
 
     expect(billable).toEqual([expect.objectContaining({
@@ -406,7 +406,7 @@ describe('the responses chain', () => {
 
     const { facts } = await serveWith(gateway, true);
     expect(gateway.attempt.firstOutputTokenAt).toBeNull();
-    await drain(facts['response.chat.responses.rendered']);
+    await drain(facts['response.chat.openaiResponses.rendered']);
 
     expect(gateway.attempt.firstOutputTokenAt).toBeTypeOf('number');
   });
@@ -418,7 +418,7 @@ describe('the responses chain', () => {
     resolves([candidate({ callResponses: async () => stream(delta('hi'), completed('hi'), delta(' and more')) })]);
 
     const { facts } = await serve(true);
-    const frames = withoutCarrier(await drain(facts['response.chat.responses.rendered']));
+    const frames = withoutCarrier(await drain(facts['response.chat.openaiResponses.rendered']));
 
     expect(frames.map(frame => frame.event)).toEqual([
       'response.output_text.delta',
@@ -437,7 +437,7 @@ describe('the responses chain', () => {
     resolves([candidate({ callResponses: async () => stream(delta('hi')) })]);
 
     const { facts } = await serve(true);
-    const frames = await drain(facts['response.chat.responses.rendered']);
+    const frames = await drain(facts['response.chat.openaiResponses.rendered']);
 
     expect(frames.map(frame => frame.event)).toEqual(['response.output_text.delta', 'error']);
     expect(JSON.parse(frames[1]!.data)).toMatchObject({
@@ -446,7 +446,7 @@ describe('the responses chain', () => {
     });
     // The client was answered, and the run still failed: what the frames said on the way out
     // is not what the row says the turn was.
-    expect((await facts['response.chat.responses.streamedUsage']!).failed).toBe(true);
+    expect((await facts['response.chat.openaiResponses.streamedUsage']!).failed).toBe(true);
   });
 
   // The upstream speaks SSE whatever the client asked for, so a client that did not ask to
@@ -457,7 +457,7 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    const answered = withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult);
+    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResult);
     expect(answered).toMatchObject({
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: 'hello' }] }],
@@ -470,7 +470,7 @@ describe('the responses chain', () => {
   // A compaction is one envelope rather than a stream: the upstream ran the turn, charged for
   // it, and stated the counts in the body. It rides at the same key the frames would have.
   it('serves an upstream that answered with one envelope as that envelope', async () => {
-    const compaction: ResponsesCompactionResult = {
+    const compaction: OpenAIResponsesCompactionResult = {
       id: 'resp_compact_1',
       object: 'response.compaction',
       output: [{
@@ -488,8 +488,8 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.chat.responses.rendered']).toEqual(compaction);
-    expect(facts['response.chat.responses.streamedUsage']).toBeNull();
+    expect(facts['response.chat.openaiResponses.rendered']).toEqual(compaction);
+    expect(facts['response.chat.openaiResponses.streamedUsage']).toBeNull();
     expect(facts['response.usage.billable']).toEqual([expect.objectContaining({
       quantities: { input_tokens: '900', output_tokens: '40' },
     })]);
@@ -521,7 +521,7 @@ describe('the responses chain', () => {
     const { facts } = await serve(false);
 
     expect(facts['response.http.status']).toBe(429);
-    expect(facts['response.chat.responses.rendered']).toEqual({ error: { message: 'slow down' } });
+    expect(facts['response.chat.openaiResponses.rendered']).toEqual({ error: { message: 'slow down' } });
   });
 
   // A refused connection is an outcome the fork has to be able to see, not a fault that ends
@@ -585,7 +585,7 @@ describe('the responses chain', () => {
     expect(sent).toMatchObject({ store: false });
 
     expect(facts['response.http.status']).toBe(200);
-    const answered = facts['response.chat.responses.rendered'] as Record<string, unknown>;
+    const answered = facts['response.chat.openaiResponses.rendered'] as Record<string, unknown>;
     expect(answered.object).toBe('response.compaction');
     expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
   });
@@ -609,7 +609,7 @@ describe('the responses chain', () => {
 
     expect(sent).toMatchObject({ input: [{ type: 'message', role: 'user', content: 'hi' }] });
     expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
-    const answered = withoutCarrierItem(facts['response.chat.responses.rendered'] as unknown as ResponsesResult);
+    const answered = withoutCarrierItem(facts['response.chat.openaiResponses.rendered'] as unknown as OpenAIResponsesResult);
     expect(answered.object).toBe('response');
     expect(answered).toMatchObject({ output: [{ content: [{ type: 'output_text', text: 'hello' }] }] });
   });
@@ -619,7 +619,7 @@ describe('the responses chain', () => {
   // the upstream's own — its id, and a blob only it can read.
   it('sends a turn that asked for a compaction on unchanged, where the shim is not engaged', async () => {
     let sent: Record<string, unknown> | undefined;
-    const upstreamCompaction: ResponsesCompactionResult = {
+    const upstreamCompaction: OpenAIResponsesCompactionResult = {
       id: 'resp_upstream_compaction',
       object: 'response.compaction',
       output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'OPAQUE_NATIVE_BLOB' } as unknown as never],
@@ -637,7 +637,7 @@ describe('the responses chain', () => {
 
     expect(sent).toMatchObject({ input: [{ role: 'user' }, { type: 'compaction_trigger' }] });
     expect(JSON.stringify(sent)).not.toContain('CONTEXT CHECKPOINT COMPACTION');
-    expect(facts['response.chat.responses.rendered']).toEqual(upstreamCompaction);
+    expect(facts['response.chat.openaiResponses.rendered']).toEqual(upstreamCompaction);
   });
 
   // No translation carries a compaction, and neither translator models the item that asks for
@@ -647,7 +647,7 @@ describe('the responses chain', () => {
     const seen: { body?: Record<string, unknown> } = {};
     affinityPayload = asksForCompaction;
     resolves([candidate(
-      { callMessages: messagesTurn('CONDENSED SUMMARY', seen) },
+      { callMessages: anthropicMessagesTurn('CONDENSED SUMMARY', seen) },
       { endpoints: { messages: {} } },
     )]);
     const gateway = mockChatGatewayCtx({ wantsStream: false });
@@ -656,7 +656,7 @@ describe('the responses chain', () => {
 
     expect(JSON.stringify(seen.body)).toContain('CONTEXT CHECKPOINT COMPACTION');
     expect(JSON.stringify(seen.body)).not.toContain('compaction_trigger');
-    const answered = facts['response.chat.responses.rendered'] as Record<string, unknown>;
+    const answered = facts['response.chat.openaiResponses.rendered'] as Record<string, unknown>;
     expect(answered.object).toBe('response.compaction');
     expect(await summaryIn(gateway, compactionItem(answered).encrypted_content)).toBe(`${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
   });

@@ -9,7 +9,7 @@
 //   callMessagesCountTokensUpstream  the ending: measures, and never opens a stream
 //
 // A second **operation** over this protocol rather than another wire under
-// `messagesServePipeline`, which is why it is a chain of its own rather than a branch inside
+// `anthropicMessagesServePipeline`, which is why it is a chain of its own rather than a branch inside
 // that one. It answers with a body and nothing else: no stream, and no billed turn — the
 // ending states an empty billed set, so settlement writes the performance sample every run
 // owes and no usage row. Measuring is not generating, and an upstream that answered the
@@ -30,7 +30,7 @@
 import { analyzeMessagesAffinity } from './affinity/ingress.ts';
 import { renderMessagesError } from './errors.ts';
 import { prepareMessagesWebSearchShimRequest } from './interceptors/web-search-shim.ts';
-import type { MessagesFacts } from './pipeline.ts';
+import type { AnthropicMessagesFacts } from './pipeline.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -47,22 +47,22 @@ import { applyRulesToUpstreamMessages } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
-import { parseAnthropicBetaHeader, type MessagesPayload } from '@floway-dev/protocols/messages';
+import { parseAnthropicBetaHeader, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { providerModelOf } from '@floway-dev/provider';
 
 /** Counting has no translation path: only an upstream's own Messages endpoint can answer the
  *  question, so a candidate that would serve generation over a translated wire cannot serve
  *  this. */
-export const messagesCountTokensTarget = chatTargetPicker(['messages']);
+export const anthropicMessagesCountTokensTarget = chatTargetPicker(['messages']);
 
 /** What a measurement hands up. It rides at a protocol's own response key — which is what
  *  lets the request rules generation runs be the same stages here — and the arm is narrowed
  *  because nothing in a counting chain opens a stream. */
 export type TokenCountAnswer = { readonly kind: 'value'; readonly body: unknown } | Failure;
 
-type Counted<K extends 'response.chat.messages'> = { [P in K]: TokenCountAnswer };
+type Counted<K extends 'response.chat.anthropicMessages'> = { [P in K]: TokenCountAnswer };
 
-type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
+type M<K extends keyof AnthropicMessagesFacts> = { [P in K]: AnthropicMessagesFacts[P] };
 
 /**
  * The outermost edge. A measurement is one object, so there is nothing to fold and nothing
@@ -72,22 +72,22 @@ type M<K extends keyof MessagesFacts> = { [P in K]: MessagesFacts[P] };
 const emitMessagesTokenCount = defineStage<
   Record<string, never>,
   Record<string, never>,
-  Counted<'response.chat.messages'> & M<'response.http.headers'>,
-  M<'response.chat.messages.rendered' | 'response.http.status' | 'response.http.headers'>,
+  Counted<'response.chat.anthropicMessages'> & M<'response.http.headers'>,
+  M<'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'emitMessagesTokenCount',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.messages', 'response.http.headers'],
-      consumes: ['response.chat.messages', 'response.http.headers'],
-      provides: ['response.chat.messages.rendered', 'response.http.status', 'response.http.headers'],
+      needs: ['response.chat.anthropicMessages', 'response.http.headers'],
+      consumes: ['response.chat.anthropicMessages', 'response.http.headers'],
+      provides: ['response.chat.anthropicMessages.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
-    const { 'response.chat.messages': answer, 'response.http.headers': headers, ...rest } = back;
+    const { 'response.chat.anthropicMessages': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
@@ -98,14 +98,14 @@ const emitMessagesTokenCount = defineStage<
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.messages.rendered': move(renderFailure(answer, () => renderMessagesError(answer.status, answer.message))),
+        'response.chat.anthropicMessages.rendered': move(renderFailure(answer, () => renderMessagesError(answer.status, answer.message))),
         'response.http.status': answer.status,
       };
     }
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.chat.messages.rendered': move(answer.body as Record<string, unknown>),
+      'response.chat.anthropicMessages.rendered': move(answer.body as Record<string, unknown>),
       'response.http.status': 200,
     };
   },
@@ -128,40 +128,40 @@ const emitMessagesTokenCount = defineStage<
  * carries the `return` trait.
  */
 const prepareMessagesWebSearchRequest = defineStage<
-  M<'request.chat.messages' | 'route.attempt'>,
-  M<'request.chat.messages'>,
-  Counted<'response.chat.messages'>,
-  Counted<'response.chat.messages'>,
-  Counted<'response.chat.messages'> & M<'response.usage.billable' | 'response.http.headers'>,
+  M<'request.chat.anthropicMessages' | 'route.attempt'>,
+  M<'request.chat.anthropicMessages'>,
+  Counted<'response.chat.anthropicMessages'>,
+  Counted<'response.chat.anthropicMessages'>,
+  Counted<'response.chat.anthropicMessages'> & M<'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'prepareMessagesWebSearchRequest',
   through: {
     request: {
-      needs: ['request.chat.messages', 'route.attempt'],
+      needs: ['request.chat.anthropicMessages', 'route.attempt'],
       consumes: [],
-      provides: ['request.chat.messages'],
+      provides: ['request.chat.anthropicMessages'],
     },
-    response: { needs: ['response.chat.messages'], consumes: [], provides: [] },
+    response: { needs: ['response.chat.anthropicMessages'], consumes: [], provides: [] },
   },
-  return: { provides: ['response.chat.messages', 'response.usage.billable', 'response.http.headers'] },
+  return: { provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, next) => {
     if (!facts['route.attempt'].flags.includes('messages-web-search-shim')) return await next(facts);
-    const prepared = prepareMessagesWebSearchShimRequest(facts['request.chat.messages']);
+    const prepared = prepareMessagesWebSearchShimRequest(facts['request.chat.anthropicMessages']);
     if (prepared.type === 'invalid-request') {
       // Nothing was dialled, which is what an empty billed set and an empty header list say
       // on the other two keys.
       return move({
         ...facts,
-        'response.chat.messages': { status: 400, message: prepared.message },
+        'response.chat.anthropicMessages': { status: 400, message: prepared.message },
         'response.usage.billable': [],
         'response.http.headers': [],
       });
     }
     // A request that engaged nothing comes back by identity, so the record shows no change
     // where none happened.
-    if (prepared.payload === facts['request.chat.messages']) return await next(facts);
-    return await next({ ...facts, 'request.chat.messages': move(prepared.payload) });
+    if (prepared.payload === facts['request.chat.anthropicMessages']) return await next(facts);
+    return await next({ ...facts, 'request.chat.anthropicMessages': move(prepared.payload) });
   },
 });
 
@@ -171,13 +171,13 @@ const prepareMessagesWebSearchRequest = defineStage<
  * never a stream.
  */
 const callMessagesCountTokensUpstream = defineStage<
-  M<'request.chat.messages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
-  Counted<'response.chat.messages'> & M<'response.usage.billable' | 'response.http.headers'>,
+  M<'request.chat.anthropicMessages' | 'route.attempt' | 'ingress.http.headers' | 'ingress.chat.sourceProtocol'>,
+  Counted<'response.chat.anthropicMessages'> & M<'response.usage.billable' | 'response.http.headers'>,
   ChatServices
 >({
   name: 'callMessagesCountTokensUpstream',
   return: {
-    provides: ['response.chat.messages', 'response.usage.billable', 'response.http.headers'],
+    provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers'],
   },
   execute: async (facts, use) => {
     const candidate = use.resolveAttempt(facts['route.attempt']);
@@ -185,7 +185,7 @@ const callMessagesCountTokensUpstream = defineStage<
     // The payload affinity materialized for this candidate, as every stage between the fork
     // and here has rewritten it — built for the dial exactly as generation builds it, so what
     // is measured is what generation would be charged for.
-    const body = bodyForAttempt(facts['request.chat.messages'], candidate, applyRulesToUpstreamMessages);
+    const body = bodyForAttempt(facts['request.chat.anthropicMessages'], candidate, applyRulesToUpstreamMessages);
 
     // Anthropic's beta flags have a typed path of their own, so no header allowlist can admit
     // them, and they are the client's own only when the client spoke this protocol.
@@ -213,7 +213,7 @@ const callMessagesCountTokensUpstream = defineStage<
       return move({
         ...facts,
         ...nothingBilled,
-        'response.chat.messages': { status: 502, message: error instanceof Error ? error.message : String(error) },
+        'response.chat.anthropicMessages': { status: 502, message: error instanceof Error ? error.message : String(error) },
         'response.http.headers': [],
       });
     }
@@ -227,7 +227,7 @@ const callMessagesCountTokensUpstream = defineStage<
       return move({
         ...facts,
         ...nothingBilled,
-        'response.chat.messages': {
+        'response.chat.anthropicMessages': {
           status: response.status,
           message: text,
           ...(parsed === undefined ? {} : { body: parsed }),
@@ -239,7 +239,7 @@ const callMessagesCountTokensUpstream = defineStage<
     return move({
       ...facts,
       ...nothingBilled,
-      'response.chat.messages': { kind: 'value' as const, body: parsed },
+      'response.chat.anthropicMessages': { kind: 'value' as const, body: parsed },
       'response.http.headers': [...response.headers],
     });
   },
@@ -256,7 +256,7 @@ const callMessagesCountTokensUpstream = defineStage<
  * would have sent it, and the web-search preparation states the tool shape it would have
  * seen.
  */
-export const messagesCountTokensWire: readonly Stage[] = [
+export const anthropicMessagesCountTokensWire: readonly Stage[] = [
   prepareMessagesWebSearchRequest,
   stripBillingAttributionFromMessages,
   disableReasoningOnForcedToolChoiceForMessages,
@@ -267,35 +267,35 @@ export const messagesCountTokensWire: readonly Stage[] = [
 /** A candidate that cannot serve *this* request is not a candidate — and what the client's
  *  own turn carries decides the order the rest are tried in, which is why the narrowing is
  *  built from the request rather than being a constant. */
-const narrowing = (payload: MessagesPayload): ChatNarrowing<Counted<'response.chat.messages'>> => ({
-  canServe: candidate => messagesCountTokensTarget.canServe(candidate.model.endpoints),
+const narrowing = (payload: AnthropicMessagesPayload): ChatNarrowing<Counted<'response.chat.anthropicMessages'>> => ({
+  canServe: candidate => anthropicMessagesCountTokensTarget.canServe(candidate.model.endpoints),
   affinity: async gateway => await analyzeMessagesAffinity(payload, gateway.affinity.codec),
   unsupported: model => `Model ${model} does not support the /messages/count_tokens endpoint.`,
-  refuse: (status, message) => ({ 'response.chat.messages': { status, message } }),
-  refuses: ['response.chat.messages'],
+  refuse: (status, message) => ({ 'response.chat.anthropicMessages': { status, message } }),
+  refuses: ['response.chat.anthropicMessages'],
 });
 
-export type MessagesCountTokensEntry = M<
-  'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'request.chat.messages' | 'serve.model'
+export type AnthropicMessagesCountTokensEntry = M<
+  'ingress.http.headers' | 'ingress.chat.sourceProtocol' | 'request.chat.anthropicMessages' | 'serve.model'
 >;
 
-export type MessagesCountTokensExit = M<
-  'response.chat.messages.rendered' | 'response.http.status' | 'response.http.headers'
+export type AnthropicMessagesCountTokensExit = M<
+  'response.chat.anthropicMessages.rendered' | 'response.http.status' | 'response.http.headers'
 >;
 
-export const messagesCountTokensPipeline = (payload: MessagesPayload): Pipeline<MessagesCountTokensEntry, MessagesCountTokensExit> =>
-  compose('messagesCountTokens', [
+export const anthropicMessagesCountTokensPipeline = (payload: AnthropicMessagesPayload): Pipeline<AnthropicMessagesCountTokensEntry, AnthropicMessagesCountTokensExit> =>
+  compose('anthropicMessagesCountTokens', [
     emitMessagesTokenCount,
     // A measurement goes through settlement like every other run. It provides an empty
     // billed set because nothing here is billable today, not because the operation is
     // exempt — an upstream that began charging for it would provide a non-empty one and
     // nothing else would change.
-    writeSettlement(handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages'])),
+    writeSettlement(handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages'])),
     resolveChatCandidates(narrowing(payload)),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.messages'?: unknown })['response.chat.messages']),
+      failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
       owns: [],
     }),
-    materializeAttempt('request.chat.messages'),
-    ...messagesCountTokensWire,
+    materializeAttempt('request.chat.anthropicMessages'),
+    ...anthropicMessagesCountTokensWire,
   ]);

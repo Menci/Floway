@@ -1,9 +1,9 @@
-import { createResponsesStorageKey, hashResponsesItem, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItem, openaiResponsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
-import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
-import { quantizeResponsesRefreshedAt, responsesStateCutoff } from '../../../../repo/responses-retention.ts';
+import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/openai-responses-clone.ts';
+import { quantizeResponsesRefreshedAt, openaiResponsesStateCutoff } from '../../../../repo/openai-responses-retention.ts';
 import type { ApiKey, Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 interface StatefulResponsesItemLookup {
   readonly apiKeyId: string;
@@ -25,17 +25,17 @@ interface LayeredStatefulResponsesStoreOptions {
   readonly writes: readonly StatefulResponsesBacking[];
 }
 
-type ResponsesSnapshotMode = 'append' | 'replace';
+type OpenAIResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
-  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
+  loadInputItems(sourceItems: readonly OpenAIResponsesInputItem[], inputItemsToStage: readonly OpenAIResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
-  stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
+  stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void>;
   persistOutputItem(row: StoredResponsesItem): Promise<void>;
-  commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
+  commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from hydrated items; interceptors can add server-only state
   // during the turn and output capture persists it with the exact wire item.
@@ -51,7 +51,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
-  private readonly inputItemHashes = new WeakMap<ResponsesInputItem, string>();
+  private readonly inputItemHashes = new WeakMap<OpenAIResponsesInputItem, string>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -90,18 +90,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async loadInputItems(
-    sourceItems: readonly ResponsesInputItem[],
-    inputItemsToStage: readonly ResponsesInputItem[],
+    sourceItems: readonly OpenAIResponsesInputItem[],
+    inputItemsToStage: readonly OpenAIResponsesInputItem[],
   ): Promise<void> {
     const ids = new Set<string>();
     for (const item of sourceItems) {
-      const id = responsesItemId(item);
+      const id = openaiResponsesItemId(item);
       if (id !== null) ids.add(id);
     }
     const itemHashes = new Set<string>();
     for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
-      if (responsesItemId(item) !== null) continue;
+      if (openaiResponsesItemId(item) !== null) continue;
       itemHashes.add(await this.hashInputItem(item));
     }
     await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
@@ -112,7 +112,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return row === undefined ? undefined : cloneStoredResponsesItem(row);
   }
 
-  async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
+  async stageInputItems(items: readonly OpenAIResponsesInputItem[]): Promise<void> {
     if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
@@ -127,7 +127,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.rememberItem(cloned);
   }
 
-  async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void> {
+  async commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void> {
     if (this.options.writes.length === 0) return;
     const itemIds = mode === 'replace'
       ? [...outputItemIds]
@@ -180,7 +180,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
   }
 
-  private async stageInputItem(item: ResponsesInputItem): Promise<void> {
+  private async stageInputItem(item: OpenAIResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.loadedItems.get(item.id);
@@ -189,7 +189,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const id = responsesItemId(item);
+    const id = openaiResponsesItemId(item);
     if (id !== null) {
       const row = this.loadedItems.get(id);
       if (row !== undefined) {
@@ -227,7 +227,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.rememberItem(row);
   }
 
-  private async hashInputItem(item: ResponsesInputItem): Promise<string> {
+  private async hashInputItem(item: OpenAIResponsesInputItem): Promise<string> {
     const cached = this.inputItemHashes.get(item);
     if (cached !== undefined) return cached;
     const hash = await hashResponsesItem(item);
@@ -268,13 +268,13 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     requestStartedAt: number,
     retentionSeconds: number,
   ) {
-    this.earliestVisibleCutoff = responsesStateCutoff(requestStartedAt, retentionSeconds);
+    this.earliestVisibleCutoff = openaiResponsesStateCutoff(requestStartedAt, retentionSeconds);
   }
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const [byId, byItemHash] = await Promise.all([
-      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
-      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
+      this.getRepo().openaiResponsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
+      this.getRepo().openaiResponsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
     for (const row of [...byId, ...byItemHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
@@ -282,19 +282,19 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    await this.getRepo().responsesItems.insertMany(items, this.earliestVisibleCutoff);
+    await this.getRepo().openaiResponsesItems.insertMany(items, this.earliestVisibleCutoff);
   }
 
   async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
-    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.earliestVisibleCutoff);
+    await this.getRepo().openaiResponsesItems.refreshMany(items, refreshedAt, this.earliestVisibleCutoff);
   }
 
   async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id, this.earliestVisibleCutoff);
+    return await this.getRepo().openaiResponsesSnapshots.lookup(apiKeyId, id, this.earliestVisibleCutoff);
   }
 
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
-    await this.getRepo().responsesSnapshots.insert(snapshot);
+    await this.getRepo().openaiResponsesSnapshots.insert(snapshot);
   }
 }
 
@@ -371,14 +371,14 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 }
 
-type ResponsesStatePolicy = Pick<ApiKey, 'id' | 'responsesRetentionSeconds'>;
+type OpenAIResponsesStatePolicy = Pick<ApiKey, 'id' | 'openaiResponsesRetentionSeconds'>;
 
-const createDurableBacking = (apiKey: ResponsesStatePolicy, requestStartedAt: number): RepoStatefulResponsesBacking | null =>
-  apiKey.responsesRetentionSeconds === 0
+const createDurableBacking = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number): RepoStatefulResponsesBacking | null =>
+  apiKey.openaiResponsesRetentionSeconds === 0
     ? null
-    : new RepoStatefulResponsesBacking(getRepo, requestStartedAt, apiKey.responsesRetentionSeconds);
+    : new RepoStatefulResponsesBacking(getRepo, requestStartedAt, apiKey.openaiResponsesRetentionSeconds);
 
-export const createResponsesHttpStore = (apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore => {
+export const createResponsesHttpStore = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore => {
   const durable = createDurableBacking(apiKey, requestStartedAt);
   return new LayeredStatefulResponsesStore({
     apiKeyId: apiKey.id,
@@ -397,7 +397,7 @@ export const createNonResponsesSourceStore = (apiKeyId: string): StatefulRespons
   new LayeredStatefulResponsesStore({ apiKeyId, reads: [], writes: [] });
 
 export const createResponsesWsSession = (): {
-  createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore;
+  createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore;
   evictSnapshot(apiKeyId: string, id: string): void;
 } => {
   // "Servers SHOULD keep the most recent previous-response state in
@@ -408,7 +408,7 @@ export const createResponsesWsSession = (): {
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L125
   const local = new MemoryStatefulResponsesBacking();
   return {
-    createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore {
+    createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore {
       const durable = createDurableBacking(apiKey, requestStartedAt);
       // Session-local state is the first store:true collision gate. Writing it
       // first prevents a rejected local history from creating a durable row.

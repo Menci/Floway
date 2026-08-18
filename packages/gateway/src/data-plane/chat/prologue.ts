@@ -13,7 +13,7 @@ import type { ChatServices } from './stages.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
 import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
-import type { StatefulResponsesStore } from './responses/items/store.ts';
+import type { StatefulResponsesStore } from './openai-responses/items/store.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 

@@ -1,5 +1,5 @@
 import type { StatefulResponsesStore } from './items/store.ts';
-import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The stage that hydrates catches this and answers with the

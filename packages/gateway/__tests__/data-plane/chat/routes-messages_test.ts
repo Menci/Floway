@@ -58,7 +58,7 @@ const post = async (apiKey: string, body: Record<string, unknown>): Promise<Resp
 const turn = (model: string, extra: Record<string, unknown> = {}): Record<string, unknown> =>
   ({ model, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }], ...extra });
 
-interface MessagesBody {
+interface AnthropicMessagesBody {
   readonly type: string;
   readonly role: string;
   readonly stop_reason: string;
@@ -67,7 +67,7 @@ interface MessagesBody {
 }
 
 /** The answer's own text, past the carrier the edge writes back. */
-const textOf = (body: MessagesBody): string | undefined =>
+const textOf = (body: AnthropicMessagesBody): string | undefined =>
   body.content.find(block => block.type === 'text')?.text;
 
 test('a streaming turn reaches the client as Messages SSE, message_stop included', async () => {
@@ -118,7 +118,7 @@ test('a non-streaming turn reaches the client as one assembled Messages body', a
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
 
-  const body = await response.json() as MessagesBody;
+  const body = await response.json() as AnthropicMessagesBody;
   expect(body.type).toBe('message');
   expect(body.role).toBe('assistant');
   expect(body.stop_reason).toBe('end_turn');
@@ -216,7 +216,7 @@ test('a turn dialled over the Chat Completions wire still answers the client in 
   );
 
   expect(response.status).toBe(200);
-  const body = await response.json() as MessagesBody;
+  const body = await response.json() as AnthropicMessagesBody;
   expect(body.type).toBe('message');
   expect(body.role).toBe('assistant');
   expect(body.stop_reason).toBe('end_turn');
