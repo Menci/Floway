@@ -623,6 +623,11 @@ const zhHansCN = {
               description:
                   '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
             },
+            'empty-tools-tool-choice-none': {
+              label: '工具列表为空时禁用工具选择',
+              description:
+                  '部分上游不接受空的 `tools` 数组与 `auto` 等启用状态的 `tool_choice` 同时出现。\n开启此开关后，当 `tools` 是空数组时，Floway 会在转发请求前将 `tool_choice` 改写为当前协议表示**不使用工具**的值。',
+            },
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:

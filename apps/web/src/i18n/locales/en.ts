@@ -653,6 +653,11 @@ const en = {
               description:
                   'Some upstreams do not support forced tool calls and reasoning mode at the same time, and reject such requests outright.\nWhen this option is enabled and the caller forces a specific tool through `tool_choice`, Floway **disables reasoning mode** before forwarding the request.',
             },
+            'empty-tools-tool-choice-none': {
+              label: 'Disable Tool Choice for Empty Tool Lists',
+              description:
+                  'Some upstreams reject requests that combine an empty `tools` array with an active `tool_choice` such as `auto`.\nWhen this option is enabled and `tools` is an empty array, Floway rewrites `tool_choice` to the protocol-specific **none** value before forwarding the request.',
+            },
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:

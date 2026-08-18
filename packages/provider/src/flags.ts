@@ -28,6 +28,7 @@ export const OPTIONAL_FLAG_IDS = [
   'responses-image-generation-shim',
   'responses-compact-shim',
   'disable-reasoning-on-forced-tool-choice',
+  'empty-tools-tool-choice-none',
   'rewrite-mid-conv-system-to-user',
   'rewrite-developer-to-system',
   'rewrite-system-to-developer',

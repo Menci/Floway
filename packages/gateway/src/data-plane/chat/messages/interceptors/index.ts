@@ -1,6 +1,7 @@
 import { answerClaudeCodeProbe } from './answer-claude-code-probe.ts';
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesPayloadInterceptor } from './types.ts';
 import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from './web-search-shim.ts';
@@ -32,6 +33,9 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 //     because Anthropic uses it for plan-tier billing.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
+//   - withEmptyToolsToolChoiceNormalized: gated by
+//     `empty-tools-tool-choice-none`. Makes an explicitly empty tool list use
+//     Messages' native `{ type: 'none' }` choice.
 //   - withRoleCompatibilityApplied: Anthropic's top-level `payload.system` is
 //     the only first-position system slot, so the mid-conversation-system flag
 //     rewrites every inline system message to user after Messages is selected
@@ -44,6 +48,7 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
 ];
 

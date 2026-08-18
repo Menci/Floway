@@ -9,6 +9,7 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'responses-image-generation-shim': true,
   'responses-compact-shim': true,
   'disable-reasoning-on-forced-tool-choice': false,
+  'empty-tools-tool-choice-none': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,
   'rewrite-system-to-developer': false,
