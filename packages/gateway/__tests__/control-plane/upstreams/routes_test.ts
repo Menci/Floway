@@ -579,7 +579,7 @@ test('POST /api/upstreams/list-models projects an ollama draft into UpstreamMode
       assertEquals(ids, ['gpt-oss:120b', 'nomic-embed-text:latest']);
       const gptoss = body.data.find(m => m.upstreamModelId === 'gpt-oss:120b')!;
       assertEquals(gptoss.kind, 'chat');
-      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['openaiChatCompletions', 'completions', 'anthropicMessages', 'openaiResponses']);
+      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['anthropicMessages', 'completions', 'openaiChatCompletions', 'openaiResponses']);
       const embed = body.data.find(m => m.upstreamModelId === 'nomic-embed-text:latest')!;
       assertEquals(embed.kind, 'embedding');
       assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['embeddings']);

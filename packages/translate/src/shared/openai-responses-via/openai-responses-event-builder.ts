@@ -187,7 +187,7 @@ export const terminal = (state: OpenAIResponsesSequenceState, response: OpenAIRe
   case 'queued':
   case 'in_progress':
   case 'cancelled':
-    throw new TypeError(`Cannot emit a terminal OpenAI OpenAIResponses event for status '${response.status}'`);
+    throw new TypeError(`Cannot emit a terminal OpenAI Responses event for status '${response.status}'`);
   }
   return seq(state, [
     {

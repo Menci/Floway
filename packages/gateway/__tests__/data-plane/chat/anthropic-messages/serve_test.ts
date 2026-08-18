@@ -398,7 +398,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the mess
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn();
   // anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
-  // exposing only chatCompletions matches none and is filtered out.
+  // exposing only openaiChatCompletions matches none and is filtered out.
   queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
 
   const result = await anthropicMessagesServe.countTokens({

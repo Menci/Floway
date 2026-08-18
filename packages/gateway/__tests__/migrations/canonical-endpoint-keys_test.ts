@@ -42,9 +42,8 @@ const seededConfig = (options: { runMigration: boolean }): unknown => {
   return decodeUpstreamConfig(row.config, 'up_legacy');
 };
 
-// The capability, read the way routing reads it, rather than the JSON shape:
-// a stale key leaves the model serving nothing, which is exactly what routing
-// would then see.
+// The capability, read the way the provider reads it, rather than the JSON
+// shape: that is where a stale key stops being an endpoint at all.
 const servedEndpoints = (config: unknown): { upstream: string[]; models: Record<string, string[]> } => {
   const record = assertCustomUpstreamRecord({ id: 'up_legacy', kind: 'custom', config } as unknown as UpstreamRecord);
   return {
@@ -70,8 +69,9 @@ test('the canonical endpoint-key migration keeps every configured endpoint routa
 
 test('without the migration the same row stops declaring any endpoint the new code understands', () => {
   // The negative control. `endpointsSchema` is a passthrough object of optional
-  // keys, so the stale row still decodes at the repository boundary; the loss
-  // only surfaces further in, where the provider reads the map.
+  // keys, so the stale row still decodes at the repository boundary; the
+  // rejection lands one layer in, where the provider validates the map, and it
+  // takes the whole upstream with it.
   const stale = seededConfig({ runMigration: false });
   expect(() => servedEndpoints(stale)).toThrow(/unsupported endpoint chatCompletions/);
 });

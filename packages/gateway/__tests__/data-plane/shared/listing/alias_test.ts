@@ -359,9 +359,9 @@ describe('synthesizeListedAliases', () => {
     // Union: every key surfaces. Resolver narrows to the supporting subset
     // at request time, so first-available / random stays sound per-endpoint.
     expect(entry.endpoints).toEqual({
-      chatCompletions: {},
-      messages: {},
-      responses: {},
+      openaiChatCompletions: {},
+      anthropicMessages: {},
+      openaiResponses: {},
       completions: {},
     });
   });

@@ -444,7 +444,7 @@ test('migration 0065 performs one direct cutover to disabled rolling state', asy
   const db = await createSqlJsDatabase();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0065_openai_responses_state.sql') break;
+      if (filename === '0065_responses_state.sql') break;
       db.run(sql);
     }
     db.run(
@@ -456,8 +456,8 @@ test('migration 0065 performs one direct cutover to disabled rolling state', asy
     db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ['msg-old', 'key-a', 'provider-a', 'msg-raw', 'message', '{}', 'hash', 1_000]);
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0065_openai_responses_state.sql');
-    if (migration === undefined) throw new Error('missing migration 0065_openai_responses_state.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0065_responses_state.sql');
+    if (migration === undefined) throw new Error('missing migration 0065_responses_state.sql');
     db.run(migration[1]);
 
     expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);

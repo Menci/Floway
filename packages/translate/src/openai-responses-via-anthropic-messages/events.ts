@@ -43,7 +43,7 @@ type OutputBlockInfo =
     itemId: string;
     thinkingText: string;
     // Genuine upstream reasoning signature, captured from `signature_delta`.
-    // Carried verbatim as the OpenAI OpenAIResponses item's `encrypted_content` so it
+    // Carried verbatim as the OpenAI Responses item's `encrypted_content` so it
     // round-trips back to the Anthropic Messages upstream's next-turn validation.
     encryptedContent?: string;
   }
@@ -54,7 +54,7 @@ type OutputBlockInfo =
     blockText: string;
     // Citations accumulated in emission order, then carried on the completed
     // content part. `annotation_index` is scoped to one content part and
-    // OpenAI OpenAIResponses targets always use content_index=0 for our single-part
+    // OpenAI Responses targets always use content_index=0 for our single-part
     // assistant message, so this array's length at push time is that index.
     annotations: OpenAIResponsesAnnotation[];
   }
@@ -123,7 +123,7 @@ const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, statu
             },
           }
         : {}),
-      // Anthropic's `thinking_tokens` and OpenAI OpenAIResponses' `reasoning_tokens` are the
+      // Anthropic's `thinking_tokens` and OpenAI Responses' `reasoning_tokens` are the
       // same quantity: the reasoning share of the inclusive output-token total.
       // As with the input breakdown above, an upstream that reports none is
       // translated to absence rather than to a synthesized zero.
@@ -160,7 +160,7 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
   }
   case 'redacted_thinking': {
     // A redacted upstream reasoning block carries an opaque signature in
-    // `data` and no readable text. Surface it as a OpenAI OpenAIResponses reasoning item
+    // `data` and no readable text. Surface it as a OpenAI Responses reasoning item
     // whose `encrypted_content` round-trips that opaque blob.
     const outputIndex = state.outputIndex++;
     const itemId = createRandomOpenAIResponsesItemId('reasoning');
@@ -228,14 +228,14 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
 
 // Anthropic emits `citations_delta` against a text content block when the
 // model cites a structured `search_result` / `web_search_result` tool
-// result. We surface these as OpenAI OpenAIResponses
+// result. We surface these as OpenAI Responses
 // `response.output_text.annotation.added` events with inline
 // `url_citation` annotations.
 //
 // Offset approximation: Anthropic gives `start_block_index` /
 // `end_block_index` referring to indices inside our
 // `AnthropicMessagesSearchResultBlock.content` (the cited source's text, not the
-// model's reply). OpenAI OpenAIResponses url_citation indices are character offsets
+// model's reply). OpenAI Responses url_citation indices are character offsets
 // inside the model's reply. We approximate using cited_text length:
 // `end_index = blockText.length` (running char count emitted so far on
 // this content part), `start_index = max(0, end_index - cited_text.length)`.
@@ -296,7 +296,7 @@ const handleContentBlockDelta = (event: AnthropicMessagesContentBlockDeltaEvent,
       return openaiResponses.reasoningDelta(state, info.outputIndex, info.itemId, event.delta.thinking);
     }
     if (event.delta.type === 'signature_delta') {
-      // The upstream owns this signature; carry it verbatim as the OpenAI OpenAIResponses
+      // The upstream owns this signature; carry it verbatim as the OpenAI Responses
       // item's `encrypted_content` (no gateway envelope) so the next turn's
       // upstream validation still passes.
       info.encryptedContent = event.delta.signature;
@@ -413,7 +413,7 @@ export const translateAnthropicMessagesEventToOpenAIResponsesEvents = (event: An
 
     return openaiResponses.terminal(state, response);
   }
-  // Anthropic's `ping` is a transport keep-alive with no OpenAI OpenAIResponses counterpart:
+  // Anthropic's `ping` is a transport keep-alive with no OpenAI Responses counterpart:
   // every spec event is either a delta event or a state-machine event, and a
   // `ping` is neither.
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459

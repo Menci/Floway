@@ -207,7 +207,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
-  // A custom upstream that only exposes chatCompletions on the model.
+  // A custom upstream that only exposes openaiChatCompletions on the model.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
     config: {

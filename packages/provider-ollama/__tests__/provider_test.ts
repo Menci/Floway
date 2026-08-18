@@ -69,7 +69,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
-    assertEquals(Object.keys(gptoss.endpoints).sort(), ['openaiChatCompletions', 'completions', 'anthropicMessages', 'openaiResponses']);
+    assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'completions', 'openaiChatCompletions', 'openaiResponses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into

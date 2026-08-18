@@ -411,7 +411,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn();
   // geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
-  // exposing only chatCompletions matches none and is filtered out.
+  // exposing only openaiChatCompletions matches none and is filtered out.
   queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
 
   const result = await geminiGenerateContentServe.countTokens({

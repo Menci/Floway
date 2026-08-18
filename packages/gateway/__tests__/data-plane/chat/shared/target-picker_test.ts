@@ -55,7 +55,7 @@ describe('chatTargetPicker', () => {
     const picker = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
     assertEquals(picker.pick({ anthropicMessages: {}, openaiResponses: {}, openaiChatCompletions: {} }), 'openaiResponses');
     assertEquals(picker.pick({ anthropicMessages: {}, openaiChatCompletions: {} }), 'anthropicMessages');
-    assertEquals(picker.pick({ openaiChatCompletions: {} }), 'openai-chat-completions');
+    assertEquals(picker.pick({ openaiChatCompletions: {} }), 'openaiChatCompletions');
   });
 
   test('pick honours the preference order even when later preferences are present', () => {
@@ -114,6 +114,6 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     const openaiChatCompletionsPicker = chatTargetPicker(['openaiChatCompletions']);
     assertEquals(anthropicMessagesOnly.canServe(candidates[0].model.endpoints), false);
     assertEquals(openaiChatCompletionsPicker.canServe(candidates[0].model.endpoints), true);
-    assertEquals(openaiChatCompletionsPicker.pick(candidates[0].model.endpoints), 'openai-chat-completions');
+    assertEquals(openaiChatCompletionsPicker.pick(candidates[0].model.endpoints), 'openaiChatCompletions');
   });
 });

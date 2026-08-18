@@ -11,7 +11,7 @@ const mapOpenAIChatCompletionsUsageToOpenAIResponsesUsage = (usage: OpenAIChatCo
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
   const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
-  // Validated, not consumed. OpenAI OpenAIResponses names the same three input buckets
+  // Validated, not consumed. OpenAI Responses names the same three input buckets
   // OpenAI Chat Completions does, so the counts cross unchanged and there is nothing
   // to recompute — but this package is the one asserting that what it emits
   // satisfies the inclusive contract its own output type declares, rather than
@@ -29,7 +29,7 @@ const mapOpenAIChatCompletionsUsageToOpenAIResponsesUsage = (usage: OpenAIChatCo
           },
         }
       : {}),
-    // OpenAI Chat Completions' `reasoning_tokens` and OpenAI OpenAIResponses' `reasoning_tokens`
+    // OpenAI Chat Completions' `reasoning_tokens` and OpenAI Responses' `reasoning_tokens`
     // are the same quantity, so an upstream that reports one is translated
     // rather than dropped. OpenAI's schema makes the breakdown mandatory, but
     // a translator's output is interior — a zero synthesized here would be
@@ -348,7 +348,7 @@ const emitToolCallsDelta = (toolCalls: OpenAIChatCompletionsStreamToolCalls, sta
 
     current.arguments += toolCall.function.arguments;
 
-    // Wrapped custom tool calls have no live delta on the OpenAI OpenAIResponses side; the
+    // Wrapped custom tool calls have no live delta on the OpenAI Responses side; the
     // freeform input is extracted at close time. Function tools keep streaming.
     if (current.streamItem?.kind === 'function') {
       events.push(...openaiResponses.argumentsDelta(state, current.streamItem.outputIndex, current.streamItem.itemId, toolCall.function.arguments));
@@ -410,7 +410,7 @@ export const translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents = (chunk
 
       if (hadPendingScalarReasoning) {
         // Chat stream composition can emit legacy scalar reasoning first and a
-        // richer item-level `reasoning_items[]` carrier later. OpenAI OpenAIResponses SSE
+        // richer item-level `reasoning_items[]` carrier later. OpenAI Responses SSE
         // items are not retractable, so scalar reasoning remains buffered until
         // either a carrier replaces it or finalization commits it.
         state.pendingScalarReasoning = undefined;

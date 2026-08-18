@@ -8,11 +8,12 @@
 -- custom, once more at `config_json.endpoints`. It is not a cache, so nothing
 -- refetches it.
 --
--- The stale shape does not fail loudly. `endpointsSchema` is a passthrough
--- object of optional keys, so a row carrying `{"chatCompletions": {}}` still
--- parses under the new code: the unknown key survives, every known key is
--- absent, and the model silently reads as serving no chat endpoint and stops
--- being routable. This rewrites the keys in place, the same way
+-- The stale shape survives the repository boundary and then fails past it.
+-- `endpointsSchema` is a passthrough object of optional keys, so a row carrying
+-- `{"chatCompletions": {}}` still decodes; `endpointsField` in
+-- `packages/provider` then rejects the unknown key outright, which takes the
+-- whole azure or custom upstream down rather than costing it one capability.
+-- This rewrites the keys in place, the same way
 -- `0024_structured_model_endpoints.sql` rewrote the path array they replaced.
 --
 -- `models_cache_json` is left alone: it is a derived catalog cache, and
