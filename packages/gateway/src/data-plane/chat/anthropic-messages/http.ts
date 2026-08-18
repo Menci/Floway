@@ -17,7 +17,7 @@ import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/s
 import { move } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
-// Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
+// Reject `anthropic_beta` / `betas` in the body; the Anthropic Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
 const rejectBodyBetaResponse = (payload: AnthropicMessagesPayload): Response | null => {
   const record = payload as unknown as Record<string, unknown>;
@@ -30,7 +30,7 @@ const rejectBodyBetaResponse = (payload: AnthropicMessagesPayload): Response | n
   return Response.json(
     {
       error: {
-        message: `${param} in the Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
+        message: `${param} in the Anthropic Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
         type: 'invalid_request_error',
         param,
       },

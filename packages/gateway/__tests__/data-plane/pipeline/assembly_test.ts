@@ -33,7 +33,7 @@ const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] 
   ['Gemini generateContent', () => geminiGenerateContentServePipeline({ model: 'm', contents: [] } as never)],
   ['OpenAI Responses', () => openaiResponsesServePipeline({ model: 'm', input: [] } as never)],
   ['Anthropic Messages count_tokens', () => anthropicMessagesCountTokensPipeline({ model: 'm', messages: [] } as never)],
-  ['Gemini countTokens', () => geminiGenerateContentCountTokensPipeline({ model: 'm', contents: [] } as never)],
+  ['Gemini generateContent countTokens', () => geminiGenerateContentCountTokensPipeline({ model: 'm', contents: [] } as never)],
   ['OpenAI Responses compact', () => openaiResponsesCompactPipeline({ model: 'm', input: [] } as never)],
 ];
 

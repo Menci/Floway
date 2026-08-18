@@ -1,6 +1,6 @@
-// Messages as a pipeline, on the chain Chat Completions established.
+// Anthropic Messages as a pipeline, on the chain OpenAI Chat Completions established.
 //
-//   emitAnthropicMessages           the edge: writes the answer in the shape the client asked for
+//   emitAnthropicMessages  the edge: writes the answer in the shape the client asked for
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
 //   failover               runs what follows once per candidate
@@ -9,7 +9,7 @@
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.anthropicMessages`: this protocol's own, and the two
-// translated ones — Messages via Responses and Messages via Chat Completions — each a
+// translated ones — Anthropic Messages via OpenAI Responses and via OpenAI Chat Completions — each a
 // handoff followed by that protocol's own wire. The stage above cannot tell which ran.
 //
 // `/v1/messages/count_tokens` is not one of them: it is a second operation over this
@@ -63,8 +63,8 @@ import {
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateAnthropicMessagesViaOpenAIChatCompletions, translateAnthropicMessagesViaOpenAIResponses } from '@floway-dev/translate';
 
-/** `/v1/messages` prefers its own wire, then the translated Responses path, then the
- *  translated Chat Completions path. */
+/** `/v1/messages` prefers its own wire, then the translated OpenAI Responses path, then the
+ *  translated OpenAI Chat Completions path. */
 export const anthropicMessagesTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
 
 /** What this family adds to the chat space. */
@@ -80,7 +80,7 @@ export interface AnthropicMessagesFacts extends ChatFacts {
 type M<K extends keyof AnthropicMessagesFacts> = { [P in K]: AnthropicMessagesFacts[P] };
 
 /**
- * The outermost edge. A Messages answer is always a stream by the time it reaches here —
+ * The outermost edge. An Anthropic Messages answer is always a stream by the time it reaches here —
  * the upstream speaks SSE whatever the client asked for — so what this decides is whether
  * the client sees the frames or the one message they add up to.
  *
@@ -163,7 +163,7 @@ const emitAnthropicMessages = defineStage<
 
 /** Anthropic names its own SSE events, and every frame that has one is the client's. Which
  *  frames have an SSE form at all is the protocol's to say, and it says so by writing no
- *  frame — a stream terminator is a Chat Completions idea and there is nothing to send for
+ *  frame — a stream terminator is an OpenAI Chat Completions idea and there is nothing to send for
  *  it here. */
 const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncIterable<SseFrame> => ({
   [Symbol.asyncIterator]: () => (async function* () {
@@ -175,7 +175,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEv
 });
 
 /**
- * The native wire. It dials Messages and provides the answer at this family's own response
+ * The native wire. It dials Anthropic Messages and provides the answer at this family's own response
  * key — which is what will make it interchangeable with a translated chain: both hand up
  * `response.chat.anthropicMessages`, and the stage above cannot tell which ran.
  */
@@ -185,7 +185,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEv
  * The CLI asks "is this model usable?" by generating one token against it and reporting the
  * model unusable if the call throws. A one-token cap is not portable — OpenAI's Responses API
  * floors `max_output_tokens` at 16 and rejects anything lower with a hard 400 — so every
- * Messages-via-Responses candidate fails a probe that is asking nothing this gateway cannot
+ * Anthropic-Messages-via-OpenAI-Responses candidate fails a probe that is asking nothing this gateway cannot
  * answer. Resolution has already picked a real candidate by the time this runs, so an id no
  * upstream serves still fails above with a 404; what is suppressed is only the generation.
  *
@@ -350,11 +350,11 @@ const callAnthropicMessagesUpstream = (streamedUsage: string) => defineStage<
 });
 
 /**
- * The Messages wire, as the chain that dials it.
+ * The Anthropic Messages wire, as the chain that dials it.
  *
  * Every source protocol that reaches an upstream over this endpoint runs this, whether the
- * client spoke Messages or a handoff arrived here — which is what makes a rule that speaks
- * about *this* wire belong here. The system-role rewrite states what an upstream's Messages
+ * client spoke Anthropic Messages or a handoff arrived here — which is what makes a rule that
+ * speaks about *this* wire belong here. The system-role rewrite states what an upstream's Anthropic Messages
  * endpoint accepts, so it applies to whatever body this wire actually sends and to nothing
  * that leaves for another protocol.
  */
@@ -442,7 +442,7 @@ const meterAnthropicMessages = (
   return { frames: { [Symbol.asyncIterator]: () => generator }, outcome };
 };
 
-/** What ends a Messages turn. Anthropic's own stream terminator is an event rather than a
+/** What ends an Anthropic Messages turn. Anthropic's own stream terminator is an event rather than a
  *  transport sentinel, and a stream that failed mid-turn says so with `error` in place of the
  *  `message_stop` that will now never come. */
 const isAnthropicMessagesTerminalFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEvent>): boolean =>

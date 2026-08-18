@@ -28,7 +28,7 @@ export const openChatPrologue = (
   options: {
     readonly wantsStream: boolean;
     readonly model?: string;
-    /** Native Responses entries persist their items; every other source gets a scratchpad,
+    /** Native OpenAI Responses entries persist their items; every other source gets a scratchpad,
      *  so the server-tool shim's request-private state always has a home. */
     readonly storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulOpenAIResponsesStore;
   },

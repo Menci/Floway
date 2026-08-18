@@ -8,7 +8,7 @@
 // returns the record it hands on instead of assigning to `ctx.payload`, so a rewrite is a
 // spread and structural sharing is what makes it cheap — every rule here writes
 // conditionally, which is the convention that keeps a 49-message conversation costing three
-// objects, and it is also what lets a Gemini payload be rewritten at all now that the record
+// objects, and it is also what lets a Gemini generateContent payload be rewritten at all now that the record
 // is frozen and `delete ctx.payload.x` would throw. `ctx.targetApi` is a declared need rather
 // than an ambient field — array position says which chain a stage is in, and what it reads
 // about the protocol it is looking at is in the record. The guards themselves are not deleted
@@ -234,7 +234,7 @@ const rewriteOpenAIChatCompletionsRoles = (messages: OpenAIChatCompletionsMessag
  *  Written once, over roles alone. A protocol walks its own items, hands in the role it read
  *  off one and takes back the role to write, so the ordering exists in one place however
  *  differently the two protocols that use it shape a turn. An item with no role at all —
- *  a Responses reasoning item between two system messages — still crosses the leading run,
+ *  an OpenAI Responses reasoning item between two system messages — still crosses the leading run,
  *  which is what makes the system message after it mid-conversation. */
 const roleRewriter = (rewrite: RoleRewrite) => {
   let crossedLeadingSystemRun = false;
@@ -326,7 +326,7 @@ export const stripPromptCacheKeyForOpenAIChatCompletions = defineStage<
 /**
  * Asks the upstream for the usage chunk that billing is read off.
  *
- * Chat Completions emits the final usage-only chunk only when `stream_options.include_usage`
+ * OpenAI Chat Completions emits the final usage-only chunk only when `stream_options.include_usage`
  * is on, and the gateway meters every stream from those frames — so what the client asked for
  * and what the upstream is asked for differ here, which is the one thing this rule exists to
  * say. Nothing downstream has to thread the client's original value through, because it is a
@@ -335,7 +335,7 @@ export const stripPromptCacheKeyForOpenAIChatCompletions = defineStage<
  *
  * It belongs to the wire rather than to the source chain because it names a field of *this*
  * protocol's request. Every source protocol that reaches an upstream over this endpoint runs
- * it — a Messages or Gemini turn served here would otherwise be metered off a stream that was
+ * it — an Anthropic Messages or Gemini generateContent turn served here would otherwise be metered off a stream that was
  * never asked to report anything — and a turn that leaves for another wire gets that wire's
  * own rule for the same thing.
  *
@@ -448,7 +448,7 @@ const withUsageOnItsOwnCarrier = async function* (
  * `total_tokens` as the witness, and the `usage-exclusive-cached-tokens` flag is a declaration
  * input for the responses whose totals witness nothing.
  *
- * Everything it says is about one upstream's Chat Completions wire — the flag it reads
+ * Everything it says is about one upstream's OpenAI Chat Completions wire — the flag it reads
  * describes how that upstream writes its usage there, and the remedy its errors name is a
  * setting for that upstream. That is why it belongs to the wire: on any other wire these
  * events are a projection of some other protocol, where the flag answers a question about
@@ -501,7 +501,7 @@ export const normalizeExclusiveCachedTokensForOpenAIChatCompletions = defineStag
   }),
 });
 
-/** Chat Completions carries usage on the chunk's own root and names the buckets
+/** OpenAI Chat Completions carries usage on the chunk's own root and names the buckets
  *  `prompt_tokens` and `prompt_tokens_details.{cached_tokens, cache_creation_input_tokens}`. */
 const OPENAI_CHAT_COMPLETIONS_CACHE_BUCKETS: CacheBucketNames = {
   input: 'prompt_tokens',
@@ -521,7 +521,7 @@ const foldOpenAIChatCompletionsUsage = (
   return folded === usage ? chunk : { ...chunk, usage: folded as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
-// ── Chat Completions vendor dialects ──────────────────────────────────────────────────────
+// ── OpenAI Chat Completions vendor dialects ───────────────────────────────────────────────
 //
 // Each of the three below is last among this wire's rewrites, which is what gives it the final
 // say on the outbound body and the first say on the inbound stream: everything above deals
@@ -753,7 +753,7 @@ const kimiInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCo
   return { ...chunk, usage: next as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
 };
 
-/** None of the three fields is a Chat Completions field, so each is declared beside the vendor
+/** None of the three fields is an OpenAI Chat Completions field, so each is declared beside the vendor
  *  that reads it rather than widening the protocol's own types. */
 type OpenAIChatCompletionsPayloadWithDeepSeekThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
 type OpenAIChatCompletionsPayloadWithQwenThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { enable_thinking: false };
@@ -762,7 +762,7 @@ type OpenAIChatCompletionsMessageWithDeepSeekReasoning =
 type OpenAIChatCompletionsDeltaWithDeepSeekReasoning =
   OpenAIChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
 
-// ── Messages ──────────────────────────────────────────────────────────────────────────────
+// ── Anthropic Messages ────────────────────────────────────────────────────────────────────
 
 /**
  * The mid-conversation system rewrite, which on this protocol is every inline system message.
@@ -940,15 +940,15 @@ const scrubbedSystemPrompt = (system: AnthropicMessagesPayload['system']): Anthr
   return blocks.length > 0 ? blocks : undefined;
 };
 
-// ── Gemini ────────────────────────────────────────────────────────────────────────────────
+// ── Gemini generateContent ────────────────────────────────────────────────────────────────
 //
 // The three strippers below are unconditional rather than flag-gated, and that is a statement
-// about the target graph rather than about any upstream: Gemini has no wire of its own here,
+// about the target graph rather than about any upstream: Gemini generateContent has no wire of its own here,
 // so every turn is served through a translation, and what no translation can carry cannot be
 // sent whichever candidate answers. What was `delete ctx.payload.x` is a rewrite now — the
 // record is frozen, so a stage that deleted in place would throw rather than strip.
 
-/** Gemini file and code parts have no equivalent anywhere the translations reach, so they go
+/** Gemini generateContent file and code parts have no equivalent anywhere the translations reach, so they go
  *  at source and every target sees translatable parts. A part left holding nothing goes with
  *  them: it is not a part any more. */
 export const stripUnsupportedPartFieldsFromGeminiGenerateContent = defineStage<
@@ -1010,7 +1010,7 @@ const stripContentParts = (content: GeminiGenerateContentContent): GeminiGenerat
   return changed ? { ...content, parts } : content;
 };
 
-/** Only function declarations translate out of a Gemini tool group, so the rest of a group's
+/** Only function declarations translate out of a Gemini generateContent tool group, so the rest of a group's
  *  capabilities go — and a group left declaring no function goes with them, because a target
  *  emitter offered an empty group would be offered a tool that does nothing. `tools` itself
  *  goes when no group survived: an empty tool list is a different request from no tools. */
@@ -1039,7 +1039,7 @@ export const stripUnsupportedToolsFromGeminiGenerateContent = defineStage<
   })),
 });
 
-/** Every field a Gemini tool group can carry other than `functionDeclarations` — the
+/** Every field a Gemini generateContent tool group can carry other than `functionDeclarations` — the
  *  capabilities Google executes inside its own generation loop, which no target wire can be
  *  asked to run. `functionDeclarations` is the one that survives because the model "does not
  *  execute the function"; it asks the caller to. Re-derive against the `Tool` schema whenever
@@ -1072,7 +1072,7 @@ const withUnsupportedToolsStripped = (payload: GeminiGenerateContentPayload): Ge
   return changed ? { ...payload, tools: kept } : payload;
 };
 
-/** Gemini safety controls are source-specific and have no matching control on every target
+/** Gemini generateContent safety controls are source-specific and have no matching control on every target
  *  path, so they go rather than have us pretend to enforce a policy we cannot honor
  *  end to end. */
 export const stripSafetySettingsFromGeminiGenerateContent = defineStage<
@@ -1101,7 +1101,7 @@ export const stripSafetySettingsFromGeminiGenerateContent = defineStage<
 });
 
 /**
- * Hides Gemini thought-summary parts from a caller who did not ask for them.
+ * Hides Gemini generateContent thought-summary parts from a caller who did not ask for them.
  *
  * The opt-in is `generationConfig.thinkingConfig.includeThoughts`, which is something the
  * client sent — a request-direction reading — and the rule that uses it runs on the way back.
@@ -1187,9 +1187,9 @@ const hasGeminiGenerateContentEventPayload = (event: GeminiGenerateContentStream
     || event.responseId !== undefined;
 };
 
-// ── Responses ─────────────────────────────────────────────────────────────────────────────
+// ── OpenAI Responses ──────────────────────────────────────────────────────────────────────
 
-/** Role rewrites, in the same fixed order and by the same fold as Chat Completions; what is
+/** Role rewrites, in the same fixed order and by the same fold as OpenAI Chat Completions; what is
  *  here is the walk over this protocol's input items. Only a message item carries a role, and
  *  an item that carries none still crosses the leading system run — a reasoning item between
  *  two system messages is what makes the second one mid-conversation. */
@@ -1361,7 +1361,7 @@ export const normalizeExclusiveCachedTokensForOpenAIResponses = defineStage<
   }),
 });
 
-/** Responses carries usage on `event.response.usage` and names the buckets `input_tokens` and
+/** OpenAI Responses carries usage on `event.response.usage` and names the buckets `input_tokens` and
  *  `input_tokens_details.{cached_tokens, cache_write_tokens}`. */
 const OPENAI_RESPONSES_CACHE_BUCKETS: CacheBucketNames = {
   input: 'input_tokens',
@@ -1454,7 +1454,7 @@ export const vendorQwenNormalizeForOpenAIResponses = defineStage<
   })),
 });
 
-/** Neither field is a Responses field, so each is declared beside the vendor that reads it
+/** Neither field is an OpenAI Responses field, so each is declared beside the vendor that reads it
  *  rather than widening the protocol's own request type. */
 type OpenAIResponsesPayloadWithDeepSeekThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { thinking: { type: 'disabled' } };
 type OpenAIResponsesPayloadWithQwenThinking = Omit<OpenAIResponsesPayload, 'reasoning'> & { enable_thinking: false };

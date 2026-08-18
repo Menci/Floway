@@ -1,6 +1,6 @@
-// Responses as a pipeline, on the chain Chat Completions established.
+// OpenAI Responses as a pipeline, on the chain OpenAI Chat Completions established.
 //
-//   emitOpenAIResponses          the edge: writes the answer in the shape the client asked for
+//   emitOpenAIResponses    the edge: writes the answer in the shape the client asked for
 //   writeSettlement        above the fork, so a run bills once however many wires it tried
 //   hydrateStoredItems     the stored-items membrane, on the way in
 //   resolveChatCandidates  narrows to what can serve, in the order affinity asks for
@@ -12,7 +12,7 @@
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.openaiResponses`: this protocol's own, and the two
-// translated ones — Responses via Messages and Responses via Chat Completions — each a
+// translated ones — OpenAI Responses via Anthropic Messages and via OpenAI Chat Completions — each a
 // handoff followed by that protocol's own wire. What sits *in* a wire rather than above the
 // fork is a rule that speaks about that wire: the role rewrite and the cache-bucket fold both
 // do, which is why their interceptor forms stood down on `ctx.targetApi !== 'openaiResponses'`, and
@@ -106,8 +106,8 @@ import {
 import { providerModelOf, toInternalDebugError, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateOpenAIResponsesViaOpenAIChatCompletions, translateOpenAIResponsesViaAnthropicMessages } from '@floway-dev/translate';
 
-/** `/v1/responses` prefers its own wire, then the translated Messages path, then the
- *  translated Chat Completions path. */
+/** `/v1/responses` prefers its own wire, then the translated Anthropic Messages path, then
+ *  the translated OpenAI Chat Completions path. */
 export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
 
 /** How the transport that opened the run frames a streamed answer. Both carry this
@@ -303,7 +303,7 @@ const streamFailedEvent = (announced: ClientResponseResource, error: unknown): C
   } as ClientOpenAIResponsesStreamEvent;
 };
 
-/** Every Responses event has an SSE form of its own, so the render is a straight map. What
+/** Every OpenAI Responses event has an SSE form of its own, so the render is a straight map. What
  *  it adds is the two endings a client already being streamed to can be given. The ordinary
  *  one is the terminator: the client's stream ends on the literal `[DONE]` payload whether or
  *  not the upstream's stream carried one, because that is what the transport reads to know
@@ -340,7 +340,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStre
 });
 
 /**
- * The wire. It dials Responses and provides the answer at whichever family's response key the
+ * The wire. It dials OpenAI Responses and provides the answer at whichever family's response key the
  * chain above it reads — which is what makes it interchangeable with a translated chain: both
  * hand up `response.chat.openaiResponses`, and the stage above cannot tell which ran.
  */
@@ -453,7 +453,7 @@ const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
 });
 
 /**
- * What an upstream's Responses endpoint accepts on an assistant item it produced itself.
+ * What an upstream's OpenAI Responses endpoint accepts on an assistant item it produced itself.
  * Copilot's compaction translation and Azure-native compaction both emit assistant messages
  * whose content blocks carry `type: 'input_text'`, and both then refuse those same items
  * echoed back as input on the next turn. Every way prior upstream-produced history reaches a
@@ -461,7 +461,7 @@ const callOpenAIResponsesUpstream = (streamedUsage: string) => defineStage<
  * tail — so this is the one place the canonical assistant content type is put back.
  *
  * Only this wire needs it. Both translators read `input_text` and `output_text` the same way
- * on assistant content, so a turn that leaves for Messages or Chat Completions never carried
+ * on assistant content, so a turn that leaves for Anthropic Messages or OpenAI Chat Completions never carried
  * the disagreement in the first place.
  */
 const normalizeAssistantContentForOpenAIResponses = defineStage<
@@ -490,9 +490,9 @@ const normalizeAssistantContentForOpenAIResponses = defineStage<
  * What every turn this wire sends is subject to, whichever operation asked for it.
  *
  * Every source protocol that reaches an upstream over this endpoint runs these, whether the
- * client spoke Responses or a handoff arrived here — which is what makes the three rules
+ * client spoke OpenAI Responses or a handoff arrived here — which is what makes the three rules
  * belong to the wire. The role rewrite and the assistant-content rewrite both state what an
- * upstream's Responses endpoint accepts; the cache-bucket fold speaks about the usage *this*
+ * upstream's OpenAI Responses endpoint accepts; the cache-bucket fold speaks about the usage *this*
  * wire reports and about the flag that describes it, and a translator emits the canonical
  * form, which is the one case the fold has nothing to do with.
  *
@@ -509,7 +509,7 @@ export const openaiResponsesWireRules: readonly Stage[] = [
   vendorQwenNormalizeForOpenAIResponses,
 ];
 
-/** The Responses wire, as the chain that dials it. */
+/** The OpenAI Responses wire, as the chain that dials it. */
 export const openaiResponsesWire = (streamedUsage: string): readonly Stage[] => [
   ...openaiResponsesWireRules,
   callOpenAIResponsesUpstream(streamedUsage),
@@ -550,7 +550,7 @@ export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCa
 };
 
 /** Reads the upstream's own usage off its own events as they pass, so the reading costs one
- *  pass and the client's stream is what drives it. Responses states its counts on the
+ *  pass and the client's stream is what drives it. OpenAI Responses states its counts on the
  *  lifecycle envelopes, and only one carrying real counts replaces the running figure, so an
  *  envelope that states none cannot wipe a good reading. */
 const meterOpenAIResponses = (
@@ -799,10 +799,10 @@ export const beginStoredAttempt = defineStage<
 /**
  * Whether this candidate's compactions are the shim's to simulate.
  *
- * Two ways to be, and an upstream only has to be one of them. The operator opted a Responses
+ * Two ways to be, and an upstream only has to be one of them. The operator opted an OpenAI Responses
  * upstream in with `responses-compact-shim`, which is the say-so for one that would answer a
- * compaction itself. Or the candidate has no Responses endpoint at all: no translation
- * carries a compaction, so a Messages or Chat Completions candidate has neither a compaction
+ * compaction itself. Or the candidate has no OpenAI Responses endpoint at all: no translation
+ * carries a compaction, so an Anthropic Messages or OpenAI Chat Completions candidate has neither a compaction
  * to dial nor a translator that models the item asking for one — the shim is structurally
  * required there rather than chosen.
  *
@@ -943,7 +943,7 @@ export const summarizeForCompaction = (asked: CompactionAsk) => defineStage<
  * with the control item that requests it — so this chain reads the request rather than the
  * operation, and reads it per turn. Where the shim is not this candidate's to run, the item
  * travels on to an upstream whose own `/responses` endpoint answers it, which is what a
- * native Responses upstream does with it.
+ * native OpenAI Responses upstream does with it.
  */
 const asksForCompaction: CompactionAsk = (facts, use) =>
   containsCompactionTrigger((facts['request.chat.openaiResponses'] as CanonicalOpenAIResponsesPayload).input)

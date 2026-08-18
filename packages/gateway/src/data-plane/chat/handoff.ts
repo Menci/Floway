@@ -146,7 +146,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
       // A pair that declares no rewrite has nothing that can carry the refusal across, so what
       // crosses is the status and the sentence and not the object they came in. The object is
       // the *target* protocol's envelope — an OpenAI `{error:{type,code}}` where the client is
-      // reading Anthropic, or anything at all where the client is Gemini and reads
+      // reading Anthropic, or anything at all where the client is Gemini generateContent and reads
       // `error.status` — and handing it on would answer one protocol in another's words. The
       // family's own edge renders what is left, in the protocol its client actually speaks.
       //

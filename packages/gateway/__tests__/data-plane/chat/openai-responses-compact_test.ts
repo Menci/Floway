@@ -1,4 +1,4 @@
-// The Responses compaction chain, run. Assembly is checked where every family's is; what is
+// The OpenAI Responses compaction chain, run. Assembly is checked where every family's is; what is
 // written down here is what only running it can say — that an upstream whose own endpoint
 // compacts is asked to and answered under an id this gateway minted, that one with no
 // compaction wire is sent the compactor's turn over the wires generation would have used and
@@ -84,7 +84,7 @@ const compacts = (
   return { action: 'compact', ok: true, result: compaction(overrides), modelKey: 'responses-model-key' };
 };
 
-/** A generate turn over the Responses wire that produces one assistant message. */
+/** A generate turn over the OpenAI Responses wire that produces one assistant message. */
 const generates = (text: string, seen: { body?: Record<string, unknown>; action?: unknown } = {}) =>
   async (_model: unknown, body: unknown, action: unknown): Promise<ProviderOpenAIResponsesResult> => {
     seen.body = body as Record<string, unknown>;
@@ -111,7 +111,7 @@ const generates = (text: string, seen: { body?: Record<string, unknown>; action?
     };
   };
 
-/** The same turn over the Messages wire, which is the only way a Messages-only candidate can
+/** The same turn over the Anthropic Messages wire, which is the only way an Anthropic Messages-only candidate can
  *  be reached: the compaction crosses into that protocol and its frames come back translated. */
 const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
   async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
@@ -239,7 +239,7 @@ describe('the responses compaction chain', () => {
     expect(seen.body).not.toHaveProperty('model');
   });
 
-  // No translation carries a compaction, so a Messages candidate has none to dial. The turn
+  // No translation carries a compaction, so an Anthropic Messages candidate has none to dial. The turn
   // it is sent instead is an ordinary generate turn against the compactor's prompt, over the
   // wire generation would have used — which is the whole of what the action pivot was.
   it('simulates a compaction over a candidate with no compaction wire', async () => {

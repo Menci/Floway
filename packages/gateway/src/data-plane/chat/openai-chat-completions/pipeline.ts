@@ -1,6 +1,6 @@
-// Chat Completions as a pipeline — the reference chain for the chat families.
+// OpenAI Chat Completions as a pipeline — the reference chain for the chat families.
 //
-//   emitOpenAIChatCompletions        the edge: writes the answer in the shape the client asked for
+//   emitOpenAIChatCompletions  the edge: writes the answer in the shape the client asked for
 //   writeSettlement            above the fork, so a run bills once however many wires it tried
 //   resolveChatCandidates      narrows to what can serve, in the order affinity asks for
 //   failover                   runs what follows once per candidate
@@ -14,7 +14,7 @@
 // tell which ran.
 //
 // What sits *in* a wire rather than above the fork is the other half of the arrangement. A
-// rule that speaks about an upstream's Chat Completions endpoint — the role rewrite does,
+// rule that speaks about an upstream's OpenAI Chat Completions endpoint — the role rewrite does,
 // which is why its interceptor form stood down on `ctx.targetApi !== 'openaiChatCompletions'` —
 // belongs to the wire and not to the source chain, so a turn that leaves for another
 // protocol never carries it. Said by position rather than by a guard: a stage below the fork
@@ -68,8 +68,8 @@ import type { BillableUsage, ProtocolFrame, SseFrame } from '@floway-dev/protoco
 import { providerModelOf, type ChatTargetApi, type ModelCandidate, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
-/** `/v1/chat/completions` prefers its own wire, then the translated Messages path, then the
- *  translated Responses path. */
+/** `/v1/chat/completions` prefers its own wire, then the translated Anthropic Messages path,
+ *  then the translated OpenAI Responses path. */
 export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 /** What this family adds to the chat space. */
@@ -188,7 +188,7 @@ const renderSSE = (
 });
 
 /**
- * The wire. It dials Chat Completions and provides the answer at whichever family's response
+ * The wire. It dials OpenAI Chat Completions and provides the answer at whichever family's response
  * key the chain above it reads — which is what makes it interchangeable with a translated
  * chain: both hand up `response.chat.openaiChatCompletions`, and the stage above cannot tell which
  * ran.
@@ -284,10 +284,10 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
 });
 
 /**
- * The Chat Completions wire, as the chain that dials it.
+ * The OpenAI Chat Completions wire, as the chain that dials it.
  *
  * Every source protocol that reaches an upstream over this endpoint runs this, whether the
- * client spoke Chat Completions or a handoff arrived here — which is what makes a rule that
+ * client spoke OpenAI Chat Completions or a handoff arrived here — which is what makes a rule that
  * speaks about *this* wire belong here. The role rewrite states what an upstream's Chat
  * Completions endpoint accepts; the usage rules speak about the usage this wire asks for and
  * this wire reports; the vendor dialects are how one upstream spells both. All of them apply
@@ -301,7 +301,7 @@ const callOpenAIChatCompletionsUpstream = (streamedUsage: string) => defineStage
  * seeing usage the fold has already settled.
  *
  * `disableReasoningOnForcedToolChoice` and `stripPromptCacheKey` are here rather than above
- * the fork, because both speak about what an upstream's Chat Completions endpoint accepts —
+ * the fork, because both speak about what an upstream's OpenAI Chat Completions endpoint accepts —
  * so a turn that arrived over a translation gets them too. Both still precede every vendor
  * dialect on the request path: the canonical sentinel is emitted before a vendor spells it,
  * and the field an upstream would reject is gone before a vendor rewrites what is left.

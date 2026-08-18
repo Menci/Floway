@@ -929,7 +929,7 @@ async function* runMultiTurnLoop(args: {
       }
 
       // Accumulated output items are fed back as the next turn's input.
-      // A OpenAI Responses output item is a structural superset of the matching
+      // An OpenAI Responses output item is a structural superset of the matching
       // input item for every shape we emit here (messages, reasoning,
       // function_call / function_call_output, and the server-tool items
       // the dispatchers produce), so the reuse is sound; the cast only

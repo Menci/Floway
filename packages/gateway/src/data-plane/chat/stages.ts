@@ -43,7 +43,7 @@ export interface ChatNarrowing<Refusal extends object> {
    *  appear here cannot serve the request whatever else it offers. */
   readonly canServe: (candidate: ModelCandidate) => boolean;
   /** What the client's own turn says about where it must go. Client-carried state — a
-   *  Responses `previous_response_id`, an encrypted reasoning blob — pins the turn to the
+   *  an OpenAI Responses `previous_response_id`, an encrypted reasoning blob — pins the turn to the
    *  upstream that issued it, so this runs before any candidate is tried. */
   readonly affinity: (gateway: ChatGatewayCtx) => Promise<AffinityRequestAnalysis<unknown>>;
   readonly unsupported: (model: string) => string;

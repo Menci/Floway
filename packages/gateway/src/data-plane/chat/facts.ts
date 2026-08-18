@@ -16,7 +16,7 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-/** The four protocols a client can speak here. Gemini is source-only: nothing translates
+/** The four protocols a client can speak here. Gemini generateContent is source-only: nothing translates
  *  into it, so by the ruling it contributes one pipeline rather than two — a source role
  *  and no target role. */
 export type ChatSourceProtocol = 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses' | 'geminiGenerateContent';

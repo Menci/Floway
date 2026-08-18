@@ -1,4 +1,4 @@
-// The Responses chain, run. Assembly is checked where every family's is; what is written
+// The OpenAI Responses chain, run. Assembly is checked where every family's is; what is written
 // down here is what only running it can say — that the edge terminates the client's stream
 // on `[DONE]` however the upstream's ended, that it folds a stream into one response object
 // when the client did not ask to stream, that it hands the turn's own state back for the
@@ -107,7 +107,7 @@ const stream = (...events: readonly OpenAIResponsesStreamEvent[]): ProviderOpenA
   })(),
 });
 
-/** One assistant message over the Messages wire, which is the only way a Messages-only
+/** One assistant message over the Anthropic Messages wire, which is the only way an Anthropic Messages-only
  *  candidate can be reached: the turn crosses into that protocol and comes back translated. */
 const anthropicMessagesTurn = (text: string, seen: { body?: Record<string, unknown> } = {}) =>
   async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
@@ -540,7 +540,7 @@ describe('the responses chain', () => {
   });
 
   // A provider owns the body it is dialled with and shapes it in place, down to nested nodes —
-  // Copilot marks individual items for caching, and its Messages boundary writes into a nested
+  // Copilot marks individual items for caching, and its Anthropic Messages boundary writes into a nested
   // field — while the record that body is built from is deep-frozen. A dial that handed over a
   // shallow copy satisfies every type in the system and throws at the first nested write,
   // answering the client with a 502 raised where nothing can explain it.
@@ -643,7 +643,7 @@ describe('the responses chain', () => {
   // No translation carries a compaction, and neither translator models the item that asks for
   // one — so on a candidate this protocol can only reach through one, the shim is structurally
   // required rather than opted into, and the flag has nothing to say.
-  it('answers a turn that asked for a compaction over a candidate with no Responses wire', async () => {
+  it('answers a turn that asked for a compaction over a candidate with no OpenAI Responses wire', async () => {
     const seen: { body?: Record<string, unknown> } = {};
     affinityPayload = asksForCompaction;
     resolves([candidate(

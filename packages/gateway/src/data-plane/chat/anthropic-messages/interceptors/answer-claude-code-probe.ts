@@ -24,7 +24,7 @@ import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate }
 //
 // A one-token cap is not portable. OpenAI's Responses API floors
 // `max_output_tokens` at 16 and rejects anything lower with a hard 400, so
-// every Messages→Responses candidate fails the probe and Claude Code
+// every Anthropic Messages→OpenAI Responses candidate fails the probe and Claude Code
 // concludes the model does not exist — the CLI surfaces the upstream envelope
 // verbatim: `API error: 400 {"error":{"message":"Invalid 'max_output_tokens':
 // integer below minimum value. Expected a value >= 16, but got 1 instead.",

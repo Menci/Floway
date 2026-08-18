@@ -43,7 +43,7 @@ const post = async (apiKey: string, body: Record<string, unknown>): Promise<Resp
     body: JSON.stringify(body),
   });
 
-test('a turn reaches Copilot over its own Responses endpoint and comes back as one response', async () => {
+test('a turn reaches Copilot over its own OpenAI Responses endpoint and comes back as one response', async () => {
   const { apiKey } = await setupAppTest();
 
   let sent: Record<string, unknown> | undefined;

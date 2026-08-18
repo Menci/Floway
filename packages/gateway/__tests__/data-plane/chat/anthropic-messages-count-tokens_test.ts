@@ -1,4 +1,4 @@
-// The Messages count-tokens chain, run. What is written down here is what only running it
+// The Anthropic Messages count-tokens chain, run. What is written down here is what only running it
 // can say: that a measurement is taken on the body generation would have sent — the payload
 // affinity materialized, the alias' own rules, the three request rules and the web-search
 // rewrite — that a refusal is answered in the upstream's own words after every candidate has
@@ -310,7 +310,7 @@ describe('the messages count-tokens chain', () => {
     expect(facts['response.chat.anthropicMessages.rendered']).toEqual({ input_tokens: 7 });
   });
 
-  // Only a native Messages endpoint measures — no translation carries the question — so a
+  // Only a native Anthropic Messages endpoint measures — no translation carries the question — so a
   // candidate that would serve generation over a translated wire cannot serve this, and the
   // refusal names the endpoint the client actually addressed.
   it('refuses a candidate no wire can measure on, naming the count endpoint', async () => {

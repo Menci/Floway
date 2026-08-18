@@ -1,6 +1,6 @@
-// Gemini's pipeline, assembled and run. Gemini is the source-only family and the one with no
+// Gemini generateContent's pipeline, assembled and run. Gemini generateContent is the source-only family and the one with no
 // wire of its own, so what a run of it has to show beyond the entry contract is the round
-// trip: a turn translated out to Chat Completions, an answer translated back, the turn's own
+// trip: a turn translated out to OpenAI Chat Completions, an answer translated back, the turn's own
 // state handed back on a Part for the client to carry, and the reading taken on the dialect
 // the upstream actually spoke rather than on the one the client did.
 
@@ -82,7 +82,7 @@ const turn = (): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> 
 });
 
 /** The wire below closed cleanly and never finished the turn: no choice ever carried a
- *  finish reason, so nothing that comes out of the translation is a Gemini terminal event. */
+ *  finish reason, so nothing that comes out of the translation is a Gemini generateContent terminal event. */
 const unfinishedTurn = (): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => ({
   [Symbol.asyncIterator]: () => (async function* () {
     yield chunk({ content: 'he' });
@@ -165,7 +165,7 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
 };
 
 /** The turn's own answer. The carrier the edge writes back rides as a `thoughtSignature` on
- *  a Part rather than as an event of its own, so taking it off leaves what Gemini itself
+ *  a Part rather than as an event of its own, so taking it off leaves what Gemini generateContent itself
  *  said. */
 const withoutCarrier = (event: GeminiGenerateContentResult): GeminiGenerateContentResult => ({
   ...event,
@@ -200,7 +200,7 @@ describe('the gemini pipeline', () => {
     ]);
   });
 
-  it('translates the turn out, dials the Chat Completions wire, and streams Gemini frames back', async () => {
+  it('translates the turn out, dials the OpenAI Chat Completions wire, and streams Gemini generateContent frames back', async () => {
     let sent: Record<string, unknown> | undefined;
     resolves([candidate('up_a', async (_model, body) => {
       sent = body as Record<string, unknown>;
@@ -226,7 +226,7 @@ describe('the gemini pipeline', () => {
     await drain();
   });
 
-  // Gemini carries its state in `thoughtSignature` parts, which only mean anything to the
+  // Gemini generateContent carries its state in `thoughtSignature` parts, which only mean anything to the
   // upstream that issued them — so the turn that is translated is the one affinity rewrote
   // for this candidate, and the candidate that answered is marked for the next turn. That
   // turn enters the record below the fork because everything between there and the dial
@@ -245,7 +245,7 @@ describe('the gemini pipeline', () => {
     await collect(facts['response.chat.geminiGenerateContent.rendered']);
 
     // The handoff consumed `request.chat.geminiGenerateContent` and provided the wire's own key, so what the
-    // record still carries below the fork is the translated turn and not the Gemini one — the
+    // record still carries below the fork is the translated turn and not the Gemini generateContent one — the
     // whole of what a translation is, said in the fact space.
     expect((facts as Record<string, unknown>)['request.chat.geminiGenerateContent']).toBeUndefined();
     expect((facts as Record<string, unknown>)['request.chat.openaiChatCompletions'])
@@ -256,7 +256,7 @@ describe('the gemini pipeline', () => {
     await drain();
   });
 
-  it('folds the frames into one Gemini result for a client that did not ask to stream', async () => {
+  it('folds the frames into one Gemini generateContent result for a client that did not ask to stream', async () => {
     resolves([candidate('up_a', async () => streamed(turn()))]);
 
     const { facts, drain } = await serve(entryFacts({ 'ingress.chat.geminiGenerateContent.wantsStream': false }));
@@ -310,7 +310,7 @@ describe('the gemini pipeline', () => {
     expect(tried).toEqual(['up_a', 'up_b']);
     // Every candidate failed, so the last failure is the base: the client sees the status the
     // last upstream actually returned, and its words. The shape around them is this protocol's,
-    // because every Gemini wire is a translation and the object that came back was written by
+    // because every Gemini generateContent wire is a translation and the object that came back was written by
     // whatever protocol the candidate was dialled on.
     expect(facts['response.http.status']).toBe(400);
     const rendered = facts['response.chat.geminiGenerateContent.rendered'] as { error: { code: number; message: string; status: string } };

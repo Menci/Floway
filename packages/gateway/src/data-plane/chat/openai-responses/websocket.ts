@@ -1,4 +1,4 @@
-// The Responses WebSocket transport: a second entry against the same chain `POST
+// The OpenAI Responses WebSocket transport: a second entry against the same chain `POST
 // /v1/responses` runs. One `response.create` frame is one turn and one turn is one run, so
 // nothing about a turn outlives the frame that opened it except what the connection itself
 // holds — the session's item store and the ids a continuation may name.
@@ -572,7 +572,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
         // streaming HTTP, and the specification defines no frame after the
         // terminal event:
         // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
-        // Live captures agree. Azure Foundry Responses-over-WebSocket, and the
+        // Live captures agree. Azure Foundry OpenAI-Responses-over-WebSocket, and the
         // ChatGPT backend the Codex CLI talks to, both end a turn on
         // `response.completed` and send nothing further while the socket stays
         // open and idle. Codex's own reader breaks its loop on that event

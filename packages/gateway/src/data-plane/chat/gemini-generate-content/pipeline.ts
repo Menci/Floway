@@ -1,28 +1,29 @@
-// Gemini as a pipeline — the same chain as Chat Completions, for the one source-only family.
+// Gemini generateContent as a pipeline — the same chain as OpenAI Chat Completions, for the
+// one source-only family.
 //
-//   emitGeminiGenerateContent                       the edge: writes the answer in the shape the client asked for
-//   writeSettlement                  above the fork, so a run bills once however many wires it tried
-//   resolveChatCandidates            narrows to what can serve, in the order affinity asks for
-//   failover                         runs what follows once per candidate
-//   materializeAttempt               puts the payload this candidate is owed into the record
+//   emitGeminiGenerateContent  the edge: writes the answer in the shape the client asked for
+//   writeSettlement            above the fork, so a run bills once however many wires it tried
+//   resolveChatCandidates      narrows to what can serve, in the order affinity asks for
+//   failover                   runs what follows once per candidate
+//   materializeAttempt         puts the payload this candidate is owed into the record
 //   the strippers, then requireGeminiGenerateContentTerminal
-//   dialChatWire                     the ending: picks this candidate's wire and hands into it
+//   dialChatWire               the ending: picks this candidate's wire and hands into it
 //
-// Gemini is source-only. Nothing translates *into* it, so it contributes one pipeline rather
+// Gemini generateContent is source-only. Nothing translates *into* it, so it contributes one pipeline rather
 // than two — a source role and no target role, and no other family's chain ever hands up
 // `response.chat.geminiGenerateContent`.
 //
 // It is also the one family with no wire of its own: the provider surface has no `callGeminiGenerateContent`,
 // so every candidate is reached through a translation and all three wires are translated ones
-// — a handoff into Chat Completions, into Messages or into Responses, followed by that
+// — a handoff into OpenAI Chat Completions, into Anthropic Messages or into OpenAI Responses, followed by that
 // protocol's own wire. Which one a candidate is dialled on is the picker's answer for that
 // candidate, and failover re-running the suffix is what re-asks for the next.
 //
 // Because every wire is translated, the reading is taken on the dialect the upstream actually
 // spoke: the target protocol's own wire meters its own frames on their way into the
 // translation, so a figure the upstream stated is billed as stated. Where the *turn* ends is
-// a different question and is stated on the Gemini frames the client is handed, which is what
-// `requireGeminiGenerateContentTerminal` is for — a Chat Completions stream that closed cleanly without ever
+// a different question and is stated on the Gemini generateContent frames the client is handed,
+// which is what `requireGeminiGenerateContentTerminal` is for — an OpenAI Chat Completions stream that closed cleanly without ever
 // reporting a finish reason translates into candidates that never finish.
 //
 // `:countTokens` is not one of the three: it is a second operation over this protocol rather
@@ -30,7 +31,7 @@
 // `{ totalTokens }` envelope of its own — so it is a chain of its own in `count-tokens.ts`.
 //
 // What is not built, stated rather than implied:
-//   - the affinity egress' thought-signature rewrite is here, but the Gemini interceptors are
+//   - the affinity egress' thought-signature rewrite is here, but the Gemini generateContent interceptors are
 //     only partly stages: the four `interceptors/` entries are, and nothing else is.
 //   - the Google-RPC envelope `respond.ts` wrote into a client's own stream for a turn that
 //     ended without a terminal event. The chain detects one and leaves the run as a throw
@@ -38,8 +39,8 @@
 //
 // A refusal is the one place where having no wire of its own changes what a client is owed.
 // Every other family can hand an upstream's own error object on, because the upstream spoke
-// that family's protocol. Here it never did: whatever came back was written by Chat
-// Completions, Messages or Responses, and `error.status` — the field a Google client reads —
+// that family's protocol. Here it never did: whatever came back was written by OpenAI Chat
+// Completions, Anthropic Messages or OpenAI Responses, and `error.status` — the field a Google client reads —
 // is in none of them. So the words survive and the shape is this protocol's, which is what
 // the handoff arranges by dropping a foreign envelope on the way up.
 //
@@ -84,7 +85,7 @@ import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGeminiGenerateContentViaAnthropicMessages, translateGeminiGenerateContentViaOpenAIResponses } from '@floway-dev/translate';
 
 /** `:generateContent` has no wire of its own, so the whole preference list is translated:
- *  Chat Completions first, then Messages, then Responses. */
+ *  OpenAI Chat Completions first, then Anthropic Messages, then OpenAI Responses. */
 export const geminiGenerateContentTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 /** What this family adds to the chat space. */
@@ -100,8 +101,8 @@ export interface GeminiGenerateContentFacts extends ChatFacts {
 type C<K extends keyof GeminiGenerateContentFacts> = { [P in K]: GeminiGenerateContentFacts[P] };
 
 /**
- * The outermost edge. A Gemini answer is always a stream by the time it reaches here — the
- * wire below speaks SSE whatever the client asked for, and the translation back into Gemini
+ * The outermost edge. A Gemini generateContent answer is always a stream by the time it reaches
+ * here — the wire below speaks SSE whatever the client asked for, and the translation back into Gemini generateContent
  * is itself a stream of frames — so what this decides is whether the client sees the frames
  * or the one object they add up to.
  *
@@ -184,7 +185,7 @@ const emitGeminiGenerateContent = defineStage<
   },
 });
 
-/** Gemini streams one JSON object per `data:` line and has no sentinel to write, which the
+/** Gemini generateContent streams one JSON object per `data:` line and has no sentinel to write, which the
  *  protocol says by writing no frame at all for the one that ends the stream. */
 const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<SseFrame> => ({
   [Symbol.asyncIterator]: () => (async function* () {
@@ -196,10 +197,10 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStre
 });
 
 /**
- * Says where a Gemini turn ends, on the frames the client is handed rather than on the wire
+ * Says where a Gemini generateContent turn ends, on the frames the client is handed rather than on the wire
  * below them.
  *
- * The two are not the same statement. A Chat Completions stream that closed cleanly without
+ * The two are not the same statement. An OpenAI Chat Completions stream that closed cleanly without
  * ever reporting a finish reason ends its own dialect properly and translates into candidates
  * that never finish, and serving those would report a truncated answer as a whole one. So the
  * turn's end is read here, where the protocol the client speaks is, and the wire's end is read
@@ -258,7 +259,7 @@ const framesUntilTerminal = async function* (
 const STREAMED_USAGE = 'response.chat.geminiGenerateContent.streamedUsage';
 
 /** The three wires `:generateContent` can be served on, and all three are translated ones:
- *  the provider surface has no Gemini call, so a handoff is how every candidate is reached. */
+ *  the provider surface has no Gemini generateContent call, so a handoff is how every candidate is reached. */
 const geminiGenerateContentWireFor = (target: ChatTargetApi, candidate: ModelCandidate): ChatWire => {
   const context = { model: candidate.model.id, fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens };
   switch (target) {

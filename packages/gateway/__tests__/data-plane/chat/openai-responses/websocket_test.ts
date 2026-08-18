@@ -149,7 +149,7 @@ const completeOpenAIResponsesTurn = async (
   await waitForMicrotasks();
 };
 
-test('Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
+test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -211,7 +211,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
   );
 });
 
-test('Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
+test('OpenAI Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
   const { apiKey, repo } = await setupAppTest();
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
 
@@ -251,7 +251,7 @@ test('Responses WebSocket starts capturing on the next turn when dump retention 
   );
 });
 
-test('Responses WebSocket stops capturing on the next turn when dump retention is disabled after upgrade', async () => {
+test('OpenAI Responses WebSocket stops capturing on the next turn when dump retention is disabled after upgrade', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -271,7 +271,7 @@ test('Responses WebSocket stops capturing on the next turn when dump retention i
   );
 });
 
-test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
+test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -311,7 +311,7 @@ const recordedFrameCount = (record: Parameters<typeof runRecordOf>[0]): number =
 // into the record, and this transport, which reads it to write each event to the socket — so a
 // second tee is invisible everywhere except here, and it would make the collected view the
 // dashboard replays show the whole turn twice.
-test('Responses WebSocket records one frame per event it sent', async () => {
+test('OpenAI Responses WebSocket records one frame per event it sent', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -344,7 +344,7 @@ test('Responses WebSocket records one frame per event it sent', async () => {
 // after the last frame has gone out. The rows are filtered to this turn's own key because
 // every `setupAppTest` mints a fresh one, and background writes from earlier files in the
 // suite resolve against whichever repo was installed last.
-test('Responses WebSocket settles a streamed turn once, with what the chain read off it', async () => {
+test('OpenAI Responses WebSocket settles a streamed turn once, with what the chain read off it', async () => {
   const { apiKey, repo } = await setupAppTest();
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
@@ -377,7 +377,7 @@ test('Responses WebSocket settles a streamed turn once, with what the chain read
   assertEquals(meta.outputTokens, 5);
 });
 
-test('Responses WebSocket rejects the next turn after its API key is rotated', async () => {
+test('OpenAI Responses WebSocket rejects the next turn after its API key is rotated', async () => {
   const { apiKey, repo } = await setupAppTest();
 
   await withSuccessfulOpenAIResponsesUpstream(
@@ -409,7 +409,7 @@ test('Responses WebSocket rejects the next turn after its API key is rotated', a
   );
 });
 
-test('Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
+test('OpenAI Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
   const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
   try {
@@ -469,7 +469,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
   }
 });
 
-test('Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
+test('OpenAI Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
   const { apiKey } = await setupAppTest();
   // Captured before the clock is faked: the turn's frames cross real event-loop
   // turns (upstream body reads, item persistence), which a faked `setTimeout`
@@ -617,7 +617,7 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
   );
 });
 
-test('Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
+test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
   const { apiKey } = await setupAppTest();
   await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
@@ -638,7 +638,7 @@ test('Responses WebSocket returns OpenAI-style error envelopes for unsupported c
   });
 });
 
-test('Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
+test('OpenAI Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
   const { apiKey } = await setupAppTest();
   await withWorkerWebSocketRuntime(async () => {
     const client = await connectOpenAIResponsesWebSocket(apiKey.key);
@@ -719,7 +719,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
   });
 });
 
-test('Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
+test('OpenAI Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -758,7 +758,7 @@ test('Responses WebSocket forwards HTTP failures with status, error.code, and ev
   );
 });
 
-test('Responses WebSocket dump responseBytes counts an error envelope sent downstream', async () => {
+test('OpenAI Responses WebSocket dump responseBytes counts an error envelope sent downstream', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -802,7 +802,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
   );
 });
 
-test('Responses WebSocket store:false keeps session snapshots without durable repo writes', async () => {
+test('OpenAI Responses WebSocket store:false keeps session snapshots without durable repo writes', async () => {
   const { apiKey, repo } = await setupAppTest();
   const upstreamBodies: unknown[] = [];
 
@@ -914,7 +914,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
   );
 });
 
-test('Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
+test('OpenAI Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
 
@@ -1018,7 +1018,7 @@ test('Responses WebSocket evicts a failed continuation target so the next attemp
 // client with an event instead of an error envelope, so it leaves the handler
 // through a different exit than the rejected turn above — and the spec's
 // eviction rule applies to it just the same.
-test('Responses WebSocket evicts a continuation that failed through a streamed terminal event', async () => {
+test('OpenAI Responses WebSocket evicts a continuation that failed through a streamed terminal event', async () => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
 
@@ -1119,7 +1119,7 @@ test('Responses WebSocket evicts a continuation that failed through a streamed t
   );
 });
 
-test('Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
+test('OpenAI Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
   let turn = 0;
   let firstResponseId: string | undefined;
@@ -1179,7 +1179,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
 });
 
-test('Responses WebSocket makes a done reasoning item reusable from a fresh connection before terminal', async () => {
+test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fresh connection before terminal', async () => {
   const { apiKey } = await setupAppTest();
   const encoder = new TextEncoder();
   const originalReasoning = {
@@ -1287,7 +1287,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
 // message resolves the prior snapshot purely from in-RAM session cache.
 // A fresh WS session after the repo wipe MUST NOT see it (the cache is
 // per-session, not per-api-key).
-test('Responses WebSocket session-level store: second message resolves prior items via session cache', async () => {
+test('OpenAI Responses WebSocket session-level store: second message resolves prior items via session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
   const upstreamBodies: unknown[] = [];
 
@@ -1398,7 +1398,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
   );
 });
 
-test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
+test('OpenAI Responses WebSocket aborts the in-flight OpenAI Responses request when the client closes', async () => {
   const { apiKey } = await setupAppTest();
   let resolveOpenAIResponsesStarted: (() => void) | undefined;
   const openaiResponsesStarted = new Promise<void>(resolve => {
@@ -1462,7 +1462,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
 // one: a refusal whose body cannot be read. `callOpenAIResponsesUpstream` stamps this
 // candidate's telemetry before it dials and then reads the refusal's own words, so
 // the read's rejection is a mid-attempt throw with attribution already in place.
-test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
+test('OpenAI Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
   const { apiKey, repo, copilotUpstream } = await setupAppTest();
 
   await withMockedFetch(
@@ -1518,7 +1518,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
   assertEquals(perfRows[0]?.requests, 1);
 });
 
-test('Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
+test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.save(buildCodexUpstreamRecord());
   const upstreamBodies: Record<string, unknown>[] = [];

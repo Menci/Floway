@@ -1,12 +1,12 @@
 // `/v1beta/models/:model:generateContent`, from the client's socket to Copilot's and back.
 //
 // The same statement the other two route files make, for the one family with no wire of its
-// own: the provider surface has no Gemini call, so every candidate is reached through a
+// own: the provider surface has no Gemini generateContent call, so every candidate is reached through a
 // translation and each row here is already a translated turn. What the last row adds is the
-// second pair — the same request answered over a Messages-only candidate — because "the client
+// second pair — the same request answered over an Anthropic Messages-only candidate — because "the client
 // gets its own protocol back" has to hold for whichever wire the picker landed on.
 //
-// Gemini also ends a turn differently from either OpenAI-shaped protocol: there is no
+// Gemini generateContent also ends a turn differently from either OpenAI-shaped protocol: there is no
 // sentinel, and the last frame is the one whose candidate states a `finishReason`.
 
 import { expect, test } from 'vitest';
@@ -38,8 +38,8 @@ const withCopilot = async <T>(
     run,
   );
 
-/** The answer a Chat Completions upstream gives, as the SSE every chat endpoint really speaks.
- *  Gemini's first-preference wire, so this is what most of these turns are dialled on. */
+/** The answer an OpenAI Chat Completions upstream gives, as the SSE every chat endpoint really speaks.
+ *  Gemini generateContent's first-preference wire, so this is what most of these turns are dialled on. */
 const openaiChatCompletionsTurn = (): Response =>
   sseOpenAIChatCompletionsResponse({
     id: 'chatcmpl_route',
@@ -67,15 +67,16 @@ interface GeminiGenerateContentEvent {
 const geminiGenerateContentText = (event: GeminiGenerateContentEvent): string =>
   (event.candidates ?? []).flatMap(candidate => candidate.content.parts.map(part => part.text ?? '')).join('');
 
-test('a streaming turn reaches the client as Gemini SSE, ending on the frame that states a finish reason', async () => {
+test('a streaming turn reaches the client as Gemini generateContent SSE, ending on the frame that states a finish reason', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
     [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],
     (path, body) => {
       expect(path).toBe('/chat/completions');
-      // Gemini has no wire of its own, so what left the gateway is the translated turn — a
-      // Chat Completions body, streaming because every chat endpoint here does.
+      // Gemini generateContent has no wire of its own, so what left the gateway is the
+      // translated turn — an OpenAI Chat Completions body, streaming because every chat
+      // endpoint here does.
       expect(body.messages).toBeDefined();
       expect(body.stream).toBe(true);
       return openaiChatCompletionsTurn();
@@ -88,7 +89,7 @@ test('a streaming turn reaches the client as Gemini SSE, ending on the frame tha
 
   const frames = parseSSEText(await response.text());
   expect(frames.length > 0).toBe(true);
-  // One JSON object per `data:` line, and no sentinel — Gemini has none to write, so a `[DONE]`
+  // One JSON object per `data:` line, and no sentinel — Gemini generateContent has none to write, so a `[DONE]`
   // here would be a frame no Google client can parse.
   const events = frames.map(frame => JSON.parse(frame.data) as GeminiGenerateContentEvent);
   for (const frame of frames) expect(frame.event).toBe('message');
@@ -98,7 +99,7 @@ test('a streaming turn reaches the client as Gemini SSE, ending on the frame tha
   expect(events.slice(0, -1).every(event => event.candidates?.[0]?.finishReason === undefined)).toBe(true);
 });
 
-test('a non-streaming turn reaches the client as one assembled Gemini body', async () => {
+test('a non-streaming turn reaches the client as one assembled Gemini generateContent body', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
@@ -133,9 +134,9 @@ test('an upstream refusal reaches the client in this protocol-s own envelope', a
   // onto the codes it cannot express.
   expect(response.status).toBe(402);
 
-  // Gemini has no wire of its own, so every refusal that gets here was written by whatever
+  // Gemini generateContent has no wire of its own, so every refusal that gets here was written by whatever
   // protocol the candidate was dialled on — here OpenAI's. Handing that object on would answer
-  // a Gemini client in another protocol's words: `error.status` is the field its SDKs read and
+  // a Gemini generateContent client in another protocol's words: `error.status` is the field its SDKs read and
   // an OpenAI envelope has none, while `error.code` would arrive as a string where a number
   // belongs. So the upstream's words become the message and this protocol writes the shape.
   const body = await response.json() as { error: { code: number; message: string; status: string } };
@@ -151,7 +152,7 @@ test('a refusal on a turn that asked to stream is a body, not an opened stream',
   const refusal = { error: { message: 'copilot said no', type: 'insufficient_quota' } };
 
   // The riskier half of the same statement: the client asked for SSE, so the seam has a
-  // stream to open and must not — nothing was ever generated, and a Gemini stream that
+  // stream to open and must not — nothing was ever generated, and a Gemini generateContent stream that
   // carried the refusal would be read as a turn that produced no candidates.
   const response = await withCopilot(
     [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],
@@ -194,7 +195,7 @@ test('a served turn writes one usage row carrying the tokens the upstream report
   expect(tokenCountsFromUsage(rows[0])).toEqual({ input: 21, output: 3 });
 });
 
-test('a turn dialled over the Messages wire still answers the client in Gemini', async () => {
+test('a turn dialled over the Anthropic Messages wire still answers the client in Gemini generateContent', async () => {
   const { apiKey, repo } = await setupAppTest();
 
   // The candidate serves `/messages` and nothing else, so the picker's first preference is

@@ -291,7 +291,7 @@ export const summarizationTurnFor = (payload: CanonicalOpenAIResponsesPayload): 
 // A summarization that closed no assistant text produced no summary, and a
 // compaction blob is the whole of what the next turn inherits — so an empty one
 // silently discards the conversation.
-export const EMPTY_SUMMARY_MESSAGE = 'Responses compact shim: the summarization turn closed no assistant text to summarize';
+export const EMPTY_SUMMARY_MESSAGE = 'OpenAI Responses compact shim: the summarization turn closed no assistant text to summarize';
 
 export const containsCompactionTrigger = (input: readonly OpenAIResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');

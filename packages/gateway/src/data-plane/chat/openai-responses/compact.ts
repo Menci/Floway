@@ -22,8 +22,8 @@
 //   - the compaction wire. An upstream whose own `/responses` endpoint compacts is asked to,
 //     and answers with one envelope; the synthetic frames it becomes are what the stateful
 //     half above persists items and a response id from.
-//   - the simulation. An upstream with no compaction wire of its own — every Messages and
-//     Chat Completions candidate, and any Responses candidate an operator opted in with
+//   - the simulation. An upstream with no compaction wire of its own — every Anthropic Messages
+//     and OpenAI Chat Completions candidate, and any OpenAI Responses candidate an operator opted in with
 //     `responses-compact-shim` — is sent an ordinary generate turn against the compactor's
 //     prompt over the wires generation would have used, and the summary it produces is packed
 //     into an envelope of this gateway's own. That is the whole of what the action pivot was:
@@ -309,10 +309,10 @@ const simulationWire: ChatWire = compose('openaiResponsesCompactSimulated', [sum
  * Picks how this candidate's compaction is produced.
  *
  * An upstream whose own endpoint compacts is asked to, unless the operator asked for the
- * simulation instead — which is what the `responses-compact-shim` flag is: an opt-in for a
- * Responses upstream that would answer a compaction itself. Everything else is simulated,
- * structurally rather than by choice: no translation carries a compaction, so a Messages or
- * Chat Completions candidate has no compaction to dial.
+ * simulation instead — which is what the `responses-compact-shim` flag is: an opt-in for an
+ * OpenAI Responses upstream that would answer a compaction itself. Everything else is simulated,
+ * structurally rather than by choice: no translation carries a compaction, so an Anthropic
+ * Messages or OpenAI Chat Completions candidate has no compaction to dial.
  *
  * It is last, which is what earns it the right to name a target at all, and it holds no state
  * across candidates: failover re-running the suffix re-runs this stage.

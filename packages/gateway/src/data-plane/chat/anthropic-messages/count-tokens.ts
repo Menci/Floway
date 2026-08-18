@@ -1,10 +1,10 @@
 // `/v1/messages/count_tokens` as a pipeline.
 //
-//   emitAnthropicMessagesTokenCount  the edge: writes the measurement, or the refusal, as one body
-//   writeSettlement         above the fork, so a measurement is sampled once however many it tried
-//   resolveChatCandidates   narrows to what can serve, in the order affinity asks for
-//   failover                runs what follows once per candidate
-//   materializeAttempt      puts the payload this candidate is owed into the record
+//   emitAnthropicMessagesTokenCount           the edge: writes the measurement, or the refusal, as one body
+//   writeSettlement                           above the fork, so a measurement is sampled once however many it tried
+//   resolveChatCandidates                     narrows to what can serve, in the order affinity asks for
+//   failover                                  runs what follows once per candidate
+//   materializeAttempt                        puts the payload this candidate is owed into the record
 //   the three request rules generation applies, and the web-search request preparation
 //   callAnthropicMessagesCountTokensUpstream  the ending: measures, and never opens a stream
 //
@@ -15,10 +15,10 @@
 // owes and no usage row. Measuring is not generating, and an upstream that answered the
 // question charged nothing for it.
 //
-// There is one wire, and it is shared. Only an upstream's own Messages endpoint measures —
+// There is one wire, and it is shared. Only an upstream's own Anthropic Messages endpoint measures —
 // no protocol but this one answers "what would this cost" — so the chain dials directly
 // instead of forking, and Gemini's `:countTokens` translates into the same wire rather than
-// growing one of its own. The rule generation keeps inside its Messages wire (the system-role
+// growing one of its own. The rule generation keeps inside its Anthropic Messages wire (the system-role
 // rewrite, which speaks about what that endpoint accepts) is therefore a rule of this wire
 // too, and sits with it.
 //
@@ -50,7 +50,7 @@ import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-d
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { providerModelOf } from '@floway-dev/provider';
 
-/** Counting has no translation path: only an upstream's own Messages endpoint can answer the
+/** Counting has no translation path: only an upstream's own Anthropic Messages endpoint can answer the
  *  question, so a candidate that would serve generation over a translated wire cannot serve
  *  this. */
 export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']);
@@ -246,13 +246,13 @@ const callAnthropicMessagesCountTokensUpstream = defineStage<
 });
 
 /**
- * The Messages count-tokens wire, as the chain that dials it.
+ * The Anthropic Messages count-tokens wire, as the chain that dials it.
  *
  * Every source protocol whose measurement reaches an upstream does it over this endpoint —
  * Gemini's `:countTokens` has no wire of its own and arrives here through a translation — so
  * a rule that speaks about *this* wire belongs here rather than beside a source's own
  * strippers. All four do: the system-role rewrite and the reasoning sentinel state what an
- * upstream's Messages endpoint accepts, the billing-attribution scrub states what generation
+ * upstream's Anthropic Messages endpoint accepts, the billing-attribution scrub states what generation
  * would have sent it, and the web-search preparation states the tool shape it would have
  * seen.
  */

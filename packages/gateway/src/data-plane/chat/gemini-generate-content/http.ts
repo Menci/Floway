@@ -22,7 +22,7 @@ interface GeminiGenerateContentModelAction {
   readonly action: string;
 }
 
-// The Gemini wire API encodes both the model id and the action in one path
+// The Gemini generateContent wire API encodes both the model id and the action in one path
 // segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
 // captures everything after `/v1beta/models/` in a single `modelAction` param;
 // we split on the trailing `:` here so each entry sees just the action and
@@ -101,7 +101,7 @@ const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string,
       'ingress.chat.sourceProtocol': 'geminiGenerateContent',
       'ingress.chat.geminiGenerateContent.wantsStream': wantsStream,
       'request.chat.geminiGenerateContent': payload,
-      // Gemini carries the model in the path rather than the body, so the id the run
+      // Gemini generateContent carries the model in the path rather than the body, so the id the run
       // resolves against is the one the route split off.
       'serve.model': model,
     }) as never,

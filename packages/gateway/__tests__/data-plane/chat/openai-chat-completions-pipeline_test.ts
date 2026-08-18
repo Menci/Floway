@@ -1,4 +1,4 @@
-// The Chat Completions chain, run. Assembly is checked where every family's is; what is
+// The OpenAI Chat Completions chain, run. Assembly is checked where every family's is; what is
 // written down here is what only running it can say — that the edge folds a stream into one
 // object when the client did not ask to stream, that it hands the turn's own state back for
 // the client to carry, that a refusal keeps the upstream's own status and words, and that a

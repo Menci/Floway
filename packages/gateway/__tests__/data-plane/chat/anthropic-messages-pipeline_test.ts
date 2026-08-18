@@ -1,4 +1,4 @@
-// The Messages chain, run. Assembly is checked where every family's is; what is written
+// The Anthropic Messages chain, run. Assembly is checked where every family's is; what is written
 // down here is what only running it can say — that the edge writes Anthropic's own named
 // SSE events when the client asked to stream and reassembles them into one message when it
 // did not, that it hands the turn's own state back for the client to carry, that a refusal
@@ -140,7 +140,7 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
 };
 
 // The carrier the edge writes back is a redacted_thinking block holding this turn's own
-// state. Messages has real block boundaries, so it takes content block 0 of its own: its
+// state. Anthropic Messages has real block boundaries, so it takes content block 0 of its own: its
 // start and stop are the two extra frames, and the turn's own blocks answer behind it.
 
 /** The turn's own frames, with the carrier block's dropped. */

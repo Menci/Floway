@@ -255,7 +255,7 @@ beforeEach(() => {
 });
 
 describe('a chat family reaching a candidate over another protocol', () => {
-  it('serves /v1/chat/completions on a Messages-only candidate', async () => {
+  it('serves /v1/chat/completions on an Anthropic Messages-only candidate', async () => {
     const callAnthropicMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { anthropicMessages: {} }, { callAnthropicMessages })]);
 
@@ -267,7 +267,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves /v1/chat/completions on a Responses-only candidate', async () => {
+  it('serves /v1/chat/completions on an OpenAI Responses-only candidate', async () => {
     const callOpenAIResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { openaiResponses: {} }, { callOpenAIResponses })]);
 
@@ -278,7 +278,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves /v1/messages on a Responses-only candidate', async () => {
+  it('serves /v1/messages on an OpenAI Responses-only candidate', async () => {
     const callOpenAIResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { openaiResponses: {} }, { callOpenAIResponses })]);
 
@@ -289,7 +289,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves /v1/messages on a Chat Completions-only candidate', async () => {
+  it('serves /v1/messages on an OpenAI Chat Completions-only candidate', async () => {
     const callOpenAIChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { openaiChatCompletions: {} }, { callOpenAIChatCompletions })]);
 
@@ -300,7 +300,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves /v1/responses on a Messages-only candidate', async () => {
+  it('serves /v1/responses on an Anthropic Messages-only candidate', async () => {
     const callAnthropicMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { anthropicMessages: {} }, { callAnthropicMessages })]);
 
@@ -311,7 +311,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves /v1/responses on a Chat Completions-only candidate', async () => {
+  it('serves /v1/responses on an OpenAI Chat Completions-only candidate', async () => {
     const callOpenAIChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { openaiChatCompletions: {} }, { callOpenAIChatCompletions })]);
 
@@ -322,8 +322,8 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  // Gemini has no wire of its own, so all three of its rows are translated ones.
-  it('serves :generateContent on a Chat Completions-only candidate', async () => {
+  // Gemini generateContent has no wire of its own, so all three of its rows are translated ones.
+  it('serves :generateContent on an OpenAI Chat Completions-only candidate', async () => {
     const callOpenAIChatCompletions = vi.fn(async () => openaiChatCompletionsTurn('hello'));
     resolves([candidate('up_a', { openaiChatCompletions: {} }, { callOpenAIChatCompletions })]);
 
@@ -334,7 +334,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves :generateContent on a Messages-only candidate', async () => {
+  it('serves :generateContent on an Anthropic Messages-only candidate', async () => {
     const callAnthropicMessages = vi.fn(async () => anthropicMessagesTurn('hello'));
     resolves([candidate('up_a', { anthropicMessages: {} }, { callAnthropicMessages })]);
 
@@ -345,7 +345,7 @@ describe('a chat family reaching a candidate over another protocol', () => {
     await drain();
   });
 
-  it('serves :generateContent on a Responses-only candidate', async () => {
+  it('serves :generateContent on an OpenAI Responses-only candidate', async () => {
     const callOpenAIResponses = vi.fn(async () => openaiResponsesTurn('hello'));
     resolves([candidate('up_a', { openaiResponses: {} }, { callOpenAIResponses })]);
 
@@ -436,11 +436,11 @@ describe('the fork over wires', () => {
 });
 
 describe('a rule that speaks about one protocol-s wire', () => {
-  // The Messages fold rewrites *every* inline system message, because Anthropic's top-level
-  // `system` is the only first-position slot there. The Chat Completions fold rewrites only a
+  // The Anthropic Messages fold rewrites *every* inline system message, because Anthropic's top-level
+  // `system` is the only first-position slot there. The OpenAI Chat Completions fold rewrites only a
   // system message past the leading run. So a leading system message tells the two apart: a
-  // turn that left for Chat Completions must be folded by the Chat Completions rule, which
-  // leaves it alone, and not by the Messages one, which would not.
+  // turn that left for OpenAI Chat Completions must be folded by the OpenAI Chat Completions rule, which
+  // leaves it alone, and not by the Anthropic Messages one, which would not.
   it('does not run on a turn that leaves for another protocol', async () => {
     let sent: { messages: { role: string }[] } | undefined;
     const payload = {
@@ -467,8 +467,8 @@ describe('a rule that speaks about one protocol-s wire', () => {
   });
 
   // The other direction, and the one that pays for the whole arrangement: the usage chunk is
-  // asked for by the Chat Completions wire, so a Messages turn that reaches an upstream over
-  // that endpoint is metered like any other turn on it. A rule left in the Chat Completions
+  // asked for by the OpenAI Chat Completions wire, so an Anthropic Messages turn that reaches an upstream over
+  // that endpoint is metered like any other turn on it. A rule left in the OpenAI Chat Completions
   // *source* chain would ask for nothing here, and this turn would bill zero.
   it('asks for the usage chunk on a turn that arrived from another protocol', async () => {
     let sent: { stream_options?: unknown } | undefined;
@@ -487,7 +487,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
 
   // The same arrangement for a rule no guard ever covered. The old surface ran the *whole*
   // target array on a translated body, so a turn arriving over a translation was shaped for
-  // the wire it landed on. A rule left in the Messages source chain would scrub nothing here.
+  // the wire it landed on. A rule left in the Anthropic Messages source chain would scrub nothing here.
   it('applies the target wire-s unguarded rules to a turn that arrived translated', async () => {
     let sent: { system?: unknown } | undefined;
     resolves([candidate('up_a', { anthropicMessages: {} }, {
@@ -509,8 +509,9 @@ describe('a rule that speaks about one protocol-s wire', () => {
     await drain();
   });
 
-  // And a rule the *other* wire owns stays off this turn. `stream_options` is a Chat
-  // Completions field, so a Chat Completions turn dialled over Messages must not carry it —
+  // And a rule the *other* wire owns stays off this turn. `stream_options` is an OpenAI Chat
+  // Completions field, so an OpenAI Chat Completions turn dialled over Anthropic Messages must
+  // not carry it —
   // which is what the interceptor form said with `ctx.targetApi !== 'openaiChatCompletions'` and
   // what position says here.
   it('does not carry another wire-s request rules onto the wire it dialled', async () => {

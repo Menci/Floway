@@ -1,6 +1,6 @@
 // `/v1/messages`, from the client's socket to Copilot's and back.
 //
-// The same statement the Chat Completions route file makes, for the protocol Claude Code
+// The same statement the OpenAI Chat Completions route file makes, for the protocol Claude Code
 // speaks. Two things are this family's own and are said here rather than assumed: Anthropic
 // ends a turn with an event rather than a transport sentinel, so `message_stop` is what the
 // terminal assertion looks for; and the edge writes the turn's own affinity state into the
@@ -36,7 +36,7 @@ const withCopilot = async <T>(
     run,
   );
 
-/** The answer a Messages upstream gives, as the SSE every chat endpoint really speaks. */
+/** The answer an Anthropic Messages upstream gives, as the SSE every chat endpoint really speaks. */
 const upstreamTurn = (model: string): Response =>
   sseAnthropicMessagesResponse({
     id: 'msg_route',
@@ -70,7 +70,7 @@ interface AnthropicMessagesBody {
 const textOf = (body: AnthropicMessagesBody): string | undefined =>
   body.content.find(block => block.type === 'text')?.text;
 
-test('a streaming turn reaches the client as Messages SSE, message_stop included', async () => {
+test('a streaming turn reaches the client as Anthropic Messages SSE, message_stop included', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
@@ -106,7 +106,7 @@ test('a streaming turn reaches the client as Messages SSE, message_stop included
   expect(text).toBe(ANSWER);
 });
 
-test('a non-streaming turn reaches the client as one assembled Messages body', async () => {
+test('a non-streaming turn reaches the client as one assembled Anthropic Messages body', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
@@ -190,11 +190,11 @@ test('a served turn writes one usage row carrying the tokens the upstream report
   expect(tokenCountsFromUsage(rows[0])).toEqual({ input: 17, output: 4 });
 });
 
-test('a turn dialled over the Chat Completions wire still answers the client in Messages', async () => {
+test('a turn dialled over the OpenAI Chat Completions wire still answers the client in Anthropic Messages', async () => {
   const { apiKey, repo } = await setupAppTest();
 
   // The candidate serves `/chat/completions` and nothing else, so neither this protocol's own
-  // wire nor the Responses one is available and the turn leaves through the handoff. A chain
+  // wire nor the OpenAI Responses one is available and the turn leaves through the handoff. A chain
   // that dialled anything else would call a Copilot method with no upstream mocked here.
   const response = await withCopilot(
     [{ id: 'gpt-route', supported_endpoints: ['/chat/completions'] }],

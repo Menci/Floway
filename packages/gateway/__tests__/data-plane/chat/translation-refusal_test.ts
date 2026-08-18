@@ -10,9 +10,9 @@
 // express: the verdict belongs to one candidate. The next candidate may be reachable on a wire
 // whose protocol *can* carry the body, and failover re-runs the suffix to find out.
 //
-// Both of Gemini's actions cross a protocol boundary and both are covered: generation reaches
+// Both of Gemini generateContent's actions cross a protocol boundary and both are covered: generation reaches
 // its target through a handoff, and `:countTokens` through the pair that asks the question in
-// Messages. The replaced surface answered a refusal the same way on either, because what the
+// Anthropic Messages. The replaced surface answered a refusal the same way on either, because what the
 // caller reads is the same protocol whichever action it asked for.
 
 import { test } from 'vitest';
@@ -30,7 +30,7 @@ const upstream = (models: Parameters<typeof copilotModels>[0]) => async (request
   throw new Error(`Unhandled fetch ${request.url}`);
 };
 
-// A `functionResponse` part in model content: a shape Gemini defines and neither target protocol
+// A `functionResponse` part in model content: a shape Gemini generateContent defines and neither target protocol
 // has anywhere to put, so the translator refuses it rather than dropping it.
 const untranslatableGeminiGenerateContentBody = {
   contents: [
@@ -39,7 +39,7 @@ const untranslatableGeminiGenerateContentBody = {
   ],
 };
 
-/** What a Gemini client reads a refusal out of. `error.status` is the field it keys on, and it
+/** What a Gemini generateContent client reads a refusal out of. `error.status` is the field it keys on, and it
  *  is not a field the gateway's internal-error envelope has — nor is `stack` a field a
  *  caller-input refusal has any business carrying. */
 const assertGoogleRpcRefusal = async (response: Response): Promise<void> => {
@@ -73,7 +73,7 @@ test('a body the counting wire cannot carry is refused in the client own protoco
   const { apiKey } = await setupAppTest();
 
   await withMockedFetch(
-    // Counting is reachable only over an upstream's own Messages endpoint, so this is the one
+    // Counting is reachable only over an upstream's own Anthropic Messages endpoint, so this is the one
     // candidate shape that gets as far as the translation.
     upstream([{ id: 'claude-count', supported_endpoints: ['/messages'] }]),
     async () => {

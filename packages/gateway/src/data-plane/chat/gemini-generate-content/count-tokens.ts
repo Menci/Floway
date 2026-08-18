@@ -1,4 +1,4 @@
-// Gemini's `:countTokens` as a pipeline.
+// Gemini generateContent's `:countTokens` as a pipeline.
 //
 //   emitGeminiGenerateContentTokenCount     the edge: writes the measurement, or the refusal, as one body
 //   writeSettlement          above the fork, so a measurement is sampled once however many it tried
@@ -6,13 +6,15 @@
 //   failover                 runs what follows once per candidate
 //   materializeAttempt       puts the payload this candidate is owed into the record
 //   the three strippers      the same protocol-shape cleanups generation applies
-//   measureGeminiGenerateContentAsAnthropicMessages  the pair: asks the question in Messages and reads the answer back
-//   the Messages count wire  the ending, shared with `/v1/messages/count_tokens`
+//   measureGeminiGenerateContentAsAnthropicMessages  the pair: asks the question in Anthropic
+//                                                    Messages and reads the answer back
+//   the Anthropic Messages count wire                the ending, shared with
+//                                                    `/v1/messages/count_tokens`
 //
 // A second **operation** over this protocol rather than another wire under
 // `geminiGenerateContentServePipeline`, so it is a chain of its own. Like generation it has no wire of its
-// own — the provider surface has no Gemini call — but unlike generation it has only one
-// target: no protocol but Messages answers "what would this cost", so there is nothing to
+// own — the provider surface has no Gemini generateContent call — but unlike generation it has only one
+// target: no protocol but Anthropic Messages answers "what would this cost", so there is nothing to
 // pick between and the pair is in the array rather than under a fork.
 //
 // The pair is not `handOff`. A handoff maps frames, and there are none here: what crosses the
@@ -45,7 +47,7 @@ import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline'
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { translateGeminiGenerateContentViaAnthropicMessages, TranslatorInputError } from '@floway-dev/translate';
 
-/** Counting is reachable only over an upstream's own Messages endpoint: no other protocol
+/** Counting is reachable only over an upstream's own Anthropic Messages endpoint: no other protocol
  *  answers the question, and no translation invents an answer. */
 export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']);
 
@@ -101,10 +103,10 @@ const emitGeminiGenerateContentTokenCount = defineStage<
 });
 
 /**
- * Asks the question in Messages, and reads the answer back out as Google's.
+ * Asks the question in Anthropic Messages, and reads the answer back out as Google's.
  *
  * It consumes this protocol's request key and provides the target's, exactly as a handoff
- * does, so the wire below sees only Messages and cannot tell it was reached by translation.
+ * does, so the wire below sees only Anthropic Messages and cannot tell it was reached by translation.
  * What differs is the way back: there are no frames to map, only counts.
  *
  * It carries the `return` trait for the same reason a handoff does — a body the target

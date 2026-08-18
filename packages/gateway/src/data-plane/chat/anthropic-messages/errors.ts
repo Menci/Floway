@@ -4,7 +4,7 @@ import { generateAnthropicId } from '@floway-dev/protocols/anthropic-messages';
 // `{type:'error', error:{type, message}, request_id}` with `request_id` at the
 // top level — alongside `error`, not nested inside it — and the key order is
 // load-bearing for byte-faithfulness.
-/** What a Messages client is sent when a turn produced no content. The envelope is
+/** What an Anthropic Messages client is sent when a turn produced no content. The envelope is
  *  Anthropic's own — `type` at the top, the error's own `type` inside, and a `request_id` a
  *  caller quotes back in a support thread — so it is the protocol's shape rather than the
  *  gateway's, and an OpenAI-shaped one would carry none of those fields. */

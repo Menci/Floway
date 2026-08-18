@@ -36,7 +36,7 @@ const withCopilot = async <T>(
     run,
   );
 
-/** The answer a Chat Completions upstream gives, as the SSE every chat endpoint really speaks. */
+/** The answer an OpenAI Chat Completions upstream gives, as the SSE every chat endpoint really speaks. */
 const upstreamTurn = (model: string): Response =>
   sseOpenAIChatCompletionsResponse({
     id: 'chatcmpl_route',
@@ -59,7 +59,7 @@ interface ChatChunk {
   readonly choices: readonly { readonly delta?: { readonly content?: string }; readonly finish_reason: string | null }[];
 }
 
-test('a streaming turn reaches the client as Chat Completions SSE, terminator included', async () => {
+test('a streaming turn reaches the client as OpenAI Chat Completions SSE, terminator included', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
@@ -90,7 +90,7 @@ test('a streaming turn reaches the client as Chat Completions SSE, terminator in
   expect(chunks.some(chunk => chunk.choices[0]?.finish_reason === 'stop')).toBe(true);
 });
 
-test('a non-streaming turn reaches the client as one assembled Chat Completions body', async () => {
+test('a non-streaming turn reaches the client as one assembled OpenAI Chat Completions body', async () => {
   const { apiKey } = await setupAppTest();
 
   const response = await withCopilot(
@@ -179,7 +179,7 @@ test('a served turn writes one usage row carrying the tokens the upstream report
   expect(tokenCountsFromUsage(rows[0])).toEqual({ input: 11, output: 7 });
 });
 
-test('a turn dialled over the Messages wire still answers the client in Chat Completions', async () => {
+test('a turn dialled over the Anthropic Messages wire still answers the client in OpenAI Chat Completions', async () => {
   const { apiKey, repo } = await setupAppTest();
 
   // The candidate serves `/messages` and nothing else, so the picker's first preference — this

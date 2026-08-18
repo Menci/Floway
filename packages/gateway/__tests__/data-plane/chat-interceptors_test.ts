@@ -120,7 +120,7 @@ const anthropicMessagesPayload = (messages: unknown[], rest: Record<string, unkn
 const openaiResponsesPayload = (input: unknown[], rest: Record<string, unknown> = {}): OpenAIResponsesPayload =>
   ({ model: 'm', input, ...rest }) as unknown as OpenAIResponsesPayload;
 
-describe('the Chat Completions interceptors, as stages', () => {
+describe('the OpenAI Chat Completions interceptors, as stages', () => {
   it('rewrites the roles its flags name, in the settled order', async () => {
     const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
@@ -426,7 +426,7 @@ const assistantReplay = (reasoning: Record<string, unknown>): OpenAIChatCompleti
 const assistantOf = (payload: unknown): Record<string, unknown> =>
   (payload as OpenAIChatCompletionsPayload).messages[1] as unknown as Record<string, unknown>;
 
-describe('the Chat Completions vendor dialects, as stages', () => {
+describe('the OpenAI Chat Completions vendor dialects, as stages', () => {
   it('projects the canonical assistant reasoning onto the one field DeepSeek reads', async () => {
     const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload(assistantReplay({
@@ -650,7 +650,7 @@ describe('the Chat Completions vendor dialects, as stages', () => {
   });
 });
 
-describe('the Messages interceptors, as stages', () => {
+describe('the Anthropic Messages interceptors, as stages', () => {
   it('turns every inline system message into a user one', async () => {
     const { down } = await runStage(applyRoleCompatibilityToAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([
@@ -751,7 +751,7 @@ describe('the Messages interceptors, as stages', () => {
   });
 });
 
-describe('the Gemini interceptors, as stages', () => {
+describe('the Gemini generateContent interceptors, as stages', () => {
   it('drops the part fields no translation carries, and a part they were all of', async () => {
     const { down } = await runStage(stripUnsupportedPartFieldsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {
@@ -859,7 +859,7 @@ describe('the Gemini interceptors, as stages', () => {
   });
 });
 
-describe('the Responses interceptors, as stages', () => {
+describe('the OpenAI Responses interceptors, as stages', () => {
   const rolesOf = (down: Record<string, unknown>): unknown[] =>
     ((down['request.chat.openaiResponses'] as OpenAIResponsesPayload).input as OpenAIResponsesInputItem[])
       .map(item => (item as { role?: unknown }).role);
@@ -1035,7 +1035,7 @@ const usageOf = (frame: ProtocolFrame<OpenAIResponsesStreamEvent>): Record<strin
 // It is not that family's *whole* chain. Rules a wire owns run in the wire's own chain, below
 // the stage that picks it, so what an array states is the order of what sits above the fork.
 describe('a family\'s interceptor array, in the order its chain runs it', () => {
-  it('assembles and runs the Messages array', async () => {
+  it('assembles and runs the Anthropic Messages array', async () => {
     const { down } = await runChain('response.chat.anthropicMessages', [
       stripBillingAttributionFromAnthropicMessages,
       disableReasoningOnForcedToolChoiceForAnthropicMessages,
@@ -1057,7 +1057,7 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
     expect(after.messages.map(message => message.role)).toEqual(['user']);
   });
 
-  it('assembles and runs the Gemini array', async () => {
+  it('assembles and runs the Gemini generateContent array', async () => {
     const answer = streamOf<GeminiGenerateContentStreamEvent>([
       eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'pondering', thought: true }, { text: 'the answer' }] }, finishReason: 'STOP' }] }),
     ]);
@@ -1085,7 +1085,7 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
   // The one ordering between stages rather than inside one: the sentinel is the gateway's
   // canonical form, and a vendor normalizer can only put it on the wire in the vendor's shape
   // because it runs after the stage that wrote it.
-  it('assembles and runs the Responses array, the vendor normalizers last', async () => {
+  it('assembles and runs the OpenAI Responses array, the vendor normalizers last', async () => {
     const answer = streamOf<OpenAIResponsesStreamEvent>([usageEvent({ input_tokens: 100, output_tokens: 10, total_tokens: 160, input_tokens_details: { cached_tokens: 50 } })]);
     const { down, up } = await runChain('response.chat.openaiResponses', [
       disableReasoningOnForcedToolChoiceForOpenAIResponses,
@@ -1117,12 +1117,12 @@ describe('a family\'s interceptor array, in the order its chain runs it', () => 
     expect(usageOf(frames[0]!)).toMatchObject({ input_tokens: 150 });
   });
 
-  // The Chat Completions wire's own array, which is not one family's: every source protocol
+  // The OpenAI Chat Completions wire's own array, which is not one family's: every source protocol
   // that reaches an upstream over this endpoint runs it. What the order states is one thing in
   // each direction. Going down, the usage chunk is asked for before any vendor can rewrite the
   // body. Coming back, the vendor dialect has the first say — so the fold reads a cache count
   // under OpenAI's name rather than DeepSeek's, and the carrier split reads the folded total.
-  it('assembles and runs the Chat Completions wire, the vendor dialects innermost', async () => {
+  it('assembles and runs the OpenAI Chat Completions wire, the vendor dialects innermost', async () => {
     const answer = streamOf<OpenAIChatCompletionsStreamEvent>([eventFrame({
       id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'm',
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],

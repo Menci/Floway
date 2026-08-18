@@ -372,7 +372,7 @@ const prepareAnthropicMessagesWebSearchReplay = (messages: AnthropicMessagesMess
     // System messages with array content pass through unchanged: the
     // remaining rewrite path below assumes assistant-shape content
     // (server_tool_use, web_search_tool_result, citations) and finalizes
-    // with `role: 'assistant'`, which would silently corrupt a
+    // with `role: 'assistant'`, which would silently corrupt an
     // AnthropicMessagesSystemMessage carrying AnthropicMessagesTextBlock[] into an assistant
     // turn. System messages never own web-search replay markers.
     if (message.role === 'system') {

@@ -15,7 +15,7 @@ export const openaiResponsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(
 // The item lifecycle first resolves any partial terminal restatement. Affinity
 // then wraps routing metadata, and the client-output boundary stores each
 // complete emitted item under its exact ID and applies one generated response
-// ID to the downstream stream and snapshot. Every native Responses turn goes
+// ID to the downstream stream and snapshot. Every native OpenAI Responses turn goes
 // through this half, whichever resource it answers with.
 export const wrapOpenAIResponsesStatefulOutput = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,

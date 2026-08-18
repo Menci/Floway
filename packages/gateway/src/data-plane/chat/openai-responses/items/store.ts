@@ -184,7 +184,7 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.loadedItems.get(item.id);
-      if (row === undefined) throw new Error(`Cannot stage unresolved Responses item_reference id=${item.id}`);
+      if (row === undefined) throw new Error(`Cannot stage unresolved OpenAI Responses item_reference id=${item.id}`);
       this.stagedInputItemIds.push(row.id);
       return;
     }
@@ -250,7 +250,7 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
     const pending = rows.flatMap(row => {
       if (!this.committedItemIds.has(row.id)) return [row];
       const committed = this.loadedItems.get(row.id);
-      if (committed === undefined) throw new Error(`Committed Responses item disappeared from request state: ${row.id}`);
+      if (committed === undefined) throw new Error(`Committed OpenAI Responses item disappeared from request state: ${row.id}`);
       assertSameStoredOpenAIResponsesItem(row, committed);
       return [];
     });
@@ -387,8 +387,9 @@ export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolic
   });
 };
 
-// Non-Responses sources (Messages / Gemini / Chat Completions) never persist
-// Responses items, even when translation enters a Responses attempt — but the
+// Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat
+// Completions) never persist OpenAI Responses items, even when translation enters an OpenAI
+// Responses attempt — but the
 // server-tool shim's request-private payload scratchpad lives on the store, and
 // it is what will write there once that shim is a stage. So they get a store
 // with no backing: it holds per-attempt state in memory and reads/writes nothing

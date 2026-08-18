@@ -396,7 +396,7 @@ const handleCompleted = (response: OpenAIResponsesResult, state: OpenAIResponses
   return events;
 };
 
-// A OpenAI Responses upstream can report a context-exceeded failure inside the SSE
+// An OpenAI Responses upstream can report a context-exceeded failure inside the SSE
 // stream (Codex emits `response.failed` with `error.code =
 // context_length_exceeded`; some Copilot fronts surface a stream `error`
 // event with the same code). We rewrite those into the same Anthropic

@@ -1,5 +1,5 @@
-// The Gemini count-tokens chain, run. What is written down here is what only running it can
-// say: that the question is asked in Messages and the answer read back out as Google's, that
+// The Gemini generateContent count-tokens chain, run. What is written down here is what only running it can
+// say: that the question is asked in Anthropic Messages and the answer read back out as Google's, that
 // what no translation can carry is gone before the question is asked, that a refusal keeps
 // the upstream's own status, and that measuring bills nothing.
 
@@ -107,9 +107,9 @@ beforeEach(() => {
 });
 
 describe('the gemini count-tokens chain', () => {
-  // Gemini has no endpoint that answers this, so the question is asked in Messages and the
+  // Gemini generateContent has no endpoint that answers this, so the question is asked in Anthropic Messages and the
   // counts are read back out under the name this protocol gives them.
-  it('asks the question in Messages and answers in Google-s own envelope', async () => {
+  it('asks the question in Anthropic Messages and answers in Google-s own envelope', async () => {
     let sent: AnthropicMessagesPayload | undefined;
     let seenModel: { readonly id: string } | undefined;
     resolves([candidate(async (model, body) => {
@@ -158,7 +158,7 @@ describe('the gemini count-tokens chain', () => {
     });
   });
 
-  // Gemini has no wire of its own, so what no translation can carry cannot be sent whichever
+  // Gemini generateContent has no wire of its own, so what no translation can carry cannot be sent whichever
   // candidate answers — and a count taken before the strip would measure a request the
   // translator would refuse.
   it('strips what no translation carries before asking', async () => {
@@ -179,7 +179,7 @@ describe('the gemini count-tokens chain', () => {
   });
 
   // Anthropic's beta flags are the client's own only when the client spoke that protocol, and
-  // a Gemini turn asked for nothing on that wire.
+  // a Gemini generateContent turn asked for nothing on that wire.
   it('does not carry another protocol-s beta flags across the boundary', async () => {
     let seen: AnthropicMessagesUpstreamCallOptions | undefined;
     resolves([candidate(async (_model, _body, _signal, opts) => { seen = opts; return answered({ input_tokens: 1 }); })]);
@@ -202,7 +202,7 @@ describe('the gemini count-tokens chain', () => {
     });
   });
 
-  // Only an upstream's own Messages endpoint measures, so a candidate that would serve
+  // Only an upstream's own Anthropic Messages endpoint measures, so a candidate that would serve
   // generation over a translated wire cannot serve this.
   it('refuses a candidate no wire can measure on, naming the action', async () => {
     resolves([candidate(async () => answered({ input_tokens: 0 }), { endpoints: { openaiChatCompletions: {} } })]);
