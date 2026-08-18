@@ -2,17 +2,17 @@
 // the two are the same shape and rendering a success is re-serializing what was parsed —
 // which is what keeps the fields this file does not name from being dropped on the way out.
 
-import type { CanonicalImage, CanonicalImagesResponse, CanonicalImagesUsage } from './index.ts';
+import type { CanonicalOpenAIImage, CanonicalOpenAIImagesResponse, CanonicalOpenAIImagesUsage } from './index.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const parseImagesResponse = (value: unknown): CanonicalImagesResponse => {
-  if (!isRecord(value)) throw new Error('Images response body must be an object');
-  const usage = parseImagesUsage(value);
+export const parseOpenAIImagesResponse = (value: unknown): CanonicalOpenAIImagesResponse => {
+  if (!isRecord(value)) throw new Error('OpenAI Images response body must be an object');
+  const usage = parseOpenAIImagesUsage(value);
   return {
     raw: value,
-    images: parseImages(value.data),
+    images: parseOpenAIImages(value.data),
     ...(usage === undefined ? {} : { usage }),
   };
 };
@@ -20,14 +20,14 @@ export const parseImagesResponse = (value: unknown): CanonicalImagesResponse => 
 // An answer that carries no `data` at all is not malformed — an upstream reporting a
 // moderation refusal in a 200 does exactly that — so it parses to no images, and only a `data`
 // that is there but cannot be read is an error.
-const parseImages = (data: unknown): CanonicalImage[] => {
+const parseOpenAIImages = (data: unknown): CanonicalOpenAIImage[] => {
   if (data === undefined) return [];
-  if (!Array.isArray(data)) throw new Error('Images response data must be an array');
+  if (!Array.isArray(data)) throw new Error('OpenAI Images response data must be an array');
   return data.map((entry, index) => {
-    if (!isRecord(entry)) throw new Error(`Images response data[${index}] must be an object`);
-    const url = optionalString(entry.url, `Images response data[${index}].url`);
-    const base64 = optionalString(entry.b64_json, `Images response data[${index}].b64_json`);
-    const revisedPrompt = optionalString(entry.revised_prompt, `Images response data[${index}].revised_prompt`);
+    if (!isRecord(entry)) throw new Error(`OpenAI Images response data[${index}] must be an object`);
+    const url = optionalString(entry.url, `OpenAI Images response data[${index}].url`);
+    const base64 = optionalString(entry.b64_json, `OpenAI Images response data[${index}].b64_json`);
+    const revisedPrompt = optionalString(entry.revised_prompt, `OpenAI Images response data[${index}].revised_prompt`);
     return {
       ...(url === undefined ? {} : { url }),
       ...(base64 === undefined ? {} : { base64 }),
@@ -47,7 +47,7 @@ const optionalString = (value: unknown, field: string): string | undefined => {
  * distinction is the whole point of the return type: an upstream that reported no usage is a
  * different fact from one that reported zero, and only one of them is a reading.
  */
-export const parseImagesUsage = (value: unknown): CanonicalImagesUsage | undefined => {
+export const parseOpenAIImagesUsage = (value: unknown): CanonicalOpenAIImagesUsage | undefined => {
   if (!isRecord(value) || !isRecord(value.usage)) return undefined;
   const {
     input_tokens: inputTotal,
@@ -88,4 +88,4 @@ const splitModality = (
   return { text: text ?? 0, image: image ?? 0 };
 };
 
-export const renderImagesResponse = (response: CanonicalImagesResponse): Record<string, unknown> => response.raw;
+export const renderOpenAIImagesResponse = (response: CanonicalOpenAIImagesResponse): Record<string, unknown> => response.raw;

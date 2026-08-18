@@ -328,7 +328,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
 // one that did.
 test('/v1/completions a stream that never terminated is recorded as a failed request', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
+  await registerOpenAICompletionsUpstream(repo);
 
   await withMockedFetch(
     () => Promise.resolve(new Response('data: {"id":"c","object":"text_completion","created":1,"model":"davinci-002","choices":[{"index":0,"text":"hi"}]}\n\n', {

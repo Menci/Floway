@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseImagesEditsRequest, parseImagesGenerationsRequest } from '../../src/images/request.ts';
+import { parseOpenAIImagesEditsRequest, parseOpenAIImagesGenerationsRequest } from '../../src/openai-images/request.ts';
 
 const json = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
@@ -12,9 +12,9 @@ const multipart = async (form: FormData): Promise<{ contentType: string; bytes: 
   };
 };
 
-describe('images generations ingress', () => {
+describe('OpenAI Images Generations ingress', () => {
   test('routing takes the model and everything else stays as the client wrote it', () => {
-    const parsed = parseImagesGenerationsRequest(json({
+    const parsed = parseOpenAIImagesGenerationsRequest(json({
       model: 'gpt-image-1',
       prompt: 'a shiba in space',
       size: '1024x1024',
@@ -29,18 +29,18 @@ describe('images generations ingress', () => {
   });
 
   test('a body that is not a JSON object, or names no model, is refused with what to fix', () => {
-    expect(() => parseImagesGenerationsRequest(new TextEncoder().encode('not json')))
-      .toThrow('Images generations request body must be valid JSON.');
-    expect(() => parseImagesGenerationsRequest(json(['gpt-image-1'])))
-      .toThrow('Images generations request body must be an object.');
-    expect(() => parseImagesGenerationsRequest(json({ prompt: 'hi' })))
-      .toThrow('Images generations request body must include a model string.');
+    expect(() => parseOpenAIImagesGenerationsRequest(new TextEncoder().encode('not json')))
+      .toThrow('OpenAI Images Generations request body must be valid JSON.');
+    expect(() => parseOpenAIImagesGenerationsRequest(json(['gpt-image-1'])))
+      .toThrow('OpenAI Images Generations request body must be an object.');
+    expect(() => parseOpenAIImagesGenerationsRequest(json({ prompt: 'hi' })))
+      .toThrow('OpenAI Images Generations request body must include a model string.');
   });
 });
 
-describe('images edits ingress', () => {
+describe('OpenAI Images Edits ingress', () => {
   test('a JSON edit keeps each reference exactly as it arrived', async () => {
-    const parsed = await parseImagesEditsRequest('application/json', json({
+    const parsed = await parseOpenAIImagesEditsRequest('application/json', json({
       model: 'gpt-image-1',
       prompt: 'replace the background',
       images: [{ image_url: 'data:image/png;base64,iVBORw0KGgo=' }, { file_id: 'file-source' }],
@@ -61,13 +61,13 @@ describe('images edits ingress', () => {
   });
 
   test('a reference naming both ways, or neither, is refused by position', async () => {
-    await expect(parseImagesEditsRequest('application/json', json({
+    await expect(parseOpenAIImagesEditsRequest('application/json', json({
       model: 'gpt-image-1',
       images: [{ file_id: 'file-source' }, { image_url: 'https://example.com/a.png', file_id: 'file-source' }],
-    }))).rejects.toThrow('Image edits images[1] must contain exactly one string field: image_url or file_id.');
+    }))).rejects.toThrow('OpenAI Images Edits images[1] must contain exactly one string field: image_url or file_id.');
 
-    await expect(parseImagesEditsRequest('application/json', json({ model: 'gpt-image-1', prompt: 'hi' })))
-      .rejects.toThrow('Image edits request body must include an images array.');
+    await expect(parseOpenAIImagesEditsRequest('application/json', json({ model: 'gpt-image-1', prompt: 'hi' })))
+      .rejects.toThrow('OpenAI Images Edits request body must include an images array.');
   });
 
   test('a multipart edit holds each file as bytes and every other field as text', async () => {
@@ -80,7 +80,7 @@ describe('images edits ingress', () => {
     form.append('mask', new Blob([new Uint8Array([6])], { type: 'image/png' }), 'mask.png');
     const { contentType, bytes } = await multipart(form);
 
-    const parsed = await parseImagesEditsRequest(contentType, bytes);
+    const parsed = await parseOpenAIImagesEditsRequest(contentType, bytes);
 
     expect(parsed.model).toBe('gpt-image-1');
     expect(parsed.request).toEqual({
@@ -100,8 +100,8 @@ describe('images edits ingress', () => {
     form.append('prompt', 'replace the sky');
     const { contentType, bytes } = await multipart(form);
 
-    await expect(parseImagesEditsRequest(contentType, bytes))
-      .rejects.toThrow('Image edits request body must include a model field.');
+    await expect(parseOpenAIImagesEditsRequest(contentType, bytes))
+      .rejects.toThrow('OpenAI Images Edits request body must include a model field.');
   });
 
   test('an image field carrying text, and a text field carrying a file, are both refused', async () => {
@@ -109,21 +109,21 @@ describe('images edits ingress', () => {
     textImage.append('model', 'gpt-image-1');
     textImage.append('image', 'not a file');
     const encodedTextImage = await multipart(textImage);
-    await expect(parseImagesEditsRequest(encodedTextImage.contentType, encodedTextImage.bytes))
-      .rejects.toThrow('Image edits image fields must be files.');
+    await expect(parseOpenAIImagesEditsRequest(encodedTextImage.contentType, encodedTextImage.bytes))
+      .rejects.toThrow('OpenAI Images Edits image fields must be files.');
 
     const fileParameter = new FormData();
     fileParameter.append('model', 'gpt-image-1');
     fileParameter.append('prompt', new Blob([new Uint8Array([1])], { type: 'text/plain' }), 'prompt.txt');
     const encodedFileParameter = await multipart(fileParameter);
-    await expect(parseImagesEditsRequest(encodedFileParameter.contentType, encodedFileParameter.bytes))
-      .rejects.toThrow('Image edits prompt field must be text.');
+    await expect(parseOpenAIImagesEditsRequest(encodedFileParameter.contentType, encodedFileParameter.bytes))
+      .rejects.toThrow('OpenAI Images Edits prompt field must be text.');
   });
 
   test('a body in neither of the two media types the endpoint takes is refused as such', async () => {
-    await expect(parseImagesEditsRequest('text/plain', new TextEncoder().encode('hi')))
-      .rejects.toThrow('Image edits request body must use application/json or multipart/form-data.');
-    await expect(parseImagesEditsRequest(undefined, new TextEncoder().encode('hi')))
-      .rejects.toThrow('Image edits request body must use application/json or multipart/form-data.');
+    await expect(parseOpenAIImagesEditsRequest('text/plain', new TextEncoder().encode('hi')))
+      .rejects.toThrow('OpenAI Images Edits request body must use application/json or multipart/form-data.');
+    await expect(parseOpenAIImagesEditsRequest(undefined, new TextEncoder().encode('hi')))
+      .rejects.toThrow('OpenAI Images Edits request body must use application/json or multipart/form-data.');
   });
 });

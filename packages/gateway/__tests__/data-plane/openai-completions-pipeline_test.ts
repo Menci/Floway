@@ -1,12 +1,12 @@
-// Completions' pipeline, assembled and run. `compose` derives the entry contract and rejects
-// an array that cannot work, so the assembly succeeding is itself most of what a test of the
-// wiring would say — what is written down here is the entry contract, the two things the
+// OpenAI Completions' pipeline, assembled and run. `compose` derives the entry contract and
+// rejects an array that cannot work, so the assembly succeeding is itself most of what a test
+// of the wiring would say — what is written down here is the entry contract, the two things the
 // assembly cannot see, and one run of each shape the answer can take, because this is the
 // first family whose answer can be a stream and none of that is visible in a declaration.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { completionsServePipeline } from '../../src/data-plane/completions/pipeline.ts';
+import { openaiCompletionsServePipeline } from '../../src/data-plane/openai-completions/pipeline.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
@@ -38,14 +38,14 @@ const resolveAttempt = (selector: { readonly upstreamId: string }): ModelCandida
 
 const candidate = (
   upstream: string,
-  callCompletions: (model: unknown, body: unknown, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderCallResult>,
+  callOpenAICompletions: (model: unknown, body: unknown, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderCallResult>,
 ): ModelCandidate => {
-  const endpoints = { chatCompletions: {}, completions: {} };
+  const endpoints = { openaiChatCompletions: {}, openaiCompletions: {} };
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callCompletions }),
+      instance: stubProvider({ callOpenAICompletions }),
     },
     model: stubInternalModel({ id: 'text-model', endpoints, providerModels: { [upstream]: stubProviderModel({ id: 'text-model', endpoints }) } }, upstream),
     fetcher: directFetcher,
@@ -82,10 +82,10 @@ beforeEach(() => {
 });
 
 const serve = async (facts: Record<string, unknown>) => await run(
-  completionsServePipeline,
+  openaiCompletionsServePipeline,
   move(facts) as never,
   {
-    gateway: mockGatewayCtx({ wantsStream: facts['ingress.completions.wantsStream'] === true }),
+    gateway: mockGatewayCtx({ wantsStream: facts['ingress.openaiCompletions.wantsStream'] === true }),
     background: () => {},
     rememberCandidates: () => {},
     resolveAttempt,
@@ -93,10 +93,10 @@ const serve = async (facts: Record<string, unknown>) => await run(
 );
 
 const entryFacts = (overrides: Record<string, unknown> = {}) => ({
-  'ingress.completions.wantsStream': true,
-  'ingress.completions.wantsUsageChunk': false,
+  'ingress.openaiCompletions.wantsStream': true,
+  'ingress.openaiCompletions.wantsUsageChunk': false,
   'ingress.http.headers': [],
-  'request.completions.payload': { model: 'text-model', prompt: 'hello', stream: true },
+  'request.openaiCompletions.payload': { model: 'text-model', prompt: 'hello', stream: true },
   'serve.model': 'text-model',
   ...overrides,
 });
@@ -109,24 +109,24 @@ const collect = async (rendered: unknown): Promise<readonly SseFrame[]> => {
 
 beforeEach(() => { vi.mocked(enumerateModelCandidates).mockReset(); });
 
-describe('the completions pipeline', () => {
+describe('the OpenAI Completions pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
-    expect([...completionsServePipeline.entryNeeds].sort()).toEqual([
-      'ingress.completions.wantsStream',
-      'ingress.completions.wantsUsageChunk',
-      'request.completions.payload',
+    expect([...openaiCompletionsServePipeline.entryNeeds].sort()).toEqual([
+      'ingress.openaiCompletions.wantsStream',
+      'ingress.openaiCompletions.wantsUsageChunk',
+      'request.openaiCompletions.payload',
       'serve.model',
     ]);
   });
 
-  // `callCompletionsUpstream` reads `ingress.http.headers`, and the entry contract does not
-  // mention it. That is not this family's defect: a stage whose only trait is `return`
+  // `callOpenAICompletionsUpstream` reads `ingress.http.headers`, and the entry contract does
+  // not mention it. That is not this family's defect: a stage whose only trait is `return`
   // declares no request side at all, by ruling — "when it short-circuits, only `provides`" —
   // so assembly cannot see what an ending stage reads, and every family's ending stage reads
   // something. A caller who omits that key gets a runtime failure at the deepest stage
   // instead of the assembly error the entry contract exists to give it.
   it('cannot see what an ending stage reads, because a return-only stage declares no needs', () => {
-    expect(completionsServePipeline.entryNeeds).not.toContain('ingress.http.headers');
+    expect(openaiCompletionsServePipeline.entryNeeds).not.toContain('ingress.http.headers');
   });
 
   it('renders the upstream frames as SSE, hiding the usage chunk the client did not ask for', async () => {
@@ -140,7 +140,7 @@ describe('the completions pipeline', () => {
 
     // The answer comes back before the drain runs, which is what lets a streaming family
     // hand its stream on: the frames are still there to read.
-    expect(await collect(facts['response.completions.rendered'])).toEqual([
+    expect(await collect(facts['response.openaiCompletions.rendered'])).toEqual([
       { type: 'sse', event: undefined, data: chunk('he') },
       { type: 'sse', event: undefined, data: chunk('llo') },
       { type: 'sse', event: undefined, data: '[DONE]' },
@@ -162,8 +162,8 @@ describe('the completions pipeline', () => {
     expect(facts['response.usage.billable']).toEqual([
       { identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null }, quantities: {} },
     ]);
-    await collect(facts['response.completions.rendered']);
-    expect(await facts['response.completions.streamedUsage']).toMatchObject({
+    await collect(facts['response.openaiCompletions.rendered']);
+    expect(await facts['response.openaiCompletions.streamedUsage']).toMatchObject({
       failed: false,
       billable: [
         {
@@ -178,9 +178,9 @@ describe('the completions pipeline', () => {
   it('shows the usage chunk to a client that asked for it', async () => {
     resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'text-model-key' }))]);
 
-    const { facts, drain } = await serve(entryFacts({ 'ingress.completions.wantsUsageChunk': true }));
+    const { facts, drain } = await serve(entryFacts({ 'ingress.openaiCompletions.wantsUsageChunk': true }));
 
-    expect((await collect(facts['response.completions.rendered'])).map(frame => frame.data)).toEqual([chunk('hi'), usageChunk, '[DONE]']);
+    expect((await collect(facts['response.openaiCompletions.rendered'])).map(frame => frame.data)).toEqual([chunk('hi'), usageChunk, '[DONE]']);
     await drain();
   });
 
@@ -189,12 +189,12 @@ describe('the completions pipeline', () => {
     resolves([candidate('up_a', async () => ({ response: Response.json(body), modelKey: 'text-model-key' }))]);
 
     const { facts, drain } = await serve(entryFacts({
-      'ingress.completions.wantsStream': false,
-      'request.completions.payload': { model: 'text-model', prompt: 'hello' },
+      'ingress.openaiCompletions.wantsStream': false,
+      'request.openaiCompletions.payload': { model: 'text-model', prompt: 'hello' },
     }));
 
-    expect(facts['response.completions.rendered']).toEqual(body);
-    expect(facts['response.completions.streamedUsage']).toBeNull();
+    expect(facts['response.openaiCompletions.rendered']).toEqual(body);
+    expect(facts['response.openaiCompletions.streamedUsage']).toBeNull();
     expect(facts['response.usage.billable']).toEqual([
       {
         identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null },
@@ -235,7 +235,7 @@ describe('the completions pipeline', () => {
 
     const { facts, drain } = await serve(entryFacts());
     // The client's stream is still live: the run answered before anything was drained.
-    expect(facts['response.completions.rendered']).toBeDefined();
+    expect(facts['response.openaiCompletions.rendered']).toBeDefined();
     await drain();
     expect(drained).toContain('winner');
   });
@@ -253,8 +253,8 @@ describe('the completions pipeline', () => {
       })),
     ]);
     const { drain } = await serve(entryFacts({
-      'ingress.completions.wantsStream': false,
-      'request.completions.payload': { model: 'text-model', prompt: 'hello' },
+      'ingress.openaiCompletions.wantsStream': false,
+      'request.openaiCompletions.payload': { model: 'text-model', prompt: 'hello' },
     }));
     await drain();
     expect(recorded.usage).toHaveLength(1);
@@ -272,7 +272,7 @@ describe('the completions pipeline', () => {
     await drain();
 
     expect(recorded.usage).toHaveLength(0);
-    const streamed = facts['response.completions.streamedUsage'];
+    const streamed = facts['response.openaiCompletions.streamedUsage'];
     expect(streamed).not.toBeNull();
     const outcome = await streamed!;
     expect(outcome.billable).toHaveLength(1);
@@ -306,8 +306,8 @@ describe('the completions pipeline', () => {
     ]);
 
     const { facts, drain } = await serve(entryFacts({
-      'ingress.completions.wantsStream': false,
-      'request.completions.payload': { model: 'text-model', prompt: 'hello' },
+      'ingress.openaiCompletions.wantsStream': false,
+      'request.openaiCompletions.payload': { model: 'text-model', prompt: 'hello' },
     }));
 
     expect(tried).toEqual(['up_a', 'up_b']);
@@ -315,7 +315,7 @@ describe('the completions pipeline', () => {
     // an upstream actually returned, and the words that upstream used, rather than a
     // synthesized envelope quoting its serialized body back as a message.
     expect(facts['response.http.status']).toBe(400);
-    expect(facts['response.completions.rendered']).toEqual({ error: { message: 'no' } });
+    expect(facts['response.openaiCompletions.rendered']).toEqual({ error: { message: 'no' } });
     await drain();
   });
 
@@ -333,7 +333,7 @@ describe('the completions pipeline', () => {
     const { facts, drain } = await serve(entryFacts());
 
     expect((facts as Record<string, unknown>)['response.http.body']).toBeInstanceOf(ReadableStream);
-    await collect(facts['response.completions.rendered']);
+    await collect(facts['response.openaiCompletions.rendered']);
     await drain();
   });
 });

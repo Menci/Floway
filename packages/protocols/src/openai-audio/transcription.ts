@@ -19,38 +19,38 @@
 // all. Those are properties of the renderings, not gaps in the reading.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L714-L745
 
-import type { AudioTranscriptionCue } from './subtitles.ts';
+import type { OpenAIAudioTranscriptionCue } from './subtitles.ts';
 import { parseSubtitleDocument } from './subtitles.ts';
 
 // `diarized_json` joined the enum with `gpt-4o-transcribe-diarize`; it is a JSON rendering
 // and needs nothing of its own here.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L28527-L28545
-export const AUDIO_TRANSCRIPTION_RESPONSE_FORMATS = ['json', 'text', 'srt', 'verbose_json', 'vtt', 'diarized_json'] as const;
-export type AudioTranscriptionResponseFormat = typeof AUDIO_TRANSCRIPTION_RESPONSE_FORMATS[number];
+export const OPENAI_AUDIO_TRANSCRIPTION_RESPONSE_FORMATS = ['json', 'text', 'srt', 'verbose_json', 'vtt', 'diarized_json'] as const;
+export type OpenAIAudioTranscriptionResponseFormat = typeof OPENAI_AUDIO_TRANSCRIPTION_RESPONSE_FORMATS[number];
 
 /** The form field is optional and the protocol's own default is `json`. */
-export const parseAudioTranscriptionResponseFormat = (value: unknown): AudioTranscriptionResponseFormat => {
+export const parseOpenAIAudioTranscriptionResponseFormat = (value: unknown): OpenAIAudioTranscriptionResponseFormat => {
   if (value === undefined) return 'json';
-  if (typeof value === 'string' && (AUDIO_TRANSCRIPTION_RESPONSE_FORMATS as readonly string[]).includes(value)) {
-    return value as AudioTranscriptionResponseFormat;
+  if (typeof value === 'string' && (OPENAI_AUDIO_TRANSCRIPTION_RESPONSE_FORMATS as readonly string[]).includes(value)) {
+    return value as OpenAIAudioTranscriptionResponseFormat;
   }
-  throw new Error(`Audio transcription response_format is invalid: ${JSON.stringify(value)}`);
+  throw new Error(`OpenAI Audio Transcriptions response_format is invalid: ${JSON.stringify(value)}`);
 };
 
 /** A JSON rendering answers with an object; `text`, `srt` and `vtt` answer with a document.
  *  The split decides how the body is read and written, and it is the whole of what the
  *  response format decides for a non-streaming answer. */
-export type AudioTranscriptionObjectFormat = 'json' | 'verbose_json' | 'diarized_json';
+export type OpenAIAudioTranscriptionObjectFormat = 'json' | 'verbose_json' | 'diarized_json';
 
-export const isAudioTranscriptionObjectFormat = (
-  format: AudioTranscriptionResponseFormat,
-): format is AudioTranscriptionObjectFormat =>
+export const isOpenAIAudioTranscriptionObjectFormat = (
+  format: OpenAIAudioTranscriptionResponseFormat,
+): format is OpenAIAudioTranscriptionObjectFormat =>
   format === 'json' || format === 'verbose_json' || format === 'diarized_json';
 
 /** Token-billed and duration-billed models report usage under one discriminated key. A
  *  transcription answered in `text`, `srt` or `vtt` reports none, because those renderings
  *  cannot express it. */
-export type AudioTranscriptionUsage =
+export type OpenAIAudioTranscriptionUsage =
   | {
     readonly kind: 'tokens';
     readonly inputTokens: number;
@@ -61,7 +61,7 @@ export type AudioTranscriptionUsage =
   }
   | { readonly kind: 'duration'; readonly seconds: number };
 
-export interface CanonicalAudioTranscription {
+export interface CanonicalOpenAIAudioTranscription {
   /** What the upstream sent, byte for byte. Every rendering but the objects is written back
    *  from this, and so is a body the reading below could not open.
    *
@@ -77,7 +77,7 @@ export interface CanonicalAudioTranscription {
   readonly text?: string;
   /** The timed cues. This is the whole of `srt` and `vtt`; `verbose_json` and
    *  `diarized_json` carry the same thing as `segments`. */
-  readonly cues?: readonly AudioTranscriptionCue[];
+  readonly cues?: readonly OpenAIAudioTranscriptionCue[];
   /** The upstream's own object, kept whole for the renderings that are objects. A JSON
    *  answer is re-serialized from this, so a field this type does not name — a segment's
    *  `avg_logprob`, a `logprobs` array, a `speaker` label — reaches the client unchanged,
@@ -91,13 +91,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
 const seconds = (value: unknown, where: string): number => {
-  if (!isFiniteNumber(value) || value < 0) throw new Error(`Audio transcription ${where} must be a finite non-negative number`);
+  if (!isFiniteNumber(value) || value < 0) throw new Error(`OpenAI Audio Transcriptions ${where} must be a finite non-negative number`);
   return value;
 };
 
 const count = (value: unknown, where: string): number => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`Audio transcription ${where} must be a non-negative safe integer`);
+    throw new Error(`OpenAI Audio Transcriptions ${where} must be a non-negative safe integer`);
   }
   return value;
 };
@@ -116,26 +116,26 @@ const count = (value: unknown, where: string): number => {
  * https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36513-L36545
  * https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L61968-L62051
  */
-export const parseAudioTranscriptionUsage = (value: unknown): AudioTranscriptionUsage | undefined => {
+export const parseOpenAIAudioTranscriptionUsage = (value: unknown): OpenAIAudioTranscriptionUsage | undefined => {
   if (!isRecord(value)) return undefined;
   if (value.usage === undefined) {
     if (value.duration === undefined) return undefined;
     return { kind: 'duration', seconds: seconds(value.duration, 'duration') };
   }
   const usage = value.usage;
-  if (!isRecord(usage)) throw new Error('Audio transcription usage must be an object');
+  if (!isRecord(usage)) throw new Error('OpenAI Audio Transcriptions usage must be an object');
   if (usage.type === 'duration') return { kind: 'duration', seconds: seconds(usage.seconds, 'usage.seconds') };
   if (usage.type !== 'tokens') return undefined;
 
   const inputTokens = count(usage.input_tokens, 'usage.input_tokens');
   const outputTokens = count(usage.output_tokens, 'usage.output_tokens');
   const details = usage.input_token_details;
-  if (details !== undefined && !isRecord(details)) throw new Error('Audio transcription usage.input_token_details must be an object');
+  if (details !== undefined && !isRecord(details)) throw new Error('OpenAI Audio Transcriptions usage.input_token_details must be an object');
   const audioTokens = details?.audio_tokens === undefined
     ? undefined
     : count(details.audio_tokens, 'usage.input_token_details.audio_tokens');
   if (audioTokens !== undefined && audioTokens > inputTokens) {
-    throw new Error('Audio transcription usage.input_token_details.audio_tokens must not exceed usage.input_tokens');
+    throw new Error('OpenAI Audio Transcriptions usage.input_token_details.audio_tokens must not exceed usage.input_tokens');
   }
   return {
     kind: 'tokens',
@@ -146,17 +146,17 @@ export const parseAudioTranscriptionUsage = (value: unknown): AudioTranscription
 };
 
 const requiredText = (value: unknown, where: string): string => {
-  if (typeof value !== 'string') throw new Error(`Audio transcription ${where} must be a string`);
+  if (typeof value !== 'string') throw new Error(`OpenAI Audio Transcriptions ${where} must be a string`);
   return value;
 };
 
 /** `verbose_json` and `diarized_json` both time their segments with seconds and text; the
  *  fields they do not share stay in `raw` and reach the client through it. */
-const objectCues = (value: Record<string, unknown>): readonly AudioTranscriptionCue[] | undefined => {
+const objectCues = (value: Record<string, unknown>): readonly OpenAIAudioTranscriptionCue[] | undefined => {
   if (!Array.isArray(value.segments)) return undefined;
   return value.segments.map((segment: unknown, index) => {
     if (!isRecord(segment) || !isFiniteNumber(segment.start) || !isFiniteNumber(segment.end)) {
-      throw new Error(`Audio transcription segment ${index} must carry numeric start and end`);
+      throw new Error(`OpenAI Audio Transcriptions segment ${index} must carry numeric start and end`);
     }
     return { start: segment.start, end: segment.end, text: requiredText(segment.text, `segment ${index} text`) };
   });
@@ -169,14 +169,14 @@ const objectCues = (value: Record<string, unknown>): readonly AudioTranscription
  * serializing one from what it read answers anyway: what a failed reading costs is the
  * transcript in the record and the usage measured beside it, never the answer.
  */
-export const parseAudioTranscription = (
-  format: AudioTranscriptionResponseFormat,
+export const parseOpenAIAudioTranscription = (
+  format: OpenAIAudioTranscriptionResponseFormat,
   document: Uint8Array,
-): CanonicalAudioTranscription => {
+): CanonicalOpenAIAudioTranscription => {
   const decoded = new TextDecoder().decode(document);
-  if (isAudioTranscriptionObjectFormat(format)) {
+  if (isOpenAIAudioTranscriptionObjectFormat(format)) {
     const body: unknown = JSON.parse(decoded);
-    if (!isRecord(body)) throw new Error('Audio transcription response body must be an object');
+    if (!isRecord(body)) throw new Error('OpenAI Audio Transcriptions response body must be an object');
     const cues = objectCues(body);
     return {
       document,
@@ -198,10 +198,10 @@ export const parseAudioTranscription = (
  * arrived, handed back untouched — and so is an object rendering whose body the reading could
  * not open, because bytes nobody could read are still the answer the upstream gave.
  */
-export const renderAudioTranscription = (
-  format: AudioTranscriptionResponseFormat,
-  transcription: CanonicalAudioTranscription,
+export const renderOpenAIAudioTranscription = (
+  format: OpenAIAudioTranscriptionResponseFormat,
+  transcription: CanonicalOpenAIAudioTranscription,
 ): Record<string, unknown> | Uint8Array =>
-  isAudioTranscriptionObjectFormat(format) && transcription.raw !== undefined
+  isOpenAIAudioTranscriptionObjectFormat(format) && transcription.raw !== undefined
     ? transcription.raw
     : transcription.document;

@@ -1,7 +1,7 @@
 // OpenAI text completions (`POST /v1/completions`). The gateway carries this protocol end to
-// end: what a client sends is parsed into `CompletionsPayload`, what an upstream answers is
-// parsed into a `CompletionsResult` or a frame stream, and what the client receives is
-// serialized back from those. No body is forwarded verbatim, so the shapes here are the
+// end: what a client sends is parsed into `OpenAICompletionsPayload`, what an upstream answers
+// is parsed into an `OpenAICompletionsResult` or a frame stream, and what the client receives
+// is serialized back from those. No body is forwarded verbatim, so the shapes here are the
 // protocol's own rather than a convenience view over bytes in flight.
 //
 // Request and response follow OpenAI's `CreateCompletionRequest` and
@@ -18,7 +18,7 @@
 // opinion about that held here would have to be kept in step with every OpenAI-compatible
 // upstream we route to. The index signature carries a vendor extension through to the
 // upstream that understands it.
-export interface CompletionsPayload {
+export interface OpenAICompletionsPayload {
   model: string;
   prompt?: string | readonly string[] | readonly number[] | readonly (readonly number[])[] | null;
   best_of?: number | null;
@@ -32,7 +32,7 @@ export interface CompletionsPayload {
   seed?: number | null;
   stop?: string | readonly string[] | null;
   stream?: boolean | null;
-  stream_options?: CompletionsStreamOptions | null;
+  stream_options?: OpenAICompletionsStreamOptions | null;
   suffix?: string | null;
   temperature?: number | null;
   top_p?: number | null;
@@ -45,7 +45,7 @@ export interface CompletionsPayload {
 // https://github.com/openai/openai-openapi/blob/2186421dca0cca7c1e67caa7739005e8b1ccc4dd/openapi.yaml#L31764-L31810
 // The index signature is what lets the gateway turn `include_usage` on without dropping the
 // siblings a client sent.
-export interface CompletionsStreamOptions {
+export interface OpenAICompletionsStreamOptions {
   include_usage?: boolean;
   include_obfuscation?: boolean;
   [key: string]: unknown;
@@ -57,7 +57,7 @@ export interface CompletionsStreamOptions {
 // `finish_reason`) alongside the usage block — so `text` and
 // `finish_reason` are optional, matching that shape on the typed surface.
 // `logprobs` is opaque to the gateway — carried through as-is.
-interface CompletionsChoiceStreaming {
+interface OpenAICompletionsChoiceStreaming {
   index: number;
   text?: string;
   finish_reason?: string | null;
@@ -72,7 +72,7 @@ interface CompletionsChoiceStreaming {
 // all emit `cached_tokens` here on `/v1/completions`, and Azure mirrors the schema. Billing
 // reads the split through `openAICacheTokensFromUsage`, which also knows the field names the
 // wilder forks use, so what is named here is the schema rather than the union of the wild.
-export interface CompletionsUsage {
+export interface OpenAICompletionsUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
@@ -84,17 +84,17 @@ export interface CompletionsUsage {
 // empty or placeholder `choices` array; isOpenAIUsageOnlyEventShape (in
 // protocols/common) detects that chunk shape without consulting the typed
 // surface.
-export interface CompletionsStreamEvent {
+export interface OpenAICompletionsStreamEvent {
   id: string;
   object: 'text_completion';
   created: number;
   model: string;
-  choices: CompletionsChoiceStreaming[];
-  usage?: CompletionsUsage;
+  choices: OpenAICompletionsChoiceStreaming[];
+  usage?: OpenAICompletionsUsage;
   system_fingerprint?: string;
 }
 
-export interface CompletionsChoice {
+export interface OpenAICompletionsChoice {
   index: number;
   text: string;
   finish_reason: string | null;
@@ -105,19 +105,19 @@ export interface CompletionsChoice {
 // endpoint — but a vLLM fork was observed emitting it on the non-streaming
 // `/v1/completions` body (null, on a Zhipu/GLM build) and billing reads it as the pricing
 // tier when it is there, so it is named rather than left to the index signature.
-export interface CompletionsResult {
+export interface OpenAICompletionsResult {
   id: string;
   object: 'text_completion';
   created: number;
   model: string;
-  choices: CompletionsChoice[];
+  choices: OpenAICompletionsChoice[];
   service_tier?: string | null;
-  usage?: CompletionsUsage;
+  usage?: OpenAICompletionsUsage;
   system_fingerprint?: string;
   [key: string]: unknown;
 }
 
-export { parseCompletionsPayload, parseCompletionsResult } from './parse.ts';
-export { reassembleCompletionsEvents } from './reassemble.ts';
-export { parseCompletionsStream, type ParseCompletionsStreamOptions } from './stream.ts';
-export { completionsProtocolFrameToSSEFrame } from './to-sse.ts';
+export { parseOpenAICompletionsPayload, parseOpenAICompletionsResult } from './parse.ts';
+export { reassembleOpenAICompletionsEvents } from './reassemble.ts';
+export { parseOpenAICompletionsStream, type ParseOpenAICompletionsStreamOptions } from './stream.ts';
+export { openaiCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

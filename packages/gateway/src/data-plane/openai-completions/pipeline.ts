@@ -4,15 +4,15 @@
 //
 // The shape:
 //
-//   emitCompletions           the edge: asks the upstream for the usage chunk on the way
-//                             down, and renders the answer into the client's protocol on the
-//                             way back, SSE framing included
-//   resolveCandidates         narrows to the upstreams that expose the endpoint
-//   failover                  runs what follows once per candidate
-//   callCompletionsUpstream   the ending: dials, parses what came back, and provides the
-//                             answer plus what is billable
+//   emitOpenAICompletions          the edge: asks the upstream for the usage chunk on the way
+//                                  down, and renders the answer into the client's protocol on
+//                                  the way back, SSE framing included
+//   resolveCandidates              narrows to the upstreams that expose the endpoint
+//   failover                       runs what follows once per candidate
+//   callOpenAICompletionsUpstream  the ending: dials, parses what came back, and provides the
+//                                  answer plus what is billable
 
-import { tokenUsageFromCompletionsUsage } from './usage.ts';
+import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
@@ -28,58 +28,58 @@ import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, renderErrorEnvelope, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
-  completionsProtocolFrameToSSEFrame,
-  parseCompletionsResult,
-  parseCompletionsStream,
-  type CompletionsPayload,
-  type CompletionsResult,
-  type CompletionsStreamEvent,
-} from '@floway-dev/protocols/completions';
+  openaiCompletionsProtocolFrameToSSEFrame,
+  parseOpenAICompletionsResult,
+  parseOpenAICompletionsStream,
+  type OpenAICompletionsPayload,
+  type OpenAICompletionsResult,
+  type OpenAICompletionsStreamEvent,
+} from '@floway-dev/protocols/openai-completions';
 import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** The answer while it is still the upstream's, one frame at a time. */
-export type CompletionsFrames = AsyncIterable<ProtocolFrame<CompletionsStreamEvent>>;
+export type OpenAICompletionsFrames = AsyncIterable<ProtocolFrame<OpenAICompletionsStreamEvent>>;
 
 /**
  * A stream as a value the record can hold: a wrapper around the generator rather than the
  * generator itself, which is what says where the resource is. There is exactly one resource in
- * a completions run — the upstream's body, claimed with `own()` — and the wrapper keeps a frame
- * view from reading as another.
+ * an OpenAI Completions run — the upstream's body, claimed with `own()` — and the wrapper keeps
+ * a frame view from reading as another.
  *
  * What comes back is single-shot on purpose: a stream that has been read is a stream that is
  * over, and a second reader learns that rather than being lied to.
  */
 const view = <T>(frames: AsyncGenerator<T>): AsyncIterable<T> => ({ [Symbol.asyncIterator]: () => frames });
 
-/** Completions' own keys, extending the shared space by intersection. */
-export interface CompletionsFacts extends GatewayFacts {
+/** OpenAI Completions' own keys, extending the shared space by intersection. */
+export interface OpenAICompletionsFacts extends GatewayFacts {
   /** What the client asked for, which is not what the upstream is asked for: the gateway
    *  meters every stream and so always turns the usage chunk on. These stay put for the same
    *  reason every `ingress.*` key does — they describe the request that arrived, and the
    *  answer is rendered back into it. */
-  'ingress.completions.wantsStream': boolean;
-  'ingress.completions.wantsUsageChunk': boolean;
-  'request.completions.payload': CompletionsPayload;
+  'ingress.openaiCompletions.wantsStream': boolean;
+  'ingress.openaiCompletions.wantsUsageChunk': boolean;
+  'request.openaiCompletions.payload': OpenAICompletionsPayload;
   /** The answer, whichever kind it turned out to be. A stream, a value and a failure sit at
    *  one key: telling them apart is reading a value, and each stage does that where it needs
    *  to. */
-  'response.completions.payload': CompletionsResult | CompletionsFrames | Failure;
+  'response.openaiCompletions.payload': OpenAICompletionsResult | OpenAICompletionsFrames | Failure;
   /** What the upstream will have reported by the time the frames run out, and `null` on
    *  every path that does not stream. A stream's usage arrives with its last chunk, which is
    *  after this run has answered — so the numbers cannot be in `response.usage.billable`,
    *  which says what had been reported when the ending stage handed up: the entity, and no
    *  quantities. Settling billing from this is the prologue's job, after the drain. */
-  'response.completions.streamedUsage': Promise<StreamOutcome> | null;
+  'response.openaiCompletions.streamedUsage': Promise<StreamOutcome> | null;
   /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows what the client received rather than
    *  the gateway's own reading of it. */
-  'response.completions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  'response.openaiCompletions.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
 }
 
-type C<K extends keyof CompletionsFacts> = { [P in K]: CompletionsFacts[P] };
+type C<K extends keyof OpenAICompletionsFacts> = { [P in K]: OpenAICompletionsFacts[P] };
 
-const isFrames = (answer: CompletionsFacts['response.completions.payload']): answer is CompletionsFrames =>
+const isFrames = (answer: OpenAICompletionsFacts['response.openaiCompletions.payload']): answer is OpenAICompletionsFrames =>
   Symbol.asyncIterator in answer;
 
 /**
@@ -91,35 +91,35 @@ const isFrames = (answer: CompletionsFacts['response.completions.payload']): ans
  * below this stage a stream carries protocol frames, so the same assembly would serve
  * another transport by rendering differently at this one point.
  */
-const emitCompletions = defineStage<
-  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
-  C<'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload'>,
-  C<'ingress.completions.wantsUsageChunk' | 'response.completions.payload' | 'response.http.headers'>,
-  C<'response.completions.rendered' | 'response.http.status' | 'response.http.headers'>
+const emitOpenAICompletions = defineStage<
+  C<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
+  C<'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload'>,
+  C<'ingress.openaiCompletions.wantsUsageChunk' | 'response.openaiCompletions.payload' | 'response.http.headers'>,
+  C<'response.openaiCompletions.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
-  name: 'emitCompletions',
+  name: 'emitOpenAICompletions',
   through: {
     request: {
-      needs: ['ingress.completions.wantsStream', 'ingress.completions.wantsUsageChunk', 'request.completions.payload'],
+      needs: ['ingress.openaiCompletions.wantsStream', 'ingress.openaiCompletions.wantsUsageChunk', 'request.openaiCompletions.payload'],
       consumes: [],
-      provides: ['request.completions.payload'],
+      provides: ['request.openaiCompletions.payload'],
     },
     response: {
-      needs: ['response.completions.payload', 'response.http.headers'],
-      consumes: ['response.completions.payload', 'response.http.headers'],
-      provides: ['response.completions.rendered', 'response.http.status', 'response.http.headers'],
+      needs: ['response.openaiCompletions.payload', 'response.http.headers'],
+      consumes: ['response.openaiCompletions.payload', 'response.http.headers'],
+      provides: ['response.openaiCompletions.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
-    const asked = facts['request.completions.payload'];
+    const asked = facts['request.openaiCompletions.payload'];
     const back = await next({
       ...facts,
-      'request.completions.payload': move(facts['ingress.completions.wantsStream']
+      'request.openaiCompletions.payload': move(facts['ingress.openaiCompletions.wantsStream']
         ? { ...asked, stream_options: { ...asked.stream_options, include_usage: true } }
         : asked),
     });
 
-    const { 'response.completions.payload': answer, 'response.http.headers': headers, ...rest } = back;
+    const { 'response.openaiCompletions.payload': answer, 'response.http.headers': headers, ...rest } = back;
     // Vendor traces and quota state stay visible; what an intermediary must strip, and what
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
@@ -131,23 +131,23 @@ const emitCompletions = defineStage<
       ...rest,
       'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
       'response.http.status': isFailure(answer) ? answer.status : 200,
-      'response.completions.rendered': move(rendered(answer, back['ingress.completions.wantsUsageChunk'])),
+      'response.openaiCompletions.rendered': move(rendered(answer, back['ingress.openaiCompletions.wantsUsageChunk'])),
     };
   },
 });
 
 const rendered = (
-  answer: CompletionsFacts['response.completions.payload'],
+  answer: OpenAICompletionsFacts['response.openaiCompletions.payload'],
   wantsUsageChunk: boolean,
-): CompletionsFacts['response.completions.rendered'] =>
+): OpenAICompletionsFacts['response.openaiCompletions.rendered'] =>
   isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
     : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
       : answer;
 
-const renderSSE = (frames: CompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => view((async function* () {
+const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => view((async function* () {
   for await (const frame of frames) {
     if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
-    yield completionsProtocolFrameToSSEFrame(frame);
+    yield openaiCompletionsProtocolFrameToSSEFrame(frame);
   }
 })());
 
@@ -157,17 +157,17 @@ const renderSSE = (frames: CompletionsFrames, wantsUsageChunk: boolean): AsyncIt
  * A failure is a value: a 429 here is what an earlier stage fails over, and so is a 200 whose
  * body this protocol cannot read, because the next candidate's path and flags may differ.
  */
-const callCompletionsUpstream = defineStage<
-  C<'ingress.completions.wantsStream' | 'request.completions.payload' | 'route.attempt' | 'ingress.http.headers'>,
-  C<'response.completions.payload' | 'response.completions.streamedUsage' | 'response.usage.billable'
+const callOpenAICompletionsUpstream = defineStage<
+  C<'ingress.openaiCompletions.wantsStream' | 'request.openaiCompletions.payload' | 'route.attempt' | 'ingress.http.headers'>,
+  C<'response.openaiCompletions.payload' | 'response.openaiCompletions.streamedUsage' | 'response.usage.billable'
     | 'response.http.status' | 'response.http.headers' | 'response.http.body'>,
   GatewayServices
 >({
-  name: 'callCompletionsUpstream',
+  name: 'callOpenAICompletionsUpstream',
   return: {
     provides: [
-      'response.completions.payload',
-      'response.completions.streamedUsage',
+      'response.openaiCompletions.payload',
+      'response.openaiCompletions.streamedUsage',
       'response.usage.billable',
       'response.http.status',
       'response.http.headers',
@@ -178,14 +178,14 @@ const callCompletionsUpstream = defineStage<
     const candidate = use.resolveAttempt(facts['route.attempt']);
     // The provider re-stamps whatever id it resolved upstream, so the id the client
     // addressed does not travel with the body.
-    const { model: _addressed, ...body } = facts['request.completions.payload'];
+    const { model: _addressed, ...body } = facts['request.openaiCompletions.payload'];
     // Attribution is set before the dial, so an attempt that never completes still names the
     // candidate it was made against rather than the one tried before it.
     use.gateway.attempt.telemetry = upstreamPerformanceContext(use.gateway, candidate, 'text_completion');
 
     let result;
     try {
-      result = await candidate.provider.instance.callCompletions(
+      result = await candidate.provider.instance.callOpenAICompletions(
         providerModelOf(candidate),
         body,
         use.gateway.abortSignal,
@@ -200,8 +200,8 @@ const callCompletionsUpstream = defineStage<
       // no headers to carry. What it leaves behind is the performance row settlement writes.
       return move({
         ...facts,
-        'response.completions.payload': dialFailure(error),
-        'response.completions.streamedUsage': null,
+        'response.openaiCompletions.payload': dialFailure(error),
+        'response.openaiCompletions.streamedUsage': null,
         'response.usage.billable': [],
         'response.http.status': 502,
         'response.http.headers': [],
@@ -212,7 +212,7 @@ const callCompletionsUpstream = defineStage<
 
     const answer = await readUpstream(
       result.response,
-      facts['ingress.completions.wantsStream'],
+      facts['ingress.openaiCompletions.wantsStream'],
       telemetryModelIdentity(candidate, result.modelKey),
       candidate,
       use.gateway.abortSignal,
@@ -220,8 +220,8 @@ const callCompletionsUpstream = defineStage<
     );
     return move({
       ...facts,
-      'response.completions.payload': answer.payload,
-      'response.completions.streamedUsage': answer.streamedUsage,
+      'response.openaiCompletions.payload': answer.payload,
+      'response.openaiCompletions.streamedUsage': answer.streamedUsage,
       'response.usage.billable': answer.billable,
       'response.http.status': result.response.status,
       'response.http.headers': [...result.response.headers],
@@ -231,8 +231,8 @@ const callCompletionsUpstream = defineStage<
 });
 
 interface UpstreamAnswer {
-  readonly payload: CompletionsFacts['response.completions.payload'];
-  readonly streamedUsage: CompletionsFacts['response.completions.streamedUsage'];
+  readonly payload: OpenAICompletionsFacts['response.openaiCompletions.payload'];
+  readonly streamedUsage: OpenAICompletionsFacts['response.openaiCompletions.streamedUsage'];
   readonly billable: readonly BillableEntity[];
   /** Every arm hands one up, this stage's own reading included: the record holds a body as a
    *  stream, and `failover` releases the losing attempts' by consuming that key. */
@@ -247,7 +247,7 @@ const readUpstream = async (
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
   signal: AbortSignal | undefined,
-  record: (frame: ProtocolFrame<CompletionsStreamEvent>) => void,
+  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
 ): Promise<UpstreamAnswer> => {
   // An upstream was called and reported nothing — which is what every arm but a read usage
   // block leaves standing, and is a different statement from reporting zero.
@@ -282,7 +282,7 @@ const readUpstream = async (
   // the frames as they pass — so the reading costs one pass and the client's own stream is
   // what drives it. What it finds arrives with the last frame, long after this stage has
   // handed up, which is why the entity above carries no quantities.
-  const metered = meterFrames(parseCompletionsStream(response.body, { signal }), identity, candidate, record);
+  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate, record);
   return {
     payload: metered.frames,
     streamedUsage: metered.outcome,
@@ -313,24 +313,24 @@ const refusal = async (response: Response): Promise<Failure> => {
 /** A body that answered 200 and cannot be read as this protocol is an attempt that failed,
  *  because the gateway serializes what it sends from the value it parsed and has nothing to
  *  serialize. The next candidate may well answer in the protocol it advertised. */
-const readResult = async (response: Response): Promise<{ readonly value: CompletionsResult } | Failure> => {
+const readResult = async (response: Response): Promise<{ readonly value: OpenAICompletionsResult } | Failure> => {
   try {
-    return { value: parseCompletionsResult(await response.json()) };
+    return { value: parseOpenAICompletionsResult(await response.json()) };
   } catch (error) {
     return { status: 502, message: `Upstream answered ${response.status} with a body this endpoint cannot read: ${error instanceof Error ? error.message : String(error)}` };
   }
 };
 
 interface MeteredFrames {
-  readonly frames: CompletionsFrames;
+  readonly frames: OpenAICompletionsFrames;
   readonly outcome: Promise<StreamOutcome>;
 }
 
 const meterFrames = (
-  source: AsyncIterable<ProtocolFrame<CompletionsStreamEvent>>,
+  source: AsyncIterable<ProtocolFrame<OpenAICompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
-  record: (frame: ProtocolFrame<CompletionsStreamEvent>) => void,
+  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
   const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
@@ -368,7 +368,7 @@ const meterFrames = (
 
 const billed = (usage: unknown, tier: string | null | undefined, candidate: ModelCandidate): UsageQuantities => {
   const model = providerModelOf(candidate);
-  const tokens = tokenUsageFromCompletionsUsage(
+  const tokens = tokenUsageFromOpenAICompletionsUsage(
     usage,
     tier,
     model.enabledFlags.has('usage-exclusive-cached-tokens'),
@@ -389,28 +389,28 @@ const billed = (usage: unknown, tier: string | null | undefined, candidate: Mode
 const narrowing = {
   kind: 'chat' as const,
   reject: (candidate: ModelCandidate): string | null =>
-    candidate.model.endpoints.completions === undefined ? 'the upstream does not expose a completions endpoint' : null,
+    candidate.model.endpoints.openaiCompletions === undefined ? 'the upstream does not expose an OpenAI Completions endpoint' : null,
   unsupported: (model: string) => `Model ${model} does not support the /completions endpoint.`,
-  refuse: (status: number, message: string): C<'response.completions.payload' | 'response.completions.streamedUsage'> => ({
-    'response.completions.payload': { status, message },
-    'response.completions.streamedUsage': null,
+  refuse: (status: number, message: string): C<'response.openaiCompletions.payload' | 'response.openaiCompletions.streamedUsage'> => ({
+    'response.openaiCompletions.payload': { status, message },
+    'response.openaiCompletions.streamedUsage': null,
   }),
-  refuses: ['response.completions.payload', 'response.completions.streamedUsage'] as const,
+  refuses: ['response.openaiCompletions.payload', 'response.openaiCompletions.streamedUsage'] as const,
 };
 
-export const completionsServePipeline: Pipeline<
-  C<'ingress.http.headers' | 'ingress.completions.wantsStream' | 'ingress.completions.wantsUsageChunk' | 'request.completions.payload' | 'serve.model'>,
-  C<'response.completions.rendered' | 'response.completions.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
-> = compose('completionsServe', [
-  emitCompletions,
+export const openaiCompletionsServePipeline: Pipeline<
+  C<'ingress.http.headers' | 'ingress.openaiCompletions.wantsStream' | 'ingress.openaiCompletions.wantsUsageChunk' | 'request.openaiCompletions.payload' | 'serve.model'>,
+  C<'response.openaiCompletions.rendered' | 'response.openaiCompletions.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
+> = compose('openaiCompletionsServe', [
+  emitOpenAICompletions,
   writeSettlement(
-    handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload']),
-    handedUp => (handedUp as { 'response.completions.streamedUsage'?: unknown })['response.completions.streamedUsage'] !== null,
+    handedUp => isFailure((handedUp as { 'response.openaiCompletions.payload'?: unknown })['response.openaiCompletions.payload']),
+    handedUp => (handedUp as { 'response.openaiCompletions.streamedUsage'?: unknown })['response.openaiCompletions.streamedUsage'] !== null,
   ),
   resolveCandidates(narrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.completions.payload'?: unknown })['response.completions.payload']),
+    failed: handedUp => isFailure((handedUp as { 'response.openaiCompletions.payload'?: unknown })['response.openaiCompletions.payload']),
     owns: ['response.http.body'],
   }),
-  callCompletionsUpstream,
+  callOpenAICompletionsUpstream,
 ]);

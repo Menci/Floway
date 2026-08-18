@@ -1,21 +1,21 @@
 // POST /v1/completions and /completions, served through the pipeline.
 //
-// The handler is a prologue and an epilogue around `completionsServePipeline`: read what the
-// client sent, hand it over, and turn what the run answered with into a response. The one
-// thing it decides for itself is whether the request streams, because that is written in the
-// body and the run has to be opened knowing it.
+// The handler is a prologue and an epilogue around `openaiCompletionsServePipeline`: read
+// what the client sent, hand it over, and turn what the run answered with into a response. The
+// one thing it decides for itself is whether the request streams, because that is written in
+// the body and the run has to be opened knowing it.
 
 import type { Context } from 'hono';
 
-import { completionsServePipeline } from './pipeline.ts';
+import { openaiCompletionsServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { prepareJsonModelRequest } from '../shared/json-model-request.ts';
 import { move } from '@floway-dev/pipeline';
 
-export const completions = async (c: Context): Promise<Response> => {
+export const openaiCompletions = async (c: Context): Promise<Response> => {
   const ingress = await readIngress(c);
-  const request = prepareJsonModelRequest(ingress.body.bytes, 'Completions');
+  const request = prepareJsonModelRequest(ingress.body.bytes, 'OpenAI Completions');
   if (request.type === 'invalid') {
     // A request the gateway could not read never reaches a pipeline: there is no model to
     // resolve and no attempt to make, so there is nothing for a run to record.
@@ -34,22 +34,22 @@ export const completions = async (c: Context): Promise<Response> => {
   return await serveThrough(
     c,
     prologue,
-    completionsServePipeline,
+    openaiCompletionsServePipeline,
     move({
       'ingress.http.headers': prologue.headers,
-      'ingress.completions.wantsStream': wantsStream,
+      'ingress.openaiCompletions.wantsStream': wantsStream,
       // Whether the client asked to *see* the usage chunk. The edge turns it on upstream
       // either way so billing always gets one, and drops it here when it was not asked for.
-      'ingress.completions.wantsUsageChunk': streamOptions?.include_usage === true,
-      'request.completions.payload': request.body,
+      'ingress.openaiCompletions.wantsUsageChunk': streamOptions?.include_usage === true,
+      'request.openaiCompletions.payload': request.body,
       'serve.model': request.model,
     }) as never,
     facts => {
-      const rendered = facts['response.completions.rendered'];
+      const rendered = facts['response.openaiCompletions.rendered'];
       return isFrames(rendered)
         ? { frames: rendered }
         : { body: JSON.stringify(rendered), contentType: 'application/json' };
     },
-    facts => facts['response.completions.streamedUsage'],
+    facts => facts['response.openaiCompletions.streamedUsage'],
   );
 };

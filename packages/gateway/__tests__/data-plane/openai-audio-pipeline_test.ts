@@ -1,4 +1,4 @@
-// Audio transcription's pipeline, assembled. `compose` derives the entry contract and
+// OpenAI Audio Transcriptions' pipeline, assembled. `compose` derives the entry contract and
 // rejects an array that cannot work, so most of what this file establishes is established
 // by the module importing at all — the assembly runs at load. What is worth writing down is
 // the entry contract it derives, the keys it cannot see, and the one runtime property this
@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { audioTranscriptionServePipeline } from '../../src/data-plane/audio/pipeline.ts';
+import { openaiAudioTranscriptionServePipeline } from '../../src/data-plane/openai-audio/pipeline.ts';
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
@@ -22,13 +22,13 @@ vi.mock('../../src/data-plane/providers/resolution.ts', async importOriginal => 
 
 let live: readonly ModelCandidate[] = [];
 
-const candidate = (callAudioTranscriptions: () => Promise<ProviderCallResult>): ModelCandidate => {
-  const endpoints = { audioTranscriptions: {} };
+const candidate = (callOpenAIAudioTranscriptions: () => Promise<ProviderCallResult>): ModelCandidate => {
+  const endpoints = { openaiAudioTranscriptions: {} };
   return {
     provider: {
       upstreamId: 'up_a', kind: 'custom', name: 'up_a', inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({ callAudioTranscriptions }),
+      instance: stubProvider({ callOpenAIAudioTranscriptions }),
     },
     model: stubInternalModel(
       { id: 'whisper-1', kind: 'transcription', endpoints, providerModels: { up_a: stubProviderModel({ id: 'whisper-1', endpoints }) } },
@@ -47,11 +47,11 @@ const sse = (...events: readonly string[]): Response =>
   new Response(events.map(event => `data: ${event}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
 
 const serve = async (responseFormat = 'json') => await run(
-  audioTranscriptionServePipeline,
+  openaiAudioTranscriptionServePipeline,
   move({
-    'ingress.audioTranscription.responseFormat': responseFormat,
+    'ingress.openaiAudioTranscription.responseFormat': responseFormat,
     'ingress.http.headers': [] as readonly (readonly [string, string])[],
-    'request.audioTranscription.form': [{ name: 'model', value: 'whisper-1' }],
+    'request.openaiAudioTranscription.form': [{ name: 'model', value: 'whisper-1' }],
     'serve.model': 'whisper-1',
   }) as never,
   {
@@ -74,18 +74,18 @@ beforeEach(() => {
   } as never);
 });
 
-describe('the audio transcription pipeline', () => {
+describe('the OpenAI Audio Transcriptions pipeline', () => {
   it('assembles, and asks its caller for what the descending stages need', () => {
-    expect([...audioTranscriptionServePipeline.entryNeeds].sort()).toEqual([
-      'ingress.audioTranscription.responseFormat',
+    expect([...openaiAudioTranscriptionServePipeline.entryNeeds].sort()).toEqual([
+      'ingress.openaiAudioTranscription.responseFormat',
       'serve.model',
     ]);
   });
 
-  // The ending stage reads `request.audioTranscription.form` and `ingress.http.headers`, and
-  // the entry contract mentions neither. That is not this family's defect: a stage whose only
-  // trait is `return` declares no request side at all, by ruling — "when it short-circuits,
-  // only `provides`" — so assembly cannot see what an ending stage reads.
+  // The ending stage reads `request.openaiAudioTranscription.form` and `ingress.http.headers`,
+  // and the entry contract mentions neither. That is not this family's defect: a stage whose
+  // only trait is `return` declares no request side at all, by ruling — "when it
+  // short-circuits, only `provides`" — so assembly cannot see what an ending stage reads.
   //
   // It bites harder here than it does for a family whose edge needs the request payload to
   // render: this family's edge does not, so the payload the whole endpoint exists to send is
@@ -93,13 +93,13 @@ describe('the audio transcription pipeline', () => {
   // before failing. The type layer still catches it at the definition site, which is why this
   // is a gap and not a break.
   it('cannot see the request payload, because only a return-only stage reads it', () => {
-    expect(audioTranscriptionServePipeline.entryNeeds).not.toContain('request.audioTranscription.form');
-    expect(audioTranscriptionServePipeline.entryNeeds).not.toContain('ingress.http.headers');
+    expect(openaiAudioTranscriptionServePipeline.entryNeeds).not.toContain('request.openaiAudioTranscription.form');
+    expect(openaiAudioTranscriptionServePipeline.entryNeeds).not.toContain('ingress.http.headers');
   });
 
   it('names the entry key a caller did not bring, before any stage runs', async () => {
-    await expect(run(audioTranscriptionServePipeline, move({ 'serve.model': 'whisper-1' }) as never, {}))
-      .rejects.toThrow('run(audioTranscriptionServe): audioTranscriptionServe needs');
+    await expect(run(openaiAudioTranscriptionServePipeline, move({ 'serve.model': 'whisper-1' }) as never, {}))
+      .rejects.toThrow('run(openaiAudioTranscriptionServe): openaiAudioTranscriptionServe needs');
   });
 
   // The streamed answer is a wrapper around its generator rather than the generator itself.
@@ -119,7 +119,7 @@ describe('the audio transcription pipeline', () => {
     const { facts } = await serve();
 
     expect(facts['response.http.status']).toBe(200);
-    expect(facts['response.audioTranscription.rendered']).toMatchObject({ text: 'hello there' });
+    expect(facts['response.openaiAudioTranscription.rendered']).toMatchObject({ text: 'hello there' });
   });
 
   // A refusal reaches the client with the status the upstream gave it, and in the words the
@@ -135,7 +135,7 @@ describe('the audio transcription pipeline', () => {
     const { facts } = await serve();
 
     expect(facts['response.http.status']).toBe(413);
-    expect(facts['response.audioTranscription.rendered']).toEqual({ error: { message: 'too large' } });
+    expect(facts['response.openaiAudioTranscription.rendered']).toEqual({ error: { message: 'too large' } });
   });
 
   // The reader stops at the terminal event. An upstream that holds the connection open past
@@ -151,7 +151,7 @@ describe('the audio transcription pipeline', () => {
 
     const { facts, drain } = await serve('json');
     const frames: SseFrame[] = [];
-    for await (const frame of facts['response.audioTranscription.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
+    for await (const frame of facts['response.openaiAudioTranscription.rendered'] as AsyncIterable<SseFrame>) frames.push(frame);
     await drain();
 
     expect(frames).toHaveLength(2);

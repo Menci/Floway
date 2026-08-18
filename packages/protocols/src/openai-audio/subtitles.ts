@@ -14,7 +14,7 @@
 // accept more than Whisper writes.
 // https://github.com/openai/whisper/blob/v20250625/whisper/utils.py#L238-L262
 
-export interface AudioTranscriptionCue {
+export interface OpenAIAudioTranscriptionCue {
   /** Seconds from the start of the audio. */
   readonly start: number;
   readonly end: number;
@@ -36,7 +36,7 @@ const readTimestamp = (value: string, dialect: SubtitleDialect): number => {
   return Number(hours ?? '0') * 3600 + Number(minutes) * 60 + Number(seconds) + Number(fraction.padEnd(3, '0')) / 1000;
 };
 
-const readCueBlock = (block: readonly string[], dialect: SubtitleDialect): AudioTranscriptionCue => {
+const readCueBlock = (block: readonly string[], dialect: SubtitleDialect): OpenAIAudioTranscriptionCue => {
   // SubRip opens a cue with its ordinal and WebVTT with an optional identifier, so the
   // timing line is the one holding the arrow and the lines after it are the cue's text.
   const timingIndex = block.findIndex(line => line.includes('-->'));
@@ -50,7 +50,7 @@ const readCueBlock = (block: readonly string[], dialect: SubtitleDialect): Audio
   };
 };
 
-export const parseSubtitleDocument = (dialect: SubtitleDialect, document: string): readonly AudioTranscriptionCue[] => {
+export const parseSubtitleDocument = (dialect: SubtitleDialect, document: string): readonly OpenAIAudioTranscriptionCue[] => {
   const lines = document.replaceAll('\r\n', '\n').split('\n');
   if (dialect === 'vtt') {
     // The signature may carry a byte order mark and may be followed by header metadata on

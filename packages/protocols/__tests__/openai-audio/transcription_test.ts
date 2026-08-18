@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  parseAudioTranscription,
-  parseAudioTranscriptionResponseFormat,
-  parseAudioTranscriptionUsage,
-  renderAudioTranscription,
-  type AudioTranscriptionResponseFormat,
-} from '../../src/audio/index.ts';
+  parseOpenAIAudioTranscription,
+  parseOpenAIAudioTranscriptionResponseFormat,
+  parseOpenAIAudioTranscriptionUsage,
+  renderOpenAIAudioTranscription,
+  type OpenAIAudioTranscriptionResponseFormat,
+} from '../../src/openai-audio/index.ts';
 
 const bytes = (document: string): Uint8Array => new TextEncoder().encode(document);
 
@@ -37,13 +37,13 @@ const VERBOSE = {
   ],
 };
 
-const carries = (format: AudioTranscriptionResponseFormat, document: string): string =>
-  carried(renderAudioTranscription(format, parseAudioTranscription(format, bytes(document))));
+const carries = (format: OpenAIAudioTranscriptionResponseFormat, document: string): string =>
+  carried(renderOpenAIAudioTranscription(format, parseOpenAIAudioTranscription(format, bytes(document))));
 
 describe('the renderings of a transcription', () => {
   it('is the protocol default when the form left the field out', () => {
-    expect(parseAudioTranscriptionResponseFormat(undefined)).toBe('json');
-    expect(() => parseAudioTranscriptionResponseFormat('yaml')).toThrow('response_format is invalid');
+    expect(parseOpenAIAudioTranscriptionResponseFormat(undefined)).toBe('json');
+    expect(() => parseOpenAIAudioTranscriptionResponseFormat('yaml')).toThrow('response_format is invalid');
   });
 
   // The claim the family rests on: `response_format` travels to the upstream inside the
@@ -57,7 +57,7 @@ describe('the renderings of a transcription', () => {
     ['srt', SRT],
     ['vtt', VTT],
   ] as const)('reads and writes %s back unchanged', (format, document) => {
-    const rendered = renderAudioTranscription(format, parseAudioTranscription(format, bytes(document)));
+    const rendered = renderOpenAIAudioTranscription(format, parseOpenAIAudioTranscription(format, bytes(document)));
     expect(rendered instanceof Uint8Array ? carried(rendered) : JSON.stringify(rendered)).toBe(document);
   });
 
@@ -79,14 +79,14 @@ describe('the renderings of a transcription', () => {
   // equally rich. This is the whole of why a rendering is never derived from a value read
   // out of a different one.
   it('holds a transcript and its cues where the rendering carried both', () => {
-    expect(parseAudioTranscription('verbose_json', bytes(JSON.stringify(VERBOSE)))).toMatchObject({
+    expect(parseOpenAIAudioTranscription('verbose_json', bytes(JSON.stringify(VERBOSE)))).toMatchObject({
       text: VERBOSE.text,
       cues: [{ start: 0, end: 3.32, text: ' The beach was a popular spot.' }],
     });
   });
 
   it('holds no cues where the rendering carried none', () => {
-    expect(parseAudioTranscription('json', bytes(JSON.stringify({ text: 'hello' }))).cues).toBeUndefined();
+    expect(parseOpenAIAudioTranscription('json', bytes(JSON.stringify({ text: 'hello' }))).cues).toBeUndefined();
   });
 
   // A subtitle document states the transcript only as its cues' texts, so the transcript on
@@ -94,53 +94,53 @@ describe('the renderings of a transcription', () => {
   // claimed to be the string a `text` request would have returned.
   // https://github.com/openai/whisper/blob/v20250625/whisper/utils.py#L109-L116
   it('rebuilds the transcript of a subtitle document from its cues', () => {
-    expect(parseAudioTranscription('srt', bytes(SRT)).text).toBe(' The beach was a popular spot.\n People were swimming in the ocean.');
+    expect(parseOpenAIAudioTranscription('srt', bytes(SRT)).text).toBe(' The beach was a popular spot.\n People were swimming in the ocean.');
   });
 
   it('refuses a body the rendering cannot be read from', () => {
-    expect(() => parseAudioTranscription('json', bytes('{not-json'))).toThrow(SyntaxError);
-    expect(() => parseAudioTranscription('json', bytes(JSON.stringify({ transcript: 'hello' })))).toThrow('text must be a string');
-    expect(() => parseAudioTranscription('vtt', bytes(SRT))).toThrow('must open with WEBVTT');
+    expect(() => parseOpenAIAudioTranscription('json', bytes('{not-json'))).toThrow(SyntaxError);
+    expect(() => parseOpenAIAudioTranscription('json', bytes(JSON.stringify({ transcript: 'hello' })))).toThrow('text must be a string');
+    expect(() => parseOpenAIAudioTranscription('vtt', bytes(SRT))).toThrow('must open with WEBVTT');
   });
 
   // The other half of that refusal: a caller that could not read the body still has the body,
   // and what it writes back is what arrived. A 2xx nobody could parse is still the upstream's
   // answer to the client's request.
   it('writes back a body no reading could open', () => {
-    expect(carried(renderAudioTranscription('json', { document: bytes('{not-json') }))).toBe('{not-json');
+    expect(carried(renderOpenAIAudioTranscription('json', { document: bytes('{not-json') }))).toBe('{not-json');
   });
 });
 
 describe('what a transcription says it will be billed for', () => {
   it('splits the audio share out of the input tokens the upstream broke down', () => {
-    expect(parseAudioTranscriptionUsage({
+    expect(parseOpenAIAudioTranscriptionUsage({
       usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 10, audio_tokens: 4 }, output_tokens: 101, total_tokens: 115 },
     })).toEqual({ kind: 'tokens', inputTokens: 14, inputAudioTokens: 4, outputTokens: 101 });
   });
 
   it('reads a duration report, and whisper\'s top-level duration where there is no report', () => {
-    expect(parseAudioTranscriptionUsage({ usage: { type: 'duration', seconds: 43 } })).toEqual({ kind: 'duration', seconds: 43 });
-    expect(parseAudioTranscriptionUsage(VERBOSE)).toEqual({ kind: 'duration', seconds: 8.47 });
+    expect(parseOpenAIAudioTranscriptionUsage({ usage: { type: 'duration', seconds: 43 } })).toEqual({ kind: 'duration', seconds: 43 });
+    expect(parseOpenAIAudioTranscriptionUsage(VERBOSE)).toEqual({ kind: 'duration', seconds: 8.47 });
   });
 
   // Nothing was stated, or what was stated is not something this reading names. A metric
   // invented after this was written is not a malformed one, and the caller bills neither.
   it('is no report where nothing this reading names was stated', () => {
-    expect(parseAudioTranscriptionUsage({ text: 'hello' })).toBeUndefined();
-    expect(parseAudioTranscriptionUsage({ usage: { type: 'credits', spent: 3 } })).toBeUndefined();
+    expect(parseOpenAIAudioTranscriptionUsage({ text: 'hello' })).toBeUndefined();
+    expect(parseOpenAIAudioTranscriptionUsage({ usage: { type: 'credits', spent: 3 } })).toBeUndefined();
   });
 
   // An upstream that reported under a name this reading does know, in a shape it cannot read,
   // is a third situation and it says so — which is what lets the caller warn rather than
   // record the request as though the upstream had metered nothing.
   it('reports a block it names and cannot read, rather than reading it as nothing', () => {
-    expect(() => parseAudioTranscriptionUsage({ usage: { type: 'duration', seconds: 'invalid' } }))
+    expect(() => parseOpenAIAudioTranscriptionUsage({ usage: { type: 'duration', seconds: 'invalid' } }))
       .toThrow('usage.seconds must be a finite non-negative number');
-    expect(() => parseAudioTranscriptionUsage({ usage: { type: 'tokens', input_tokens: -1, output_tokens: 2 } }))
+    expect(() => parseOpenAIAudioTranscriptionUsage({ usage: { type: 'tokens', input_tokens: -1, output_tokens: 2 } }))
       .toThrow('usage.input_tokens must be a non-negative safe integer');
-    expect(() => parseAudioTranscriptionUsage({ usage: { type: 'tokens', input_tokens: 4, input_token_details: { audio_tokens: 9 }, output_tokens: 2 } }))
+    expect(() => parseOpenAIAudioTranscriptionUsage({ usage: { type: 'tokens', input_tokens: 4, input_token_details: { audio_tokens: 9 }, output_tokens: 2 } }))
       .toThrow('audio_tokens must not exceed usage.input_tokens');
-    expect(() => parseAudioTranscriptionUsage({ usage: 'billed' })).toThrow('usage must be an object');
-    expect(() => parseAudioTranscriptionUsage({ duration: 'a while' })).toThrow('duration must be a finite non-negative number');
+    expect(() => parseOpenAIAudioTranscriptionUsage({ usage: 'billed' })).toThrow('usage must be an object');
+    expect(() => parseOpenAIAudioTranscriptionUsage({ duration: 'a while' })).toThrow('duration must be a finite non-negative number');
   });
 });

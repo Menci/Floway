@@ -8,7 +8,7 @@ import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } f
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
-const registerEmbeddingsUpstream = async (
+const registerOpenAIEmbeddingsUpstream = async (
   repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
@@ -29,7 +29,7 @@ const registerEmbeddingsUpstream = async (
 
 const upstreamModels = () => jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
 
-const askForEmbeddings = async (key: string): Promise<Response> => await requestApp('/v1/embeddings', {
+const askForOpenAIEmbeddings = async (key: string): Promise<Response> => await requestApp('/v1/embeddings', {
   method: 'POST',
   headers: { 'content-type': 'application/json', 'x-api-key': key },
   body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
@@ -40,7 +40,7 @@ const askForEmbeddings = async (key: string): Promise<Response> => await request
 // and the failure is still reported, because a write nobody hears about is one nobody fixes.
 test('a usage write that fails leaves the answer alone and still reports', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
 
   repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -61,7 +61,7 @@ test('a usage write that fails leaves the answer alone and still reports', async
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const response = await askForEmbeddings(apiKey.key);
+        const response = await askForOpenAIEmbeddings(apiKey.key);
 
         assertEquals(response.status, 200);
         const body = await response.json() as { data: { embedding: number[] }[] };
@@ -79,9 +79,9 @@ test('a usage write that fails leaves the answer alone and still reports', async
 // The replaced surface forwarded such a body verbatim with the upstream's 200. A protocol
 // that requires JSON and did not get JSON has no answer to serve, so the gateway says so
 // itself — it cannot claim to have served a request whose answer it never read.
-test('a 2xx body the embeddings protocol cannot read is refused rather than forwarded', async () => {
+test('a 2xx body the OpenAI Embeddings protocol cannot read is refused rather than forwarded', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
 
   await withMockedFetch(
     request => {
@@ -96,12 +96,12 @@ test('a 2xx body the embeddings protocol cannot read is refused rather than forw
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await askForEmbeddings(apiKey.key);
+      const response = await askForOpenAIEmbeddings(apiKey.key);
 
       assertEquals(response.status, 502);
       assertEquals(response.headers.get('content-type'), 'application/json');
       const body = await response.json() as { error: { message: string } };
-      assertEquals(body.error.message.includes('the embeddings protocol cannot read'), true);
+      assertEquals(body.error.message.includes('the OpenAI Embeddings protocol cannot read'), true);
       await flushAsyncWork();
     },
   );
@@ -141,7 +141,7 @@ test('when every candidate refuses the client gets the last upstream-s own refus
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await askForEmbeddings(apiKey.key);
+      const response = await askForOpenAIEmbeddings(apiKey.key);
 
       assertEquals(response.status, 429);
       assertEquals(response.headers.get('retry-after'), '17');

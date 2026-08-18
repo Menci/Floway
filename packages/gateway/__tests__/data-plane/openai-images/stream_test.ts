@@ -5,10 +5,10 @@ import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } f
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-// The upstream is declared rather than discovered: both images endpoints are named on one
-// manual model row, so nothing in these cases depends on the id heuristics that infer a
+// The upstream is declared rather than discovered: both OpenAI Images endpoints are named on
+// one manual model row, so nothing in these cases depends on the id heuristics that infer a
 // catalog's capabilities.
-const registerImagesModel = async (repo: InMemoryRepo): Promise<void> => {
+const registerOpenAIImagesModel = async (repo: InMemoryRepo): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -26,7 +26,7 @@ const registerImagesModel = async (repo: InMemoryRepo): Promise<void> => {
         upstreamModelId: 'gpt-image-2-upstream',
         publicModelId: 'gpt-image-2',
         kind: 'image',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
       }],
     },
   }));
@@ -40,7 +40,7 @@ const sseResponse = (body: string, headers: Record<string, string> = {}): Respon
 
 test('/v1/images/generations answers a streaming request with the upstream events as SSE', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
   let forwarded: Record<string, unknown> | undefined;
 
   await withMockedFetch(
@@ -85,7 +85,7 @@ test('/v1/images/generations answers a streaming request with the upstream event
 
 test('/v1/images/generations answers a non-streaming request with the JSON object', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
 
   await withMockedFetch(
     request => {
@@ -110,7 +110,7 @@ test('/v1/images/generations answers a non-streaming request with the JSON objec
 
 test('/v1/images/generations bills a stream from the usage its completed event reported, once', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
 
   await withMockedFetch(
     () => Promise.resolve(sseResponse(PARTIAL + COMPLETED)),
@@ -143,7 +143,7 @@ test('/v1/images/generations bills a stream from the usage its completed event r
 
 test('/v1/images/generations answers a refused stream in the upstream status and words', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
 
   await withMockedFetch(
     () => Promise.resolve(new Response(JSON.stringify({ error: { message: 'Rate limit reached for images.', code: 'rate_limit_exceeded' } }), {
@@ -172,7 +172,7 @@ test('/v1/images/generations answers a refused stream in the upstream status and
 
 test('/v1/images/generations completes and cancels an upstream kept open after the completed event', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
   let upstreamCancelled = false;
   const encoder = new TextEncoder();
 
@@ -203,7 +203,7 @@ test('/v1/images/generations completes and cancels an upstream kept open after t
 
 test('/v1/images/generations fails a stream that ended without a completed event', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
@@ -225,7 +225,7 @@ test('/v1/images/generations fails a stream that ended without a completed event
     // An upstream that sent partial images and no image never answered the request, and the
     // run says so rather than letting a truncated stream read as a complete one.
     assertEquals(
-      errorSpy.mock.calls.some(call => call.some(arg => arg instanceof Error && arg.message === 'Images stream ended without a completed event.')),
+      errorSpy.mock.calls.some(call => call.some(arg => arg instanceof Error && arg.message === 'OpenAI Images stream ended without a completed event.')),
       true,
     );
   } finally {
@@ -235,7 +235,7 @@ test('/v1/images/generations fails a stream that ended without a completed event
 
 test('/v1/images/edits streams a multipart request, whose stream field arrives as text', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerImagesModel(repo);
+  await registerOpenAIImagesModel(repo);
   let upstreamForm: FormData | undefined;
 
   await withMockedFetch(

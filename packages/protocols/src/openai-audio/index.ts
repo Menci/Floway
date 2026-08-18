@@ -3,27 +3,27 @@
 // picks between three JSON objects and three text documents, and `stream` picks a sequence
 // of events instead of any of them.
 
-export type { AudioTranscriptionCue, SubtitleDialect } from './subtitles.ts';
+export type { OpenAIAudioTranscriptionCue, SubtitleDialect } from './subtitles.ts';
 export { parseSubtitleDocument } from './subtitles.ts';
 
 export type {
-  AudioTranscriptionObjectFormat,
-  AudioTranscriptionResponseFormat,
-  AudioTranscriptionUsage,
-  CanonicalAudioTranscription,
+  OpenAIAudioTranscriptionObjectFormat,
+  OpenAIAudioTranscriptionResponseFormat,
+  OpenAIAudioTranscriptionUsage,
+  CanonicalOpenAIAudioTranscription,
 } from './transcription.ts';
 export {
-  AUDIO_TRANSCRIPTION_RESPONSE_FORMATS,
-  isAudioTranscriptionObjectFormat,
-  parseAudioTranscription,
-  parseAudioTranscriptionResponseFormat,
-  parseAudioTranscriptionUsage,
-  renderAudioTranscription,
+  OPENAI_AUDIO_TRANSCRIPTION_RESPONSE_FORMATS,
+  isOpenAIAudioTranscriptionObjectFormat,
+  parseOpenAIAudioTranscription,
+  parseOpenAIAudioTranscriptionResponseFormat,
+  parseOpenAIAudioTranscriptionUsage,
+  renderOpenAIAudioTranscription,
 } from './transcription.ts';
 
-export type { AudioTranscriptionDoneEvent, AudioTranscriptionStreamEvent } from './stream.ts';
+export type { OpenAIAudioTranscriptionDoneEvent, OpenAIAudioTranscriptionStreamEvent } from './stream.ts';
 export {
-  isAudioTranscriptionDoneEvent,
-  parseAudioTranscriptionStreamEvent,
-  parseAudioTranscriptionStreamUsage,
+  isOpenAIAudioTranscriptionDoneEvent,
+  parseOpenAIAudioTranscriptionStreamEvent,
+  parseOpenAIAudioTranscriptionStreamUsage,
 } from './stream.ts';

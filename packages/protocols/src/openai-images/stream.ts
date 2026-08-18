@@ -5,31 +5,31 @@
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L13077-L13086
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12846-L12857
 
-import type { ImagesStreamEvent } from './index.ts';
+import type { OpenAIImagesStreamEvent } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 
-export interface ParseImagesStreamOptions {
+export interface ParseOpenAIImagesStreamOptions {
   signal?: AbortSignal;
 }
 
-export const IMAGES_MISSING_TERMINAL_MESSAGE = 'Images stream ended without a completed event.';
+export const OPENAI_IMAGES_MISSING_TERMINAL_MESSAGE = 'OpenAI Images stream ended without a completed event.';
 
 /** The stream is over when the image is. Each endpoint names its own terminal —
  *  `image_generation.completed` and `image_edit.completed` — so the suffix is the whole of
  *  what the two have in common, which is also what makes this reading serve an endpoint added
  *  later without being taught its prefix. */
-export const isImagesTerminalEvent = (event: ImagesStreamEvent): boolean => event.type.endsWith('.completed');
+export const isOpenAIImagesTerminalEvent = (event: OpenAIImagesStreamEvent): boolean => event.type.endsWith('.completed');
 
 /**
  * The upstream's SSE body as this protocol's events. Transport framing ends here: what comes
- * out carries images events, and nothing that reads them knows how they arrived.
+ * out carries OpenAI Images events, and nothing that reads them knows how they arrived.
  */
-export const parseImagesStream = (
+export const parseOpenAIImagesStream = (
   body: ReadableStream<Uint8Array>,
-  options: ParseImagesStreamOptions = {},
-): AsyncGenerator<ImagesStreamEvent> => (async function* () {
-  for await (const frame of parseTargetStreamFrames<Record<string, unknown>>(parseSSEStream(body, options), { protocol: 'Images' })) {
+  options: ParseOpenAIImagesStreamOptions = {},
+): AsyncGenerator<OpenAIImagesStreamEvent> => (async function* () {
+  for await (const frame of parseTargetStreamFrames<Record<string, unknown>>(parseSSEStream(body, options), { protocol: 'OpenAI Images' })) {
     // `[DONE]` is not part of this protocol. An OpenAI-compatible upstream that appends the
     // sentinel it writes elsewhere is saying the body is over, which is all it can mean here —
     // whether the image finished is what the completed event says, and that has already passed.
@@ -44,8 +44,8 @@ export const parseImagesStream = (
  *  reconciled once at the boundary rather than at each reader. An event that carries neither
  *  is not one this protocol can place — it could be the terminal or a partial — so it ends the
  *  read rather than being passed on as an unknown. */
-const named = (event: Record<string, unknown>, label: string | undefined): ImagesStreamEvent => {
-  if (typeof event.type === 'string') return event as ImagesStreamEvent;
-  if (label === undefined) throw new Error('Images stream event carries no type, on the payload or as an SSE event name');
-  return { ...event, type: label } as ImagesStreamEvent;
+const named = (event: Record<string, unknown>, label: string | undefined): OpenAIImagesStreamEvent => {
+  if (typeof event.type === 'string') return event as OpenAIImagesStreamEvent;
+  if (label === undefined) throw new Error('OpenAI Images stream event carries no type, on the payload or as an SSE event name');
+  return { ...event, type: label } as OpenAIImagesStreamEvent;
 };

@@ -7,19 +7,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
-import { audioTranscriptionServePipeline } from '../../../src/data-plane/audio/pipeline.ts';
-import { completionsServePipeline } from '../../../src/data-plane/completions/pipeline.ts';
-import { embeddingsServePipeline } from '../../../src/data-plane/embeddings/pipeline.ts';
-import { imagesServePipeline } from '../../../src/data-plane/images/pipeline.ts';
+import { openaiAudioTranscriptionServePipeline } from '../../../src/data-plane/openai-audio/pipeline.ts';
+import { openaiCompletionsServePipeline } from '../../../src/data-plane/openai-completions/pipeline.ts';
+import { openaiEmbeddingsServePipeline } from '../../../src/data-plane/openai-embeddings/pipeline.ts';
+import { openaiImagesServePipeline } from '../../../src/data-plane/openai-images/pipeline.ts';
 import { rerankServePipeline } from '../../../src/data-plane/rerank/pipeline.ts';
 
 const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] = [
-  ['embeddings', () => embeddingsServePipeline],
+  ['OpenAI Embeddings', () => openaiEmbeddingsServePipeline],
   ['rerank', () => rerankServePipeline({ sourceProtocol: 'cohere-v2', raw: {}, query: 'q', documents: ['a'] } as never)],
-  ['images generations', () => imagesServePipeline({ operation: 'generations', parameters: {} } as never)],
-  ['images edits', () => imagesServePipeline({ operation: 'edits', images: [], parameters: {} } as never)],
-  ['completions', () => completionsServePipeline],
-  ['audio transcription', () => audioTranscriptionServePipeline],
+  ['OpenAI Images Generations', () => openaiImagesServePipeline({ operation: 'generations', parameters: {} } as never)],
+  ['OpenAI Images Edits', () => openaiImagesServePipeline({ operation: 'edits', images: [], parameters: {} } as never)],
+  ['OpenAI Completions', () => openaiCompletionsServePipeline],
+  ['OpenAI Audio Transcriptions', () => openaiAudioTranscriptionServePipeline],
   ['alpha search', () => searchServePipeline({ kind: 'search' } as never)],
 ];
 

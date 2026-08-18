@@ -1,4 +1,4 @@
-import type { CompletionsPayload, CompletionsResult } from './index.ts';
+import type { OpenAICompletionsPayload, OpenAICompletionsResult } from './index.ts';
 import { isJsonObject } from '../common/json.ts';
 
 // The two boundaries where a `/v1/completions` body becomes a value. Both check what the
@@ -8,15 +8,15 @@ import { isJsonObject } from '../common/json.ts';
 // upstream's to decide, and a gateway opinion about the rest would have to be kept in step
 // with every OpenAI-compatible implementation we route to.
 
-export const parseCompletionsPayload = (value: unknown): CompletionsPayload => {
-  if (!isJsonObject(value)) throw new Error('Completions request body must be an object.');
+export const parseOpenAICompletionsPayload = (value: unknown): OpenAICompletionsPayload => {
+  if (!isJsonObject(value)) throw new Error('OpenAI Completions request body must be an object.');
   if (typeof value.model !== 'string' || value.model.length === 0) {
-    throw new Error('Completions request body must include a model string.');
+    throw new Error('OpenAI Completions request body must include a model string.');
   }
-  return value as CompletionsPayload;
+  return value as OpenAICompletionsPayload;
 };
 
-export const parseCompletionsResult = (value: unknown): CompletionsResult => {
-  if (!isJsonObject(value)) throw new Error('Completions response body must be an object.');
-  return value as CompletionsResult;
+export const parseOpenAICompletionsResult = (value: unknown): OpenAICompletionsResult => {
+  if (!isJsonObject(value)) throw new Error('OpenAI Completions response body must be an object.');
+  return value as OpenAICompletionsResult;
 };

@@ -1,12 +1,12 @@
 import type {
-  CanonicalEmbedding,
-  CanonicalEmbeddingsRequest,
-  CanonicalEmbeddingsResponse,
-  CanonicalEmbeddingsUsage,
-  EmbeddingsEncodingFormat,
-  EmbeddingsInput,
-  EmbeddingsPayload,
-  ParsedEmbeddingsRequest,
+  CanonicalOpenAIEmbedding,
+  CanonicalOpenAIEmbeddingsRequest,
+  CanonicalOpenAIEmbeddingsResponse,
+  CanonicalOpenAIEmbeddingsUsage,
+  OpenAIEmbeddingsEncodingFormat,
+  OpenAIEmbeddingsInput,
+  OpenAIEmbeddingsPayload,
+  ParsedOpenAIEmbeddingsRequest,
 } from './index.ts';
 import { decodeForgivingBase64, encodeBase64 } from '../common/base-encoding.ts';
 
@@ -36,7 +36,7 @@ const optionalPositiveInteger = (value: unknown, field: string): number | undefi
   return integer;
 };
 
-const parseEncodingFormat = (value: unknown): EmbeddingsEncodingFormat | undefined => {
+const parseEncodingFormat = (value: unknown): OpenAIEmbeddingsEncodingFormat | undefined => {
   if (value === undefined) return undefined;
   if (value !== 'float' && value !== 'base64') throw new Error('encoding_format must be float or base64');
   return value;
@@ -47,7 +47,7 @@ const parseTokenIds = (value: readonly unknown[], field: string): readonly numbe
   return value.map((token, index) => requiredInteger(token, `${field}[${index}]`));
 };
 
-const parseInput = (value: unknown): EmbeddingsInput => {
+const parseInput = (value: unknown): OpenAIEmbeddingsInput => {
   if (typeof value === 'string') return value;
   if (!Array.isArray(value)) throw new Error('input must be a string or an array');
   if (value.length === 0) throw new Error('input must not be empty');
@@ -70,12 +70,12 @@ const parseInput = (value: unknown): EmbeddingsInput => {
 // https://github.com/BerriAI/litellm/blob/bc6e7df05b018eefe6c7293790ca3f4de38709ac/litellm/utils.py#L3259-L3273
 // — while copilot-api's request type is narrower still, `input` and `model` alone:
 // https://github.com/ericc-ch/copilot-api/blob/0ea08febdd7e3e055b03dd298bf57e669500b5c1/src/services/copilot/create-embeddings.ts#L19-L22
-const EMBEDDINGS_REQUEST_FIELDS = ['model', 'input', 'encoding_format', 'dimensions', 'user'];
+const OPENAI_EMBEDDINGS_REQUEST_FIELDS = ['model', 'input', 'encoding_format', 'dimensions', 'user'];
 
-export const parseEmbeddingsRequest = (value: unknown): ParsedEmbeddingsRequest => {
-  if (!isRecord(value)) throw new Error('Embeddings request body must be an object');
-  const unsupported = Object.keys(value).filter(field => !EMBEDDINGS_REQUEST_FIELDS.includes(field));
-  if (unsupported.length > 0) throw new Error(`Embeddings does not support ${unsupported.join(', ')}`);
+export const parseOpenAIEmbeddingsRequest = (value: unknown): ParsedOpenAIEmbeddingsRequest => {
+  if (!isRecord(value)) throw new Error('OpenAI Embeddings request body must be an object');
+  const unsupported = Object.keys(value).filter(field => !OPENAI_EMBEDDINGS_REQUEST_FIELDS.includes(field));
+  if (unsupported.length > 0) throw new Error(`OpenAI Embeddings does not support ${unsupported.join(', ')}`);
 
   const encodingFormat = parseEncodingFormat(value.encoding_format);
   const dimensions = optionalPositiveInteger(value.dimensions, 'dimensions');
@@ -92,7 +92,7 @@ export const parseEmbeddingsRequest = (value: unknown): ParsedEmbeddingsRequest 
   };
 };
 
-export const serializeEmbeddingsRequest = (request: CanonicalEmbeddingsRequest): Omit<EmbeddingsPayload, 'model'> => ({
+export const serializeOpenAIEmbeddingsRequest = (request: CanonicalOpenAIEmbeddingsRequest): Omit<OpenAIEmbeddingsPayload, 'model'> => ({
   input: request.input,
   ...(request.encodingFormat === undefined ? {} : { encoding_format: request.encodingFormat }),
   ...(request.dimensions === undefined ? {} : { dimensions: request.dimensions }),
@@ -133,7 +133,7 @@ const renderEmbedding = (values: readonly number[]): string => {
   return encodeBase64(bytes);
 };
 
-const parseUsage = (value: unknown): CanonicalEmbeddingsUsage | undefined => {
+const parseUsage = (value: unknown): CanonicalOpenAIEmbeddingsUsage | undefined => {
   if (value === undefined || value === null) return undefined;
   if (!isRecord(value)) throw new Error('usage must be an object');
   return {
@@ -157,12 +157,12 @@ const parseUsage = (value: unknown): CanonicalEmbeddingsUsage | undefined => {
  * what another Copilot gateway meters under for the same reason —
  * https://github.com/caozhiyuan/copilot-api/blob/96854ce1e1e741d621b12d4ca844efd77f6e8d90/src/routes/embeddings/route.ts#L16-L23
  */
-export const parseEmbeddingsResponse = (value: unknown, requestedModel: string): CanonicalEmbeddingsResponse => {
-  if (!isRecord(value)) throw new Error('Embeddings response body must be an object');
+export const parseOpenAIEmbeddingsResponse = (value: unknown, requestedModel: string): CanonicalOpenAIEmbeddingsResponse => {
+  if (!isRecord(value)) throw new Error('OpenAI Embeddings response body must be an object');
   const { data } = value;
   if (!Array.isArray(data)) throw new Error('data must be an array');
   const usage = parseUsage(value.usage);
-  const embeddings: CanonicalEmbedding[] = data.map((entry, position) => {
+  const embeddings: CanonicalOpenAIEmbedding[] = data.map((entry, position) => {
     if (!isRecord(entry)) throw new Error(`data[${position}] must be an object`);
     return {
       index: requiredInteger(entry.index, `data[${position}].index`),
@@ -182,9 +182,9 @@ export const parseEmbeddingsResponse = (value: unknown, requestedModel: string):
  * protocol rather than something an upstream varies, and it is written here rather than
  * repeated back from the body.
  */
-export const renderEmbeddingsResponse = (
-  format: EmbeddingsEncodingFormat,
-  response: CanonicalEmbeddingsResponse,
+export const renderOpenAIEmbeddingsResponse = (
+  format: OpenAIEmbeddingsEncodingFormat,
+  response: CanonicalOpenAIEmbeddingsResponse,
 ): Record<string, unknown> => ({
   object: 'list',
   data: response.embeddings.map(embedding => ({

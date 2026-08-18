@@ -4,20 +4,20 @@
 // the terminal one and the only place a streamed transcription states its usage.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L61796-L61917
 
-import type { AudioTranscriptionUsage } from './transcription.ts';
-import { parseAudioTranscriptionUsage } from './transcription.ts';
+import type { OpenAIAudioTranscriptionUsage } from './transcription.ts';
+import { parseOpenAIAudioTranscriptionUsage } from './transcription.ts';
 
-export interface AudioTranscriptionStreamEvent {
+export interface OpenAIAudioTranscriptionStreamEvent {
   type: string;
   [key: string]: unknown;
 }
 
-export interface AudioTranscriptionDoneEvent extends AudioTranscriptionStreamEvent {
+export interface OpenAIAudioTranscriptionDoneEvent extends OpenAIAudioTranscriptionStreamEvent {
   type: 'transcript.text.done';
   text: string;
 }
 
-export const isAudioTranscriptionDoneEvent = (event: unknown): event is AudioTranscriptionDoneEvent =>
+export const isOpenAIAudioTranscriptionDoneEvent = (event: unknown): event is OpenAIAudioTranscriptionDoneEvent =>
   typeof event === 'object'
   && event !== null
   && (event as { type?: unknown }).type === 'transcript.text.done'
@@ -25,15 +25,15 @@ export const isAudioTranscriptionDoneEvent = (event: unknown): event is AudioTra
 
 /** The reading every frame goes through, so the value at the canonical key is a parsed
  *  event and the edge re-serializes it rather than relaying the bytes it arrived in. */
-export const parseAudioTranscriptionStreamEvent = (value: unknown): AudioTranscriptionStreamEvent => {
+export const parseOpenAIAudioTranscriptionStreamEvent = (value: unknown): OpenAIAudioTranscriptionStreamEvent => {
   if (typeof value !== 'object' || value === null || typeof (value as { type?: unknown }).type !== 'string') {
-    throw new Error('Audio transcription stream event must be an object carrying a string type');
+    throw new Error('OpenAI Audio Transcriptions stream event must be an object carrying a string type');
   }
-  return value as AudioTranscriptionStreamEvent;
+  return value as OpenAIAudioTranscriptionStreamEvent;
 };
 
 /** A streamed transcription states its usage once, in the terminal event, in the same shape
  *  a JSON body states it. */
-export const parseAudioTranscriptionStreamUsage = (
-  event: AudioTranscriptionDoneEvent,
-): AudioTranscriptionUsage | undefined => parseAudioTranscriptionUsage(event);
+export const parseOpenAIAudioTranscriptionStreamUsage = (
+  event: OpenAIAudioTranscriptionDoneEvent,
+): OpenAIAudioTranscriptionUsage | undefined => parseOpenAIAudioTranscriptionUsage(event);

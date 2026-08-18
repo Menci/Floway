@@ -1,10 +1,11 @@
-// The images protocol: POST /v1/images/generations and POST /v1/images/edits. One protocol
-// over two endpoints — generations takes JSON, and edits takes either JSON, where every image
-// is a URL, a data URL or a file id, or a multipart form carrying the files themselves.
+// The OpenAI Images protocol: POST /v1/images/generations and POST /v1/images/edits. One
+// protocol over two endpoints — generations takes JSON, and edits takes either JSON, where
+// every image is a URL, a data URL or a file id, or a multipart form carrying the files
+// themselves.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12858-L12870
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
 
-export type ImagesOperation = 'generations' | 'edits';
+export type OpenAIImagesOperation = 'generations' | 'edits';
 
 // JSON payload accepted by POST /v1/images/generations. Field set follows
 // OpenAI's reference for gpt-image-* and legacy dall-e-* (dall-e is
@@ -40,7 +41,7 @@ export type OpenAIImageEditReference =
 
 /** A file the client sent in a multipart form, held as bytes: a form is a parsed value like
  *  any other, and bytes are what survives being read once and what a dump can show. */
-export interface ImagesUploadedFile {
+export interface OpenAIImagesUploadedFile {
   fileName: string;
   mediaType: string;
   bytes: Uint8Array<ArrayBuffer>;
@@ -49,36 +50,36 @@ export interface ImagesUploadedFile {
 /** One image an edit reads. Multipart carries the file itself; JSON carries a reference for
  *  the upstream to resolve, kept exactly as the client wrote it — whether a data URL can be
  *  turned back into a file is the upstream serializer's question, not this one's. */
-export type ImagesEditImage =
-  | { kind: 'file'; file: ImagesUploadedFile }
-  | { kind: 'reference'; reference: ImageEditReference };
+export type OpenAIImagesEditImage =
+  | { kind: 'file'; file: OpenAIImagesUploadedFile }
+  | { kind: 'reference'; reference: OpenAIImageEditReference };
 
-export interface CanonicalImagesGenerationsRequest {
+export interface CanonicalOpenAIImagesGenerationsRequest {
   operation: 'generations';
   /** Everything the client sent but `model`: routing owns the model id, and what is left is
    *  what the upstream is asked for. */
   parameters: Record<string, unknown>;
 }
 
-export interface CanonicalImagesEditsRequest {
+export interface CanonicalOpenAIImagesEditsRequest {
   operation: 'edits';
-  images: ImagesEditImage[];
-  mask?: ImagesEditImage;
+  images: OpenAIImagesEditImage[];
+  mask?: OpenAIImagesEditImage;
   parameters: Record<string, unknown>;
 }
 
-export type CanonicalImagesRequest = CanonicalImagesGenerationsRequest | CanonicalImagesEditsRequest;
+export type CanonicalOpenAIImagesRequest = CanonicalOpenAIImagesGenerationsRequest | CanonicalOpenAIImagesEditsRequest;
 
-export interface ParsedImagesRequest {
+export interface ParsedOpenAIImagesRequest {
   model: string;
-  request: CanonicalImagesRequest;
+  request: CanonicalOpenAIImagesRequest;
 }
 
 /** One image the upstream returned. `response_format` decides which arm carries it on the
  *  dall-e models, while the GPT image models answer base64 and do not serve a URL at all, so
  *  neither arm is the one to expect.
  *  https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L51044-L51067 */
-export interface CanonicalImage {
+export interface CanonicalOpenAIImage {
   url?: string;
   base64?: string;
   revisedPrompt?: string;
@@ -89,19 +90,19 @@ export interface CanonicalImage {
  *  the dall-e models report nothing — which is why the whole reading is optional as well as
  *  each field.
  *  https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L78089-L78115 */
-export interface CanonicalImagesUsage {
+export interface CanonicalOpenAIImagesUsage {
   inputTokens?: number;
   inputImageTokens?: number;
   outputTokens?: number;
   outputImageTokens?: number;
 }
 
-export interface CanonicalImagesResponse {
+export interface CanonicalOpenAIImagesResponse {
   /** The parsed body as it arrived. One protocol in and one out means rendering is
    *  re-serializing this, so the fields the gateway does not model still reach the client. */
   raw: Record<string, unknown>;
-  images: CanonicalImage[];
-  usage?: CanonicalImagesUsage;
+  images: CanonicalOpenAIImage[];
+  usage?: CanonicalOpenAIImagesUsage;
 }
 
 /** One event on a streamed answer. A stream carries partial images and then the completed one,
@@ -113,7 +114,7 @@ export interface CanonicalImagesResponse {
  *  `type` is an open string rather than the four names the specification lists: an event type
  *  is the upstream's own word, and a shape added later has to reach the client whether or not
  *  this gateway has heard of it. The index signature carries everything not named here. */
-export interface ImagesStreamEvent {
+export interface OpenAIImagesStreamEvent {
   type: string;
   b64_json?: string;
   created_at?: number;
@@ -126,7 +127,7 @@ export interface ImagesStreamEvent {
   [key: string]: unknown;
 }
 
-export { imagesRequestWantsStream, parseImagesEditsRequest, parseImagesGenerationsRequest } from './request.ts';
-export { parseImagesResponse, parseImagesUsage, renderImagesResponse } from './response.ts';
-export { IMAGES_MISSING_TERMINAL_MESSAGE, isImagesTerminalEvent, parseImagesStream, type ParseImagesStreamOptions } from './stream.ts';
-export { imagesStreamEventToSSEFrame } from './to-sse.ts';
+export { openaiImagesRequestWantsStream, parseOpenAIImagesEditsRequest, parseOpenAIImagesGenerationsRequest } from './request.ts';
+export { parseOpenAIImagesResponse, parseOpenAIImagesUsage, renderOpenAIImagesResponse } from './response.ts';
+export { OPENAI_IMAGES_MISSING_TERMINAL_MESSAGE, isOpenAIImagesTerminalEvent, parseOpenAIImagesStream, type ParseOpenAIImagesStreamOptions } from './stream.ts';
+export { openaiImagesStreamEventToSSEFrame } from './to-sse.ts';

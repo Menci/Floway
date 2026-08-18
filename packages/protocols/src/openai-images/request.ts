@@ -2,7 +2,7 @@
 // bodies — generations is JSON, edits is JSON or a multipart form — and each message here is
 // what the client is told, so they name the endpoint and the field they are about.
 
-import type { CanonicalImagesRequest, ImageEditReference, ImagesEditImage, ImagesUploadedFile, ParsedImagesRequest } from './index.ts';
+import type { CanonicalOpenAIImagesRequest, OpenAIImageEditReference, OpenAIImagesEditImage, OpenAIImagesUploadedFile, ParsedOpenAIImagesRequest } from './index.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '../common/media-type.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -17,7 +17,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * and a JSON edit carry the boolean the specification names.
  * https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L47542-L47673
  */
-export const imagesRequestWantsStream = (request: CanonicalImagesRequest): boolean =>
+export const openaiImagesRequestWantsStream = (request: CanonicalOpenAIImagesRequest): boolean =>
   request.parameters.stream === true || request.parameters.stream === 'true';
 
 const jsonObject = (body: Uint8Array, endpoint: string): Record<string, unknown> => {
@@ -41,30 +41,30 @@ const requiredModel = (body: Record<string, unknown>, endpoint: string): string 
   return model;
 };
 
-export const parseImagesGenerationsRequest = (body: Uint8Array): ParsedImagesRequest => {
-  const payload = jsonObject(body, 'Images generations');
-  const model = requiredModel(payload, 'Images generations');
+export const parseOpenAIImagesGenerationsRequest = (body: Uint8Array): ParsedOpenAIImagesRequest => {
+  const payload = jsonObject(body, 'OpenAI Images Generations');
+  const model = requiredModel(payload, 'OpenAI Images Generations');
   const { model: _model, ...parameters } = payload;
   return { model, request: { operation: 'generations', parameters } };
 };
 
-export const parseImagesEditsRequest = async (
+export const parseOpenAIImagesEditsRequest = async (
   contentType: string | null | undefined,
   body: Uint8Array,
-): Promise<ParsedImagesRequest> => {
+): Promise<ParsedOpenAIImagesRequest> => {
   if (isJsonMediaType(contentType)) return jsonEdits(body);
   if (isMultipartFormDataMediaType(contentType)) return await multipartEdits(contentType, body);
-  throw new Error('Image edits request body must use application/json or multipart/form-data.');
+  throw new Error('OpenAI Images Edits request body must use application/json or multipart/form-data.');
 };
 
-const jsonEdits = (body: Uint8Array): ParsedImagesRequest => {
-  const payload = jsonObject(body, 'Image edits');
-  const model = requiredModel(payload, 'Image edits');
+const jsonEdits = (body: Uint8Array): ParsedOpenAIImagesRequest => {
+  const payload = jsonObject(body, 'OpenAI Images Edits');
+  const model = requiredModel(payload, 'OpenAI Images Edits');
   if (!Array.isArray(payload.images)) {
-    throw new Error('Image edits request body must include an images array.');
+    throw new Error('OpenAI Images Edits request body must include an images array.');
   }
-  const images = payload.images.map((value, index) => referenceImage(value, `Image edits images[${index}]`));
-  const mask = payload.mask === undefined ? undefined : referenceImage(payload.mask, 'Image edits mask');
+  const images = payload.images.map((value, index) => referenceImage(value, `OpenAI Images Edits images[${index}]`));
+  const mask = payload.mask === undefined ? undefined : referenceImage(payload.mask, 'OpenAI Images Edits mask');
   const { model: _model, images: _images, mask: _mask, ...parameters } = payload;
   return {
     model,
@@ -72,42 +72,42 @@ const jsonEdits = (body: Uint8Array): ParsedImagesRequest => {
   };
 };
 
-const referenceImage = (value: unknown, path: string): ImagesEditImage => {
+const referenceImage = (value: unknown, path: string): OpenAIImagesEditImage => {
   if (!isRecord(value)) throw new Error(`${path} must be an object.`);
   const { image_url: imageUrl, file_id: fileId } = value;
   const named = (typeof imageUrl === 'string' && fileId === undefined)
     || (typeof fileId === 'string' && imageUrl === undefined);
   if (!named) throw new Error(`${path} must contain exactly one string field: image_url or file_id.`);
-  return { kind: 'reference', reference: value as ImageEditReference };
+  return { kind: 'reference', reference: value as OpenAIImageEditReference };
 };
 
-const multipartEdits = async (contentType: string, body: Uint8Array): Promise<ParsedImagesRequest> => {
+const multipartEdits = async (contentType: string, body: Uint8Array): Promise<ParsedOpenAIImagesRequest> => {
   let form: FormData;
   try {
     // `BodyInit` excludes a view over a `SharedArrayBuffer`, which an inbound body never is.
     form = await new Response(body as BodyInit, { headers: { 'content-type': contentType } }).formData();
   } catch {
-    throw new Error('Image edits request body must be valid multipart/form-data.');
+    throw new Error('OpenAI Images Edits request body must be valid multipart/form-data.');
   }
 
   const model = form.get('model');
   if (typeof model !== 'string' || model.length === 0) {
-    throw new Error('Image edits request body must include a model field.');
+    throw new Error('OpenAI Images Edits request body must include a model field.');
   }
 
-  const images: ImagesEditImage[] = [];
-  let mask: ImagesEditImage | undefined;
+  const images: OpenAIImagesEditImage[] = [];
+  let mask: OpenAIImagesEditImage | undefined;
   const parameters: Record<string, unknown> = {};
   for (const [name, value] of form.entries()) {
     if (name === 'model') continue;
     // One image is sent as `image` and several as `image[]`; the upstream serializer picks the
     // field name back off the count, so the two arrive at one list here.
     if (name === 'image' || name === 'image[]') {
-      images.push({ kind: 'file', file: await uploadedFile(value, `Image edits ${name} fields must be files.`) });
+      images.push({ kind: 'file', file: await uploadedFile(value, `OpenAI Images Edits ${name} fields must be files.`) });
     } else if (name === 'mask') {
-      mask = { kind: 'file', file: await uploadedFile(value, 'Image edits mask field must be a file.') };
+      mask = { kind: 'file', file: await uploadedFile(value, 'OpenAI Images Edits mask field must be a file.') };
     } else {
-      if (typeof value !== 'string') throw new Error(`Image edits ${name} field must be text.`);
+      if (typeof value !== 'string') throw new Error(`OpenAI Images Edits ${name} field must be text.`);
       parameters[name] = value;
     }
   }
@@ -118,7 +118,7 @@ const multipartEdits = async (contentType: string, body: Uint8Array): Promise<Pa
   };
 };
 
-const uploadedFile = async (value: FormDataEntryValue, message: string): Promise<ImagesUploadedFile> => {
+const uploadedFile = async (value: FormDataEntryValue, message: string): Promise<OpenAIImagesUploadedFile> => {
   if (!(value instanceof File)) throw new Error(message);
   return { fileName: value.name, mediaType: value.type, bytes: new Uint8Array(await value.arrayBuffer()) };
 };

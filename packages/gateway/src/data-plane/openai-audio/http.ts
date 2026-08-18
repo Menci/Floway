@@ -8,56 +8,56 @@
 
 import type { Context } from 'hono';
 
-import { audioTranscriptionServePipeline } from './pipeline.ts';
+import { openaiAudioTranscriptionServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { move } from '@floway-dev/pipeline';
-import { parseAudioTranscriptionResponseFormat, type AudioTranscriptionResponseFormat } from '@floway-dev/protocols/audio';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
-import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
+import { parseOpenAIAudioTranscriptionResponseFormat, type OpenAIAudioTranscriptionResponseFormat } from '@floway-dev/protocols/openai-audio';
+import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
 
-type PreparedTranscription =
+type PreparedOpenAIAudioTranscription =
   | {
     readonly type: 'ok';
     readonly model: string;
-    readonly responseFormat: AudioTranscriptionResponseFormat;
+    readonly responseFormat: OpenAIAudioTranscriptionResponseFormat;
     readonly wantsStream: boolean;
-    readonly entries: readonly AudioTranscriptionFormEntry[];
+    readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
   }
   | { readonly type: 'invalid'; readonly message: string };
 
-const prepareTranscription = async (bytes: Uint8Array, contentType: string | undefined): Promise<PreparedTranscription> => {
+const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: string | undefined): Promise<PreparedOpenAIAudioTranscription> => {
   if (!isMultipartFormDataMediaType(contentType)) {
-    return { type: 'invalid', message: 'Audio transcription request body must use multipart/form-data.' };
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must use multipart/form-data.' };
   }
 
   let form: FormData;
   try {
     form = await new Response(bytes as BodyInit, { headers: { 'content-type': contentType } }).formData();
   } catch {
-    return { type: 'invalid', message: 'Audio transcription request body must be valid multipart/form-data.' };
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must be valid multipart/form-data.' };
   }
 
   const model = form.get('model');
   if (typeof model !== 'string' || model.length === 0) {
-    return { type: 'invalid', message: 'Audio transcription request body must include a model field.' };
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must include a model field.' };
   }
   const files = form.getAll('file');
   if (files.length === 0 || files.some(file => !(file instanceof File))) {
-    return { type: 'invalid', message: 'Audio transcription request body must include a file upload.' };
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must include a file upload.' };
   }
   const declaredFormat = form.get('response_format');
   if (declaredFormat !== null && typeof declaredFormat !== 'string') {
-    return { type: 'invalid', message: 'Audio transcription response_format must be a text field.' };
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions response_format must be a text field.' };
   }
-  let responseFormat: AudioTranscriptionResponseFormat;
+  let responseFormat: OpenAIAudioTranscriptionResponseFormat;
   try {
-    responseFormat = parseAudioTranscriptionResponseFormat(declaredFormat ?? undefined);
+    responseFormat = parseOpenAIAudioTranscriptionResponseFormat(declaredFormat ?? undefined);
   } catch (error) {
     return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
 
-  const entries: AudioTranscriptionFormEntry[] = [];
+  const entries: OpenAIAudioTranscriptionFormEntry[] = [];
   for (const [name, value] of form.entries()) {
     entries.push({ name, value });
   }
@@ -92,9 +92,9 @@ const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
  * while the request is live, on a promise that resolves with both. Give the seam these two
  * and this handler is `serveThrough` again.
  */
-export const audioTranscriptions = async (c: Context): Promise<Response> => {
+export const openaiAudioTranscriptions = async (c: Context): Promise<Response> => {
   const ingress = await readIngress(c);
-  const request = await prepareTranscription(ingress.body.bytes, c.req.header('content-type'));
+  const request = await prepareOpenAIAudioTranscription(ingress.body.bytes, c.req.header('content-type'));
   if (request.type === 'invalid') {
     // A request the gateway could not read never reaches a pipeline: there is no model to
     // resolve and no attempt to make, so there is nothing for a run to record.
@@ -111,20 +111,20 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
   return await serveThrough(
     c,
     prologue,
-    audioTranscriptionServePipeline,
+    openaiAudioTranscriptionServePipeline,
     move({
       'ingress.http.headers': prologue.headers,
-      'ingress.audioTranscription.responseFormat': request.responseFormat,
-      'request.audioTranscription.form': request.entries,
+      'ingress.openaiAudioTranscription.responseFormat': request.responseFormat,
+      'request.openaiAudioTranscription.form': request.entries,
       'serve.model': request.model,
     }) as never,
     facts => {
-      const rendered = facts['response.audioTranscription.rendered'];
+      const rendered = facts['response.openaiAudioTranscription.rendered'];
       if (isFrames(rendered)) return { frames: rendered };
       // The upstream's own media type, or none where it declared none: a document this
       // gateway carried rather than wrote is not one it can describe.
-      return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.audioTranscription.mediaType'] };
+      return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };
     },
-    facts => facts['response.audioTranscription.streamedOutcome'],
+    facts => facts['response.openaiAudioTranscription.streamedOutcome'],
   );
 };
