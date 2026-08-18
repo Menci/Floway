@@ -42,10 +42,10 @@ const testTelemetryModelIdentity = {
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: { endpoints: { messages: {} } },
+    model: { endpoints: { anthropicMessages: {} } },
     enabledFlags: new Set(['messages-web-search-shim']),
   }),
-  targetApi: 'messages',
+  targetApi: 'anthropicMessages',
   headers: new Headers(),
 });
 

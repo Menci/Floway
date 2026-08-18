@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 test('strips scope and ttl from system, tools, and message content blocks while keeping the marker', async () => {

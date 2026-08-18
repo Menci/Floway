@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 test('Anthropic Messages vision header set when a top-level image block is present', async () => {

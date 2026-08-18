@@ -14,7 +14,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate(),
-  targetApi: 'openai-chat-completions',
+  targetApi: 'openaiChatCompletions',
   headers: new Headers(),
 });
 

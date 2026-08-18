@@ -69,7 +69,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
-    assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
+    assertEquals(Object.keys(gptoss.endpoints).sort(), ['openaiChatCompletions', 'completions', 'anthropicMessages', 'openaiResponses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
@@ -97,7 +97,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
       models: [{
         upstreamModelId: 'gpt-oss:120b',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Pinned 120B',
         pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
       }],
@@ -109,7 +109,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
-    assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
+    assertEquals(Object.keys(models[0].endpoints), ['openaiChatCompletions']);
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
@@ -124,7 +124,7 @@ test('manual known models inherit built-in pricing when no override is configure
       models: [{
         upstreamModelId: 'deepseek-v4-flash',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
       }],
     },
   }));

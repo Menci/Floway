@@ -138,7 +138,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     authStyle: 'bearer',
     ingressHeadersRules: [],
     apiKey: 'sk-custom',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
   };
   const { config: overrideConfig, ...rest } = overrides;
 

@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsSt
 const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
 test('OpenAI Chat Completions initiator is user when the last message is from the user', async () => {

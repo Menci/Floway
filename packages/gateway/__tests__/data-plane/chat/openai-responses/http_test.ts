@@ -126,7 +126,7 @@ const makeCandidate = (overrides: {
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
+  const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
   const provider = stubProvider({
     callOpenAIResponses: overrides.callOpenAIResponses,
   });

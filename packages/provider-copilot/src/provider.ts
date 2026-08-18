@@ -59,13 +59,13 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
   switch (path) {
   case '/chat/completions':
   case '/v1/chat/completions':
-    return 'chatCompletions';
+    return 'openaiChatCompletions';
   case '/responses':
   case '/v1/responses':
-    return 'responses';
+    return 'openaiResponses';
   case '/v1/messages':
   case '/messages':
-    return 'messages';
+    return 'anthropicMessages';
   case '/embeddings':
   case '/v1/embeddings':
     return 'embeddings';
@@ -84,8 +84,8 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
   if ((model.supported_endpoints ?? []).some(path => copilotPathToModelEndpoint(path) === endpoint)) return true;
   // Copilot's Anthropic-family entries have historically under-reported their
   // native Anthropic Messages path, so treat claude-* as Anthropic-Messages-capable.
-  if (endpoint === 'messages' && model.id.startsWith('claude-')) return true;
-  if (endpoint === 'chatCompletions') {
+  if (endpoint === 'anthropicMessages' && model.id.startsWith('claude-')) return true;
+  if (endpoint === 'openaiChatCompletions') {
     return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
   }
   if (endpoint === 'embeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
@@ -93,16 +93,16 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
 };
 
 const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndpoints => {
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'responses'))) {
-    return { responses: {} };
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiResponses'))) {
+    return { openaiResponses: {} };
   }
 
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'messages'))) {
-    return { messages: {} };
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'anthropicMessages'))) {
+    return { anthropicMessages: {} };
   }
 
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'chatCompletions'))) {
-    return { chatCompletions: {} };
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiChatCompletions'))) {
+    return { openaiChatCompletions: {} };
   }
 
   return rawModels.some(model => rawModelSupportsEndpoint(model, 'embeddings')) ? { embeddings: {} } : {};
@@ -332,7 +332,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),
     callOpenAIChatCompletions: async (model, body, signal, opts) => {
-      const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
+      const rawModel = rawModelFor(model, 'openaiChatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: OpenAIChatCompletionsBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: new Headers(opts.headers),
@@ -347,7 +347,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return lowerToStream(result, rawModel.id);
     },
     callOpenAIResponses: async (model, body, action, signal, opts) => {
-      const rawModel = rawModelFor(model, 'responses', { reasoningEffort: openaiResponsesReasoningEffort(body) });
+      const rawModel = rawModelFor(model, 'openaiResponses', { reasoningEffort: openaiResponsesReasoningEffort(body) });
       const ctx: OpenAIResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: new Headers(opts.headers),
@@ -429,7 +429,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // Both the native Anthropic Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
       const ctx = anthropicMessagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
-      const rawModel = rawModelFor(model, 'messages', {
+      const rawModel = rawModelFor(model, 'anthropicMessages', {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: anthropicMessagesReasoningEffort(body),
         fast: body.speed === 'fast',
@@ -444,7 +444,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     },
     callAnthropicMessagesCountTokens: async (model, body, signal, opts) => {
       const ctx = anthropicMessagesBoundaryContext(body, model, opts.headers, opts.anthropicBeta);
-      const rawModel = rawModelFor(model, 'messages', {
+      const rawModel = rawModelFor(model, 'anthropicMessages', {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: anthropicMessagesReasoningEffort(body),
       });

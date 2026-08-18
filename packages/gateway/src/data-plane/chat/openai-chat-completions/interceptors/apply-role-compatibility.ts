@@ -3,7 +3,7 @@ import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-
 import { providerModelOf } from '@floway-dev/provider';
 
 export const withRoleCompatibilityApplied: OpenAIChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'openai-chat-completions') return run();
+  if (ctx.targetApi !== 'openaiChatCompletions') return run();
 
   const flags = providerModelOf(ctx.candidate).enabledFlags;
   const rewriteSystemToDeveloper = flags.has('rewrite-system-to-developer');

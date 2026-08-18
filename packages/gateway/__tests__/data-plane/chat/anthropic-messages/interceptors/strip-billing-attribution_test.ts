@@ -20,10 +20,10 @@ interface InvocationOptions {
 const invocation = (payload: AnthropicMessagesPayload, { flagOn = true }: InvocationOptions = {}): AnthropicMessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: { endpoints: { messages: {} } },
+    model: { endpoints: { anthropicMessages: {} } },
     enabledFlags: flagOn ? new Set(['strip-billing-attribution']) : new Set(),
   }),
-  targetApi: 'messages',
+  targetApi: 'anthropicMessages',
   headers: new Headers(),
 });
 

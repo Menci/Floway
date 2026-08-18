@@ -12,7 +12,7 @@ describe('custom discovered model projection', () => {
         { id: 'speech', kind: 'transcription' },
         { id: 'ranker', kind: 'rerank' },
       ],
-    }, { chatCompletions: {} });
+    }, { openaiChatCompletions: {} });
 
     expect(models[0]?.endpoints).toEqual({ audioTranscriptions: {} });
     expect(models[1]?.endpoints).toEqual({ rerank: {} });
@@ -34,7 +34,7 @@ describe('custom discovered model projection', () => {
       reasoning: { effort: { supported: ['none', 'high'], default: 'high' } },
     } satisfies NonNullable<UpstreamModelConfig['chat']>;
 
-    const chatModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { responses: {} });
+    const chatModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { openaiResponses: {} });
     const embeddingModel = discoveredModelsFromResponse({ kind: 'custom', data: [{ id: 'vision', chat }] }, { embeddings: {} });
 
     expect(chatModel[0]?.chat).toEqual(chat);
@@ -50,7 +50,7 @@ describe('custom discovered model projection', () => {
         { id: 'speech', kind: 'transcription' },
         { id: 'ranker', kind: 'rerank' },
       ],
-    }, { chatCompletions: {} });
+    }, { openaiChatCompletions: {} });
 
     expect(modelsAreValid(models)).toBe(true);
   });
@@ -58,7 +58,7 @@ describe('custom discovered model projection', () => {
 
 describe('manual model validation', () => {
   it('rejects the same incomplete identities and endpoint contracts as the gateway', () => {
-    expect(modelsAreValid([{ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } }])).toBe(false);
+    expect(modelsAreValid([{ upstreamModelId: '', kind: 'chat', endpoints: { openaiChatCompletions: {} } }])).toBe(false);
     expect(modelsAreValid([{ upstreamModelId: 'ranker', kind: 'rerank', endpoints: { rerank: {} } }])).toBe(false);
     expect(modelsAreValid([{
       upstreamModelId: 'ranker',

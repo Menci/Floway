@@ -24,7 +24,7 @@ const invocation = (input: OpenAIResponsesInputItem[] = []): OpenAIResponsesBoun
     parallel_tool_calls: true,
   },
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
   action: 'generate',
 });
 

@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload & { cache_control?: { type
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 test('ports top-level cache_control onto the last cacheable block and drops the root field', async () => {

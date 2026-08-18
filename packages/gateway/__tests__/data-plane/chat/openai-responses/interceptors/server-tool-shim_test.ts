@@ -317,7 +317,7 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 };
 
 interface InvocationOverrides {
-  targetApi?: 'responses' | 'messages' | 'openai-chat-completions';
+  targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
   payload?: Partial<OpenAIResponsesPayload>;
 }
@@ -325,12 +325,12 @@ interface InvocationOverrides {
 const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
   candidate: stubModelCandidate({
     ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-    model: { id: 'claude-x', endpoints: { chatCompletions: {}, responses: {}, messages: {} } },
+    model: { id: 'claude-x', endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} } },
   }),
   // Default openai-chat-completions so existing tests exercise the
   // function_call_output path. Tests that care about a specific target
   // set targetApi explicitly.
-  targetApi: overrides.targetApi ?? 'openai-chat-completions',
+  targetApi: overrides.targetApi ?? 'openaiChatCompletions',
   payload: {
     model: 'claude-x',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -448,7 +448,7 @@ test('shim no-ops when targetApi=responses and flag is off', async () => {
   const { backend } = makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
-    targetApi: 'responses',
+    targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(),
   });
   const originalPayload = inv.payload;
@@ -467,7 +467,7 @@ test('shim activates when targetApi=responses and flag is on', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
-    targetApi: 'responses',
+    targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
   });
   const script = scriptedRun([messageTurn('done')]);
@@ -482,7 +482,7 @@ test('shim activates when targetApi=responses and flag is on', async () => {
 test('shim activates when targetApi=messages and flag is off', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({ targetApi: 'messages', enabledFlags: new Set<FlagId>() });
+  const inv = makeInvocation({ targetApi: 'anthropicMessages', enabledFlags: new Set<FlagId>() });
   const script = scriptedRun([messageTurn('done')]);
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
@@ -493,7 +493,7 @@ test('shim activates when targetApi=messages and flag is off', async () => {
 test('shim activates when targetApi=openai-chat-completions and flag is off', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({ targetApi: 'openai-chat-completions', enabledFlags: new Set<FlagId>() });
+  const inv = makeInvocation({ targetApi: 'openaiChatCompletions', enabledFlags: new Set<FlagId>() });
   const script = scriptedRun([messageTurn('done')]);
 
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
@@ -3928,7 +3928,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
-    targetApi: 'responses',
+    targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
   });
   const script = scriptedRun([
@@ -3958,7 +3958,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
   mockResolveAlpha.mockResolvedValue(call);
   const inv = makeInvocation({
-    targetApi: 'responses',
+    targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
     payload: {
       tools: [{
@@ -3998,7 +3998,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
   const expected = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
   const runUnsupported = async (): Promise<string> => {
     const inv = makeInvocation({
-      targetApi: 'responses',
+      targetApi: 'openaiResponses',
       enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
     });
     const script = scriptedRun([
@@ -4034,7 +4034,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
 test('openai-chat-completions target: function_call_output is plain-text formatted search results', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({ targetApi: 'openai-chat-completions' });
+  const inv = makeInvocation({ targetApi: 'openaiChatCompletions' });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),
@@ -4049,7 +4049,7 @@ test('openai-chat-completions target: function_call_output is plain-text formatt
 test('messages target: function_call_output is plain-text formatted search results', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({ targetApi: 'messages' });
+  const inv = makeInvocation({ targetApi: 'anthropicMessages' });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),

@@ -12,7 +12,7 @@ import { assert, assertEquals, assertStringIncludes, stubProviderModel, testTele
 const invocation = (): OpenAIChatCompletionsBoundaryCtx => ({
   payload: { model: 'test-model', messages: [] },
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
 const stubRequest = {};

@@ -31,8 +31,8 @@ const probePayload = (overrides: Partial<AnthropicMessagesPayload> = {}): Anthro
 
 const invocation = (payload: AnthropicMessagesPayload, userAgent: string | null = PROBE_USER_AGENT): AnthropicMessagesInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { endpoints: { responses: {} } } }),
-  targetApi: 'responses',
+  candidate: stubModelCandidate({ model: { endpoints: { openaiResponses: {} } } }),
+  targetApi: 'openaiResponses',
   headers: new Headers(userAgent === null ? {} : { 'user-agent': userAgent }),
 });
 

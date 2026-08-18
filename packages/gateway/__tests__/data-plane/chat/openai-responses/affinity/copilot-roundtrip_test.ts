@@ -74,7 +74,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   const rawModel = { id: 'gpt-test', supported_endpoints: ['/responses'] };
   const candidate = stubModelCandidate({
     provider,
-    model: { id: 'gpt-test', endpoints: { responses: {} } },
+    model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
     providerData: { rawModels: [rawModel] },
   });
   const otherCandidate = stubModelCandidate({
@@ -88,7 +88,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       modelsCache: null,
       instance: stubProvider(),
     },
-    model: { id: 'gpt-test', endpoints: { responses: {} } },
+    model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
   });
   const rawReasoning: OpenAIResponsesOutputItem = {
     type: 'reasoning',

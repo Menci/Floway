@@ -314,7 +314,7 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
     };
   });
   const upstream = 'up_chat';
-  const endpoints = { chatCompletions: {} };
+  const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     provider: {
       upstreamId: upstream,
@@ -446,7 +446,7 @@ test('generate strips disallowed headers and injects external image loading acro
   let observedHeaders: Headers | undefined;
   let observedAnthropicBeta: readonly string[] | undefined;
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const upstreamModel = stubInternalModel({ endpoints: { messages: {} } }, 'up_test');
+  const upstreamModel = stubInternalModel({ endpoints: { anthropicMessages: {} } }, 'up_test');
   const anthropicMessagesProvider = stubProvider({
     callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
       observedHeaders = opts.headers;

@@ -2,7 +2,7 @@ import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
 import { providerModelOf } from '@floway-dev/provider';
 
 export const withRoleCompatibilityApplied: AnthropicMessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'messages') return run();
+  if (ctx.targetApi !== 'anthropicMessages') return run();
   if (!providerModelOf(ctx.candidate).enabledFlags.has('rewrite-mid-conv-system-to-user')) return run();
 
   ctx.payload = {

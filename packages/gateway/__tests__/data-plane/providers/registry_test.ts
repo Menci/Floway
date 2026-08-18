@@ -23,7 +23,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
         },
       ],
     },

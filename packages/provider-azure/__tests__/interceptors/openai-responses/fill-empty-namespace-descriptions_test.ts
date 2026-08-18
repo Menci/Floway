@@ -8,7 +8,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
   action: 'generate',
 });
 

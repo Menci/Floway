@@ -23,7 +23,7 @@ const okEvents = () =>
 const invocation = (payload: CanonicalOpenAIResponsesPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): OpenAIResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'responses',
+  targetApi: 'openaiResponses',
   headers: new Headers(),
   action: 'generate',
 });

@@ -32,7 +32,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } } },
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: ' there' } } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'anthropicMessages', ctx, () => null);
     const collected = await drainEvents(result);
     expect(collected).toEqual(frames);
     expect(ctx.attempt.firstOutputTokenAt).not.toBe(null);
@@ -44,7 +44,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'response.created' } },
       { type: 'event', event: { type: 'response.output_item.added' } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
     await drainEvents(result);
     expect(ctx.attempt.firstOutputTokenAt).toBe(null);
   });
@@ -56,7 +56,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openai-chat-completions', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);
@@ -76,7 +76,7 @@ test('an abandoned stream still settles its metadata instead of hanging the call
   const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
   const frames: ProtocolFrame<unknown>[] = [{ type: 'event', event: { type: 'response.created' } }];
 
-  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
   expect(result.type).toBe('events');
   if (result.type !== 'events') return;
 

@@ -13,7 +13,7 @@ const stubCtx = mockChatGatewayCtx();
 const invocation = (payload: OpenAIChatCompletionsPayload = { model: 'test-model', messages: [] }): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate(),
-  targetApi: 'openai-chat-completions',
+  targetApi: 'openaiChatCompletions',
   headers: new Headers(),
 });
 

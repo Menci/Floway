@@ -19,10 +19,10 @@ const invocation = (
 ): AnthropicMessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: { endpoints: { messages: {} } },
+    model: { endpoints: { anthropicMessages: {} } },
     enabledFlags,
   }),
-  targetApi: 'messages',
+  targetApi: 'anthropicMessages',
   headers: new Headers(),
 });
 

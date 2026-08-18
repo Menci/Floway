@@ -15,7 +15,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentSt
 const invocation = (payload: GeminiGenerateContentPayload): GeminiGenerateContentInvocation => ({
   payload,
   candidate: stubModelCandidate(),
-  targetApi: 'messages',
+  targetApi: 'anthropicMessages',
   headers: new Headers(),
 });
 

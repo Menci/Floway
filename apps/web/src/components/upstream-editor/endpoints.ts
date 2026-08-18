@@ -5,9 +5,9 @@ import type { ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protoc
 // the key the config stores.
 export const ENDPOINT_PATHS = {
   completions: '/completions',
-  chatCompletions: '/chat/completions',
-  responses: '/responses',
-  messages: '/messages',
+  openaiChatCompletions: '/chat/completions',
+  openaiResponses: '/responses',
+  anthropicMessages: '/messages',
   embeddings: '/embeddings',
   rerank: '/alpha/search',
   imagesGenerations: '/images/generations',
@@ -15,7 +15,7 @@ export const ENDPOINT_PATHS = {
   audioTranscriptions: '/audio/transcriptions',
 } as const satisfies Record<keyof ModelEndpoints, string>;
 
-export const CHAT_ENDPOINT_KEYS = ['completions', 'chatCompletions', 'responses', 'messages'] as const satisfies readonly (keyof ModelEndpoints)[];
+export const CHAT_ENDPOINT_KEYS = ['completions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['imagesGenerations', 'imagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
 // Every path the custom provider accepts an override for, in the order the
@@ -42,7 +42,7 @@ const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
 // configured embeddings or rerank path and then persist the loss through the
 // auto-to-manual conversion.
 export const configuredEndpoints = (configured: ModelEndpoints): ModelEndpoints =>
-  Object.keys(configured).length ? structuredClone(configured) : { chatCompletions: {} };
+  Object.keys(configured).length ? structuredClone(configured) : { openaiChatCompletions: {} };
 
 // Everything a model's kind decides about its own shape, for every place that
 // puts a model into a kind: the discovered-model projection of a model that
@@ -61,5 +61,5 @@ export const shapeForKind = (
   const kept: ModelEndpoints = {};
   for (const key of family) if (current.endpoints[key]) kept[key] = current.endpoints[key];
   if (Object.keys(kept).length) return { endpoints: kept };
-  return { endpoints: kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} } };
+  return { endpoints: kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { openaiChatCompletions: {} } };
 };

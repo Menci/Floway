@@ -13,7 +13,7 @@ const stubCtx = mockChatGatewayCtx();
 
 const invocation = (
   enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens']),
-  targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openai-chat-completions',
+  targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openaiChatCompletions',
 ): OpenAIChatCompletionsInvocation => ({
   payload: { model: 'kimi-k3', messages: [{ role: 'user', content: 'hi' }] } satisfies OpenAIChatCompletionsPayload,
   candidate: stubModelCandidate({ enabledFlags }),
@@ -131,6 +131,6 @@ test('stands down entirely when the wire it speaks about is elsewhere', async ()
   // entry owns that wire, and by the time these events reach this chain they
   // are a translation. Neither the fold nor its errors apply here, so even a
   // payload that would raise on the wire passes through untouched.
-  const usage = await run(invocation(undefined, 'responses'), HYPER_USAGE_WITHOUT_TOTAL);
+  const usage = await run(invocation(undefined, 'openaiResponses'), HYPER_USAGE_WITHOUT_TOTAL);
   assertEquals(usage.prompt_tokens, 479);
 });

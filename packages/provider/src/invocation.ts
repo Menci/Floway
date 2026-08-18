@@ -7,7 +7,7 @@ import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-export type ChatTargetApi = 'messages' | 'responses' | 'openai-chat-completions';
+export type ChatTargetApi = 'anthropicMessages' | 'openaiResponses' | 'openaiChatCompletions';
 
 // One (provider, model) pair the resolver produced for an inbound id,
 // plus the per-request `Fetcher` minted for the provider's upstream. The

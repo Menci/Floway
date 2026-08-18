@@ -18,7 +18,7 @@ import { translateOpenAIChatCompletionsViaAnthropicMessages, translateOpenAIChat
 
 // `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
 // then the translated Anthropic Messages path, then the translated OpenAI Responses path.
-export const openaiChatCompletionsTarget = chatTargetPicker(['openai-chat-completions', 'messages', 'responses']);
+export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 export interface OpenAIChatCompletionsAttemptArgs {
   readonly payload: OpenAIChatCompletionsPayload;
@@ -40,7 +40,7 @@ export const openaiChatCompletionsAttempt = {
       headers,
     };
     return await runInterceptors(invocation, ctx, openaiChatCompletionsInterceptors, async () => {
-      if (targetApi === 'openai-chat-completions') {
+      if (targetApi === 'openaiChatCompletions') {
         if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
         const providerResult = await candidate.provider.instance.callOpenAIChatCompletions(
@@ -49,9 +49,9 @@ export const openaiChatCompletionsAttempt = {
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, 'openai-chat-completions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
       }
-      if (targetApi === 'messages') {
+      if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(
           invocation.payload,
           p => translateOpenAIChatCompletionsViaAnthropicMessages(p, {
@@ -64,7 +64,7 @@ export const openaiChatCompletionsAttempt = {
           }),
         );
       }
-      if (targetApi === 'responses') {
+      if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateOpenAIChatCompletionsViaOpenAIResponses(p, { model: candidate.model.id }),

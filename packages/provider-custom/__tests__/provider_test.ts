@@ -32,7 +32,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
     modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
     models: options.models ?? [],
@@ -48,7 +48,7 @@ test('Custom writes every configured header value and passes admitted client val
       { key: 'x-client-never-sends', value: 'configured-anyway' },
     ],
     modelsFetchEnabled: false,
-    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   }));
   let observed: Headers | undefined;
 
@@ -98,7 +98,7 @@ test('getProvidedModels returns only manual models and never fetches when models
       {
         upstreamModelId: 'manual-only',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Only',
       },
     ],
@@ -126,7 +126,7 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
       {
         upstreamModelId: 'manual-extra',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Extra',
       },
     ],
@@ -179,7 +179,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
       {
         upstreamModelId: 'shared-id',
         kind: 'chat',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
         display_name: 'Manual Override',
         pricing: manualPricing,
       },
@@ -207,7 +207,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
 test('a manual model without explicit pricing inherits pricing from its shadowed auto row', async () => {
   const inheritedPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
   const instance = createCustomProvider(buildCustomUpstream({
-    models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   }));
 
   await withMockedFetch(
@@ -379,7 +379,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
     async () => {
       const provider = createCustomProvider(buildCustomUpstream()).instance;
       const [model] = await provider.getProvidedModels(directFetcher);
-      assertEquals(model.endpoints, { chatCompletions: {} });
+      assertEquals(model.endpoints, { openaiChatCompletions: {} });
       assertEquals(model.kind, 'chat');
     },
   );
@@ -488,7 +488,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       upstreamModelId: 'pinned-chat',
       publicModelId: 'pinned',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       display_name: 'Pinned Chat',
       limits: { max_output_tokens: 4096 },
       pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
@@ -502,7 +502,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'pinned');
       assertEquals(models[0].kind, 'chat');
-      assertEquals(models[0].endpoints, { chatCompletions: {} });
+      assertEquals(models[0].endpoints, { openaiChatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
       assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
@@ -515,7 +515,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
     models: [{
       upstreamModelId: 'shared',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       display_name: 'Manual Shared',
       pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
     }],

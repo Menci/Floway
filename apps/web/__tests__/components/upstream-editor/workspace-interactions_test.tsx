@@ -27,7 +27,7 @@ const model = (id: string) => ({
   publicModelId: id,
   display_name: id,
   kind: 'chat' as const,
-  endpoints: { responses: {} },
+  endpoints: { openaiResponses: {} },
 });
 
 const record = upstreamRecord('up_test', {
@@ -37,7 +37,7 @@ const record = upstreamRecord('up_test', {
     baseUrl: 'https://example.com',
     authStyle: 'bearer',
     apiKey: '',
-    endpoints: { responses: {} },
+    endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false },
     models: [model('model-a'), model('model-b')],
@@ -198,7 +198,7 @@ describe('upstream model workspace field-array transitions', () => {
     const editor = await screen.findByLabelText('YAML models');
     fireEvent.change(editor, {
       target: {
-        value: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    responses: {}\n',
+        value: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n',
       },
     });
     fireEvent.click(screen.getByRole('button', { name: models('editWithUi') }));

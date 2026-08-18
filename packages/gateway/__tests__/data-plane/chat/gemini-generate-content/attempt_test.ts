@@ -132,7 +132,7 @@ test('generate translates through Anthropic Messages when targetApi is messages'
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages, endpoints: { messages: {} } }),
+    candidate: makeCandidate({ callAnthropicMessages, endpoints: { anthropicMessages: {} } }),
     headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols' }),
   });
 
@@ -152,7 +152,7 @@ test('generate translates through OpenAI Responses when targetApi is responses',
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIResponses, endpoints: { responses: {} } }),
+    candidate: makeCandidate({ callOpenAIResponses, endpoints: { openaiResponses: {} } }),
     headers: new Headers(),
   });
 
@@ -241,7 +241,7 @@ test('countTokens refuses a non-anthropic-messages candidate', async () => {
     await geminiGenerateContentAttempt.countTokens({
       payload: makePayload(),
       ctx: makeGatewayCtx(),
-      candidate: makeCandidate({ endpoints: { responses: {} } }),
+      candidate: makeCandidate({ endpoints: { openaiResponses: {} } }),
       headers: new Headers(),
     });
   } catch (error) {

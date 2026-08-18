@@ -489,7 +489,7 @@ test('generate falls through translate-out to messages target', async () => {
     modelKey: 'messages-key',
     headers: new Headers(),
   }));
-  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callAnthropicMessages });
+  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
   queueResolution([candidate]);
 
   const result = await openaiResponsesServe.generate({
@@ -540,7 +540,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
     modelKey: 'messages-key',
     headers: new Headers(),
   }));
-  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callAnthropicMessages });
+  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
   queueResolution([candidate]);
 
   const result = await openaiResponsesServe.generate({ payload: makePayload(), ctx: makeGatewayCtx(), headers: new Headers() });
@@ -582,7 +582,7 @@ test('generate falls through translate-out to openai-chat-completions target', a
     modelKey: 'chat-completions-key',
     headers: new Headers(),
   }));
-  const candidate = makeCandidate({ upstream: 'up_c', endpoints: { chatCompletions: {} }, callOpenAIChatCompletions });
+  const candidate = makeCandidate({ upstream: 'up_c', endpoints: { openaiChatCompletions: {} }, callOpenAIChatCompletions });
   queueResolution([candidate]);
 
   const result = await openaiResponsesServe.generate({

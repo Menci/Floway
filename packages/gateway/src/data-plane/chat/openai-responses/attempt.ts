@@ -27,7 +27,7 @@ import { translateOpenAIResponsesViaOpenAIChatCompletions, translateOpenAIRespon
 // same picker covers compact: every OpenAI Responses target is reachable via the
 // shim, which pivots compact→generate inside the chain on non-openai-responses
 // targets.
-export const openaiResponsesTarget = chatTargetPicker(['responses', 'messages', 'openai-chat-completions']);
+export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
 
 interface OpenAIResponsesAttemptBaseArgs {
   readonly action: OpenAIResponsesAction;
@@ -55,7 +55,7 @@ type OpenAIResponsesAttemptGenerateArgs = Omit<OpenAIResponsesAttemptInvokeArgs,
 // hand back is the caller's contract; keying off the caller's value is the
 // only place that contract lives.
 //
-// The module-boundary invariant `compact-shaped ⇒ targetApi='responses'`
+// The module-boundary invariant `compact-shaped ⇒ targetApi='openaiResponses'`
 // at dispatch time is enforced in two places, each at the layer that owns
 // the corresponding piece of state:
 //
@@ -140,7 +140,7 @@ const dispatchOpenAIResponses = async (
 ): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> => {
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
-  case 'responses': {
+  case 'openaiResponses': {
     if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIResponses(invocation.payload, candidate.rules);
     // Compact drops `stream` and `store` before hitting the wire: `store` is a
     // gateway-only snapshot-persistence hint the upstream compact endpoint
@@ -164,7 +164,7 @@ const dispatchOpenAIResponses = async (
     );
     return await providerOpenAIResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
   }
-  case 'messages':
+  case 'anthropicMessages':
     if (invocation.action === 'compact') {
       // The responses-compact-shim is structurally required on non-openai-responses
       // targets and pivots ctx.action to 'generate' before reaching here;
@@ -172,7 +172,7 @@ const dispatchOpenAIResponses = async (
       // disengaged or was wired out of the chain. A compaction_trigger in
       // input is caught one layer down by the translator's
       // unexpected-input-item guard.
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='messages' — the responses-compact-shim must engage and pivot the action`);
+      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the responses-compact-shim must engage and pivot the action`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -185,9 +185,9 @@ const dispatchOpenAIResponses = async (
         payload: translated, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       }),
     );
-  case 'openai-chat-completions':
+  case 'openaiChatCompletions':
     if (invocation.action === 'compact') {
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openai-chat-completions' — the responses-compact-shim must engage and pivot the action`);
+      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the responses-compact-shim must engage and pivot the action`);
     }
     return await traverseTranslation(
       invocation.payload,

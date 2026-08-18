@@ -17,7 +17,7 @@ const invocation = (
 ): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'openai-chat-completions',
+  targetApi: 'openaiChatCompletions',
   headers: new Headers(),
 });
 

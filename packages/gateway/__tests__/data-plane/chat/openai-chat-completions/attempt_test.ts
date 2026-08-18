@@ -68,7 +68,7 @@ const makeCandidate = (overrides: {
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
+  const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
   const provider = stubProvider({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
@@ -144,7 +144,7 @@ test('generate native target applies role compatibility flags in target-chain or
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callOpenAIChatCompletions,
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       enabledFlags: new Set([
         'rewrite-developer-to-system',
         'rewrite-mid-conv-system-to-user',
@@ -174,7 +174,7 @@ test('generate translates through the Anthropic Messages target when only that e
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages, endpoints: { messages: {} } }),
+    candidate: makeCandidate({ callAnthropicMessages, endpoints: { anthropicMessages: {} } }),
     headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols' }),
   });
 
@@ -204,7 +204,7 @@ test('generate injects the platform external-image loader into Chat-to-Anthropic
       }],
     }),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages, endpoints: { messages: {} } }),
+    candidate: makeCandidate({ callAnthropicMessages, endpoints: { anthropicMessages: {} } }),
     headers: new Headers(),
   });
 
@@ -237,7 +237,7 @@ test('generate translates through the OpenAI Responses target when only that end
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIResponses, endpoints: { responses: {} } }),
+    candidate: makeCandidate({ callOpenAIResponses, endpoints: { openaiResponses: {} } }),
     headers: new Headers(),
   });
 
@@ -277,7 +277,7 @@ test('generate preserves translated instructions before rewriting inline system 
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callOpenAIResponses,
-      endpoints: { responses: {} },
+      endpoints: { openaiResponses: {} },
       enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
     }),
     headers: new Headers(),

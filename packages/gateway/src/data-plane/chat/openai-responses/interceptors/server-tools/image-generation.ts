@@ -1391,7 +1391,7 @@ export const transformInputItemsForImageGeneration = (
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
+  if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
 

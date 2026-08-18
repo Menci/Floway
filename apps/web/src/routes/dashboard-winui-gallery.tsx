@@ -316,7 +316,7 @@ function SelectSection() {
       </StateLabel>
     </Row>
     <Row label="dropdown - multiselect">
-      <Dropdown multiselect defaultSelectedOptions={['chat', 'responses']} placeholder="Endpoints">
+      <Dropdown multiselect defaultSelectedOptions={['chat', 'openaiResponses']} placeholder="Endpoints">
         <Option text="OpenAI Chat Completions" value="chat">OpenAI Chat Completions</Option>
         <Option text="OpenAI Responses" value="responses">Responses</Option>
         <Option text="Embeddings" value="embeddings">Embeddings</Option>

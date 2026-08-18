@@ -25,7 +25,7 @@ const realModel = (
 ): InternalModel => ({
   kind: 'chat',
   limits: {},
-  endpoints: { chatCompletions: {}, messages: {}, responses: {} },
+  endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} },
   providerModels: {},
   ...overrides,
 });
@@ -351,9 +351,9 @@ describe('synthesizeListedAliases', () => {
     })];
     const realModels = [
       // Target a serves the three chat endpoints + /completions.
-      realModel({ id: 'a', endpoints: { chatCompletions: {}, messages: {}, responses: {}, completions: {} } }),
+      realModel({ id: 'a', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {}, completions: {} } }),
       // Target b only serves the three chat endpoints.
-      realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
+      realModel({ id: 'b', endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} } }),
     ];
     const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // Union: every key surfaces. Resolver narrows to the supporting subset
@@ -417,7 +417,7 @@ describe('synthesizeListedAliases', () => {
     });
     expect(entry.id).toBe('fast-claude');
     expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
-    expect(entry.endpoints).toEqual({ chatCompletions: {}, messages: {}, responses: {} });
+    expect(entry.endpoints).toEqual({ openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} });
   });
 
   test('metadata is computed gateway-wide — same numbers regardless of caller cap', () => {

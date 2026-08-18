@@ -92,24 +92,24 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: 'openai-chat-completions' | 'messages' | 'responses';
+  targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'openai-chat-completions';
+  const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
   // When the test fixes `endpoints` directly, use it verbatim — that lets a
   // test pin a wrong-endpoint shape the picker rejects. Otherwise synthesize
   // a single-endpoint map from `targetApi` so the gemini serve layer's
   // picker (openai-chat-completions first, then messages, then responses) lands on
   // the requested wire.
-  const endpoints = overrides.endpoints ?? (targetApi === 'openai-chat-completions'
-    ? { chatCompletions: {} }
-    : targetApi === 'messages'
-      ? { messages: {} }
-      : { responses: {} });
+  const endpoints = overrides.endpoints ?? (targetApi === 'openaiChatCompletions'
+    ? { openaiChatCompletions: {} }
+    : targetApi === 'anthropicMessages'
+      ? { anthropicMessages: {} }
+      : { openaiResponses: {} });
   const provider = stubProvider({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
@@ -189,7 +189,7 @@ test('POST /v1beta/models/:model:countTokens returns the Gemini totalTokens enve
     }),
     modelKey: 'k',
   }));
-  queueCandidates([makeCandidate({ targetApi: 'messages', callAnthropicMessagesCountTokens })]);
+  queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
 
   const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
     method: 'POST',
@@ -210,7 +210,7 @@ test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest 
     }),
     modelKey: 'k',
   }));
-  queueCandidates([makeCandidate({ targetApi: 'messages', callAnthropicMessagesCountTokens })]);
+  queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
 
   const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
     method: 'POST',
@@ -229,7 +229,7 @@ test('POST /v1beta/models/:model:generateContent translates through Anthropic Me
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ targetApi: 'messages', callAnthropicMessages })]);
+  queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);
 
   const response = await makeApp().request('/v1beta/models/test-model:generateContent', {
     method: 'POST',

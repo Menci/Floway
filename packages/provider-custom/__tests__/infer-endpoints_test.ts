@@ -109,7 +109,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       baseUrl: 'https://custom.example.com',
       authStyle: 'bearer',
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
     state: null,

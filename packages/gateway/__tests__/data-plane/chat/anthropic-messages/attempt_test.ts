@@ -59,7 +59,7 @@ const makeCandidate = (overrides: {
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
+  const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
   const provider = stubProvider({
     callAnthropicMessages: overrides.callAnthropicMessages,
     callOpenAIResponses: overrides.callOpenAIResponses,
@@ -166,7 +166,7 @@ test('generate translate-to-responses branch routes through openaiResponsesAttem
   const result = await anthropicMessagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIResponses, endpoints: { responses: {} } }),
+    candidate: makeCandidate({ callOpenAIResponses, endpoints: { openaiResponses: {} } }),
     headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
     anthropicBeta: ['context-1m-2025-08-07'],
   });
@@ -197,7 +197,7 @@ test('generate does not carry Anthropic Messages beta metadata through translati
   const result = await anthropicMessagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { chatCompletions: {} } }),
+    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } }),
     headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
     anthropicBeta: ['context-1m-2025-08-07'],
   });
@@ -245,7 +245,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callOpenAIResponses,
-      endpoints: { responses: {} },
+      endpoints: { openaiResponses: {} },
       enabledFlags: new Set<FlagId>([
         'rewrite-mid-conv-system-to-user',
         'rewrite-system-to-developer',
@@ -305,7 +305,7 @@ test('generate translate-to-responses branch rewrites a multi-block system prefi
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callOpenAIResponses,
-      endpoints: { responses: {} },
+      endpoints: { openaiResponses: {} },
       enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
     }),
     headers: new Headers(),
@@ -461,7 +461,7 @@ test('countTokens refuses a non-anthropic-messages candidate', async () => {
     await anthropicMessagesAttempt.countTokens({
       payload: makePayload(),
       ctx: makeGatewayCtx(),
-      candidate: makeCandidate({ endpoints: { responses: {} } }),
+      candidate: makeCandidate({ endpoints: { openaiResponses: {} } }),
       headers: new Headers(),
       anthropicBeta: [],
     });

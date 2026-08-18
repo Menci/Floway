@@ -13,7 +13,7 @@ const stubCtx = mockChatGatewayCtx();
 
 const invocation = (
   enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens']),
-  targetApi: OpenAIResponsesInvocation['targetApi'] = 'responses',
+  targetApi: OpenAIResponsesInvocation['targetApi'] = 'openaiResponses',
 ): OpenAIResponsesInvocation => ({
   payload: { model: 'test-model', input: [{ type: 'message', role: 'user', content: 'hi' }] },
   candidate: stubModelCandidate({ enabledFlags }),
@@ -123,6 +123,6 @@ test('raises naming the flag when the cache counts underflow with no verdict', a
 });
 
 test('stands down entirely when the wire it speaks about is elsewhere', async () => {
-  const response = await run(invocation(undefined, 'openai-chat-completions'), exclusiveUsageWithoutTotal());
+  const response = await run(invocation(undefined, 'openaiChatCompletions'), exclusiveUsageWithoutTotal());
   assertEquals(response.usage?.input_tokens, 479);
 });

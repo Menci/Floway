@@ -17,8 +17,8 @@ import { translateGeminiGenerateContentViaOpenAIChatCompletions, translateGemini
 // Gemini has no native upstream target in the provider API; prefer Chat
 // Completions, then Anthropic Messages, then OpenAI Responses for generate. countTokens has
 // no translation path beyond native Anthropic Messages count_tokens.
-export const geminiGenerateContentGenerateTarget = chatTargetPicker(['openai-chat-completions', 'messages', 'responses']);
-export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['messages']);
+export const geminiGenerateContentGenerateTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']);
 
 export interface GeminiGenerateContentAttemptGenerateArgs {
   readonly payload: GeminiGenerateContentPayload;
@@ -50,7 +50,7 @@ export const geminiGenerateContentAttempt = {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
-      if (targetApi === 'messages') {
+      if (targetApi === 'anthropicMessages') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiGenerateContentViaAnthropicMessages(p, transCtx),
@@ -59,7 +59,7 @@ export const geminiGenerateContentAttempt = {
           }),
         );
       }
-      if (targetApi === 'responses') {
+      if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiGenerateContentViaOpenAIResponses(p, transCtx),
@@ -68,7 +68,7 @@ export const geminiGenerateContentAttempt = {
           }),
         );
       }
-      if (targetApi === 'openai-chat-completions') {
+      if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiGenerateContentViaOpenAIChatCompletions(p, transCtx),

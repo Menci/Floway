@@ -18,7 +18,7 @@ const invocation = (
   payload: payload as AnthropicMessagesPayload,
   headers: new Headers(),
   anthropicBeta,
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 const baseBody = {

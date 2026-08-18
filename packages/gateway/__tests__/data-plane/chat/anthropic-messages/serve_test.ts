@@ -219,7 +219,7 @@ test('generate translates through the OpenAI Responses target when only that end
     modelKey: 'responses-model-key',
     headers: new Headers(),
   }));
-  queueResolution([makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callOpenAIResponses })]);
+  queueResolution([makeCandidate({ upstream: 'up_r', endpoints: { openaiResponses: {} }, callOpenAIResponses })]);
 
   const result = await anthropicMessagesServe.generate({
     payload: makePayload(),
@@ -397,9 +397,9 @@ test('countTokens renders model-missing as a 404 when no candidates are availabl
 test('countTokens filters out candidates whose endpoints do not satisfy the messages-countTokens preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn();
-  // anthropicMessagesCountTokensTarget = chatTargetPicker(['messages']); a candidate
+  // anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
   // exposing only chatCompletions matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callAnthropicMessagesCountTokens })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
 
   const result = await anthropicMessagesServe.countTokens({
     payload: makePayload({ model: 'wrong-endpoint-model' }),

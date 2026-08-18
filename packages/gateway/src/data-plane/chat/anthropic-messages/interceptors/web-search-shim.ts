@@ -893,7 +893,7 @@ type PrepareAnthropicMessagesWebSearchInvocationResult =
   | { type: 'prepared'; state: PreparedAnthropicMessagesWebSearchShimState };
 
 const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvocation): PrepareAnthropicMessagesWebSearchInvocationResult => {
-  if (ctx.targetApi === 'messages' && !providerModelOf(ctx.candidate).enabledFlags.has('messages-web-search-shim')) {
+  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('messages-web-search-shim')) {
     return { type: 'inactive' };
   }
 

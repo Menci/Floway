@@ -29,7 +29,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, embeddings: {} },
       },
     ],
   },
@@ -160,7 +160,7 @@ test('Foundry project endpoints route OpenAI v1 calls under the project base', a
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          endpoints: { responses: {} },
+          endpoints: { openaiResponses: {} },
         },
       ],
     },
@@ -189,7 +189,7 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          endpoints: { responses: {}, messages: {} },
+          endpoints: { openaiResponses: {}, anthropicMessages: {} },
         },
       ],
     },
@@ -222,7 +222,7 @@ test('native Anthropic calls land on the resource Anthropic base when a project 
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },
@@ -251,7 +251,7 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },
@@ -302,7 +302,7 @@ test('Foundry Anthropic messages target URI is accepted and splits per surface',
       models: [
         {
           upstreamModelId: 'claude-prod',
-          endpoints: { messages: {} },
+          endpoints: { anthropicMessages: {} },
         },
       ],
     },

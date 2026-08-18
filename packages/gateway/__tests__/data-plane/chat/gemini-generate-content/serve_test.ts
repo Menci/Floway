@@ -110,7 +110,7 @@ const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStream
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: 'openai-chat-completions' | 'messages' | 'responses';
+  targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>;
@@ -118,18 +118,18 @@ const makeCandidate = (overrides: {
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'openai-chat-completions';
+  const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
   // The gemini serve layer picks the target from model.endpoints (openai-chat-completions
   // first, then messages, then responses). Narrow endpoints to the target this
   // test wants so the gemini serve layer picks the expected target via
   // geminiGenerateContentGenerateTarget.canServe. An explicit `endpoints` override beats the
   // default `targetApi`-derived map, for tests that need a candidate whose
   // endpoints satisfy none of the target preferences.
-  const endpoints = overrides.endpoints ?? (targetApi === 'openai-chat-completions'
-    ? { chatCompletions: {} }
-    : targetApi === 'messages'
-      ? { messages: {} }
-      : { responses: {} });
+  const endpoints = overrides.endpoints ?? (targetApi === 'openaiChatCompletions'
+    ? { openaiChatCompletions: {} }
+    : targetApi === 'anthropicMessages'
+      ? { anthropicMessages: {} }
+      : { openaiResponses: {} });
   const provider = stubProvider({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
@@ -164,7 +164,7 @@ test('generate translates through native OpenAI Chat Completions target end to e
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueResolution([makeCandidate({ targetApi: 'openai-chat-completions', callOpenAIChatCompletions })]);
+  queueResolution([makeCandidate({ targetApi: 'openaiChatCompletions', callOpenAIChatCompletions })]);
 
   const result = await geminiGenerateContentServe.generate({
     payload: makePayload(),
@@ -183,7 +183,7 @@ test('generate translates through Anthropic Messages when only that endpoint is 
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueResolution([makeCandidate({ targetApi: 'messages', callAnthropicMessages })]);
+  queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);
 
   const result = await geminiGenerateContentServe.generate({
     payload: makePayload(),
@@ -202,7 +202,7 @@ test('generate translates through OpenAI Responses when only that endpoint is ex
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
     action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
-  queueResolution([makeCandidate({ targetApi: 'responses', callOpenAIResponses })]);
+  queueResolution([makeCandidate({ targetApi: 'openaiResponses', callOpenAIResponses })]);
 
   const result = await geminiGenerateContentServe.generate({
     payload: makePayload(),
@@ -234,8 +234,8 @@ test('generate falls through to the next candidate when the first yields an upst
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
   }));
   queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openai-chat-completions', callOpenAIChatCompletions: firstCall }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openai-chat-completions', callOpenAIChatCompletions: secondCall }),
+    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: firstCall }),
+    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: secondCall }),
   ]);
 
   const result = await geminiGenerateContentServe.generate({
@@ -274,8 +274,8 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
     throw new Error('simulated provider-layer JS exception');
   });
   queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openai-chat-completions', callOpenAIChatCompletions: firstCall }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openai-chat-completions', callOpenAIChatCompletions: secondCall }),
+    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: firstCall }),
+    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: secondCall }),
   ]);
 
   const ctx = makeGatewayCtx();
@@ -302,8 +302,8 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openai-chat-completions', callOpenAIChatCompletions }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openai-chat-completions', callOpenAIChatCompletions }),
+    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
+    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
   ]);
 
   const result = await geminiGenerateContentServe.generate({
@@ -372,7 +372,7 @@ test('countTokens translates Gemini to Anthropic Messages count_tokens and retur
     }),
     modelKey: 'k',
   }));
-  queueResolution([makeCandidate({ targetApi: 'messages', callAnthropicMessagesCountTokens })]);
+  queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
 
   const result = await geminiGenerateContentServe.countTokens({
     payload: makePayload(),
@@ -410,9 +410,9 @@ test('countTokens renders a Google RPC NOT_FOUND when no Anthropic-Messages-capa
 test('countTokens filters out candidates whose endpoints do not satisfy the gemini-countTokens preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn();
-  // geminiGenerateContentCountTokensTarget = chatTargetPicker(['messages']); a candidate
+  // geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
   // exposing only chatCompletions matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callAnthropicMessagesCountTokens })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
 
   const result = await geminiGenerateContentServe.countTokens({
     payload: makePayload(),
@@ -437,7 +437,7 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
     capturedBodies.push(body as Record<string, unknown>);
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
   });
-  queueResolution([makeCandidate({ targetApi: 'openai-chat-completions', callOpenAIChatCompletions })], {
+  queueResolution([makeCandidate({ targetApi: 'openaiChatCompletions', callOpenAIChatCompletions })], {
     aliasRules: { reasoning: { effort: 'high', budget_tokens: 1024 }, verbosity: 'low' },
   });
 

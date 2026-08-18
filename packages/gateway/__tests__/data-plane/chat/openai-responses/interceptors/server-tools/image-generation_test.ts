@@ -41,9 +41,9 @@ const paddedPngResponse = (byteLength: number): Response => {
 const makeCtx = (payload: Partial<OpenAIResponsesPayload>): OpenAIResponsesInvocation => ({
   candidate: stubModelCandidate({
     enabledFlags: new Set(['responses-image-generation-shim']),
-    model: { id: 'm', endpoints: { responses: {} } },
+    model: { id: 'm', endpoints: { openaiResponses: {} } },
   }),
-  targetApi: 'responses',
+  targetApi: 'openaiResponses',
   payload: { model: 'm', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
   headers: new Headers(),
   action: 'generate',

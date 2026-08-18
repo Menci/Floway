@@ -9,7 +9,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { messages: {} } })): AnthropicMessagesBoundaryCtx => ({
+const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { anthropicMessages: {} } })): AnthropicMessagesBoundaryCtx => ({
   payload,
   model,
   upstreamId: 'up_test',
@@ -32,7 +32,7 @@ test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both
 });
 
 test('prefers model.limits.max_output_tokens over the gateway fallback when set', async () => {
-  const model = stubProviderModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
+  const model = stubProviderModel({ endpoints: { anthropicMessages: {} }, limits: { max_output_tokens: 64000 } });
   const ctx = invocation(
     {
       model: 'claude-sonnet-4-5-20250929',
@@ -48,7 +48,7 @@ test('prefers model.limits.max_output_tokens over the gateway fallback when set'
 });
 
 test('preserves caller-supplied max_tokens', async () => {
-  const model = stubProviderModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
+  const model = stubProviderModel({ endpoints: { anthropicMessages: {} }, limits: { max_output_tokens: 64000 } });
   const ctx = invocation(
     {
       model: 'claude-sonnet-4-5-20250929',

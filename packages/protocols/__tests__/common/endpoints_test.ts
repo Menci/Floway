@@ -21,8 +21,8 @@ test('kindForEndpoints returns transcription for audio transcription', () => {
 
 test('kindForEndpoints returns embedding for embeddings and chat for chat-protocol endpoints', () => {
   assertEquals(kindForEndpoints({ embeddings: {} }), 'embedding');
-  assertEquals(kindForEndpoints({ chatCompletions: {} }), 'chat');
-  assertEquals(kindForEndpoints({ messages: {} }), 'chat');
+  assertEquals(kindForEndpoints({ openaiChatCompletions: {} }), 'chat');
+  assertEquals(kindForEndpoints({ anthropicMessages: {} }), 'chat');
   assertEquals(kindForEndpoints({ completions: {} }), 'chat');
 });
 

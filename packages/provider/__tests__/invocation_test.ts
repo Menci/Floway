@@ -71,7 +71,7 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
       id: 'gpt-fast',
       kind: 'chat',
       limits: {},
-      endpoints: { chatCompletions: {}, responses: {}, messages: {} },
+      endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       aliasedFrom: {
         selection: 'first-available',
         targets: [{ target_model_id: 'gpt-5.4', rules: {} }],

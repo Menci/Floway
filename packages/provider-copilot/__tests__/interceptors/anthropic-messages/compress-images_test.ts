@@ -33,7 +33,7 @@ const invocation = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ id: upstreamModelId, endpoints: { messages: {} } }),
+  model: stubProviderModel({ id: upstreamModelId, endpoints: { anthropicMessages: {} } }),
 });
 
 test('compresses a top-level image block to WebP', async () => {

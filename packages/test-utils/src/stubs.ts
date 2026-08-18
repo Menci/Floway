@@ -28,7 +28,7 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
   id: 'test-model',
   limits: {},
   kind: 'chat',
-  endpoints: { chatCompletions: {}, responses: {}, messages: {} },
+  endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
   enabledFlags: new Set<FlagId>(),
   ...overrides,
 });
@@ -49,7 +49,7 @@ export const stubInternalModel = (
     id: overrides.id ?? 'test-model',
     limits: overrides.limits ?? {},
     kind: overrides.kind ?? 'chat',
-    endpoints: overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} },
+    endpoints: overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
   } as const;
   return {
     ...base,
@@ -118,7 +118,7 @@ export const stubModelCandidate = (overrides: {
     id: modelOverrides.id ?? 'test-model',
     limits: modelOverrides.limits ?? {},
     kind: modelOverrides.kind ?? 'chat',
-    endpoints: modelOverrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} },
+    endpoints: modelOverrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
   } as const;
   const providerModel = stubProviderModel({
     id: outerMeta.id,

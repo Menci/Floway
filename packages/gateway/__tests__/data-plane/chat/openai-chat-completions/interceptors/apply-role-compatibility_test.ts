@@ -13,7 +13,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 const applyRoles = async (
   messages: OpenAIChatCompletionsMessage[],
   enabledFlags: ReadonlySet<FlagId>,
-  targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openai-chat-completions',
+  targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openaiChatCompletions',
 ): Promise<OpenAIChatCompletionsMessage[]> => {
   const payload: OpenAIChatCompletionsPayload = { model: 'test-model', messages };
   const invocation: OpenAIChatCompletionsInvocation = {
@@ -34,7 +34,7 @@ test('leaves roles unchanged without flags or at a translated target', async () 
 
   assertEquals(await applyRoles(messages, new Set()), messages);
   assertEquals(
-    await applyRoles(messages, new Set(['rewrite-system-to-developer']), 'responses'),
+    await applyRoles(messages, new Set(['rewrite-system-to-developer']), 'openaiResponses'),
     messages,
   );
 });

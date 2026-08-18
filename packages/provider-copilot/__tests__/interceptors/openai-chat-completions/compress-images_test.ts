@@ -21,7 +21,7 @@ const fixedProcessor: ImageProcessor = {
 const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
 const imageUrl = (payload: OpenAIChatCompletionsPayload): string => {

@@ -16,7 +16,7 @@ const baseRecord: UpstreamRecord = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,
@@ -35,7 +35,7 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
       ...(baseRecord.config as Record<string, unknown>),
       modelsFetch: { enabled: false },
       models: [
-        { upstreamModelId: 'pinned', endpoints: { chatCompletions: {} }, display_name: 'Pinned' },
+        { upstreamModelId: 'pinned', endpoints: { openaiChatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
@@ -267,7 +267,7 @@ test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () =>
     config: {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
@@ -301,7 +301,7 @@ test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () 
         config: {
           baseUrl: 'https://custom.example.com',
           authStyle: 'bearer',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           ingressHeadersRules: [],
         },
       }),

@@ -18,6 +18,12 @@ import type {
 } from './types.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
+// The schema keeps the pre-rename spelling — `responses_items`,
+// `responses_snapshots`, `api_keys.responses_retention_seconds`, and the
+// indices and triggers over them. `responses_items` is the largest table this
+// deployment carries and a rename of it is not viable there, so the SQL below
+// deliberately reads names the surrounding code no longer uses.
+
 const OPENAI_RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, item_hash, payload_hash, payload_file_key, refreshed_at';
 const OPENAI_RESPONSES_IN_QUERY_CHUNK_SIZE = 80;
 const OPENAI_RESPONSES_INSERT_CHUNK_SIZE = 14;

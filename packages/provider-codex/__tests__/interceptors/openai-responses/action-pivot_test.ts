@@ -92,7 +92,7 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
   // of these are allowed on /responses/compact. The pivot above flips action
   // to 'compact'; the terminal must narrow the body before sending upstream.
   const result = await instance.instance.callOpenAIResponses(
-    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],

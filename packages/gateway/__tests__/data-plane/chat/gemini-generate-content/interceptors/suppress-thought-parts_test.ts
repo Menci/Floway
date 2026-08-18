@@ -12,7 +12,7 @@ const stubCtx = mockChatGatewayCtx();
 const invocation = (payload: GeminiGenerateContentPayload): GeminiGenerateContentInvocation => ({
   payload,
   candidate: stubModelCandidate(),
-  targetApi: 'messages',
+  targetApi: 'anthropicMessages',
   headers: new Headers(),
 });
 

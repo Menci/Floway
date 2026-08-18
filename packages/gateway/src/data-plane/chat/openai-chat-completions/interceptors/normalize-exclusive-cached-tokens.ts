@@ -72,7 +72,7 @@ export const withExclusiveCachedTokensNormalized: OpenAIChatCompletionsIntercept
   // describe, and telling an operator to set it would be advice that cannot
   // help. Nothing is lost by standing down: a translator emits the canonical
   // form, which is the one case the fold has nothing to do with.
-  if (ctx.targetApi !== 'openai-chat-completions') return await run();
+  if (ctx.targetApi !== 'openaiChatCompletions') return await run();
 
   const model = providerModelOf(ctx.candidate);
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');

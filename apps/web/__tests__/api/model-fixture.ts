@@ -25,7 +25,7 @@ export const catalogModel = (
   display_name: id,
   kind: 'chat',
   limits: contextWindow === undefined ? {} : { max_context_window_tokens: contextWindow },
-  endpoints: { chatCompletions: {}, messages: {}, responses: {} },
+  endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} },
   ...overrides,
   upstreams: upstreams.map(upstreamBinding),
 });

@@ -29,7 +29,7 @@ const sonnetProviderData = { upstreamModelId: 'claude-sonnet-4-5-20250929' };
 const sonnetModel = stubProviderModel({
   id: 'claude-sonnet-4-5',
   display_name: 'Sonnet',
-  endpoints: { messages: {} },
+  endpoints: { anthropicMessages: {} },
   providerData: sonnetProviderData,
 });
 
@@ -37,7 +37,7 @@ const haikuProviderData = { upstreamModelId: 'claude-haiku-4-5-20251001' };
 const haikuModel = stubProviderModel({
   id: 'claude-haiku-4-5',
   display_name: 'Haiku',
-  endpoints: { messages: {} },
+  endpoints: { anthropicMessages: {} },
   providerData: haikuProviderData,
 });
 

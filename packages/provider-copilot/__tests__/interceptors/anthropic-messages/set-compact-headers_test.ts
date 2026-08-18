@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 const COMPACT_LAST_MESSAGE_TEXT =

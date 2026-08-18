@@ -17,7 +17,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   payload,
   headers: new Headers(),
   anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 test('Anthropic Messages initiator is user when the last message is a plain user turn', async () => {

@@ -219,7 +219,7 @@ test('/v1/completions rejects a model without the completions endpoint with the 
       modelsFetch: { enabled: false },
       models: [{
         upstreamModelId: 'davinci-002',
-        endpoints: { chatCompletions: {} },
+        endpoints: { openaiChatCompletions: {} },
       }],
     },
   }));

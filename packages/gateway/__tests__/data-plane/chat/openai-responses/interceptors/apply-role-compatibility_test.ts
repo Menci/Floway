@@ -14,7 +14,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () { yield d
 const applyRoles = async (
   input: OpenAIResponsesInputItem[],
   enabledFlags: ReadonlySet<FlagId>,
-  targetApi: OpenAIResponsesInvocation['targetApi'] = 'responses',
+  targetApi: OpenAIResponsesInvocation['targetApi'] = 'openaiResponses',
 ): Promise<OpenAIResponsesInputItem[]> => {
   const invocation: OpenAIResponsesInvocation = {
     payload: { model: 'test-model', input },
@@ -34,7 +34,7 @@ test('leaves roles unchanged without flags or at a translated target', async () 
   ];
 
   assertEquals(await applyRoles(input, new Set()), input);
-  assertEquals(await applyRoles(input, new Set(['rewrite-system-to-developer']), 'openai-chat-completions'), input);
+  assertEquals(await applyRoles(input, new Set(['rewrite-system-to-developer']), 'openaiChatCompletions'), input);
 });
 
 test('applies the system and developer rewrites independently', async () => {

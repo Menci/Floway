@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsSt
 const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
 test('OpenAI Chat Completions vision header set when an image_url content part is present', async () => {

@@ -15,7 +15,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStream
 const applyRoles = async (
   messages: AnthropicMessagesMessage[],
   enabledFlags: ReadonlySet<FlagId>,
-  targetApi: AnthropicMessagesInvocation['targetApi'] = 'messages',
+  targetApi: AnthropicMessagesInvocation['targetApi'] = 'anthropicMessages',
 ): Promise<AnthropicMessagesMessage[]> => {
   const payload: AnthropicMessagesPayload = { model: 'test-model', max_tokens: 1, messages };
   const invocation: AnthropicMessagesInvocation = {
@@ -32,7 +32,7 @@ test('leaves roles unchanged without the flag or at a translated target', async 
   const messages: AnthropicMessagesMessage[] = [{ role: 'system', content: 'inline rules' }];
   assertEquals(await applyRoles(messages, new Set()), messages);
   assertEquals(
-    await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user']), 'responses'),
+    await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user']), 'openaiResponses'),
     messages,
   );
 });

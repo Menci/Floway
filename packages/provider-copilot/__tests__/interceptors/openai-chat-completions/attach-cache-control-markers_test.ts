@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsSt
 const invocation = (messages: OpenAIChatCompletionsMessage[]): OpenAIChatCompletionsBoundaryCtx => ({
   payload: { model: 'gpt-test', messages },
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
 const markedIndexes = (messages: readonly OpenAIChatCompletionsMessage[]): number[] =>

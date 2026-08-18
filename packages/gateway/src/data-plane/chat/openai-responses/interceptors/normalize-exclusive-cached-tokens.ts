@@ -51,7 +51,7 @@ const rewriteInboundUsage = (
 export const withExclusiveCachedTokensNormalized: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   // Runs only where the wire it speaks about is; see the OpenAI Chat Completions
   // counterpart.
-  if (ctx.targetApi !== 'responses') return await run();
+  if (ctx.targetApi !== 'openaiResponses') return await run();
 
   const model = providerModelOf(ctx.candidate);
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');

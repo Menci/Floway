@@ -16,14 +16,14 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
   const find = (endpoints: ModelEndpoints): ChatTargetApi | null => {
     for (const key of preference) {
       switch (key) {
-      case 'messages':
-        if (endpoints.messages) return 'messages';
+      case 'anthropicMessages':
+        if (endpoints.anthropicMessages) return 'anthropicMessages';
         break;
-      case 'responses':
-        if (endpoints.responses) return 'responses';
+      case 'openaiResponses':
+        if (endpoints.openaiResponses) return 'openaiResponses';
         break;
-      case 'openai-chat-completions':
-        if (endpoints.chatCompletions) return 'openai-chat-completions';
+      case 'openaiChatCompletions':
+        if (endpoints.openaiChatCompletions) return 'openaiChatCompletions';
         break;
       }
     }

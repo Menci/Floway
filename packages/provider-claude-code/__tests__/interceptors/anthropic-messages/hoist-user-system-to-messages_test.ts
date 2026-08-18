@@ -11,7 +11,7 @@ const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>>
 
 const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
   payload,
-  model: stubProviderModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
   upstreamId: 'up_test',
 });
 

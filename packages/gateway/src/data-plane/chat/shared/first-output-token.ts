@@ -10,8 +10,8 @@ export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: C
 
   const event = frame.event as Record<string, unknown> & { type?: unknown; choices?: unknown };
 
-  if (targetApi === 'messages') return isAnthropicMessagesOutputEvent(event);
-  if (targetApi === 'responses') return isOpenAIResponsesOutputEvent(event);
+  if (targetApi === 'anthropicMessages') return isAnthropicMessagesOutputEvent(event);
+  if (targetApi === 'openaiResponses') return isOpenAIResponsesOutputEvent(event);
   return isOpenAIChatCompletionsOutputEvent(event);
 };
 

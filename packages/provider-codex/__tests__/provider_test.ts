@@ -114,7 +114,7 @@ describe('createCodexProvider', () => {
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
-    expect(models[0].endpoints).toEqual({ responses: {} });
+    expect(models[0].endpoints).toEqual({ openaiResponses: {} });
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { imagesGenerations: {}, imagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
@@ -218,7 +218,7 @@ describe('createCodexProvider', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callOpenAIResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       {
         input: [
           { type: 'message', role: 'developer', content: 'base instructions' },
@@ -248,7 +248,7 @@ describe('createCodexProvider', () => {
     repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callOpenAIResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       { input: [], stream: true },
       'generate',
       undefined,
@@ -341,7 +341,7 @@ describe('createCodexProvider', () => {
     'callAnthropicMessages',
   ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
     const instance = createCodexProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
+    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
     const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };

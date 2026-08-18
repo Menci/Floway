@@ -21,7 +21,7 @@ const fixedProcessor: ImageProcessor = {
 const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
   action: 'generate',
 });
 

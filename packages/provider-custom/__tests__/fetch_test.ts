@@ -29,7 +29,7 @@ const baseRecord: UpstreamRecord = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,
@@ -237,7 +237,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
     config: {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
@@ -268,7 +268,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       baseUrl: 'https://custom.example.com',
       authStyle: 'bearer',
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   };

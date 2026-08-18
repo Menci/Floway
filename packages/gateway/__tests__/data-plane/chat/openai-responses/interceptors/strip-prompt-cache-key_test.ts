@@ -26,7 +26,7 @@ const invocation = (
 ): OpenAIResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'responses',
+  targetApi: 'openaiResponses',
   headers: new Headers(),
   action: 'generate',
 });

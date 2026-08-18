@@ -19,11 +19,11 @@ import { translateAnthropicMessagesViaOpenAIChatCompletions, translateAnthropicM
 
 // `/v1/messages` generate prefers a native Anthropic Messages target, then the
 // translated OpenAI Responses path, then the translated OpenAI Chat Completions path.
-export const anthropicMessagesGenerateTarget = chatTargetPicker(['messages', 'responses', 'openai-chat-completions']);
+export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
 
 // `count_tokens` has no translation path — only a native Anthropic Messages target
 // satisfies the operation.
-export const anthropicMessagesCountTokensTarget = chatTargetPicker(['messages']);
+export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']);
 
 export interface AnthropicMessagesAttemptArgs {
   readonly payload: AnthropicMessagesPayload;
@@ -57,7 +57,7 @@ export const anthropicMessagesAttempt = {
       headers,
     };
     return await runInterceptors(invocation, ctx, anthropicMessagesInterceptors, async () => {
-      if (targetApi === 'messages') {
+      if (targetApi === 'anthropicMessages') {
         if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
         const providerResult = await candidate.provider.instance.callAnthropicMessages(
@@ -68,7 +68,7 @@ export const anthropicMessagesAttempt = {
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
       }
-      if (targetApi === 'responses') {
+      if (targetApi === 'openaiResponses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateAnthropicMessagesViaOpenAIResponses(p, { model: candidate.model.id }),
@@ -77,7 +77,7 @@ export const anthropicMessagesAttempt = {
           }),
         );
       }
-      if (targetApi === 'openai-chat-completions') {
+      if (targetApi === 'openaiChatCompletions') {
         return await traverseTranslation(
           invocation.payload,
           p => translateAnthropicMessagesViaOpenAIChatCompletions(p, { model: candidate.model.id }),

@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEv
 const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
   action: 'generate',
 });
 

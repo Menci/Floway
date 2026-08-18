@@ -365,7 +365,7 @@ export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async 
   // OpenAI Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
   const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
-  const structurallyRequired = ctx.targetApi !== 'responses';
+  const structurallyRequired = ctx.targetApi !== 'openaiResponses';
   if (!flagOn && !structurallyRequired) return await run();
 
   // Inbound: expand any prior shim-encoded compactions back into their

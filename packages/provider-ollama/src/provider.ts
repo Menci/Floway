@@ -46,7 +46,7 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 // Vision / tool / thinking capabilities live alongside `embedding` in the
 // /api/show response. Embedding is the only one that drives a different
 // kind/endpoints projection — the others are request-time signals.
-const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
+const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
 const finalizeOllamaModels = (

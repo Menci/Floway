@@ -172,7 +172,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
         models.map(model => model.id),
         ['gpt-dual'],
       );
-      assertEquals(models[0].endpoints, { responses: {} });
+      assertEquals(models[0].endpoints, { openaiResponses: {} });
     },
   );
 });
@@ -221,7 +221,7 @@ test('Copilot provider exposes only OpenAI Responses for Claude when available',
 
       assertEquals(model.id, 'claude-opus-4-7');
       assertEquals(model.display_name, 'Claude Opus 4.7');
-      assertEquals(model.endpoints, { responses: {} });
+      assertEquals(model.endpoints, { openaiResponses: {} });
     },
   );
 });
@@ -268,7 +268,7 @@ test('Copilot provider owns the claude-* Anthropic Messages capability workaroun
       const [providerModel] = await provider.getProvidedModels(directFetcher);
 
       assertEquals(providerModel.id, 'claude-haiku-chat-listed');
-      assertEquals(providerModel.endpoints, { messages: {} });
+      assertEquals(providerModel.endpoints, { anthropicMessages: {} });
 
       await provider.callAnthropicMessages(providerModel, {
         max_tokens: 100,

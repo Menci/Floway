@@ -12,7 +12,7 @@ const stubCtx = mockChatGatewayCtx();
 const invocation = (payload: OpenAIChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
-  targetApi: 'openai-chat-completions',
+  targetApi: 'openaiChatCompletions',
   headers: new Headers(),
 });
 

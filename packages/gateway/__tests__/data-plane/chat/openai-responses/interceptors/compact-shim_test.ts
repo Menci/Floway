@@ -13,12 +13,12 @@ const stubCtx = mockChatGatewayCtx();
 
 const makeInvocation = (
   payload: Partial<OpenAIResponsesPayload> = {},
-  options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'responses' | 'messages' | 'openai-chat-completions' } = {},
+  options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions' } = {},
 ): OpenAIResponsesInvocation => ({
   payload: { model: 'test-model', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
   action: options.action ?? 'generate',
   candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) }),
-  targetApi: options.targetApi ?? 'responses',
+  targetApi: options.targetApi ?? 'openaiResponses',
   headers: new Headers(),
 });
 
@@ -390,7 +390,7 @@ test('compact + flag off: passes through to run() unchanged', async () => {
 // ── Bug 1 — engagement gating ────────────────────────────────────────────────
 //
 // The shim engages when EITHER the per-upstream flag is on OR the candidate's
-// targetApi is not 'responses'. The compact-shape check inside (action ===
+// targetApi is not 'openaiResponses'. The compact-shape check inside (action ===
 // 'compact' OR input contains compaction_trigger) decides whether to simulate
 // or just pass the request through. Together these gates make the shim
 // structurally required on non-OpenAI-Responses upstreams (Anthropic Messages / Chat
@@ -405,7 +405,7 @@ test('generate + compaction_trigger + flag off + messages target: shim simulates
         { type: 'compaction_trigger' } as unknown as never,
       ],
     },
-    { action: 'generate', flagOn: false, targetApi: 'messages' },
+    { action: 'generate', flagOn: false, targetApi: 'anthropicMessages' },
   );
 
   let seenPayload: OpenAIResponsesPayload | undefined;
@@ -439,7 +439,7 @@ test('generate + compaction_trigger + flag off + responses target: shim passes t
         { type: 'compaction_trigger' } as unknown as never,
       ],
     },
-    { action: 'generate', flagOn: false, targetApi: 'responses' },
+    { action: 'generate', flagOn: false, targetApi: 'openaiResponses' },
   );
 
   let runCalled = false;
@@ -468,7 +468,7 @@ test('generate + compaction_trigger + flag on + messages target: shim simulates 
         { type: 'compaction_trigger' } as unknown as never,
       ],
     },
-    { action: 'generate', targetApi: 'messages' },
+    { action: 'generate', targetApi: 'anthropicMessages' },
   );
 
   let seenPayload: OpenAIResponsesPayload | undefined;
