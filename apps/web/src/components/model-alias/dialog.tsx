@@ -30,8 +30,9 @@ import { MODEL_KINDS, type ModelAlias, type ModelKind } from '@floway-dev/protoc
 
 const { Button, DialogActions, DialogTitle, Field, Option, Text } = fluentComponents;
 
-export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, record }: {
+export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved, record }: {
   aliases: readonly ModelAlias[];
+  mode: 'create' | 'edit' | 'copy';
   models: readonly ControlPlaneModel[] | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -43,6 +44,13 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   const toasts = useOutcomeToasts();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const editingRecord = mode === 'edit' ? record : null;
+  const copySource = mode === 'copy' ? record : null;
+  const initialValues = useMemo(() => {
+    const defaults = aliasDefaults(record);
+    if (copySource) defaults.name = t('dashboard.modelAliases.copy.nameSuffix', { name: copySource.name });
+    return defaults;
+  }, [copySource, record, t]);
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, 'dashboard.modelAliases.validation.nameRequired'),
     displayName: z.string(),
@@ -53,7 +61,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     manualMetadata: z.boolean(),
     announcedMetadata: z.any().refine(value => value !== undefined),
   }).superRefine((values, ctx) => {
-    if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== record?.name)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.duplicate', path: ['name'] });
+    if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== editingRecord?.name)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.duplicate', path: ['name'] });
     values.targets.forEach((target, index) => {
       const issue = targetIssue(target);
       if (issue) ctx.addIssue({ code: 'custom', message: issue, path: ['targets', index, 'target_model_id'] });
@@ -61,8 +69,8 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     for (const [field, message] of Object.entries(announcedMetadataIssues(values.announcedMetadata))) {
       ctx.addIssue({ code: 'custom', message, path: ['announcedMetadata', field] });
     }
-  }), [aliases, record?.name]);
-  const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
+  }), [aliases, editingRecord?.name]);
+  const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: initialValues });
   // useWatch is typed DeepPartial, but every field has a default and useFieldArray keeps target rows whole.
   const values = useWatch({ control }) as AliasFormValues;
   const targets = values.targets;
@@ -93,8 +101,8 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       const name = form.name.trim();
       const body = aliasBody(form);
       const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
-      const result = record
-        ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: record.id }, json: body }))
+      const result = editingRecord
+        ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: editingRecord.id }, json: body }))
         : await callApi(() => api.api.aliases.$post({ json: body }));
       if (result.error) { handle.settle(); setServerError(result.error.message); return; }
       onOpenChange(false);
@@ -110,7 +118,11 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     open={open}
     onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
     onSubmit={() => void handleSubmit(save)()}
-    title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
+    title={<DialogTitle>{editingRecord
+      ? t('dashboard.modelAliases.dialog.editTitle', { name: editingRecord.name })
+      : copySource
+        ? t('dashboard.modelAliases.dialog.copyTitle', { name: copySource.name })
+        : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
     actions={<DialogActions><Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
   >
     <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>

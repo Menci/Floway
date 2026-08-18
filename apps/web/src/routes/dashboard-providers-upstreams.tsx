@@ -1,6 +1,7 @@
 import {
   CheckmarkCircleRegular,
   ChevronDownRegular,
+  CopyRegular,
   DeleteRegular,
   EditRegular,
   ProhibitedRegular,
@@ -89,6 +90,7 @@ const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b
 // Both affordances that open a record — the row's name and its edit button —
 // address it from here, so the two cannot come apart.
 const upstreamEditorPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`;
+const upstreamCopyPath = (record: UpstreamRecord) => `/dashboard/providers/upstreams/${encodeURIComponent(record.id)}/copy`;
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
@@ -463,6 +465,12 @@ function UpstreamsTable({
                     icon={<EditRegular />}
                     label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
                     to={upstreamEditorPath(record)}
+                  />
+                  <TooltipIconButton
+                    disabled={busy}
+                    icon={<CopyRegular />}
+                    label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })}
+                    to={upstreamCopyPath(record)}
                   />
                   <TooltipIconButton
                     danger
