@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
@@ -199,7 +199,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
     },
     async () => {
       const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
-      const result = await instance.instance.callChatCompletions(
+      const result = await instance.instance.callOpenAIChatCompletions(
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
@@ -216,7 +216,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   assertEquals(body.stream, true);
 });
 
-test('Messages methods serialize typed anthropic-beta metadata only on Messages wire calls', async () => {
+test('Anthropic Messages methods serialize typed anthropic-beta metadata only on Anthropic Messages wire calls', async () => {
   const instance = createOllamaProvider(buildRecord());
   const betas: Record<string, string | null> = {};
 
@@ -244,9 +244,9 @@ test('Messages methods serialize typed anthropic-beta metadata only on Messages 
     },
     async () => {
       const [model] = await instance.instance.getProvidedModels(testFetcher);
-      const opts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await instance.instance.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await instance.instance.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      const opts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      await instance.instance.callAnthropicMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await instance.instance.callAnthropicMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
     },
   );
 

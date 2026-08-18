@@ -13,8 +13,8 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // Copilot has no native compact endpoint. The provider replays
   // `RemoteCompactionV2` through `/responses` with `stream: false` and a
   // trailing `compaction_trigger`, so this default leaves the gateway compact
-  // shim off. The shim still engages on its own whenever a Responses request
-  // lands on a Copilot Messages or Chat Completions target, neither of which
+  // shim off. The shim still engages on its own whenever a OpenAI Responses request
+  // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
   // has a compaction wire.
   'responses-compact-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
@@ -70,7 +70,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // happened to serve that request. A deployment carrying the feature answers
 // `role 'system' is not supported on this model`, reporting the model's
 // limitation; one whose validator predates the feature answers `Unexpected
-// role "system". The Messages API accepts a top-level system parameter...`,
+// role "system". The Anthropic Messages API accepts a top-level system parameter...`,
 // not recognising the role at all. Since the backend is chosen per request
 // (see the routing section below), one model yields both strings over time —
 // `claude-sonnet-4.6` usually draws the pre-feature wording and drew the
@@ -80,7 +80,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // The `anthropic-beta: mid-conversation-system-2026-04-07` header does not
 // help and can hurt: Vertex answers `Unexpected value for the 'anthropic-beta'
 // header` when it appears, and elsewhere it is a no-op for models that have
-// the feature. The Messages boundary normalization drops it, so the probe
+// the feature. The Anthropic Messages boundary normalization drops it, so the probe
 // above measures what actually goes on the wire.
 //
 // ## Backend attribution

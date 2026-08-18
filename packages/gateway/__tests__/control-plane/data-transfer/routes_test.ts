@@ -18,7 +18,7 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-sea
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
@@ -38,7 +38,7 @@ const KEY_A: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 };
 
 const KEY_B: ApiKey = {
@@ -51,7 +51,7 @@ const KEY_B: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 };
 
 const SEED_ADMIN: User = {
@@ -263,7 +263,7 @@ const WEB_SEARCH_USAGE_2: WebSearchUsageRecord = {
   requests: 4,
 };
 
-const STORED_RESPONSES_ITEM: StoredResponsesItem = {
+const STORED_OPENAI_RESPONSES_ITEM: StoredOpenAIResponsesItem = {
   id: 'msg_producer',
   apiKeyId: 'key-a',
   itemHash: 'stored-content-hash',
@@ -466,11 +466,11 @@ test('import rejects any version other than the current one before deleting data
 
 test('import replace writes upstreams and clears replaced collections', async () => {
   const { app, repo } = setup();
-  await repo.apiKeys.save({ ...KEY_A, responsesRetentionSeconds: 24 * 60 * 60 });
+  await repo.apiKeys.save({ ...KEY_A, openaiResponsesRetentionSeconds: 24 * 60 * 60 });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
-  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM], 0);
+  await repo.openaiResponsesItems.insertMany([STORED_OPENAI_RESPONSES_ITEM], 0);
   await repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'old' },
@@ -503,7 +503,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
-  assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
+  assertEquals(await repo.openaiResponsesItems.lookupMany('key-a', [STORED_OPENAI_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.webSearchConfig.get(), {
     provider: 'microsoft-web-iq',
     tavily: { apiKey: '' },
@@ -1160,20 +1160,20 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   assertEquals(restored?.dumpRetentionSeconds, 3600);
 });
 
-test('v20 import preserves and validates Responses retention', async () => {
+test('v20 import preserves and validates OpenAI Responses retention', async () => {
   const { app, repo } = setup();
   const retained = await doImport(app, 'replace', latestImportData({
-    apiKeys: [{ ...KEY_A, responsesRetentionSeconds: 7 * 24 * 60 * 60 }],
+    apiKeys: [{ ...KEY_A, openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60 }],
   }));
   assertEquals(retained.status, 200);
-  assertEquals((await repo.apiKeys.findByRawKey(KEY_A.key))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  assertEquals((await repo.apiKeys.findByRawKey(KEY_A.key))?.openaiResponsesRetentionSeconds, 7 * 24 * 60 * 60);
 
   for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     const invalid = await doImport(app, 'replace', latestImportData({
-      apiKeys: [{ ...KEY_A, responsesRetentionSeconds: value }],
+      apiKeys: [{ ...KEY_A, openaiResponsesRetentionSeconds: value }],
     }));
     assertEquals(invalid.status, 400);
-    assertEquals(String(invalid.body.error).includes('responsesRetentionSeconds must be 0 or a whole-day integer'), true);
+    assertEquals(String(invalid.body.error).includes('openaiResponsesRetentionSeconds must be 0 or a whole-day integer'), true);
   }
 });
 

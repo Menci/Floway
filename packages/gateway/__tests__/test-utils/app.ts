@@ -210,7 +210,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    openaiResponsesRetentionSeconds: 30 * 24 * 60 * 60,
   };
   await repo.apiKeys.save(apiKey);
 
@@ -260,7 +260,7 @@ export function sseResponse(chunks: SSEChunk[], status = 200): Response {
 // helpers project a single non-stream JSON shape into the canonical SSE chunks
 // that mirror what a real streaming upstream would emit.
 
-export function sseMessagesResponse(response: Record<string, unknown>): Response {
+export function sseAnthropicMessagesResponse(response: Record<string, unknown>): Response {
   const chunks: SSEChunk[] = [
     {
       event: 'message_start',
@@ -304,7 +304,7 @@ export function sseMessagesResponse(response: Record<string, unknown>): Response
   return sseResponse(chunks);
 }
 
-export function sseChatCompletionsResponse(response: Record<string, unknown>): Response {
+export function sseOpenAIChatCompletionsResponse(response: Record<string, unknown>): Response {
   const choice = (response.choices as Array<Record<string, unknown>>)[0];
   const message = choice.message as Record<string, unknown>;
   const id = response.id as string;
@@ -333,8 +333,8 @@ export function sseChatCompletionsResponse(response: Record<string, unknown>): R
   return sseResponse(chunks);
 }
 
-export function sseResponsesResponse(response: Record<string, unknown>): Response {
-  // The Responses stream wrapper expands a created+in_progress+completed
+export function sseOpenAIResponsesResponse(response: Record<string, unknown>): Response {
+  // The OpenAI Responses stream wrapper expands a created+in_progress+completed
   // triplet into the full event sequence, so emitting just those three
   // wrapper events here exercises that expansion path.
   return sseResponse([

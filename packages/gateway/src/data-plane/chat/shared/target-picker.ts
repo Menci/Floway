@@ -22,8 +22,8 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
       case 'responses':
         if (endpoints.responses) return 'responses';
         break;
-      case 'chat-completions':
-        if (endpoints.chatCompletions) return 'chat-completions';
+      case 'openai-chat-completions':
+        if (endpoints.chatCompletions) return 'openai-chat-completions';
         break;
       }
     }

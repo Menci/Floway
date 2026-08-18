@@ -214,10 +214,10 @@ describe('createCodexProvider', () => {
     }
   });
 
-  test('callResponses preserves developer messages on the Codex wire', async () => {
+  test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callResponses(
+    const result = await instance.instance.callOpenAIResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       {
         input: [
@@ -244,10 +244,10 @@ describe('createCodexProvider', () => {
     ]);
   });
 
-  test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
+  test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
     repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = createCodexProvider(baseRecord);
-    const result = await instance.instance.callResponses(
+    const result = await instance.instance.callOpenAIResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       { input: [], stream: true },
       'generate',
@@ -336,9 +336,9 @@ describe('createCodexProvider', () => {
   test.each([
     'callEmbeddings',
     'callAudioTranscriptions',
-    'callChatCompletions',
-    'callMessagesCountTokens',
-    'callMessages',
+    'callOpenAIChatCompletions',
+    'callAnthropicMessagesCountTokens',
+    'callAnthropicMessages',
   ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
     const instance = createCodexProvider(baseRecord);
     const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });

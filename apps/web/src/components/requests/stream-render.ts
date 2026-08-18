@@ -1,9 +1,9 @@
 import { errorMessage } from '../../lib/error-message';
 import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import {
-  chatCompletionsProtocolFrameToSSEFrame,
-  collectChatCompletionsProtocolEventsToResult,
-} from '@floway-dev/protocols/chat-completions';
+  openaiChatCompletionsProtocolFrameToSSEFrame,
+  collectOpenAIChatCompletionsProtocolEventsToResult,
+} from '@floway-dev/protocols/openai-chat-completions';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   completionsProtocolFrameToSSEFrame,
@@ -11,20 +11,20 @@ import {
   type CompletionsStreamEvent,
 } from '@floway-dev/protocols/completions';
 import {
-  collectGeminiProtocolEventsToResult,
-  geminiProtocolFrameToSSEFrame,
-  type GeminiStreamEvent,
-} from '@floway-dev/protocols/gemini';
+  collectGeminiGenerateContentProtocolEventsToResult,
+  geminiGenerateContentProtocolFrameToSSEFrame,
+  type GeminiGenerateContentStreamEvent,
+} from '@floway-dev/protocols/gemini-generate-content';
 import {
-  collectMessagesProtocolEventsToResult,
-  messagesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/messages';
+  collectAnthropicMessagesProtocolEventsToResult,
+  anthropicMessagesProtocolFrameToSSEFrame,
+} from '@floway-dev/protocols/anthropic-messages';
 import {
-  collectResponsesProtocolEventsToResult,
-  responsesProtocolFrameToSSEFrame,
-} from '@floway-dev/protocols/responses';
+  collectOpenAIResponsesProtocolEventsToResult,
+  openaiResponsesProtocolFrameToSSEFrame,
+} from '@floway-dev/protocols/openai-responses';
 
-export type CollectKind = 'completions' | 'chat-completions' | 'messages' | 'responses' | 'gemini';
+export type CollectKind = 'completions' | 'openai-chat-completions' | 'messages' | 'responses' | 'gemini';
 
 export interface CollectedStream {
   result: unknown | null;
@@ -42,7 +42,7 @@ export interface RenderedStreamEvent {
 export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/messages')) return 'messages';
   if (path.includes('/responses')) return 'responses';
-  if (path.includes('/chat/completions')) return 'chat-completions';
+  if (path.includes('/chat/completions')) return 'openai-chat-completions';
   if (path.includes('/completions')) return 'completions';
   if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini';
   return null;
@@ -57,14 +57,14 @@ const complete = (result: unknown, events: DumpStreamEvent[]): CollectedStream =
 export const collectStream = async (kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> => {
   try {
     switch (kind) {
-    case 'chat-completions':
-      return complete(await collectChatCompletionsProtocolEventsToResult(frames(events) as never), events);
+    case 'openai-chat-completions':
+      return complete(await collectOpenAIChatCompletionsProtocolEventsToResult(frames(events) as never), events);
     case 'messages':
-      return complete(await collectMessagesProtocolEventsToResult(frames(events) as never), events);
+      return complete(await collectAnthropicMessagesProtocolEventsToResult(frames(events) as never), events);
     case 'responses':
-      return complete(await collectResponsesProtocolEventsToResult(frames(events) as never), events);
+      return complete(await collectOpenAIResponsesProtocolEventsToResult(frames(events) as never), events);
     case 'gemini':
-      return complete(await collectGeminiProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>), events);
+      return complete(await collectGeminiGenerateContentProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>), events);
     case 'completions': {
       const stream = (async function* () {
         for (const { frame } of events) {
@@ -106,11 +106,11 @@ async function* frames(events: DumpStreamEvent[]) {
 const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
   try {
     switch (kind) {
-    case 'chat-completions': return chatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
+    case 'openai-chat-completions': return openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
     case 'completions': return completionsProtocolFrameToSSEFrame(frame as never);
-    case 'messages': return messagesProtocolFrameToSSEFrame(frame as never);
-    case 'responses': return responsesProtocolFrameToSSEFrame(frame as never);
-    case 'gemini': return geminiProtocolFrameToSSEFrame(frame as never);
+    case 'messages': return anthropicMessagesProtocolFrameToSSEFrame(frame as never);
+    case 'responses': return openaiResponsesProtocolFrameToSSEFrame(frame as never);
+    case 'gemini': return geminiGenerateContentProtocolFrameToSSEFrame(frame as never);
     default: return null;
     }
   } catch (error) {

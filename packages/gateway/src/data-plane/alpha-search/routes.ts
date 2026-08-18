@@ -126,7 +126,7 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
     apiKeyId: apiKeyFromContext(c).id,
     pageCache: new Map(),
     // Codex renders `output` as plain text; the search-action sources list
-    // is a Responses wire concern with no place here.
+    // is a OpenAI Responses wire concern with no place here.
     includeSearchActionSources: false,
     signal: c.req.raw.signal,
   };

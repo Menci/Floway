@@ -110,8 +110,8 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
     if (nameIssue === 'invalid') {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key must be a valid HTTP header name`);
     }
-    if (nameIssue === 'messages-owned') {
-      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the Messages protocol`);
+    if (nameIssue === 'anthropic-messages-owned') {
+      throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the Anthropic Messages protocol`);
     }
     if (nameIssue === 'transport-owned') {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the HTTP transport`);

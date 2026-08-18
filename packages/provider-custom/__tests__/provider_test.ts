@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, assertRejects, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -67,7 +67,7 @@ test('Custom writes every configured header value and passes admitted client val
           'x-override': 'client-override',
         }),
       });
-      await provider.instance.callChatCompletions(model, { messages: [] }, undefined, opts);
+      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts);
     },
   );
 
@@ -352,11 +352,11 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       const [model] = await provider.getProvidedModels(directFetcher);
       assertExists(model);
       const opts = noopUpstreamCallOptions();
-      const messagesOpts = noopMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, messagesOpts);
+      const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
+      await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );

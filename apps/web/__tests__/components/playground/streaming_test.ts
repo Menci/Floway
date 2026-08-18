@@ -20,7 +20,7 @@ const collect = async (stream: AsyncGenerator<string>): Promise<string> => {
 describe('playground wire requests', () => {
   it.each([
     {
-      name: 'Responses',
+      name: 'OpenAI Responses',
       api: 'responses' as const,
       path: '/v1/responses',
       custom: { seed: 9 },
@@ -31,7 +31,7 @@ describe('playground wire requests', () => {
       ],
     },
     {
-      name: 'Chat Completions',
+      name: 'OpenAI Chat Completions',
       api: 'chatCompletions' as const,
       path: '/v1/chat/completions',
       custom: { seed: 9 },
@@ -42,7 +42,7 @@ describe('playground wire requests', () => {
       ],
     },
     {
-      name: 'Messages',
+      name: 'Anthropic Messages',
       api: 'messages' as const,
       path: '/v1/messages',
       custom: { metadata: { test: true } },
@@ -119,7 +119,7 @@ describe('playground wire requests', () => {
     }))).rejects.toThrow('upstream refused');
   });
 
-  it('surfaces a Responses failed envelope instead of returning empty text', async () => {
+  it('surfaces a OpenAI Responses failed envelope instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{
         type: 'response.failed',

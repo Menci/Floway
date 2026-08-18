@@ -56,7 +56,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx, () => null);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'openai-chat-completions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);

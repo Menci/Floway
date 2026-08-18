@@ -52,18 +52,18 @@ describe('chatTargetPicker', () => {
   });
 
   test('pick returns the first preferred key whose endpoint exists', () => {
-    const picker = chatTargetPicker(['responses', 'messages', 'chat-completions']);
+    const picker = chatTargetPicker(['responses', 'messages', 'openai-chat-completions']);
     assertEquals(picker.pick({ messages: {}, responses: {}, chatCompletions: {} }), 'responses');
     assertEquals(picker.pick({ messages: {}, chatCompletions: {} }), 'messages');
-    assertEquals(picker.pick({ chatCompletions: {} }), 'chat-completions');
+    assertEquals(picker.pick({ chatCompletions: {} }), 'openai-chat-completions');
   });
 
   test('pick honours the preference order even when later preferences are present', () => {
-    const messagesFirst = chatTargetPicker(['messages', 'responses']);
-    const responsesFirst = chatTargetPicker(['responses', 'messages']);
+    const anthropicMessagesFirst = chatTargetPicker(['messages', 'responses']);
+    const openaiResponsesFirst = chatTargetPicker(['responses', 'messages']);
     const endpoints = { messages: {}, responses: {} };
-    assertEquals(messagesFirst.pick(endpoints), 'messages');
-    assertEquals(responsesFirst.pick(endpoints), 'responses');
+    assertEquals(anthropicMessagesFirst.pick(endpoints), 'messages');
+    assertEquals(openaiResponsesFirst.pick(endpoints), 'responses');
   });
 
   test('pick throws on a candidate the picker rejects — serve must filter via canServe first', () => {
@@ -88,12 +88,12 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     });
     assertEquals(candidates.length, 1);
 
-    const messagesFirst = chatTargetPicker(['messages', 'responses']);
-    const responsesFirst = chatTargetPicker(['responses', 'messages']);
-    assertEquals(messagesFirst.canServe(candidates[0].model.endpoints), true);
-    assertEquals(responsesFirst.canServe(candidates[0].model.endpoints), true);
-    assertEquals(messagesFirst.pick(candidates[0].model.endpoints), 'messages');
-    assertEquals(responsesFirst.pick(candidates[0].model.endpoints), 'responses');
+    const anthropicMessagesFirst = chatTargetPicker(['messages', 'responses']);
+    const openaiResponsesFirst = chatTargetPicker(['responses', 'messages']);
+    assertEquals(anthropicMessagesFirst.canServe(candidates[0].model.endpoints), true);
+    assertEquals(openaiResponsesFirst.canServe(candidates[0].model.endpoints), true);
+    assertEquals(anthropicMessagesFirst.pick(candidates[0].model.endpoints), 'messages');
+    assertEquals(openaiResponsesFirst.pick(candidates[0].model.endpoints), 'responses');
   });
 
   test('a candidate whose endpoint surface lacks every preferred key is filtered out by canServe', async () => {
@@ -110,10 +110,10 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
     });
     assertEquals(candidates.length, 1);
 
-    const messagesOnly = chatTargetPicker(['messages']);
-    const chatCompletionsPicker = chatTargetPicker(['chat-completions']);
-    assertEquals(messagesOnly.canServe(candidates[0].model.endpoints), false);
-    assertEquals(chatCompletionsPicker.canServe(candidates[0].model.endpoints), true);
-    assertEquals(chatCompletionsPicker.pick(candidates[0].model.endpoints), 'chat-completions');
+    const anthropicMessagesOnly = chatTargetPicker(['messages']);
+    const openaiChatCompletionsPicker = chatTargetPicker(['openai-chat-completions']);
+    assertEquals(anthropicMessagesOnly.canServe(candidates[0].model.endpoints), false);
+    assertEquals(openaiChatCompletionsPicker.canServe(candidates[0].model.endpoints), true);
+    assertEquals(openaiChatCompletionsPicker.pick(candidates[0].model.endpoints), 'openai-chat-completions');
   });
 });

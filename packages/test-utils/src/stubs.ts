@@ -1,5 +1,5 @@
 import { testFetcher } from './mock-fetch.ts';
-import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type MessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type AnthropicMessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
@@ -14,7 +14,7 @@ export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> 
   ...overrides,
 });
 
-export const noopMessagesUpstreamCallOptions = (overrides: Partial<MessagesUpstreamCallOptions> = {}): MessagesUpstreamCallOptions => ({
+export const noopAnthropicMessagesUpstreamCallOptions = (overrides: Partial<AnthropicMessagesUpstreamCallOptions> = {}): AnthropicMessagesUpstreamCallOptions => ({
   ...noopUpstreamCallOptions(overrides),
   anthropicBeta: [],
   ...overrides,
@@ -78,10 +78,10 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
   callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),
   callCompletions: overrides.callCompletions ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
-  callChatCompletions: overrides.callChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callChatCompletions was called'))),
-  callResponses: overrides.callResponses ?? (() => Promise.reject(new Error('stubProvider.callResponses was called'))),
-  callMessages: overrides.callMessages ?? (() => Promise.reject(new Error('stubProvider.callMessages was called'))),
-  callMessagesCountTokens: overrides.callMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callMessagesCountTokens was called'))),
+  callOpenAIChatCompletions: overrides.callOpenAIChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIChatCompletions was called'))),
+  callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubProvider.callOpenAIResponses was called'))),
+  callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessages was called'))),
+  callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessagesCountTokens was called'))),
   callEmbeddings: overrides.callEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callEmbeddings was called'))),
   callImagesGenerations: overrides.callImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callImagesGenerations was called'))),
   callImagesEdits: overrides.callImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),

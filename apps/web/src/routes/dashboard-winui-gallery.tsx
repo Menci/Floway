@@ -258,8 +258,8 @@ function ChoiceSection() {
     <Row label="radio group - invalid">
       <Field validationMessage="Pick the protocol this upstream speaks." validationState="error">
         <RadioGroup layout="horizontal">
-          <Radio label="Chat Completions" value="chat" />
-          <Radio label="Responses" value="responses" />
+          <Radio label="OpenAI Chat Completions" value="chat" />
+          <Radio label="OpenAI Responses" value="responses" />
         </RadioGroup>
       </Field>
     </Row>
@@ -317,8 +317,8 @@ function SelectSection() {
     </Row>
     <Row label="dropdown - multiselect">
       <Dropdown multiselect defaultSelectedOptions={['chat', 'responses']} placeholder="Endpoints">
-        <Option text="Chat Completions" value="chat">Chat Completions</Option>
-        <Option text="Responses" value="responses">Responses</Option>
+        <Option text="OpenAI Chat Completions" value="chat">OpenAI Chat Completions</Option>
+        <Option text="OpenAI Responses" value="responses">Responses</Option>
         <Option text="Embeddings" value="embeddings">Embeddings</Option>
       </Dropdown>
     </Row>
@@ -555,7 +555,7 @@ function MenuSection() {
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItemRadio name="protocol" value="chat">Chat Completions</MenuItemRadio>
+            <MenuItemRadio name="protocol" value="chat">OpenAI Chat Completions</MenuItemRadio>
             <MenuItemRadio name="protocol" value="responses">Responses</MenuItemRadio>
             <MenuDivider />
             <MenuItemCheckbox name="stream" value="on">Stream the response</MenuItemCheckbox>

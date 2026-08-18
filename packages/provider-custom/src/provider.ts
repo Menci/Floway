@@ -1,14 +1,14 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchAlphaSearch, customFetchAudioTranscriptions, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchRerank, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
-import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
+import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import { parseMessagesStream } from '@floway-dev/protocols/messages';
+import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { parseResponsesStream, type ResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { headersForMessagesCall, jsonRequestBody, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -175,33 +175,33 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     },
     callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, headersForCall(opts.headers), opts),
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, headersForCall(opts.headers), opts),
-    callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headersForCall(opts.headers), parseChatCompletionsStream, opts),
-    callResponses: async (model, body, action, signal, opts) => {
+    callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(customFetchOpenAIChatCompletions, model, body, signal, headersForCall(opts.headers), parseOpenAIChatCompletionsStream, opts),
+    callOpenAIResponses: async (model, body, action, signal, opts) => {
       switch (action) {
       case 'generate': {
-        const stream = await callStreaming(customFetchResponses, model, body, signal, headersForCall(opts.headers), parseResponsesStream, opts);
+        const stream = await callStreaming(customFetchOpenAIResponses, model, body, signal, headersForCall(opts.headers), parseOpenAIResponsesStream, opts);
         return stream.ok
           ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
           : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
-        const response = await customFetchResponsesCompact(
+        const response = await customFetchOpenAIResponsesCompact(
           config,
           { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
           { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesCompactionResult, modelKey: rawModelId }
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
           : { action: 'compact', ok: false, response, modelKey: rawModelId };
       }
       default:
         action satisfies never;
-        throw new Error(`Unhandled ResponsesAction: ${action as string}`);
+        throw new Error(`Unhandled OpenAIResponsesAction: ${action as string}`);
       }
     },
-    callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, headersForMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), parseMessagesStream, opts),
-    callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, headersForMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), opts),
+    callAnthropicMessages: (model, body, signal, opts) => callStreaming(customFetchAnthropicMessages, model, body, signal, headersForAnthropicMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), parseAnthropicMessagesStream, opts),
+    callAnthropicMessagesCountTokens: (model, body, signal, opts) => call(customFetchAnthropicMessagesCountTokens, model, body, signal, headersForAnthropicMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), opts),
     callEmbeddings: (model, body, signal, opts) => call(customFetchEmbeddings, model, body, signal, headersForCall(opts.headers), opts),
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, headersForCall(opts.headers), opts),
     callImagesEdits: async (model, request, signal, opts) => {

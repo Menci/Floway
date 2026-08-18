@@ -54,11 +54,11 @@ const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig,
   return url.href;
 };
 
-export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIChatCompletions = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/chat/completions', init, options);
-export const azureFetchResponses = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIResponses = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/responses', init, options);
-export const azureFetchResponsesCompact = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchOpenAIResponsesCompact = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/responses/compact', init, options);
 export const azureFetchEmbeddings = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/embeddings', init, options);
@@ -79,7 +79,7 @@ export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: FetchIn
 // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
 export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options);
-export const azureFetchMessages = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchAnthropicMessages = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
-export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchAnthropicMessagesCountTokens = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages/count_tokens', init, options);

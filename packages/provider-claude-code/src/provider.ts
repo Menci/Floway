@@ -2,15 +2,15 @@ import { ensureClaudeCodeAccessToken } from './access-token.ts';
 import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
-import { callClaudeCodeMessages } from './fetch.ts';
-import { CLAUDE_CODE_MESSAGES_BOUNDARY, type MessagesBoundaryCtx } from './interceptors/messages/index.ts';
+import { callClaudeCodeAnthropicMessages } from './fetch.ts';
+import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY, type AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import {
   getProviderRepo,
-  headersForMessagesCall,
+  headersForAnthropicMessagesCall,
   resolveEffectiveFlags,
   type ProviderInstance,
   type Provider,
@@ -57,15 +57,15 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       return buildClaudeCodeCatalog(apiModels, enabledFlags);
     },
 
-    callMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
-      const ctx: MessagesBoundaryCtx = {
+    callAnthropicMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
+      const ctx: AnthropicMessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
         model,
         upstreamId: record.id,
       };
 
       // Detection runs on the unmodified payload plus the Claude Code
-      // fingerprint admitted by the provider module and Messages boundaries.
+      // fingerprint admitted by the provider module and Anthropic Messages boundaries.
       // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the
@@ -75,17 +75,17 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       // supplies the provider-owned OAuth auth, and restamps the resolved model
       // id.
       const looksShaped = isClaudeCodeShapedRequest({
-        headers: headersForMessagesCall(opts.headers, opts.anthropicBeta),
+        headers: headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta),
         body: ctx.payload,
       });
 
-      const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-        // Drop `model` from the payload: callClaudeCodeMessages re-attaches the
+      const terminal = async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+        // Drop `model` from the payload: callClaudeCodeAnthropicMessages re-attaches the
         // dated upstream id (from `opts.model.providerData.upstreamModelId`) on
         // the wire so Anthropic sees a stable per-revision id rather than the
         // public alias the catalog exposes to clients.
         const { model: _ignored, ...wireBody } = ctx.payload;
-        return await callClaudeCodeMessages({
+        return await callClaudeCodeAnthropicMessages({
           upstreamId: record.id,
           model,
           body: wireBody,
@@ -97,20 +97,20 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
       if (looksShaped) return await terminal();
 
-      return await runInterceptors<MessagesBoundaryCtx, object, ProviderStreamResult<MessagesStreamEvent>>(
+      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>(
         ctx,
         {},
-        CLAUDE_CODE_MESSAGES_BOUNDARY,
+        CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY,
         terminal,
       );
     },
 
     // Only /v1/messages is supported; reject any other endpoint loudly so a
     // dispatcher routing bug surfaces instead of a silent shape mismatch.
-    callMessagesCountTokens: rejectUnsupported('callMessagesCountTokens'),
+    callAnthropicMessagesCountTokens: rejectUnsupported('callAnthropicMessagesCountTokens'),
     callCompletions: rejectUnsupported('callCompletions'),
-    callChatCompletions: rejectUnsupported('callChatCompletions'),
-    callResponses: rejectUnsupported('callResponses'),
+    callOpenAIChatCompletions: rejectUnsupported('callOpenAIChatCompletions'),
+    callOpenAIResponses: rejectUnsupported('callOpenAIResponses'),
     callEmbeddings: rejectUnsupported('callEmbeddings'),
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),

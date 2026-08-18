@@ -158,7 +158,7 @@ describe('Custom ingress header rules', () => {
 
     fireEvent.change(first, { target: { value: 'Anthropic-Beta' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.messagesOwned'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
     expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicateName'))).toBeNull();
 
     fireEvent.change(first, { target: { value: 'Authorization' } });

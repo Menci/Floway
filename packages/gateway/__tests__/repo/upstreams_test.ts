@@ -478,7 +478,7 @@ test('migration 0010 creates unified upstreams and rewrites legacy upstream iden
         json_extract(config_json, '$.baseUrl') AS baseUrl,
         json_extract(config_json, '$.bearerToken') AS bearerToken,
         json_extract(config_json, '$.supportedEndpoints[0]') AS firstEndpoint,
-        json_extract(config_json, '$.pathOverrides.chat_completions') AS chatPath
+        json_extract(config_json, '$.pathOverrides.openai_chat_completions') AS chatPath
        FROM upstreams
        WHERE provider = 'custom'`,
     );
@@ -611,7 +611,7 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
                 json_object('baseUrl', 'https://a.example', 'authStyle', 'bearer', 'apiKey', 'sk-a',
                   'pathOverrides', json_object(
                     'completions', '/p/completions',
-                    'chat_completions', '/p/chat/completions',
+                    'openai_chat_completions', '/p/chat/completions',
                     'responses', '/p/responses',
                     'messages', '/p/messages',
                     'embeddings', '/p/embeddings',
@@ -624,7 +624,7 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
                 '[]', '[]', '[]'),
               ('up_azure', 'azure', 'Azure', 1, 2, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
                 json_object('endpoint', 'https://az.example', 'apiKey', 'az-key',
-                  'pathOverrides', json_object('chat_completions', '/should/stay')
+                  'pathOverrides', json_object('openai_chat_completions', '/should/stay')
                 ), '[]', '[]', '[]')`);
 
     applySqlJsFile(db, '0044_custom_pathoverrides_slash_keys.sql');
@@ -657,7 +657,7 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
       db,
       `SELECT json_extract(config_json, '$.pathOverrides') AS overrides FROM upstreams WHERE id = 'up_azure'`,
     );
-    assertEquals(JSON.parse(azure[0].overrides), { chat_completions: '/should/stay' });
+    assertEquals(JSON.parse(azure[0].overrides), { openai_chat_completions: '/should/stay' });
   } finally {
     db.close();
   }
@@ -1118,7 +1118,7 @@ const seedLegacyUpstreamData = (db: SqlJsDatabase): void => {
        0,
        '2026-05-21T00:00:00.000Z',
        '["z-fix","a-fix"]',
-       '{"chat_completions":"/chat/completions"}'
+       '{"openai_chat_completions":"/chat/completions"}'
      );
 
      INSERT INTO usage (key_id, model, upstream, model_key, hour, requests, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)

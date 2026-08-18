@@ -4,7 +4,7 @@ import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
+import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { SqlScheduledMaintenanceRepo } from './scheduled-maintenance-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
@@ -34,8 +34,8 @@ import type {
   ProxyRecord,
   ProxyRepo,
   Repo,
-  ResponsesItemsRepo,
-  ResponsesSnapshotsRepo,
+  OpenAIResponsesItemsRepo,
+  OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
@@ -122,7 +122,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   deletedAt: row.deleted_at,
   dumpRetentionSeconds: row.dump_retention_seconds,
-  responsesRetentionSeconds: row.responses_retention_seconds,
+  openaiResponsesRetentionSeconds: row.responses_retention_seconds,
 });
 
 class SqlApiKeyRepo implements ApiKeyRepo {
@@ -200,7 +200,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         serializeUpstreamIds(key.upstreamIds),
         key.deletedAt,
         key.dumpRetentionSeconds,
-        key.responsesRetentionSeconds,
+        key.openaiResponsesRetentionSeconds,
       )
       .run();
   }
@@ -211,7 +211,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
     const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
     const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
-    const hasResponsesRetention = sqliteBoolean(patch.responsesRetentionSeconds !== undefined);
+    const hasOpenAIResponsesRetention = sqliteBoolean(patch.openaiResponsesRetentionSeconds !== undefined);
     const row = await this.db
       .prepare(
         `UPDATE api_keys
@@ -230,7 +230,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
         hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
         hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
-        hasResponsesRetention ? 1 : 0, patch.responsesRetentionSeconds ?? null,
+        hasOpenAIResponsesRetention ? 1 : 0, patch.openaiResponsesRetentionSeconds ?? null,
         id,
       )
       .first<ApiKeyRow>();
@@ -1584,8 +1584,8 @@ export class SqlRepo implements Repo {
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;
-  responsesItems: ResponsesItemsRepo;
-  responsesSnapshots: ResponsesSnapshotsRepo;
+  openaiResponsesItems: OpenAIResponsesItemsRepo;
+  openaiResponsesSnapshots: OpenAIResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
@@ -1603,8 +1603,8 @@ export class SqlRepo implements Repo {
     this.proxies = new SqlProxyRepo(db);
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);
     this.modelAliases = new SqlModelAliasesRepo(db);
-    this.responsesItems = new SqlResponsesItemsRepo(db);
-    this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
+    this.openaiResponsesItems = new SqlOpenAIResponsesItemsRepo(db);
+    this.openaiResponsesSnapshots = new SqlOpenAIResponsesSnapshotsRepo(db);
     this.spilledFiles = new SqlSpilledFilesRepo(db);
     this.expirationSweeps = new SqlExpirationSweepsRepo(db);
     this.scheduledMaintenance = new SqlScheduledMaintenanceRepo(db);

@@ -1,6 +1,6 @@
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
 
-// Per-model image caps for the Copilot Responses/Chat egress, measured from the
+// Per-model image caps for the Copilot OpenAI Responses/Chat egress, measured from the
 // model's server-side downscale point (the size beyond which extra pixels are
 // discarded), so the calculator reproduces exactly what the upstream would do:
 //
@@ -15,7 +15,7 @@ import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/
 //
 // Unknown models fall back to the gpt-5.5 budget — the most permissive cap —
 // so we never over-shrink an image a model might actually use at full detail.
-export const targetSizeForResponsesChat = (upstreamModelId: string): ImageSizeCalculator => {
+export const targetSizeForOpenAIResponsesChat = (upstreamModelId: string): ImageSizeCalculator => {
   let caps: SizeCaps;
   if (upstreamModelId.startsWith('gemini')) caps = { maxLongEdge: 2048 };
   else if (upstreamModelId.startsWith('gpt-4o') || /^gpt-4\.1(?!-?(?:mini|nano))/.test(upstreamModelId)) caps = { maxLongEdge: 2048, maxShortEdge: 768 };

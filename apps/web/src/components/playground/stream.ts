@@ -1,9 +1,9 @@
 import type { PlaygroundApi, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 
 export interface PlaygroundRequest {
   api: PlaygroundApi;
@@ -60,22 +60,22 @@ const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): 
 
 const textDelta = (api: PlaygroundApi, event: unknown): string => {
   if (api === 'chatCompletions') {
-    const chunk = event as ChatCompletionsStreamEvent;
+    const chunk = event as OpenAIChatCompletionsStreamEvent;
     return chunk.choices?.[0]?.delta?.content ?? '';
   }
   if (api === 'messages') {
-    const messagesEvent = event as MessagesStreamEvent;
-    if (messagesEvent.type !== 'content_block_delta') return '';
-    return messagesEvent.delta.type === 'text_delta' ? messagesEvent.delta.text : '';
+    const anthropicMessagesEvent = event as AnthropicMessagesStreamEvent;
+    if (anthropicMessagesEvent.type !== 'content_block_delta') return '';
+    return anthropicMessagesEvent.delta.type === 'text_delta' ? anthropicMessagesEvent.delta.text : '';
   }
-  const responsesEvent = event as ResponsesStreamEvent;
-  return responsesEvent.type === 'response.output_text.delta' ? responsesEvent.delta : '';
+  const openaiResponsesEvent = event as OpenAIResponsesStreamEvent;
+  return openaiResponsesEvent.type === 'response.output_text.delta' ? openaiResponsesEvent.delta : '';
 };
 
 const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | null => {
   const direct = errorMessageFromPayload(payload);
   if (direct !== null || api !== 'responses' || !payload || typeof payload !== 'object') return direct;
-  const event = payload as ResponsesStreamEvent;
+  const event = payload as OpenAIResponsesStreamEvent;
   if (event.type !== 'response.failed') return null;
   return event.response.error?.message ?? 'Response failed';
 };

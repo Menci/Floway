@@ -22,7 +22,7 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
   ...overrides,
 });
 
@@ -112,12 +112,12 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
   });
 
-  test(`[${backend}] targeted Responses retention updates preserve unrelated fields`, async () => {
+  test(`[${backend}] targeted OpenAI Responses retention updates preserve unrelated fields`, async () => {
     const repo = await makeRepo();
     await repo.apiKeys.save(baseKey({ lastUsedAt: '2026-07-01T00:00:00.000Z' }));
-    const updated = await repo.apiKeys.update('key_dump', { responsesRetentionSeconds: 7 * 24 * 60 * 60 });
+    const updated = await repo.apiKeys.update('key_dump', { openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60 });
 
-    assertEquals(updated?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+    assertEquals(updated?.openaiResponsesRetentionSeconds, 7 * 24 * 60 * 60);
     assertEquals(updated?.lastUsedAt, '2026-07-01T00:00:00.000Z');
     assertEquals(updated?.dumpRetentionSeconds, null);
   });
@@ -133,7 +133,7 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
     lastUsedAt: '2026-07-29T00:00:00.000Z',
     upstreamIds: ['upstream-a'],
     dumpRetentionSeconds: 3600,
-    responsesRetentionSeconds: 7 * 24 * 60 * 60,
+    openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60,
   });
 
   assertEquals(updated?.name, 'Updated key');
@@ -141,7 +141,7 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
   assertEquals(updated?.lastUsedAt, '2026-07-29T00:00:00.000Z');
   assertEquals(updated?.upstreamIds, ['upstream-a']);
   assertEquals(updated?.dumpRetentionSeconds, 3600);
-  assertEquals(updated?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  assertEquals(updated?.openaiResponsesRetentionSeconds, 7 * 24 * 60 * 60);
 });
 
 test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {

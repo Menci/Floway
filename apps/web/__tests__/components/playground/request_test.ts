@@ -30,7 +30,7 @@ describe('generation and capabilities', () => {
       .toEqual({ max_tokens: 100, thinking: { type: 'enabled' }, output_config: { effort: 'max' } });
   });
 
-  it('always caps Messages output, which requires the field on the wire', () => {
+  it('always caps Anthropic Messages output, which requires the field on the wire', () => {
     expect(generationOptions('messages', undefined, 2048)).toEqual({ max_tokens: 2048 });
     expect(generationOptions('responses', undefined)).toEqual({});
   });

@@ -1,16 +1,16 @@
 import { getDumpStore } from '../dump/registry.ts';
 import { getRepo } from '../repo/index.ts';
-import { RESPONSES_REFRESH_GRANULARITY_MS } from '../repo/responses-retention.ts';
+import { OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../repo/openai-responses-retention.ts';
 import type { ExpirationDomain, ExpirationSweepCompletion } from '../repo/types.ts';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const ERROR_RETRY_MS = 60 * 1000;
 const PARTIAL_RETRY_MS = 1;
-const RESPONSES_DELETE_BATCH_SIZE = 100;
+const OPENAI_RESPONSES_DELETE_BATCH_SIZE = 100;
 const DUMP_DELETE_BATCH_SIZE = 50;
 export const SWEEP_UNITS_PER_TICK = 4;
 export const MAX_FILES_RETIRED_PER_SWEEP_UNIT = Math.max(
-  RESPONSES_DELETE_BATCH_SIZE,
+  OPENAI_RESPONSES_DELETE_BATCH_SIZE,
   DUMP_DELETE_BATCH_SIZE * 2,
 );
 const BACKFILL_ROWS_PER_TICK = 500;
@@ -19,29 +19,29 @@ interface ExpirationAdapter {
   sweepKey(keyId: string, now: number): Promise<ExpirationSweepCompletion>;
 }
 
-const findNextResponsesCleanupAt = async (keyId: string): Promise<number | null> => {
+const findNextOpenAIResponsesCleanupAt = async (keyId: string): Promise<number | null> => {
   const repo = getRepo();
   const key = await repo.apiKeys.getById(keyId);
-  if (key === null || key.responsesRetentionSeconds === 0) return null;
+  if (key === null || key.openaiResponsesRetentionSeconds === 0) return null;
   const [itemRefresh, snapshotRefresh] = await Promise.all([
-    repo.responsesItems.findOldestRefreshedAt(keyId),
-    repo.responsesSnapshots.findOldestRefreshedAt(keyId),
+    repo.openaiResponsesItems.findOldestRefreshedAt(keyId),
+    repo.openaiResponsesSnapshots.findOldestRefreshedAt(keyId),
   ]);
   const oldest = [itemRefresh, snapshotRefresh].filter((value): value is number => value !== null);
   return oldest.length === 0
     ? null
-    : Math.min(...oldest) + key.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
+    : Math.min(...oldest) + key.openaiResponsesRetentionSeconds * 1000 + OPENAI_RESPONSES_REFRESH_GRANULARITY_MS + 1;
 };
 
-const responsesAdapter: ExpirationAdapter = {
+const openaiResponsesAdapter: ExpirationAdapter = {
   async sweepKey(keyId, now) {
     const repo = getRepo();
-    const deletedSnapshots = await repo.responsesSnapshots.deleteExpiredBatch(keyId, now, RESPONSES_DELETE_BATCH_SIZE);
-    const deletedItems = await repo.responsesItems.deleteExpiredBatch(keyId, now, RESPONSES_DELETE_BATCH_SIZE);
-    if (deletedSnapshots === RESPONSES_DELETE_BATCH_SIZE || deletedItems === RESPONSES_DELETE_BATCH_SIZE) {
+    const deletedSnapshots = await repo.openaiResponsesSnapshots.deleteExpiredBatch(keyId, now, OPENAI_RESPONSES_DELETE_BATCH_SIZE);
+    const deletedItems = await repo.openaiResponsesItems.deleteExpiredBatch(keyId, now, OPENAI_RESPONSES_DELETE_BATCH_SIZE);
+    if (deletedSnapshots === OPENAI_RESPONSES_DELETE_BATCH_SIZE || deletedItems === OPENAI_RESPONSES_DELETE_BATCH_SIZE) {
       return { kind: 'partial', retryAt: now + PARTIAL_RETRY_MS };
     }
-    return { kind: 'drained', nextDueAt: await findNextResponsesCleanupAt(keyId) };
+    return { kind: 'drained', nextDueAt: await findNextOpenAIResponsesCleanupAt(keyId) };
   },
 };
 
@@ -62,7 +62,7 @@ const dumpsAdapter: ExpirationAdapter = {
 };
 
 const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
-  responses: responsesAdapter,
+  responses: openaiResponsesAdapter,
   dumps: dumpsAdapter,
 };
 

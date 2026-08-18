@@ -203,7 +203,7 @@ const en = {
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
           openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses compaction', openAiResponsesWs: 'Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',
-          geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent (SSE)', geminiCount: 'Gemini countTokens',
+          geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent (SSE)', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex alpha search',
@@ -359,8 +359,8 @@ const en = {
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
           viewCapturedRequests: 'View captured requests',
-          responsesRetention: 'Stateful Responses retention',
-          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
+          openaiResponsesRetention: 'Stateful Responses retention',
+          openaiResponsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window',
         },
@@ -389,9 +389,9 @@ const en = {
               'Saving will delete this key\'s captured requests.',
           warningShrink:
               'Saving will delete captured requests older than the new window.',
-          responsesWarningDisable:
+          openaiResponsesWarningDisable:
               'Saving will delete this key\'s stored Responses items. A follow-up request that references one by id will no longer find it.',
-          responsesWarningShrink:
+          openaiResponsesWarningShrink:
               'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
@@ -575,7 +575,7 @@ const en = {
           validation: {
             invalidName: 'Enter a valid HTTP header name.',
             duplicateName: 'Each header name can appear only once.',
-            messagesOwned: 'The Messages protocol manages this header.',
+            anthropicMessagesOwned: 'The Messages protocol manages this header.',
             transportOwned: 'Floway’s HTTP transport manages this header.',
             invalidValue: 'Enter a valid HTTP header value without control characters.',
           },

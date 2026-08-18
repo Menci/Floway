@@ -5,13 +5,13 @@ import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import {
-  assertSameStoredResponsesItem,
-  cloneStoredResponsesItem,
-  cloneStoredResponsesSnapshot,
-  compareResponsesItemsByFreshness,
-  scopedResponsesKey,
-} from '../../src/repo/responses-clone.ts';
-import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS, responsesStateCutoff } from '../../src/repo/responses-retention.ts';
+  assertSameStoredOpenAIResponsesItem,
+  cloneStoredOpenAIResponsesItem,
+  cloneStoredOpenAIResponsesSnapshot,
+  compareOpenAIResponsesItemsByFreshness,
+  scopedOpenAIResponsesKey,
+} from '../../src/repo/openai-responses-clone.ts';
+import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARITY_MS, openaiResponsesStateCutoff } from '../../src/repo/openai-responses-retention.ts';
 import { SEED_ADMIN_USER_ID } from '../../src/repo/seed-admin.ts';
 import { generateSessionToken } from '../../src/repo/session-tokens.ts';
 import type {
@@ -42,8 +42,8 @@ import type {
   ProxyRecord,
   ProxyRepo,
   Repo,
-  ResponsesItemsRepo,
-  ResponsesSnapshotsRepo,
+  OpenAIResponsesItemsRepo,
+  OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
@@ -51,8 +51,8 @@ import type {
   WebSearchUsageRepo,
   Session,
   SessionsRepo,
-  StoredResponsesItem,
-  StoredResponsesSnapshot,
+  StoredOpenAIResponsesItem,
+  StoredOpenAIResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
   UsageOverviewAxis,
@@ -190,7 +190,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
 
   private schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
     const schedules: Promise<void>[] = [];
-    if (previous.responsesRetentionSeconds !== next.responsesRetentionSeconds || previous.deletedAt !== next.deletedAt) {
+    if (previous.openaiResponsesRetentionSeconds !== next.openaiResponsesRetentionSeconds || previous.deletedAt !== next.deletedAt) {
       schedules.push(this.expirationSweeps.schedule('responses', next.id, 0));
     }
     if (previous.dumpRetentionSeconds !== next.dumpRetentionSeconds || previous.deletedAt !== next.deletedAt) {
@@ -258,7 +258,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
     const previous = this.keys[i];
-    const next = { ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
+    const next = { ...previous, deletedAt: new Date().toISOString(), openaiResponsesRetentionSeconds: 0 };
     this.keys[i] = next;
     try {
       await this.schedulePolicyChanges(previous, next);
@@ -275,7 +275,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
-        const next = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
+        const next = { ...k, deletedAt: now, openaiResponsesRetentionSeconds: 0 };
         updates.push({ index: i, previous: k, next });
       }
     }
@@ -817,77 +817,77 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   hue: upstream.hue,
 });
 
-const responsesCleanupDueAt = async (
+const openaiResponsesCleanupDueAt = async (
   apiKeys: ApiKeyRepo,
   apiKeyId: string,
   refreshedAt: number,
 ): Promise<number> => {
   const apiKey = (await apiKeys.listIncludingDeleted()).find(candidate => candidate.id === apiKeyId);
-  if (apiKey === undefined) throw new Error(`API key not found for Responses state: ${apiKeyId}`);
-  return apiKey.deletedAt !== null || apiKey.responsesRetentionSeconds === 0
+  if (apiKey === undefined) throw new Error(`API key not found for OpenAI Responses state: ${apiKeyId}`);
+  return apiKey.deletedAt !== null || apiKey.openaiResponsesRetentionSeconds === 0
     ? 0
-    : refreshedAt + apiKey.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
+    : refreshedAt + apiKey.openaiResponsesRetentionSeconds * 1000 + OPENAI_RESPONSES_REFRESH_GRANULARITY_MS + 1;
 };
 
-class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
-  private store = new Map<string, StoredResponsesItem>();
+class MemoryOpenAIResponsesItemsRepo implements OpenAIResponsesItemsRepo {
+  private store = new Map<string, StoredOpenAIResponsesItem>();
 
   constructor(
     private readonly apiKeys: ApiKeyRepo,
     private readonly expirationSweeps: ExpirationSweepsRepo,
   ) {}
 
-  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]> {
-    const rows: StoredResponsesItem[] = [];
+  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesItem[]> {
+    const rows: StoredOpenAIResponsesItem[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
-      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
-      if (row !== undefined && row.refreshedAt >= earliestVisibleCutoff) rows.push(cloneStoredResponsesItem(row));
+      const row = this.store.get(scopedOpenAIResponsesKey(apiKeyId, id));
+      if (row !== undefined && row.refreshedAt >= earliestVisibleCutoff) rows.push(cloneStoredOpenAIResponsesItem(row));
     }
     return Promise.resolve(rows);
   }
 
-  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]> {
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesItem[]> {
     const wanted = new Set(hashes);
     if (wanted.size === 0) return Promise.resolve([]);
-    const rows: StoredResponsesItem[] = [];
+    const rows: StoredOpenAIResponsesItem[] = [];
     for (const row of this.store.values()) {
       if (row.apiKeyId === apiKeyId && row.refreshedAt >= earliestVisibleCutoff && wanted.has(row.itemHash)) {
-        rows.push(cloneStoredResponsesItem(row));
+        rows.push(cloneStoredOpenAIResponsesItem(row));
       }
     }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
+    return Promise.resolve(rows.toSorted(compareOpenAIResponsesItemsByFreshness));
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], earliestVisibleCutoff: number): Promise<void> {
+  async insertMany(items: readonly StoredOpenAIResponsesItem[], earliestVisibleCutoff: number): Promise<void> {
     const quantizedItems = items.map(item => ({
       ...item,
-      refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
+      refreshedAt: quantizeOpenAIResponsesRefreshedAt(item.refreshedAt),
     }));
-    const pending = new Map<string, StoredResponsesItem>();
+    const pending = new Map<string, StoredOpenAIResponsesItem>();
     const dueByApiKey = new Map<string, number>();
     for (const item of quantizedItems) {
-      const key = scopedResponsesKey(item.apiKeyId, item.id);
+      const key = scopedOpenAIResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
       if (existing !== undefined && existing.refreshedAt >= earliestVisibleCutoff) {
-        assertSameStoredResponsesItem(item, existing);
+        assertSameStoredOpenAIResponsesItem(item, existing);
       } else {
         pending.set(key, item);
       }
       const refreshedAt = Math.max(existing?.refreshedAt ?? item.refreshedAt, item.refreshedAt);
-      const dueAt = await responsesCleanupDueAt(this.apiKeys, item.apiKeyId, refreshedAt);
+      const dueAt = await openaiResponsesCleanupDueAt(this.apiKeys, item.apiKeyId, refreshedAt);
       dueByApiKey.set(item.apiKeyId, Math.min(dueByApiKey.get(item.apiKeyId) ?? dueAt, dueAt));
     }
-    const previous = new Map<string, StoredResponsesItem | undefined>();
+    const previous = new Map<string, StoredOpenAIResponsesItem | undefined>();
     for (const item of items) {
-      const key = scopedResponsesKey(item.apiKeyId, item.id);
-      if (!previous.has(key)) previous.set(key, this.store.has(key) ? cloneStoredResponsesItem(this.store.get(key)!) : undefined);
+      const key = scopedOpenAIResponsesKey(item.apiKeyId, item.id);
+      if (!previous.has(key)) previous.set(key, this.store.has(key) ? cloneStoredOpenAIResponsesItem(this.store.get(key)!) : undefined);
     }
-    for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
+    for (const [key, item] of pending) this.store.set(key, cloneStoredOpenAIResponsesItem(item));
     for (const item of quantizedItems) {
-      const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      const stored = this.store.get(scopedOpenAIResponsesKey(item.apiKeyId, item.id))!;
       if (stored.refreshedAt < item.refreshedAt) stored.refreshedAt = item.refreshedAt;
     }
     try {
@@ -902,24 +902,24 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void> {
-    const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
-    const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
+  async refreshMany(items: readonly StoredOpenAIResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void> {
+    const quantizedRefreshedAt = quantizeOpenAIResponsesRefreshedAt(refreshedAt);
+    const existing = items.map(item => this.store.get(scopedOpenAIResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item =>
       item === undefined || item.refreshedAt < earliestVisibleCutoff);
     if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
+      throw new Error(`OpenAI Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
     }
     const dueByApiKey = new Map<string, number>();
     for (let index = 0; index < existing.length; index += 1) {
-      assertSameStoredResponsesItem(items[index], existing[index]!);
+      assertSameStoredOpenAIResponsesItem(items[index], existing[index]!);
       const nextRefreshedAt = Math.max(existing[index]!.refreshedAt, quantizedRefreshedAt);
-      const dueAt = await responsesCleanupDueAt(this.apiKeys, items[index].apiKeyId, nextRefreshedAt);
+      const dueAt = await openaiResponsesCleanupDueAt(this.apiKeys, items[index].apiKeyId, nextRefreshedAt);
       dueByApiKey.set(items[index].apiKeyId, Math.min(dueByApiKey.get(items[index].apiKeyId) ?? dueAt, dueAt));
     }
     const previous = new Map(existing.map(item => {
       const row = item!;
-      return [scopedResponsesKey(row.apiKeyId, row.id), cloneStoredResponsesItem(row)] as const;
+      return [scopedOpenAIResponsesKey(row.apiKeyId, row.id), cloneStoredOpenAIResponsesItem(row)] as const;
     }));
     for (const item of existing) {
       if (item!.refreshedAt < quantizedRefreshedAt) item!.refreshedAt = quantizedRefreshedAt;
@@ -940,8 +940,8 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       const apiKey = await this.apiKeys.getById(row.apiKeyId);
       if (
         apiKey === null
-        || apiKey.responsesRetentionSeconds === 0
-        || row.refreshedAt < responsesStateCutoff(now, apiKey.responsesRetentionSeconds)
+        || apiKey.openaiResponsesRetentionSeconds === 0
+        || row.refreshedAt < openaiResponsesStateCutoff(now, apiKey.openaiResponsesRetentionSeconds)
       ) {
         this.store.delete(key);
         changes += 1;
@@ -961,30 +961,30 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 }
 
-class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
-  private store = new Map<string, StoredResponsesSnapshot>();
+class MemoryOpenAIResponsesSnapshotsRepo implements OpenAIResponsesSnapshotsRepo {
+  private store = new Map<string, StoredOpenAIResponsesSnapshot>();
 
   constructor(
     private readonly apiKeys: ApiKeyRepo,
     private readonly expirationSweeps: ExpirationSweepsRepo,
   ) {}
 
-  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
-    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= earliestVisibleCutoff ? cloneStoredResponsesSnapshot(snapshot) : null);
+  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesSnapshot | null> {
+    const snapshot = this.store.get(scopedOpenAIResponsesKey(apiKeyId, id));
+    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= earliestVisibleCutoff ? cloneStoredOpenAIResponsesSnapshot(snapshot) : null);
   }
 
-  async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
+  async insert(snapshot: StoredOpenAIResponsesSnapshot): Promise<void> {
     const quantized = {
       ...snapshot,
-      refreshedAt: quantizeResponsesRefreshedAt(snapshot.refreshedAt),
+      refreshedAt: quantizeOpenAIResponsesRefreshedAt(snapshot.refreshedAt),
     };
-    const key = scopedResponsesKey(quantized.apiKeyId, quantized.id);
+    const key = scopedOpenAIResponsesKey(quantized.apiKeyId, quantized.id);
     const existing = this.store.get(key);
     if (existing === undefined || quantized.refreshedAt > existing.refreshedAt) {
-      this.store.set(key, cloneStoredResponsesSnapshot(quantized));
+      this.store.set(key, cloneStoredOpenAIResponsesSnapshot(quantized));
       try {
-        await this.expirationSweeps.schedule('responses', quantized.apiKeyId, await responsesCleanupDueAt(
+        await this.expirationSweeps.schedule('responses', quantized.apiKeyId, await openaiResponsesCleanupDueAt(
           this.apiKeys,
           quantized.apiKeyId,
           quantized.refreshedAt,
@@ -1004,8 +1004,8 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       const apiKey = await this.apiKeys.getById(snapshot.apiKeyId);
       if (
         apiKey === null
-        || apiKey.responsesRetentionSeconds === 0
-        || snapshot.refreshedAt < responsesStateCutoff(now, apiKey.responsesRetentionSeconds)
+        || apiKey.openaiResponsesRetentionSeconds === 0
+        || snapshot.refreshedAt < openaiResponsesStateCutoff(now, apiKey.openaiResponsesRetentionSeconds)
       ) {
         this.store.delete(key);
         changes += 1;
@@ -1471,8 +1471,8 @@ export class InMemoryRepo implements Repo {
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;
-  responsesItems: ResponsesItemsRepo;
-  responsesSnapshots: ResponsesSnapshotsRepo;
+  openaiResponsesItems: OpenAIResponsesItemsRepo;
+  openaiResponsesSnapshots: OpenAIResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;
@@ -1492,8 +1492,8 @@ export class InMemoryRepo implements Repo {
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.modelAliases = new MemoryModelAliasesRepo();
-    this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
-    this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);
+    this.openaiResponsesItems = new MemoryOpenAIResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
+    this.openaiResponsesSnapshots = new MemoryOpenAIResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);
     this.spilledFiles = new MemorySpilledFilesRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }

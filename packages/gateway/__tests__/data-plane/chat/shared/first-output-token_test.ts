@@ -68,33 +68,33 @@ describe('isFirstOutputTokenFrame — responses', () => {
   });
 });
 
-describe('isFirstOutputTokenFrame — chat-completions', () => {
+describe('isFirstOutputTokenFrame — openai-chat-completions', () => {
   it('accepts chunk with delta.content', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: 'hi' } }] }), 'chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: 'hi' } }] }), 'openai-chat-completions')).toBe(true);
   });
 
   it('accepts chunk with delta.tool_calls', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{' } }] } }] }), 'chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{' } }] } }] }), 'openai-chat-completions')).toBe(true);
   });
 
   it('accepts reasoning-only chunk (delta.reasoning / delta.reasoning_content / delta.reasoning_text)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning: '...' } }] }), 'chat-completions')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_content: '...' } }] }), 'chat-completions')).toBe(true);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_text: '...' } }] }), 'chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning: '...' } }] }), 'openai-chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_content: '...' } }] }), 'openai-chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_text: '...' } }] }), 'openai-chat-completions')).toBe(true);
   });
 
   it('accepts refusal delta (safety refusals are legitimate generated output)', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: "I can't help with that." } }] }), 'chat-completions')).toBe(true);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: "I can't help with that." } }] }), 'openai-chat-completions')).toBe(true);
   });
 
   it('rejects role-only chunk', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { role: 'assistant' } }] }), 'chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { role: 'assistant' } }] }), 'openai-chat-completions')).toBe(false);
   });
 
   it('rejects empty-content chunk', () => {
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: '' } }] }), 'chat-completions')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: '' } }] }), 'chat-completions')).toBe(false);
-    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: {} }] }), 'chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: '' } }] }), 'openai-chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: '' } }] }), 'openai-chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: {} }] }), 'openai-chat-completions')).toBe(false);
   });
 });
 
@@ -103,6 +103,6 @@ describe('isFirstOutputTokenFrame — done sentinel', () => {
     const done = { type: 'done' as const };
     expect(isFirstOutputTokenFrame(done, 'messages')).toBe(false);
     expect(isFirstOutputTokenFrame(done, 'responses')).toBe(false);
-    expect(isFirstOutputTokenFrame(done, 'chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(done, 'openai-chat-completions')).toBe(false);
   });
 });

@@ -65,7 +65,7 @@ const firstPreferred = (models: readonly CopilotRawModel[]): CopilotRawModel | u
 // A narrowing filter that rolls back to the original pool when it would empty
 // it. Keeps selection best-effort over hints so a unit caller that bypasses
 // the entry-point pre-check still gets a reasonable answer; in production
-// Fast Mode is a hard constraint at the callMessages entry and the rollback
+// Fast Mode is a hard constraint at the callAnthropicMessages entry and the rollback
 // is unreachable there.
 const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawModel) => boolean): readonly CopilotRawModel[] => {
   const filtered = pool.filter(predicate);
