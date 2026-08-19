@@ -60,7 +60,7 @@ interface ResponseSnapshot {
 //     rejection).
 //   • `failed(reason)` records an uncategorized terminal failure: a thrown
 //     exception (caught by the respond layer or passthrough-serve), a
-//     source-emitted error frame, a missing terminal event, or a writer error.
+//     source-emitted error frame, a downstream cancel, or a writer error.
 //     Caller passes a string or Error; the accumulator one-line-formats
 //     it (`.message` only — never the stack, which lives in the response
 //     body's debug envelope).

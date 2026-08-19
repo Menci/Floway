@@ -16,48 +16,6 @@ const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 
-test('enumerateModelCandidates blocks a cold catalog fetch after client disconnect', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.upstreams.save(buildCustomUpstreamRecord({
-    config: {
-      baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
-      ingressHeadersRules: [],
-      apiKey: 'sk-custom',
-      endpoints: { messages: {} },
-    },
-  }));
-  const controller = new AbortController();
-  const reason = new Error('client disconnected');
-  controller.abort(reason);
-  let fetches = 0;
-
-  await withMockedFetch(
-    () => {
-      fetches += 1;
-      return jsonResponse({ object: 'list', data: [] });
-    },
-    async () => {
-      let caught: unknown;
-      try {
-        await enumerateModelCandidates({
-          upstreamIds: null,
-          model: 'gpt-test',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-          clientDisconnectSignal: controller.signal,
-        });
-      } catch (error) {
-        caught = error;
-      }
-      assertEquals(caught, reason);
-      assertEquals(fetches, 0);
-    },
-  );
-});
-
 test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 

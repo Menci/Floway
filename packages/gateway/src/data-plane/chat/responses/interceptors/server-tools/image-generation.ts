@@ -2,7 +2,6 @@ import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
-import { retainUpstreamFetcher, type RetainedDispatchLifecycle } from '../../../../shared/retained-response.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
@@ -604,8 +603,8 @@ const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-const createRemoteImageMaterializer = (lifecycle: RetainedDispatchLifecycle) => {
-  const fetchImage = createExternalImageFetcher(lifecycle);
+const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
+  const fetchImage = createExternalImageFetcher(requestSignal);
   const materialized = new Map<string, ImageSource>();
   const materializedByData = new Map<Uint8Array, ImageSource>();
   let materializedBytes = 0;
@@ -901,7 +900,7 @@ interface ShimState {
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
-  clientDisconnectSignal: AbortSignal;
+  downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
 
@@ -994,7 +993,6 @@ const resolveImageCandidate = async (
       kind: 'image',
       scheduler: state.backgroundScheduler,
       runtimeLocation: state.runtimeLocation,
-      clientDisconnectSignal: state.clientDisconnectSignal,
     });
   } catch (e) {
     return { ok: false, error: serverError(e) };
@@ -1084,7 +1082,7 @@ const issueImageCall = async (
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let retry = 0; ; retry++) {
     const opts = {
-      fetcher: retainUpstreamFetcher(fetcher, state.clientDisconnectSignal, state.backgroundScheduler),
+      fetcher,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
       // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
@@ -1092,11 +1090,11 @@ const issueImageCall = async (
       // Perf recording lives at the sub-call's terminal boundary in
       // streamImageGeneration; the retry loop overwrites this slot each
       // retry so it reflects the dispatch that actually returned.
-      wrapUpstreamCall: stampUpstreamCallStart(attempt, state.clientDisconnectSignal),
+      wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (editRequest === null
-      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), undefined, opts)
-      : provider.instance.callImagesEdits(model, editRequest, undefined, opts));
+      ? provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
+      : provider.instance.callImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -1105,7 +1103,7 @@ const issueImageCall = async (
     const backoffMs = base + Math.random() * base * 0.25;
     const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
     await response.text().catch(() => undefined);
-    await sleep(delayMs, state.clientDisconnectSignal);
+    await sleep(delayMs, state.downstreamAbortSignal);
   }
 };
 
@@ -1297,7 +1295,7 @@ const streamImageGeneration = (
   let finalB64: string | undefined;
   let finalEcho: EchoFields = {};
   let usage: unknown;
-  for await (const frame of parseSSEStream(response.body)) {
+  for await (const frame of parseSSEStream(response.body, { signal: state.downstreamAbortSignal })) {
     const signal = parseImageStreamEvent(frame.data);
     if (signal === null) continue;
     if (signal.kind === 'partial') {
@@ -1430,10 +1428,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     };
   }
 
-  const materializer = createRemoteImageMaterializer({
-    clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
-    backgroundScheduler: gatewayCtx.backgroundScheduler,
-  });
+  const materializer = createRemoteImageMaterializer(gatewayCtx.abortSignal);
   const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
   const materializedInputs = await materializer.inputs(remoteInputs);
   if (!materializedInputs.ok) {
@@ -1484,7 +1479,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
-    clientDisconnectSignal: gatewayCtx.clientDisconnectSignal,
+    downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,
   };
 

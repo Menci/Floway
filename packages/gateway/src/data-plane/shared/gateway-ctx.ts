@@ -1,5 +1,4 @@
 import type { RequestBody } from './request-body.ts';
-import { retainResponse } from './retained-response.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -18,9 +17,8 @@ export interface AttemptState {
 
 // Stamps at dispatch entry — pre-dial by design. See
 // UpstreamCallOptions.wrapUpstreamCall for what the interval covers.
-export const stampUpstreamCallStart = (attempt: AttemptState, clientDisconnectSignal?: AbortSignal) =>
+export const stampUpstreamCallStart = (attempt: AttemptState) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
-    clientDisconnectSignal?.throwIfAborted();
     attempt.upstreamCallStartedAt = performance.now();
     return dispatch();
   };
@@ -29,9 +27,9 @@ export interface GatewayCtx {
   readonly apiKeyId: string;
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
-  readonly clientDisconnectSignal: AbortSignal;
+  readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
-  readonly clientDisconnectController: AbortController;
+  readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
   readonly attempt: AttemptState;
   // The deployment colo / region, used both as the `runtimeLocation`
@@ -40,16 +38,17 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
   // Null when the api key has no dump retention configured, in which case
-  // `finalizeGatewayResponse` skips only the dump tee. Response lifetime
-  // retention still applies.
+  // `finalizeGatewayResponse` short-circuits the dump tee and returns the
+  // response untouched.
   readonly dump: DumpAccumulator | null;
 }
 
 export interface CreateGatewayCtxOptions {
   wantsStream: boolean;
-  // WebSocket call sites own the connection controller. HTTP call sites let
-  // the factory create one and mirror the inbound Request signal into it.
-  clientDisconnectController?: AbortController;
+  // WebSocket-style call sites own the AbortController (so the upgrade
+  // handler can cancel mid-stream); HTTP call sites let the factory mint one
+  // when wantsStream is true.
+  downstreamAbortController?: AbortController;
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
   // snapshot reflects the exact bytes the handler parsed. WebSocket
@@ -78,12 +77,7 @@ export interface CreateGatewayCtxOptions {
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
-  const controller = opts.clientDisconnectController ?? new AbortController();
-  if (opts.clientDisconnectController === undefined) {
-    const requestSignal = c.req.raw.signal;
-    if (requestSignal.aborted) controller.abort(requestSignal.reason);
-    else requestSignal.addEventListener('abort', () => controller.abort(requestSignal.reason), { once: true });
-  }
+  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
@@ -92,9 +86,9 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     apiKeyId: apiKey.id,
     requestStartedAt: Date.now(),
     upstreamIds,
-    clientDisconnectSignal: controller.signal,
+    abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
-    clientDisconnectController: controller,
+    downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
     runtimeLocation: getRuntimeLocation(c.req.raw),
@@ -102,14 +96,8 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   };
 };
 
-// Finalize the optional dump tee, then retain the outgoing body independently
-// of its consumer. Client cancellation records the disconnect while the
-// background scheduler keeps the server-side response drain alive.
+// Run the dump-accumulator's finalize tee on the outgoing Response. Every
+// inbound HTTP wrapper returns its response through this seam so the dump
+// pipeline applies uniformly across happy-path, error, and passthrough paths.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
-  retainResponse(
-    ctx.dump?.finalize(response) ?? response,
-    ctx.backgroundScheduler,
-    reason => {
-      if (!ctx.clientDisconnectSignal.aborted) ctx.clientDisconnectController.abort(reason);
-    },
-  );
+  ctx.dump?.finalize(response) ?? response;
