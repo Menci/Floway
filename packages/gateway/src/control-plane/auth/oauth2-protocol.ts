@@ -1,6 +1,4 @@
 import { oauth2CallbackUrl, type OAuth2Config, type OAuth2ProviderConfig } from './oauth2-config.ts';
-export { OAuth2ProtocolError } from './oauth2-protocol-error.ts';
-import { OAuth2ProtocolError } from './oauth2-protocol-error.ts';
 import { getFetch } from '@floway-dev/platform';
 
 const textEncoder = new TextEncoder();
@@ -15,6 +13,8 @@ const base64Url = (bytes: Uint8Array): string =>
   base64(bytes).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
 const formEncode = (value: string): string => new URLSearchParams({ value }).toString().slice('value='.length);
+
+export class OAuth2ProtocolError extends Error {}
 
 export const newOAuth2Secret = (): string => base64Url(crypto.getRandomValues(new Uint8Array(32)));
 
@@ -137,6 +137,7 @@ const claimString = (userinfo: Record<string, unknown>, paths: readonly string[]
 export interface OAuth2Identity {
   providerUserId: string;
   providerLogin: string;
+  claims: Record<string, unknown>;
 }
 
 export const fetchOAuth2Identity = async (
@@ -174,5 +175,5 @@ export const fetchOAuth2Identity = async (
   if (providerUserId.length > 1024 || providerLogin.length > 1024) {
     throw new OAuth2ProtocolError('OAuth2 userinfo identity exceeded 1024 characters');
   }
-  return { providerUserId, providerLogin };
+  return { providerUserId, providerLogin, claims: userinfo };
 };

@@ -16,9 +16,7 @@ const valid = {
   userIdClaim: '',
   usernameClaim: 'data.login',
   authorizationParams: '{"prompt":"login"}',
-  accessPolicy: 'allow_all' as const,
-  giteaBaseUrl: '',
-  giteaAllowedMemberships: '',
+  accessPolicy: '',
 };
 
 describe('OAuth2 provider form', () => {
@@ -35,7 +33,7 @@ describe('OAuth2 provider form', () => {
       user_id_claim: null,
       username_claim: 'data.login',
       authorization_params: { prompt: 'login' },
-      access_policy: { type: 'allow_all' },
+      access_policy: { logic: 'and', conditions: [] },
     });
   });
 
@@ -63,31 +61,38 @@ describe('OAuth2 provider form', () => {
       user_id_claim: null,
       username_claim: null,
       authorization_params: {},
-      access_policy: { type: 'allow_all' },
+      access_policy: { logic: 'and', conditions: [] },
       created_at: '2026-08-19T00:00:00.000Z',
       updated_at: '2026-08-19T00:00:00.000Z',
     });
 
     expect(defaults.clientSecret).toBe('');
+    expect(defaults.accessPolicy).toBe('');
   });
 
-  it('serializes and validates Gitea organization and team access', () => {
-    const gitea = {
+  it('serializes and validates a UserInfo claim access policy', () => {
+    const restricted = {
       ...valid,
-      scopes: 'read:user read:organization',
-      accessPolicy: 'gitea' as const,
-      giteaBaseUrl: 'https://gitea.example.com',
-      giteaAllowedMemberships: 'company:owners\nother-company',
+      scopes: 'openid groups',
+      accessPolicy: JSON.stringify({
+        logic: 'or',
+        conditions: [
+          { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
+          { field: 'groups', op: 'contains', value: 'canneed:owners' },
+        ],
+      }),
     };
-    expect(oauth2ProviderFormSchema('create').safeParse(gitea).success).toBe(true);
-    expect(oauth2ProviderBody(gitea).access_policy).toEqual({
-      type: 'gitea',
-      base_url: 'https://gitea.example.com',
-      allowed_memberships: ['company:owners', 'other-company'],
+    expect(oauth2ProviderFormSchema('create').safeParse(restricted).success).toBe(true);
+    expect(oauth2ProviderBody(restricted).access_policy).toEqual({
+      logic: 'or',
+      conditions: [
+        { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
+        { field: 'groups', op: 'contains', value: 'canneed:owners' },
+      ],
     });
     expect(oauth2ProviderFormSchema('create').safeParse({
-      ...gitea,
-      scopes: 'read:user',
+      ...restricted,
+      accessPolicy: '{"logic":"or","conditions":[{"field":"groups","op":"equals","value":"owners"}]}',
     }).success).toBe(false);
   });
 });

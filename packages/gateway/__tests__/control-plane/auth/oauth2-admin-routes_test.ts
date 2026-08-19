@@ -17,7 +17,7 @@ const providerBody = (overrides: Record<string, unknown> = {}) => ({
   user_id_claim: null,
   username_claim: null,
   authorization_params: { prompt: 'login' },
-  access_policy: { type: 'allow_all' },
+  access_policy: { logic: 'and', conditions: [] },
   ...overrides,
 });
 
@@ -51,7 +51,7 @@ test('administrator configures OAuth2 and controls its public availability immed
   assertEquals(createdResponse.status, 201);
   const created = await createdResponse.json() as Record<string, unknown>;
   assertEquals(created.client_secret_configured, true);
-  assertEquals(created.access_policy, { type: 'allow_all' });
+  assertEquals(created.access_policy, { logic: 'and', conditions: [] });
   assertEquals(Object.hasOwn(created, 'client_secret'), false);
 
   const unavailable = await requestApp('/auth/oauth2/providers', {});
@@ -135,36 +135,28 @@ test('OAuth2 configuration API rejects duplicate IDs and unsafe protocol configu
   expect((await badBaseUrl.json() as { error: string }).error).toContain('must be an origin');
 });
 
-test('administrator configures Gitea organization and team access on the provider', async () => {
+test('administrator configures a generic UserInfo claim access policy on the provider', async () => {
   const { adminSession, repo } = await setupAppTest();
+  const accessPolicy = {
+    logic: 'or',
+    conditions: [
+      { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
+      { field: 'groups', op: 'contains', value: 'canneed:owners' },
+    ],
+  };
   const response = await requestApp('/api/oauth2/providers', adminJson(adminSession, 'POST', providerBody({
-    scopes: ['read:user', 'read:organization'],
-    access_policy: {
-      type: 'gitea',
-      base_url: 'https://gitea.example.com/',
-      allowed_memberships: ['company:owners'],
-    },
+    scopes: ['openid', 'groups'],
+    access_policy: accessPolicy,
   })));
   assertEquals(response.status, 201);
-  assertEquals((await response.json() as Record<string, unknown>).access_policy, {
-    type: 'gitea',
-    base_url: 'https://gitea.example.com',
-    allowed_memberships: ['company:owners'],
-  });
-  assertEquals((await repo.oauth2Config.getProviderById('custom'))?.accessPolicy, {
-    type: 'gitea',
-    baseUrl: 'https://gitea.example.com',
-    allowedMemberships: ['company:owners'],
-  });
+  assertEquals((await response.json() as Record<string, unknown>).access_policy, accessPolicy);
+  assertEquals((await repo.oauth2Config.getProviderById('custom'))?.accessPolicy, accessPolicy);
 
-  const missingScope = await requestApp('/api/oauth2/providers/custom', adminJson(adminSession, 'PUT', providerUpdateBody({
-    scopes: ['read:user'],
+  const unsupportedOperator = await requestApp('/api/oauth2/providers/custom', adminJson(adminSession, 'PUT', providerUpdateBody({
     access_policy: {
-      type: 'gitea',
-      base_url: 'https://gitea.example.com',
-      allowed_memberships: ['company:owners'],
+      logic: 'or',
+      conditions: [{ field: 'groups', op: 'equals', value: 'POPIPA-l10n:owners' }],
     },
   })));
-  assertEquals(missingScope.status, 400);
-  expect((await missingScope.json() as { error: string }).error).toContain('read:organization');
+  assertEquals(unsupportedOperator.status, 400);
 });

@@ -1,7 +1,7 @@
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
+import { oauth2AccessAllowed } from './oauth2-access-policy.ts';
 import { getOAuth2Config, oauth2BindingFrontendRedirect, oauth2FrontendRedirect, oauth2ProviderById, type OAuth2Config, type OAuth2ProviderConfig } from './oauth2-config.ts';
-import { validateGiteaAccess } from './oauth2-gitea.ts';
 import { exchangeOAuth2Code, fetchOAuth2Identity, newOAuth2Secret, OAuth2ProtocolError, oauth2AuthorizationUrl } from './oauth2-protocol.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -143,8 +143,8 @@ export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provi
   try {
     const accessToken = await exchangeOAuth2Code(config, provider, code, authorization.codeVerifier, c.req.raw.signal);
     identity = await fetchOAuth2Identity(provider, accessToken, c.req.raw.signal);
-    if (provider.accessPolicy.type === 'gitea') {
-      await validateGiteaAccess(provider.accessPolicy, accessToken, c.req.raw.signal);
+    if (!oauth2AccessAllowed(provider.accessPolicy, identity.claims)) {
+      throw new OAuth2ProtocolError('This OAuth2 account does not satisfy the provider access policy');
     }
   } catch (cause) {
     if (!(cause instanceof OAuth2ProtocolError)) throw cause;

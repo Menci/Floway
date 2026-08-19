@@ -15,30 +15,14 @@ const endpoint = nonEmpty.transform(value => {
   return url.toString();
 });
 
-const giteaBaseUrl = nonEmpty.transform(value => {
-  const url = new URL(value);
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error(`Gitea base URL must use http or https: ${value}`);
-  }
-  if (url.username || url.password || url.search || url.hash) {
-    throw new Error(`Gitea base URL must not contain credentials, a query, or a fragment: ${value}`);
-  }
-  return url.toString().replace(/\/+$/, '');
-});
-
-const giteaMembership = nonEmpty.max(512).refine(value => {
-  const parts = value.split(':');
-  return parts.length <= 2 && parts.every(part => part.trim() !== '');
-}, 'Gitea membership must be an organization or organization:team');
-
-const accessPolicySchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('allow_all') }).strict(),
-  z.object({
-    type: z.literal('gitea'),
-    baseUrl: giteaBaseUrl,
-    allowedMemberships: z.array(giteaMembership).min(1).max(100),
-  }).strict(),
-]);
+const accessPolicySchema = z.object({
+  logic: z.enum(['and', 'or']),
+  conditions: z.array(z.object({
+    field: nonEmpty.max(200),
+    op: z.literal('contains'),
+    value: nonEmpty.max(1024),
+  }).strict()).max(100),
+}).strict();
 
 const providerSchema = z.object({
   id: nonEmpty.regex(/^[A-Za-z0-9_-]+$/),
@@ -66,18 +50,6 @@ const providerSchema = z.object({
         message: `authorizationParams must not override ${key}`,
         path: ['authorizationParams', key],
       });
-    }
-  }
-  if (provider.accessPolicy.type === 'gitea') {
-    const scopes = new Set(provider.scopes);
-    for (const required of ['read:user', 'read:organization']) {
-      if (!scopes.has(required)) {
-        context.addIssue({
-          code: 'custom',
-          message: `Gitea access policy requires the ${required} scope`,
-          path: ['scopes'],
-        });
-      }
     }
   }
 });

@@ -249,14 +249,14 @@ export const oauth2RegisterBody = z.object({
 });
 
 const oauth2Trimmed = z.string().trim().min(1);
-const oauth2AccessPolicyBody = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('allow_all') }).strict(),
-  z.object({
-    type: z.literal('gitea'),
-    base_url: oauth2Trimmed.max(4096),
-    allowed_memberships: z.array(oauth2Trimmed.max(512)).min(1).max(100),
-  }).strict(),
-]);
+const oauth2AccessPolicyBody = z.object({
+  logic: z.enum(['and', 'or']),
+  conditions: z.array(z.object({
+    field: oauth2Trimmed.max(200),
+    op: z.literal('contains'),
+    value: oauth2Trimmed.max(1024),
+  }).strict()).max(100),
+}).strict();
 const oauth2ProviderFields = {
   display_name: oauth2Trimmed.max(200),
   enabled: z.boolean(),
@@ -751,7 +751,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(23, { error: 'version must be 23 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(24, { error: 'version must be 24 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

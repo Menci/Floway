@@ -854,16 +854,23 @@ const parseOAuth2AccessPolicy = (raw: string, field: string): OAuth2AccessPolicy
     throw new TypeError(`OAuth2 provider ${field} must contain an object`);
   }
   const policy = value as Record<string, unknown>;
-  if (policy.type === 'allow_all' && Object.keys(policy).length === 1) return { type: 'allow_all' };
-  if (policy.type === 'gitea'
-    && typeof policy.baseUrl === 'string'
-    && Array.isArray(policy.allowedMemberships)
-    && policy.allowedMemberships.every(item => typeof item === 'string')
-    && Object.keys(policy).length === 3) {
+  if ((policy.logic === 'and' || policy.logic === 'or')
+    && Array.isArray(policy.conditions)
+    && policy.conditions.every(condition => {
+      if (typeof condition !== 'object' || condition === null || Array.isArray(condition)) return false;
+      const entry = condition as Record<string, unknown>;
+      return typeof entry.field === 'string'
+        && entry.op === 'contains'
+        && typeof entry.value === 'string'
+        && Object.keys(entry).length === 3;
+    })
+    && Object.keys(policy).length === 2) {
     return {
-      type: 'gitea',
-      baseUrl: policy.baseUrl,
-      allowedMemberships: policy.allowedMemberships,
+      logic: policy.logic,
+      conditions: policy.conditions.map(condition => {
+        const entry = condition as Record<string, string>;
+        return { field: entry.field!, op: 'contains', value: entry.value! };
+      }),
     };
   }
   throw new TypeError(`OAuth2 provider ${field} contains an invalid access policy`);

@@ -25,7 +25,7 @@ const provider: OAuth2Provider = {
   userIdClaim: 'data.subject',
   usernameClaim: 'data.login',
   authorizationParams: { prompt: 'login', access_type: 'offline' },
-  accessPolicy: { type: 'allow_all' },
+  accessPolicy: { logic: 'and', conditions: [] },
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -62,9 +62,8 @@ for (const [kind, makeRepo] of repoFactories) {
       scopes: ['read:user', 'read:organization'],
       authorizationParams: { audience: 'floway' },
       accessPolicy: {
-        type: 'gitea' as const,
-        baseUrl: 'https://gitea.example.com',
-        allowedMemberships: ['company:owners'],
+        logic: 'or' as const,
+        conditions: [{ field: 'groups', op: 'contains' as const, value: 'company:owners' }],
       },
       updatedAt: '2026-08-19T01:00:00.000Z',
     };

@@ -60,13 +60,16 @@ export interface OAuth2Account {
 
 export type OAuth2ClientAuthentication = 'client_secret_post' | 'client_secret_basic';
 
-export type OAuth2AccessPolicy =
-  | { type: 'allow_all' }
-  | {
-    type: 'gitea';
-    baseUrl: string;
-    allowedMemberships: string[];
-  };
+export interface OAuth2AccessCondition {
+  field: string;
+  op: 'contains';
+  value: string;
+}
+
+export interface OAuth2AccessPolicy {
+  logic: 'and' | 'or';
+  conditions: OAuth2AccessCondition[];
+}
 
 export interface OAuth2Provider {
   id: string;

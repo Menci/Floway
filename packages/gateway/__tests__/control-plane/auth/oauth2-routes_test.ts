@@ -21,7 +21,7 @@ const provider: OAuth2Provider = {
   userIdClaim: null,
   usernameClaim: null,
   authorizationParams: {},
-  accessPolicy: { type: 'allow_all' },
+  accessPolicy: { logic: 'and', conditions: [] },
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -261,58 +261,42 @@ test('OAuth2 configuration rejects a public base URL with an unsupported path pr
   await expect(getOAuth2Config()).rejects.toThrow('must be an origin');
 });
 
-test('Gitea access policy admits an allowed organization team and denies other users', async () => {
+test('UserInfo claim access policy admits a matching group and denies other users', async () => {
   const { repo } = await setupAppTest();
   await configureOAuth2(repo, [{
     ...provider,
-    scopes: ['read:user', 'read:organization'],
+    scopes: ['openid', 'groups'],
     accessPolicy: {
-      type: 'gitea',
-      baseUrl: 'https://gitea.example.com',
-      allowedMemberships: ['company:owners'],
+      logic: 'or',
+      conditions: [
+        { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
+        { field: 'groups', op: 'contains', value: 'canneed:owners' },
+      ],
     },
   }]);
   let allowed = true;
-  initFetch(async (url, init) => {
-    if (url === 'https://id.example.com/oauth/token') return Response.json({ access_token: 'gitea-access' });
-    if (url === 'https://id.example.com/api/user') return Response.json({ id: 42, login: 'alice' });
-    if (url === 'https://gitea.example.com/api/v1/user/teams?page=1&limit=100') {
-      assertEquals(new Headers(init.headers).get('authorization'), 'Bearer gitea-access');
-      return Response.json([{
-        name: allowed ? 'Owners' : 'Developers',
-        organization: { name: 'Company', username: 'company' },
-      }]);
-    }
+  initFetch(async url => {
+    if (url === 'https://id.example.com/oauth/token') return Response.json({ access_token: 'provider-access' });
+    if (url === 'https://id.example.com/api/user') return Response.json({
+      id: 42,
+      login: 'alice',
+      groups: allowed ? ['developers', 'canneed:owners'] : ['developers'],
+    });
     throw new Error(`unexpected OAuth2 request: ${url}`);
   });
 
-  const accepted = await start('read:user read:organization');
+  const accepted = await start('openid groups');
   const handoff = await callbackHandoff(accepted.state, accepted.cookie);
   assertExists(handoff);
 
   allowed = false;
-  const denied = await start('read:user read:organization');
+  const denied = await start('openid groups');
   const response = await requestApp(`/auth/oauth2/custom/callback?state=${encodeURIComponent(denied.state)}&code=provider-code`, {
     method: 'GET',
     headers: { cookie: denied.cookie },
   });
   assertEquals(response.status, 302);
-  expect(new URL(response.headers.get('location')!).hash).toContain('does+not+belong+to+an+allowed+Gitea+organization+or+team');
-});
-
-test('Gitea access policy requires the user and organization scopes', async () => {
-  const { repo } = await setupAppTest();
-  await configureOAuth2(repo, [{
-    ...provider,
-    scopes: ['read:user'],
-    accessPolicy: {
-      type: 'gitea',
-      baseUrl: 'https://gitea.example.com',
-      allowedMemberships: ['company'],
-    },
-  }]);
-
-  await expect(getOAuth2Config()).rejects.toThrow('requires the read:organization scope');
+  expect(new URL(response.headers.get('location')!).hash).toContain('does+not+satisfy+the+provider+access+policy');
 });
 
 test('a dashboard session binds an additional OAuth2 identity through a browser transaction', async () => {

@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 
-import { oauth2ProviderBody, oauth2ProviderFormDefaults, oauth2ProviderFormSchema, type OAuth2AccessPolicyType, type OAuth2ClientAuthentication, type OAuth2ProviderFormValues } from './form';
+import { oauth2ProviderBody, oauth2ProviderFormDefaults, oauth2ProviderFormSchema, type OAuth2ClientAuthentication, type OAuth2ProviderFormValues } from './form';
 import { api, callApi } from '../../api/client';
 import type { OAuth2Provider } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -18,7 +18,6 @@ import { useDiscardGuard } from '../ui/use-discard-guard';
 const { Button, DialogActions, DialogTitle, Field, Option } = fluentComponents;
 
 const CLIENT_AUTHENTICATION: OAuth2ClientAuthentication[] = ['client_secret_post', 'client_secret_basic'];
-const ACCESS_POLICIES: OAuth2AccessPolicyType[] = ['allow_all', 'gitea'];
 
 export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: {
   onOpenChange: (open: boolean) => void;
@@ -44,15 +43,6 @@ export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: 
   const message = (field: keyof OAuth2ProviderFormValues) => {
     const value = errors[field]?.message;
     return typeof value === 'string' ? t(value) : undefined;
-  };
-
-  const selectAccessPolicy = (accessPolicy: OAuth2AccessPolicyType) => {
-    setValue('accessPolicy', accessPolicy, { shouldValidate: true });
-    if (accessPolicy !== 'gitea') return;
-    const scopes = new Set(values.scopes.trim().split(/\s+/).filter(Boolean));
-    scopes.add('read:user');
-    scopes.add('read:organization');
-    setValue('scopes', [...scopes].join(' '), { shouldValidate: true });
   };
 
   const save = async (form: OAuth2ProviderFormValues) => {
@@ -158,31 +148,15 @@ export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: 
     <Controller control={control} name="accessPolicy" render={({ field }) => <Field
       hint={t('dashboard.oauth2.form.accessPolicyHint')}
       label={t('dashboard.oauth2.form.accessPolicy')}
-    >
-      <Dropdown
+      validationMessage={message('accessPolicy')}
+      validationState={errors.accessPolicy ? 'error' : undefined}
+    ><Textarea
+        {...field}
+        className="font-mono"
         disabled={saving}
-        onOptionSelect={(_, data) => data.optionValue !== undefined && selectAccessPolicy(data.optionValue as OAuth2AccessPolicyType)}
-        selectedOptions={[field.value]}
-        value={t(`dashboard.oauth2.accessPolicy.${field.value}`)}
-      >
-        {ACCESS_POLICIES.map(value => <Option key={value} value={value}>{t(`dashboard.oauth2.accessPolicy.${value}`)}</Option>)}
-      </Dropdown>
-    </Field>} />
-
-    {values.accessPolicy === 'gitea' && <>
-      <Controller control={control} name="giteaBaseUrl" render={({ field }) => <Field
-        hint={t('dashboard.oauth2.form.giteaBaseUrlHint')}
-        label={t('dashboard.oauth2.form.giteaBaseUrl')}
-        validationMessage={message('giteaBaseUrl')}
-        validationState={errors.giteaBaseUrl ? 'error' : undefined}
-      ><Input {...field} className="font-mono" disabled={saving} placeholder="https://gitea.example.com" /></Field>} />
-      <Controller control={control} name="giteaAllowedMemberships" render={({ field }) => <Field
-        hint={t('dashboard.oauth2.form.giteaAllowedMembershipsHint')}
-        label={t('dashboard.oauth2.form.giteaAllowedMemberships')}
-        validationMessage={message('giteaAllowedMemberships')}
-        validationState={errors.giteaAllowedMemberships ? 'error' : undefined}
-      ><Textarea {...field} className="font-mono" disabled={saving} placeholder="company:owners" rows={3} /></Field>} />
-    </>}
+        placeholder={t('dashboard.oauth2.form.accessPolicyPlaceholder')}
+        rows={9}
+      /></Field>} />
 
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Controller control={control} name="scopes" render={({ field }) => <Field

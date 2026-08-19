@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -41,6 +41,50 @@ test('rerun is a no-op once all migrations are applied', () => withTemp(async di
   await applyMigrations(db);
   const secondCount = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
   assertEquals(secondCount?.n, firstCount?.n);
+}));
+
+test('OAuth2 access migration converts the former Gitea membership list to UserInfo group conditions', () => withTemp(async dir => {
+  const db = createNodeSqliteDatabase(join(dir, 'oauth2-access.db'));
+  await applyMigrations(db);
+  await db.prepare(
+    `INSERT INTO oauth2_providers (
+       id, display_name, enabled, client_id, client_secret,
+       authorization_endpoint, token_endpoint, userinfo_endpoint,
+       scopes_json, client_authentication, user_id_claim, username_claim,
+       authorization_params_json, access_policy_json, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    'gitea',
+    'Gitea',
+    1,
+    'client',
+    'secret',
+    'https://gitea.example.com/login/oauth/authorize',
+    'https://gitea.example.com/login/oauth/access_token',
+    'https://gitea.example.com/login/oauth/userinfo',
+    '["openid","groups"]',
+    'client_secret_post',
+    null,
+    null,
+    '{}',
+    '{"type":"gitea","baseUrl":"https://gitea.example.com","allowedMemberships":["POPIPA-l10n:owners","canneed:owners"]}',
+    '2026-08-19T00:00:00.000Z',
+    '2026-08-19T00:00:00.000Z',
+  ).run();
+
+  const migration = await readFile(new URL('../../../packages/gateway/migrations/0086_oauth2_claim_access_policies.sql', import.meta.url), 'utf8');
+  await db.exec(migration);
+
+  const row = await db.prepare('SELECT access_policy_json FROM oauth2_providers WHERE id = ?')
+    .bind('gitea')
+    .first<{ access_policy_json: string }>();
+  assertEquals(JSON.parse(row?.access_policy_json ?? ''), {
+    logic: 'or',
+    conditions: [
+      { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
+      { field: 'groups', op: 'contains', value: 'canneed:owners' },
+    ],
+  });
 }));
 
 test('mid-migration failure rolls back and leaves no partial schema', () => withTemp(async dir => {
