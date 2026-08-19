@@ -166,13 +166,13 @@ const dispatchOpenAIResponses = async (
   }
   case 'anthropicMessages':
     if (invocation.action === 'compact') {
-      // The responses-compact-shim is structurally required on non-openai-responses
+      // The openai-responses-compact-shim is structurally required on non-openai-responses
       // targets and pivots ctx.action to 'generate' before reaching here;
       // landing inside this case with action='compact' means the shim
       // disengaged or was wired out of the chain. A compaction_trigger in
       // input is caught one layer down by the translator's
       // unexpected-input-item guard.
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the responses-compact-shim must engage and pivot the action`);
+      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the openai-responses-compact-shim must engage and pivot the action`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -187,7 +187,7 @@ const dispatchOpenAIResponses = async (
     );
   case 'openaiChatCompletions':
     if (invocation.action === 'compact') {
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the responses-compact-shim must engage and pivot the action`);
+      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the openai-responses-compact-shim must engage and pivot the action`);
     }
     return await traverseTranslation(
       invocation.payload,

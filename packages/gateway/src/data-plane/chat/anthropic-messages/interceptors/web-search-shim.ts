@@ -893,7 +893,7 @@ type PrepareAnthropicMessagesWebSearchInvocationResult =
   | { type: 'prepared'; state: PreparedAnthropicMessagesWebSearchShimState };
 
 const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvocation): PrepareAnthropicMessagesWebSearchInvocationResult => {
-  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('messages-web-search-shim')) {
+  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('anthropic-messages-web-search-shim')) {
     return { type: 'inactive' };
   }
 
@@ -915,7 +915,7 @@ const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvoc
  *
  * The shim is unconditional for non-native Anthropic Messages targets (OpenAI Responses /
  * OpenAI Chat Completions cannot carry Anthropic server tools), and gated by the
- * `messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
+ * `anthropic-messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
  * may or may not be able to serve web_search natively).
  */
 export const withAnthropicMessagesWebSearchShim: AnthropicMessagesInterceptor = async (ctx, gatewayCtx, run) => {

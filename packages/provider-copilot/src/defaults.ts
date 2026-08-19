@@ -7,16 +7,16 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
-  'messages-web-search-shim': true,
-  'responses-web-search-shim': true,
-  'responses-image-generation-shim': true,
+  'anthropic-messages-web-search-shim': true,
+  'openai-responses-web-search-shim': true,
+  'openai-responses-image-generation-shim': true,
   // Copilot has no native compact endpoint. The provider replays
   // `RemoteCompactionV2` through `/responses` with `stream: false` and a
   // trailing `compaction_trigger`, so this default leaves the gateway compact
   // shim off. The shim still engages on its own whenever an OpenAI Responses request
   // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
   // has a compaction wire.
-  'responses-compact-shim': false,
+  'openai-responses-compact-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
   // Upstream default is off; Claude models below 4.8 flip it on via the
   // per-model default. See `defaultFlagsForCopilotModel` for the empirical

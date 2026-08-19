@@ -568,7 +568,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     capturedBody = body as { input?: unknown[] };
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
-  const candidate = makeCandidate(callOpenAIResponses, new Set(['responses-web-search-shim']));
+  const candidate = makeCandidate(callOpenAIResponses, new Set(['openai-responses-web-search-shim']));
 
   const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
   await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);

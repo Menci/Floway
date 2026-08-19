@@ -18,7 +18,7 @@ import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 // turn that some upstreams expose natively (`/v1/responses/compact`,
 // chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
 // simulate. The same `callOpenAIResponses` method dispatches on this tag, and
-// interceptors are free to flip it (the responses-compact-shim turns 'compact'
+// interceptors are free to flip it (the openai-responses-compact-shim turns 'compact'
 // into 'generate' so the inner upstream call runs an ordinary summarization
 // turn against the SUMMARIZATION_PROMPT).
 export type OpenAIResponsesAction = 'generate' | 'compact';

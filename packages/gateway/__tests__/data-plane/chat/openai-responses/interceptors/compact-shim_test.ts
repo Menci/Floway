@@ -17,7 +17,7 @@ const makeInvocation = (
 ): OpenAIResponsesInvocation => ({
   payload: { model: 'test-model', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
   action: options.action ?? 'generate',
-  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) }),
+  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['openai-responses-compact-shim']) }),
   targetApi: options.targetApi ?? 'openaiResponses',
   headers: new Headers(),
 });

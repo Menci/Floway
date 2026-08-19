@@ -40,7 +40,7 @@ const paddedPngResponse = (byteLength: number): Response => {
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<OpenAIResponsesPayload>): OpenAIResponsesInvocation => ({
   candidate: stubModelCandidate({
-    enabledFlags: new Set(['responses-image-generation-shim']),
+    enabledFlags: new Set(['openai-responses-image-generation-shim']),
     model: { id: 'm', endpoints: { openaiResponses: {} } },
   }),
   targetApi: 'openaiResponses',

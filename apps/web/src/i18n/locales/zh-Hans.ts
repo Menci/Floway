@@ -598,22 +598,22 @@ const zhHansCN = {
               description:
                   'Kimi 的 API 在缓存 Token 用量统计方面采用了非标准格式。\n开启此开关，以将 Kimi 响应中的扁平缓存 Token 字段 (`cached_tokens`) 归一化为 OpenAI 规范格式 (`prompt_tokens_details.cached_tokens`)。\n当上游为 **Kimi（月之暗面）chat completions API** 时应开启。',
             },
-            'messages-web-search-shim': {
+            'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages 网页搜索兼容层',
               description:
                   'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
             },
-            'responses-web-search-shim': {
+            'openai-responses-web-search-shim': {
               label: 'OpenAI Responses 网页搜索兼容层',
               description:
                   'OpenAI Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-image-generation-shim': {
+            'openai-responses-image-generation-shim': {
               label: 'OpenAI Responses 图像生成兼容层',
               description:
                   'OpenAI Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-compact-shim': {
+            'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',
               description:
                   'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
