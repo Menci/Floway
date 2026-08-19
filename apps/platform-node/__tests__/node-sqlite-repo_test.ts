@@ -130,3 +130,38 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
   assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
   assertEquals((await repo.responsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));
+
+test('OAuth2 self-registration consumes a handoff atomically through node:sqlite', () => withRepo(async repo => {
+  const now = Date.now();
+  await repo.oauth2.createHandoff({
+    tokenHash: 'node-registration',
+    providerId: 'custom',
+    providerUserId: 'provider-node',
+    providerLogin: 'node@example.com',
+    userId: null,
+    createdAt: '2026-08-19T00:00:00.000Z',
+    expiresAt: now + 60_000,
+  });
+  const register = (suffix: string) => repo.oauth2.register({
+    tokenHash: 'node-registration',
+    username: `node-${suffix}`,
+    createdAt: '2026-08-19T00:00:00.000Z',
+    now,
+    defaultKey: {
+      id: `node-key-${suffix}`,
+      name: 'Default',
+      key: `node-secret-${suffix}`,
+      serverSecret: '11'.repeat(32),
+      createdAt: '2026-08-19T00:00:00.000Z',
+      upstreamIds: null,
+      deletedAt: null,
+      dumpRetentionSeconds: null,
+      responsesRetentionSeconds: 0,
+    },
+  });
+
+  const results = await Promise.all([register('one'), register('two')]);
+  assertEquals(results.map(result => result.status).toSorted(), ['created', 'missing']);
+  assertEquals((await repo.oauth2.listAccounts()).length, 1);
+  assertEquals((await repo.apiKeys.list()).filter(key => key.id.startsWith('node-key-')).length, 1);
+}));

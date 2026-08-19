@@ -231,11 +231,22 @@ export const authLoginBody = z.object({
   password: z.string().max(1024),
 });
 
+const oauth2HandoffTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'invalid OAuth2 handoff token');
+
+export const oauth2ResultBody = z.object({
+  token: oauth2HandoffTokenSchema,
+});
+
 // --- users ---
 
 export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
+
+export const oauth2RegisterBody = z.object({
+  registrationToken: oauth2HandoffTokenSchema,
+  username: usernameSchema,
+});
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because zero upstreams cannot serve any model.
@@ -701,7 +712,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(20, { error: 'version must be 20 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(21, { error: 'version must be 21 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

@@ -45,6 +45,68 @@ routing, and telemetry. Coding agents and API clients call the data plane,
 which performs model resolution, upstream dispatch, and any required protocol
 translation. Both planes are served by the same gateway process.
 
+## OAuth2 Dashboard Login
+
+Floway can offer one or more custom OAuth2 providers alongside password and
+`ADMIN_KEY` login. A provider-authenticated identity that is not bound yet can
+choose a Floway username and register itself; the new non-admin user receives a
+default API key. Later logins resolve the stable provider user ID back to that
+same Floway account.
+
+Register this callback URL in the OAuth2 application, replacing the origin and
+provider ID with your values:
+
+```text
+https://floway.example.com/auth/oauth2/company/callback
+```
+
+Then set the externally visible Floway origin (scheme, host, and optional port,
+without a path) and a JSON provider array. Use HTTPS outside local development.
+For Node.js or Docker Compose, these are ordinary environment variables:
+
+```bash
+export OAUTH2_PUBLIC_BASE_URL='https://floway.example.com'
+export OAUTH2_PROVIDERS='[
+  {
+    "id": "company",
+    "displayName": "Company ID",
+    "clientId": "floway",
+    "clientSecret": "replace-with-the-oauth-client-secret",
+    "authorizationEndpoint": "https://id.example.com/oauth/authorize",
+    "tokenEndpoint": "https://id.example.com/oauth/token",
+    "userInfoEndpoint": "https://id.example.com/oauth/userinfo",
+    "scopes": ["openid", "profile"]
+  }
+]'
+```
+
+On Cloudflare, store both values as Worker secrets:
+
+```bash
+pnpm wrangler secret put OAUTH2_PUBLIC_BASE_URL
+pnpm wrangler secret put OAUTH2_PROVIDERS
+```
+
+Each provider requires `id`, `displayName`, `clientId`, `clientSecret`, and the
+three endpoint URLs above. Optional fields are:
+
+- `clientAuthentication`: `client_secret_post` (the default) or
+  `client_secret_basic`.
+- `scopes`: scopes sent with the authorization request.
+- `userIdClaim`: userinfo claim containing the immutable account ID; defaults
+  to the first of `sub`, `id`, or `user_id`.
+- `usernameClaim`: userinfo claim used as the registration display/login hint;
+  defaults through common username, name, and email claims.
+- `authorizationParams`: extra string parameters for the authorization
+  endpoint. Protocol-owned parameters such as `state`, `redirect_uri`, and the
+  PKCE challenge cannot be overridden.
+
+Claim names may be dotted paths such as `data.user.id`. Provider client secrets
+are never returned to the dashboard. Authorization state and browser binding
+are single-use and short-lived, PKCE uses S256, and callback handoffs travel in
+the URL fragment so reverse proxies and static asset servers do not receive
+them.
+
 ## Compatibility
 
 ### Client APIs
@@ -116,6 +178,9 @@ migrations, and deploy:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
+# Optional custom dashboard OAuth2 login:
+# pnpm wrangler secret put OAUTH2_PUBLIC_BASE_URL
+# pnpm wrangler secret put OAUTH2_PROVIDERS
 pnpm run db:migrate:remote
 pnpm run deploy
 ```

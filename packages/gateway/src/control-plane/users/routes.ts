@@ -119,6 +119,7 @@ export const deleteUser = async (c: AuthedContext) => {
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  await repo.oauth2.deleteByUserId(id);
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });

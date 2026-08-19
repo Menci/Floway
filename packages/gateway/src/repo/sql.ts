@@ -22,6 +22,12 @@ import type {
   ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
+  OAuth2Account,
+  OAuth2Authorization,
+  OAuth2Handoff,
+  OAuth2RegistrationInput,
+  OAuth2RegistrationResult,
+  OAuth2Repo,
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
@@ -69,7 +75,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogra
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
@@ -425,6 +431,289 @@ class SqlSessionsRepo implements SessionsRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM sessions').run();
+  }
+}
+
+interface OAuth2AccountRow {
+  provider_id: string;
+  provider_user_id: string;
+  user_id: number;
+  provider_login: string;
+  created_at: string;
+  last_login_at: string;
+}
+
+interface OAuth2AuthorizationRow {
+  provider_id: string;
+  code_verifier: string;
+  browser_verifier_hash: string;
+  expires_at: number;
+}
+
+interface OAuth2HandoffRow {
+  token_hash: string;
+  provider_id: string;
+  provider_user_id: string;
+  provider_login: string;
+  user_id: number | null;
+  created_at: string;
+  expires_at: number;
+}
+
+const OAUTH2_ACCOUNT_COLUMNS = 'provider_id, provider_user_id, user_id, provider_login, created_at, last_login_at';
+const OAUTH2_HANDOFF_COLUMNS = 'token_hash, provider_id, provider_user_id, provider_login, user_id, created_at, expires_at';
+
+const toOAuth2Account = (row: OAuth2AccountRow): OAuth2Account => ({
+  providerId: row.provider_id,
+  providerUserId: row.provider_user_id,
+  userId: row.user_id,
+  providerLogin: row.provider_login,
+  createdAt: row.created_at,
+  lastLoginAt: row.last_login_at,
+});
+
+const toOAuth2Handoff = (row: OAuth2HandoffRow): OAuth2Handoff => ({
+  tokenHash: row.token_hash,
+  providerId: row.provider_id,
+  providerUserId: row.provider_user_id,
+  providerLogin: row.provider_login,
+  userId: row.user_id,
+  createdAt: row.created_at,
+  expiresAt: row.expires_at,
+});
+
+class SqlOAuth2Repo implements OAuth2Repo {
+  constructor(private db: SqlDatabase) {}
+
+  private async cleanupExpired(now: number): Promise<void> {
+    if (this.db.batch) {
+      await this.db.batch([
+        this.db.prepare('DELETE FROM oauth2_authorizations WHERE expires_at <= ?').bind(now),
+        this.db.prepare('DELETE FROM oauth2_handoffs WHERE expires_at <= ?').bind(now),
+      ]);
+      return;
+    }
+    await this.db.prepare('DELETE FROM oauth2_authorizations WHERE expires_at <= ?').bind(now).run();
+    await this.db.prepare('DELETE FROM oauth2_handoffs WHERE expires_at <= ?').bind(now).run();
+  }
+
+  async createAuthorization(stateHash: string, authorization: OAuth2Authorization): Promise<void> {
+    await this.cleanupExpired(Date.now());
+    await this.db
+      .prepare('INSERT INTO oauth2_authorizations (state_hash, provider_id, code_verifier, browser_verifier_hash, expires_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(stateHash, authorization.providerId, authorization.codeVerifier, authorization.browserVerifierHash, authorization.expiresAt)
+      .run();
+  }
+
+  async takeAuthorization(stateHash: string, now: number): Promise<OAuth2Authorization | null> {
+    await this.cleanupExpired(now);
+    const row = await this.db
+      .prepare(
+        `DELETE FROM oauth2_authorizations
+         WHERE state_hash = ? AND expires_at > ?
+         RETURNING provider_id, code_verifier, browser_verifier_hash, expires_at`,
+      )
+      .bind(stateHash, now)
+      .first<OAuth2AuthorizationRow>();
+    return row ? {
+      providerId: row.provider_id,
+      codeVerifier: row.code_verifier,
+      browserVerifierHash: row.browser_verifier_hash,
+      expiresAt: row.expires_at,
+    } : null;
+  }
+
+  async findAccountAndTouch(providerId: string, providerUserId: string, providerLogin: string, now: string): Promise<OAuth2Account | null> {
+    const row = await this.db
+      .prepare(`SELECT ${OAUTH2_ACCOUNT_COLUMNS} FROM oauth2_accounts WHERE provider_id = ? AND provider_user_id = ?`)
+      .bind(providerId, providerUserId)
+      .first<OAuth2AccountRow>();
+    if (!row) return null;
+    await this.db
+      .prepare('UPDATE oauth2_accounts SET provider_login = ?, last_login_at = ? WHERE provider_id = ? AND provider_user_id = ?')
+      .bind(providerLogin, now, providerId, providerUserId)
+      .run();
+    return toOAuth2Account({ ...row, provider_login: providerLogin, last_login_at: now });
+  }
+
+  async createHandoff(handoff: OAuth2Handoff): Promise<void> {
+    await this.cleanupExpired(Date.now());
+    await this.db
+      .prepare(`INSERT INTO oauth2_handoffs (${OAUTH2_HANDOFF_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(
+        handoff.tokenHash,
+        handoff.providerId,
+        handoff.providerUserId,
+        handoff.providerLogin,
+        handoff.userId,
+        handoff.createdAt,
+        handoff.expiresAt,
+      )
+      .run();
+  }
+
+  async getHandoff(tokenHash: string, now: number): Promise<OAuth2Handoff | null> {
+    await this.cleanupExpired(now);
+    const row = await this.db
+      .prepare(`SELECT ${OAUTH2_HANDOFF_COLUMNS} FROM oauth2_handoffs WHERE token_hash = ? AND expires_at > ?`)
+      .bind(tokenHash, now)
+      .first<OAuth2HandoffRow>();
+    return row ? toOAuth2Handoff(row) : null;
+  }
+
+  async completeLogin(tokenHash: string, now: number): Promise<Session | null> {
+    const handoff = await this.getHandoff(tokenHash, now);
+    if (handoff?.userId == null) return null;
+    if (!this.db.batch) throw new Error('OAuth2 login completion requires atomic SQL batch support');
+    const id = generateSessionToken();
+    const createdAt = new Date(now).toISOString();
+    const results = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO sessions (${SESSION_COLUMNS})
+         SELECT ?, h.user_id, ?, ?
+         FROM oauth2_handoffs h
+         JOIN users u ON u.id = h.user_id AND u.deleted_at IS NULL
+         WHERE h.token_hash = ? AND h.user_id IS NOT NULL AND h.expires_at > ?`,
+      ).bind(id, createdAt, createdAt, tokenHash, now),
+      this.db.prepare(
+        `DELETE FROM oauth2_handoffs
+         WHERE token_hash = ? AND user_id IS NOT NULL AND expires_at > ?
+           AND EXISTS (SELECT 1 FROM users WHERE users.id = oauth2_handoffs.user_id AND users.deleted_at IS NULL)`,
+      ).bind(tokenHash, now),
+    ]);
+    if (results.some(result => result.meta.changes !== 1)) return null;
+    return { id, userId: handoff.userId, createdAt, lastSeenAt: createdAt };
+  }
+
+  async register(input: OAuth2RegistrationInput): Promise<OAuth2RegistrationResult> {
+    const handoff = await this.getHandoff(input.tokenHash, input.now);
+    if (handoff?.userId !== null) return { status: 'missing' };
+    if (await this.db.prepare('SELECT id FROM users WHERE username = ? AND deleted_at IS NULL').bind(input.username).first()) {
+      return { status: 'username-taken' };
+    }
+    if (await this.db
+      .prepare('SELECT user_id FROM oauth2_accounts WHERE provider_id = ? AND provider_user_id = ?')
+      .bind(handoff.providerId, handoff.providerUserId)
+      .first()) {
+      return { status: 'account-taken' };
+    }
+
+    if (!this.db.batch) throw new Error('OAuth2 self-registration requires atomic SQL batch support');
+    const sessionId = generateSessionToken();
+    let results: SqlResult[];
+    try {
+      results = await this.db.batch([
+        this.db.prepare(
+          `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
+           SELECT (SELECT COALESCE(MAX(id), 0) + 1 FROM users), ?, NULL, 0, NULL, ?, NULL
+           FROM oauth2_handoffs
+           WHERE token_hash = ? AND user_id IS NULL AND expires_at > ?`,
+        ).bind(input.username, input.createdAt, input.tokenHash, input.now),
+        this.db.prepare(
+          `INSERT INTO oauth2_accounts (${OAUTH2_ACCOUNT_COLUMNS})
+           SELECT h.provider_id, h.provider_user_id, u.id, h.provider_login, ?, ?
+           FROM oauth2_handoffs h
+           JOIN users u ON u.username = ? AND u.deleted_at IS NULL
+           WHERE h.token_hash = ? AND h.user_id IS NULL AND h.expires_at > ?`,
+        ).bind(input.createdAt, input.createdAt, input.username, input.tokenHash, input.now),
+        this.db.prepare(
+          `INSERT INTO api_keys (${API_KEY_COLUMNS})
+           SELECT ?, u.id, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           FROM oauth2_handoffs h
+           JOIN users u ON u.username = ? AND u.deleted_at IS NULL
+           WHERE h.token_hash = ? AND h.user_id IS NULL AND h.expires_at > ?`,
+        ).bind(
+          input.defaultKey.id,
+          input.defaultKey.name,
+          input.defaultKey.key,
+          input.defaultKey.serverSecret,
+          input.defaultKey.createdAt,
+          input.defaultKey.lastUsedAt ?? null,
+          serializeUpstreamIds(input.defaultKey.upstreamIds),
+          input.defaultKey.deletedAt,
+          input.defaultKey.dumpRetentionSeconds,
+          input.defaultKey.responsesRetentionSeconds,
+          input.username,
+          input.tokenHash,
+          input.now,
+        ),
+        this.db.prepare(
+          `INSERT INTO sessions (${SESSION_COLUMNS})
+           SELECT ?, u.id, ?, ?
+           FROM oauth2_handoffs h
+           JOIN users u ON u.username = ? AND u.deleted_at IS NULL
+           WHERE h.token_hash = ? AND h.user_id IS NULL AND h.expires_at > ?`,
+        ).bind(sessionId, input.createdAt, input.createdAt, input.username, input.tokenHash, input.now),
+        this.db.prepare('DELETE FROM oauth2_handoffs WHERE token_hash = ?').bind(input.tokenHash),
+      ]);
+    } catch (cause) {
+      if (await this.db.prepare('SELECT id FROM users WHERE username = ? AND deleted_at IS NULL').bind(input.username).first()) {
+        return { status: 'username-taken' };
+      }
+      if (await this.db
+        .prepare('SELECT user_id FROM oauth2_accounts WHERE provider_id = ? AND provider_user_id = ?')
+        .bind(handoff.providerId, handoff.providerUserId)
+        .first()) {
+        return { status: 'account-taken' };
+      }
+      if (!(await this.getHandoff(input.tokenHash, input.now))) return { status: 'missing' };
+      throw cause;
+    }
+
+    if (results.every(result => result.meta.changes === 0)) return { status: 'missing' };
+    if (results.some(result => result.meta.changes !== 1)) {
+      throw new Error('OAuth2 registration batch did not create exactly one user, account, API key, session, and handoff consumption');
+    }
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE username = ? AND deleted_at IS NULL`)
+      .bind(input.username)
+      .first<UserRow>();
+    if (!row) throw new Error('OAuth2 registration committed without a readable user');
+    return {
+      status: 'created',
+      user: toUser(row),
+      session: { id: sessionId, userId: row.id, createdAt: input.createdAt, lastSeenAt: input.createdAt },
+    };
+  }
+
+  async listAccounts(): Promise<OAuth2Account[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${OAUTH2_ACCOUNT_COLUMNS} FROM oauth2_accounts ORDER BY provider_id, provider_user_id`)
+      .all<OAuth2AccountRow>();
+    return results.map(toOAuth2Account);
+  }
+
+  async saveAccount(account: OAuth2Account): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO oauth2_accounts (${OAUTH2_ACCOUNT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (provider_id, provider_user_id) DO UPDATE SET
+           user_id = excluded.user_id,
+           provider_login = excluded.provider_login,
+           last_login_at = excluded.last_login_at`,
+      )
+      .bind(
+        account.providerId,
+        account.providerUserId,
+        account.userId,
+        account.providerLogin,
+        account.createdAt,
+        account.lastLoginAt,
+      )
+      .run();
+  }
+
+  async deleteByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM oauth2_accounts WHERE user_id = ?').bind(userId).run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM oauth2_handoffs'),
+      this.db.prepare('DELETE FROM oauth2_authorizations'),
+      this.db.prepare('DELETE FROM oauth2_accounts'),
+    ]);
   }
 }
 
@@ -1575,6 +1864,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 export class SqlRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
+  oauth2: OAuth2Repo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
@@ -1594,6 +1884,7 @@ export class SqlRepo implements Repo {
   constructor(db: SqlDatabase) {
     this.users = new SqlUsersRepo(db);
     this.sessions = new SqlSessionsRepo(db);
+    this.oauth2 = new SqlOAuth2Repo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);

@@ -46,6 +46,22 @@ const zhHansCN = {
         submit: '登录',
         genericError: '无法登录。请检查 gateway 后重试。',
       },
+      oauth2: {
+        continueWith: '使用 {{provider}} 继续',
+        connecting: '正在连接…',
+        passwordDivider: '或使用密码',
+        providerLoadError: '无法加载 OAuth2 登录方式。',
+        resultError: 'OAuth2 登录结果无效或已过期，请重试。',
+        registration: {
+          title: '创建 Floway 账号',
+          description: '已通过 {{provider}} 认证为 {{login}}。请为 Floway 选择用户名。',
+          username: '用户名',
+          create: '创建账号',
+          creating: '正在创建账号…',
+          usernameTaken: '该用户名已被使用。',
+          error: '无法创建 Floway 账号，请重新发起 OAuth2 登录。',
+        },
+      },
     },
     provider: {
       custom: '自定义',
@@ -1050,6 +1066,7 @@ const zhHansCN = {
           successEmpty: '导入完成。备份文件中没有任何记录。',
           imported: {
             users_other: '{{count, number}} 个用户',
+            oauth2Accounts_other: '{{count, number}} 个 OAuth2 账号',
             apiKeys_other: '{{count, number}} 个 API 密钥',
             upstreams_other: '{{count, number}} 个上游',
             proxies_other: '{{count, number}} 个代理',
@@ -1062,6 +1079,7 @@ const zhHansCN = {
           errorReadFile: '无法读取所选备份文件。',
           previewLabel: {
             users: '用户',
+            oauth2Accounts: 'OAuth2 账号',
             apiKeys: 'API 密钥',
             upstreams: '上游',
             proxies: '代理',

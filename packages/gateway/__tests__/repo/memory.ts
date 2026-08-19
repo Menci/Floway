@@ -30,6 +30,12 @@ import type {
   ModelsCacheGeneration,
   ModelAliasesRepo,
   ModelAliasRecord,
+  OAuth2Account,
+  OAuth2Authorization,
+  OAuth2Handoff,
+  OAuth2RegistrationInput,
+  OAuth2RegistrationResult,
+  OAuth2Repo,
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceTelemetryRecord,
@@ -179,6 +185,151 @@ class MemorySessionsRepo implements SessionsRepo {
 
   deleteAll(): Promise<void> {
     this.sessions = [];
+    return Promise.resolve();
+  }
+}
+
+const oauth2AccountKey = (providerId: string, providerUserId: string): string =>
+  `${providerId}\u0000${providerUserId}`;
+
+class MemoryOAuth2Repo implements OAuth2Repo {
+  private readonly accounts = new Map<string, OAuth2Account>();
+  private readonly authorizations = new Map<string, OAuth2Authorization>();
+  private readonly handoffs = new Map<string, OAuth2Handoff>();
+  private handoffMutation = Promise.resolve();
+
+  constructor(
+    private readonly users: UsersRepo,
+    private readonly sessions: SessionsRepo,
+    private readonly apiKeys: ApiKeyRepo,
+  ) {}
+
+  private cleanupExpired(now: number): void {
+    for (const [key, authorization] of this.authorizations) {
+      if (authorization.expiresAt <= now) this.authorizations.delete(key);
+    }
+    for (const [key, handoff] of this.handoffs) {
+      if (handoff.expiresAt <= now) this.handoffs.delete(key);
+    }
+  }
+
+  private mutateHandoff<T>(mutation: () => Promise<T>): Promise<T> {
+    const result = this.handoffMutation.then(mutation);
+    this.handoffMutation = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  createAuthorization(stateHash: string, authorization: OAuth2Authorization): Promise<void> {
+    this.cleanupExpired(Date.now());
+    if (this.authorizations.has(stateHash)) throw new Error(`OAuth2 authorization already exists: ${stateHash}`);
+    this.authorizations.set(stateHash, { ...authorization });
+    return Promise.resolve();
+  }
+
+  takeAuthorization(stateHash: string, now: number): Promise<OAuth2Authorization | null> {
+    this.cleanupExpired(now);
+    const authorization = this.authorizations.get(stateHash);
+    if (!authorization) return Promise.resolve(null);
+    this.authorizations.delete(stateHash);
+    return Promise.resolve({ ...authorization });
+  }
+
+  findAccountAndTouch(providerId: string, providerUserId: string, providerLogin: string, now: string): Promise<OAuth2Account | null> {
+    const key = oauth2AccountKey(providerId, providerUserId);
+    const account = this.accounts.get(key);
+    if (!account) return Promise.resolve(null);
+    const touched = { ...account, providerLogin, lastLoginAt: now };
+    this.accounts.set(key, touched);
+    return Promise.resolve({ ...touched });
+  }
+
+  createHandoff(handoff: OAuth2Handoff): Promise<void> {
+    this.cleanupExpired(Date.now());
+    if (this.handoffs.has(handoff.tokenHash)) throw new Error(`OAuth2 handoff already exists: ${handoff.tokenHash}`);
+    this.handoffs.set(handoff.tokenHash, { ...handoff });
+    return Promise.resolve();
+  }
+
+  getHandoff(tokenHash: string, now: number): Promise<OAuth2Handoff | null> {
+    this.cleanupExpired(now);
+    const handoff = this.handoffs.get(tokenHash);
+    return Promise.resolve(handoff ? { ...handoff } : null);
+  }
+
+  completeLogin(tokenHash: string, now: number): Promise<Session | null> {
+    return this.mutateHandoff(async () => {
+      this.cleanupExpired(now);
+      const handoff = this.handoffs.get(tokenHash);
+      if (handoff?.userId == null) return null;
+      const user = await this.users.getById(handoff.userId);
+      if (!user) return null;
+      const session = await this.sessions.create(user.id);
+      this.handoffs.delete(tokenHash);
+      return session;
+    });
+  }
+
+  register(input: OAuth2RegistrationInput): Promise<OAuth2RegistrationResult> {
+    return this.mutateHandoff(async () => {
+      this.cleanupExpired(input.now);
+      const handoff = this.handoffs.get(input.tokenHash);
+      if (handoff?.userId !== null) return { status: 'missing' };
+      if (await this.users.findByUsername(input.username)) return { status: 'username-taken' };
+      if (this.accounts.has(oauth2AccountKey(handoff.providerId, handoff.providerUserId))) return { status: 'account-taken' };
+
+      const user = await this.users.createNewUser({
+        username: input.username,
+        passwordHash: null,
+        isAdmin: false,
+        upstreamIds: null,
+        createdAt: input.createdAt,
+        deletedAt: null,
+      });
+      await this.saveAccount({
+        providerId: handoff.providerId,
+        providerUserId: handoff.providerUserId,
+        userId: user.id,
+        providerLogin: handoff.providerLogin,
+        createdAt: input.createdAt,
+        lastLoginAt: input.createdAt,
+      });
+      await this.apiKeys.save({ ...input.defaultKey, userId: user.id });
+      const session = await this.sessions.create(user.id);
+      this.handoffs.delete(input.tokenHash);
+      return { status: 'created', user, session };
+    });
+  }
+
+  listAccounts(): Promise<OAuth2Account[]> {
+    return Promise.resolve([...this.accounts.values()]
+      .sort((a, b) => a.providerId.localeCompare(b.providerId) || a.providerUserId.localeCompare(b.providerUserId))
+      .map(account => ({ ...account })));
+  }
+
+  saveAccount(account: OAuth2Account): Promise<void> {
+    const collision = [...this.accounts.values()].find(candidate =>
+      candidate.providerId === account.providerId
+      && candidate.userId === account.userId
+      && candidate.providerUserId !== account.providerUserId);
+    if (collision) throw new Error(`OAuth2 account already bound for provider ${account.providerId} and user ${account.userId}`);
+    this.accounts.set(oauth2AccountKey(account.providerId, account.providerUserId), { ...account });
+    return Promise.resolve();
+  }
+
+  deleteByUserId(userId: number): Promise<number> {
+    let deleted = 0;
+    for (const [key, account] of this.accounts) {
+      if (account.userId !== userId) continue;
+      this.accounts.delete(key);
+      deleted++;
+    }
+    return Promise.resolve(deleted);
+  }
+
+  deleteAll(): Promise<void> {
+    this.accounts.clear();
+    this.authorizations.clear();
+    this.handoffs.clear();
     return Promise.resolve();
   }
 }
@@ -1463,6 +1614,7 @@ export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;
+  oauth2: OAuth2Repo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
@@ -1484,6 +1636,7 @@ export class InMemoryRepo implements Repo {
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();
     this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
+    this.oauth2 = new MemoryOAuth2Repo(this.users, this.sessions, this.apiKeys);
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);

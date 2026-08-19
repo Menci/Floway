@@ -3,6 +3,7 @@ import type { TFunction } from '../../i18n/translation';
 
 export const PREVIEW_LABEL_KEYS = [
   'users',
+  'oauth2Accounts',
   'apiKeys',
   'upstreams',
   'proxies',

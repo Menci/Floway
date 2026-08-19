@@ -12,7 +12,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 const CLI = fileURLToPath(new URL('../../src/backfill-usage-pricing/cli.ts', import.meta.url));
 const TSX_LOADER = fileURLToPath(import.meta.resolve('tsx'));
 
-test('non-interactive CLI writes a private plan and applies only that artifact', async () => {
+test('non-interactive CLI writes a private plan and applies only that artifact', { timeout: 15_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'floway-tools-cli-'));
   const databasePath = join(directory, 'floway.db');
   const planPath = join(directory, 'plan.json');

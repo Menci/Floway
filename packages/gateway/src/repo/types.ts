@@ -49,6 +49,46 @@ export interface Session {
   lastSeenAt: string;
 }
 
+export interface OAuth2Account {
+  providerId: string;
+  providerUserId: string;
+  userId: number;
+  providerLogin: string;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface OAuth2Authorization {
+  providerId: string;
+  codeVerifier: string;
+  browserVerifierHash: string;
+  expiresAt: number;
+}
+
+export interface OAuth2Handoff {
+  tokenHash: string;
+  providerId: string;
+  providerUserId: string;
+  providerLogin: string;
+  userId: number | null;
+  createdAt: string;
+  expiresAt: number;
+}
+
+export interface OAuth2RegistrationInput {
+  tokenHash: string;
+  username: string;
+  createdAt: string;
+  now: number;
+  defaultKey: Omit<ApiKey, 'userId'>;
+}
+
+export type OAuth2RegistrationResult =
+  | { status: 'created'; user: User; session: Session }
+  | { status: 'missing' }
+  | { status: 'username-taken' }
+  | { status: 'account-taken' };
+
 export interface UsageRecord {
   keyId: string;
   model: string;
@@ -286,6 +326,20 @@ export interface SessionsRepo {
   deleteById(id: string): Promise<boolean>;
   deleteByUserId(userId: number): Promise<number>;
   deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;
+  deleteAll(): Promise<void>;
+}
+
+export interface OAuth2Repo {
+  createAuthorization(stateHash: string, authorization: OAuth2Authorization): Promise<void>;
+  takeAuthorization(stateHash: string, now: number): Promise<OAuth2Authorization | null>;
+  findAccountAndTouch(providerId: string, providerUserId: string, providerLogin: string, now: string): Promise<OAuth2Account | null>;
+  createHandoff(handoff: OAuth2Handoff): Promise<void>;
+  getHandoff(tokenHash: string, now: number): Promise<OAuth2Handoff | null>;
+  completeLogin(tokenHash: string, now: number): Promise<Session | null>;
+  register(input: OAuth2RegistrationInput): Promise<OAuth2RegistrationResult>;
+  listAccounts(): Promise<OAuth2Account[]>;
+  saveAccount(account: OAuth2Account): Promise<void>;
+  deleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -545,6 +599,7 @@ export interface Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;
+  oauth2: OAuth2Repo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;

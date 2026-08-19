@@ -164,13 +164,17 @@ class SqlJsPreparedStatement implements SqlPreparedStatement {
     return Promise.resolve({ results, success: true, meta: {} });
   }
 
-  run(): Promise<SqlResult> {
+  runSync(): SqlResult {
     // sql.js's `run()` does not surface `changes`. Read it back via
     // `SELECT changes()` so the CAS path in saveState gets an accurate count.
     this.db.run(this.query, this.bound as unknown[]);
     const [changesResult] = this.db.exec('SELECT changes() AS changes');
     const changes = Number(changesResult.values[0][0]);
-    return Promise.resolve({ results: [], success: true, meta: { changes } });
+    return { results: [], success: true, meta: { changes } };
+  }
+
+  run(): Promise<SqlResult> {
+    return Promise.resolve(this.runSync());
   }
 }
 
@@ -179,6 +183,23 @@ class SqlJsSqlDatabase implements SqlDatabase {
 
   prepare(query: string): SqlPreparedStatement {
     return new SqlJsPreparedStatement(this.db, query);
+  }
+
+  batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
+    this.db.run('BEGIN');
+    try {
+      const results = statements.map(statement => {
+        if (!(statement instanceof SqlJsPreparedStatement)) {
+          throw new Error('SqlJsSqlDatabase.batch received a statement from a different database adapter');
+        }
+        return statement.runSync();
+      });
+      this.db.run('COMMIT');
+      return Promise.resolve(results);
+    } catch (cause) {
+      try { this.db.run('ROLLBACK'); } catch { /* transaction already rolled back */ }
+      throw cause;
+    }
   }
 
   exec(sql: string): Promise<unknown> {

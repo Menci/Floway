@@ -2,6 +2,7 @@ import { Hono, type Next } from 'hono';
 
 import { AGENT_SETUP_ROUTE_PATH, agentSetupControlRoutes } from './agent-setup.ts';
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
+import { finishOAuth2Callback, listOAuth2Providers, registerOAuth2User, resolveOAuth2Result, startOAuth2Login } from './auth/oauth2-routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
@@ -9,7 +10,7 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOAuthAuthorizeUrlBody, codexOAuthExchangeBody, codexOAuthRefreshBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, listModelsBody, modelsQuery, ollamaUsageBody, performanceQuery, resetBackoffBody, rotateKeyBody, webSearchConfigSchema, webSearchUsageQuery, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
+import { authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOAuthAuthorizeUrlBody, codexOAuthExchangeBody, codexOAuthRefreshBody, copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, listModelsBody, modelsQuery, oauth2RegisterBody, oauth2ResultBody, ollamaUsageBody, performanceQuery, resetBackoffBody, rotateKeyBody, webSearchConfigSchema, webSearchUsageQuery, testProxyBody, tokenUsageOverviewQuery, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
 import { webSearchUsage } from './search-usage/routes.ts';
 import { tokenUsageOverview } from './token-usage/overview.ts';
@@ -43,6 +44,11 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // already in PUBLIC_PATHS so auth lets it through.
   .get('/favicon.ico', () => new Response(null, { status: 204 }))
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
+  .get('/auth/oauth2/providers', listOAuth2Providers)
+  .get('/auth/oauth2/:provider/start', startOAuth2Login)
+  .get('/auth/oauth2/:provider/callback', finishOAuth2Callback)
+  .post('/auth/oauth2/result', zValidator('json', oauth2ResultBody), resolveOAuth2Result)
+  .post('/auth/oauth2/register', zValidator('json', oauth2RegisterBody), registerOAuth2User)
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
   .get('/api/runtime-info', c => c.json(getRuntimeInfo(c.req.raw)))

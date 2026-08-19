@@ -6,7 +6,7 @@ import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-mode
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, OAuth2Account, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -33,6 +33,7 @@ export interface SerializedProxy {
 
 export interface ParsedImportData {
   users: User[];
+  oauth2Accounts: OAuth2Account[];
   apiKeys: ApiKey[];
   upstreams: UpstreamRecord[];
   proxies: SerializedProxy[];
@@ -253,6 +254,15 @@ const userSchema = z.object({
   deletedAt: nullableStringSchema('deletedAt'),
   createdAt: nonEmptyStringSchema('createdAt'),
 });
+
+const oauth2AccountSchema = z.object({
+  providerId: nonEmptyStringSchema('providerId'),
+  providerUserId: nonEmptyStringSchema('providerUserId'),
+  userId: positiveIntegerSchema('userId'),
+  providerLogin: nonEmptyStringSchema('providerLogin'),
+  createdAt: nonEmptyStringSchema('createdAt'),
+  lastLoginAt: nonEmptyStringSchema('lastLoginAt'),
+}).strict();
 
 const sequentialArraySchema = <T>(
   schema: z.ZodType<T>,
@@ -477,6 +487,32 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: 'invalid users: payload must include user 1 (the seed admin)' };
   }
   const userIds = new Set(users.records.map(user => user.id));
+  const oauth2Accounts = parseCollection('oauth2Accounts', oauth2AccountSchema, value.oauth2Accounts, {
+    arrayError: 'oauth2Accounts must be an array',
+    validateInput: (input, _index, prior) => {
+      try {
+        const wire = parseRecord(input, 'record must be an object');
+        const providerId = parseValue(nonEmptyStringSchema('providerId'), wire.providerId);
+        const providerUserId = parseValue(nonEmptyStringSchema('providerUserId'), wire.providerUserId);
+        const userId = parseValue(positiveIntegerSchema('userId'), wire.userId);
+        if (prior.some(account => account.providerId === providerId && account.providerUserId === providerUserId)) {
+          return `duplicate provider identity ${providerId}/${providerUserId}`;
+        }
+        if (prior.some(account => account.providerId === providerId && account.userId === userId)) {
+          return `user ${userId} has more than one account for provider ${providerId}`;
+        }
+        return null;
+      } catch (cause) {
+        return messageFor(cause);
+      }
+    },
+  });
+  if (oauth2Accounts.type === 'invalid') return oauth2Accounts;
+  for (let index = 0; index < oauth2Accounts.records.length; index++) {
+    if (!userIds.has(oauth2Accounts.records[index].userId)) {
+      return { type: 'invalid', error: `invalid oauth2Accounts at index ${index}: userId ${oauth2Accounts.records[index].userId} does not match any user in the payload` };
+    }
+  }
   for (let index = 0; index < apiKeys.records.length; index++) {
     if (!userIds.has(apiKeys.records[index].userId)) {
       return { type: 'invalid', error: `invalid apiKeys at index ${index}: user_id ${apiKeys.records[index].userId} does not match any user in the payload` };
@@ -527,6 +563,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     type: 'ok',
     data: {
       users: users.records,
+      oauth2Accounts: oauth2Accounts.records,
       apiKeys: apiKeys.records,
       upstreams: upstreams.records,
       proxies: proxies.records,

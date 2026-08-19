@@ -48,6 +48,22 @@ const en = {
         submit: 'Sign in',
         genericError: 'Unable to sign in. Check the gateway and try again.',
       },
+      oauth2: {
+        continueWith: 'Continue with {{provider}}',
+        connecting: 'Connecting…',
+        passwordDivider: 'or use a password',
+        providerLoadError: 'OAuth2 sign-in options could not be loaded.',
+        resultError: 'The OAuth2 sign-in result is invalid or has expired. Please try again.',
+        registration: {
+          title: 'Create your Floway account',
+          description: 'Signed in to {{provider}} as {{login}}. Choose a username for Floway.',
+          username: 'Username',
+          create: 'Create account',
+          creating: 'Creating account…',
+          usernameTaken: 'That username is already in use.',
+          error: 'Your Floway account could not be created. Start the OAuth2 sign-in again.',
+        },
+      },
     },
     provider: {
       custom: 'Custom',
@@ -1104,6 +1120,8 @@ const en = {
           imported: {
             users_one: '{{count, number}} user',
             users_other: '{{count, number}} users',
+            oauth2Accounts_one: '{{count, number}} OAuth2 account',
+            oauth2Accounts_other: '{{count, number}} OAuth2 accounts',
             apiKeys_one: '{{count, number}} API key',
             apiKeys_other: '{{count, number}} API keys',
             upstreams_one: '{{count, number}} upstream',
@@ -1123,6 +1141,7 @@ const en = {
           errorReadFile: 'The selected backup file could not be read.',
           previewLabel: {
             users: 'Users',
+            oauth2Accounts: 'OAuth2 Accounts',
             apiKeys: 'API Keys',
             upstreams: 'Upstreams',
             proxies: 'Proxies',
