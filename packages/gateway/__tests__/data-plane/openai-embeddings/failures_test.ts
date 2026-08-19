@@ -76,9 +76,10 @@ test('a usage write that fails leaves the answer alone and still reports', async
   }
 });
 
-// The replaced surface forwarded such a body verbatim with the upstream's 200. A protocol
-// that requires JSON and did not get JSON has no answer to serve, so the gateway says so
-// itself — it cannot claim to have served a request whose answer it never read.
+// A protocol that requires JSON and did not get JSON has no answer to serve, so the gateway
+// says so itself — it cannot claim to have served a request whose answer it never read.
+// Forwarding the body verbatim under the upstream's 200 would report success for a turn
+// nothing in this gateway could read.
 test('a 2xx body the OpenAI Embeddings protocol cannot read is refused rather than forwarded', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAIEmbeddingsUpstream(repo);

@@ -57,7 +57,7 @@ export interface OpenAIAudioTranscriptionStreamOutcome {
   readonly billable: readonly BillableEntity[];
   /** An upstream that stopped before `transcript.text.done` answered 200 and then did not
    *  finish what it started, which is a failed request however much of the transcript
-   *  reached the client — the same reading the replaced surface made. */
+   *  reached the client. */
   readonly failed: boolean;
 }
 
