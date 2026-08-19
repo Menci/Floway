@@ -21,7 +21,7 @@ import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWeb
 //   - withAnthropicMessagesWebSearchShim: registered next so its request preparation,
 //     replay rewrite, and intercept loop wrap the rest of the generation chain.
 //     Unconditional for translated targets (OpenAI Responses / OpenAI Chat Completions cannot
-//     carry Anthropic server tools); gated by `messages-web-search-shim` for
+//     carry Anthropic server tools); gated by `anthropic-messages-web-search-shim` for
 //     native Anthropic Messages targets. count_tokens runs the same request preparation
 //     without the stream-response wrapper.
 //   - stripBillingAttribution: gated by `strip-billing-attribution` (default

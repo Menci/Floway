@@ -468,7 +468,7 @@ test('shim activates when targetApi=responses and flag is on', async () => {
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
-    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
   });
   const script = scriptedRun([messageTurn('done')]);
 
@@ -3929,7 +3929,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
   const shim = withOpenAIResponsesWebSearchShim;
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
-    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
   });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
@@ -3959,7 +3959,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
   mockResolveAlpha.mockResolvedValue(call);
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
-    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
     payload: {
       tools: [{
         type: 'web_search',
@@ -3999,7 +3999,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
   const runUnsupported = async (): Promise<string> => {
     const inv = makeInvocation({
       targetApi: 'openaiResponses',
-      enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+      enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
     });
     const script = scriptedRun([
       fcTurn(0, 'call_unsupported', SHIM_TOOL_NAME, JSON.stringify(commands)),
@@ -6244,7 +6244,7 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   // silently, because the client-facing usage is no longer consulted.
   const billableUsage: BillableUsage = { input: 10, cacheRead: 3, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
   makeStubDeps();
-  const inv = makeInvocation({ enabledFlags: new Set(['responses-web-search-shim'] as const) });
+  const inv = makeInvocation({ enabledFlags: new Set(['openai-responses-web-search-shim'] as const) });
 
   const result = await withOpenAIResponsesWebSearchShim(inv, makeGatewayCtx(), async () => ({
     type: 'events',

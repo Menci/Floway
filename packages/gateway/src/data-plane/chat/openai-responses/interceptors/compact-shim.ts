@@ -2,7 +2,7 @@
 // that have no native compaction wire.
 //
 // Engagement is the OR of two conditions:
-//   1. The per-upstream `responses-compact-shim` flag is on. This is the
+//   1. The per-upstream `openai-responses-compact-shim` flag is on. This is the
 //      operator-controlled opt-in for OpenAI-Responses-target upstreams that
 //      already answer a compact request themselves — natively through
 //      `/responses/compact` (codex / azure / custom), or by replaying
@@ -364,7 +364,7 @@ export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async 
   // OR when the upstream's targetApi is not OpenAI Responses (Anthropic Messages /
   // OpenAI Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
-  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
+  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-shim');
   const structurallyRequired = ctx.targetApi !== 'openaiResponses';
   if (!flagOn && !structurallyRequired) return await run();
 

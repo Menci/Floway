@@ -76,7 +76,7 @@ export interface OpenAIResponsesInvocation {
   payload: CanonicalOpenAIResponsesPayload;
   // Mutable action tag — interceptors can flip 'compact' to 'generate' so the
   // inner provider call runs a normal summarization turn (see the
-  // responses-compact-shim) and the gateway derives snapshot mode from the
+  // openai-responses-compact-shim) and the gateway derives snapshot mode from the
   // post-chain action carried on the provider's tagged result.
   action: OpenAIResponsesAction;
   readonly candidate: ModelCandidate;

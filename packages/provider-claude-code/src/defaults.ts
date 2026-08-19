@@ -6,7 +6,7 @@ import type { FlagDefaults } from '@floway-dev/provider';
 // * Hosted-tool shims stay off — Claude Code's Anthropic Messages passthrough
 //   forwards caller bytes verbatim, so a gateway-side shim would silently
 //   rewrite a request the operator deliberately let through unchanged.
-// * `responses-compact-shim` defaults on: Anthropic Messages has no
+// * `openai-responses-compact-shim` defaults on: Anthropic Messages has no
 //   /responses/compact concept, and the shim is what synthesizes a
 //   `response.compaction` envelope for callers that expect one.
 // * `strip-billing-attribution` defaults off: the `x-anthropic-billing-header:`
@@ -17,10 +17,10 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
-  'messages-web-search-shim': false,
-  'responses-web-search-shim': false,
-  'responses-image-generation-shim': false,
-  'responses-compact-shim': true,
+  'anthropic-messages-web-search-shim': false,
+  'openai-responses-web-search-shim': false,
+  'openai-responses-image-generation-shim': false,
+  'openai-responses-compact-shim': true,
   'disable-reasoning-on-forced-tool-choice': false,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,

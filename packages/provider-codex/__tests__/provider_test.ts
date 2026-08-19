@@ -204,13 +204,13 @@ describe('createCodexProvider', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const recordWithOverride: UpstreamRecord = {
       ...baseRecord,
-      flagOverrides: { 'responses-web-search-shim': true },
+      flagOverrides: { 'openai-responses-web-search-shim': true },
     };
     const instance = createCodexProvider(recordWithOverride);
     const models = await instance.instance.getProvidedModels(directFetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
-      expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);
+      expect(m.enabledFlags.has('openai-responses-web-search-shim')).toBe(true);
     }
   });
 

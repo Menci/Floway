@@ -628,22 +628,22 @@ const en = {
               description:
                   "Kimi's API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.",
             },
-            'messages-web-search-shim': {
+            'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages Web Search Shim',
               description:
-                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Messages API.',
+                  'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
             },
-            'responses-web-search-shim': {
+            'openai-responses-web-search-shim': {
               label: 'OpenAI Responses Web Search Shim',
               description:
                   'The OpenAI Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
-            'responses-image-generation-shim': {
+            'openai-responses-image-generation-shim': {
               label: 'OpenAI Responses Image Generation Shim',
               description:
                   'The OpenAI Responses API includes image generation capabilities, but this upstream may not support image generation.\nEnable this option to route the image generation tool (`image_generation`) to another image-capable upstream in Floway (including `gpt-image-*`) instead of forwarding it to this upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
-            'responses-compact-shim': {
+            'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:
                   "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
