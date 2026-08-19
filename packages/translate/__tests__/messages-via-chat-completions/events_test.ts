@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createChatCompletionsToMessagesStreamState, flushChatCompletionsToMessagesEvents, mapChatCompletionsUsageToMessagesUsage, translateChatCompletionsChunkToMessagesEvents } from '../../src/messages-via-chat-completions/events.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertFalse } from '@floway-dev/test-utils';
 
 const chunk = (delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
@@ -600,7 +600,8 @@ test('translateChatCompletionsChunkToMessagesEvents omits usage.speed when servi
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  const usage = (messageDelta as { usage: Record<string, unknown> }).usage;
+  const usage = messageDelta?.usage;
+  assertExists(usage);
   assertFalse('speed' in usage);
   assertEquals(usage.service_tier, 'default');
 });
@@ -614,5 +615,7 @@ test('translateChatCompletionsChunkToMessagesEvents omits usage.speed when servi
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertFalse('speed' in (messageDelta as { usage: Record<string, unknown> }).usage);
+  const usage = messageDelta?.usage;
+  assertExists(usage);
+  assertFalse('speed' in usage);
 });

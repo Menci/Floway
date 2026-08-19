@@ -37,3 +37,14 @@ test('Messages billable usage keeps the per-TTL cache-creation split the protoco
 test('Messages billable usage reports the served speed as the tier', () => {
   expect(read([start({ input_tokens: 1, output_tokens: 1, speed: 'fast' })])?.tier).toBe('fast');
 });
+
+// Anthropic states a bucket that does not apply to the request as `null` on
+// either usage carrier, and a `message_delta` that nulls the input-side
+// counters is not a correction of what `message_start` already billed.
+// https://github.com/anthropics/anthropic-sdk-python/issues/994
+test('Messages billable usage bills a turn whose upstream nulls its cache counters', () => {
+  expect(read([
+    start({ input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 30, cache_creation_input_tokens: 9, cache_creation: null }),
+    delta({ input_tokens: null, output_tokens: 7, cache_read_input_tokens: null, cache_creation_input_tokens: null }),
+  ])).toEqual({ input: 10, cacheRead: 30, cacheWrite: 9, cacheWrite1h: 0, output: 7 });
+});

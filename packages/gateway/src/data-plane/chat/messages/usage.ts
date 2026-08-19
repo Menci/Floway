@@ -26,7 +26,7 @@ export const createMessagesBillableUsageReader = (): (event: MessagesStreamEvent
       : event.type === 'message_delta' ? event.usage
         : undefined;
     if (usage === undefined) return null;
-    merged = mergeMessagesUsageSnapshot(merged, messagesUsageSnapshot(usage));
+    merged = mergeMessagesUsageSnapshot(merged, usage);
     return billableUsageFromMessagesUsage(merged);
   };
 };

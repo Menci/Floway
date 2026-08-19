@@ -103,6 +103,43 @@ test('reassembleMessagesEvents reassembles text response', async () => {
   assertEquals(result.usage.output_tokens, 5);
 });
 
+test('reassembleMessagesEvents keeps counters a later null does not restate', async () => {
+  const body = makeEvents([
+    {
+      event: 'message_start',
+      data: {
+        type: 'message_start',
+        message: {
+          id: 'msg_1',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'claude-test',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 4, cache_creation_input_tokens: 9 },
+        },
+      },
+    },
+    {
+      event: 'message_delta',
+      data: {
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn', stop_sequence: null },
+        usage: { input_tokens: null, output_tokens: 5, cache_read_input_tokens: null, cache_creation_input_tokens: null },
+      },
+    },
+    { event: 'message_stop', data: { type: 'message_stop' } },
+  ]);
+
+  const result: MessagesResult = await reassembleMessagesEvents(body);
+
+  assertEquals(result.usage.input_tokens, 10);
+  assertEquals(result.usage.output_tokens, 5);
+  assertEquals(result.usage.cache_read_input_tokens, 4);
+  assertEquals(result.usage.cache_creation_input_tokens, 9);
+});
+
 test('MessagesTool supports both client and native web search shapes', () => {
   const clientTool: MessagesTool = {
     name: 'get_weather',

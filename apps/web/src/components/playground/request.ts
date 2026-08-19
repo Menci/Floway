@@ -70,10 +70,11 @@ const normalizeMessagesSseLine = (line: string): string => {
       message?: { usage?: Record<string, unknown> };
     };
     if (event.type !== 'message_start' || !event.message) return line;
-    event.message.usage = {
-      input_tokens: 0,
-      ...event.message.usage,
-    };
+    const usage = event.message.usage ?? {};
+    // An upstream that never counted the prompt states it as an absent or null
+    // counter; the playground's reader needs the number the panel renders.
+    if (typeof usage.input_tokens !== 'number') usage.input_tokens = 0;
+    event.message.usage = usage;
     return `data: ${JSON.stringify(event)}`;
   } catch {
     return line;

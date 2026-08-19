@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from '../../src/chat-completions-via-messages/events.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 // ── Helpers ──
 
@@ -513,6 +513,45 @@ test('message_delta usage includes cache_read_input_tokens from message_start', 
   assertEquals(chunk.usage!.completion_tokens, 50);
   assertEquals(chunk.usage!.total_tokens, 150);
   assertEquals(chunk.usage!.prompt_tokens_details!.cached_tokens, 20);
+});
+
+// A null counter states that the bucket did not apply, so nothing about it
+// reaches the client: no cache detail, and no tier the upstream never served.
+test('null Messages usage counters translate to absent Chat Completions usage detail', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_start',
+      message: {
+        ...(MSG_START as { type: 'message_start'; message: Record<string, unknown> }).message,
+        usage: {
+          input_tokens: 80,
+          output_tokens: 0,
+          cache_read_input_tokens: null,
+          cache_creation_input_tokens: null,
+          cache_creation: null,
+          service_tier: null,
+          speed: null,
+        },
+      },
+    } as MessagesStreamEvent,
+    state,
+  );
+
+  const result = translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: { input_tokens: null, output_tokens: 50, cache_read_input_tokens: null, cache_creation_input_tokens: null },
+    },
+    state,
+  );
+  const chunk = (result as ChatCompletionsStreamEvent[])[1];
+  assertEquals(chunk.usage!.prompt_tokens, 80);
+  assertEquals(chunk.usage!.completion_tokens, 50);
+  assertEquals(chunk.usage!.total_tokens, 130);
+  assertEquals(chunk.usage!.prompt_tokens_details, undefined);
+  assertFalse('service_tier' in chunk);
 });
 
 // ── message_stop ──

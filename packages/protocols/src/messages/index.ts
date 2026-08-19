@@ -1,4 +1,4 @@
-import type { MessagesUsage, MessagesUsageIteration, MessagesUsageServerToolUse } from './usage.ts';
+import type { MessagesUsage, MessagesUsageDelta } from './usage.ts';
 
 /**
  * Messages requires `max_tokens`, but the Chat Completions, Responses, and
@@ -287,8 +287,7 @@ export {
   splitMessagesCacheCreationTokens,
   type MessagesCacheCreationUsage,
   type MessagesUsage,
-  type MessagesUsageIteration,
-  type MessagesUsageServerToolUse,
+  type MessagesUsageDelta,
   type MessagesUsageSnapshot,
 } from './usage.ts';
 
@@ -361,21 +360,7 @@ export interface MessagesMessageDeltaEvent {
     stop_details?: MessagesRefusalStopDetails | null;
     stop_sequence?: string | null;
   };
-  usage?: {
-    input_tokens?: number;
-    output_tokens: number;
-    cache_creation_input_tokens?: number;
-    cache_read_input_tokens?: number;
-    cache_creation?: {
-      ephemeral_5m_input_tokens?: number;
-      ephemeral_1h_input_tokens?: number;
-    };
-    output_tokens_details?: { thinking_tokens: number };
-    service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
-    speed?: 'standard' | 'fast' | (string & {});
-    server_tool_use?: MessagesUsageServerToolUse;
-    iterations?: MessagesUsageIteration[] | null;
-  };
+  usage?: MessagesUsageDelta;
 }
 
 interface MessagesMessageStopEvent {
