@@ -26,6 +26,8 @@ const provider: OAuth2Provider = {
   usernameClaim: 'data.login',
   authorizationParams: { prompt: 'login', access_type: 'offline' },
   accessPolicy: { logic: 'and', conditions: [] },
+  accessDeniedMessage: '',
+  registrationUpstreamIds: null,
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -96,6 +98,7 @@ for (const [kind, makeRepo] of repoFactories) {
       providerUserId: 'provider-user-1',
       providerLogin: 'alice@example.com',
       userId: null,
+      registrationUpstreamIds: ['up-registration'],
       createdAt: '2026-08-19T00:00:00.000Z',
       expiresAt: now + 60_000,
     });
@@ -124,6 +127,7 @@ for (const [kind, makeRepo] of repoFactories) {
     if (created[0]?.status !== 'created') throw new Error('expected exactly one created registration');
     assertEquals(created[0].user.passwordHash, null);
     assertEquals(created[0].user.isAdmin, false);
+    assertEquals(created[0].user.upstreamIds, ['up-registration']);
     assertEquals((await repo.apiKeys.listByUserId(created[0].user.id)).map(key => key.id), [`key-oauth2-${created[0].user.username.slice(-3)}`]);
     assertEquals((await repo.oauth2.listAccounts()).map(account => account.providerUserId), ['provider-user-1']);
     assertEquals(await repo.oauth2.getHandoff('registration-hash', now), null);
@@ -139,6 +143,7 @@ for (const [kind, makeRepo] of repoFactories) {
       providerUserId: 'provider-user-1',
       providerLogin: 'alice',
       userId: 1,
+      registrationUpstreamIds: null,
       createdAt: '2026-08-19T00:00:00.000Z',
       expiresAt: now + 60_000,
     });

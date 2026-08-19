@@ -22,6 +22,8 @@ const provider: OAuth2Provider = {
   usernameClaim: null,
   authorizationParams: {},
   accessPolicy: { logic: 'and', conditions: [] },
+  accessDeniedMessage: '',
+  registrationUpstreamIds: null,
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -77,7 +79,7 @@ const callbackHandoff = async (state: string, cookie: string): Promise<string> =
 
 test('custom OAuth2 provider supports self-service registration and later login', async () => {
   const { repo } = await setupAppTest();
-  await configureOAuth2(repo);
+  await configureOAuth2(repo, [{ ...provider, registrationUpstreamIds: ['up_copilot'] }]);
   let tokenRequests = 0;
   initFetch(async (url, init) => {
     if (url === 'https://id.example.com/oauth/token') {
@@ -102,6 +104,7 @@ test('custom OAuth2 provider supports self-service registration and later login'
 
   const first = await start();
   const registrationToken = await callbackHandoff(first.state, first.cookie);
+  await repo.oauth2Config.saveProvider({ ...provider, registrationUpstreamIds: null });
   const pendingResponse = await requestApp('/auth/oauth2/result', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -125,7 +128,9 @@ test('custom OAuth2 provider supports self-service registration and later login'
   assertEquals(registration.user.username, 'alice');
   assertEquals(registration.user.isAdmin, false);
   expect(registration.token).toMatch(/^[0-9a-f]{64}$/);
+  assertEquals((await repo.users.getById(registration.user.id))?.upstreamIds, ['up_copilot']);
   assertEquals((await repo.apiKeys.listByUserId(registration.user.id)).length, 1);
+  assertEquals((await repo.apiKeys.listByUserId(registration.user.id))[0]?.upstreamIds, null);
   assertEquals((await repo.oauth2.listAccounts())[0]?.providerUserId, '42');
 
   const reused = await requestApp('/auth/oauth2/register', {
@@ -273,6 +278,7 @@ test('UserInfo claim access policy admits a matching group and denies other user
         { field: 'groups', op: 'contains', value: 'canneed:owners' },
       ],
     },
+    accessDeniedMessage: '{{provider}} denied {{field}} {{op}} {{required}}; current={{current.groups}}; roles={{current.roles}}',
   }]);
   let allowed = true;
   initFetch(async url => {
@@ -281,6 +287,7 @@ test('UserInfo claim access policy admits a matching group and denies other user
       id: 42,
       login: 'alice',
       groups: allowed ? ['developers', 'canneed:owners'] : ['developers'],
+      roles: ['guest'],
     });
     throw new Error(`unexpected OAuth2 request: ${url}`);
   });
@@ -296,7 +303,8 @@ test('UserInfo claim access policy admits a matching group and denies other user
     headers: { cookie: denied.cookie },
   });
   assertEquals(response.status, 302);
-  expect(new URL(response.headers.get('location')!).hash).toContain('does+not+satisfy+the+provider+access+policy');
+  const fragment = new URLSearchParams(new URL(response.headers.get('location')!).hash.slice(1));
+  assertEquals(fragment.get('oauth2_error'), 'Example ID denied groups contains POPIPA-l10n:owners; current=["developers"]; roles=["guest"]');
 });
 
 test('a dashboard session binds an additional OAuth2 identity through a browser transaction', async () => {

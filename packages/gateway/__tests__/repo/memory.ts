@@ -284,7 +284,7 @@ class MemoryOAuth2Repo implements OAuth2Repo {
         username: input.username,
         passwordHash: null,
         isAdmin: false,
-        upstreamIds: null,
+        upstreamIds: handoff.registrationUpstreamIds,
         createdAt: input.createdAt,
         deletedAt: null,
       });

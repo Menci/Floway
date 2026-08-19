@@ -17,6 +17,9 @@ const valid = {
   usernameClaim: 'data.login',
   authorizationParams: '{"prompt":"login"}',
   accessPolicy: '',
+  accessDeniedMessage: 'Denied by {{provider}}: {{field}} {{op}} {{required}}; roles={{current.roles}}',
+  registrationUpstreamOverride: true,
+  registrationUpstreamIds: ['up_allowed'],
 };
 
 describe('OAuth2 provider form', () => {
@@ -34,6 +37,8 @@ describe('OAuth2 provider form', () => {
       username_claim: 'data.login',
       authorization_params: { prompt: 'login' },
       access_policy: { logic: 'and', conditions: [] },
+      access_denied_message: valid.accessDeniedMessage,
+      registration_upstream_ids: ['up_allowed'],
     });
   });
 
@@ -62,12 +67,15 @@ describe('OAuth2 provider form', () => {
       username_claim: null,
       authorization_params: {},
       access_policy: { logic: 'and', conditions: [] },
+      access_denied_message: '',
+      registration_upstream_ids: null,
       created_at: '2026-08-19T00:00:00.000Z',
       updated_at: '2026-08-19T00:00:00.000Z',
     });
 
     expect(defaults.clientSecret).toBe('');
     expect(defaults.accessPolicy).toBe('');
+    expect(defaults.registrationUpstreamOverride).toBe(false);
   });
 
   it('serializes and validates a UserInfo claim access policy', () => {
@@ -78,7 +86,9 @@ describe('OAuth2 provider form', () => {
         logic: 'or',
         conditions: [
           { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
-          { field: 'groups', op: 'contains', value: 'canneed:owners' },
+          { field: 'age', op: 'gte', value: 18 },
+          { field: 'role', op: 'in', value: ['owner', 'operator'] },
+          { field: 'suspended', op: 'not_exists' },
         ],
       }),
     };
@@ -87,12 +97,34 @@ describe('OAuth2 provider form', () => {
       logic: 'or',
       conditions: [
         { field: 'groups', op: 'contains', value: 'POPIPA-l10n:owners' },
-        { field: 'groups', op: 'contains', value: 'canneed:owners' },
+        { field: 'age', op: 'gte', value: 18 },
+        { field: 'role', op: 'in', value: ['owner', 'operator'] },
+        { field: 'suspended', op: 'not_exists' },
       ],
     });
     expect(oauth2ProviderFormSchema('create').safeParse({
       ...restricted,
       accessPolicy: '{"logic":"or","conditions":[{"field":"groups","op":"equals","value":"owners"}]}',
     }).success).toBe(false);
+    expect(oauth2ProviderFormSchema('create').safeParse({
+      ...restricted,
+      accessPolicy: '{"logic":"and","conditions":[{"field":"age","op":"gt","value":true}]}',
+    }).success).toBe(false);
+    expect(oauth2ProviderFormSchema('create').safeParse({
+      ...restricted,
+      accessPolicy: '{"logic":"and","conditions":[{"field":"role","op":"in","value":"owner"}]}',
+    }).success).toBe(false);
+  });
+
+  it('requires a non-empty upstream allowlist only while the self-registration override is enabled', () => {
+    expect(oauth2ProviderFormSchema('create').safeParse({
+      ...valid,
+      registrationUpstreamIds: [],
+    }).success).toBe(false);
+    expect(oauth2ProviderFormSchema('create').safeParse({
+      ...valid,
+      registrationUpstreamOverride: false,
+      registrationUpstreamIds: [],
+    }).success).toBe(true);
   });
 });

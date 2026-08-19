@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 
+import { oauth2AccessPolicySchema } from './auth/oauth2-config.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
@@ -249,14 +250,11 @@ export const oauth2RegisterBody = z.object({
 });
 
 const oauth2Trimmed = z.string().trim().min(1);
-const oauth2AccessPolicyBody = z.object({
-  logic: z.enum(['and', 'or']),
-  conditions: z.array(z.object({
-    field: oauth2Trimmed.max(200),
-    op: z.literal('contains'),
-    value: oauth2Trimmed.max(1024),
-  }).strict()).max(100),
-}).strict();
+const oauth2RegistrationUpstreamIdsBody = z.array(oauth2Trimmed.max(200))
+  .min(1, 'Select at least one upstream, or turn off the override to allow all.')
+  .max(100)
+  .refine(ids => new Set(ids).size === ids.length, 'registration_upstream_ids contains duplicates')
+  .nullable();
 const oauth2ProviderFields = {
   display_name: oauth2Trimmed.max(200),
   enabled: z.boolean(),
@@ -269,7 +267,9 @@ const oauth2ProviderFields = {
   user_id_claim: oauth2Trimmed.max(200).nullable(),
   username_claim: oauth2Trimmed.max(200).nullable(),
   authorization_params: z.record(oauth2Trimmed.max(200), z.string().max(4096)),
-  access_policy: oauth2AccessPolicyBody,
+  access_policy: oauth2AccessPolicySchema,
+  access_denied_message: z.string().max(2000),
+  registration_upstream_ids: oauth2RegistrationUpstreamIdsBody,
 };
 
 export const oauth2SettingsBody = z.object({
@@ -751,7 +751,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(24, { error: 'version must be 24 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

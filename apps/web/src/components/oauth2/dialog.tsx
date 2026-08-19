@@ -4,7 +4,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 
 import { oauth2ProviderBody, oauth2ProviderFormDefaults, oauth2ProviderFormSchema, type OAuth2ClientAuthentication, type OAuth2ProviderFormValues } from './form';
 import { api, callApi } from '../../api/client';
-import type { OAuth2Provider } from '../../api/types';
+import type { ControlPlaneModel, OAuth2Provider, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { DialogShell } from '../ui/dialog-shell';
@@ -14,16 +14,20 @@ import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SecretInput } from '../ui/secret-input';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDiscardGuard } from '../ui/use-discard-guard';
+import { UpstreamAccessControl } from '../upstreams/access-control';
 
 const { Button, DialogActions, DialogTitle, Field, Option } = fluentComponents;
 
 const CLIENT_AUTHENTICATION: OAuth2ClientAuthentication[] = ['client_secret_post', 'client_secret_basic'];
+const ACCESS_DENIED_TEMPLATE_VARIABLES = '{{provider}}, {{field}}, {{op}}, {{required}}, {{current}}, {{current.roles}}';
 
-export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: {
+export function OAuth2ProviderDialog({ models, onOpenChange, onSaved, open, provider, upstreams }: {
+  models: ControlPlaneModel[];
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
   open: boolean;
   provider: OAuth2Provider | null;
+  upstreams: UpstreamOption[];
 }) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
@@ -158,6 +162,13 @@ export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: 
         rows={9}
       /></Field>} />
 
+    <Controller control={control} name="accessDeniedMessage" render={({ field }) => <Field
+      hint={t('dashboard.oauth2.form.accessDeniedMessageHint', { variables: ACCESS_DENIED_TEMPLATE_VARIABLES })}
+      label={t('dashboard.oauth2.form.accessDeniedMessage')}
+      validationMessage={message('accessDeniedMessage')}
+      validationState={errors.accessDeniedMessage ? 'error' : undefined}
+    ><Textarea {...field} disabled={saving} rows={3} /></Field>} />
+
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Controller control={control} name="scopes" render={({ field }) => <Field
         hint={t('dashboard.oauth2.form.scopesHint')}
@@ -196,6 +207,21 @@ export function OAuth2ProviderDialog({ onOpenChange, onSaved, open, provider }: 
       validationMessage={message('authorizationParams')}
       validationState={errors.authorizationParams ? 'error' : undefined}
     ><Textarea {...field} className="font-mono" disabled={saving} rows={5} /></Field>} />
+
+    <UpstreamAccessControl
+      available={upstreams}
+      description={t('dashboard.oauth2.form.registrationUpstreamsHint')}
+      disabled={saving}
+      error={message('registrationUpstreamIds') ?? null}
+      ids={values.registrationUpstreamIds}
+      models={models}
+      onChange={next => {
+        setValue('registrationUpstreamOverride', next.override, { shouldValidate: true });
+        setValue('registrationUpstreamIds', next.ids, { shouldValidate: true });
+      }}
+      override={values.registrationUpstreamOverride}
+      title={t('dashboard.oauth2.form.registrationUpstreams')}
+    />
 
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell></>;

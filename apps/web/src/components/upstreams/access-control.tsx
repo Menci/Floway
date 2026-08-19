@@ -35,20 +35,24 @@ interface UpstreamAccessRow {
 
 export function UpstreamAccessControl({
   available,
+  description,
   disabled,
   error,
   ids,
   models,
   onChange,
   override,
+  title,
 }: {
   available: UpstreamOption[];
+  description?: string;
   disabled: boolean;
   error: string | null;
   ids: string[];
   models: ControlPlaneModel[];
   onChange: (value: { override: boolean; ids: string[] }) => void;
   override: boolean;
+  title?: string;
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
@@ -84,11 +88,11 @@ export function UpstreamAccessControl({
       action={<SettingsSwitch
         checked={override}
         disabled={disabled}
-        label={t('dashboard.upstreamAccess.title')}
+        label={title ?? t('dashboard.upstreamAccess.title')}
         onChange={toggleOverride}
       />}
-      description={t('dashboard.upstreamAccess.description')}
-      header={t('dashboard.upstreamAccess.title')}
+      description={description ?? t('dashboard.upstreamAccess.description')}
+      header={title ?? t('dashboard.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
       revealOn={error !== null}
       toggledOn={override}

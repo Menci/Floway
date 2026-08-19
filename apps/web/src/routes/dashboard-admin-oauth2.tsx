@@ -3,7 +3,8 @@ import { useCallback, useState } from 'react';
 import type { Route } from './+types/dashboard-admin-oauth2';
 import { requireDashboardAdmin } from './guards';
 import { api, callApi, callApiNoContent } from '../api/client';
-import type { OAuth2Provider, OAuth2Settings } from '../api/types';
+import { mapResult, mergeResults } from '../api/partial-results';
+import type { ControlPlaneModel, OAuth2Provider, OAuth2Settings, UpstreamOption } from '../api/types';
 import { OAuth2ProviderDialog } from '../components/oauth2/dialog';
 import { OAuth2ProviderList } from '../components/oauth2/list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -25,25 +26,41 @@ const { Button, Field, Spinner } = fluentComponents;
 
 interface LoaderData {
   error: string | null;
+  models: ControlPlaneModel[] | null;
   providers: OAuth2Provider[] | null;
   settings: OAuth2Settings | null;
+  upstreams: UpstreamOption[] | null;
 }
 
-const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
-  const [settings, providers] = await Promise.all([
+const loadPageData = async (
+  current: Pick<LoaderData, 'models' | 'providers' | 'settings' | 'upstreams'>,
+  signal?: AbortSignal,
+): Promise<LoaderData> => {
+  const [settings, providers, upstreams, models] = await Promise.all([
     callApi(() => api.api.oauth2.settings.$get(undefined, { init: { signal } })),
     callApi(() => api.api.oauth2.providers.$get(undefined, { init: { signal } })),
+    callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
-  return {
-    error: settings.error?.message ?? providers.error?.message ?? null,
-    providers: providers.data ?? null,
-    settings: settings.data ?? null,
-  };
+  const merged = mergeResults(current, {
+    models: mapResult(models, body => body.data),
+    providers,
+    settings,
+    upstreams,
+  });
+  return { ...merged.values, error: merged.error };
+};
+
+const unloadedPageData: Pick<LoaderData, 'models' | 'providers' | 'settings' | 'upstreams'> = {
+  models: null,
+  providers: null,
+  settings: null,
+  upstreams: null,
 };
 
 export async function clientLoader(): Promise<LoaderData> {
   await requireDashboardAdmin();
-  return await loadPageData();
+  return await loadPageData(unloadedPageData);
 }
 
 export default function DashboardAdminOAuth2({ loaderData }: Route.ComponentProps) {
@@ -59,12 +76,12 @@ export default function DashboardAdminOAuth2({ loaderData }: Route.ComponentProp
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const reload = useCallback(async (signal: AbortSignal) => {
-    const next = await loadPageData(signal);
+    const next = await loadPageData(data, signal);
     if (signal.aborted) return;
     setData(next);
     setPageError(next.error);
     if (next.settings) setPublicBaseUrl(next.settings.public_base_url);
-  }, []);
+  }, [data]);
   const { refresh, refreshing } = useRefresh(reload);
 
   const saveSettings = async () => {
@@ -109,7 +126,7 @@ export default function DashboardAdminOAuth2({ loaderData }: Route.ComponentProp
     await refresh();
   };
 
-  const loaded = data.settings !== null && data.providers !== null;
+  const loaded = data.settings !== null && data.providers !== null && data.models !== null && data.upstreams !== null;
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -159,7 +176,7 @@ export default function DashboardAdminOAuth2({ loaderData }: Route.ComponentProp
 
           <ResourceListPanel>
             <OAuth2ProviderList
-              disabled={refreshing || deleting}
+              disabled={!loaded || refreshing || deleting}
               onDelete={openDeleteDialog}
               onEdit={editorDialog.open}
               providers={data.providers}
@@ -167,12 +184,14 @@ export default function DashboardAdminOAuth2({ loaderData }: Route.ComponentProp
             />
           </ResourceListPanel>
 
-          {editorDialog.invocation && <OAuth2ProviderDialog
+          {editorDialog.invocation && data.models && data.upstreams && <OAuth2ProviderDialog
             key={editorDialog.invocation.key}
+            models={data.models}
             onOpenChange={open => { if (!open) editorDialog.close(); }}
             onSaved={refresh}
             open={editorDialog.isOpen}
             provider={editorDialog.invocation.value}
+            upstreams={data.upstreams}
           />}
 
           {deleteDialog.invocation && <ConfirmDialog

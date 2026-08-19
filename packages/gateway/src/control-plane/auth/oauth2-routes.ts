@@ -1,6 +1,6 @@
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
-import { oauth2AccessAllowed } from './oauth2-access-policy.ts';
+import { evaluateOAuth2Access, renderOAuth2AccessDeniedMessage } from './oauth2-access-policy.ts';
 import { getOAuth2Config, oauth2BindingFrontendRedirect, oauth2FrontendRedirect, oauth2ProviderById, type OAuth2Config, type OAuth2ProviderConfig } from './oauth2-config.ts';
 import { exchangeOAuth2Code, fetchOAuth2Identity, newOAuth2Secret, OAuth2ProtocolError, oauth2AuthorizationUrl } from './oauth2-protocol.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
@@ -15,6 +15,7 @@ import { sha256Hex, timingSafeEqual } from '@floway-dev/platform';
 
 const AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
 const HANDOFF_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_ACCESS_DENIED_MESSAGE = 'This OAuth2 account does not satisfy the provider access policy';
 const encoder = new TextEncoder();
 
 const secretHash = (secret: string): Promise<string> => sha256Hex(encoder.encode(secret));
@@ -143,8 +144,14 @@ export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provi
   try {
     const accessToken = await exchangeOAuth2Code(config, provider, code, authorization.codeVerifier, c.req.raw.signal);
     identity = await fetchOAuth2Identity(provider, accessToken, c.req.raw.signal);
-    if (!oauth2AccessAllowed(provider.accessPolicy, identity.claims)) {
-      throw new OAuth2ProtocolError('This OAuth2 account does not satisfy the provider access policy');
+    const access = evaluateOAuth2Access(provider.accessPolicy, identity.claims);
+    if (!access.allowed) {
+      throw new OAuth2ProtocolError(renderOAuth2AccessDeniedMessage(
+        provider.accessDeniedMessage || DEFAULT_ACCESS_DENIED_MESSAGE,
+        provider.displayName,
+        access,
+        identity.claims,
+      ));
     }
   } catch (cause) {
     if (!(cause instanceof OAuth2ProtocolError)) throw cause;
@@ -190,6 +197,7 @@ export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provi
     providerUserId: identity.providerUserId,
     providerLogin: identity.providerLogin,
     userId,
+    registrationUpstreamIds: provider.registrationUpstreamIds,
     createdAt: now,
     expiresAt: Date.now() + HANDOFF_TTL_MS,
   });

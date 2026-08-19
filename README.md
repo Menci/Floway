@@ -87,10 +87,9 @@ callback handoffs travel in the URL fragment so reverse proxies and static
 asset servers do not receive them.
 
 The optional UserInfo access policy is evaluated against the provider's raw
-UserInfo JSON on every login and new account binding. An empty policy permits
-every authenticated user. A policy can combine exact string-array membership
-checks with `and` or `or`; `field` is a dotted JSON path and `contains` requires
-the selected claim to be an array containing the exact string:
+UserInfo JSON on every login and new account binding. Leave the policy editor
+blank to permit every authenticated user. A policy combines conditions with
+`and` or `or`, and `field` is a dotted JSON path such as `profile.roles`:
 
 ```json
 {
@@ -104,6 +103,36 @@ the selected claim to be an array containing the exact string:
 
 The provider must request whatever scope causes the upstream to include those
 claims, such as `groups`; Floway does not call vendor-specific membership APIs.
+
+The supported operators are:
+
+- `eq` and `ne`: strict JSON equality without type conversion.
+- `gt`, `gte`, `lt`, and `lte`: ordering between two numbers or two strings.
+- `in` and `not_in`: strict membership of the claim value in the configured
+  `value` array.
+- `contains` and `not_contains`: strict member matching for an array claim, or
+  substring matching when both the claim and configured value are strings.
+- `exists` and `not_exists`: whether the dotted field path is present. These
+  conditions omit `value`; a present `null` value still counts as existing.
+
+Missing fields and values of incompatible types do not satisfy binary
+operators, including negative operators. An empty `and` policy permits every
+user, while an empty `or` policy rejects every user.
+
+Each provider can define the message displayed when its policy rejects an
+account. The template supports `{{provider}}`, `{{field}}`, `{{op}}`,
+`{{required}}`, and `{{current}}`. Dotted paths under `current`, such as
+`{{current.roles}}`, read individual claims from the complete UserInfo object.
+Unknown variables remain unchanged. Leave the message blank to use Floway's
+default error.
+
+The self-registration upstream control optionally sets a user-level upstream
+allowlist for accounts created through that provider. Turning the override off
+allows all upstreams; turning it on permits only the selected upstreams. The
+selection is captured when the OAuth2 callback succeeds, so a registration
+already in progress keeps the permissions it was offered. It affects only new
+users and does not rewrite existing accounts. Their default API key inherits
+the user-level restriction rather than maintaining a second allowlist.
 
 Signed-in users manage their own OAuth2 bindings under **Settings → OAuth2
 Accounts**. An account with no password must keep at least one OAuth2 binding;

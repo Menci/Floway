@@ -15,14 +15,37 @@ const endpoint = nonEmpty.transform(value => {
   return url.toString();
 });
 
-const accessPolicySchema = z.object({
-  logic: z.enum(['and', 'or']),
-  conditions: z.array(z.object({
-    field: nonEmpty.max(200),
-    op: z.literal('contains'),
-    value: nonEmpty.max(1024),
-  }).strict()).max(100),
+const accessPolicyScalar = z.union([z.string().max(4096), z.number(), z.boolean(), z.null()]);
+const accessPolicyValue = z.union([accessPolicyScalar, z.array(accessPolicyScalar).max(100)]);
+const accessPolicyField = nonEmpty.max(200);
+const valueAccessCondition = z.object({
+  field: accessPolicyField,
+  op: z.enum(['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'contains', 'not_contains']),
+  value: accessPolicyValue,
+}).strict().superRefine((condition, context) => {
+  if ((condition.op === 'gt' || condition.op === 'gte' || condition.op === 'lt' || condition.op === 'lte')
+    && typeof condition.value !== 'number' && typeof condition.value !== 'string') {
+    context.addIssue({ code: 'custom', message: `${condition.op} requires a number or string value`, path: ['value'] });
+  }
+  if ((condition.op === 'in' || condition.op === 'not_in') && !Array.isArray(condition.value)) {
+    context.addIssue({ code: 'custom', message: `${condition.op} requires an array value`, path: ['value'] });
+  }
+});
+const presenceAccessCondition = z.object({
+  field: accessPolicyField,
+  op: z.enum(['exists', 'not_exists']),
 }).strict();
+
+export const oauth2AccessPolicySchema = z.object({
+  logic: z.enum(['and', 'or']),
+  conditions: z.array(z.union([valueAccessCondition, presenceAccessCondition])).max(100),
+}).strict();
+
+const registrationUpstreamIdsSchema = z.array(nonEmpty.max(200))
+  .min(1)
+  .max(100)
+  .refine(ids => new Set(ids).size === ids.length, 'registration upstream ids must be unique')
+  .nullable();
 
 const providerSchema = z.object({
   id: nonEmpty.regex(/^[A-Za-z0-9_-]+$/),
@@ -38,7 +61,9 @@ const providerSchema = z.object({
   userIdClaim: nonEmpty.nullable(),
   usernameClaim: nonEmpty.nullable(),
   authorizationParams: z.record(z.string(), z.string()),
-  accessPolicy: accessPolicySchema,
+  accessPolicy: oauth2AccessPolicySchema,
+  accessDeniedMessage: z.string().max(2000),
+  registrationUpstreamIds: registrationUpstreamIdsSchema,
   createdAt: nonEmpty,
   updatedAt: nonEmpty,
 }).strict().superRefine((provider, context) => {

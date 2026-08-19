@@ -60,11 +60,28 @@ export interface OAuth2Account {
 
 export type OAuth2ClientAuthentication = 'client_secret_post' | 'client_secret_basic';
 
-export interface OAuth2AccessCondition {
+export type OAuth2AccessOperator =
+  | 'eq'
+  | 'ne'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'in'
+  | 'not_in'
+  | 'contains'
+  | 'not_contains'
+  | 'exists'
+  | 'not_exists';
+
+export type OAuth2AccessCondition = {
   field: string;
-  op: 'contains';
-  value: string;
-}
+  op: Exclude<OAuth2AccessOperator, 'exists' | 'not_exists'>;
+  value: unknown;
+} | {
+  field: string;
+  op: 'exists' | 'not_exists';
+};
 
 export interface OAuth2AccessPolicy {
   logic: 'and' | 'or';
@@ -86,6 +103,8 @@ export interface OAuth2Provider {
   usernameClaim: string | null;
   authorizationParams: Record<string, string>;
   accessPolicy: OAuth2AccessPolicy;
+  accessDeniedMessage: string;
+  registrationUpstreamIds: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -113,6 +132,7 @@ export interface OAuth2Handoff {
   providerUserId: string;
   providerLogin: string;
   userId: number | null;
+  registrationUpstreamIds: string[] | null;
   createdAt: string;
   expiresAt: number;
 }

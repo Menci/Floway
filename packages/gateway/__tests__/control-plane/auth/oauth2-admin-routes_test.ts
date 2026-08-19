@@ -18,6 +18,8 @@ const providerBody = (overrides: Record<string, unknown> = {}) => ({
   username_claim: null,
   authorization_params: { prompt: 'login' },
   access_policy: { logic: 'and', conditions: [] },
+  access_denied_message: '',
+  registration_upstream_ids: null,
   ...overrides,
 });
 
@@ -52,6 +54,8 @@ test('administrator configures OAuth2 and controls its public availability immed
   const created = await createdResponse.json() as Record<string, unknown>;
   assertEquals(created.client_secret_configured, true);
   assertEquals(created.access_policy, { logic: 'and', conditions: [] });
+  assertEquals(created.access_denied_message, '');
+  assertEquals(created.registration_upstream_ids, null);
   assertEquals(Object.hasOwn(created, 'client_secret'), false);
 
   const unavailable = await requestApp('/auth/oauth2/providers', {});
@@ -159,4 +163,23 @@ test('administrator configures a generic UserInfo claim access policy on the pro
     },
   })));
   assertEquals(unsupportedOperator.status, 400);
+});
+
+test('administrator configures self-registration upstream access on the provider', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const response = await requestApp('/api/oauth2/providers', adminJson(adminSession, 'POST', providerBody({
+    access_denied_message: '{{provider}} requires {{field}} {{op}} {{required}}; current={{current.roles}}',
+    registration_upstream_ids: ['up_copilot'],
+  })));
+  assertEquals(response.status, 201);
+  const created = await response.json() as Record<string, unknown>;
+  assertEquals(created.registration_upstream_ids, ['up_copilot']);
+  assertEquals((await repo.oauth2Config.getProviderById('custom'))?.registrationUpstreamIds, ['up_copilot']);
+
+  const unknown = await requestApp('/api/oauth2/providers/custom', adminJson(adminSession, 'PUT', providerUpdateBody({
+    registration_upstream_ids: ['up_missing'],
+  })));
+  assertEquals(unknown.status, 400);
+  expect((await unknown.json() as { error: string }).error).toContain('Unknown upstream(s): up_missing');
+  assertEquals((await repo.oauth2Config.getProviderById('custom'))?.registrationUpstreamIds, ['up_copilot']);
 });

@@ -31,6 +31,14 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
   // Every migration was recorded.
   const recorded = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
   assertEquals(recorded !== null && recorded.n > 0, true);
+  const latest = await db.prepare('SELECT name FROM _migrations ORDER BY name DESC LIMIT 1').first<{ name: string }>();
+  assertEquals(latest?.name, '0087_oauth2_policy_controls.sql');
+
+  const providerCols = await db.prepare('PRAGMA table_info(oauth2_providers)').all<{ name: string; dflt_value: string | null }>();
+  assertEquals(providerCols.results.find(column => column.name === 'access_denied_message')?.dflt_value, "''");
+  assertEquals(providerCols.results.find(column => column.name === 'registration_upstream_ids')?.dflt_value, null);
+  const handoffCols = await db.prepare('PRAGMA table_info(oauth2_handoffs)').all<{ name: string; dflt_value: string | null }>();
+  assertEquals(handoffCols.results.find(column => column.name === 'registration_upstream_ids')?.dflt_value, null);
 }));
 
 test('rerun is a no-op once all migrations are applied', () => withTemp(async dir => {
@@ -85,6 +93,41 @@ test('OAuth2 access migration converts the former Gitea membership list to UserI
       { field: 'groups', op: 'contains', value: 'canneed:owners' },
     ],
   });
+}));
+
+test('OAuth2 policy control columns apply permissive defaults', () => withTemp(async dir => {
+  const db = createNodeSqliteDatabase(join(dir, 'oauth2-policy-controls.db'));
+  await applyMigrations(db);
+  await db.prepare(
+    `INSERT INTO oauth2_providers (
+       id, display_name, enabled, client_id, client_secret,
+       authorization_endpoint, token_endpoint, userinfo_endpoint,
+       scopes_json, client_authentication, user_id_claim, username_claim,
+       authorization_params_json, access_policy_json, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    'existing',
+    'Existing Provider',
+    1,
+    'client',
+    'secret',
+    'https://id.example.com/authorize',
+    'https://id.example.com/token',
+    'https://id.example.com/userinfo',
+    '[]',
+    'client_secret_post',
+    null,
+    null,
+    '{}',
+    '{"logic":"and","conditions":[]}',
+    '2026-08-19T00:00:00.000Z',
+    '2026-08-19T00:00:00.000Z',
+  ).run();
+
+  const row = await db.prepare(
+    'SELECT access_denied_message, registration_upstream_ids FROM oauth2_providers WHERE id = ?',
+  ).bind('existing').first<{ access_denied_message: string; registration_upstream_ids: string | null }>();
+  assertEquals(row, { access_denied_message: '', registration_upstream_ids: null });
 }));
 
 test('mid-migration failure rolls back and leaves no partial schema', () => withTemp(async dir => {

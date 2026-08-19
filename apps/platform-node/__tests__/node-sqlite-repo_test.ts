@@ -139,6 +139,7 @@ test('OAuth2 self-registration consumes a handoff atomically through node:sqlite
     providerUserId: 'provider-node',
     providerLogin: 'node@example.com',
     userId: null,
+    registrationUpstreamIds: ['up_node'],
     createdAt: '2026-08-19T00:00:00.000Z',
     expiresAt: now + 60_000,
   });
@@ -162,6 +163,8 @@ test('OAuth2 self-registration consumes a handoff atomically through node:sqlite
 
   const results = await Promise.all([register('one'), register('two')]);
   assertEquals(results.map(result => result.status).toSorted(), ['created', 'missing']);
+  const created = results.find(result => result.status === 'created');
+  assertEquals(created?.status === 'created' ? created.user.upstreamIds : null, ['up_node']);
   assertEquals((await repo.oauth2.listAccounts()).length, 1);
   assertEquals((await repo.apiKeys.list()).filter(key => key.id.startsWith('node-key-')).length, 1);
 }));
@@ -182,6 +185,8 @@ test('OAuth2 provider configuration round-trips through node:sqlite', () => with
     usernameClaim: null,
     authorizationParams: { audience: 'floway' },
     accessPolicy: { logic: 'and' as const, conditions: [] },
+    accessDeniedMessage: 'Denied by {{provider}}',
+    registrationUpstreamIds: ['up_one'],
     createdAt: '2026-08-19T00:00:00.000Z',
     updatedAt: '2026-08-19T00:00:00.000Z',
   };

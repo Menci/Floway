@@ -3,7 +3,19 @@ import { z } from 'zod';
 import type { OAuth2Provider } from '../../api/types';
 
 export type OAuth2ClientAuthentication = 'client_secret_post' | 'client_secret_basic';
-type OAuth2AccessPolicy = OAuth2Provider['access_policy'];
+type OAuth2AccessValue = string | number | boolean | null | Array<string | number | boolean | null>;
+type OAuth2AccessCondition = {
+  field: string;
+  op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'not_in' | 'contains' | 'not_contains';
+  value: OAuth2AccessValue;
+} | {
+  field: string;
+  op: 'exists' | 'not_exists';
+};
+interface OAuth2AccessPolicy {
+  logic: 'and' | 'or';
+  conditions: OAuth2AccessCondition[];
+}
 
 export interface OAuth2ProviderFormValues {
   id: string;
@@ -20,6 +32,9 @@ export interface OAuth2ProviderFormValues {
   usernameClaim: string;
   authorizationParams: string;
   accessPolicy: string;
+  accessDeniedMessage: string;
+  registrationUpstreamOverride: boolean;
+  registrationUpstreamIds: string[];
 }
 
 const RESERVED_AUTHORIZATION_PARAMS = new Set([
@@ -57,13 +72,29 @@ export const parseAuthorizationParams = (raw: string): Record<string, string> =>
   return parsed as Record<string, string>;
 };
 
+const accessPolicyScalar = z.union([z.string().max(4096), z.number(), z.boolean(), z.null()]);
+const accessPolicyValue = z.union([accessPolicyScalar, z.array(accessPolicyScalar).max(100)]);
+const accessPolicyField = z.string().trim().min(1).max(200);
+const valueAccessCondition = z.object({
+  field: accessPolicyField,
+  op: z.enum(['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'contains', 'not_contains']),
+  value: accessPolicyValue,
+}).strict().superRefine((condition, context) => {
+  if ((condition.op === 'gt' || condition.op === 'gte' || condition.op === 'lt' || condition.op === 'lte')
+    && typeof condition.value !== 'number' && typeof condition.value !== 'string') {
+    context.addIssue({ code: 'custom', message: 'dashboard.oauth2.validation.accessPolicyShape', path: ['value'] });
+  }
+  if ((condition.op === 'in' || condition.op === 'not_in') && !Array.isArray(condition.value)) {
+    context.addIssue({ code: 'custom', message: 'dashboard.oauth2.validation.accessPolicyShape', path: ['value'] });
+  }
+});
+const presenceAccessCondition = z.object({
+  field: accessPolicyField,
+  op: z.enum(['exists', 'not_exists']),
+}).strict();
 const accessPolicySchema = z.object({
   logic: z.enum(['and', 'or']),
-  conditions: z.array(z.object({
-    field: z.string().trim().min(1).max(200),
-    op: z.literal('contains'),
-    value: z.string().trim().min(1).max(1024),
-  }).strict()).max(100),
+  conditions: z.array(z.union([valueAccessCondition, presenceAccessCondition])).max(100),
 }).strict();
 
 const allowAllAccessPolicy: OAuth2AccessPolicy = { logic: 'and', conditions: [] };
@@ -112,9 +143,15 @@ export const oauth2ProviderFormSchema = (mode: 'create' | 'edit') => z.object({
       ctx.addIssue({ code: 'custom', message: cause instanceof Error ? cause.message : String(cause) });
     }
   }),
+  accessDeniedMessage: z.string().max(2000, 'dashboard.oauth2.validation.maximum'),
+  registrationUpstreamOverride: z.boolean(),
+  registrationUpstreamIds: z.array(z.string()),
 }).superRefine((value, ctx) => {
   if (mode === 'create' && value.clientSecret.trim() === '') {
     ctx.addIssue({ code: 'custom', message: 'dashboard.oauth2.validation.required', path: ['clientSecret'] });
+  }
+  if (value.registrationUpstreamOverride && value.registrationUpstreamIds.length === 0) {
+    ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamAccess.validation', path: ['registrationUpstreamIds'] });
   }
 });
 
@@ -136,6 +173,10 @@ export const oauth2ProviderFormDefaults = (provider: OAuth2Provider | null): OAu
     || (provider.access_policy.logic === 'and' && provider.access_policy.conditions.length === 0)
     ? ''
     : JSON.stringify(provider.access_policy, null, 2),
+  accessDeniedMessage: provider?.access_denied_message ?? '',
+  registrationUpstreamOverride: provider?.registration_upstream_ids !== null
+    && provider?.registration_upstream_ids !== undefined,
+  registrationUpstreamIds: provider?.registration_upstream_ids ?? [],
 });
 
 export const oauth2ProviderBody = (values: OAuth2ProviderFormValues) => ({
@@ -151,4 +192,6 @@ export const oauth2ProviderBody = (values: OAuth2ProviderFormValues) => ({
   username_claim: values.usernameClaim.trim() || null,
   authorization_params: parseAuthorizationParams(values.authorizationParams),
   access_policy: parseAccessPolicy(values.accessPolicy),
+  access_denied_message: values.accessDeniedMessage,
+  registration_upstream_ids: values.registrationUpstreamOverride ? values.registrationUpstreamIds : null,
 });

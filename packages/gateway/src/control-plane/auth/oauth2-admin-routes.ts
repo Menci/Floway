@@ -6,6 +6,7 @@ import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { OAuth2Provider } from '../../repo/types.ts';
 import type { createOAuth2ProviderBody, oauth2SettingsBody, updateOAuth2ProviderBody } from '../schemas.ts';
+import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const providerToAdminWire = (provider: OAuth2Provider) => ({
   id: provider.id,
@@ -22,6 +23,8 @@ const providerToAdminWire = (provider: OAuth2Provider) => ({
   username_claim: provider.usernameClaim,
   authorization_params: provider.authorizationParams,
   access_policy: provider.accessPolicy,
+  access_denied_message: provider.accessDeniedMessage,
+  registration_upstream_ids: provider.registrationUpstreamIds,
   created_at: provider.createdAt,
   updated_at: provider.updatedAt,
 });
@@ -62,6 +65,8 @@ const bodyToProvider = (
   usernameClaim: body.username_claim,
   authorizationParams: body.authorization_params,
   accessPolicy: body.access_policy,
+  accessDeniedMessage: body.access_denied_message,
+  registrationUpstreamIds: body.registration_upstream_ids,
   ...timestamps,
 });
 
@@ -97,6 +102,8 @@ export const createOAuth2Provider = async (c: CtxWithJson<typeof createOAuth2Pro
     updatedAt: now,
   }));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
+  const upstreamError = unknownUpstreamIdsError(parsed.provider.registrationUpstreamIds, await loadKnownUpstreamIds());
+  if (upstreamError) return c.json({ error: upstreamError }, 400);
 
   if (!(await getRepo().oauth2Config.insertProvider(parsed.provider))) {
     return c.json({ error: `OAuth2 provider ${body.id} already exists` }, 409);
@@ -116,6 +123,8 @@ export const updateOAuth2Provider = async (c: CtxWithJson<typeof updateOAuth2Pro
     updatedAt: new Date().toISOString(),
   }));
   if ('error' in parsed) return c.json({ error: parsed.error }, 400);
+  const upstreamError = unknownUpstreamIdsError(parsed.provider.registrationUpstreamIds, await loadKnownUpstreamIds());
+  if (upstreamError) return c.json({ error: upstreamError }, 400);
   if (!(await repo.updateProvider(parsed.provider))) return c.json({ error: 'OAuth2 provider not found' }, 404);
   return c.json(providerToAdminWire(parsed.provider));
 };

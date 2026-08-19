@@ -461,12 +461,13 @@ interface OAuth2HandoffRow {
   provider_user_id: string;
   provider_login: string;
   user_id: number | null;
+  registration_upstream_ids: string | null;
   created_at: string;
   expires_at: number;
 }
 
 const OAUTH2_ACCOUNT_COLUMNS = 'provider_id, provider_user_id, user_id, provider_login, created_at, last_login_at';
-const OAUTH2_HANDOFF_COLUMNS = 'token_hash, provider_id, provider_user_id, provider_login, user_id, created_at, expires_at';
+const OAUTH2_HANDOFF_COLUMNS = 'token_hash, provider_id, provider_user_id, provider_login, user_id, registration_upstream_ids, created_at, expires_at';
 
 const toOAuth2Account = (row: OAuth2AccountRow): OAuth2Account => ({
   providerId: row.provider_id,
@@ -483,6 +484,7 @@ const toOAuth2Handoff = (row: OAuth2HandoffRow): OAuth2Handoff => ({
   providerUserId: row.provider_user_id,
   providerLogin: row.provider_login,
   userId: row.user_id,
+  registrationUpstreamIds: parseUpstreamIds(row.registration_upstream_ids, `oauth2_handoffs.token_hash=${row.token_hash}`),
   createdAt: row.created_at,
   expiresAt: row.expires_at,
 });
@@ -545,13 +547,14 @@ class SqlOAuth2Repo implements OAuth2Repo {
   async createHandoff(handoff: OAuth2Handoff): Promise<void> {
     await this.cleanupExpired(Date.now());
     await this.db
-      .prepare(`INSERT INTO oauth2_handoffs (${OAUTH2_HANDOFF_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .prepare(`INSERT INTO oauth2_handoffs (${OAUTH2_HANDOFF_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(
         handoff.tokenHash,
         handoff.providerId,
         handoff.providerUserId,
         handoff.providerLogin,
         handoff.userId,
+        serializeUpstreamIds(handoff.registrationUpstreamIds),
         handoff.createdAt,
         handoff.expiresAt,
       )
@@ -611,8 +614,9 @@ class SqlOAuth2Repo implements OAuth2Repo {
       results = await this.db.batch([
         this.db.prepare(
           `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
-           SELECT (SELECT COALESCE(MAX(id), 0) + 1 FROM users), ?, NULL, 0, NULL, ?, NULL
+           SELECT (SELECT COALESCE(MAX(id), 0) + 1 FROM users), ?, NULL, 0, h.registration_upstream_ids, ?, NULL
            FROM oauth2_handoffs
+           AS h
            WHERE token_hash = ? AND user_id IS NULL AND expires_at > ?`,
         ).bind(input.username, input.createdAt, input.tokenHash, input.now),
         this.db.prepare(
@@ -810,11 +814,13 @@ interface OAuth2ProviderRow {
   username_claim: string | null;
   authorization_params_json: string;
   access_policy_json: string;
+  access_denied_message: string;
+  registration_upstream_ids: string | null;
   created_at: string;
   updated_at: string;
 }
 
-const OAUTH2_PROVIDER_COLUMNS = 'id, display_name, enabled, client_id, client_secret, authorization_endpoint, token_endpoint, userinfo_endpoint, scopes_json, client_authentication, user_id_claim, username_claim, authorization_params_json, access_policy_json, created_at, updated_at';
+const OAUTH2_PROVIDER_COLUMNS = 'id, display_name, enabled, client_id, client_secret, authorization_endpoint, token_endpoint, userinfo_endpoint, scopes_json, client_authentication, user_id_claim, username_claim, authorization_params_json, access_policy_json, access_denied_message, registration_upstream_ids, created_at, updated_at';
 
 const parseOAuth2StringArray = (raw: string, field: string): string[] => {
   let value: unknown;
@@ -854,24 +860,27 @@ const parseOAuth2AccessPolicy = (raw: string, field: string): OAuth2AccessPolicy
     throw new TypeError(`OAuth2 provider ${field} must contain an object`);
   }
   const policy = value as Record<string, unknown>;
+  const valueOperators = new Set(['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'contains', 'not_contains']);
+  const presenceOperators = new Set(['exists', 'not_exists']);
+  const isScalar = (candidate: unknown): boolean => candidate === null
+    || typeof candidate === 'string'
+    || typeof candidate === 'number'
+    || typeof candidate === 'boolean';
   if ((policy.logic === 'and' || policy.logic === 'or')
     && Array.isArray(policy.conditions)
     && policy.conditions.every(condition => {
       if (typeof condition !== 'object' || condition === null || Array.isArray(condition)) return false;
       const entry = condition as Record<string, unknown>;
-      return typeof entry.field === 'string'
-        && entry.op === 'contains'
-        && typeof entry.value === 'string'
-        && Object.keys(entry).length === 3;
+      if (typeof entry.field !== 'string' || typeof entry.op !== 'string') return false;
+      if (presenceOperators.has(entry.op)) return Object.keys(entry).length === 2;
+      if (!valueOperators.has(entry.op) || Object.keys(entry).length !== 3 || !Object.hasOwn(entry, 'value')) return false;
+      if (!isScalar(entry.value) && !(Array.isArray(entry.value) && entry.value.every(isScalar))) return false;
+      if ((entry.op === 'gt' || entry.op === 'gte' || entry.op === 'lt' || entry.op === 'lte')
+        && typeof entry.value !== 'number' && typeof entry.value !== 'string') return false;
+      return (entry.op !== 'in' && entry.op !== 'not_in') || Array.isArray(entry.value);
     })
     && Object.keys(policy).length === 2) {
-    return {
-      logic: policy.logic,
-      conditions: policy.conditions.map(condition => {
-        const entry = condition as Record<string, string>;
-        return { field: entry.field!, op: 'contains', value: entry.value! };
-      }),
-    };
+    return value as OAuth2AccessPolicy;
   }
   throw new TypeError(`OAuth2 provider ${field} contains an invalid access policy`);
 };
@@ -895,6 +904,8 @@ const toOAuth2Provider = (row: OAuth2ProviderRow): OAuth2Provider => {
     usernameClaim: row.username_claim,
     authorizationParams: parseOAuth2StringRecord(row.authorization_params_json, `${row.id}.authorization_params_json`),
     accessPolicy: parseOAuth2AccessPolicy(row.access_policy_json, `${row.id}.access_policy_json`),
+    accessDeniedMessage: row.access_denied_message,
+    registrationUpstreamIds: parseUpstreamIds(row.registration_upstream_ids, `oauth2_providers.id=${row.id}`),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -915,6 +926,8 @@ const bindOAuth2Provider = (statement: SqlPreparedStatement, provider: OAuth2Pro
   provider.usernameClaim,
   JSON.stringify(provider.authorizationParams),
   JSON.stringify(provider.accessPolicy),
+  provider.accessDeniedMessage,
+  serializeUpstreamIds(provider.registrationUpstreamIds),
   provider.createdAt,
   provider.updatedAt,
 );
@@ -959,7 +972,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
 
   async insertProvider(provider: OAuth2Provider): Promise<boolean> {
     const result = await bindOAuth2Provider(
-      this.db.prepare(`INSERT OR IGNORE INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      this.db.prepare(`INSERT OR IGNORE INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
       provider,
     ).run();
     return (result.meta.changes ?? 0) > 0;
@@ -972,7 +985,8 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
            display_name = ?, enabled = ?, client_id = ?, client_secret = ?,
            authorization_endpoint = ?, token_endpoint = ?, userinfo_endpoint = ?,
            scopes_json = ?, client_authentication = ?, user_id_claim = ?,
-           username_claim = ?, authorization_params_json = ?, access_policy_json = ?, updated_at = ?
+           username_claim = ?, authorization_params_json = ?, access_policy_json = ?,
+           access_denied_message = ?, registration_upstream_ids = ?, updated_at = ?
          WHERE id = ?`,
       )
       .bind(
@@ -989,6 +1003,8 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
         provider.usernameClaim,
         JSON.stringify(provider.authorizationParams),
         JSON.stringify(provider.accessPolicy),
+        provider.accessDeniedMessage,
+        serializeUpstreamIds(provider.registrationUpstreamIds),
         provider.updatedAt,
         provider.id,
       )
@@ -999,7 +1015,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
   async saveProvider(provider: OAuth2Provider): Promise<void> {
     await bindOAuth2Provider(
       this.db.prepare(
-        `INSERT INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            display_name = excluded.display_name,
            enabled = excluded.enabled,
@@ -1014,6 +1030,8 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
            username_claim = excluded.username_claim,
            authorization_params_json = excluded.authorization_params_json,
            access_policy_json = excluded.access_policy_json,
+           access_denied_message = excluded.access_denied_message,
+           registration_upstream_ids = excluded.registration_upstream_ids,
            updated_at = excluded.updated_at`,
       ),
       provider,
