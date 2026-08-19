@@ -1,0 +1,32 @@
+# Workers Static Assets answers every asset with
+# `Cache-Control: public, max-age=0, must-revalidate` unless a rule here says
+# otherwise, so each already-downloaded chunk still costs a conditional request
+# per page load:
+# https://developers.cloudflare.com/workers/static-assets/headers/
+#
+# Everything the client build emits under /assets/ carries a content hash in its
+# filename, sourcemaps included -- a map is named after the chunk it belongs to,
+# so it rehashes with it. A URL there therefore always answers with the same
+# bytes and never needs revalidating. index.html is deliberately left out: it is
+# the unhashed document that names the current hashes.
+#
+# The lifetime also lands on a response we did not intend it for, and we accept
+# that. `not_found_handling: single-page-application` answers a request for a
+# file this deployment no longer holds with index.html and a 200, and a rule
+# here is matched against the request URL, with no knowledge of what was served
+# -- so a browser can end up holding HTML, permanently, at a chunk's URL. What
+# bounds it is that the blast radius is that one browser: the asset worker
+# writes to no shared HTTP cache, and the one cache it does use is keyed by
+# content hash rather than by URL. (Cloudflare Pages, where the two public
+# reports of this come from, kept a URL-keyed CDN cache and so poisoned every
+# visitor at a PoP.) Under the deployment that poisons it the URL is already
+# dead, since a deploy only drops the assets whose hash changed; it comes back
+# to life only through a rollback, or through a gradual deployment serving one
+# version's document beside another version's assets. We deploy all at once and
+# roll back rarely, which is the trade we are making here.
+# https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/version-affinity/
+#
+# docker/nginx.conf states the same policy for the docker-compose topology, and
+# apps/web/__tests__/static-asset-caching_test.ts fails when the two drift.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
