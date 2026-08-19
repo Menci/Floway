@@ -8,7 +8,7 @@ import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
-const MIGRATION = '0083_canonical_endpoint_keys.sql';
+const MIGRATION = '0083_canonical_protocol_names.sql';
 
 // The shape an operator's row carried before the rename: the endpoint map keyed
 // by the abbreviated protocol names, per model and once at the upstream level.
