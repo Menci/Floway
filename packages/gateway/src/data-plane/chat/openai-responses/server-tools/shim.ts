@@ -2,13 +2,10 @@ import { jsonrepair } from 'jsonrepair';
 
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../interceptors/types.ts';
 import type { StatefulOpenAIResponsesStore } from '../items/store.ts';
-import type { InterceptorRun } from '@floway-dev/interceptor';
-import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
-  type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
   type OpenAIResponsesInputItem,
@@ -18,7 +15,7 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
+import type { OpenAIResponsesInvocation } from '@floway-dev/provider';
 
 export interface MergeUsage {
   input_tokens?: number;
@@ -128,7 +125,7 @@ export type ServerToolPrepareResult =
 
 export type ServerToolRegistration = (invocation: OpenAIResponsesInvocation, gatewayCtx: ChatGatewayCtx) => ServerToolPrepareResult | Promise<ServerToolPrepareResult>;
 
-type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
+export type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
   // Absent only for replay activation; otherwise drives `tools` echo restore.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
@@ -154,8 +151,6 @@ export interface TurnSummary {
   turnUsage: MergeUsage;
   terminalStatus: UpstreamTerminal;
 }
-
-type LatestUpstreamMetadata = Pick<EventResultMetadata, 'modelIdentity' | 'performance' | 'billableUsage'>;
 
 export const createMergeState = (): MergeState => ({
   sequenceNumber: 0,
@@ -224,7 +219,7 @@ const usageOf = (usage: OpenAIResponsesResult['usage']): MergeUsage => {
   return out;
 };
 
-const rewriteHostedToolChoice = (
+export const rewriteHostedToolChoice = (
   toolChoice: OpenAIResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
 ): OpenAIResponsesToolChoice | null | undefined => {
@@ -284,7 +279,7 @@ export const resolveServerToolName = (baseName: string, tools: readonly OpenAIRe
 // configuration. The replacement occupies the first declaration's array slot
 // so unrelated tools retain their relative order.
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
-const rewriteToolsForHostedShim = (
+export const rewriteToolsForHostedShim = (
   tools: readonly OpenAIResponsesTool[],
   hosted: ServerToolHostedDispatch,
   toolName: string,
@@ -442,7 +437,7 @@ const serverToolEndFrames = (
   return frames;
 };
 
-const transformServerToolItems = (
+export const transformServerToolItems = (
   items: OpenAIResponsesInputItem[],
   active: readonly ActiveServerTool[],
 ): OpenAIResponsesInputItem[] => {
@@ -727,11 +722,15 @@ export const consumeTurnStreaming = async function* (
 
 const MAX_BODY_EXCERPT_CHARS = 512;
 
-const buildErrorFromResult = (
-  result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
+/** What a refusal mid-loop becomes on the synthesized terminal. An upstream that wrote an
+ *  OpenAI-shaped envelope is quoted verbatim — its own code, type and sentence — because that is
+ *  what a client reads; anything else is reported as the status plus an excerpt of what came. */
+export const buildErrorFromRefusal = (
+  status: number,
+  body: string,
 ): NonNullable<OpenAIResponsesResult['error']> => {
-  if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error' };
-  const decoded = new TextDecoder('utf-8', { fatal: false }).decode(result.body);
+  const result = { status, body };
+  const decoded = body;
   let parsed: unknown = undefined;
   try {
     parsed = JSON.parse(decoded);
@@ -756,29 +755,6 @@ const buildErrorFromResult = (
   };
 };
 
-const invalidRequestEnvelope = (
-  message: string,
-  param: string | null,
-  code: string | null | undefined,
-  errorType = 'invalid_request_error',
-): ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> => {
-  const body = JSON.stringify({
-    error: {
-      message,
-      type: errorType,
-      param,
-      code: code === undefined ? 'invalid_request_error' : code,
-    },
-  });
-  return {
-    type: 'api-error',
-    source: 'gateway',
-    status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode(body),
-  };
-};
-
 // The terminal the shim emits downstream. Unlike `UpstreamTerminal`
 // (what we observed), this carries only the already-extracted `error` /
 // `incompleteDetails` the synthesized envelope needs; the output and
@@ -795,7 +771,7 @@ const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'r
   incomplete: { type: 'response.incomplete', status: 'incomplete' },
 };
 
-const synthesizeTerminalEnvelope = (
+export const synthesizeTerminalEnvelope = (
   state: MergeState,
   kind: SynthesizedTerminal,
   active: readonly ActiveServerTool[],
@@ -839,7 +815,7 @@ const synthesizeTerminalEnvelope = (
   } as OpenAIResponsesStreamEvent);
 };
 
-async function* materializeServerToolItems(
+export async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
   store: StatefulOpenAIResponsesStore,
@@ -860,213 +836,3 @@ async function* materializeServerToolItems(
     }
   }
 }
-
-// `finalMetadata` resolves when that turn's stream ends; the shim has already
-// drained it before reaching here, so awaiting it cannot deadlock.
-const accumulateBillableUsage = async (
-  metadata: LatestUpstreamMetadata,
-  result: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>,
-): Promise<void> => {
-  const turn = result.finalMetadata === undefined ? undefined : (await result.finalMetadata).billableUsage;
-  metadata.billableUsage = sumBillableUsage(metadata.billableUsage, turn);
-};
-
-async function* runMultiTurnLoop(args: {
-  ctx: OpenAIResponsesInvocation;
-  run: InterceptorRun<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>;
-  merge: MergeState;
-  loopState: ServerToolLoopState;
-  demoteForcedServerToolChoiceAfterFirstTurn: boolean;
-  turn1Iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>;
-  firstResult: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>;
-  dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
-  store: StatefulOpenAIResponsesStore;
-  canonicalInput: OpenAIResponsesInputItem[];
-  active: readonly ActiveServerTool[];
-  metadata: LatestUpstreamMetadata;
-  resolveFinalMetadata: (m: EventResultMetadata) => void;
-}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const { ctx, run, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, turn1Iter, dispatchers, store, active, metadata, resolveFinalMetadata } = args;
-  const baseInput = args.canonicalInput;
-  let midStreamError: unknown = undefined;
-  try {
-    let currentTurn: TurnSummary = yield* turn1Iter;
-    // Each turn resolves its own cost once its stream has drained, and the
-    // shim consumes them one at a time, so the running total is complete by
-    // the time the loop reaches its terminal.
-    await accumulateBillableUsage(metadata, args.firstResult);
-    merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
-    while (true) {
-      const turn = currentTurn;
-      const executedShim = turn.dispatched.length > 0;
-
-      if (turn.terminalStatus.kind === 'failed') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, store);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
-        return;
-      }
-      if (turn.terminalStatus.kind === 'incomplete') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, store);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
-        return;
-      }
-      if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
-        yield synthesizeTerminalEnvelope(merge, {
-          kind: 'failed',
-          error: { code: turn.terminalStatus.error.code, message: turn.terminalStatus.error.message },
-        }, active);
-        return;
-      }
-      if (!executedShim && !turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
-        return;
-      }
-
-      yield* materializeServerToolItems(turn.dispatched, merge, store);
-      if (turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
-        return;
-      }
-
-      // Accumulated output items are fed back as the next turn's input.
-      // An OpenAI Responses output item is a structural superset of the matching
-      // input item for every shape we emit here (messages, reasoning,
-      // function_call / function_call_output, and the server-tool items
-      // the dispatchers produce), so the reuse is sound; the cast only
-      // bridges the output/input naming.
-      const nextCanonicalInput = [
-        ...baseInput,
-        ...materializeAccumulatedOutput(merge).map(item => item as OpenAIResponsesInputItem),
-      ];
-      const nextPayload: CanonicalOpenAIResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
-      if (loopState.remainingToolCalls !== undefined) {
-        nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
-      } else {
-        delete nextPayload.max_tool_calls;
-      }
-      ctx.payload = nextPayload;
-
-      if (demoteForcedServerToolChoiceAfterFirstTurn) ctx.payload = { ...ctx.payload, tool_choice: 'auto' };
-      loopState.iterationCount += 1;
-
-      const nextResult = await run();
-      if (nextResult.type !== 'events') {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: buildErrorFromResult(nextResult) }, active);
-        return;
-      }
-      metadata.modelIdentity = nextResult.modelIdentity;
-      metadata.performance = nextResult.performance;
-      await accumulateBillableUsage(metadata, nextResult);
-      currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active);
-      merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
-    }
-  } catch (error) {
-    if (merge.lastSeenModel === null) {
-      midStreamError = error;
-      throw error;
-    }
-    yield synthesizeTerminalEnvelope(merge, {
-      kind: 'failed',
-      error: {
-        code: 'server_error',
-        message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    }, active);
-  } finally {
-    if (midStreamError === undefined) resolveFinalMetadata(metadata);
-  }
-}
-
-export const withOpenAIResponsesServerToolShim = (
-  registrations: readonly ServerToolRegistration[],
-): OpenAIResponsesInterceptor => async (ctx, gatewayCtx, run) => {
-  const active: ActiveServerTool[] = [];
-
-  for (const prepareServerTool of registrations) {
-    const prepared = await prepareServerTool(ctx, gatewayCtx);
-    if (prepared.type === 'inactive') continue;
-    if (prepared.type === 'invalid-request') {
-      return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
-    }
-    const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
-    const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
-    const { hosted } = prepared;
-    let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
-    if (hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
-      canonicalHostedTool = rewrite.canonicalHostedTool;
-      ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
-    }
-    const originalToolChoice = hosted !== undefined
-      && typeof ctx.payload.tool_choice === 'object'
-      && ctx.payload.tool_choice !== null
-      && hosted.hostedTypes.includes(ctx.payload.tool_choice.type)
-      ? ctx.payload.tool_choice
-      : undefined;
-    active.push({ ...prepared, toolName, canonicalHostedTool, originalToolChoice });
-  }
-
-  if (active.length === 0) return await run();
-
-  const rewrittenToolChoice = rewriteHostedToolChoice(ctx.payload.tool_choice, active);
-  if (rewrittenToolChoice !== ctx.payload.tool_choice) {
-    ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
-  }
-
-  const canonicalInput = ctx.payload.input;
-  const nextInput = transformServerToolItems(canonicalInput, active);
-  if (nextInput !== canonicalInput) ctx.payload = { ...ctx.payload, input: nextInput };
-
-  const hostedActive = active.filter(
-    (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>
-      entry.hosted !== undefined,
-  );
-  if (hostedActive.length === 0) return await run();
-
-  const dispatchers = new Map<string, ServerToolDispatcher>();
-  for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted.dispatcher);
-  const loopState: ServerToolLoopState = {
-    iterationCount: 1,
-    remainingToolCalls: typeof ctx.payload.max_tool_calls === 'number' ? ctx.payload.max_tool_calls : undefined,
-  };
-  const finalToolChoice = ctx.payload.tool_choice;
-  const demoteForcedServerToolChoiceAfterFirstTurn = finalToolChoice === 'required'
-    || (typeof finalToolChoice === 'object'
-      && finalToolChoice !== null
-      && finalToolChoice.type === 'function'
-      && dispatchers.has(finalToolChoice.name));
-
-  const merge = createMergeState();
-  const firstResult = await run();
-  if (firstResult.type !== 'events') return firstResult;
-  const turn1Iter = consumeTurnStreaming(firstResult.events, merge, true, dispatchers, loopState, active);
-
-  let resolveFinalMetadata!: (m: EventResultMetadata) => void;
-  const shimFinalMetadata = new Promise<EventResultMetadata>(resolve => {
-    resolveFinalMetadata = resolve;
-  });
-  const metadata: LatestUpstreamMetadata = {
-    modelIdentity: firstResult.modelIdentity,
-    performance: firstResult.performance,
-  };
-
-  return {
-    ...firstResult,
-    events: runMultiTurnLoop({
-      ctx,
-      run,
-      merge,
-      loopState,
-      demoteForcedServerToolChoiceAfterFirstTurn,
-      turn1Iter,
-      firstResult,
-      dispatchers,
-      store: gatewayCtx.store,
-      canonicalInput,
-      active,
-      metadata,
-      resolveFinalMetadata,
-    }),
-    finalMetadata: shimFinalMetadata,
-  };
-};

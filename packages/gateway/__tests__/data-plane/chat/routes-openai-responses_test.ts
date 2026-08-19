@@ -97,11 +97,16 @@ test('a turn reaches Copilot over its own OpenAI Responses endpoint and comes ba
   expect(body.output.find(item => item.type === 'message')?.content?.[0]?.text).toBe(ANSWER);
   expect(body.usage).toMatchObject({ input_tokens: 11, output_tokens: 7 });
 
-  // What the boundary made of the turn, on the wire: the tool its endpoint rejects is gone,
-  // the description it needs is filled, and neither field it refuses travels.
-  const tools = sent?.tools as { type: string; description?: string }[];
-  expect(tools.map(tool => tool.type)).toEqual(['namespace']);
+  // What the turn looked like on the wire. The hosted image-generation tool never reached the
+  // Copilot boundary that would have dropped it: Copilot carries the
+  // `responses-image-generation-shim` flag, so the server-tool stage got there first and sent a
+  // function tool the model can call and this gateway executes. What the boundary did make of
+  // the rest is here — the description its namespace tool needs is filled, and neither field it
+  // refuses travels.
+  const tools = sent?.tools as { type: string; name?: string; description?: string }[];
+  expect(tools.map(tool => tool.type)).toEqual(['namespace', 'function']);
   expect(tools[0]!.description).toBe('Tools in the repo namespace.');
+  expect(tools[1]!.name).toBe('image_generation');
   expect(sent).not.toHaveProperty('service_tier');
   expect(sent).toMatchObject({ store: false });
 });

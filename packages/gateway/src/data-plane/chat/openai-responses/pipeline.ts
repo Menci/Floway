@@ -59,6 +59,9 @@ import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
+import { imageGenerationServerTool } from './server-tools/image-generation.ts';
+import { runOpenAIResponsesServerTools } from './server-tools/stage.ts';
+import { webSearchServerTool } from './server-tools/web-search.ts';
 import { billableUsageFromOpenAIResponsesEvent, billableUsageFromOpenAIResponsesResult } from './usage.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
@@ -993,6 +996,13 @@ export const openaiResponsesServePipeline = (
     beginStoredAttempt,
     expandShimCompactions,
     summarizeForCompaction(asksForCompaction),
+    // Directly above the dial, because every descent it makes is another dial of this same
+    // candidate: a hosted tool the upstream does not implement is emulated by asking again with
+    // the tool's result folded back in, and the frames of every ask are spliced into one turn.
+    runOpenAIResponsesServerTools([webSearchServerTool, imageGenerationServerTool], {
+      streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE,
+      targetOf: candidate => openaiResponsesTarget.pick(candidate.model.endpoints),
+    }),
     dialChatWire({
       source: 'request.chat.openaiResponses',
       needs: ['request.chat.openaiResponses', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

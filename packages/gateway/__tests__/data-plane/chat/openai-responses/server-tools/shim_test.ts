@@ -1,8 +1,8 @@
 import { beforeEach, test, vi } from 'vitest';
 
+import { driveServerToolStage } from './drive.ts';
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts';
 import {
   consumeTurnStreaming,
   createMergeState,
@@ -49,7 +49,7 @@ import type {
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
 
-const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
+const withOpenAIResponsesWebSearchShim = driveServerToolStage([webSearchServerTool]);
 
 const emptyResult = (id: string, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => ({
   id,
@@ -992,7 +992,7 @@ test('fetchPage whole-batch failure surfaces the open-page error text', async ()
 // ── Domain filter input validation ────────────────────────────────────
 
 test('invalid request registration preserves an upstream error type and null code', async () => {
-  const shim = withOpenAIResponsesServerToolShim([() => ({
+  const shim = driveServerToolStage([() => ({
     type: 'invalid-request',
     message: 'native image error',
     param: 'input',
@@ -2872,11 +2872,13 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
 
   const result = await shim(inv, makeGatewayCtx(), run);
   assert(result.type === 'events');
-  // Drain so the multi-turn loop completes and finalMetadata resolves.
+  // Drain so the multi-turn loop completes and the reading it hands up settles.
   await collectFrames(result.events);
-  assert(result.finalMetadata !== undefined);
-  const meta = await result.finalMetadata;
-  assertEquals(meta.modelIdentity.modelKey, 'turn-2-key');
+  assert(result.reading !== null);
+  const reading = await result.reading;
+  // Every call the loop made is its own billable entity, in the order it made them, so the
+  // variant a later turn was served by is named rather than frozen to the first one's.
+  assertEquals(reading.billable.map(entity => entity.identity.modelKey), ['turn-1-key', 'turn-2-key']);
 });
 
 // ── Results are always included on web_search_call items ─────────────
@@ -6238,10 +6240,10 @@ test('upstream that does not echo `tools` produces a synthesized envelope withou
 
 // ── Billable usage ────────────────────────────────────────────────────────
 
-test('the shim carries the upstream turn cost onto the metadata pricing reads', async () => {
-  // The shim publishes its own finalMetadata, and that is what pricing reads.
-  // Failing to carry the cost onto it loses billing for the whole response
-  // silently, because the client-facing usage is no longer consulted.
+test('the shim carries the upstream turn cost onto the reading settlement writes from', async () => {
+  // The stage publishes its own reading, and that is what settlement writes the row from.
+  // Failing to carry the cost onto it loses billing for the whole response silently, because
+  // the client-facing usage is no longer consulted.
   const billableUsage: BillableUsage = { input: 10, cacheRead: 3, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
   makeStubDeps();
   const inv = makeInvocation({ enabledFlags: new Set(['responses-web-search-shim'] as const) });
@@ -6257,7 +6259,11 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
 
   assert(result.type === 'events');
   await collectFrames(result.events);
-  assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
+  assert(result.reading !== null);
+  assertEquals((await result.reading).billable, [{
+    identity: testTelemetryModelIdentity,
+    quantities: { input_tokens: '10', input_cache_read_tokens: '3', output_tokens: '2' },
+  }]);
 });
 
 test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {

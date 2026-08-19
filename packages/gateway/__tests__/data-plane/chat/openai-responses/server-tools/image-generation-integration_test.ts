@@ -1,5 +1,6 @@
 import { beforeEach, test, vi } from 'vitest';
 
+import { driveServerToolStage } from './drive.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -87,10 +88,9 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', () => ({
 }));
 
 // Imported AFTER vi.mock so the mocked registry is in effect.
-const { withOpenAIResponsesServerToolShim } = await import('../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts');
 const { imageGenerationServerTool } = await import('../../../../../src/data-plane/chat/openai-responses/server-tools/image-generation.ts');
 
-const shim = withOpenAIResponsesServerToolShim([imageGenerationServerTool]);
+const shim = driveServerToolStage([imageGenerationServerTool]);
 
 const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', pricing: null };
 
