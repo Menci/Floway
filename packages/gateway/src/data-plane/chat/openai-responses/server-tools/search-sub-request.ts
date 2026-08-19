@@ -46,7 +46,7 @@ const runWebSearchCall = defineStage<
   }) as never,
 });
 
-export const webSearchSubRequestPipeline: Pipeline<W<'request.webSearch.call'>, W<'response.webSearch.ir'>> =
+const webSearchSubRequestPipeline: Pipeline<W<'request.webSearch.call'>, W<'response.webSearch.ir'>> =
   compose('webSearchSubRequest', [
     writeSettlement(() => false),
     runWebSearchCall,

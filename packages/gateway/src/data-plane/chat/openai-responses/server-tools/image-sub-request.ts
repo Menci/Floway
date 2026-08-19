@@ -76,7 +76,7 @@ const dialImageGeneration = defineStage<
   },
 });
 
-export const imageGenerationSubRequestPipeline: Pipeline<
+const imageGenerationSubRequestPipeline: Pipeline<
   I<'request.imageGeneration.call'>,
   I<'response.imageGeneration.lifecycle' | 'response.imageGeneration.streamedUsage'>
 > = compose('imageGenerationSubRequest', [
