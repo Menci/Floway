@@ -24,7 +24,7 @@ import { dialFailure } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { compose, defineStage, move, own, type Logger, type Owned, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, own, type Deferred, type Logger, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { eventFrame, isEventStreamMediaType, parseDecimalString, parseSSEStream, renderErrorEnvelope, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   isOpenAIAudioTranscriptionDoneEvent,
@@ -90,7 +90,7 @@ export interface OpenAIAudioTranscriptionFacts extends GatewayFacts {
    *  `response.usage.billable`, which says what had been reported when the ending stage
    *  handed up: the entity, and no quantities. Settling from this is the epilogue's job,
    *  after the drain. */
-  'response.openaiAudioTranscription.streamedOutcome': Promise<OpenAIAudioTranscriptionStreamOutcome> | null;
+  'response.openaiAudioTranscription.streamedOutcome': Deferred<OpenAIAudioTranscriptionStreamOutcome> | null;
   /** What the client is actually sent — a JSON object, the upstream's own document, or the
    *  SSE frames of a stream. The edge provides it, so a dump shows what the client received
    *  rather than the gateway's own reading of it. */
@@ -376,7 +376,7 @@ const readUsage = (read: () => OpenAIAudioTranscriptionUsage | undefined, log: L
 
 interface MeteredEvents {
   readonly events: OpenAIAudioTranscriptionEvents;
-  readonly outcome: Promise<OpenAIAudioTranscriptionStreamOutcome>;
+  readonly outcome: Deferred<OpenAIAudioTranscriptionStreamOutcome>;
 }
 
 const meterEvents = (
@@ -386,7 +386,9 @@ const meterEvents = (
   log: Logger,
 ): MeteredEvents => {
   let settle!: (outcome: OpenAIAudioTranscriptionStreamOutcome) => void;
-  const outcome = new Promise<OpenAIAudioTranscriptionStreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<OpenAIAudioTranscriptionStreamOutcome>(resolve => { settle = resolve; }));
   const events = viewOf((async function* () {
     let usage: OpenAIAudioTranscriptionUsage | undefined;
     let completed = false;

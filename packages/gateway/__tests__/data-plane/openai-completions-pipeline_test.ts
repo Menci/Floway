@@ -10,7 +10,7 @@ import { openaiCompletionsServePipeline } from '../../src/data-plane/openai-comp
 import { enumerateModelCandidates } from '../../src/data-plane/providers/resolution.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { mockGatewayCtx } from '../test-utils/gateway-ctx.ts';
-import { move, run } from '@floway-dev/pipeline';
+import { isDeferred, move, run } from '@floway-dev/pipeline';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { directFetcher, type ModelCandidate, type ProviderCallResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { stubInternalModel, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
@@ -162,6 +162,10 @@ describe('the OpenAI Completions pipeline', () => {
     expect(facts['response.usage.billable']).toEqual([
       { identity: { model: 'text-model', upstream: 'up_a', modelKey: 'text-model-key', pricing: null }, quantities: {} },
     ]);
+    // And the reading is declared as this run's own unfinished work rather than started and
+    // forgotten, which is what puts it in front of teardown: a family that hands up a reading
+    // that never settles is reported instead of silently never billing.
+    expect(isDeferred(facts['response.openaiCompletions.streamedUsage'])).toBe(true);
     await collect(facts['response.openaiCompletions.rendered']);
     expect(await facts['response.openaiCompletions.streamedUsage']).toMatchObject({
       failed: false,

@@ -23,7 +23,7 @@ import { dialFailure, readUpstreamBody } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, own, type Deferred, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import {
   eventFrame,
   isEventStreamMediaType,
@@ -83,7 +83,7 @@ export interface OpenAIImagesFacts extends GatewayFacts {
    *  `response.usage.billable`, which says what had been reported when the ending stage handed
    *  up: the entity, and no quantities. Settling from this is the epilogue's job, after the
    *  drain. */
-  'response.openaiImages.streamedUsage': Promise<StreamOutcome> | null;
+  'response.openaiImages.streamedUsage': Deferred<StreamOutcome> | null;
   /** What the client is actually sent, in the OpenAI Images protocol — a JSON body, or the SSE
    *  frames of a stream. The edge provides it, so a dump shows the body the client received
    *  rather than the gateway's canonical form. */
@@ -310,7 +310,7 @@ const spentBody = (body: ReadableStream<Uint8Array> | null): ReadableStream<Uint
 
 interface MeteredFrames {
   readonly frames: OpenAIImagesFrames;
-  readonly outcome: Promise<StreamOutcome>;
+  readonly outcome: Deferred<StreamOutcome>;
 }
 
 const meterFrames = (
@@ -319,7 +319,9 @@ const meterFrames = (
   signal: AbortSignal | undefined,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
-  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
   // Running out without the completed event is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;

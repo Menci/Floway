@@ -21,8 +21,7 @@ import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
-import type { Pipeline } from '@floway-dev/pipeline';
-import { run } from '@floway-dev/pipeline';
+import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -145,8 +144,11 @@ export interface StreamOutcome {
 
 /** What a streaming family will have been billed, and whether it got there. A stream's usage
  *  arrives with its last chunk, which is after the run has answered — so the run hands up a
- *  promise and settlement of it belongs here, after the answer is on its way. */
-export type DeferredUsage<Exit> = (facts: Exit) => Promise<StreamOutcome> | null;
+ *  reading it has started and not finished, and settlement of it belongs here, after the answer
+ *  is on its way. It is `Deferred` because that is what it is: the runner sees it in the record
+ *  and waits for it at teardown, so a family that hands up a reading that never settles is
+ *  reported rather than silently never billed. */
+export type DeferredUsage<Exit> = (facts: Exit) => Deferred<StreamOutcome> | null;
 
 /**
  * Runs a family's pipeline and turns what it answered with into a response.

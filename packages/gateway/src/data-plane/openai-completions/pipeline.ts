@@ -26,7 +26,7 @@ import { dialFailure } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, own, type Deferred, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, renderErrorEnvelope, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   openaiCompletionsProtocolFrameToSSEFrame,
@@ -71,7 +71,7 @@ export interface OpenAICompletionsFacts extends GatewayFacts {
    *  after this run has answered — so the numbers cannot be in `response.usage.billable`,
    *  which says what had been reported when the ending stage handed up: the entity, and no
    *  quantities. Settling billing from this is the prologue's job, after the drain. */
-  'response.openaiCompletions.streamedUsage': Promise<StreamOutcome> | null;
+  'response.openaiCompletions.streamedUsage': Deferred<StreamOutcome> | null;
   /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows what the client received rather than
    *  the gateway's own reading of it. */
@@ -329,7 +329,7 @@ const readResult = async (response: Response): Promise<{ readonly value: OpenAIC
 
 interface MeteredFrames {
   readonly frames: OpenAICompletionsFrames;
-  readonly outcome: Promise<StreamOutcome>;
+  readonly outcome: Deferred<StreamOutcome>;
 }
 
 const meterFrames = (
@@ -338,7 +338,9 @@ const meterFrames = (
   candidate: ModelCandidate,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
-  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;

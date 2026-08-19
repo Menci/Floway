@@ -52,8 +52,12 @@ export const isOwned = (value: unknown): value is Owned =>
 const DEFERRED = Symbol('floway.deferred');
 
 /** A value the run has started and has not finished. It is a property of the value, not a
- *  capability a stage was handed: what a run must wait for is legible from its own record. */
-export type Deferred<T> = PromiseLike<T> & { readonly [DEFERRED]: true };
+ *  capability a stage was handed: what a run must wait for is legible from its own record.
+ *
+ *  A `Promise` rather than a `PromiseLike`, because branding one is all `defer` does — what
+ *  comes back is the same object, and narrowing it to the smaller interface would make a
+ *  caller reach for `Promise.resolve` to get back what it already had. */
+export type Deferred<T> = Promise<T> & { readonly [DEFERRED]: true };
 
 /**
  * Marks a promise as this run's to finish.
@@ -66,7 +70,7 @@ export type Deferred<T> = PromiseLike<T> & { readonly [DEFERRED]: true };
  * "stages have no fire-and-forget" means in practice: work a stage starts becomes a fact
  * with a name, and the runner waits for it where it can see it.
  */
-export const defer = <T>(promise: PromiseLike<T>): Deferred<T> =>
+export const defer = <T>(promise: Promise<T>): Deferred<T> =>
   Object.assign(promise, { [DEFERRED]: true as const });
 
 export const isDeferred = (value: unknown): value is Deferred<unknown> =>
