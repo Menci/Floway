@@ -384,6 +384,7 @@ const useStyles = makeStyles({
     alignItems: 'center',
     columnGap: '12px',
     display: 'flex',
+    flexShrink: 0,
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
