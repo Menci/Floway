@@ -299,3 +299,60 @@ export const encodeRun = (events: readonly Event[], options?: { readonly shareSt
  *  so the stored file and the live protocol are the same bytes. */
 export const toNdjson = (events: readonly DumpEvent[]): string =>
   events.map(event => `${JSON.stringify(event)}\n`).join('');
+
+// --- The reading -------------------------------------------------------------------
+
+/**
+ * Resolves a run's own object space as its events arrive.
+ *
+ * The encoder interns: a value that appears twice is written once as a node under an `object`
+ * event and pointed at by `{"$": n}` everywhere after. A reader folds the same way — it keeps
+ * every node it has been given and resolves a reference against them — and it can do so line by
+ * line, because the format's own invariant is that a reference never points forward.
+ *
+ * What comes back is the value as the run held it, with the two things JSON cannot carry
+ * restored: `undefined` and the numeric edges. A secret stays redacted, because redaction is
+ * what was stored; bytes stay base64, because reading them back out is a decision about what
+ * they are and this knows only that they are bytes.
+ */
+export const createRunReader = () => {
+  const nodes = new Map<number, Stored>();
+  const resolved = new Map<number, unknown>();
+
+  const read = (stored: Stored): unknown => {
+    if (stored === null || typeof stored !== 'object') return stored;
+    if (Array.isArray(stored)) return stored.map(read);
+    if ('$' in stored) {
+      const id = stored.$ as number;
+      if (resolved.has(id)) return resolved.get(id);
+      const node = nodes.get(id);
+      if (node === undefined) throw new Error(`dump reference $${id} points at a node no event carried`);
+      const value = read(node);
+      resolved.set(id, value);
+      return value;
+    }
+    if ('$stream' in stored) return { stream: stored.$stream };
+    if ('$secret' in stored) return stored.$secret;
+    if ('$bytes' in stored) return { bytes: stored.$bytes };
+    if ('$undefined' in stored) return undefined;
+    if ('$number' in stored) return stored.$number === 'NaN' ? NaN : stored.$number === 'Infinity' ? Infinity : -Infinity;
+    if ('$bigint' in stored) return BigInt(stored.$bigint as string);
+    return Object.fromEntries(Object.entries(stored).map(([key, child]) => [decodeKey(key), read(child)]));
+  };
+
+  /** What one event says. An `object` event says nothing on its own — it is the space the
+   *  events around it are written against — so it reads as `null`. */
+  return (event: DumpEvent): { readonly facts?: Record<string, unknown>; readonly frames?: readonly unknown[] } | null => {
+    if (event.type === 'object') {
+      event.nodes.forEach((node, index) => { nodes.set(event.fromObjectId + index, node); });
+      return null;
+    }
+    if (event.type === 'stream.frame') return { frames: event.frames.map(read) };
+    if (event.type === 'stage.entered' || event.type === 'stage.leaved') {
+      return event.facts === undefined
+        ? {}
+        : { facts: Object.fromEntries(Object.entries(event.facts).map(([key, value]) => [decodeKey(key), read(value)])) };
+    }
+    return {};
+  };
+};

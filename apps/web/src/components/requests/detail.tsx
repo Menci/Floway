@@ -1,20 +1,10 @@
-import {
-  EyeOffRegular,
-  EyeRegular,
-} from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import type { PropsWithChildren, ReactNode } from 'react';
 
-import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
+import { type RenderedBody } from './body-render';
 import { errorLabel, requestSeverity } from './format';
-import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import { renderRunEvents } from './run-render';
-import {
-  detectCollectKind,
-  renderStreamEvents,
-  streamEventsCopyText,
-  type CollectedStream,
-} from './stream-render';
+import { detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { useDangerTextClass } from '../ui/danger';
@@ -25,9 +15,9 @@ import { highlight, prismTokenStyles } from '../ui/prism';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import type { DumpRecord } from '@floway-dev/gateway/dump-types';
 
-const { Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
+const { Text, makeStyles, mergeClasses } = fluentComponents;
 
 // Region dividers take WinUI's divider brush (`colorNeutralStroke3`), not the
 // control outline; the two only differ in the dark dictionary.
@@ -116,40 +106,6 @@ function CodeView({ body }: { body: RenderedBody }) {
   return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
 }
 
-function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
-  const { t } = useTranslation();
-  const s = useStyles();
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  return (
-    <table className={s.headers}><tbody>
-      {headers.map(([name, value], index) => {
-        const sensitive = isSensitiveHeader(name);
-        const visible = revealed.has(index);
-        return (
-          <tr className={s.headerRow} key={`${name}-${index}`}>
-            <th className={s.headerName}>{name}</th>
-            <td className={s.headerValue}>
-              {sensitive && !visible ? redactHeaderValue(value) : value}
-              {sensitive && (
-                <TooltipIconButton
-                  className="!ml-1"
-                  icon={visible ? <EyeOffRegular /> : <EyeRegular />}
-                  label={visible ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
-                  onClick={() => setRevealed(current => {
-                    const next = new Set(current);
-                    if (next.has(index)) next.delete(index); else next.add(index);
-                    return next;
-                  })}
-                />
-              )}
-            </td>
-          </tr>
-        );
-      })}
-    </tbody></table>
-  );
-}
-
 // Deliberately not `SectionHeader`: this bar is sticky and holds a fixed
 // height, which that primitive's narrow-viewport rule would stack away, and it
 // carries a detail slot beside the title that the primitive has no prop for.
@@ -160,10 +116,6 @@ function DetailSectionHeader({ title, detail, actions, copyText }: { title: stri
 
 function SectionBody({ children }: PropsWithChildren) {
   return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max">{children}</ScrollArea>;
-}
-
-function HeaderSectionBody({ children }: PropsWithChildren) {
-  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full">{children}</ScrollArea>;
 }
 
 export function RequestDetailPanel({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
@@ -177,7 +129,6 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const { t } = useTranslation();
   const s = useStyles();
   const dangerText = useDangerTextClass();
-  const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
 
   // Deriving the retained record during render rather than in an effect keeps
   // the swap out of the first frame of the leave animation.
@@ -187,7 +138,6 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
     : { collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId };
   if (shown.recordId !== incoming.recordId) {
     setShown(incoming);
-    setStreamView('collected');
   } else if (shown.record !== incoming.record || shown.error !== incoming.error) {
     // Recollecting the same events only rebuilds an equal value, so a reload of
     // the same record keeps the collected stream and the tab showing it.
@@ -195,22 +145,13 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   }
   const { collected, error, record, recordId } = shown;
 
-  // The two shapes a record comes in. An endpoint served by the onion is
-  // recorded as its edges and draws the four sections below; a pipelined one is
-  // recorded as its whole run, and the run's event stream is the whole of it.
-  const edge = record?.shape === 'edge' ? record : null;
-  const requestBody = edge ? renderBody(edge.request.body, contentTypeOf(edge.request.headers)) : EMPTY_BODY;
-  const responseBody = edge?.response.body.type === 'bytes' ? renderBody(edge.response.body.body, contentTypeOf(edge.response.headers)) : EMPTY_BODY;
-  const streamEvents = useMemo<DumpStreamEvent[]>(
-    () => record?.shape === 'edge' && record.response.body.type === 'stream' ? record.response.body.events : [],
-    [record],
-  );
+  // A record is a whole run — every stage, both directions — and its event stream is the whole
+  // of what it holds.
+  const runEvents = useMemo(() => (record ? renderRunEvents(record.events) : []), [record]);
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
-  const runEvents = useMemo(
-    () => record?.shape === 'run' ? renderRunEvents(record.events) : [],
-    [record],
-  );
+  const collectedCopyText = collected?.result === null || collected?.result === undefined
+    ? undefined
+    : JSON.stringify(collected.result, null, 2);
 
   if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
   // This replaces every section rather than sitting in one, so it takes the
@@ -222,99 +163,46 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const severity = requestSeverity(record.meta.status, record.meta.error);
   const responseError = errorLabel(record.meta.error);
 
-  if (record.shape === 'run') {
-    return (
-      <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
-        <section>
-          <DetailSectionHeader
-            title={t('dashboard.requests.run')}
-            detail={<>
-              <HttpMethodBadge method={record.meta.method} />
-              <Text size={300} className="font-mono">{record.meta.path}</Text>
-              <HttpStatusBadge severity={severity}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-              {responseError && <Text size={200} className={dangerText}>{responseError}</Text>}
-            </>}
-            copyText={record.events || undefined}
-          />
-          <SectionBody>
-            {runEvents.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine> : runEvents.map((event, index) => (
-              <div className={s.section} key={index}>
-                <div className="flex items-center gap-2 px-4 pt-3">
-                  <Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.type || t('dashboard.requests.unlabeled')}</Text>
-                  {event.subject && <Text size={100} className="font-mono mono-size-100 text-fui-fg3">{event.subject}</Text>}
-                  {event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}
-                </div>
-                <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
-              </div>
-            ))}
-          </SectionBody>
-        </section>
-      </ScrollArea>
-    );
-  }
-
-  const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
-  const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
-  const collectedCopyText = collected?.result === null || collected?.result === undefined
-    ? undefined
-    : JSON.stringify(collected.result, null, 2);
-
   return (
     <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
-        <HeaderSectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></HeaderSectionBody>
-      </section>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
-        <SectionBody>
-          {requestBody.decodeError && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</OutcomeMessageBar>}
-          {requestBody.text ? <CodeView body={requestBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noRequestBody')}</EmptyStateLine>}
-        </SectionBody>
-      </section>
-      <section className={s.section}>
-        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge severity={severity}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={dangerText}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
-        <HeaderSectionBody>
-          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
-        </HeaderSectionBody>
-      </section>
       <section>
         <DetailSectionHeader
-          title={t('dashboard.requests.responseBody')}
-          actions={record.response.body.type === 'stream' ? (
-            <TabList aria-label={t('dashboard.requests.streamView')} selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
-              <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
-              <Tab value="events">{t('dashboard.requests.events', { count: streamEvents.length })}</Tab>
-            </TabList>
-          ) : undefined}
-          copyText={record.response.body.type === 'bytes' && responseBody.text
-            ? responseBody.copyText
-            : record.response.body.type === 'stream' && streamView === 'events'
-              ? streamEventsCopyText(collectKind, streamEvents)
-              : record.response.body.type === 'stream' && streamView === 'collected'
-                ? collectedCopyText
-                : undefined}
+          title={t('dashboard.requests.run')}
+          detail={<>
+            <HttpMethodBadge method={record.meta.method} />
+            <Text size={300} className="font-mono">{record.meta.path}</Text>
+            <HttpStatusBadge severity={severity}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+            {responseError && <Text size={200} className={dangerText}>{responseError}</Text>}
+          </>}
+          copyText={record.events || undefined}
         />
         <SectionBody>
-          {record.response.body.type === 'none' ? <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseBody')}</EmptyStateLine> : null}
-          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
-          {record.response.body.type === 'stream' && streamView === 'collected' && (
-            collectKind === null ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
-              : collected === null ? null
-                : <>
-                    {collected.error && <OutcomeMessageBar className="!m-3">{collected.error}</OutcomeMessageBar>}
-                    {!collected.error && collected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
-                    {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
-                  </>
-          )}
-          {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
+          {runEvents.length === 0 ? <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine> : runEvents.map((event, index) => (
             <div className={s.section} key={index}>
-              {/* Not `formatDuration`: its ladder rounds the sub-millisecond
-                  gaps within a burst to `0ms`. */}
-              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
+              <div className="flex items-center gap-2 px-4 pt-3">
+                <Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.type || t('dashboard.requests.unlabeled')}</Text>
+                {event.subject && <Text size={100} className="font-mono mono-size-100 text-fui-fg3">{event.subject}</Text>}
+                {event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}
+              </div>
               <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
             </div>
           ))}
+        </SectionBody>
+      </section>
+      {/* The frames are in the run's own stream above; what this adds is the one value they add
+          up to, which is what a reader compares an answer against. A path no collector reads —
+          an endpoint that never streams — says so rather than showing an empty section. */}
+      <section className={s.section}>
+        <DetailSectionHeader title={t('dashboard.requests.collected')} copyText={collectedCopyText} />
+        <SectionBody>
+          {collectKind === null
+            ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
+            : collected === null ? <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine>
+              : <>
+                  {collected.error && <OutcomeMessageBar className="!m-3">{collected.error}</OutcomeMessageBar>}
+                  {!collected.error && collected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
+                  {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
+                </>}
         </SectionBody>
       </section>
     </ScrollArea>

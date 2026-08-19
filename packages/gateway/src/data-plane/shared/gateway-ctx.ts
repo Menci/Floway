@@ -1,5 +1,4 @@
 import type { RequestBody } from './request-body.ts';
-import { openDumpAccumulator } from '../../dump/accumulator.ts';
 import type { TurnDump } from '../../dump/turn-dump.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -46,17 +45,17 @@ export interface GatewayCtx {
 
 export interface CreateGatewayCtxOptions {
   wantsStream: boolean;
-  // What this turn is recorded as. The shape follows the endpoint: a pipelined one hands in
-  // its run recording, and everything else lets the factory open the edge accumulator.
-  // Absent and null differ — absent means "open the usual one", null means "record nothing".
-  dump?: TurnDump | null;
+  // What this turn is recorded as, opened by whoever opened the run — every entry does, through
+  // the prologue. `null` is a key with no retention configured, which is what makes recording
+  // conditional: there is nothing to hand the runner rather than a sink that discards.
+  dump: TurnDump | null;
   // WebSocket-style call sites own the AbortController (so the upgrade
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
   // when wantsStream is true.
   downstreamAbortController?: AbortController;
   // Already-buffered inbound request body bytes. HTTP handlers read them
-  // once via `readRequestBody` and pass them in so the dump accumulator's
-  // snapshot reflects the exact bytes the handler parsed. WebSocket
+  // once via `readRequestBody` and pass them in so the record holds the exact
+  // bytes the handler parsed. WebSocket
   // upgrades carry no HTTP body — the WS OpenAI Responses path passes the
   // per-turn JSON message bytes here so the dump captures the turn's
   // input verbatim.
@@ -85,7 +84,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const dump = 'dump' in opts ? opts.dump ?? null : openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
+  const dump = opts.dump;
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
@@ -101,8 +100,8 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   };
 };
 
-// Run the dump-accumulator's finalize tee on the outgoing Response. Every
-// inbound HTTP wrapper returns its response through this seam so the dump
-// pipeline applies uniformly across happy-path, error, and passthrough paths.
+// Run the recording's finalize tee on the outgoing Response. Every inbound HTTP
+// wrapper returns its response through this seam so the dump applies uniformly
+// across happy-path, error, and passthrough paths.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
   ctx.dump?.finalize(response) ?? response;

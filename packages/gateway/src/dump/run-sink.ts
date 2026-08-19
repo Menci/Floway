@@ -184,7 +184,6 @@ export class RunDump {
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
       await getDumpStore().put(this.apiKey.id, {
-        shape: 'run',
         meta,
         events: new TextEncoder().encode(toNdjson(this.events)),
       });

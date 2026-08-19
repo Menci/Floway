@@ -30,7 +30,6 @@ initBackgroundSchedulerResolver(_c => trackBackground);
 // independent of that subsystem. Dump-specific tests install real or recording
 // implementations.
 const noopStore: DumpStore = {
-  async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
   async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },

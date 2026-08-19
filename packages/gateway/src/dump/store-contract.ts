@@ -1,4 +1,4 @@
-import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
+import type { DumpMetadata, DumpRecordId, DumpWriteRecord, StoredDumpRecord } from './types.ts';
 
 // Per-API-key request dump storage contract: metadata in SQL, bodies in the
 // FileStore. Request bytes are prepared before the terminal write; reads
@@ -10,10 +10,6 @@ export interface DumpListOptions {
 }
 
 export interface DumpStore {
-  // Starts body preparation while the request is in flight. Implementations
-  // may return identity bytes, but persistent stores compress here so the
-  // accumulator can release the original request buffer before terminal IO.
-  prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody>;
 
   // Write body files BEFORE the metadata row so a partial failure leaves
   // orphan files (sweep-collectable), not orphan rows (broken records).

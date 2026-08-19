@@ -34,6 +34,7 @@ export type { Deferred, Owned, RunResult } from './run.ts';
 export {
   createEncoder,
   createRunEncoder,
+  createRunReader,
   decodeKey,
   encodeKey,
   encodeRun,

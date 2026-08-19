@@ -59,116 +59,23 @@ export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 // agnostic — the dashboard dispatches the right per-protocol serializer
 // based on `meta.path`.
 export type DumpStreamEvent = z.infer<typeof dumpStreamEventSchema>;
-
-// --- Storage shape (in-process, never serialized) ---
-
-export interface StoredDumpRequest {
-  method: string;
-  path: string;
-  // Captured verbatim with no redaction: the dump only surfaces to the
-  // owning API key's operator, who already holds the key.
-  headers: Array<[string, string]>;
-  body: Uint8Array;
-}
-
-export type PreparedDumpRequestBody = {
-  readonly encoding: 'identity' | 'gzip';
-  readonly bytes: Uint8Array;
-  readonly decodedByteLength: number;
-};
-
-export interface DumpWriteRequest {
-  method: string;
-  path: string;
-  headers: Array<[string, string]>;
-  body: PreparedDumpRequestBody;
-}
-
-export type StoredDumpResponseBody =
-  | { type: 'stream'; events: DumpStreamEvent[] }
-  | { type: 'bytes'; body: Uint8Array }
-  | { type: 'none' };
-
-export interface StoredDumpResponse {
-  status: number | null;
-  headers: Array<[string, string]>;
-  body: StoredDumpResponseBody;
-}
-
-export type StoredDumpEdgeRecord = {
-  shape: 'edge';
-  meta: DumpMetadata;
-  request: StoredDumpRequest;
-  response: StoredDumpResponse;
-};
-
 // The run's NDJSON, still as bytes: it is a body file under the same contract
 // as the other two, gzipped into the file store and pointed at by the row's
 // descriptor. One `put` carries it whole — measured on production, P99 of a
 // turn's request and response together is 2.86 MB, well under the 5 MiB below
 // which multipart has nothing to divide.
-export type StoredDumpRunRecord = {
-  shape: 'run';
+export type StoredDumpRecord = {
   meta: DumpMetadata;
   events: Uint8Array;
 };
 
-export type StoredDumpRecord = StoredDumpEdgeRecord | StoredDumpRunRecord;
-
-export type DumpWriteEdgeRecord = {
-  shape: 'edge';
-  meta: DumpMetadata;
-  request: DumpWriteRequest;
-  response: StoredDumpResponse;
-};
-
-// The run half is the stored shape unchanged: a run's stream is encoded once the
-// run is over, so there is nothing to compress ahead of the terminal write the
-// way a request body is.
-export type DumpWriteRecord = DumpWriteEdgeRecord | StoredDumpRunRecord;
-
-// --- Wire shape (serialized JSON over the dashboard's control plane) ---
-
-// `utf8` is chosen from the upstream content-type, with a UTF-8-fatal
-// fallback to `base64` when a textual content-type carried non-UTF-8 bytes.
-// JSON cannot carry `Uint8Array` directly, so this discriminator lives at
-// the HTTP boundary and nowhere else.
-export type DumpBody =
-  | { encoding: 'utf8'; data: string }
-  | { encoding: 'base64'; data: string };
-
-interface DumpRequest {
-  method: string;
-  path: string;
-  headers: Array<[string, string]>;
-  body: DumpBody;
-}
-
-export type DumpResponseBody =
-  | { type: 'stream'; events: DumpStreamEvent[] }
-  | { type: 'bytes'; body: DumpBody }
-  | { type: 'none' };
-
-interface DumpResponse {
-  status: number | null;
-  headers: Array<[string, string]>;
-  body: DumpResponseBody;
-}
-
-export type DumpEdgeRecord = {
-  shape: 'edge';
-  meta: DumpMetadata;
-  request: DumpRequest;
-  response: DumpResponse;
-};
-
+// A run's stream is encoded once the run is over, so there is nothing to
+// compress ahead of the terminal write the way a request body was.
+export type DumpWriteRecord = StoredDumpRecord;
 // The stored NDJSON verbatim, decoded as UTF-8. One line is one event and one
 // SSE `data:` payload, so what a reader parses here is what a live observer
 // will parse frame by frame once the fan-out exists.
-export type DumpRunRecord = {
-  shape: 'run';
+export type DumpRecord = {
   meta: DumpMetadata;
   events: string;
 };
-
-export type DumpRecord = DumpEdgeRecord | DumpRunRecord;

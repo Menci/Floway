@@ -2,12 +2,8 @@ import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-p
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import {
   decodeDumpBodyDescriptor,
-  decodeDumpHeaders,
-  decodeDumpStreamEvents,
   decodePersistedDumpMetadata,
   encodeDumpBodyDescriptor,
-  encodeDumpHeaders,
-  encodeDumpStreamEvents,
   encodePersistedDumpMetadata,
 } from '../dump/storage-codec.ts';
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
@@ -17,11 +13,7 @@ import type {
   DumpRecordId,
   DumpUpstreamRef,
   DumpWriteRecord,
-  PreparedDumpRequestBody,
   StoredDumpRecord,
-  StoredDumpRequest,
-  StoredDumpResponse,
-  StoredDumpResponseBody,
 } from '../dump/types.ts';
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
@@ -86,16 +78,6 @@ const putRawBody = async (
   return { key, type };
 };
 
-const putPreparedBody = async (
-  files: FileStore,
-  key: string,
-  prepared: PreparedDumpRequestBody,
-): Promise<DumpBodyDescriptor> => {
-  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzipBytes(prepared.bytes);
-  await files.put(key, gz);
-  return { key, type: 'bytes' };
-};
-
 const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
@@ -111,34 +93,13 @@ const NO_EDGE_HEADERS = '[]';
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
-  async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
-    return {
-      encoding: 'gzip',
-      bytes: await gzipBytes(body),
-      decodedByteLength: body.byteLength,
-    };
-  }
-
-  // Both shapes take the same route: files are staged in the registry, written,
-  // and only then pointed at by a row. A run's NDJSON is one more body file
-  // under that contract, carried by the response descriptor — which is what
-  // leaves retention, the sweep and the files-before-row ordering untouched by
-  // its arrival.
+  // A run's NDJSON is one body file, staged in the registry, written, and only
+  // then pointed at by a row — the contract that leaves retention, the sweep and
+  // the files-before-row ordering saying what they always said.
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
-    const requestFileKey = record.shape === 'run' || record.request.body.decodedByteLength === 0
-      ? null
-      : bodyPath(keyId, bucket, record.meta.id, 'req');
-    const responseFileKey = record.shape === 'run'
-      ? bodyPath(keyId, bucket, record.meta.id, 'run')
-      : record.response.body.type === 'none'
-        || (record.response.body.type === 'bytes' && record.response.body.body.byteLength === 0)
-        ? null
-        : bodyPath(keyId, bucket, record.meta.id, 'resp');
-    const staged = [
-      ...(requestFileKey === null ? [] : [{ fileKey: requestFileKey, ownerKind: 'dump-request' }]),
-      ...(responseFileKey === null ? [] : [{ fileKey: responseFileKey, ownerKind: 'dump-response' }]),
-    ];
+    const responseFileKey = bodyPath(keyId, bucket, record.meta.id, 'run');
+    const staged = [{ fileKey: responseFileKey, ownerKind: 'dump-response' }];
     if (staged.length > 0) {
       await this.db
         .prepare(
@@ -155,27 +116,7 @@ export class FileDumpStore implements DumpStore {
         .run();
     }
 
-    let requestDescriptor: DumpBodyDescriptor | null = null;
-    let responseDescriptor: DumpBodyDescriptor | null = null;
-    if (record.shape === 'run') {
-      responseDescriptor = await putRawBody(this.files, responseFileKey!, record.events, 'run');
-    } else {
-      if (requestFileKey !== null) {
-        requestDescriptor = await putPreparedBody(this.files, requestFileKey, record.request.body);
-      }
-      if (record.response.body.type === 'bytes') {
-        if (record.response.body.body.byteLength > 0) {
-          responseDescriptor = await putRawBody(this.files, responseFileKey!, record.response.body.body, 'bytes');
-        }
-      } else if (record.response.body.type === 'stream') {
-        responseDescriptor = await putRawBody(
-          this.files,
-          responseFileKey!,
-          new TextEncoder().encode(encodeDumpStreamEvents(record.response.body.events, `dump record ${record.meta.id} response events`)),
-          'events',
-        );
-      }
-    }
+    const responseDescriptor = await putRawBody(this.files, responseFileKey, record.events, 'run');
 
     // Files before row — a partial failure leaves orphan files the sweep
     // collects, never an orphan row whose detail fetch would 404.
@@ -189,15 +130,9 @@ export class FileDumpStore implements DumpStore {
       record.meta.completedAt,
       record.meta.upstream?.id ?? null,
       encodePersistedDumpMetadata(record.meta, `dump record ${record.meta.id} metadata`),
-      record.shape === 'run'
-        ? NO_EDGE_HEADERS
-        : encodeDumpHeaders(record.request.headers, `dump record ${record.meta.id} request headers`),
-      record.shape === 'run' || record.response.body.type === 'none'
-        ? null
-        : encodeDumpHeaders(record.response.headers, `dump record ${record.meta.id} response headers`),
-      requestDescriptor === null
-        ? null
-        : encodeDumpBodyDescriptor(requestDescriptor, `dump record ${record.meta.id} request body descriptor`),
+      NO_EDGE_HEADERS,
+      null,
+      null,
       responseDescriptor === null
         ? null
         : encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
@@ -250,55 +185,16 @@ export class FileDumpStore implements DumpStore {
       ...decodePersistedDumpMetadata(row.meta_json, `dump record ${recordId} metadata`),
       upstream: hydrateUpstream(row),
     };
-    const requestDescriptor = row.request_body_descriptor === null
-      ? null
-      : decodeDumpBodyDescriptor(row.request_body_descriptor, `dump record ${recordId} request body descriptor`);
     const responseDescriptor = row.response_body_descriptor === null
       ? null
       : decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} response body descriptor`);
-
-    // The body kind is the shape: a run was written as one NDJSON stream and
-    // has no edge halves to rebuild.
-    if (responseDescriptor?.type === 'run') {
-      return { shape: 'run', meta, events: await fetchBody(this.files, responseDescriptor) };
+    // A record is one NDJSON stream, carried by the response descriptor and saying so. Anything
+    // else is a row from before the shape that produced it was deleted, which the migration that
+    // deleted them leaves none of — so it is corruption rather than a second shape.
+    if (responseDescriptor?.type !== 'run') {
+      throw new Error(`dump record ${recordId} has no run stream to read`);
     }
-
-    const requestHeaders = decodeDumpHeaders(row.request_headers_json, `dump record ${recordId} request headers`);
-    const responseHeaders = row.response_headers_json === null
-      ? null
-      : decodeDumpHeaders(row.response_headers_json, `dump record ${recordId} response headers`);
-
-    const request: StoredDumpRequest = {
-      method: meta.method,
-      path: meta.path,
-      headers: requestHeaders,
-      body: requestDescriptor ? await fetchBody(this.files, requestDescriptor) : new Uint8Array(),
-    };
-
-    // Headers null iff `type: 'none'`; a null descriptor with headers is a
-    // legitimate empty-body `bytes` response (nothing to gzip), reconstructed
-    // here from a zero-length buffer so the discriminator round-trips.
-    let responseBody: StoredDumpResponseBody;
-    if (responseHeaders === null) {
-      responseBody = { type: 'none' };
-    } else if (responseDescriptor === null) {
-      responseBody = { type: 'bytes', body: new Uint8Array() };
-    } else if (responseDescriptor.type === 'events') {
-      const text = new TextDecoder().decode(await fetchBody(this.files, responseDescriptor));
-      responseBody = {
-        type: 'stream',
-        events: decodeDumpStreamEvents(text, `dump record ${recordId} response events at key=${responseDescriptor.key}`),
-      };
-    } else {
-      responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
-    }
-
-    const response: StoredDumpResponse = {
-      status: meta.status,
-      headers: responseHeaders ?? [],
-      body: responseBody,
-    };
-    return { shape: 'edge', meta, request, response };
+    return { meta, events: await fetchBody(this.files, responseDescriptor) };
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
