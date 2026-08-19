@@ -574,7 +574,7 @@ const en = {
           empty: '(empty)',
           validation: {
             invalidName: 'Enter a valid HTTP header name.',
-            duplicateName: 'Each header name can appear only once.',
+            duplicatePassthrough: 'A header name can pass the client value through only once.',
             anthropicMessagesOwned: 'The Anthropic Messages protocol manages this header.',
             transportOwned: 'Floway’s HTTP transport manages this header.',
             invalidValue: 'Enter a valid HTTP header value without control characters.',

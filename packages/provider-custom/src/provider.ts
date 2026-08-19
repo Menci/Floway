@@ -8,7 +8,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -119,13 +119,28 @@ export const projectCustomModels = (
 export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
-  // A configured value is this upstream's own header, so it is written on
-  // every call regardless of what the client sent. Only passthrough rules
-  // depend on the client, and they are already satisfied by admission.
-  const headersForCall = (headers: Headers): Headers => {
-    const resolved = new Headers(headers);
-    for (const rule of config.ingressHeadersRules) {
-      if (rule.value !== null) resolved.set(rule.key, rule.value);
+  // Each name is resolved as a whole: the admitted client values are dropped
+  // and its rules rebuild the name's value list in rule order, so a
+  // passthrough rule reinstates what the client sent and every configured
+  // rule contributes its own value beside it.
+  const valuesByKey = config.ingressHeadersRules.reduce<Map<string, (string | null)[]>>((byKey, rule) => {
+    const values = byKey.get(rule.key);
+    if (values) values.push(rule.value);
+    else byKey.set(rule.key, [rule.value]);
+    return byKey;
+  }, new Map());
+
+  const headersForCall = (headers: Headers): HttpHeaderLines => {
+    const resolved: [string, string][] = [];
+    for (const [name, value] of headers) {
+      if (!valuesByKey.has(name.toLowerCase())) resolved.push([name, value]);
+    }
+    for (const [key, values] of valuesByKey) {
+      const admitted = headers.get(key);
+      for (const value of values) {
+        if (value !== null) resolved.push([key, value]);
+        else if (admitted !== null) resolved.push([key, admitted]);
+      }
     }
     return resolved;
   };
@@ -134,7 +149,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    headers: Headers,
+    headers: HttpHeaderLines,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
@@ -150,7 +165,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    headers: Headers,
+    headers: HttpHeaderLines,
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {

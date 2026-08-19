@@ -37,7 +37,7 @@ import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-me
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResult, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -127,13 +127,14 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
+    headers: HttpHeaderLines,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
     return transport(
       config,
       { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal },
-      { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
@@ -142,6 +143,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
+    headers: HttpHeaderLines,
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {
@@ -150,7 +152,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: jsonRequestBody({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -171,12 +173,12 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       );
       return [...manualModels, ...auto];
     },
-    callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, opts)),
-    callOpenAIChatCompletions: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchOpenAIChatCompletions, model, body, signal, parseOpenAIChatCompletionsStream, opts)),
+    callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, [...opts.headers], opts)),
+    callOpenAIChatCompletions: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts)),
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       switch (action) {
       case 'generate': {
-        const stream = await withProbes(opts, callStreaming(ollamaFetchOpenAIResponses, model, body, signal, parseOpenAIResponsesStream, opts));
+        const stream = await withProbes(opts, callStreaming(ollamaFetchOpenAIResponses, model, body, signal, [...opts.headers], parseOpenAIResponsesStream, opts));
         return stream.ok
           ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
           : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
@@ -186,7 +188,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const response = await withProbes(opts, ollamaFetchOpenAIResponsesCompact(
           config,
           { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+          { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResult, modelKey: rawModelId }
@@ -197,9 +199,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         throw new Error(`Unhandled OpenAIResponsesAction: ${action as string}`);
       }
     },
-    callAnthropicMessages: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchAnthropicMessages, model, body, signal, parseAnthropicMessagesStream, { ...opts, headers: headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta) })),
-    callAnthropicMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchAnthropicMessagesCountTokens, model, body, signal, { ...opts, headers: headersForAnthropicMessagesCall(opts.headers, opts.anthropicBeta) }),
-    callOpenAIEmbeddings: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAIEmbeddings, model, body, signal, opts)),
+    callAnthropicMessages: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchAnthropicMessages, model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), parseAnthropicMessagesStream, opts)),
+    callAnthropicMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchAnthropicMessagesCountTokens, model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts),
+    callOpenAIEmbeddings: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAIEmbeddings, model, body, signal, [...opts.headers], opts)),
     // Ollama serves no image-generation endpoint; reject if the gateway ever
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
@@ -207,7 +209,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
-      const response = await withProbes(opts, ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
+      const response = await withProbes(opts, ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
       return { response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
