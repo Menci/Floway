@@ -105,6 +105,6 @@ export const driveServerToolStage = (registrations: readonly ServerToolRegistrat
     } as never);
 
     // The reading the run hands up, which is where every turn's identity and cost land now
-    // that a stage rather than an interceptor observes them.
+    // that a stage observes them.
     return { ...resultOf(facts), reading: facts[STREAMED_USAGE] as Deferred<StreamOutcome> | null };
   };

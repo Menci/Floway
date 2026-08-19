@@ -42,7 +42,7 @@ import {
   applyRoleCompatibilityToAnthropicMessages,
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   stripBillingAttributionFromAnthropicMessages,
-} from '../interceptors.ts';
+} from '../rules.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';

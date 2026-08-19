@@ -2,7 +2,7 @@
 //
 // Everything else in this directory calls a chain, a stage or a helper directly. What no such
 // test can state is that the route *works*: the parts it skips — the provider's own boundary
-// interceptors, the fetcher, the epilogue that writes the client's bytes and settles what the
+// boundary rules, the fetcher, the epilogue that writes the client's bytes and settles what the
 // stream billed — are exactly where a turn has been lost before. So each row here drives the
 // real Hono route against a Copilot upstream, reads the bytes the client would read, and says
 // something about them that a broken chain could not produce.

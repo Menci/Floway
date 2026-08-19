@@ -9,14 +9,15 @@
 //   beginStoredAttempt     reseeds the store's per-attempt scratchpad
 //   expandShimCompactions  a compaction this gateway wrote, back into what it stood for
 //   summarizeForCompaction answers a turn that asked for a compaction with one
+//   runOpenAIResponsesServerTools  a hosted tool the upstream cannot serve, emulated here
 //   dialChatWire           the ending: picks this candidate's wire and hands into it
 //
 // Three wires, all handing up `response.chat.openaiResponses`: this protocol's own, and the two
 // translated ones — OpenAI Responses via Anthropic Messages and via OpenAI Chat Completions — each a
 // handoff followed by that protocol's own wire. What sits *in* a wire rather than above the
 // fork is a rule that speaks about that wire: the role rewrite and the cache-bucket fold both
-// do, which is why their interceptor forms stood down on `ctx.targetApi !== 'openaiResponses'`, and
-// position says it here instead.
+// do, and position is what says so — a stage below the fork runs only on the wire the fork
+// chose, so neither needs a guard about which protocol it is looking at.
 //
 // Two transports enter here — `POST /v1/responses` and the WebSocket one — and the only thing
 // they disagree about is how a streamed answer is framed, which is what `framing` says. Below
@@ -32,17 +33,10 @@
 //     compaction routes and is rewritten exactly as a turn is. The dial here asks for
 //     `generate`; what the ending answers with is the branch the provider says it ran, which
 //     is why the envelope a compaction is arrives somewhere rather than nowhere.
-//   - the server-tool shims. They never became stages and the interceptor array that ran them
-//     is gone, so `withOpenAIResponsesServerToolShim` and the two tools under it are reachable only
-//     from their own tests: a turn declaring a hosted `web_search` or `image_generation` tool
-//     reaches the upstream unshimmed, and the two flags that gate them do nothing. The code is
-//     kept so that porting it starts from something rather than from nothing. Nothing in a
-//     pipelined turn writes to the store's private-payload scratchpad for the same reason —
-//     the shim that writes to it does not run.
 //
-// One deliberate difference from `respond.ts`, shared with every other family on the
-// pipeline: an upstream that refused is answered in its own words, with the status it sent,
-// rather than being quoted back inside an envelope this gateway wrote.
+// One deliberate difference from the surface this replaced, shared with every other family: an
+// upstream that refused is answered in its own words, with the status it sent, rather than
+// being quoted back inside an envelope this gateway wrote.
 
 import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
@@ -77,6 +71,8 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
+import { meterChatWire } from '../meter.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
 import {
   applyRoleCompatibilityToOpenAIResponses,
   disableReasoningOnForcedToolChoiceForOpenAIResponses,
@@ -84,9 +80,7 @@ import {
   stripPromptCacheKeyForOpenAIResponses,
   vendorDeepSeekNormalizeForOpenAIResponses,
   vendorQwenNormalizeForOpenAIResponses,
-} from '../interceptors.ts';
-import { meterChatWire } from '../meter.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
+} from '../rules.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';

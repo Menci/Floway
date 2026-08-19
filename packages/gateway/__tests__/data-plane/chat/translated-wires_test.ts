@@ -9,7 +9,7 @@
 // Beside the matrix, three things that are about the fork rather than about a pair: that
 // failover moves from a native candidate onto a translated one, that a pair's own refusal
 // rewrite survives the trip, and that a rule which speaks about one protocol's wire does not
-// run on a turn that leaves for another — which is what the interceptor form said with
+// run on a turn that leaves for another — which is what the replaced surface said with
 // `ctx.targetApi !== <self>` and what position says here.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -512,7 +512,7 @@ describe('a rule that speaks about one protocol-s wire', () => {
   // And a rule the *other* wire owns stays off this turn. `stream_options` is an OpenAI Chat
   // Completions field, so an OpenAI Chat Completions turn dialled over Anthropic Messages must
   // not carry it —
-  // which is what the interceptor form said with `ctx.targetApi !== 'openaiChatCompletions'` and
+  // which is what the replaced surface said with a target-API guard and
   // what position says here.
   it('does not carry another wire-s request rules onto the wire it dialled', async () => {
     let sent: Record<string, unknown> | undefined;

@@ -15,7 +15,7 @@
 //
 // What sits *in* a wire rather than above the fork is the other half of the arrangement. A
 // rule that speaks about an upstream's OpenAI Chat Completions endpoint — the role rewrite does,
-// which is why its interceptor form stood down on `ctx.targetApi !== 'openaiChatCompletions'` —
+// and position is what says so, because a stage below the fork runs only on the wire it chose —
 // belongs to the wire and not to the source chain, so a turn that leaves for another
 // protocol never carries it. Said by position rather than by a guard: a stage below the fork
 // runs only when this is the wire the fork chose.
@@ -37,6 +37,8 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
+import { meterChatWire } from '../meter.ts';
+import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import {
   applyRoleCompatibilityToOpenAIChatCompletions,
   disableReasoningOnForcedToolChoiceForOpenAIChatCompletions,
@@ -47,9 +49,7 @@ import {
   vendorDeepSeekNormalizeForOpenAIChatCompletions,
   vendorKimiNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
-} from '../interceptors.ts';
-import { meterChatWire } from '../meter.ts';
-import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
+} from '../rules.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';

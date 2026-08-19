@@ -34,10 +34,10 @@
 //
 // What the simulation cannot reproduce is stated where it happens, at `summarizationTurnFor`.
 //
-// One thing this chain does not carry, stated rather than implied by its absence: the
-// server-tool shim. It never became a stage and the interceptor array that ran it is gone, so
-// a compaction whose caller declared a server tool is summarized without the ReAct loop wrapped
-// around it — the same gap the generate chain states, and for the same reason.
+// The server-tool stage is here for one of its two halves. A summarization declares no hosted
+// tool, so nothing is ever dispatched and the loop never runs — which is what keeps a compaction
+// from calling out on the caller's behalf. What does run is the history rewrite, so a hosted
+// tool's items echoed from an earlier turn reach the upstream in a shape it can read.
 
 import { openaiResponsesCreatedAt, wrapOpenAIResponsesStatefulOutput } from './client-output.ts';
 import { completeOpenAIResponsesCompaction } from './compaction-resource.ts';
@@ -57,6 +57,9 @@ import {
   summarizeForCompaction,
   type OpenAIResponsesFacts,
 } from './pipeline.ts';
+import { imageGenerationServerTool } from './server-tools/image-generation.ts';
+import { runOpenAIResponsesServerTools } from './server-tools/stage.ts';
+import { webSearchServerTool } from './server-tools/web-search.ts';
 import { billableUsageFromOpenAIResponsesResult } from './usage.ts';
 import { recordStream } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
@@ -386,6 +389,14 @@ export const openaiResponsesCompactPipeline = (payload: CanonicalOpenAIResponses
     materializeAttempt('request.chat.openaiResponses'),
     beginStoredAttempt,
     expandShimCompactions,
+    // A compaction declares no hosted tool of its own, so what this does here is the other half
+    // of the same rule: an `image_generation_call` or `web_search_call` echoed from an earlier
+    // turn is rewritten into something the upstream can read. The loop never runs — there is no
+    // hosted tool to dispatch — which is what keeps a summarization from calling out.
+    runOpenAIResponsesServerTools([webSearchServerTool, imageGenerationServerTool], {
+      streamedUsage: OPENAI_RESPONSES_STREAMED_USAGE,
+      targetOf: candidate => openaiResponsesTarget.pick(candidate.model.endpoints),
+    }),
     dialOpenAIResponsesCompaction,
   ]);
 };

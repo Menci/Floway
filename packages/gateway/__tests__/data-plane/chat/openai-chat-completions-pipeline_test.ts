@@ -132,10 +132,10 @@ beforeEach(() => {
 });
 
 describe('the chat completions chain', () => {
-  // The interceptors rewrite the request as a fact, so what they rewrite has to be what the
+  // The wire's rules rewrite the request as a fact, so what they rewrite has to be what the
   // ending sends. An ending that asked the resolver for the payload instead would read one no
-  // interceptor had touched, and every rewrite in the chain would go nowhere.
-  it('sends what the interceptors rewrote, not what the resolver materialized', async () => {
+  // rule had touched, and every rewrite in the chain would go nowhere.
+  it('sends what the rules rewrote, not what the resolver materialized', async () => {
     let sent: { messages: { role: string }[] } | undefined;
     affinityPayload = {
       ...payload,

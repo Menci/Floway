@@ -40,7 +40,7 @@ import {
   stripSafetySettingsFromGeminiGenerateContent,
   stripUnsupportedPartFieldsFromGeminiGenerateContent,
   stripUnsupportedToolsFromGeminiGenerateContent,
-} from '../interceptors.ts';
+} from '../rules.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
 import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';

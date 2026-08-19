@@ -888,11 +888,10 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 };
 
 // Per-request inputs the dispatcher's backend call needs. Captured in the
-// registration closure from `ctx`/`request` so the dispatcher stays free of the
-// interceptor signature. Edit sources are NOT captured here — they are
-// re-collected from the live `ctx.payload.input` at dispatch time so an image
-// generated in an earlier turn (fed back as an `input_image`) becomes editable
-// in a later turn. `imageDispatchCount` bounds how many real backend image
+// registration closure so the dispatcher reads none of the turn it was
+// registered for. Edit sources are NOT captured here — they are re-collected
+// from the payload the current descent is sending, so an image generated in an
+// earlier turn (fed back as an `input_image`) becomes editable in a later one. `imageDispatchCount` bounds how many real backend image
 // calls one response may issue.
 interface ShimState {
   config: MaterializedImageGenerationConfig;

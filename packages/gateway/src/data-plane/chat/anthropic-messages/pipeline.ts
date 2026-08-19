@@ -14,11 +14,10 @@
 //
 // `/v1/messages/count_tokens` is not one of them: it is a second operation over this
 // protocol rather than another wire under this pipeline, so it is a chain of its own in
-// `count-tokens.ts`. The web-search shim is not one of them either, and for a worse reason: it
-// never became a stage and the interceptor array that ran it is gone, so a turn declaring
-// Anthropic's native `web_search` reaches the upstream unshimmed and the flag that gates it does
-// nothing. Only its request half survives on a live path, in the counting chain. The code is kept
-// so that porting it starts from something rather than from nothing.
+// `count-tokens.ts`. Anthropic's native `web_search` is not a wire either: an upstream that
+// cannot serve it gets the declaration rewritten and each search executed here, which is
+// `runAnthropicMessagesWebSearchTool` below — one stage, because Anthropic carries the tool
+// result inside the same turn and there is nothing to ask again for.
 
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
@@ -39,14 +38,14 @@ import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts'
 import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
+import { meterChatWire } from '../meter.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
+import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import {
   applyRoleCompatibilityToAnthropicMessages,
   disableReasoningOnForcedToolChoiceForAnthropicMessages,
   stripBillingAttributionFromAnthropicMessages,
-} from '../interceptors.ts';
-import { meterChatWire } from '../meter.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
-import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
+} from '../rules.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
@@ -195,7 +194,7 @@ const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEv
  * upstream serves still fails above with a 404; what is suppressed is only the generation.
  *
  * It answers rather than descending, which is why it carries the `return` trait — and why it
- * has to live here rather than beside the shared interceptors: what it answers with is this
+ * has to live here rather than beside the shared rules: what it answers with is this
  * family's own response keys.
  */
 const answerClaudeCodeProbe = defineStage<

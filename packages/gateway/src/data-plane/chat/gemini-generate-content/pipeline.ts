@@ -30,12 +30,9 @@
 // than another wire under this pipeline — no stream, no billable turn, and a
 // `{ totalTokens }` envelope of its own — so it is a chain of its own in `count-tokens.ts`.
 //
-// What is not built, stated rather than implied:
-//   - the affinity egress' thought-signature rewrite is here, but the Gemini generateContent interceptors are
-//     only partly stages: the four `interceptors/` entries are, and nothing else is.
-//   - the Google-RPC envelope `respond.ts` wrote into a client's own stream for a turn that
-//     ended without a terminal event. The chain detects one and leaves the run as a throw
-//     rather than as that 502 envelope.
+// What is not built, stated rather than implied: the Google-RPC envelope the replaced surface
+// wrote into a client's own stream for a turn that ended without a terminal event. The chain
+// detects one and leaves the run as a throw rather than as that 502 envelope.
 //
 // A refusal is the one place where having no wire of its own changes what a client is owed.
 // Every other family can hand an upstream's own error object on, because the upstream spoke
@@ -60,14 +57,14 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { anthropicMessagesWire } from '../anthropic-messages/pipeline.ts';
 import type { ChatFacts } from '../facts.ts';
 import { dialChatWire, handOff, type ChatWire } from '../handoff.ts';
+import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
+import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import {
   stripSafetySettingsFromGeminiGenerateContent,
   stripUnsupportedPartFieldsFromGeminiGenerateContent,
   stripUnsupportedToolsFromGeminiGenerateContent,
   suppressThoughtPartsFromGeminiGenerateContent,
-} from '../interceptors.ts';
-import { openaiChatCompletionsWire } from '../openai-chat-completions/pipeline.ts';
-import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
+} from '../rules.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';

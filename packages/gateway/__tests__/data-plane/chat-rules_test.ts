@@ -30,7 +30,7 @@ import {
   vendorKimiNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIChatCompletions,
   vendorQwenNormalizeForOpenAIResponses,
-} from '../../src/data-plane/chat/interceptors.ts';
+} from '../../src/data-plane/chat/rules.ts';
 import type { AttemptSelector } from '../../src/data-plane/pipeline/facts.ts';
 import { compose, defineStage, move, run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';

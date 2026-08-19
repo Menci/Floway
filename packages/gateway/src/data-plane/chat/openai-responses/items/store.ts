@@ -37,7 +37,7 @@ export interface StatefulOpenAIResponsesStore {
   persistOutputItem(row: StoredOpenAIResponsesItem): Promise<void>;
   commitSnapshot(responseId: string, mode: OpenAIResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
-  // scratchpad from hydrated items; interceptors can add server-only state
+  // scratchpad from hydrated items; a server tool can add server-only state
   // during the turn and output capture persists it with the exact wire item.
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
   registerPrivatePayload(id: string, privatePayload: unknown): void;

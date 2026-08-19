@@ -123,7 +123,7 @@ export const resolveChatCandidates = <Refusal extends object>(narrowing: ChatNar
  * Affinity materializes one per candidate — client-carried state rewritten for the upstream
  * that will see it — and it has to enter the record here rather than be read by the stage
  * that dials, because everything between this stage and the dial rewrites the request as a
- * fact. An ending that asked the resolver instead would be reading a payload no interceptor
+ * fact. An ending that asked the resolver instead would be reading a payload no rule
  * had touched, and the rewrites would go nowhere.
  *
  * It sits below the fork because there is no single payload above it: each candidate has its

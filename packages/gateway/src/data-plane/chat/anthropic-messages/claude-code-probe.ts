@@ -28,7 +28,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 // "code":"invalid_request_body"}}`.
 //
 // The gateway answers the probe itself instead. That is honest for what the
-// probe actually asks: by the time this interceptor runs, model resolution has
+// probe actually asks: by the time the stage that answers it runs, model resolution has
 // already picked a real candidate for the requested id, so an id no upstream
 // serves still fails at the serve layer with a 404 and the CLI still reports
 // it not found. What we suppress is only the pointless one-token generation
