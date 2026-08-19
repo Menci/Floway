@@ -59,10 +59,11 @@ export interface MessagesUsageDelta {
   iterations?: MessagesUsageIteration[] | null;
 }
 
-// The `message_start` totals are the one carrier upstream declares
-// `input_tokens` non-null on. Upstream's own delta carrier declares a narrower
-// field set than the type above, which stays widened because real upstreams do
-// repeat the tier and per-TTL fields on `message_delta`.
+// The whole-message totals, carried by the non-streaming response body and by
+// the `message_start` snapshot that reuses it — the two places upstream
+// declares `input_tokens` non-null. Upstream's own delta carrier declares a
+// narrower field set than the type above, which stays widened because real
+// upstreams do repeat the tier and per-TTL fields on `message_delta`.
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/resources/messages/messages.ts#L2362-L2412
 export interface MessagesUsage extends Omit<MessagesUsageDelta, 'input_tokens'> {
   input_tokens: number;
