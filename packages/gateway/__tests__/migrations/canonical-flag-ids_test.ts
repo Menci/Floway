@@ -6,7 +6,7 @@ import { decodeUpstreamConfig, decodeUpstreamFlagOverrides } from '../../src/rep
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { parseFlagOverridesWire, resolveEffectiveFlags } from '@floway-dev/provider';
 
-const MIGRATION = '0084_canonical_flag_ids.sql';
+const MIGRATION = '0083_canonical_protocol_names.sql';
 
 // The shape an operator's row carried before the rename. Four ids abbreviated a
 // protocol and are rewritten; the rest name a vendor dialect or a rewrite and
