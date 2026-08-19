@@ -17,7 +17,7 @@ The provider code and the reference URLs beside each workaround are the
 inventory; there is no separate documentation list to reconcile.
 
 1. Start from
-   `packages/provider-copilot/src/interceptors/{openai-chat-completions,messages,responses}/index.ts`
+   `packages/provider-copilot/src/interceptors/{openai-chat-completions,anthropic-messages,openai-responses}/index.ts`
    and `packages/provider-copilot/src/defaults.ts`. Follow every registered
    interceptor and default-enabled shim to its implementation and tests.
 2. Sweep the rest of `packages/provider-copilot/src` for non-pricing reference
