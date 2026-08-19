@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createOpenAIChatCompletionsToAnthropicMessagesStreamState, flushOpenAIChatCompletionsToAnthropicMessagesEvents, mapOpenAIChatCompletionsUsageToAnthropicMessagesUsage, translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents } from '../../src/anthropic-messages-via-openai-chat-completions/events.ts';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertFalse } from '@floway-dev/test-utils';
 
 const chunk = (delta: OpenAIChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: OpenAIChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
@@ -600,7 +600,8 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits usage.s
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  const usage = (messageDelta as { usage: Record<string, unknown> }).usage;
+  const usage = messageDelta?.usage;
+  assertExists(usage);
   assertFalse('speed' in usage);
   assertEquals(usage.service_tier, 'default');
 });
@@ -614,5 +615,7 @@ test('translateOpenAIChatCompletionsChunkToAnthropicMessagesEvents omits usage.s
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertFalse('speed' in (messageDelta as { usage: Record<string, unknown> }).usage);
+  const usage = messageDelta?.usage;
+  assertExists(usage);
+  assertFalse('speed' in usage);
 });
