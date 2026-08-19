@@ -1,6 +1,8 @@
 import { beforeEach, test, vi } from 'vitest';
 
-import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
+import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
+import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts';
 import {
   consumeTurnStreaming,
   createMergeState,
@@ -11,10 +13,8 @@ import {
   type ServerToolResultSlot,
   type TurnSummary,
   type UpstreamTerminal,
-} from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
-import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+} from '../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts';
+import { SHIM_TOOL_NAME, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/server-tools/web-search.ts';
 import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { resolveAlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';

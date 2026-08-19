@@ -1,9 +1,9 @@
 import { beforeEach, test, vi } from 'vitest';
 
-import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { initRepo } from '../../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
+import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
+import { initRepo } from '../../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -75,7 +75,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
   fetcher: (request: Request) => fetch(request),
 }]);
 
-vi.mock('../../../../../../src/data-plane/providers/resolution.ts', () => ({
+vi.mock('../../../../../src/data-plane/providers/resolution.ts', () => ({
   enumerateModelCandidates: vi.fn(async () => {
     const override = stub.nextResolutionOverride;
     if (override !== null) {
@@ -87,8 +87,8 @@ vi.mock('../../../../../../src/data-plane/providers/resolution.ts', () => ({
 }));
 
 // Imported AFTER vi.mock so the mocked registry is in effect.
-const { withOpenAIResponsesServerToolShim } = await import('../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts');
-const { imageGenerationServerTool } = await import('../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts');
+const { withOpenAIResponsesServerToolShim } = await import('../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts');
+const { imageGenerationServerTool } = await import('../../../../../src/data-plane/chat/openai-responses/server-tools/image-generation.ts');
 
 const shim = withOpenAIResponsesServerToolShim([imageGenerationServerTool]);
 

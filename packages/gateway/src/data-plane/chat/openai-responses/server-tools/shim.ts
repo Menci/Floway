@@ -1,8 +1,8 @@
 import { jsonrepair } from 'jsonrepair';
 
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../interceptors/types.ts';
 import type { StatefulOpenAIResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';

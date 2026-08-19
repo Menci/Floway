@@ -1,9 +1,10 @@
-import { shortId } from '../../../../../shared/short-id.ts';
-import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
-import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
-import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
-import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
-import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
+import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from './shim.ts';
+import { shortId } from '../../../../shared/short-id.ts';
+import { truncatePreservingCodePoints } from '../../../shared/text.ts';
+import { executeAlphaSearch } from '../../../tools/web-search/alpha-search/execution.ts';
+import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
+import { normalizeDomainEntry } from '../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
   assertLocalWebSearchSupport,
@@ -24,10 +25,9 @@ import {
   type WebSearchExecutionSession,
   type WebSearchFilters,
   type WebSearchOperation,
-} from '../../../../tools/web-search/operations.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
-import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
-import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
+} from '../../../tools/web-search/operations.ts';
+import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
+import type { ConfiguredWebSearchProvider } from '../../../tools/web-search/types.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesFunctionToolCallItem, OpenAIResponsesHostedTool, OpenAIResponsesInputItem, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';

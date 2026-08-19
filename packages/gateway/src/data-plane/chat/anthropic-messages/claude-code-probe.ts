@@ -1,8 +1,5 @@
-import type { AnthropicMessagesInterceptor } from './types.ts';
-import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
 
 // Claude Code answers "is this model usable?" by generating one token against
 // it. `/model <id>` runs the CLI's `model_validation` side query — a
@@ -113,15 +110,3 @@ export const probeFrames = async function* (model: string): AsyncGenerator<Proto
   yield eventFrame({ type: 'message_stop' });
   yield doneFrame();
 };
-
-// No `performance` context on the result: `settle` reads it to decide whether
-// the turn contributes a latency sample, and a turn that never dialed the
-// upstream has no latency to report. The usage row still lands, at zero, so
-// the request itself stays visible in the dashboard.
-const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>> =>
-  eventResult(probeFrames(model), telemetryModelIdentity(candidate, providerModelOf(candidate).id));
-
-export const answerClaudeCodeProbe: AnthropicMessagesInterceptor = async (ctx, _gatewayCtx, run) =>
-  isClaudeCodeProbe(ctx.payload, ctx.headers)
-    ? probeResult(ctx.candidate, ctx.payload.model)
-    : await run();

@@ -22,8 +22,8 @@
 
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
+import { isClaudeCodeProbe, probeFrames } from './claude-code-probe.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
-import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';

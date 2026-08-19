@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { resolveServerToolName } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
+import { resolveServerToolName } from '../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts';
 import {
   alphaSearchSettingsFromHosted,
   buildShimFunctionTool,
@@ -11,8 +11,8 @@ import {
   transformInputItemsForWebSearch,
   WEB_SEARCH_HOSTED_TYPES,
   type WebSearchCallPrivatePayload,
-} from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
-import { assertLocalWebSearchSupport, findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
+} from '../../../../../src/data-plane/chat/openai-responses/server-tools/web-search.ts';
+import { assertLocalWebSearchSupport, findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../src/data-plane/tools/web-search/operations.ts';
 import type { OpenAIResponsesHostedTool, OpenAIResponsesTool, OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchResult } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
 

@@ -1,11 +1,11 @@
-import { sleep } from '../../../../../shared/sleep.ts';
-import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
-import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
-import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
-import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
-import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
-import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
-import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from './shim.ts';
+import { sleep } from '../../../../shared/sleep.ts';
+import { enumerateModelCandidates } from '../../../providers/resolution.ts';
+import { appendFailedUpstreams } from '../../../shared/failed-upstreams.ts';
+import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
+import { recordPerformance, type PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
+import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../shared/telemetry/usage.ts';
+import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../shared/external-image-loader.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
 import {

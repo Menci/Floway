@@ -1,5 +1,6 @@
 import { beforeEach, test } from 'vitest';
 
+import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import {
   buildImageGenerationFunctionTool,
   createImageSourceInspector,
@@ -17,11 +18,10 @@ import {
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
-} from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { initRepo } from '../../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
+} from '../../../../../src/data-plane/chat/openai-responses/server-tools/image-generation.ts';
+import { initRepo } from '../../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
