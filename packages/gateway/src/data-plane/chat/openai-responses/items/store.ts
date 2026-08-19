@@ -107,6 +107,12 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
     await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
   }
 
+  // Copied on the way out, which is the one copy in this file the pipeline's own rule asks for
+  // rather than forbids. What hydration builds from this row is handed to `move()`, so it is
+  // deep-frozen the moment it becomes a fact — and the row is a live cache entry that outlives
+  // the turn. Handing the cache's own object over would freeze the cache, which is the same
+  // hazard `GatewayFacts` states about putting a live handle in the record: the writes the
+  // store relies on would then fail where nothing is watching.
   getItemById(id: string): StoredOpenAIResponsesItem | undefined {
     const row = this.loadedItems.get(id);
     return row === undefined ? undefined : cloneStoredOpenAIResponsesItem(row);
@@ -157,17 +163,22 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
     await Promise.all(this.options.writes.map(write => write.insertSnapshot(snapshot)));
   }
 
+  // The scratchpad holds what it was handed. These three used to copy on the way in and again
+  // on the way out, so that a caller writing into a payload could not reach the store's own —
+  // but the payloads arriving here came out of the record and are frozen, and the one reader
+  // splices a sub-object of them into an array rather than writing to it. Copying bought
+  // isolation from a write nothing performs, at a deep copy per stored item per attempt.
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
     this.privatePayloads.clear();
-    for (const [id, payload] of privatePayloads) this.privatePayloads.set(id, structuredClone(payload));
+    for (const [id, payload] of privatePayloads) this.privatePayloads.set(id, payload);
   }
 
   registerPrivatePayload(id: string, privatePayload: unknown): void {
-    if (privatePayload !== undefined) this.privatePayloads.set(id, structuredClone(privatePayload));
+    if (privatePayload !== undefined) this.privatePayloads.set(id, privatePayload);
   }
 
   getPrivatePayload(id: string): unknown {
-    return structuredClone(this.privatePayloads.get(id));
+    return this.privatePayloads.get(id);
   }
 
   private async loadItems(query: { ids: readonly string[]; itemHashes: readonly string[] }): Promise<void> {

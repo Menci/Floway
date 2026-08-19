@@ -2,6 +2,12 @@ export interface AnthropicMessagesUsageServerToolUse {
   web_search_requests?: number;
 }
 
+// The beta usage union includes model attempts, advisor attempts, and
+// compaction entries, and remains additively extensible. Floway carries it
+// opaquely: nothing reads inside an entry and nothing writes one, so the array
+// an upstream sent travels by reference from the event to the snapshot rather
+// than being deep-copied at each of the three hops that touch it.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
 export interface AnthropicMessagesUsageIteration {
   type: string;
   model?: string;
@@ -15,13 +21,6 @@ export interface AnthropicMessagesUsageIteration {
   } | null;
   [key: string]: unknown;
 }
-
-// The beta usage union includes model attempts, advisor attempts, and
-// compaction entries, and remains additively extensible. Floway only needs an
-// isolated opaque snapshot, not a closed projection of those variants.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
-export const cloneAnthropicMessagesUsageIterations = (iterations: AnthropicMessagesUsageIteration[] | null): AnthropicMessagesUsageIteration[] | null =>
-  iterations === null ? null : structuredClone(iterations);
 
 export interface AnthropicMessagesUsage {
   input_tokens: number;
@@ -74,7 +73,6 @@ export const anthropicMessagesUsageSnapshot = (usage?: AnthropicMessagesUsageSna
       ...usage,
       ...(usage.cache_creation === undefined ? {} : { cache_creation: { ...usage.cache_creation } }),
       ...(usage.output_tokens_details === undefined ? {} : { output_tokens_details: { ...usage.output_tokens_details } }),
-      ...(usage.iterations === undefined ? {} : { iterations: cloneAnthropicMessagesUsageIterations(usage.iterations) }),
     };
 
 export const mergeAnthropicMessagesUsageSnapshot = (
@@ -88,7 +86,7 @@ export const mergeAnthropicMessagesUsageSnapshot = (
   ...(delta.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: delta.cache_creation_input_tokens }),
   ...(delta.cache_creation === undefined ? {} : { cache_creation: { ...delta.cache_creation } }),
   ...(delta.output_tokens_details === undefined ? {} : { output_tokens_details: { ...delta.output_tokens_details } }),
-  ...(delta.iterations === undefined ? {} : { iterations: cloneAnthropicMessagesUsageIterations(delta.iterations) }),
+  ...(delta.iterations === undefined ? {} : { iterations: delta.iterations }),
   ...(delta.speed === undefined && delta.service_tier === undefined
     ? {}
     : { speed: delta.speed, service_tier: delta.service_tier }),

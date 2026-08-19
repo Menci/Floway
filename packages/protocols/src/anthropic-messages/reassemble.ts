@@ -12,7 +12,6 @@ import type {
   AnthropicMessagesUsage,
   AnthropicMessagesWebSearchToolResultBlock,
 } from './index.ts';
-import { cloneAnthropicMessagesUsageIterations } from './usage.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
@@ -110,9 +109,7 @@ const applyAnthropicMessagesUsage = (usage: AnthropicMessagesUsage, update: Part
   if (update.server_tool_use != null) {
     usage.server_tool_use = update.server_tool_use;
   }
-  if (update.iterations !== undefined) {
-    usage.iterations = cloneAnthropicMessagesUsageIterations(update.iterations);
-  }
+  if (update.iterations !== undefined) usage.iterations = update.iterations;
 };
 
 const createBlockAccumulator = (event: Extract<AnthropicMessagesStreamEvent, { type: 'content_block_start' }>): AnthropicMessagesBlockAccumulator => {

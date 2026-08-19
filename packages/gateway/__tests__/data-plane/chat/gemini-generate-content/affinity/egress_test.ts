@@ -530,4 +530,50 @@ describe('Gemini generateContent affinity egress', () => {
     });
     await expect(iterator.next()).rejects.toThrow('upstream failed');
   });
+
+  // The property the whole shape of this transducer rests on: a frame it is handed belongs to
+  // the layer that produced it. The events used to be deep-cloned on the way in precisely
+  // because the rules then wrote into them; nothing writes now, so a frozen source has to
+  // survive the pass unchanged — and the relocations are exercised here rather than asserted
+  // about, because a rewrite that reached for `delete` or an index assignment throws in strict
+  // mode instead of quietly corrupting the caller's event.
+  test('rewrites a deeply frozen source without writing into it', async () => {
+    const freeze = <T>(value: T): T => {
+      if (value === null || typeof value !== 'object') return value;
+      for (const entry of Object.values(value as Record<string, unknown>)) freeze(entry);
+      return Object.freeze(value);
+    };
+    const frozen = (event: GeminiGenerateContentStreamEvent): ProtocolFrame<GeminiGenerateContentStreamEvent> => eventFrame(freeze(event));
+    const source: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [
+      // A signature-only leader, relocated forward onto the next event's content.
+      frozen({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'lead' }] } }],
+      }),
+      // Content that continues into the third event, whose signature is pulled back onto it.
+      frozen({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hello' }] } }],
+        usageMetadata: { totalTokenCount: 1 },
+      }),
+      frozen({
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: ' world', thoughtSignature: 'tail' }] },
+          finishReason: 'STOP',
+        }],
+      }),
+    ];
+    const before = JSON.stringify(source);
+
+    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
+    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames(source), { codec: immediateCodec, affinity })) {
+      output.push(frame);
+    }
+
+    // The source is what it was, and the pass still did its work.
+    expect(JSON.stringify(source)).toBe(before);
+    const signatures = output.flatMap(frame =>
+      (frame.type === 'event' && 'candidates' in frame.event ? frame.event.candidates ?? [] : [])
+        .flatMap(candidate => candidate.content.parts.flatMap(part => part.thoughtSignature ?? [])));
+    expect(signatures.some(signature => signature.startsWith('wrapped:'))).toBe(true);
+  });
 });
