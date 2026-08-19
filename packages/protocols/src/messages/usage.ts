@@ -111,13 +111,10 @@ export const mergeMessagesUsageSnapshot = (
   const update = messagesUsageSnapshot(delta);
   return {
     ...current,
-    output_tokens: update.output_tokens,
-    ...(update.input_tokens === undefined ? {} : { input_tokens: update.input_tokens }),
-    ...(update.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: update.cache_read_input_tokens }),
-    ...(update.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: update.cache_creation_input_tokens }),
-    ...(update.cache_creation === undefined ? {} : { cache_creation: update.cache_creation }),
-    ...(update.output_tokens_details === undefined ? {} : { output_tokens_details: update.output_tokens_details }),
-    ...(update.iterations === undefined ? {} : { iterations: update.iterations }),
+    ...update,
+    // The served tier is one fact spelled by two fields, so an update that
+    // states either one restates both and neither may survive from an earlier
+    // event on its own.
     ...(update.speed === undefined && update.service_tier === undefined
       ? {}
       : { speed: update.speed, service_tier: update.service_tier }),
