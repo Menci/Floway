@@ -311,7 +311,8 @@ const refusal = async (response: Response): Promise<Failure> => {
     return { status: response.status, message: text, body: JSON.parse(text) as unknown };
   } catch {
     // A refusal that is not JSON is still a refusal, and its text is what the client is
-    // told; there is simply no parsed body for a dump reader to open.
+    // told — as this protocol's own envelope, minted from the status and these words, because
+    // a body this protocol cannot carry is not one to hand on.
     return { status: response.status, message: text };
   }
 };

@@ -42,8 +42,10 @@ export interface BillableEntity {
 export interface Failure {
   readonly status: number;
   readonly message: string;
-  /** The upstream's own body, when there was one. A client is not owed the upstream's
-   *  exact bytes, but a dump reader is owed what actually came back. */
+  /** The upstream's own body, parsed, when it sent one this protocol can carry. It is what the
+   *  client is answered with — the refusing party's words rather than a restatement of them —
+   *  and a body that was not JSON at all leaves this absent, because there is nothing to carry
+   *  and an envelope minted from the status and the message is what stands in for it. */
   readonly body?: unknown;
   /** What the gateway itself would write, when the refusal is its own. A protocol's envelope
    *  carries more than a status and a sentence — which field was at fault, which code names

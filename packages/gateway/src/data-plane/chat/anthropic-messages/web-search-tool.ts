@@ -11,7 +11,7 @@
 // request rewrite and a response rewrite around one dial.
 
 import {
-  buildSyntheticInvalidRequestUpstreamError,
+  anthropicMessagesWebSearchInvalidRequestBody,
   prepareAnthropicMessagesWebSearchInvocation,
   resolveActiveAnthropicMessagesWebSearchProvider,
   rewriteAnthropicMessagesWebSearchEventsToNative,
@@ -31,12 +31,13 @@ type Answered = M<'response.chat.anthropicMessages' | 'response.usage.billable' 
 
 /** The gateway's own refusal, in Anthropic's words. It is written here rather than dialled,
  *  because a tool declaration this shim cannot execute would reach the upstream as a body this
- *  gateway wrote. */
-const refusal = (message: string): Failure => {
-  const built = buildSyntheticInvalidRequestUpstreamError(message);
-  const text = new TextDecoder().decode(built.body);
-  return { status: built.status, message: text, body: JSON.parse(text) as unknown };
-};
+ *  gateway wrote. The envelope is stated as itself: a refusal this gateway authored has no
+ *  upstream bytes behind it, so there is nothing to serialize and read back. */
+const refusal = (message: string): Failure => ({
+  status: 400,
+  message,
+  envelope: anthropicMessagesWebSearchInvalidRequestBody(message),
+});
 
 /** What the stage is told rather than reaching for: which wire this candidate is reachable on,
  *  which is what decides whether the upstream can carry Anthropic's server tools at all. */

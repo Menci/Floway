@@ -11,6 +11,8 @@
 import type { ServerToolRegistration } from '../../../../../src/data-plane/chat/openai-responses/server-tools/shim.ts';
 import { runOpenAIResponsesServerTools } from '../../../../../src/data-plane/chat/openai-responses/server-tools/stage.ts';
 import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import type { Failure } from '../../../../../src/data-plane/pipeline/facts.ts';
+import { mintedErrorEnvelope, renderFailure } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { StreamOutcome } from '../../../../../src/data-plane/pipeline/serve.ts';
 import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../../../../../src/data-plane/shared/telemetry/usage.ts';
 import { compose, defer, defineStage, move, run, type Deferred } from '@floway-dev/pipeline';
@@ -45,18 +47,21 @@ const failureOf = (result: Exclude<Result, { type: 'events' }>) => ({
   message: result.type === 'internal-error' ? result.error.message : new TextDecoder().decode(result.body),
 });
 
-/** What the run answered with, in the shape the assertions read. */
+/** What the run answered with, in the shape the assertions read. A refusal is rendered the way
+ *  the edge renders one — through the same three tiers — so a test reads the bytes a client
+ *  would have been sent rather than a restatement of them. */
 const resultOf = (facts: Record<string, unknown>): Result => {
   const answer = facts[ANSWER] as { status?: number; message?: string; kind?: string; frames?: unknown };
   if (answer.kind === 'stream') {
     return { type: 'events', events: answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, modelIdentity: undefined } as unknown as Result;
   }
+  const rendered = renderFailure(answer as Failure, mintedErrorEnvelope);
   return {
     type: 'api-error',
     source: 'gateway',
-    status: answer.status!,
+    status: rendered.status,
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode(answer.message!),
+    body: new TextEncoder().encode(JSON.stringify(rendered.body)),
   } as Result;
 };
 

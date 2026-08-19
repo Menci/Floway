@@ -839,20 +839,15 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   }
 };
 
-const anthropicMessagesWebSearchInvalidRequestBody = (message: string) => ({
+/** The body Anthropic Messages states an unusable tool declaration with. A refusal the gateway
+ *  writes is a refusal in this protocol's own words, which is what makes it readable by the
+ *  client that sent the declaration. */
+export const anthropicMessagesWebSearchInvalidRequestBody = (message: string): Record<string, unknown> => ({
   type: 'error',
   error: {
     type: 'invalid_request_error',
     message,
   },
-});
-
-export const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
-  type: 'api-error' as const,
-  source: 'gateway' as const,
-  status: 400,
-  headers: new Headers({ 'content-type': 'application/json' }),
-  body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
 });
 
 /**

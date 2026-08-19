@@ -83,7 +83,7 @@ const invalidRequest = (
   const envelope = {
     error: { message, type: errorType, param, code: code === undefined ? 'invalid_request_error' : code },
   };
-  return { status: 400, message: JSON.stringify(envelope), body: envelope, envelope };
+  return { status: 400, message, envelope };
 };
 
 /**
