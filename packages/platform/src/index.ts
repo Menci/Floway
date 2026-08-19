@@ -6,6 +6,8 @@ export * from './fetch.ts';
 export * from './file-store.ts';
 export * from './image-cache-store.ts';
 export * from './image-processor.ts';
+export * from './log-stream.ts';
+export * from './log-stream-http.ts';
 export * from './runtime-kind.ts';
 export * from './sha256.ts';
 export * from './socket-dial.ts';
