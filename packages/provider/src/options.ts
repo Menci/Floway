@@ -1,7 +1,7 @@
 import { isReplayableBody } from '@floway-dev/http';
-import type { Fetcher, FetchInit } from '@floway-dev/http';
+import type { Fetcher, FetchInit, HttpHeaderLines } from '@floway-dev/http';
 
-export type { Fetcher, FetchInit, ReplayableBody } from '@floway-dev/http';
+export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody } from '@floway-dev/http';
 export { isReplayableBody } from '@floway-dev/http';
 
 export const directFetcher: Fetcher = (url, init) => {
@@ -10,9 +10,11 @@ export const directFetcher: Fetcher = (url, init) => {
   return Promise.reject(new Error('Replayable request bodies require a runtime-composed direct fetcher'));
 };
 
-// extraHeaders are merged on top of the helper's own default headers.
+// extraHeaders are merged on top of the helper's own default headers. They
+// are field lines rather than a `Headers` so a caller can send one name
+// several times — see HttpHeaderLines.
 export interface UpstreamFetchOptions {
-  extraHeaders?: Headers;
+  extraHeaders?: HttpHeaderLines;
   fetcher: Fetcher;
   /** See UpstreamCallOptions.wrapUpstreamCall — same contract. */
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
