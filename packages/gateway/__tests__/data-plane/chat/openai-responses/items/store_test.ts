@@ -24,7 +24,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-describe('StatefulOpenAIResponsesStore', () => {
+describe('OpenAIResponsesStatefulStore', () => {
   test('HTTP store=false performs no state writes', async () => {
     const repo = installRepo();
     const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
