@@ -1282,7 +1282,7 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
 });
 
 // Exercises the session-level item cache directly: createOpenAIResponsesWsSession
-// builds a per-session MemoryStatefulOpenAIResponsesBacking that mirrors every
+// builds a per-session MemoryOpenAIResponsesStatefulBacking that mirrors every
 // durable write. Wiping the D1-backed repo between turns proves the second
 // message resolves the prior snapshot purely from in-RAM session cache.
 // A fresh WS session after the repo wipe MUST NOT see it (the cache is

@@ -5,29 +5,29 @@ import { quantizeOpenAIResponsesRefreshedAt, openaiResponsesStateCutoff } from '
 import type { ApiKey, Repo, StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../repo/types.ts';
 import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
-interface StatefulOpenAIResponsesItemLookup {
+interface OpenAIResponsesStatefulItemLookup {
   readonly apiKeyId: string;
   readonly ids: readonly string[];
   readonly itemHashes: readonly string[];
 }
 
-interface StatefulOpenAIResponsesBacking {
-  lookupItems(query: StatefulOpenAIResponsesItemLookup): Promise<StoredOpenAIResponsesItem[]>;
+interface OpenAIResponsesStatefulBacking {
+  lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]>;
   insertItems(items: readonly StoredOpenAIResponsesItem[]): Promise<void>;
   refreshItems(items: readonly StoredOpenAIResponsesItem[], refreshedAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredOpenAIResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredOpenAIResponsesSnapshot): Promise<void>;
 }
 
-interface LayeredStatefulOpenAIResponsesStoreOptions {
+interface LayeredOpenAIResponsesStatefulStoreOptions {
   readonly apiKeyId: string;
-  readonly reads: readonly StatefulOpenAIResponsesBacking[];
-  readonly writes: readonly StatefulOpenAIResponsesBacking[];
+  readonly reads: readonly OpenAIResponsesStatefulBacking[];
+  readonly writes: readonly OpenAIResponsesStatefulBacking[];
 }
 
 type OpenAIResponsesSnapshotMode = 'append' | 'replace';
 
-export interface StatefulOpenAIResponsesStore {
+export interface OpenAIResponsesStatefulStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredOpenAIResponsesSnapshot | null>;
@@ -44,7 +44,7 @@ export interface StatefulOpenAIResponsesStore {
   getPrivatePayload(id: string): unknown;
 }
 
-export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIResponsesStore {
+export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesStatefulStore {
   private readonly loadedItems = new Map<string, StoredOpenAIResponsesItem>();
   private readonly loadedByItemHash = new Map<string, StoredOpenAIResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
@@ -53,7 +53,7 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
   private readonly privatePayloads = new Map<string, unknown>();
   private readonly inputItemHashes = new WeakMap<OpenAIResponsesInputItem, string>();
 
-  constructor(private readonly options: LayeredStatefulOpenAIResponsesStoreOptions) {}
+  constructor(private readonly options: LayeredOpenAIResponsesStatefulStoreOptions) {}
 
   get apiKeyId(): string {
     return this.options.apiKeyId;
@@ -271,7 +271,7 @@ export class LayeredStatefulOpenAIResponsesStore implements StatefulOpenAIRespon
   }
 }
 
-export class RepoStatefulOpenAIResponsesBacking implements StatefulOpenAIResponsesBacking {
+export class RepoOpenAIResponsesStatefulBacking implements OpenAIResponsesStatefulBacking {
   private readonly earliestVisibleCutoff: number;
 
   constructor(
@@ -282,7 +282,7 @@ export class RepoStatefulOpenAIResponsesBacking implements StatefulOpenAIRespons
     this.earliestVisibleCutoff = openaiResponsesStateCutoff(requestStartedAt, retentionSeconds);
   }
 
-  async lookupItems(query: StatefulOpenAIResponsesItemLookup): Promise<StoredOpenAIResponsesItem[]> {
+  async lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]> {
     const [byId, byItemHash] = await Promise.all([
       this.getRepo().openaiResponsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
       this.getRepo().openaiResponsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
@@ -309,11 +309,11 @@ export class RepoStatefulOpenAIResponsesBacking implements StatefulOpenAIRespons
   }
 }
 
-export class MemoryStatefulOpenAIResponsesBacking implements StatefulOpenAIResponsesBacking {
+export class MemoryOpenAIResponsesStatefulBacking implements OpenAIResponsesStatefulBacking {
   private readonly items = new Map<string, StoredOpenAIResponsesItem>();
   private readonly snapshots = new Map<string, StoredOpenAIResponsesSnapshot>();
 
-  lookupItems(query: StatefulOpenAIResponsesItemLookup): Promise<StoredOpenAIResponsesItem[]> {
+  lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]> {
     const ids = new Set(query.ids);
     const hashes = new Set(query.itemHashes);
     return Promise.resolve([...this.items.values()]
@@ -372,7 +372,7 @@ export class MemoryStatefulOpenAIResponsesBacking implements StatefulOpenAIRespo
     return Promise.resolve();
   }
 
-  // Beyond `StatefulOpenAIResponsesBacking`: the spec scopes eviction to the
+  // Beyond `OpenAIResponsesStatefulBacking`: the spec scopes eviction to the
   // connection-local cache, so the delete path deliberately stops at this
   // in-memory backing rather than becoming a contract every backing — the
   // durable one included — has to answer for.
@@ -384,32 +384,31 @@ export class MemoryStatefulOpenAIResponsesBacking implements StatefulOpenAIRespo
 
 type OpenAIResponsesStatePolicy = Pick<ApiKey, 'id' | 'openaiResponsesRetentionSeconds'>;
 
-const createDurableBacking = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number): RepoStatefulOpenAIResponsesBacking | null =>
+const createDurableBacking = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number): RepoOpenAIResponsesStatefulBacking | null =>
   apiKey.openaiResponsesRetentionSeconds === 0
     ? null
-    : new RepoStatefulOpenAIResponsesBacking(getRepo, requestStartedAt, apiKey.openaiResponsesRetentionSeconds);
+    : new RepoOpenAIResponsesStatefulBacking(getRepo, requestStartedAt, apiKey.openaiResponsesRetentionSeconds);
 
-export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulOpenAIResponsesStore => {
+export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): OpenAIResponsesStatefulStore => {
   const durable = createDurableBacking(apiKey, requestStartedAt);
-  return new LayeredStatefulOpenAIResponsesStore({
+  return new LayeredOpenAIResponsesStatefulStore({
     apiKeyId: apiKey.id,
     reads: durable === null ? [] : [durable],
     writes: durable === null || store === false ? [] : [durable],
   });
 };
 
-// Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat
-// Completions) never persist OpenAI Responses items, even when translation enters an OpenAI
-// Responses attempt — but the
-// server-tool shim's request-private payload scratchpad lives on the store, and
-// it is what will write there once that shim is a stage. So they get a store
-// with no backing: it holds per-attempt state in memory and reads/writes nothing
-// durable, keeping the store present on every chat ctx.
-export const createNonOpenAIResponsesSourceStore = (apiKeyId: string): StatefulOpenAIResponsesStore =>
-  new LayeredStatefulOpenAIResponsesStore({ apiKeyId, reads: [], writes: [] });
+// Non-OpenAI-Responses sources (Anthropic Messages / Gemini generateContent / OpenAI Chat Completions) never persist
+// OpenAI Responses items, even when translation enters an OpenAI Responses attempt — but the
+// server-tool stage still runs there, and its request-private payload
+// scratchpad lives on the store. So they get a store with no backing: it holds
+// per-attempt state in memory and reads/writes nothing durable, keeping the
+// store present on every chat ctx.
+export const createNonOpenAIResponsesSourceStore = (apiKeyId: string): OpenAIResponsesStatefulStore =>
+  new LayeredOpenAIResponsesStatefulStore({ apiKeyId, reads: [], writes: [] });
 
 export const createOpenAIResponsesWsSession = (): {
-  createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulOpenAIResponsesStore;
+  createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): OpenAIResponsesStatefulStore;
   evictSnapshot(apiKeyId: string, id: string): void;
 } => {
   // "Servers SHOULD keep the most recent previous-response state in
@@ -418,14 +417,14 @@ export const createOpenAIResponsesWsSession = (): {
   // available from connection-local state, the server MUST fail the turn with
   // an error whose code is `previous_response_not_found`."
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L125
-  const local = new MemoryStatefulOpenAIResponsesBacking();
+  const local = new MemoryOpenAIResponsesStatefulBacking();
   return {
-    createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulOpenAIResponsesStore {
+    createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): OpenAIResponsesStatefulStore {
       const durable = createDurableBacking(apiKey, requestStartedAt);
       // Session-local state is the first store:true collision gate. Writing it
       // first prevents a rejected local history from creating a durable row.
       const writes = store === false || durable === null ? [local] : [local, durable];
-      return new LayeredStatefulOpenAIResponsesStore({
+      return new LayeredOpenAIResponsesStatefulStore({
         apiKeyId: apiKey.id,
         reads: durable === null ? [local] : [local, durable],
         writes,

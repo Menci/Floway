@@ -10,7 +10,7 @@
 
 import type { Context } from 'hono';
 
-import { createOpenAIResponsesWsSession, type StatefulOpenAIResponsesStore } from './items/store.ts';
+import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
 import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
 import type { RunDump } from '../../../dump/run-sink.ts';
@@ -225,7 +225,7 @@ const openOpenAIResponsesWebSocketTurn = (
     readonly headers: Ingress['headers'];
     readonly downstreamAbortController: AbortController;
     readonly backgroundScheduler: BackgroundScheduler;
-    readonly store: (apiKey: ApiKey, requestStartedAt: number) => StatefulOpenAIResponsesStore;
+    readonly store: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore;
   },
 ): ChatPrologue => {
   // The frame is this turn's request body, so an operator reading the dashboard sees the

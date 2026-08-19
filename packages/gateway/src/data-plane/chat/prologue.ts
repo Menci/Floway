@@ -13,7 +13,7 @@ import type { ChatServices } from './stages.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import type { AttemptSelector } from '../pipeline/facts.ts';
 import { gatewayCtxOptions, prologueFor, runDumpOf, type Ingress, type Prologue } from '../pipeline/serve.ts';
-import type { StatefulOpenAIResponsesStore } from './openai-responses/items/store.ts';
+import type { OpenAIResponsesStatefulStore } from './openai-responses/items/store.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -30,7 +30,7 @@ export const openChatPrologue = (
     readonly model?: string;
     /** Native OpenAI Responses entries persist their items; every other source gets a scratchpad,
      *  so the server-tool shim's request-private state always has a home. */
-    readonly storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulOpenAIResponsesStore;
+    readonly storeFactory: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore;
   },
 ): ChatPrologue => {
   // One options object, read twice: the context is built from it, and the run recording it

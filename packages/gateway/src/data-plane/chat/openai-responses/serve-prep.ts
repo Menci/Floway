@@ -1,4 +1,4 @@
-import type { StatefulOpenAIResponsesStore } from './items/store.ts';
+import type { OpenAIResponsesStatefulStore } from './items/store.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
@@ -29,7 +29,7 @@ export class PreviousResponseNotFoundError extends Error {
 // `previous_response_id`, so this runs above the fork and never on a wire.
 export const expandPreviousResponseId = async (
   payload: CanonicalOpenAIResponsesPayload,
-  store: StatefulOpenAIResponsesStore,
+  store: OpenAIResponsesStatefulStore,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const previousResponseId = payload.previous_response_id;
   if (previousResponseId === undefined || previousResponseId === null) return payload;
