@@ -13,7 +13,7 @@ import type { Context } from 'hono';
 import { createOpenAIResponsesWsSession, type StatefulOpenAIResponsesStore } from './items/store.ts';
 import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
 import { openRunDump } from '../../../dump/run-sink.ts';
-import type { TurnDump } from '../../../dump/turn-dump.ts';
+import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
@@ -767,7 +767,7 @@ const sendError = (
   status: number,
   error: Record<string, unknown>,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): void => {
   sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
@@ -784,14 +784,14 @@ const sendOpenAIResponsesEvent = (
   socket: OpenAIResponsesWebSocketSocket,
   event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'

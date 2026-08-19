@@ -23,7 +23,7 @@
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';

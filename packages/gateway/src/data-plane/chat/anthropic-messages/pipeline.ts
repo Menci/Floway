@@ -25,7 +25,7 @@ import { isClaudeCodeProbe, probeFrames } from './claude-code-probe.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';

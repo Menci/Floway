@@ -97,8 +97,8 @@ const emptyResult = (status: OpenAIResponsesResult['status']): OpenAIResponsesRe
   id: 'upstream', object: 'response', model: 'orchestrator', output: [], output_text: '', status, error: null, incomplete_details: null,
 });
 
-const jsonResponse = (b64: string): Response =>
-  new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+const jsonResponse = (b64: string, usage?: Record<string, unknown>): Response =>
+  new Response(JSON.stringify({ data: [{ b64_json: b64 }], ...(usage === undefined ? {} : { usage }) }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 const REMOTE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
 const remotePngResponse = (): Response => new Response(Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
@@ -574,7 +574,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
 });
 
 test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
+  stub.nextGenerations = [jsonResponse('R0VO', { input_tokens: 9, output_tokens: 4, total_tokens: 13 })];
   // Real scheduler: capture the promises the shim fires so the test can
   // await them before querying the repo (the default no-op scheduler in
   // `gatewayCtx()` would drop the recordSample write).
@@ -590,12 +590,21 @@ test('an image sub-call records its own perf row attributed to the image backend
   await drain(result);
   await Promise.all(pending);
 
+  // Through settlement, like every other upstream call: the row is written from the reading the
+  // sub-run hands up rather than by a telemetry call beside the dial.
   const perfRows = await repo.performance.listAll();
   const imageRows = perfRows.filter(r => r.operation === 'image_generation');
   assertEquals(imageRows.length, 1);
   assertEquals(imageRows[0].upstream, 'u');
   assertEquals(imageRows[0].keyId, 'key_test');
   assertEquals(imageRows[0].model, 'gpt-image-2');
+
+  // And the usage row beside it, from the same reading — one settlement writes both, which is
+  // what a sub-request being a run rather than a dial with telemetry beside it buys.
+  const usageRows = await repo.usage.listAll();
+  const imageUsage = usageRows.filter(row => row.model === 'gpt-image-2');
+  assertEquals(imageUsage.length, 1);
+  assertEquals(imageUsage[0]!.upstream, 'u');
   // The image shim runs on a local AttemptState distinct from the outer
   // OpenAI Responses turn's — no image-call stamps may leak onto ctx.attempt.
   assertEquals(ctx.attempt.upstreamCallStartedAt, null);

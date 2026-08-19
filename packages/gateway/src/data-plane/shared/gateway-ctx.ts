@@ -1,5 +1,5 @@
 import type { RequestBody } from './request-body.ts';
-import type { TurnDump } from '../../dump/turn-dump.ts';
+import type { RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -40,7 +40,7 @@ export interface GatewayCtx {
   // Null when the api key has no dump retention configured, in which case
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
   // response untouched.
-  readonly dump: TurnDump | null;
+  readonly dump: RunDump | null;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -48,7 +48,7 @@ export interface CreateGatewayCtxOptions {
   // What this turn is recorded as, opened by whoever opened the run — every entry does, through
   // the prologue. `null` is a key with no retention configured, which is what makes recording
   // conditional: there is nothing to hand the runner rather than a sink that discards.
-  dump: TurnDump | null;
+  dump: RunDump | null;
   // WebSocket-style call sites own the AbortController (so the upgrade
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
   // when wantsStream is true.

@@ -13,7 +13,7 @@
 //   callOpenAIAudioTranscriptionUpstream  the ending: dials, reads what came back, and
 //                                         provides the answer plus what is billable
 
-import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';

@@ -57,7 +57,7 @@ import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { runOpenAIResponsesServerTools } from './server-tools/stage.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
 import { billableUsageFromOpenAIResponsesEvent, billableUsageFromOpenAIResponsesResult } from './usage.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';

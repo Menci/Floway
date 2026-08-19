@@ -13,7 +13,7 @@
 //                                  answer plus what is billable
 
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
-import { recordStream, streamReferenceOf, type TurnDump } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf, type RunDump } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
@@ -253,7 +253,7 @@ const readUpstream = async (
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
   signal: AbortSignal | undefined,
-  dump: TurnDump | null,
+  dump: RunDump | null,
 ): Promise<UpstreamAnswer> => {
   // An upstream was called and reported nothing — which is what every arm but a read usage
   // block leaves standing, and is a different statement from reporting zero.

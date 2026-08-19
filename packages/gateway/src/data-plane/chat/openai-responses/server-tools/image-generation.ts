@@ -1,10 +1,12 @@
+import { runImageGenerationSubRequest, type SettleImageCall } from './image-sub-request.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from './shim.ts';
 import { sleep } from '../../../../shared/sleep.ts';
+import type { BillableEntity } from '../../../pipeline/facts.ts';
 import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../shared/failed-upstreams.ts';
-import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
-import { recordPerformance, type PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
-import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../shared/telemetry/usage.ts';
+import { stampUpstreamCallStart, type AttemptState, type GatewayCtx } from '../../../shared/gateway-ctx.ts';
+import type { PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
+import { tokenUsageFromOpenAIImagesBody, tokenUsageMeasurement } from '../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../shared/external-image-loader.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { decodeForgivingBase64, encodeHex, isImageMediaType, mediaTypeEssence, parseSSEStream } from '@floway-dev/protocols/common';
@@ -901,20 +903,21 @@ interface ShimState {
   runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
+  /** The turn's own context, which each call opens its own run over. */
+  gateway: GatewayCtx;
 }
 
-const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
+/** What one backend answer is billable for, in the shape settlement writes a row from. A body
+ *  that reported nothing bills nothing, which is a different statement from reporting zero. */
+const billedImage = (provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): readonly BillableEntity[] => {
   const usage = tokenUsageFromOpenAIImagesBody(responseBody);
-  if (usage === null) return;
-  const promise = recordTokenUsage(state.apiKeyId, {
-    model: model.id,
-    upstream: provider.upstreamId,
-    modelKey,
-    pricing: model.pricing ?? null,
-  }, usage).catch((error: unknown) => {
-    console.error('Failed to record image generation usage:', error);
-  });
-  state.backgroundScheduler(promise);
+  if (usage === null) return [];
+  const measurement = tokenUsageMeasurement(usage);
+  return [{
+    identity: { model: model.id, upstream: provider.upstreamId, modelKey, pricing: model.pricing ?? null },
+    quantities: measurement.quantities,
+    pricingFacts: measurement.pricingFacts,
+  }];
 };
 
 const buildGenerationsBody = (prompt: string, config: ImageGenerationConfig, stream: boolean): Record<string, unknown> => ({
@@ -1115,6 +1118,7 @@ const consumeImageResponse = async (
   modelKey: string,
   response: Response,
   state: ShimState,
+  billed: BillableEntity[],
 ): Promise<ImageOutcome> => {
   const text = await response.text();
   if (!response.ok) {
@@ -1137,7 +1141,7 @@ const consumeImageResponse = async (
   if (b64 === null) {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }
-  recordImageUsage(state, provider, model, modelKey, parsed);
+  billed.push(...billedImage(provider, model, modelKey, parsed));
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
@@ -1236,9 +1240,17 @@ const streamImageGeneration = (
   isEdit: boolean,
   sources: readonly ImageSource[],
   state: ShimState,
+  settle: SettleImageCall,
+  billed: BillableEntity[],
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageCandidate(isEdit, state);
-  if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
+  if (!resolved.ok) {
+    // No candidate means no upstream was called, so there is nothing billed and no performance
+    // context to attribute — but the reading still settles, because a run waits for what it
+    // started and a call that resolved nothing has finished.
+    settle([], true, undefined);
+    return imageTerminal(prompt, action, { ok: false, error: resolved.error });
+  }
   const { provider, fetcher } = resolved.candidate;
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
@@ -1251,8 +1263,11 @@ const streamImageGeneration = (
     operation: isEdit ? 'image_edit' : 'image_generation',
     runtimeLocation: state.runtimeLocation,
   };
+  // The call's own settlement, through the seam every other upstream call settles by: the
+  // performance sample is attributed to this run's attempt slot rather than the turn's, which is
+  // what keeps the outer turn's upstream stamp intact.
   const finish = (outcome: ImageOutcome): ServerToolTerminal => {
-    recordPerformance({ attempt, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
+    settle(billed, !outcome.ok, perfContext);
     return imageTerminal(prompt, action, outcome);
   };
 
@@ -1280,7 +1295,7 @@ const streamImageGeneration = (
   }
 
   if (!wantsPartials) {
-    return finish(await consumeImageResponse(provider, model, modelKey, response, state));
+    return finish(await consumeImageResponse(provider, model, modelKey, response, state, billed));
   }
 
   if (!response.ok) {
@@ -1310,7 +1325,7 @@ const streamImageGeneration = (
   if (finalB64 === undefined) {
     return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
-  recordImageUsage(state, provider, model, modelKey, { usage });
+  billed.push(...billedImage(provider, model, modelKey, { usage }));
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
@@ -1474,6 +1489,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
 
   const state: ShimState = {
     config: materializedConfig,
+    gateway: gatewayCtx,
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
@@ -1536,13 +1552,21 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
             { type: 'response.image_generation_call.in_progress' },
             { type: 'response.image_generation_call.generating' },
           ],
-          run: streamImageGeneration(
-            promptArg,
-            operation.action,
-            operation.action === 'edit',
-            sources,
-            state,
-          ),
+          // Its own run: its own prologue, its own settlement, its own record. What this
+          // yields is that run's lifecycle, spliced into the turn that asked for it.
+          run: () => (async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
+            const billed: BillableEntity[] = [];
+            const call = await runImageGenerationSubRequest(
+              state.gateway,
+              operation.action,
+              (settle: SettleImageCall) => streamImageGeneration(promptArg, operation.action, operation.action === 'edit', sources, state, settle, billed)(),
+            );
+            try {
+              return yield* call.lifecycle;
+            } finally {
+              await call.drain();
+            }
+          })(),
         }];
       },
     },

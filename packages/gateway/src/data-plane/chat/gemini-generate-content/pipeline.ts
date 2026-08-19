@@ -48,7 +48,7 @@
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import { renderGeminiGenerateContentError } from './errors.ts';
-import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';

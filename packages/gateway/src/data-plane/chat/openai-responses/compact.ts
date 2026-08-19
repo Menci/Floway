@@ -61,7 +61,7 @@ import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { runOpenAIResponsesServerTools } from './server-tools/stage.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
 import { billableUsageFromOpenAIResponsesResult } from './usage.ts';
-import { recordStream } from '../../../dump/turn-dump.ts';
+import { recordStream } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';

@@ -11,7 +11,7 @@
 //   failover                  runs what follows once per candidate
 //   callOpenAIImagesUpstream  the ending: dials, and provides what came back
 
-import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';

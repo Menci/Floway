@@ -15,12 +15,11 @@
 
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
-import type { StreamRecording } from './turn-dump.ts';
 import type { DumpMetadata } from './types.ts';
 import type { RequestBody } from '../data-plane/shared/request-body.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createRunEncoder, streamFact, toNdjson, type DumpEvent, type Event } from '@floway-dev/pipeline';
+import { createRunEncoder, isStreamFact, streamFact, toNdjson, type DumpEvent, type Event, type StreamFact } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -102,6 +101,23 @@ export class RunDump {
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.attribution.success(identity, usage);
+  }
+
+  /**
+   * A record for a run this one started.
+   *
+   * A sub-request is an independent run — its own prologue, its own settlement — and its record
+   * has to be its own too: a second run numbers its stages from 1 again, so its events landing
+   * here would collide with this run's ids and the tree would read as one turn that entered the
+   * same stage twice. Same key, same scheduler, so it is retained and swept by the same rule.
+   */
+  openSubRequest(turn: { readonly method: string; readonly path: string }): RunDump {
+    return new RunDump(
+      this.apiKey,
+      { method: turn.method, path: turn.path, bodyByteLength: 0, streamError: null },
+      Date.now(),
+      this.backgroundScheduler,
+    );
   }
 
   // --- terminal point ---
@@ -221,3 +237,76 @@ export const openRunDump = (
     backgroundScheduler,
   );
 };
+
+/**
+ * One stream, as the recording knows it.
+ *
+ * A record identifies its streams, because their content arrives over time and after the fact
+ * that holds them: the fact carries `{"$stream": n}` and the frames arrive afterwards naming
+ * that id. `end` is what says the record of this stream is complete — a client that stopped
+ * reading leaves it short, and the absence of the terminator is how a reader tells a stream that
+ * ended from one that was cut off.
+ */
+export interface StreamRecording {
+  frame(frame: ProtocolFrame<unknown>): void;
+  end(): void;
+  readonly fact: StreamFact;
+}
+
+/**
+ * Records a stream's frames as they are read, and hands them on untouched.
+ *
+ * What the record holds is the stream as the client is served it, so the tee goes outside
+ * whatever shapes the frames and inside whatever frames them for a transport. For a family with
+ * translated wires that is its edge and nowhere lower: below the edge the frames are the
+ * upstream's and may still be another protocol's, above it they are transport frames the record
+ * does not describe. A non-streaming turn folds the same frames into one value, and recording
+ * here is what puts both in the record — the frames as they flowed beside the value assembled
+ * from them.
+ *
+ * Reading is what records: a losing attempt nobody read contributes nothing, because the
+ * release path drains the stream underneath this rather than through it, and a stream that
+ * stopped short is recorded as far as it got.
+ *
+ * The value handed back *is* the stream reference, so the fact that holds it encodes as
+ * `{"$stream": n}` and the frames that arrive afterwards say which stream they belong to.
+ *
+ * A record holds protocol frames, which is what most families' streams already carry. The
+ * family whose stream is bare protocol events says how one becomes a frame, because the record
+ * cannot guess and a cast would be it guessing.
+ */
+export function recordStream<T>(stream: AsyncIterable<ProtocolFrame<T>>, dump: RunDump | null): AsyncIterable<ProtocolFrame<T>>;
+export function recordStream<T>(stream: AsyncIterable<T>, dump: RunDump | null, asFrame: (value: T) => ProtocolFrame<unknown>): AsyncIterable<T>;
+export function recordStream<T>(
+  stream: AsyncIterable<T>,
+  dump: RunDump | null,
+  asFrame: (value: T) => ProtocolFrame<unknown> = value => value as ProtocolFrame<unknown>,
+): AsyncIterable<T> {
+  // No recording configured hands the same iterable back, so a record shows no step where
+  // nothing happened and the stream is not wrapped for nobody.
+  if (dump === null) return stream;
+
+  const recording = dump.openStream();
+  return {
+    ...recording.fact,
+    [Symbol.asyncIterator]: () => (async function* () {
+      for await (const value of stream) {
+        recording.frame(asFrame(value));
+        yield value;
+      }
+      // Reached only where the source ran out on its own, which is what makes the record of
+      // this stream complete. A reader that stopped early never gets here.
+      recording.end();
+    })(),
+  };
+}
+
+/**
+ * The reference a value carries to the stream the record holds, for a wrapper to carry across.
+ *
+ * A stream is framed again on its way out — protocol frames become SSE — and what the client
+ * is handed is a different object over the same frames. Carrying the reference onto it is what
+ * lets the fact that produced the stream and the fact that framed it point at one record.
+ */
+export const streamReferenceOf = (value: unknown): StreamFact | Record<string, never> =>
+  isStreamFact(value) ? { ...value } : {};
