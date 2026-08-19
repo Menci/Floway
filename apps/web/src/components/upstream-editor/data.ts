@@ -34,10 +34,10 @@ interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
   discovered: UpstreamModelConfig[];
   modelsError: ModelListingFailure | null;
-  // Copy mode seeds the create form from a persisted record. For providers
-  // whose credential is an API key, the editor can keep that stored key when
-  // the form's blank secret field is left alone; OAuth providers do not copy
-  // their tokens and start from the blueprint credential shape instead.
+  // For providers whose credential is an API key, the editor can keep that
+  // stored key when the form's blank secret field is left alone; OAuth
+  // providers do not copy their tokens and start from the blueprint
+  // credential shape instead.
   preserveCredentials?: boolean;
 }
 

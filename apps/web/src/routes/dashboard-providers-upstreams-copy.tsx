@@ -13,11 +13,10 @@ import { pickDistinctHue } from '../lib/hue';
 
 export const handle = dashboardWorkspaceHandle;
 
-// A copy opens the create editor seeded from the source record. API-key
-// credentials are carried over with the editor's usual "leave blank to keep"
-// contract; OAuth credentials are deliberately reset to the provider's
-// blueprint shape, because those tokens are minted by the OAuth exchange and
-// may not be valid as a second grant.
+// API-key credentials are carried over with the editor's usual
+// "leave blank to keep" contract; OAuth credentials are deliberately
+// reset to the provider's blueprint shape, because those tokens are
+// minted by the OAuth exchange and may not be valid as a second grant.
 const copyableRecord = (source: UpstreamRecord, name: string, hue: number): {
   record: UpstreamRecord;
   preserveCredentials: boolean;
