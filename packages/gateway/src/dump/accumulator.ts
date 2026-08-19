@@ -12,6 +12,7 @@ import type { Context } from 'hono';
 
 import { DumpAttribution, oneLineError, streamReadError } from './attribution.ts';
 import { getDumpBroker, getDumpStore } from './registry.ts';
+import type { StreamRecording } from './turn-dump.ts';
 import type {
   DumpMetadata,
   DumpStreamEvent,
@@ -91,6 +92,14 @@ export class DumpAccumulator {
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
+  }
+
+  /** This shape has one frame log and no way to name anything in it, so every stream lands in
+   *  the same place, there is no terminator to write, and no fact can point at one. A turn
+   *  that opened two would have them interleaved — which the endpoints on this shape do not do,
+   *  and which the run shape is what fixes. */
+  openStream(): StreamRecording {
+    return { frame: frame => { this.frame(frame); }, end: () => {}, fact: null };
   }
 
   recordSentPayloadBytes(byteLength: number): void {

@@ -31,6 +31,7 @@ import { enumerateModelCandidates } from '../providers/resolution.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { filterInboundHeadersForProvider } from '../shared/inbound-headers.ts';
 import { telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
+import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import {
   assertLocalWebSearchSupport,
   executeOperationToText,
@@ -80,27 +81,33 @@ export interface SearchServices extends GatewayServices {
 const emitAlphaSearch = defineStage<
   S<never>,
   S<never>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>,
-  S<'response.search.rendered' | 'response.http.status'>
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  S<'response.search.rendered' | 'response.http.status' | 'response.http.headers'>
 >({
   name: 'emitAlphaSearch',
   through: {
     request: { needs: [], consumes: [], provides: [] },
     response: {
-      needs: ['response.search.alphaSearch', 'response.usage.billable'],
-      consumes: ['response.search.alphaSearch'],
-      provides: ['response.search.rendered', 'response.http.status'],
+      needs: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'],
+      consumes: ['response.search.alphaSearch', 'response.http.headers'],
+      provides: ['response.search.rendered', 'response.http.status', 'response.http.headers'],
     },
   },
   execute: async (facts, next) => {
     const back = await next(facts);
-    const { 'response.search.alphaSearch': answer, ...rest } = back;
+    const { 'response.search.alphaSearch': answer, 'response.http.headers': headers, ...rest } = back;
+    // Vendor traces and quota state stay visible; what an intermediary must strip, and what
+    // would misdescribe a body this gateway serialized itself, does not. A filter that removed
+    // nothing hands the same array on, so the record shows no change where none happened.
+    const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     if (isFailure(answer)) {
       // An upstream error body is JSON like any other: it was parsed below and is serialized
       // again here. A body that was not an object is one this protocol cannot carry, so what
       // goes out instead is the gateway's own envelope.
       return {
         ...rest,
+        'response.http.headers': forClient,
         'response.search.rendered': move(isJsonObject(answer.body)
           ? answer.body
           : { error: { message: answer.message, type: 'api_error' } }),
@@ -109,6 +116,7 @@ const emitAlphaSearch = defineStage<
     }
     return {
       ...rest,
+      'response.http.headers': forClient,
       'response.search.rendered': move(renderAlphaSearchResponse(answer)),
       'response.http.status': 200,
     };
@@ -121,6 +129,8 @@ const inBandOutput = (facts: S<'request.search.alphaSearch'>, output: string) =>
   ...facts,
   'response.search.alphaSearch': { encryptedOutput: null, output },
   'response.usage.billable': [],
+  // Nothing was called, so there are no upstream headers to carry.
+  'response.http.headers': [],
 });
 
 /**
@@ -131,9 +141,9 @@ const inBandOutput = (facts: S<'request.search.alphaSearch'>, output: string) =>
 const parseSearchOperations = defineStage<
   S<'request.search.alphaSearch'>,
   S<'request.search.operations' | 'request.search.filters'>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>
 >({
   name: 'parseSearchOperations',
   through: {
@@ -144,7 +154,7 @@ const parseSearchOperations = defineStage<
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable'] },
+  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, next) => {
     const { 'request.search.alphaSearch': request, ...rest } = facts;
     const commands = request.commands ?? {};
@@ -177,11 +187,11 @@ const parseSearchOperations = defineStage<
  */
 const executeSearchOperations = defineStage<
   S<'request.search.operations' | 'request.search.filters'>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>,
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
   SearchServices
 >({
   name: 'executeSearchOperations',
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable'] },
+  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, use) => {
     const session: WebSearchExecutionSession = {
       getProvider: use.searchProvider,
@@ -206,6 +216,8 @@ const executeSearchOperations = defineStage<
       ...facts,
       'response.search.alphaSearch': { encryptedOutput: null, output: blocks.join('\n\n') },
       'response.usage.billable': [],
+      // Nothing was called, so there are no upstream headers to carry.
+      'response.http.headers': [],
     });
   },
 });
@@ -272,15 +284,17 @@ const asJson = (raw: string): unknown => {
  */
 const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
   S<'request.search.alphaSearch' | 'ingress.http.headers'>,
-  S<'response.search.alphaSearch' | 'response.usage.billable'>,
+  S<'response.search.alphaSearch' | 'response.usage.billable' | 'response.http.headers'>,
   GatewayServices
 >({
   name: 'callSearchUpstream',
-  return: { provides: ['response.search.alphaSearch', 'response.usage.billable'] },
+  return: { provides: ['response.search.alphaSearch', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, use) => {
     const candidate = await resolvePinnedUpstream(pinned, use.gateway);
     // The caller's model is dropped: this endpoint is pinned to the operator's model, and the
     // provider stamps that one on the way out.
+    // TODO: pin SearchRequest.id to one provider account when Codex upstreams support account
+    // pools. The current Codex provider has one active account.
     const { model: _named, ...request } = facts['request.search.alphaSearch'];
     const result = await candidate.provider.instance.callAlphaSearch(
       providerModelOf(candidate),
@@ -320,6 +334,7 @@ const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
           ...(body === undefined ? {} : { body }),
         },
         'response.usage.billable': billable,
+        'response.http.headers': [...result.response.headers],
       });
     }
 
@@ -335,9 +350,15 @@ const callSearchUpstream = (pinned: PinnedSearchUpstream) => defineStage<
           body: raw,
         },
         'response.usage.billable': billable,
+        'response.http.headers': [...result.response.headers],
       });
     }
-    return move({ ...facts, 'response.search.alphaSearch': verdict.response, 'response.usage.billable': billable });
+    return move({
+      ...facts,
+      'response.search.alphaSearch': verdict.response,
+      'response.usage.billable': billable,
+      'response.http.headers': [...result.response.headers],
+    });
   },
 });
 
@@ -348,7 +369,7 @@ export type SearchExecution = { readonly kind: 'local' } | PinnedSearchUpstream;
 
 export const searchServePipeline = (execution: SearchExecution): Pipeline<
   S<'request.search.alphaSearch'>,
-  S<'response.search.rendered' | 'response.http.status' | 'response.usage.billable'>
+  S<'response.search.rendered' | 'response.http.status' | 'response.http.headers' | 'response.usage.billable'>
 > => compose('searchServe', [
   emitAlphaSearch,
   // Unconditional, as everywhere: a run that searched locally reached no upstream and bills

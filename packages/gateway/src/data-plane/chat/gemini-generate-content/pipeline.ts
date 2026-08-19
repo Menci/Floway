@@ -51,7 +51,7 @@
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import { renderGeminiGenerateContentError } from './errors.ts';
-import { recordFrames } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
@@ -71,7 +71,7 @@ import { openaiResponsesWire } from '../openai-responses/pipeline.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, transform, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defineStage, move, transform, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
@@ -95,7 +95,7 @@ export interface GeminiGenerateContentFacts extends ChatFacts {
   'response.chat.geminiGenerateContent.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.geminiGenerateContent.streamedUsage': Promise<StreamOutcome> | null;
+  'response.chat.geminiGenerateContent.streamedUsage': Deferred<StreamOutcome> | null;
 }
 
 type C<K extends keyof GeminiGenerateContentFacts> = { [P in K]: GeminiGenerateContentFacts[P] };
@@ -159,7 +159,7 @@ const emitGeminiGenerateContent = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = recordFrames(
+    const frames = recordStream(
       wrapGeminiGenerateContentAffinityEgress(
         answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
         affinityEgressOptions(use.gateway),
@@ -188,6 +188,9 @@ const emitGeminiGenerateContent = defineStage<
 /** Gemini generateContent streams one JSON object per `data:` line and has no sentinel to write, which the
  *  protocol says by writing no frame at all for the one that ends the stream. */
 const renderSSE = (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
       const written = geminiGenerateContentProtocolFrameToSSEFrame(frame);

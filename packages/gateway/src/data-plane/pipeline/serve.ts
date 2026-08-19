@@ -15,13 +15,13 @@ import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
 import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
+import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
-import type { Pipeline } from '@floway-dev/pipeline';
-import { run } from '@floway-dev/pipeline';
+import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -169,8 +169,11 @@ export interface StreamOutcome {
 
 /** What a streaming family will have been billed, and whether it got there. A stream's usage
  *  arrives with its last chunk, which is after the run has answered — so the run hands up a
- *  promise and settlement of it belongs here, after the answer is on its way. */
-export type DeferredUsage<Exit> = (facts: Exit) => Promise<StreamOutcome> | null;
+ *  reading it has started and not finished, and settlement of it belongs here, after the answer
+ *  is on its way. It is `Deferred` because that is what it is: the runner sees it in the record
+ *  and waits for it at teardown, so a family that hands up a reading that never settles is
+ *  reported rather than silently never billed. */
+export type DeferredUsage<Exit> = (facts: Exit) => Deferred<StreamOutcome> | null;
 
 /**
  * Runs a family's pipeline and turns what it answered with into a response.
@@ -179,8 +182,40 @@ export type DeferredUsage<Exit> = (facts: Exit) => Promise<StreamOutcome> | null
  * so draining before returning would consume the frames the client is waiting for. Release
  * is not cancel — an aborted connection cannot be reused and leaves the upstream's own
  * billing unsettled — so it still happens, just after the answer is on its way.
+ *
+ * A run that threw is answered here rather than by the app's own handler, because the record
+ * is closed here. Letting the throw out would lose the whole record: nothing above this knows
+ * a dump is open, so the turn that most needs explaining would be the one that left nothing
+ * behind. What goes to the client is the same envelope the app's handler writes, from the same
+ * function — the stack included, which is what a gateway owes an operator for its own fault.
  */
 export const serveThrough = async <
+  Entry extends object,
+  Exit extends Slice<'response.http.status' | 'response.http.headers'>,
+>(
+  c: Context,
+  prologue: Prologue,
+  pipeline: Pipeline<Entry, Exit>,
+  entry: Entry,
+  render: (facts: Exit) => Rendered,
+  deferredUsage?: DeferredUsage<Exit>,
+): Promise<Response> => {
+  try {
+    return await serveRun(c, prologue, pipeline, entry, render, deferredUsage);
+  } catch (error) {
+    // `run` drains what it opened before it rethrows, so there is nothing left outstanding to
+    // release here — only the record to close, and the reason to put on it.
+    prologue.gateway.dump?.failed(error);
+    return finalizeGatewayResponse(prologue.gateway, internalErrorResponse(asError(error), c));
+  }
+};
+
+/** Anything can be thrown; only an `Error` carries a stack. A throw that was not one is
+ *  reported as what it was rather than being dressed up as something with a call site. */
+const asError = (thrown: unknown): Error =>
+  thrown instanceof Error ? thrown : new Error(String(thrown));
+
+const serveRun = async <
   Entry extends object,
   Exit extends Slice<'response.http.status' | 'response.http.headers'>,
 >(

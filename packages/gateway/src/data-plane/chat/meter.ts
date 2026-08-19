@@ -21,7 +21,7 @@ import type { ChatServices } from './stages.ts';
 import type { BillableEntity } from '../pipeline/facts.ts';
 import { isFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
-import { defineStage, move } from '@floway-dev/pipeline';
+import { defineStage, move, type Deferred } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -34,7 +34,7 @@ export type ChatMeterReading<Event> = (
   frames: AsyncIterable<ProtocolFrame<Event>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-) => { readonly frames: AsyncIterable<ProtocolFrame<Event>>; readonly outcome: Promise<StreamOutcome> };
+) => { readonly frames: AsyncIterable<ProtocolFrame<Event>>; readonly outcome: Deferred<StreamOutcome> };
 
 /** Which identity the figure is attributed to, read off the entity the dial recorded when it
  *  called an upstream. That entity is already the statement "this attempt bills to this

@@ -60,7 +60,7 @@ import { normalizeAssistantInputText } from './items/normalize-assistant-content
 import { syntheticEventsFromResult } from './items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from './serve-prep.ts';
 import { billableUsageFromOpenAIResponsesEvent, billableUsageFromOpenAIResponsesResult } from './usage.ts';
-import { recordFrames } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { AttemptSelector, BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -90,7 +90,7 @@ import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, type Deferred, type Pipeline, type Stage, type Use } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, sseFrame, type BillableUsage, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesProtocolEventsToResult,
@@ -133,7 +133,7 @@ export interface OpenAIResponsesFacts extends ChatFacts {
   'response.chat.openaiResponses.rendered': Record<string, unknown> | AsyncIterable<SseFrame> | AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.openaiResponses.streamedUsage': Promise<StreamOutcome> | null;
+  'response.chat.openaiResponses.streamedUsage': Deferred<StreamOutcome> | null;
 }
 
 type R<K extends keyof OpenAIResponsesFacts> = { [P in K]: OpenAIResponsesFacts[P] };
@@ -224,7 +224,7 @@ const emitOpenAIResponses = (client: CanonicalOpenAIResponsesPayload, framing: O
     // recorded here rather than where it is framed — one tee for the family, whatever writes
     // what it hands up. Reading is what records, so a transport that stopped early records
     // exactly what it took.
-    const frames = recordFrames(egress, use.gateway.dump);
+    const frames = recordStream(egress, use.gateway.dump);
     if (!back['ingress.chat.openaiResponses.wantsStream']) {
       try {
         return {
@@ -316,6 +316,9 @@ const streamFailedEvent = (announced: ClientResponseResource, error: unknown): C
  *  the failure has to be said in the protocol's own words, and it is said *instead of* the
  *  terminator: a stream that ended on `[DONE]` is a stream that finished. */
 const renderSSE = (frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
     // The last resource the client was shown, which is the one a `response.failed` restates:
     // the id it names has to be the id the client already saw this turn under.
@@ -559,9 +562,11 @@ const meterOpenAIResponses = (
   source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+): { readonly frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
   let settle!: (outcome: StreamOutcome) => void;
-  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;

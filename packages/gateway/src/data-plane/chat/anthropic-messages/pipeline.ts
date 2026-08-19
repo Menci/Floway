@@ -25,7 +25,7 @@ import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
 import { isClaudeCodeProbe, probeFrames } from './interceptors/answer-claude-code-probe.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
-import { recordFrames } from '../../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -51,7 +51,7 @@ import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts'
 import { isFirstOutputTokenFrame } from '../shared/first-output-token.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatNarrowing, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline, type Stage } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, type Deferred, type Pipeline, type Stage } from '@floway-dev/pipeline';
 import {
   collectAnthropicMessagesProtocolEventsToResult,
   anthropicMessagesProtocolFrameToSSEFrame,
@@ -75,7 +75,7 @@ export interface AnthropicMessagesFacts extends ChatFacts {
   'response.chat.anthropicMessages.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
   /** What the upstream will have reported once the frames run out, and `null` when nothing
    *  streamed. Settling from this is the epilogue's job, after the drain. */
-  'response.chat.anthropicMessages.streamedUsage': Promise<StreamOutcome> | null;
+  'response.chat.anthropicMessages.streamedUsage': Deferred<StreamOutcome> | null;
 }
 
 type M<K extends keyof AnthropicMessagesFacts> = { [P in K]: AnthropicMessagesFacts[P] };
@@ -136,7 +136,7 @@ const emitAnthropicMessages = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const frames = recordFrames(
+    const frames = recordStream(
       wrapAnthropicMessagesAffinityEgress(
         answer.frames as AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
         affinityEgressOptions(use.gateway),
@@ -167,6 +167,9 @@ const emitAnthropicMessages = defineStage<
  *  frame — a stream terminator is an OpenAI Chat Completions idea and there is nothing to send for
  *  it here. */
 const renderSSE = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
   [Symbol.asyncIterator]: () => (async function* () {
     for await (const frame of frames) {
       const written = anthropicMessagesProtocolFrameToSSEFrame(frame);
@@ -413,9 +416,11 @@ const meterAnthropicMessages = (
   source: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>,
   identity: TelemetryModelIdentity,
   attempt: { firstOutputTokenAt: number | null },
-): { readonly frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>; readonly outcome: Promise<StreamOutcome> } => {
+): { readonly frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>; readonly outcome: Deferred<StreamOutcome> } => {
   let settle!: (outcome: StreamOutcome) => void;
-  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;

@@ -13,6 +13,7 @@
 //                                  answer plus what is billable
 
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
+import { recordStream, streamReferenceOf, type TurnDump } from '../../dump/turn-dump.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
@@ -25,7 +26,7 @@ import { dialFailure } from '../pipeline/upstream-body.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { compose, defineStage, move, own, type Owned, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, own, type Deferred, type Owned, type Pipeline } from '@floway-dev/pipeline';
 import { isOpenAIUsageOnlyEventShape, renderErrorEnvelope, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   openaiCompletionsProtocolFrameToSSEFrame,
@@ -70,7 +71,7 @@ export interface OpenAICompletionsFacts extends GatewayFacts {
    *  after this run has answered — so the numbers cannot be in `response.usage.billable`,
    *  which says what had been reported when the ending stage handed up: the entity, and no
    *  quantities. Settling billing from this is the prologue's job, after the drain. */
-  'response.openaiCompletions.streamedUsage': Promise<StreamOutcome> | null;
+  'response.openaiCompletions.streamedUsage': Deferred<StreamOutcome> | null;
   /** What the client is actually sent, in its own protocol — a JSON body, or the SSE frames
    *  of a stream. The edge provides it, so a dump shows what the client received rather than
    *  the gateway's own reading of it. */
@@ -144,12 +145,17 @@ const rendered = (
     : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
       : answer;
 
-const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => view((async function* () {
-  for await (const frame of frames) {
-    if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
-    yield openaiCompletionsProtocolFrameToSSEFrame(frame);
-  }
-})());
+const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => ({
+  // The frames the client reads are a reframing of the ones the record holds, so this key
+  // points at that same stream rather than at nothing.
+  ...streamReferenceOf(frames),
+  [Symbol.asyncIterator]: () => (async function* () {
+    for await (const frame of frames) {
+      if (!wantsUsageChunk && frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
+      yield openaiCompletionsProtocolFrameToSSEFrame(frame);
+    }
+  })(),
+});
 
 /**
  * The ending. It dials, reads what came back on the shape the request asked for, and
@@ -216,7 +222,7 @@ const callOpenAICompletionsUpstream = defineStage<
       telemetryModelIdentity(candidate, result.modelKey),
       candidate,
       use.gateway.abortSignal,
-      frame => { use.gateway.dump?.frame(frame); },
+      use.gateway.dump,
     );
     return move({
       ...facts,
@@ -247,7 +253,7 @@ const readUpstream = async (
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
   signal: AbortSignal | undefined,
-  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
+  dump: TurnDump | null,
 ): Promise<UpstreamAnswer> => {
   // An upstream was called and reported nothing — which is what every arm but a read usage
   // block leaves standing, and is a different statement from reporting zero.
@@ -282,9 +288,9 @@ const readUpstream = async (
   // the frames as they pass — so the reading costs one pass and the client's own stream is
   // what drives it. What it finds arrives with the last frame, long after this stage has
   // handed up, which is why the entity above carries no quantities.
-  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate, record);
+  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate);
   return {
-    payload: metered.frames,
+    payload: recordStream(metered.frames, dump),
     streamedUsage: metered.outcome,
     billable: called,
     // Releasing this body is draining those frames: they are one reader over one connection,
@@ -323,17 +329,18 @@ const readResult = async (response: Response): Promise<{ readonly value: OpenAIC
 
 interface MeteredFrames {
   readonly frames: OpenAICompletionsFrames;
-  readonly outcome: Promise<StreamOutcome>;
+  readonly outcome: Deferred<StreamOutcome>;
 }
 
 const meterFrames = (
   source: AsyncIterable<ProtocolFrame<OpenAICompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
-  record: (frame: ProtocolFrame<OpenAICompletionsStreamEvent>) => void,
 ): MeteredFrames => {
   let settle!: (outcome: StreamOutcome) => void;
-  const outcome = new Promise<StreamOutcome>(resolve => { settle = resolve; });
+  // Declared as this run's own unfinished work, so the runner waits for it at teardown where
+  // it can see it rather than the reading being started and forgotten.
+  const outcome = defer(new Promise<StreamOutcome>(resolve => { settle = resolve; }));
   // Running out without the terminal frame is what "it did not finish" means, and it is known
   // at the same moment the usage is.
   let sawTerminal = false;
@@ -349,11 +356,8 @@ const meterFrames = (
           if (root.service_tier !== undefined) tier = root.service_tier;
           if (isOpenAIUsageOnlyEventShape(frame.event)) usage = root.usage;
         }
-        // What the upstream sent, before the edge decides what the client sees — a dump
-        // reader is owed the frames that arrived, including the one metering asked for.
         // The transport's own terminator is this protocol's end-of-turn.
         if (frame.type === 'done') sawTerminal = true;
-        record(frame);
         yield frame;
       }
     } finally {

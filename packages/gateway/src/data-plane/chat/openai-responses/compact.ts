@@ -58,7 +58,7 @@ import {
   type OpenAIResponsesFacts,
 } from './pipeline.ts';
 import { billableUsageFromOpenAIResponsesResult } from './usage.ts';
-import { recordFrames } from '../../../dump/turn-dump.ts';
+import { recordStream } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -71,7 +71,7 @@ import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { dialChatWire, type ChatWire } from '../handoff.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { materializeAttempt, resolveChatCandidates, type ChatServices } from '../stages.ts';
-import { compose, defineStage, move, type Pipeline } from '@floway-dev/pipeline';
+import { compose, defer, defineStage, move, type Deferred, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   collectOpenAIResponsesProtocolEventsToResult,
@@ -147,7 +147,7 @@ const emitOpenAIResponsesCompaction = defineStage<
       // the ids the resource below is assembled under. Reading is what records, and the fold
       // on the next line is the read.
       const persisted = await collectOpenAIResponsesProtocolEventsToResult(
-        recordFrames(
+        recordStream(
           wrapOpenAIResponsesStatefulOutput(answer.frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>, use.gateway),
           use.gateway.dump,
         ),
@@ -186,10 +186,13 @@ const compactionFailed = (persisted: { readonly status?: string }): boolean => p
 
 /** The accounting the epilogue settles from, with the verdict only the completed resource
  *  could give it. The edge is where a compaction resource comes into existence, so it is the
- *  one reader that can say whether the turn behind it succeeded. */
-const withVerdict = (outcome: Promise<StreamOutcome> | null, failed: boolean): Promise<StreamOutcome> | null => {
+ *  one reader that can say whether the turn behind it succeeded.
+ *
+ *  What it composes is still this run's own unfinished work, so the result is declared too:
+ *  the promise below it settles first, and the run must wait for the one it hands up. */
+const withVerdict = (outcome: Deferred<StreamOutcome> | null, failed: boolean): Deferred<StreamOutcome> | null => {
   if (outcome === null || !failed) return outcome;
-  return outcome.then(read => ({ ...read, failed: true }));
+  return defer(outcome.then(read => ({ ...read, failed: true })));
 };
 
 /**
@@ -282,8 +285,9 @@ const callOpenAIResponsesCompactUpstream = defineStage<
       'response.chat.openaiResponses': { kind: 'stream' as const, frames: syntheticEventsFromCompaction(result.result) },
       // A compaction states its own counts, so what it billed is known before the frames are
       // read. It travels as a reading still to come rather than as one already settled,
-      // because the verdict that goes with it is the edge's to add.
-      [OPENAI_RESPONSES_STREAMED_USAGE]: Promise.resolve({ billable, failed: false }),
+      // because the verdict that goes with it is the edge's to add — and it is declared as
+      // this run's own, so the run waits for the verdict where it can see it.
+      [OPENAI_RESPONSES_STREAMED_USAGE]: defer(Promise.resolve({ billable, failed: false })),
       'response.usage.billable': billable,
       'response.http.headers': [],
     });
