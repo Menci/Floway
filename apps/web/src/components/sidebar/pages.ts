@@ -72,6 +72,7 @@ export const navGroups: NavGroup[] = [
     adminOnly: true,
     items: [
       { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
+      { to: '/dashboard/admin/oauth2', labelKey: 'dashboard.nav.oauth2', icon: PersonKey20Color },
       { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
     ],
   },

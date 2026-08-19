@@ -1,14 +1,15 @@
+import { applyUserUpstreamAccessChanges } from './upstream-access.ts';
 import { userToAdminWire } from './wire.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, User } from '../../repo/types.ts';
+import type { ApiKey, OAuth2Account, OAuth2Provider, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
-import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
+import type { changeOwnPasswordBody, createUserBody, updateUsersUpstreamAccessBody, updateUserBody } from '../schemas.ts';
 import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
@@ -16,9 +17,98 @@ const parseUserId = (raw: string): number | null => {
   return Number.isInteger(n) && n >= 1 ? n : null;
 };
 
+const oauth2AccountWire = (
+  account: OAuth2Account,
+  providerNames: ReadonlyMap<string, string>,
+  canUnlink: boolean,
+) => ({
+  provider_id: account.providerId,
+  provider_display_name: providerNames.get(account.providerId) ?? account.providerId,
+  provider_login: account.providerLogin,
+  created_at: account.createdAt,
+  last_login_at: account.lastLoginAt,
+  can_unlink: canUnlink,
+});
+
+const oauth2AccountsForUser = async (user: User) => {
+  const [accounts, providers] = await Promise.all([
+    getRepo().oauth2.listAccountsByUserId(user.id),
+    getRepo().oauth2Config.listProviders(),
+  ]);
+  const providerNames = new Map(providers.map((provider: OAuth2Provider) => [provider.id, provider.displayName]));
+  const canUnlink = user.passwordHash !== null || accounts.length > 1;
+  return accounts.map(account => oauth2AccountWire(account, providerNames, canUnlink));
+};
+
+const oauth2AccountsResponse = async (c: AuthedContext, userId: number) => {
+  const user = await getRepo().users.getById(userId);
+  if (!user) return c.json({ error: 'user not found' }, 404);
+  return c.json({ accounts: await oauth2AccountsForUser(user) });
+};
+
+const unlinkOAuth2Account = async (c: AuthedContext, userId: number, providerId: string) => {
+  const result = await getRepo().oauth2.unlinkAccount(userId, providerId);
+  if (result === 'not-found') return c.json({ error: 'OAuth2 account binding not found' }, 404);
+  if (result === 'last-login') {
+    return c.json({ error: 'Cannot unlink the last OAuth2 account until this user has a password or another OAuth2 account' }, 409);
+  }
+  return await oauth2AccountsResponse(c, userId);
+};
+
+export const listOwnOAuth2Accounts = async (c: AuthedContext) => {
+  if (!sessionIdFromContext(c)) {
+    return c.json({ error: 'OAuth2 account management requires a logged-in dashboard session' }, 401);
+  }
+  return await oauth2AccountsResponse(c, userFromContext(c).id);
+};
+
+export const unlinkOwnOAuth2Account = async (c: AuthedContext<'/api/users/me/oauth2-accounts/:provider'>) => {
+  if (!sessionIdFromContext(c)) {
+    return c.json({ error: 'OAuth2 account management requires a logged-in dashboard session' }, 401);
+  }
+  return await unlinkOAuth2Account(c, userFromContext(c).id, c.req.param('provider'));
+};
+
+export const listUserOAuth2Accounts = async (c: AuthedContext<'/api/users/:id/oauth2-accounts'>) => {
+  const id = parseUserId(c.req.param('id'));
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
+  return await oauth2AccountsResponse(c, id);
+};
+
+export const unlinkUserOAuth2Account = async (c: AuthedContext<'/api/users/:id/oauth2-accounts/:provider'>) => {
+  const id = parseUserId(c.req.param('id'));
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
+  return await unlinkOAuth2Account(c, id, c.req.param('provider'));
+};
+
 export const listUsers = async (c: AuthedContext) => {
   const [users, knownUpstreamIds] = await Promise.all([getRepo().users.list(), loadKnownUpstreamIds()]);
   return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds)));
+};
+
+export const updateUsersUpstreamAccess = async (c: CtxWithJson<typeof updateUsersUpstreamAccessBody>) => {
+  const body = c.req.valid('json');
+  const repo = getRepo();
+  const [users, upstreams] = await Promise.all([repo.users.list(), repo.upstreams.list()]);
+  const usersById = new Map(users.map(user => [user.id, user]));
+  const selected = body.userIds.map(id => usersById.get(id));
+  if (selected.some(user => user === undefined)) return c.json({ error: 'user not found' }, 404);
+  const selectedUsers = selected.filter((user): user is User => user !== undefined);
+
+  const catalogIds = upstreams.map(upstream => upstream.id);
+  const knownUpstreamIds = new Set(catalogIds);
+  const upstreamErr = unknownUpstreamIdsError(body.changes.map(change => change.upstreamId), knownUpstreamIds);
+  if (upstreamErr) return c.json({ error: upstreamErr }, 400);
+
+  const updated = selectedUsers.map(user => ({
+    user,
+    upstreamIds: applyUserUpstreamAccessChanges(user.upstreamIds, catalogIds, body.changes),
+  }));
+  await repo.users.setUpstreamIds(updated.map(({ user, upstreamIds }) => ({ id: user.id, upstreamIds })));
+
+  return c.json({
+    users: updated.map(({ user, upstreamIds }) => userToAdminWire({ ...user, upstreamIds }, knownUpstreamIds)),
+  });
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -119,6 +209,7 @@ export const deleteUser = async (c: AuthedContext) => {
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  await repo.oauth2.deleteByUserId(id);
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });

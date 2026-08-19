@@ -130,3 +130,72 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
   assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
   assertEquals((await repo.responsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));
+
+test('OAuth2 self-registration consumes a handoff atomically through node:sqlite', () => withRepo(async repo => {
+  const now = Date.now();
+  await repo.oauth2.createHandoff({
+    tokenHash: 'node-registration',
+    providerId: 'custom',
+    providerUserId: 'provider-node',
+    providerLogin: 'node@example.com',
+    userId: null,
+    registrationUpstreamIds: ['up_node'],
+    createdAt: '2026-08-19T00:00:00.000Z',
+    expiresAt: now + 60_000,
+  });
+  const register = (suffix: string) => repo.oauth2.register({
+    tokenHash: 'node-registration',
+    username: `node-${suffix}`,
+    createdAt: '2026-08-19T00:00:00.000Z',
+    now,
+    defaultKey: {
+      id: `node-key-${suffix}`,
+      name: 'Default',
+      key: `node-secret-${suffix}`,
+      serverSecret: '11'.repeat(32),
+      createdAt: '2026-08-19T00:00:00.000Z',
+      upstreamIds: null,
+      deletedAt: null,
+      dumpRetentionSeconds: null,
+      responsesRetentionSeconds: 0,
+    },
+  });
+
+  const results = await Promise.all([register('one'), register('two')]);
+  assertEquals(results.map(result => result.status).toSorted(), ['created', 'missing']);
+  const created = results.find(result => result.status === 'created');
+  assertEquals(created?.status === 'created' ? created.user.upstreamIds : null, ['up_node']);
+  assertEquals((await repo.oauth2.listAccounts()).length, 1);
+  assertEquals((await repo.apiKeys.list()).filter(key => key.id.startsWith('node-key-')).length, 1);
+}));
+
+test('OAuth2 provider configuration round-trips through node:sqlite', () => withRepo(async repo => {
+  const provider = {
+    id: 'node-provider',
+    displayName: 'Node Provider',
+    enabled: true,
+    clientId: 'node-client',
+    clientSecret: 'node-secret',
+    authorizationEndpoint: 'https://id.example.com/oauth/authorize',
+    tokenEndpoint: 'https://id.example.com/oauth/token',
+    userInfoEndpoint: 'https://id.example.com/api/user',
+    scopes: ['openid', 'profile'],
+    clientAuthentication: 'client_secret_post' as const,
+    userIdClaim: 'subject.id',
+    usernameClaim: null,
+    authorizationParams: { audience: 'floway' },
+    accessPolicy: { logic: 'and' as const, conditions: [] },
+    accessDeniedMessage: 'Denied by {{provider}}',
+    registrationUpstreamIds: ['up_one'],
+    createdAt: '2026-08-19T00:00:00.000Z',
+    updatedAt: '2026-08-19T00:00:00.000Z',
+  };
+  await repo.oauth2Config.saveSettings({
+    publicBaseUrl: 'https://floway.example.com',
+    updatedAt: provider.updatedAt,
+  });
+  await repo.oauth2Config.insertProvider(provider);
+
+  assertEquals((await repo.oauth2Config.getSettings()).publicBaseUrl, 'https://floway.example.com');
+  assertEquals(await repo.oauth2Config.getProviderById(provider.id), provider);
+}));

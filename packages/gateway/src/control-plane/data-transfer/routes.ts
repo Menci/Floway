@@ -15,17 +15,20 @@ import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, OAuth2Account, OAuth2Provider, OAuth2Settings, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 interface ExportPayload {
-  version: 20;
+  version: 25;
   exportedAt: string;
   data: {
     users: User[];
+    oauth2Accounts: OAuth2Account[];
+    oauth2Settings: OAuth2Settings;
+    oauth2Providers: OAuth2Provider[];
     apiKeys: ApiKey[];
     upstreams: FullSerializedUpstreamRecord[];
     proxies: SerializedProxy[];
@@ -37,7 +40,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 20;
+const EXPORT_VERSION = 25;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
@@ -100,8 +103,11 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [users, apiKeys, usage, webSearchUsage, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
+  const [users, oauth2Accounts, oauth2Settings, oauth2Providers, apiKeys, usage, webSearchUsage, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
     repo.users.listIncludingDeleted(),
+    repo.oauth2.listAccounts(),
+    repo.oauth2Config.getSettings(),
+    repo.oauth2Config.listProviders(),
     repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
     repo.webSearchUsage.listAll(),
@@ -116,6 +122,9 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
+      oauth2Accounts,
+      oauth2Settings,
+      oauth2Providers,
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(proxy => ({ id: proxy.id, name: proxy.name, url: proxy.url, dial_timeout_seconds: proxy.dialTimeoutSeconds })),
@@ -134,7 +143,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const { mode, data: rawData } = c.req.valid('json');
   const parsed = parseImportData(rawData);
   if (parsed.type === 'invalid') return c.json({ error: parsed.error }, 400);
-  const { users, apiKeys, upstreams, proxies, usage, searchUsage, performance, performanceIncluded, searchConfig } = parsed.data;
+  const { users, oauth2Accounts, oauth2Settings, oauth2Providers, apiKeys, upstreams, proxies, usage, searchUsage, performance, performanceIncluded, searchConfig } = parsed.data;
 
   const repo = getRepo();
   // Merge mode needs each key's prior dump policy to identify transitions that
@@ -154,6 +163,10 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // D1 does not expose a transaction spanning these repositories. Complete
     // validation therefore happens before this delete wave; a storage failure
     // after it begins can still leave a partially restored deployment.
+    // OAuth2 bindings reference users. Remove both durable bindings and the
+    // ephemeral authorization/handoff rows before the parallel delete wave.
+    await repo.oauth2.deleteAll();
+    await repo.oauth2Config.deleteAll();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),
@@ -172,6 +185,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
 
   // Users precede their API keys, and proxies precede upstream fallback refs.
   for (const user of users) await repo.users.save(user);
+  for (const account of oauth2Accounts) await repo.oauth2.saveAccount(account);
+  await repo.oauth2Config.saveSettings(oauth2Settings);
+  for (const provider of oauth2Providers) await repo.oauth2Config.saveProvider(provider);
   for (const proxy of proxies) {
     await repo.proxies.save({
       id: proxy.id,
@@ -198,6 +214,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     ok: true,
     imported: {
       users: users.length,
+      oauth2Accounts: oauth2Accounts.length,
+      oauth2Providers: oauth2Providers.length,
       apiKeys: apiKeys.length,
       upstreams: upstreams.length,
       proxies: proxies.length,

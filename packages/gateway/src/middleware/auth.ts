@@ -7,6 +7,12 @@ import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
+const isPublicOAuth2Request = (method: string, path: string): boolean => {
+  if (method === 'GET' && path === '/auth/oauth2/providers') return true;
+  if (method === 'POST' && (path === '/auth/oauth2/result' || path === '/auth/oauth2/register')) return true;
+  return method === 'GET' && /^\/auth\/oauth2\/[^/]+\/(?:start|callback)$/.test(path);
+};
+
 // The three slots auth middleware stamps on every authenticated request. All
 // optional because public / login routes carry none; handlers that require
 // one assert via the typed accessors below rather than reading c.get raw.
@@ -27,6 +33,7 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   const path = c.req.path;
   if (PUBLIC_PATHS.has(path) && c.req.method === 'GET') return await next();
   if (AUTH_VALIDATE_PATHS.has(path) && c.req.method === 'POST') return await next();
+  if (isPublicOAuth2Request(c.req.method, path)) return await next();
 
   // Browsers cannot attach custom headers to EventSource, so the dump SSE
   // stream — the only browser-driven SSE endpoint — accepts the session
