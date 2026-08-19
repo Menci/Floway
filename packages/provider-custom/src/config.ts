@@ -53,11 +53,27 @@ export interface CustomModelsFetch {
   endpoint?: string;
 }
 
-// One rule per header name the operator wants this upstream to receive.
-// `value: null` passes the client's own value through, so the header reaches
-// the upstream only when the client sent it. Any other value — the empty
-// string included — is this upstream's own value and is written on every
-// request, whether or not the client sent that header.
+// One rule per value the operator wants this upstream to receive under a
+// header name. `value: null` passes the client's own value through, so it
+// contributes a value only when the client sent the header. Any other value —
+// the empty string included — is this upstream's own value and is contributed
+// on every request.
+//
+// A name may carry several rules, and the upstream receives their values in
+// rule order: a passthrough rule beside a configured one appends the
+// configured value to what the client sent, and several configured rules send
+// several values. A name carries at most one passthrough rule, because the
+// client's values enter the request once. A name with no rule at all reaches
+// no upstream: it is not admitted, and nothing here writes it.
+//
+// How several values reach the wire is the runtime's choice, and the two
+// disagree: workerd keeps them as a list and emits one field line each, while
+// undici concatenates on append and emits a single combined line. RFC 9110
+// makes those the same field value for a list-typed name, so rules are
+// expressed as values and the representation is left to the runtime.
+// https://github.com/cloudflare/workerd/blob/5165b467ef2a5df54768cb5f18f33b2916e58fa7/src/workerd/api/headers.c%2B%2B#L398-L440
+// https://github.com/nodejs/undici/blob/v8.3.0/lib/web/fetch/headers.js#L236-L258
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-5.3
 export interface CustomIngressHeaderRule {
   key: string;
   value: string | null;
@@ -97,7 +113,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => {
   if (!Array.isArray(value)) throw new Error('Malformed custom upstream config: ingressHeadersRules must be an array');
-  const seen = new Set<string>();
+  const passthroughKeys = new Set<string>();
   return value.map((raw, index) => {
     if (!isRecord(raw) || Object.keys(raw).some(key => key !== 'key' && key !== 'value')) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}] must contain only key and value`);
@@ -116,14 +132,16 @@ const ingressHeadersRulesField = (value: unknown): CustomIngressHeaderRule[] => 
     if (nameIssue === 'transport-owned') {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].key ${key} is owned by the HTTP transport`);
     }
-    if (seen.has(key)) {
-      throw new Error(`Malformed custom upstream config: ingressHeadersRules contains duplicate key ${key}`);
-    }
-    seen.add(key);
     if (raw.value !== null && typeof raw.value !== 'string') {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value must be a string or null`);
     }
-    if (raw.value === null) return { key, value: null };
+    if (raw.value === null) {
+      if (passthroughKeys.has(key)) {
+        throw new Error(`Malformed custom upstream config: ingressHeadersRules passes ${key} through more than once`);
+      }
+      passthroughKeys.add(key);
+      return { key, value: null };
+    }
     if (!isCustomIngressHeaderValue(raw.value)) {
       throw new Error(`Malformed custom upstream config: ingressHeadersRules[${index}].value is not a valid HTTP header value`);
     }
