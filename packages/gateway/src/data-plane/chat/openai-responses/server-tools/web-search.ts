@@ -1,3 +1,4 @@
+import { runWebSearchSubRequest } from './search-sub-request.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from './shim.ts';
 import { shortId } from '../../../../shared/short-id.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
@@ -788,8 +789,11 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
                   { type: 'response.web_search_call.in_progress' },
                   { type: 'response.web_search_call.searching' },
                 ],
+                // Its own run: its own prologue, its own settlement, its own record. The
+                // planning above stays with the turn — what a call resolves to is the turn's
+                // decision — and what runs the backend is a run of its own.
                 run: async function* run() {
-                  const ir = await slot.resolve();
+                  const ir = await runWebSearchSubRequest(gatewayCtx, slot.resolve);
                   // `results` is gated on the client's `include`
                   // opt-in to match native OpenAI Responses' default wire
                   // shape; the IR keeps them either way for the

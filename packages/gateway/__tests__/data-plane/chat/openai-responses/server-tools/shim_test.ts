@@ -27,8 +27,12 @@ import type {
   WebSearchProviderRequest,
   WebSearchProviderResult,
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
+import { initDumpBroker, initDumpStore } from '../../../../../src/dump/registry.ts';
+import { openRunDump } from '../../../../../src/dump/run-sink.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
+import { eventsOf, installDumpStubs } from '../../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { flushBackground } from '../../../../test-utils/background-tracker.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -6281,4 +6285,35 @@ test('consumeTurn forwards an event carrying no output_index instead of dropping
   const forwarded = result.downstreamFrames[1];
   assert(forwarded.type === 'event');
   assertEquals((forwarded.event as unknown as { detail: string }).detail, 'carried through');
+});
+
+// ── A search is a run of its own ──────────────────────────────────────────
+
+// Ruling 2-and-6: a server tool's backend call is not part of the turn that asked for it. What
+// makes that observable is the record — a search bills no entity and names no performance
+// operation, so the run is the whole of what it buys, and its stages number from 1 like any
+// run's, which is why the record has to be its own rather than merged into the turn's.
+test('a search runs with its own prologue and its own record', async () => {
+  const { backend: _backend } = makeStubDeps();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const turn = openRunDump(
+    { id: 'k1', dumpRetentionSeconds: 3600 } as never,
+    { method: 'POST', path: '/v1/responses', body: { bytes: new Uint8Array(), streamError: null } },
+    promise => { void promise; },
+  );
+  assert(turn !== null);
+  const inv = makeInvocation({ payload: { tools: [{ type: 'web_search' }] } });
+  const script = scriptedRun([searchCallTurn(0, 'call_1', 'floway'), messageTurn('done', 0)]);
+
+  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, mockChatGatewayCtx({ apiKeyId: 'k1', wantsStream: true, dump: turn }), script.run);
+  await flushBackground();
+
+  // One record, and it is the search's rather than the turn's: the turn's own is finalized by
+  // the seam that served it, which no test harness here reaches.
+  assertEquals(stubs.stored.length, 1);
+  assertEquals(stubs.stored[0]!.record.meta.path, '/alpha/search');
+  const entered = eventsOf(stubs.stored[0]!.record)
+    .filter(event => event.type === 'stage.entered')
+    .map(event => event.name);
+  assertEquals(entered, ['writeSettlement', 'runWebSearchCall']);
 });
