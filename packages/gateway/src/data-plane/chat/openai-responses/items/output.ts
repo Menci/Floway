@@ -1,5 +1,5 @@
 import { hashOpenAIResponsesItem, openaiResponsesItemId } from './identity.ts';
-import type { StatefulOpenAIResponsesStore } from './store.ts';
+import type { OpenAIResponsesStatefulStore } from './store.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type OpenAIResponsesCompactionResult, type OpenAIResponsesOutputItem, type OpenAIResponsesResult, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
@@ -50,7 +50,7 @@ export const wrapOpenAIResponsesObservedOutput = async function* (
 export const wrapOpenAIResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
   args: {
-    readonly store: StatefulOpenAIResponsesStore;
+    readonly store: OpenAIResponsesStatefulStore;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {

@@ -2,7 +2,7 @@ import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
-import type { StatefulOpenAIResponsesStore } from './items/store.ts';
+import type { OpenAIResponsesStatefulStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -41,7 +41,7 @@ export class PreviousResponseNotFoundError extends Error {
 // `previous_response_id`, so this prep runs in serve and not in attempt.
 export const expandPreviousResponseId = async (
   payload: CanonicalOpenAIResponsesPayload,
-  store: StatefulOpenAIResponsesStore,
+  store: OpenAIResponsesStatefulStore,
 ): Promise<CanonicalOpenAIResponsesPayload> => {
   const previousResponseId = payload.previous_response_id;
   if (previousResponseId === undefined || previousResponseId === null) return payload;

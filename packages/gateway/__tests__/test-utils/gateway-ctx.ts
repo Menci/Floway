@@ -1,4 +1,4 @@
-import { createOpenAIResponsesHttpStore, type StatefulOpenAIResponsesStore } from '../../src/data-plane/chat/openai-responses/items/store.ts';
+import { createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityRequestContext } from '../../src/data-plane/chat/shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ctx.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
@@ -25,7 +25,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
 // Chat-protocol counterpart: adds the affinity membrane and the OpenAI Responses item
 // store. Tests that exercise durable OpenAI Responses behavior override `.store`
 // explicitly.
-export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: StatefulOpenAIResponsesStore } => {
+export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: OpenAIResponsesStatefulStore } => {
   const base = mockGatewayCtx(overrides);
   const affinity = overrides.affinity ?? new AffinityRequestContext('00'.repeat(32));
   if (overrides.affinity === undefined) affinity.select(stubModelCandidate());

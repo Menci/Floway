@@ -1,5 +1,5 @@
 import { openaiResponsesItemId } from './identity.ts';
-import type { StatefulOpenAIResponsesStore } from './store.ts';
+import type { OpenAIResponsesStatefulStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
@@ -8,7 +8,7 @@ interface HydratedItem {
   readonly privatePayload?: { readonly id: string; readonly value: unknown };
 }
 
-const hydrateItem = (item: OpenAIResponsesInputItem, store: StatefulOpenAIResponsesStore): HydratedItem => {
+const hydrateItem = (item: OpenAIResponsesInputItem, store: OpenAIResponsesStatefulStore): HydratedItem => {
   const id = openaiResponsesItemId(item);
   if (id === null) return { item };
   const stored = store.getItemById(id);
@@ -31,7 +31,7 @@ interface HydratedOpenAIResponsesPayload {
 
 export const hydrateOpenAIResponsesPayload = (
   payload: CanonicalOpenAIResponsesPayload,
-  store: StatefulOpenAIResponsesStore,
+  store: OpenAIResponsesStatefulStore,
 ): HydratedOpenAIResponsesPayload => {
   const hydrated = payload.input.map(item => hydrateItem(item, store));
   const privatePayloads = new Map<string, unknown>();
