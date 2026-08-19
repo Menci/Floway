@@ -392,6 +392,7 @@ const useStyles = makeStyles({
     // trailing edge; a stretched box would have kept it there.
     [WRAPPED]: { justifyContent: 'flex-start' },
   },
+  switchReadout: { flexShrink: 0, whiteSpace: 'nowrap' },
   // In the retemplate the readout is the ToggleSwitch's own OnContent and
   // OffContent, painted TextFillColorDisabled with the track. Sitting outside
   // the Fluent control, it is out of reach of that styling and states the dim
@@ -421,7 +422,7 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
   const styles = useStyles();
   const { t } = useTranslation();
   return <span className={styles.switchRow}>
-    <Text className={disabled === true ? styles.readoutDisabled : undefined}>{t(checked ? 'common.on' : 'common.off')}</Text>
+    <Text className={mergeClasses(styles.switchReadout, disabled === true && styles.readoutDisabled)}>{t(checked ? 'common.on' : 'common.off')}</Text>
     <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
   </span>;
 }
