@@ -205,8 +205,8 @@ export function defineStage(s: object): Stage {
 // `transform` fills the `execute` slot. Two layers: `open` holds the per-invocation state
 // that spans both directions, and each direction is one function returning the record it
 // hands on. Either side may be omitted, and an omitted one passes through unchanged —
-// which is the point, because today's interceptors call the continuation 107 times across
-// 68 files and 50 of those calls are a bare `return run();`.
+// which is the point, because most rules shape one direction and would otherwise spend a
+// line handing the other one back untouched.
 //
 // A stream, a value and a failure sit at one key, so telling them apart is reading a
 // value, and the stage does that where it needs to. There is no outcome-shape dispatch.

@@ -1,6 +1,6 @@
-// The chat interceptors, migrated. Two properties matter and neither is about the rewrites
-// themselves — those are transcribed from code that already worked. What is new is that a
-// stage returns a record instead of assigning to a context, and that a rewrite which changes
+// The chat rules. Two properties matter and neither is about the rewrites themselves — what
+// each rule does to a payload is settled by the protocol it speaks. What matters here is that
+// a stage returns a record instead of assigning to a context, and that a rewrite which changes
 // nothing changes nothing by identity. A rule that speaks about the response direction has a
 // third: what it read on the way down has to reach the way back, which is the only thing its
 // closure is for.
@@ -44,7 +44,7 @@ import type { OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesS
 const attemptWith = (...flags: string[]): AttemptSelector => ({ upstreamId: 'u', modelId: 'm', flags });
 
 /**
- * Runs a family's whole interceptor array, in the order its chain runs it, between stages
+ * Runs a family's whole rule array, in the order its chain runs it, between stages
  * that declare what its real neighbours declare: an edge that needs the answer, the headers
  * and the billed set on the way up, and an ending that answers with all three.
  *
@@ -120,7 +120,7 @@ const anthropicMessagesPayload = (messages: unknown[], rest: Record<string, unkn
 const openaiResponsesPayload = (input: unknown[], rest: Record<string, unknown> = {}): OpenAIResponsesPayload =>
   ({ model: 'm', input, ...rest }) as unknown as OpenAIResponsesPayload;
 
-describe('the OpenAI Chat Completions interceptors, as stages', () => {
+describe('the OpenAI Chat Completions rules', () => {
   it('rewrites the roles its flags name, in the settled order', async () => {
     const { down } = await runStage(applyRoleCompatibilityToOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload([
@@ -426,7 +426,7 @@ const assistantReplay = (reasoning: Record<string, unknown>): OpenAIChatCompleti
 const assistantOf = (payload: unknown): Record<string, unknown> =>
   (payload as OpenAIChatCompletionsPayload).messages[1] as unknown as Record<string, unknown>;
 
-describe('the OpenAI Chat Completions vendor dialects, as stages', () => {
+describe('the OpenAI Chat Completions vendor dialects', () => {
   it('projects the canonical assistant reasoning onto the one field DeepSeek reads', async () => {
     const { down } = await runStage(vendorDeepSeekNormalizeForOpenAIChatCompletions, 'response.chat.openaiChatCompletions', {
       'request.chat.openaiChatCompletions': openaiChatCompletionsPayload(assistantReplay({
@@ -650,7 +650,7 @@ describe('the OpenAI Chat Completions vendor dialects, as stages', () => {
   });
 });
 
-describe('the Anthropic Messages interceptors, as stages', () => {
+describe('the Anthropic Messages rules', () => {
   it('turns every inline system message into a user one', async () => {
     const { down } = await runStage(applyRoleCompatibilityToAnthropicMessages, 'response.chat.anthropicMessages', {
       'request.chat.anthropicMessages': anthropicMessagesPayload([
@@ -751,7 +751,7 @@ describe('the Anthropic Messages interceptors, as stages', () => {
   });
 });
 
-describe('the Gemini generateContent interceptors, as stages', () => {
+describe('the Gemini generateContent rules', () => {
   it('drops the part fields no translation carries, and a part they were all of', async () => {
     const { down } = await runStage(stripUnsupportedPartFieldsFromGeminiGenerateContent, 'response.chat.geminiGenerateContent', {
       'request.chat.geminiGenerateContent': {
@@ -859,7 +859,7 @@ describe('the Gemini generateContent interceptors, as stages', () => {
   });
 });
 
-describe('the OpenAI Responses interceptors, as stages', () => {
+describe('the OpenAI Responses rules', () => {
   const rolesOf = (down: Record<string, unknown>): unknown[] =>
     ((down['request.chat.openaiResponses'] as OpenAIResponsesPayload).input as OpenAIResponsesInputItem[])
       .map(item => (item as { role?: unknown }).role);
@@ -1034,7 +1034,7 @@ const usageOf = (frame: ProtocolFrame<OpenAIResponsesStreamEvent>): Record<strin
 //
 // It is not that family's *whole* chain. Rules a wire owns run in the wire's own chain, below
 // the stage that picks it, so what an array states is the order of what sits above the fork.
-describe('a family\'s interceptor array, in the order its chain runs it', () => {
+describe('a family\'s rule array, in the order its chain runs it', () => {
   it('assembles and runs the Anthropic Messages array', async () => {
     const { down } = await runChain('response.chat.anthropicMessages', [
       stripBillingAttributionFromAnthropicMessages,
