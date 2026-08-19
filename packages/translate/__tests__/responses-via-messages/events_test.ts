@@ -15,17 +15,17 @@ const runToCompletion = (
   usage: {
     input_tokens: number;
     output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
     speed?: string;
     service_tier?: string;
   },
   deltaUsageExtras?: {
-    input_tokens?: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
-    output_tokens_details?: { thinking_tokens: number };
+    input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
+    output_tokens_details?: { thinking_tokens: number } | null;
     speed?: string;
     service_tier?: string;
   },
@@ -129,6 +129,21 @@ test('handles no cache fields (backward compat)', () => {
     input_tokens: 100,
     output_tokens: 50,
   });
+
+  assertEquals(result.usage!.input_tokens, 100);
+  assertEquals(result.usage!.total_tokens, 150);
+  assertEquals(result.usage!.input_tokens_details, undefined);
+  assertEquals(result.usage!.output_tokens_details, undefined);
+});
+
+// An upstream that states an inapplicable cache bucket as `null` reported no
+// cache activity, so the translation carries absence rather than a zero the
+// upstream never billed.
+test('translates null cache counters to absent Responses cache details', () => {
+  const result = runToCompletion(
+    { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: null, cache_creation_input_tokens: null },
+    { cache_creation: null, output_tokens_details: null },
+  );
 
   assertEquals(result.usage!.input_tokens, 100);
   assertEquals(result.usage!.total_tokens, 150);

@@ -23,41 +23,61 @@ export interface MessagesUsageIteration {
 export const cloneMessagesUsageIterations = (iterations: MessagesUsageIteration[] | null): MessagesUsageIteration[] | null =>
   iterations === null ? null : structuredClone(iterations);
 
-export interface MessagesUsage {
-  input_tokens: number;
+export interface MessagesCacheCreationTtlTokens {
+  ephemeral_5m_input_tokens?: number;
+  ephemeral_1h_input_tokens?: number;
+}
+
+// Cumulative whole-message counters. Every one of them but `output_tokens` is
+// declared nullable upstream and carries `null` when the bucket does not apply
+// to the request, while upstreams that never opted into the owning feature
+// omit the field instead — the SDK's own accumulator reads both spellings as
+// "no value" and overwrites only when the counter is present.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/resources/messages/messages.ts#L1169-L1204
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/lib/MessageStream.ts#L592-L616
+export interface MessagesUsageDelta {
+  input_tokens?: number | null;
   output_tokens: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
   // Per-TTL split for cache writes introduced by extended-cache-ttl-2025-04-11.
   // Each `ephemeral_*` field is a disjoint subset of `cache_creation_input_tokens`
   // (the legacy flat field is the sum of both); upstreams that have not opted
   // into the beta omit `cache_creation` entirely and emit only the flat field.
-  cache_creation?: {
-    ephemeral_5m_input_tokens?: number;
-    ephemeral_1h_input_tokens?: number;
-  };
+  cache_creation?: MessagesCacheCreationTtlTokens | null;
   // `thinking_tokens` is the reasoning subset of the inclusive `output_tokens`
   // total, re-tokenized from the raw reasoning rather than from the possibly
   // summarized thinking text that reaches the response body, so it can differ
   // from the model's own generation count by a few tokens.
   // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1292-L1304
-  output_tokens_details?: { thinking_tokens: number };
+  output_tokens_details?: { thinking_tokens: number } | null;
   // https://docs.claude.com/en/api/service-tiers
-  service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+  service_tier?: 'standard' | 'priority' | 'batch' | (string & {}) | null;
   // https://docs.claude.com/en/build-with-claude/fast-mode
-  speed?: 'standard' | 'fast' | (string & {});
-  server_tool_use?: MessagesUsageServerToolUse;
+  speed?: 'standard' | 'fast' | (string & {}) | null;
+  server_tool_use?: MessagesUsageServerToolUse | null;
   iterations?: MessagesUsageIteration[] | null;
+}
+
+// The whole-message totals, carried by the non-streaming response body and by
+// the `message_start` snapshot that reuses it — the two places upstream
+// declares `input_tokens` non-null. Upstream's own delta carrier declares a
+// narrower field set than the type above, which stays widened because real
+// upstreams do repeat the tier and per-TTL fields on `message_delta`.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/resources/messages/messages.ts#L2362-L2412
+export interface MessagesUsage extends Omit<MessagesUsageDelta, 'input_tokens'> {
+  input_tokens: number;
 }
 
 export interface MessagesCacheCreationUsage {
   cache_creation_input_tokens?: number;
-  cache_creation?: {
-    ephemeral_5m_input_tokens?: number;
-    ephemeral_1h_input_tokens?: number;
-  };
+  cache_creation?: MessagesCacheCreationTtlTokens;
 }
 
+// Usage as Floway accounts for it: the upstream counters with every `null`
+// already collapsed to absence, so consumers test presence rather than repeat
+// the wire's two spellings of "no value". `iterations` keeps its explicit
+// `null`, which upstream uses to state that a turn ran no iterations at all.
 export interface MessagesUsageSnapshot extends MessagesCacheCreationUsage {
   input_tokens?: number;
   output_tokens: number;
@@ -68,31 +88,38 @@ export interface MessagesUsageSnapshot extends MessagesCacheCreationUsage {
   iterations?: MessagesUsageIteration[] | null;
 }
 
-export const messagesUsageSnapshot = (usage?: MessagesUsageSnapshot): MessagesUsageSnapshot => usage === undefined
+const present = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined;
+
+export const messagesUsageSnapshot = (usage?: MessagesUsageDelta): MessagesUsageSnapshot => usage === undefined
   ? { output_tokens: 0 }
   : {
-      ...usage,
-      ...(usage.cache_creation === undefined ? {} : { cache_creation: { ...usage.cache_creation } }),
-      ...(usage.output_tokens_details === undefined ? {} : { output_tokens_details: { ...usage.output_tokens_details } }),
+      output_tokens: usage.output_tokens,
+      ...(present(usage.input_tokens) ? { input_tokens: usage.input_tokens } : {}),
+      ...(present(usage.cache_read_input_tokens) ? { cache_read_input_tokens: usage.cache_read_input_tokens } : {}),
+      ...(present(usage.cache_creation_input_tokens) ? { cache_creation_input_tokens: usage.cache_creation_input_tokens } : {}),
+      ...(present(usage.cache_creation) ? { cache_creation: { ...usage.cache_creation } } : {}),
+      ...(present(usage.output_tokens_details) ? { output_tokens_details: { ...usage.output_tokens_details } } : {}),
+      ...(present(usage.service_tier) ? { service_tier: usage.service_tier } : {}),
+      ...(present(usage.speed) ? { speed: usage.speed } : {}),
       ...(usage.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(usage.iterations) }),
     };
 
 export const mergeMessagesUsageSnapshot = (
   current: MessagesUsageSnapshot,
-  delta: MessagesUsageSnapshot,
-): MessagesUsageSnapshot => ({
-  ...current,
-  output_tokens: delta.output_tokens,
-  ...(delta.input_tokens === undefined ? {} : { input_tokens: delta.input_tokens }),
-  ...(delta.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: delta.cache_read_input_tokens }),
-  ...(delta.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: delta.cache_creation_input_tokens }),
-  ...(delta.cache_creation === undefined ? {} : { cache_creation: { ...delta.cache_creation } }),
-  ...(delta.output_tokens_details === undefined ? {} : { output_tokens_details: { ...delta.output_tokens_details } }),
-  ...(delta.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(delta.iterations) }),
-  ...(delta.speed === undefined && delta.service_tier === undefined
-    ? {}
-    : { speed: delta.speed, service_tier: delta.service_tier }),
-});
+  delta: MessagesUsageDelta,
+): MessagesUsageSnapshot => {
+  const update = messagesUsageSnapshot(delta);
+  return {
+    ...current,
+    ...update,
+    // The served tier is one fact spelled by two fields, so an update that
+    // states either one restates both and neither may survive from an earlier
+    // event on its own.
+    ...(update.speed === undefined && update.service_tier === undefined
+      ? {}
+      : { speed: update.speed, service_tier: update.service_tier }),
+  };
+};
 
 export const splitMessagesCacheCreationTokens = (
   usage: MessagesCacheCreationUsage,
