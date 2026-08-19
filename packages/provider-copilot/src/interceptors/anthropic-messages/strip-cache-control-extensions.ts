@@ -1,5 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
-import { mapKeepingIdentity, withKeysChanged } from '../shared/rebuild.ts';
+import { mapKeepingIdentity, withKeysChanged } from '@floway-dev/protocols/common';
 
 /**
  * Two `cache_control` sub-fields are beta extensions to the base
