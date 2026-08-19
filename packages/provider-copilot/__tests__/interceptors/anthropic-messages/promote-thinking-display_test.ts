@@ -94,7 +94,7 @@ test('withThinkingDisplayPromoted sends summarized upstream when thinking displa
         name: 'Error',
         message: 'stop',
         stack: '',
-        target_api: 'messages',
+        target_api: 'anthropicMessages',
       },
     }));
 
