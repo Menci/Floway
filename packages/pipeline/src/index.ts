@@ -32,7 +32,6 @@ export { defer, isDeferred, isOwned, own, run } from './run.ts';
 export type { Deferred, Owned, RunResult } from './run.ts';
 
 export {
-  createEncoder,
   createRunEncoder,
   createRunReader,
   decodeKey,

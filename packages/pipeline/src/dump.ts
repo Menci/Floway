@@ -172,7 +172,7 @@ const tagged = (value: unknown): Stored | undefined => {
  * deep-clones a payload: every object below the clone is new, and an embedded image is
  * still the same bytes.
  */
-export const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => {
+const createEncoder = (options: { readonly shareStringsFrom?: number } = {}) => {
   const shareStringsFrom = options.shareStringsFrom ?? 1024;
   const objectIds = new Map<object, number>();
   const stringIds = new Map<string, number>();
