@@ -27,7 +27,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
  * - https://docs.claude.com/en/build-with-claude/fast-mode
  * - https://docs.claude.com/en/api/service-tiers
  */
-export const withSpeedFast: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withSpeedFast: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
   const speed = ctx.payload.speed;
   const stampFast = speed === 'fast';
 

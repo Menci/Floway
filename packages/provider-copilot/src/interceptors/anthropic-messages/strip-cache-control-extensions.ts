@@ -43,7 +43,7 @@ const stripExtensions = <T extends object>(block: T): T => {
   return withKeysChanged(block, { cache_control: Object.keys(rest).length > 0 ? rest : undefined });
 };
 
-export const withCacheControlExtensionsStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withCacheControlExtensionsStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
   const payload = ctx.payload;
 
   const system = Array.isArray(payload.system)

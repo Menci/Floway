@@ -7,7 +7,6 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -34,7 +33,7 @@ test('keeps only supported caller beta values in first-seen order', async () => 
     'advanced-tool-use-2025-11-20',
     'context-1m-2025-08-07',
   ]);
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
+  await withAnthropicBetaNormalized(ctx, okEvents);
   assertEquals(ctx.anthropicBeta, ['advanced-tool-use-2025-11-20']);
 });
 
@@ -42,15 +41,15 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
   const payload = { ...baseBody, thinking: { type: 'enabled' as const, budget_tokens: 1024 } };
   const silent = invocation(payload);
   const explicit = invocation(payload, ['context-1m-2025-08-07']);
-  await withAnthropicBetaNormalized(silent, stubRequest, okEvents);
-  await withAnthropicBetaNormalized(explicit, stubRequest, okEvents);
+  await withAnthropicBetaNormalized(silent, okEvents);
+  await withAnthropicBetaNormalized(explicit, okEvents);
   assertEquals(silent.anthropicBeta, ['interleaved-thinking-2025-05-14']);
   assertEquals(explicit.anthropicBeta, []);
 });
 
 test('does not synthesize interleaved thinking for adaptive thinking', async () => {
   const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive', budget_tokens: 1024 } });
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
+  await withAnthropicBetaNormalized(ctx, okEvents);
   assertEquals(ctx.anthropicBeta, []);
 });
 
@@ -59,7 +58,7 @@ test('pairs context management with its required beta token', async () => {
     { ...baseBody, context_management: { edits: [] } },
     ['interleaved-thinking-2025-05-14'],
   );
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
+  await withAnthropicBetaNormalized(ctx, okEvents);
   assertEquals(ctx.anthropicBeta, [
     'interleaved-thinking-2025-05-14',
     'context-management-2025-06-27',

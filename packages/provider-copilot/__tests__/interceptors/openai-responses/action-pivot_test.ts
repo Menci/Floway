@@ -14,7 +14,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 // observed wire request must be the streaming /responses shape
 // (stream:true, no `compaction_trigger`), and the typed result must
 // surface as the `action: 'generate'` variant.
-const pivotCompactToGenerate: Interceptor<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult> = async (ctx, _env, run) => {
+const pivotCompactToGenerate: Interceptor<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult> = async (ctx, run) => {
   ctx.action = 'generate';
   return await run();
 };

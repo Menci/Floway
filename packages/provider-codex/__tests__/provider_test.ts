@@ -344,7 +344,7 @@ describe('createCodexProvider', () => {
     const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
-    const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };
+    const result = await instance.instance[method](model, undefined, noopUpstreamCallOptions()) as { response: Response };
     expect(result.response.status).toBe(405);
     const body = await result.response.json() as { error: { type: string; message: string } };
     expect(body.error.type).toBe('method_not_allowed');

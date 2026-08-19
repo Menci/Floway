@@ -17,7 +17,7 @@ const isContextWindowError = (text: string): boolean => text.includes('Request b
  * substring set here (`Request body is too large...`) is disjoint from
  * the OpenAI Responses/OpenAI Chat Completions shapes those pairs match on.
  */
-export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryInterceptor = async (_ctx, _env, run) => {
+export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryInterceptor = async (_ctx, run) => {
   const result = await run();
   if (result.type !== 'api-error' || result.source !== 'upstream') return result;
 

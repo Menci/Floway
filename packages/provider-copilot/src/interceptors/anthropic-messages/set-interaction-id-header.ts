@@ -24,7 +24,7 @@ const sessionUuid = async (input: string): Promise<string> => {
   return v4({ random: new Uint8Array(await crypto.subtle.digest('SHA-256', data)) });
 };
 
-export const withInteractionIdHeaderSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withInteractionIdHeaderSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
   const { sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id);
   if (sessionId) {
     ctx.headers.set('x-interaction-id', await sessionUuid(sessionId));

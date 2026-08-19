@@ -9,8 +9,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -55,7 +53,7 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
   assertEquals(imageUrlOf(sourceItem), 'data:image/png;base64,AAAA');
@@ -81,7 +79,7 @@ test.each(Object.entries(contentContainers))('leaves remote images in %s untouch
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'https://example.com/cat.png');
   assert(ctx.payload === payload);
@@ -127,7 +125,7 @@ test('compresses each unique inline image only once when the same data URL appea
     ],
   });
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   // Two unique data URLs across five targets → exactly two compress calls.
   assertEquals(calls, 2);
@@ -151,8 +149,8 @@ test('reuses its compressed image when the same attempt payload is retried', asy
     }],
   });
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(calls, 1);
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
@@ -160,7 +158,7 @@ test('reuses its compressed image when the same attempt payload is retried', asy
   const item = ctx.payload.input[0];
   if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
   item.content[0].image_url = 'data:image/png;base64,BBBB';
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(calls, 2);
 });

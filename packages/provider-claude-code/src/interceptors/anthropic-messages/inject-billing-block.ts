@@ -18,7 +18,6 @@ import { CLAUDE_CLI_VERSION } from '../../headers.ts';
 // value than what the request body settles to and break CC mimicry.
 export const injectBillingBlock = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, ctx.payload);

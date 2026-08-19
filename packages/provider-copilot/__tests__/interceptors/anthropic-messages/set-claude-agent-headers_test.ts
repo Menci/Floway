@@ -9,8 +9,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -31,7 +29,7 @@ const basePayload = (userId: string | undefined): AnthropicMessagesPayload => ({
 test('Claude agent headers set for the legacy fingerprint with both halves', async () => {
   const ctx = invocation(basePayload('user_acct-1_account__session_sess-1'));
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-interaction-type'), 'messages-proxy');
   assertEquals(ctx.headers.get('openai-intent'), 'messages-proxy');
@@ -44,7 +42,7 @@ test('Claude agent headers set for the legacy fingerprint with both halves', asy
 test('Claude agent headers set for the JSON fingerprint with device_id + session_id', async () => {
   const ctx = invocation(basePayload(JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' })));
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('user-agent'), CLAUDE_AGENT_USER_AGENT);
   assertEquals(ctx.headers.get('copilot-integration-id'), '');
@@ -53,7 +51,7 @@ test('Claude agent headers set for the JSON fingerprint with device_id + session
 test('Claude agent headers absent when session_id is missing', async () => {
   const ctx = invocation(basePayload(JSON.stringify({ device_id: 'dev-1' })));
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('user-agent'), false);
   assertEquals(ctx.headers.has('copilot-integration-id'), false);
@@ -62,7 +60,7 @@ test('Claude agent headers absent when session_id is missing', async () => {
 test('Claude agent headers absent when safety identifier is missing', async () => {
   const ctx = invocation(basePayload(JSON.stringify({ session_id: 'sess-only' })));
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('user-agent'), false);
   assertEquals(ctx.headers.has('copilot-integration-id'), false);
@@ -71,7 +69,7 @@ test('Claude agent headers absent when safety identifier is missing', async () =
 test('Claude agent headers absent when metadata is not provided', async () => {
   const ctx = invocation(basePayload(undefined));
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('user-agent'), false);
   assertEquals(ctx.headers.has('copilot-integration-id'), false);
@@ -80,7 +78,7 @@ test('Claude agent headers absent when metadata is not provided', async () => {
 test('Claude agent headers skipped on claude-opus-4-8 even with full fingerprint', async () => {
   const ctx = invocation({ ...basePayload(JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' })), model: 'claude-opus-4-8' });
 
-  await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
+  await withClaudeAgentHeadersSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('user-agent'), false);
   assertEquals(ctx.headers.has('openai-intent'), false);

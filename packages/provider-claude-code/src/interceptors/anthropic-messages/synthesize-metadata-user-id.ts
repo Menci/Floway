@@ -30,7 +30,6 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway
 
 export const synthesizeMetadataUserId = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const existing = ctx.payload.metadata?.user_id;

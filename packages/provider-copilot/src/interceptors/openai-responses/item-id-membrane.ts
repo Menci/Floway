@@ -268,7 +268,7 @@ const normalizeCompactionResult = (response: OpenAIResponsesCompactionResult): O
   }),
 });
 
-export const withCopilotOpenAIResponsesItemIdMembrane: CopilotOpenAIResponsesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withCopilotOpenAIResponsesItemIdMembrane: CopilotOpenAIResponsesBoundaryInterceptor = async (ctx, run) => {
   ctx.payload = restoreInputItemIds(ctx.payload);
   const result = await run();
   if (!result.ok) return result;

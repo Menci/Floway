@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -25,7 +23,7 @@ test('OpenAI Chat Completions initiator is user when the last message is from th
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -39,7 +37,7 @@ test('OpenAI Chat Completions initiator is agent when the last message is an ass
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -58,7 +56,7 @@ test('OpenAI Chat Completions initiator is agent when the last message is a tool
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -78,7 +76,7 @@ test('OpenAI Chat Completions initiator follows the final user role for a lifted
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });

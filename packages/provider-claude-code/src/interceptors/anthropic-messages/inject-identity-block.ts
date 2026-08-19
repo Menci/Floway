@@ -5,7 +5,6 @@ import type { AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic
 // system[1]; relies on injectBillingBlock having materialized payload.system as an array (see ./index.ts chain order).
 export const injectIdentityBlock = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const system = ctx.payload.system as AnthropicMessagesTextBlock[];

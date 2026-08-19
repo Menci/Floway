@@ -63,7 +63,7 @@ const selectCacheMarkerIndexes = (messages: readonly OpenAIChatCompletionsMessag
   return [...new Set([...systemIndexes, ...nonSystemIndexes])].sort((a, b) => a - b);
 };
 
-export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
+export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, run) => {
   const marked = new Set(selectCacheMarkerIndexes(ctx.payload.messages));
   if (marked.size === 0) return await run();
 

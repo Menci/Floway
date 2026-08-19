@@ -15,7 +15,7 @@ import { assertEquals, readJsonRequest } from '@floway-dev/test-utils';
 // carry generate-only fields (tools/reasoning/temperature/...) — the
 // per-action narrowing through `toCompactPayloadShape` is what closes that
 // gap.
-const pivotGenerateToCompact: Interceptor<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult> = async (ctx, _env, run) => {
+const pivotGenerateToCompact: Interceptor<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult> = async (ctx, run) => {
   ctx.action = 'compact';
   return await run();
 };

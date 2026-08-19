@@ -13,6 +13,5 @@ export interface OpenAIChatCompletionsBoundaryCtx {
 
 export type CopilotOpenAIChatCompletionsBoundaryInterceptor = Interceptor<
   OpenAIChatCompletionsBoundaryCtx,
-  object,
   ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>
 >;

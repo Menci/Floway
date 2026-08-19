@@ -24,7 +24,6 @@ import type { OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-resp
  */
 export const withInitiatorHeaderSet = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const lastItem: OpenAIResponsesInputItem | undefined = ctx.payload.input.at(-1);

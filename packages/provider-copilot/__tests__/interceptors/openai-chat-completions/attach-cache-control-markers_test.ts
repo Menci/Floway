@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -32,7 +30,7 @@ test('OpenAI Chat Completions cache markers attach to first two systems and last
     { role: 'assistant', content: 'assistant 2' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), [0, 1, 4, 5]);
   for (const index of [0, 1, 4, 5]) {
@@ -45,7 +43,7 @@ test('OpenAI Chat Completions cache markers handle a single system message', asy
     { role: 'system', content: 'only system' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), [0]);
 });
@@ -58,7 +56,7 @@ test('OpenAI Chat Completions cache markers attach to last two non-systems when 
     { role: 'assistant', content: 'assistant 2' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), [2, 3]);
 });
@@ -69,7 +67,7 @@ test('OpenAI Chat Completions cache markers skip empty string content', async ()
     { role: 'user', content: '' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), []);
 });
@@ -80,7 +78,7 @@ test('OpenAI Chat Completions cache markers skip empty array content', async () 
     { role: 'user', content: [] },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), []);
 });
@@ -95,7 +93,7 @@ test('OpenAI Chat Completions cache markers only mark first two of five systems'
     { role: 'user', content: 'user 1' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   // First two systems + last (and only) non-system.
   assertEquals(markedIndexes(ctx.payload.messages), [0, 1, 5]);
@@ -111,7 +109,7 @@ test('OpenAI Chat Completions cache markers are independent object instances per
     { role: 'user', content: 'user 1' },
   ]);
 
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
+  await withCacheControlMarkersAttached(ctx, okEvents);
 
   const a = (ctx.payload.messages[0] as CopilotCacheableMessage).copilot_cache_control;
   const b = (ctx.payload.messages[1] as CopilotCacheableMessage).copilot_cache_control;

@@ -22,7 +22,6 @@ const CODEX_UNSUPPORTED_BODY_FIELDS = [
 
 export const stripUnsupportedFields = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const next: Record<string, unknown> = { ...(ctx.payload as unknown as Record<string, unknown>) };

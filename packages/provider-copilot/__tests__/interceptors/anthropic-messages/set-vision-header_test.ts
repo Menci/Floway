@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -35,7 +33,7 @@ test('Anthropic Messages vision header set when a top-level image block is prese
     ],
   });
 
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
+  await withVisionHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -60,7 +58,7 @@ test('Anthropic Messages vision header set when an image is nested inside tool_r
     ],
   });
 
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
+  await withVisionHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -83,7 +81,7 @@ test('Anthropic Messages vision header absent when no image is present', async (
     ],
   });
 
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
+  await withVisionHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('copilot-vision-request'), false);
 });

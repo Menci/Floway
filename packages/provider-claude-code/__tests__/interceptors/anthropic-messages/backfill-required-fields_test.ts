@@ -26,7 +26,7 @@ test('backfills max_tokens from ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when both
     temperature: 0.5,
   } as Partial<AnthropicMessagesPayload> as AnthropicMessagesPayload);
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
 });
@@ -42,7 +42,7 @@ test('prefers model.limits.max_output_tokens over the gateway fallback when set'
     model,
   );
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.max_tokens, 64000);
 });
@@ -59,7 +59,7 @@ test('preserves caller-supplied max_tokens', async () => {
     model,
   );
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.max_tokens, 100);
 });
@@ -74,7 +74,7 @@ test('backfills temperature to 1 when missing', async () => {
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.temperature, 1);
 });
@@ -87,7 +87,7 @@ test('preserves caller-supplied temperature', async () => {
     temperature: 0.7,
   });
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.temperature, 0.7);
 });
@@ -102,7 +102,7 @@ test('preserves caller-supplied temperature: 0', async () => {
     temperature: 0,
   });
 
-  await backfillRequiredFields(ctx, {}, okEvents);
+  await backfillRequiredFields(ctx, okEvents);
 
   assertEquals(ctx.payload.temperature, 0);
 });

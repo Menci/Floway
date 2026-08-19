@@ -25,7 +25,7 @@ test('appends IDENTITY_BLOCK after an existing system[0] block', async () => {
     system: [billing],
   });
 
-  await injectIdentityBlock(ctx, {}, okEvents);
+  await injectIdentityBlock(ctx, okEvents);
 
   assertEquals(ctx.payload.system, [billing, IDENTITY_BLOCK]);
 });
@@ -39,7 +39,7 @@ test('appends IDENTITY_BLOCK onto a one-block system array regardless of block c
     system: [existing],
   });
 
-  await injectIdentityBlock(ctx, {}, okEvents);
+  await injectIdentityBlock(ctx, okEvents);
 
   assertEquals(ctx.payload.system, [existing, IDENTITY_BLOCK]);
 });

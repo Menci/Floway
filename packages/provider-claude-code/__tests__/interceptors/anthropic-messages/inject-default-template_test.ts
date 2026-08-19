@@ -26,7 +26,7 @@ test('appends DEFAULT_TEMPLATE_BLOCK as system[2] with ephemeral cache_control i
     system: [billingBlock, IDENTITY_BLOCK],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
+  await injectDefaultTemplate(ctx, okEvents);
 
   assertEquals(ctx.payload.system, [billingBlock, IDENTITY_BLOCK, DEFAULT_TEMPLATE_BLOCK]);
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
@@ -57,7 +57,7 @@ test('preserves ephemeral cache_control when caller already holds 3 breakpoints 
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
+  await injectDefaultTemplate(ctx, okEvents);
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   assertEquals(ctx.payload.system.length, 4);
@@ -94,7 +94,7 @@ test('demotes our cache_control when caller already holds 4 breakpoints (would b
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
+  await injectDefaultTemplate(ctx, okEvents);
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   assertEquals(ctx.payload.system.length, 4);
@@ -124,7 +124,7 @@ test('demotes our cache_control when caller already exceeds the cap', async () =
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
+  await injectDefaultTemplate(ctx, okEvents);
 
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
   const injected = ctx.payload.system.at(-1)!;

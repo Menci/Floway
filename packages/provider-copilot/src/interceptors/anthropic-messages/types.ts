@@ -25,7 +25,6 @@ export interface AnthropicMessagesBoundaryCtx {
 
 export type CopilotAnthropicMessagesBoundaryInterceptor = Interceptor<
   AnthropicMessagesBoundaryCtx,
-  object,
   ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>
 >;
 
@@ -34,6 +33,5 @@ export type CopilotAnthropicMessagesBoundaryInterceptor = Interceptor<
 // only — post-`run()` event-stream inspection is not portable to this result.
 export type CopilotAnthropicMessagesCountTokensBoundaryInterceptor = Interceptor<
   AnthropicMessagesBoundaryCtx,
-  object,
   Response
 >;

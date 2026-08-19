@@ -50,7 +50,7 @@ const markerSite = (messages: AnthropicMessagesPayload['messages']): { readonly 
   return undefined;
 };
 
-export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
   const payload = ctx.payload as typeof ctx.payload & { cache_control?: { type: 'ephemeral' } };
   const topLevel = payload.cache_control;
   if (topLevel === undefined) return await run();

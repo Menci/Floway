@@ -61,7 +61,7 @@
 | Package | `packages/agent-setup` | Configures supported coding agents. |
 | Package | `packages/gateway` | Composes gateway services. |
 | Package | `packages/http` | Provides HTTP transport primitives. |
-| Package | `packages/interceptor` | Intercepts gateway traffic. |
+| Package | `packages/interceptor` | Chains provider boundary rewrites. |
 | Package | `packages/pipeline` | Runs stages over a fact record. |
 | Package | `packages/platform` | Defines portable runtime contracts. |
 | Package | `packages/protocols` | Defines protocol contracts. |

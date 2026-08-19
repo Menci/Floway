@@ -105,7 +105,6 @@ const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<
 // payload the chat path sends.
 export const withInlineImagesCompressed = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   // Finish this nested activation before starting the upstream call. Its

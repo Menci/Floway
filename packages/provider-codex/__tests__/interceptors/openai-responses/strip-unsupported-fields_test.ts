@@ -6,8 +6,6 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', headers: new Headers() });
 
@@ -42,7 +40,7 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
     stream_options: { include_usage: true },
   } as unknown as CanonicalOpenAIResponsesPayload);
 
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
+  await stripUnsupportedFields(ctx, okEvents);
 
   assertFalse('max_output_tokens' in ctx.payload);
   assertFalse('temperature' in ctx.payload);
@@ -67,7 +65,7 @@ test('leaves supported fields intact', async () => {
     temperature: 0.7,
   });
 
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
+  await stripUnsupportedFields(ctx, okEvents);
 
   assertEquals(ctx.payload.model, 'gpt-test');
   assertEquals(ctx.payload.input, [{ type: 'message', role: 'user', content: 'hello' }]);
@@ -82,7 +80,7 @@ test('payload without any unsupported fields is preserved as-is', async () => {
   const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] };
   const ctx = invocation(payload);
 
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
+  await stripUnsupportedFields(ctx, okEvents);
 
   assertEquals(ctx.payload, { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
 });

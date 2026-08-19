@@ -16,7 +16,6 @@ const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
 // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/extension/chatSessions/claude/node/claudeLanguageModelServer.ts#L413-L427
 export const withAnthropicBetaNormalized = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const callerSuppliedBeta = ctx.anthropicBeta.length > 0;

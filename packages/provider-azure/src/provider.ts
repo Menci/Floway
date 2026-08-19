@@ -73,8 +73,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         model,
         action,
       };
-      return await runInterceptors<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>(
-        ctx, {}, AZURE_OPENAI_RESPONSES_BOUNDARY, async () => {
+      return await runInterceptors<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult>(
+        ctx, AZURE_OPENAI_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           switch (ctx.action) {
           case 'generate': {

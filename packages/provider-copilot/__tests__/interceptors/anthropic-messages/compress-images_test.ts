@@ -9,8 +9,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -59,7 +57,7 @@ test('compresses a top-level image block to WebP', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   const block = (ctx.payload.messages[0].content as Array<{ type: string; source?: { media_type: string; data: string } }>)[1];
   assertEquals(block.source?.media_type, 'image/webp');
@@ -110,7 +108,7 @@ test('compresses an image nested inside tool_result content', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   const rewrittenContent = ctx.payload.messages[0].content;
   if (!Array.isArray(rewrittenContent)) throw new Error('expected rewritten user content');
@@ -144,7 +142,7 @@ test('leaves image-free payloads untouched and does not invoke the processor', a
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(inputs.length, 0);
   assert(ctx.payload === payload);
@@ -174,7 +172,7 @@ test('compresses each unique inline image only once when the same base64 data re
     ],
   });
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(inputs.length, 2);
 });
@@ -214,7 +212,7 @@ const capTargetFor = async (upstreamModelId: string, source: ImageDimensions): P
       },
     ],
   }, upstreamModelId);
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
   return targets[0];
 };
 

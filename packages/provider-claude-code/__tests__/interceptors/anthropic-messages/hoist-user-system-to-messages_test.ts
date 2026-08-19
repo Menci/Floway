@@ -23,7 +23,7 @@ test('captures a string system into a synthetic user/assistant pair and drops `s
     system: 'You are a pirate.',
   });
 
-  await hoistUserSystemToMessages(ctx, {}, okEvents);
+  await hoistUserSystemToMessages(ctx, okEvents);
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages, [
@@ -44,7 +44,7 @@ test('joins multi-block system into one synthetic turn with blank-line separator
     ],
   });
 
-  await hoistUserSystemToMessages(ctx, {}, okEvents);
+  await hoistUserSystemToMessages(ctx, okEvents);
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages[0], { role: 'user', content: [{ type: 'text', text: '[System Instructions]\nfirst rule\n\nsecond rule' }] });
@@ -57,7 +57,7 @@ test('drops system entirely when caller did not send one and leaves messages unt
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await hoistUserSystemToMessages(ctx, {}, okEvents);
+  await hoistUserSystemToMessages(ctx, okEvents);
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages.length, 1);
@@ -72,7 +72,7 @@ test('drops system but does not inject a synthetic turn when system text is empt
     system: [{ type: 'text', text: '' }],
   });
 
-  await hoistUserSystemToMessages(ctx, {}, okEvents);
+  await hoistUserSystemToMessages(ctx, okEvents);
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages.length, 1);

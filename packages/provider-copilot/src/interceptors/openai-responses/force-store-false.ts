@@ -14,7 +14,6 @@ import type { OpenAIResponsesBoundaryCtx } from './types.ts';
  */
 export const withStoreForcedFalse = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   ctx.payload = { ...ctx.payload, store: false };
