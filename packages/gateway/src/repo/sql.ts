@@ -24,10 +24,13 @@ import type {
   ModelAliasRecord,
   OAuth2Account,
   OAuth2Authorization,
+  OAuth2ConfigRepo,
   OAuth2Handoff,
+  OAuth2Provider,
   OAuth2RegistrationInput,
   OAuth2RegistrationResult,
   OAuth2Repo,
+  OAuth2Settings,
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
@@ -713,6 +716,206 @@ class SqlOAuth2Repo implements OAuth2Repo {
       this.db.prepare('DELETE FROM oauth2_handoffs'),
       this.db.prepare('DELETE FROM oauth2_authorizations'),
       this.db.prepare('DELETE FROM oauth2_accounts'),
+    ]);
+  }
+}
+
+interface OAuth2ProviderRow {
+  id: string;
+  display_name: string;
+  enabled: number;
+  client_id: string;
+  client_secret: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  userinfo_endpoint: string;
+  scopes_json: string;
+  client_authentication: string;
+  user_id_claim: string | null;
+  username_claim: string | null;
+  authorization_params_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const OAUTH2_PROVIDER_COLUMNS = 'id, display_name, enabled, client_id, client_secret, authorization_endpoint, token_endpoint, userinfo_endpoint, scopes_json, client_authentication, user_id_claim, username_claim, authorization_params_json, created_at, updated_at';
+
+const parseOAuth2StringArray = (raw: string, field: string): string[] => {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`OAuth2 provider ${field} contains malformed JSON`, { cause });
+  }
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new TypeError(`OAuth2 provider ${field} must contain an array of strings`);
+  }
+  return value;
+};
+
+const parseOAuth2StringRecord = (raw: string, field: string): Record<string, string> => {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`OAuth2 provider ${field} contains malformed JSON`, { cause });
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)
+    || Object.values(value).some(item => typeof item !== 'string')) {
+    throw new TypeError(`OAuth2 provider ${field} must contain an object of string values`);
+  }
+  return value as Record<string, string>;
+};
+
+const toOAuth2Provider = (row: OAuth2ProviderRow): OAuth2Provider => {
+  if (row.client_authentication !== 'client_secret_post' && row.client_authentication !== 'client_secret_basic') {
+    throw new TypeError(`OAuth2 provider ${row.id} has invalid client authentication ${row.client_authentication}`);
+  }
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    enabled: row.enabled === 1,
+    clientId: row.client_id,
+    clientSecret: row.client_secret,
+    authorizationEndpoint: row.authorization_endpoint,
+    tokenEndpoint: row.token_endpoint,
+    userInfoEndpoint: row.userinfo_endpoint,
+    scopes: parseOAuth2StringArray(row.scopes_json, `${row.id}.scopes_json`),
+    clientAuthentication: row.client_authentication,
+    userIdClaim: row.user_id_claim,
+    usernameClaim: row.username_claim,
+    authorizationParams: parseOAuth2StringRecord(row.authorization_params_json, `${row.id}.authorization_params_json`),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+const bindOAuth2Provider = (statement: SqlPreparedStatement, provider: OAuth2Provider): SqlPreparedStatement => statement.bind(
+  provider.id,
+  provider.displayName,
+  provider.enabled ? 1 : 0,
+  provider.clientId,
+  provider.clientSecret,
+  provider.authorizationEndpoint,
+  provider.tokenEndpoint,
+  provider.userInfoEndpoint,
+  JSON.stringify(provider.scopes),
+  provider.clientAuthentication,
+  provider.userIdClaim,
+  provider.usernameClaim,
+  JSON.stringify(provider.authorizationParams),
+  provider.createdAt,
+  provider.updatedAt,
+);
+
+class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async getSettings(): Promise<OAuth2Settings> {
+    const row = await this.db
+      .prepare('SELECT public_base_url, updated_at FROM oauth2_settings WHERE id = 1')
+      .first<{ public_base_url: string; updated_at: string }>();
+    if (!row) throw new Error('oauth2_settings singleton row missing');
+    return { publicBaseUrl: row.public_base_url, updatedAt: row.updated_at };
+  }
+
+  async saveSettings(settings: OAuth2Settings): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO oauth2_settings (id, public_base_url, updated_at) VALUES (1, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           public_base_url = excluded.public_base_url,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(settings.publicBaseUrl, settings.updatedAt)
+      .run();
+  }
+
+  async listProviders(): Promise<OAuth2Provider[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${OAUTH2_PROVIDER_COLUMNS} FROM oauth2_providers ORDER BY created_at, id`)
+      .all<OAuth2ProviderRow>();
+    return results.map(toOAuth2Provider);
+  }
+
+  async getProviderById(id: string): Promise<OAuth2Provider | null> {
+    const row = await this.db
+      .prepare(`SELECT ${OAUTH2_PROVIDER_COLUMNS} FROM oauth2_providers WHERE id = ?`)
+      .bind(id)
+      .first<OAuth2ProviderRow>();
+    return row ? toOAuth2Provider(row) : null;
+  }
+
+  async insertProvider(provider: OAuth2Provider): Promise<boolean> {
+    const result = await bindOAuth2Provider(
+      this.db.prepare(`INSERT OR IGNORE INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      provider,
+    ).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async updateProvider(provider: OAuth2Provider): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE oauth2_providers SET
+           display_name = ?, enabled = ?, client_id = ?, client_secret = ?,
+           authorization_endpoint = ?, token_endpoint = ?, userinfo_endpoint = ?,
+           scopes_json = ?, client_authentication = ?, user_id_claim = ?,
+           username_claim = ?, authorization_params_json = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        provider.displayName,
+        provider.enabled ? 1 : 0,
+        provider.clientId,
+        provider.clientSecret,
+        provider.authorizationEndpoint,
+        provider.tokenEndpoint,
+        provider.userInfoEndpoint,
+        JSON.stringify(provider.scopes),
+        provider.clientAuthentication,
+        provider.userIdClaim,
+        provider.usernameClaim,
+        JSON.stringify(provider.authorizationParams),
+        provider.updatedAt,
+        provider.id,
+      )
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async saveProvider(provider: OAuth2Provider): Promise<void> {
+    await bindOAuth2Provider(
+      this.db.prepare(
+        `INSERT INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           display_name = excluded.display_name,
+           enabled = excluded.enabled,
+           client_id = excluded.client_id,
+           client_secret = excluded.client_secret,
+           authorization_endpoint = excluded.authorization_endpoint,
+           token_endpoint = excluded.token_endpoint,
+           userinfo_endpoint = excluded.userinfo_endpoint,
+           scopes_json = excluded.scopes_json,
+           client_authentication = excluded.client_authentication,
+           user_id_claim = excluded.user_id_claim,
+           username_claim = excluded.username_claim,
+           authorization_params_json = excluded.authorization_params_json,
+           updated_at = excluded.updated_at`,
+      ),
+      provider,
+    ).run();
+  }
+
+  async deleteProvider(id: string): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM oauth2_providers WHERE id = ?').bind(id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await runStatements(this.db, [
+      this.db.prepare('DELETE FROM oauth2_providers'),
+      this.db.prepare("UPDATE oauth2_settings SET public_base_url = '', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = 1"),
     ]);
   }
 }
@@ -1865,6 +2068,7 @@ export class SqlRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   oauth2: OAuth2Repo;
+  oauth2Config: OAuth2ConfigRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
@@ -1885,6 +2089,7 @@ export class SqlRepo implements Repo {
     this.users = new SqlUsersRepo(db);
     this.sessions = new SqlSessionsRepo(db);
     this.oauth2 = new SqlOAuth2Repo(db);
+    this.oauth2Config = new SqlOAuth2ConfigRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);

@@ -5,6 +5,8 @@ import { BACKUP_FILE_VERSION, parseBackupFile } from '../../../src/components/ba
 const data = {
   users: [],
   oauth2Accounts: [],
+  oauth2Settings: { publicBaseUrl: '', updatedAt: '2026-08-19T00:00:00.000Z' },
+  oauth2Providers: [],
   apiKeys: [],
   upstreams: [],
   proxies: [],

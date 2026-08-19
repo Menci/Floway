@@ -165,3 +165,31 @@ test('OAuth2 self-registration consumes a handoff atomically through node:sqlite
   assertEquals((await repo.oauth2.listAccounts()).length, 1);
   assertEquals((await repo.apiKeys.list()).filter(key => key.id.startsWith('node-key-')).length, 1);
 }));
+
+test('OAuth2 provider configuration round-trips through node:sqlite', () => withRepo(async repo => {
+  const provider = {
+    id: 'node-provider',
+    displayName: 'Node Provider',
+    enabled: true,
+    clientId: 'node-client',
+    clientSecret: 'node-secret',
+    authorizationEndpoint: 'https://id.example.com/oauth/authorize',
+    tokenEndpoint: 'https://id.example.com/oauth/token',
+    userInfoEndpoint: 'https://id.example.com/api/user',
+    scopes: ['openid', 'profile'],
+    clientAuthentication: 'client_secret_post' as const,
+    userIdClaim: 'subject.id',
+    usernameClaim: null,
+    authorizationParams: { audience: 'floway' },
+    createdAt: '2026-08-19T00:00:00.000Z',
+    updatedAt: '2026-08-19T00:00:00.000Z',
+  };
+  await repo.oauth2Config.saveSettings({
+    publicBaseUrl: 'https://floway.example.com',
+    updatedAt: provider.updatedAt,
+  });
+  await repo.oauth2Config.insertProvider(provider);
+
+  assertEquals((await repo.oauth2Config.getSettings()).publicBaseUrl, 'https://floway.example.com');
+  assertEquals(await repo.oauth2Config.getProviderById(provider.id), provider);
+}));

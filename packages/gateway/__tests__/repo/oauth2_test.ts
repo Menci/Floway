@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import type { Repo } from '../../src/repo/types.ts';
+import type { OAuth2Provider, Repo } from '../../src/repo/types.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const repoFactories: Array<[string, () => Promise<Repo>]> = [
@@ -11,7 +11,77 @@ const repoFactories: Array<[string, () => Promise<Repo>]> = [
   ['sql', async () => new SqlRepo(await createSqliteTestDb())],
 ];
 
+const provider: OAuth2Provider = {
+  id: 'custom',
+  displayName: 'Example ID',
+  enabled: true,
+  clientId: 'floway-client',
+  clientSecret: 'floway-secret',
+  authorizationEndpoint: 'https://id.example.com/oauth/authorize',
+  tokenEndpoint: 'https://id.example.com/oauth/token',
+  userInfoEndpoint: 'https://id.example.com/api/user',
+  scopes: ['profile', 'email'],
+  clientAuthentication: 'client_secret_basic',
+  userIdClaim: 'data.subject',
+  usernameClaim: 'data.login',
+  authorizationParams: { prompt: 'login', access_type: 'offline' },
+  createdAt: '2026-08-19T00:00:00.000Z',
+  updatedAt: '2026-08-19T00:00:00.000Z',
+};
+
 for (const [kind, makeRepo] of repoFactories) {
+  test(`OAuth2 configuration repository round-trips settings and providers (${kind})`, async () => {
+    const config = (await makeRepo()).oauth2Config;
+    assertEquals((await config.getSettings()).publicBaseUrl, '');
+
+    await config.saveSettings({
+      publicBaseUrl: 'https://floway.example.com',
+      updatedAt: provider.updatedAt,
+    });
+    await config.insertProvider(provider);
+    await config.insertProvider({
+      ...provider,
+      id: 'first',
+      displayName: 'First',
+      clientSecret: 'first-secret',
+      createdAt: '2026-08-18T00:00:00.000Z',
+    });
+
+    assertEquals(await config.getSettings(), {
+      publicBaseUrl: 'https://floway.example.com',
+      updatedAt: provider.updatedAt,
+    });
+    assertEquals((await config.listProviders()).map(item => item.id), ['first', 'custom']);
+    assertEquals(await config.getProviderById('custom'), provider);
+
+    const updated = {
+      ...provider,
+      displayName: 'Updated',
+      enabled: false,
+      scopes: ['openid'],
+      authorizationParams: { audience: 'floway' },
+      updatedAt: '2026-08-19T01:00:00.000Z',
+    };
+    assertEquals(await config.updateProvider(updated), true);
+    assertEquals(await config.getProviderById('custom'), updated);
+    assertEquals(await config.updateProvider({ ...updated, id: 'missing' }), false);
+
+    assertEquals(await config.deleteProvider('custom'), true);
+    assertEquals(await config.deleteProvider('custom'), false);
+    assertEquals(await config.getProviderById('custom'), null);
+  });
+
+  test(`OAuth2 configuration deleteAll resets the singleton and provider catalog (${kind})`, async () => {
+    const config = (await makeRepo()).oauth2Config;
+    await config.saveSettings({ publicBaseUrl: 'https://floway.example.com', updatedAt: provider.updatedAt });
+    await config.saveProvider(provider);
+
+    await config.deleteAll();
+
+    assertEquals((await config.getSettings()).publicBaseUrl, '');
+    assertEquals(await config.listProviders(), []);
+  });
+
   test(`OAuth2 repository completes registration atomically (${kind})`, async () => {
     const repo = await makeRepo();
     const now = Date.now();

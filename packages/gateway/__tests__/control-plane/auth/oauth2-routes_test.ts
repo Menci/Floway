@@ -1,33 +1,40 @@
 import { afterEach, expect, test } from 'vitest';
 
 import { getOAuth2Config } from '../../../src/control-plane/auth/oauth2-config.ts';
+import type { OAuth2Provider } from '../../../src/repo/types.ts';
+import type { InMemoryRepo } from '../../repo/memory.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { initEnv, initFetch } from '@floway-dev/platform';
+import { initFetch } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const provider = {
+const provider: OAuth2Provider = {
   id: 'custom',
   displayName: 'Example ID',
+  enabled: true,
   clientId: 'floway-client',
   clientSecret: 'floway-secret',
   authorizationEndpoint: 'https://id.example.com/oauth/authorize',
   tokenEndpoint: 'https://id.example.com/oauth/token',
   userInfoEndpoint: 'https://id.example.com/api/user',
   scopes: ['profile'],
+  clientAuthentication: 'client_secret_post',
+  userIdClaim: null,
+  usernameClaim: null,
+  authorizationParams: {},
+  createdAt: '2026-08-19T00:00:00.000Z',
+  updatedAt: '2026-08-19T00:00:00.000Z',
 };
-const providers = JSON.stringify([provider]);
 
 afterEach(() => {
-  initEnv(() => '');
   initFetch((url, init) => fetch(url, init as RequestInit));
 });
 
-const configureOAuth2 = (rawProviders = providers) => {
-  initEnv(name => {
-    if (name === 'OAUTH2_PROVIDERS') return rawProviders;
-    if (name === 'OAUTH2_PUBLIC_BASE_URL') return 'https://floway.example.com';
-    return '';
+const configureOAuth2 = async (repo: InMemoryRepo, providers: OAuth2Provider[] = [provider]) => {
+  await repo.oauth2Config.saveSettings({
+    publicBaseUrl: 'https://floway.example.com',
+    updatedAt: provider.updatedAt,
   });
+  for (const item of providers) await repo.oauth2Config.saveProvider(item);
 };
 
 const start = async (): Promise<{ state: string; location: URL; cookie: string }> => {
@@ -69,7 +76,7 @@ const callbackHandoff = async (state: string, cookie: string): Promise<string> =
 
 test('custom OAuth2 provider supports self-service registration and later login', async () => {
   const { repo } = await setupAppTest();
-  configureOAuth2();
+  await configureOAuth2(repo);
   let tokenRequests = 0;
   initFetch(async (url, init) => {
     if (url === 'https://id.example.com/oauth/token') {
@@ -150,8 +157,8 @@ test('custom OAuth2 provider supports self-service registration and later login'
 });
 
 test('OAuth2 callback rejects a replayed state before contacting the provider', async () => {
-  await setupAppTest();
-  configureOAuth2();
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo);
   let requests = 0;
   initFetch(() => {
     requests++;
@@ -173,8 +180,8 @@ test('OAuth2 callback rejects a replayed state before contacting the provider', 
 });
 
 test('OAuth2 callback rejects a state initiated in another browser', async () => {
-  await setupAppTest();
-  configureOAuth2();
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo);
   let requests = 0;
   initFetch(() => {
     requests++;
@@ -196,14 +203,14 @@ test('OAuth2 callback rejects a state initiated in another browser', async () =>
 });
 
 test('custom OAuth2 provider supports Basic client auth, authorization parameters, and dotted claims', async () => {
-  await setupAppTest();
-  configureOAuth2(JSON.stringify([{
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo, [{
     ...provider,
     clientAuthentication: 'client_secret_basic',
     userIdClaim: 'data.subject',
     usernameClaim: 'data.handle',
     authorizationParams: { prompt: 'login' },
-  }]));
+  }]);
   initFetch(async (url, init) => {
     if (url === 'https://id.example.com/oauth/token') {
       const headers = new Headers(init.headers);
@@ -233,21 +240,22 @@ test('custom OAuth2 provider supports Basic client auth, authorization parameter
   assertEquals(pending.providerLogin, 'nested-login');
 });
 
-test('OAuth2 configuration rejects authorization parameters that replace protocol protections', () => {
-  configureOAuth2(JSON.stringify([{
+test('OAuth2 configuration rejects authorization parameters that replace protocol protections', async () => {
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo, [{
     ...provider,
     authorizationParams: { state: 'operator-value' },
-  }]));
+  }]);
 
-  expect(() => getOAuth2Config()).toThrow('authorizationParams must not override state');
+  await expect(getOAuth2Config()).rejects.toThrow('authorizationParams must not override state');
 });
 
-test('OAuth2 configuration rejects a public base URL with an unsupported path prefix', () => {
-  initEnv(name => {
-    if (name === 'OAUTH2_PROVIDERS') return providers;
-    if (name === 'OAUTH2_PUBLIC_BASE_URL') return 'https://floway.example.com/prefix';
-    return '';
+test('OAuth2 configuration rejects a public base URL with an unsupported path prefix', async () => {
+  const { repo } = await setupAppTest();
+  await repo.oauth2Config.saveSettings({
+    publicBaseUrl: 'https://floway.example.com/prefix',
+    updatedAt: provider.updatedAt,
   });
 
-  expect(() => getOAuth2Config()).toThrow('must be an origin');
+  await expect(getOAuth2Config()).rejects.toThrow('must be an origin');
 });

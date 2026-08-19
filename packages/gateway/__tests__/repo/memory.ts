@@ -32,10 +32,13 @@ import type {
   ModelAliasRecord,
   OAuth2Account,
   OAuth2Authorization,
+  OAuth2ConfigRepo,
   OAuth2Handoff,
+  OAuth2Provider,
   OAuth2RegistrationInput,
   OAuth2RegistrationResult,
   OAuth2Repo,
+  OAuth2Settings,
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceTelemetryRecord,
@@ -330,6 +333,65 @@ class MemoryOAuth2Repo implements OAuth2Repo {
     this.accounts.clear();
     this.authorizations.clear();
     this.handoffs.clear();
+    return Promise.resolve();
+  }
+}
+
+const cloneOAuth2Provider = (provider: OAuth2Provider): OAuth2Provider => structuredClone(provider);
+
+class MemoryOAuth2ConfigRepo implements OAuth2ConfigRepo {
+  private settings: OAuth2Settings = { publicBaseUrl: '', updatedAt: new Date(0).toISOString() };
+  private readonly providers = new Map<string, OAuth2Provider>();
+
+  getSettings(): Promise<OAuth2Settings> {
+    return Promise.resolve({ ...this.settings });
+  }
+
+  saveSettings(settings: OAuth2Settings): Promise<void> {
+    this.settings = { ...settings };
+    return Promise.resolve();
+  }
+
+  listProviders(): Promise<OAuth2Provider[]> {
+    return Promise.resolve([...this.providers.values()]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map(cloneOAuth2Provider));
+  }
+
+  getProviderById(id: string): Promise<OAuth2Provider | null> {
+    const provider = this.providers.get(id);
+    return Promise.resolve(provider ? cloneOAuth2Provider(provider) : null);
+  }
+
+  insertProvider(provider: OAuth2Provider): Promise<boolean> {
+    if (this.providers.has(provider.id)) return Promise.resolve(false);
+    this.providers.set(provider.id, cloneOAuth2Provider(provider));
+    return Promise.resolve(true);
+  }
+
+  updateProvider(provider: OAuth2Provider): Promise<boolean> {
+    const existing = this.providers.get(provider.id);
+    if (!existing) return Promise.resolve(false);
+    this.providers.set(provider.id, cloneOAuth2Provider({ ...provider, createdAt: existing.createdAt }));
+    return Promise.resolve(true);
+  }
+
+  saveProvider(provider: OAuth2Provider): Promise<void> {
+    const existing = this.providers.get(provider.id);
+    this.providers.set(provider.id, cloneOAuth2Provider({
+      ...provider,
+      createdAt: existing?.createdAt ?? provider.createdAt,
+    }));
+    return Promise.resolve();
+  }
+
+  deleteProvider(id: string): Promise<boolean> {
+    return Promise.resolve(this.providers.delete(id));
+  }
+
+  deleteAll(): Promise<void> {
+    this.providers.clear();
+    this.settings = { publicBaseUrl: '', updatedAt: new Date().toISOString() };
     return Promise.resolve();
   }
 }
@@ -1615,6 +1677,7 @@ export class InMemoryRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   oauth2: OAuth2Repo;
+  oauth2Config: OAuth2ConfigRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
@@ -1637,6 +1700,7 @@ export class InMemoryRepo implements Repo {
     this.scheduledMaintenance = new MemoryScheduledMaintenanceRepo();
     this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
     this.oauth2 = new MemoryOAuth2Repo(this.users, this.sessions, this.apiKeys);
+    this.oauth2Config = new MemoryOAuth2ConfigRepo();
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);

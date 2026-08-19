@@ -8,8 +8,6 @@ services:
       target: server
     environment:
       ADMIN_KEY: ${ADMIN_KEY:?set ADMIN_KEY}
-      OAUTH2_PUBLIC_BASE_URL: ${OAUTH2_PUBLIC_BASE_URL:-}
-      OAUTH2_PROVIDERS: ${OAUTH2_PROVIDERS:-}
       FLOWAY_DB_PATH: /data/floway.db
       FLOWAY_FILES_DIR: /data/files
       PORT: 8788

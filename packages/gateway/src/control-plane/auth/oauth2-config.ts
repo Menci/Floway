@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { getEnvOptional } from '@floway-dev/platform';
+import { getRepo } from '../../repo/index.ts';
+import type { OAuth2Provider } from '../../repo/types.ts';
 
 const nonEmpty = z.string().trim().min(1);
 const endpoint = nonEmpty.transform(value => {
@@ -17,16 +18,19 @@ const endpoint = nonEmpty.transform(value => {
 const providerSchema = z.object({
   id: nonEmpty.regex(/^[A-Za-z0-9_-]+$/),
   displayName: nonEmpty,
+  enabled: z.boolean(),
   clientId: nonEmpty,
   clientSecret: nonEmpty,
   authorizationEndpoint: endpoint,
   tokenEndpoint: endpoint,
   userInfoEndpoint: endpoint,
-  scopes: z.array(nonEmpty).default([]),
-  clientAuthentication: z.enum(['client_secret_post', 'client_secret_basic']).default('client_secret_post'),
-  userIdClaim: nonEmpty.optional(),
-  usernameClaim: nonEmpty.optional(),
-  authorizationParams: z.record(z.string(), z.string()).default({}),
+  scopes: z.array(nonEmpty),
+  clientAuthentication: z.enum(['client_secret_post', 'client_secret_basic']),
+  userIdClaim: nonEmpty.nullable(),
+  usernameClaim: nonEmpty.nullable(),
+  authorizationParams: z.record(z.string(), z.string()),
+  createdAt: nonEmpty,
+  updatedAt: nonEmpty,
 }).strict().superRefine((provider, context) => {
   const reserved = new Set(['client_id', 'code_challenge', 'code_challenge_method', 'redirect_uri', 'response_type', 'scope', 'state']);
   for (const key of Object.keys(provider.authorizationParams)) {
@@ -40,69 +44,44 @@ const providerSchema = z.object({
   }
 });
 
-export type OAuth2ProviderConfig = z.infer<typeof providerSchema>;
+export type OAuth2ProviderConfig = OAuth2Provider;
 
 export interface OAuth2Config {
   publicBaseUrl: string | null;
   providers: OAuth2ProviderConfig[];
 }
 
-const validationMessage = (cause: unknown): string => {
-  if (cause instanceof z.ZodError) {
-    const issue = cause.issues[0];
-    return `${issue.path.join('.') || 'value'}: ${issue.message}`;
-  }
-  return cause instanceof Error ? cause.message : String(cause);
-};
+export const parseOAuth2Provider = (value: unknown): OAuth2ProviderConfig => providerSchema.parse(value);
 
-const parseProviders = (raw: string): OAuth2ProviderConfig[] => {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error('OAUTH2_PROVIDERS must be valid JSON', { cause });
-  }
-  let providers: OAuth2ProviderConfig[];
-  try {
-    providers = z.array(providerSchema).parse(value);
-  } catch (cause) {
-    throw new Error(`OAUTH2_PROVIDERS is invalid: ${validationMessage(cause)}`, { cause });
-  }
-  const ids = new Set<string>();
-  for (const provider of providers) {
-    if (ids.has(provider.id)) throw new Error(`OAUTH2_PROVIDERS contains duplicate id '${provider.id}'`);
-    ids.add(provider.id);
-  }
-  return providers;
-};
-
-const parsePublicBaseUrl = (raw: string): string => {
+export const parseOAuth2PublicBaseUrl = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (trimmed === '') return '';
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(trimmed);
   } catch (cause) {
-    throw new Error('OAUTH2_PUBLIC_BASE_URL must be an absolute URL', { cause });
+    throw new Error('OAuth2 public base URL must be an absolute URL', { cause });
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('OAUTH2_PUBLIC_BASE_URL must use http or https');
+    throw new Error('OAuth2 public base URL must use http or https');
   }
   if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-    throw new Error('OAUTH2_PUBLIC_BASE_URL must be an origin without credentials, a path, a query, or a fragment');
+    throw new Error('OAuth2 public base URL must be an origin without credentials, a path, a query, or a fragment');
   }
   return url.origin;
 };
 
-export const getOAuth2Config = (): OAuth2Config => {
-  const rawProviders = getEnvOptional('OAUTH2_PROVIDERS', '').trim();
-  if (rawProviders === '') return { publicBaseUrl: null, providers: [] };
-  const providers = parseProviders(rawProviders);
-  if (providers.length === 0) return { publicBaseUrl: null, providers: [] };
-
-  const rawPublicBaseUrl = getEnvOptional('OAUTH2_PUBLIC_BASE_URL', '').trim();
-  if (rawPublicBaseUrl === '') {
-    throw new Error('OAUTH2_PUBLIC_BASE_URL is required when OAUTH2_PROVIDERS contains a provider');
-  }
-  return { publicBaseUrl: parsePublicBaseUrl(rawPublicBaseUrl), providers };
+export const getOAuth2Config = async (): Promise<OAuth2Config> => {
+  const repo = getRepo().oauth2Config;
+  const [settings, storedProviders] = await Promise.all([repo.getSettings(), repo.listProviders()]);
+  const providers = storedProviders.map(parseOAuth2Provider).filter(provider => provider.enabled);
+  const publicBaseUrl = parseOAuth2PublicBaseUrl(settings.publicBaseUrl);
+  // A provider may be prepared before the public origin is known. It becomes
+  // visible atomically with that singleton setting rather than creating an
+  // invalid intermediate state or requiring a cross-table transaction.
+  return publicBaseUrl === ''
+    ? { publicBaseUrl: null, providers: [] }
+    : { publicBaseUrl, providers };
 };
 
 export const oauth2ProviderById = (config: OAuth2Config, id: string): OAuth2ProviderConfig | null =>

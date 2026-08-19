@@ -60,35 +60,13 @@ provider ID with your values:
 https://floway.example.com/auth/oauth2/company/callback
 ```
 
-Then set the externally visible Floway origin (scheme, host, and optional port,
-without a path) and a JSON provider array. Use HTTPS outside local development.
-For Node.js or Docker Compose, these are ordinary environment variables:
+Sign in as an administrator and open **Management → OAuth2 Login**. Set the
+externally visible Floway origin (scheme, host, and optional port, without a
+path), then add a provider. Floway displays the exact callback URL to register
+with the OAuth2 application. Use HTTPS outside local development.
 
-```bash
-export OAUTH2_PUBLIC_BASE_URL='https://floway.example.com'
-export OAUTH2_PROVIDERS='[
-  {
-    "id": "company",
-    "displayName": "Company ID",
-    "clientId": "floway",
-    "clientSecret": "replace-with-the-oauth-client-secret",
-    "authorizationEndpoint": "https://id.example.com/oauth/authorize",
-    "tokenEndpoint": "https://id.example.com/oauth/token",
-    "userInfoEndpoint": "https://id.example.com/oauth/userinfo",
-    "scopes": ["openid", "profile"]
-  }
-]'
-```
-
-On Cloudflare, store both values as Worker secrets:
-
-```bash
-pnpm wrangler secret put OAUTH2_PUBLIC_BASE_URL
-pnpm wrangler secret put OAUTH2_PROVIDERS
-```
-
-Each provider requires `id`, `displayName`, `clientId`, `clientSecret`, and the
-three endpoint URLs above. Optional fields are:
+Each provider requires an ID, display name, client ID, client secret, and the
+authorization, token, and UserInfo endpoint URLs. The remaining controls are:
 
 - `clientAuthentication`: `client_secret_post` (the default) or
   `client_secret_basic`.
@@ -102,10 +80,11 @@ three endpoint URLs above. Optional fields are:
   PKCE challenge cannot be overridden.
 
 Claim names may be dotted paths such as `data.user.id`. Provider client secrets
-are never returned to the dashboard. Authorization state and browser binding
-are single-use and short-lived, PKCE uses S256, and callback handoffs travel in
-the URL fragment so reverse proxies and static asset servers do not receive
-them.
+are stored in the Floway database and backup export, but are never returned by
+the management API or hydrated back into the dashboard form. Authorization
+state and browser binding are single-use and short-lived, PKCE uses S256, and
+callback handoffs travel in the URL fragment so reverse proxies and static
+asset servers do not receive them.
 
 ## Compatibility
 
@@ -178,9 +157,6 @@ migrations, and deploy:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
-# Optional custom dashboard OAuth2 login:
-# pnpm wrangler secret put OAUTH2_PUBLIC_BASE_URL
-# pnpm wrangler secret put OAUTH2_PROVIDERS
 pnpm run db:migrate:remote
 pnpm run deploy
 ```

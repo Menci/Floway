@@ -248,6 +248,36 @@ export const oauth2RegisterBody = z.object({
   username: usernameSchema,
 });
 
+const oauth2Trimmed = z.string().trim().min(1);
+const oauth2ProviderFields = {
+  display_name: oauth2Trimmed.max(200),
+  enabled: z.boolean(),
+  client_id: oauth2Trimmed.max(4096),
+  authorization_endpoint: oauth2Trimmed.max(4096),
+  token_endpoint: oauth2Trimmed.max(4096),
+  userinfo_endpoint: oauth2Trimmed.max(4096),
+  scopes: z.array(oauth2Trimmed.max(200)).max(100),
+  client_authentication: z.enum(['client_secret_post', 'client_secret_basic']),
+  user_id_claim: oauth2Trimmed.max(200).nullable(),
+  username_claim: oauth2Trimmed.max(200).nullable(),
+  authorization_params: z.record(oauth2Trimmed.max(200), z.string().max(4096)),
+};
+
+export const oauth2SettingsBody = z.object({
+  public_base_url: z.string().trim().max(4096),
+}).strict();
+
+export const createOAuth2ProviderBody = z.object({
+  id: oauth2Trimmed.max(64).regex(/^[A-Za-z0-9_-]+$/, 'id must contain only letters, digits, underscore, or dash'),
+  client_secret: oauth2Trimmed.max(4096),
+  ...oauth2ProviderFields,
+}).strict();
+
+export const updateOAuth2ProviderBody = z.object({
+  client_secret: oauth2Trimmed.max(4096).optional(),
+  ...oauth2ProviderFields,
+}).strict();
+
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because zero upstreams cannot serve any model.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
@@ -712,7 +742,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(21, { error: 'version must be 21 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(22, { error: 'version must be 22 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

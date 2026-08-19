@@ -1,6 +1,6 @@
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
-import { getOAuth2Config, oauth2FrontendRedirect, oauth2ProviderById } from './oauth2-config.ts';
+import { getOAuth2Config, oauth2FrontendRedirect, oauth2ProviderById, type OAuth2Config } from './oauth2-config.ts';
 import { exchangeOAuth2Code, fetchOAuth2Identity, newOAuth2Secret, OAuth2ProtocolError, oauth2AuthorizationUrl } from './oauth2-protocol.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -34,7 +34,7 @@ const transactionCookieOptions = (publicBaseUrl: string | null) => ({
   secure: publicBaseUrl?.startsWith('https:') ?? false,
 });
 
-const oauth2ErrorRedirect = (config: ReturnType<typeof getOAuth2Config>, message: string): string => {
+const oauth2ErrorRedirect = (config: OAuth2Config, message: string): string => {
   return oauth2FrontendRedirect(config, new URLSearchParams({ oauth2_error: message.slice(0, 500) }));
 };
 
@@ -47,9 +47,9 @@ const suggestedUsername = (providerLogin: string): string => {
   return normalized || 'user';
 };
 
-export const listOAuth2Providers = (c: AuthedContext) => {
+export const listOAuth2Providers = async (c: AuthedContext) => {
   preventOAuth2Caching(c);
-  const providers = getOAuth2Config().providers.map(provider => ({
+  const providers = (await getOAuth2Config()).providers.map(provider => ({
     id: provider.id,
     displayName: provider.displayName,
   }));
@@ -58,7 +58,7 @@ export const listOAuth2Providers = (c: AuthedContext) => {
 
 export const startOAuth2Login = async (c: AuthedContext<'/auth/oauth2/:provider/start'>) => {
   preventOAuth2Caching(c);
-  const config = getOAuth2Config();
+  const config = await getOAuth2Config();
   const provider = oauth2ProviderById(config, c.req.param('provider'));
   if (!provider) return c.json({ error: 'OAuth2 provider not found' }, 404);
 
@@ -78,7 +78,7 @@ export const startOAuth2Login = async (c: AuthedContext<'/auth/oauth2/:provider/
 
 export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provider/callback'>) => {
   preventOAuth2Caching(c);
-  const config = getOAuth2Config();
+  const config = await getOAuth2Config();
   const provider = oauth2ProviderById(config, c.req.param('provider'));
   if (!provider) {
     if (config.publicBaseUrl === null) return c.json({ error: 'OAuth2 provider not found' }, 404);
@@ -152,7 +152,7 @@ export const resolveOAuth2Result = async (c: CtxWithJson<typeof oauth2ResultBody
   if (!handoff) return c.json({ error: 'OAuth2 login result is invalid or expired' }, 400);
 
   if (handoff.userId === null) {
-    const provider = oauth2ProviderById(getOAuth2Config(), handoff.providerId);
+    const provider = oauth2ProviderById(await getOAuth2Config(), handoff.providerId);
     return c.json({
       status: 'registration_required' as const,
       registrationToken: rawToken,

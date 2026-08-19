@@ -58,6 +58,32 @@ export interface OAuth2Account {
   lastLoginAt: string;
 }
 
+export type OAuth2ClientAuthentication = 'client_secret_post' | 'client_secret_basic';
+
+export interface OAuth2Provider {
+  id: string;
+  displayName: string;
+  enabled: boolean;
+  clientId: string;
+  clientSecret: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  userInfoEndpoint: string;
+  scopes: string[];
+  clientAuthentication: OAuth2ClientAuthentication;
+  userIdClaim: string | null;
+  usernameClaim: string | null;
+  authorizationParams: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OAuth2Settings {
+  // Empty until an administrator configures the public dashboard origin.
+  publicBaseUrl: string;
+  updatedAt: string;
+}
+
 export interface OAuth2Authorization {
   providerId: string;
   codeVerifier: string;
@@ -343,6 +369,18 @@ export interface OAuth2Repo {
   deleteAll(): Promise<void>;
 }
 
+export interface OAuth2ConfigRepo {
+  getSettings(): Promise<OAuth2Settings>;
+  saveSettings(settings: OAuth2Settings): Promise<void>;
+  listProviders(): Promise<OAuth2Provider[]>;
+  getProviderById(id: string): Promise<OAuth2Provider | null>;
+  insertProvider(provider: OAuth2Provider): Promise<boolean>;
+  updateProvider(provider: OAuth2Provider): Promise<boolean>;
+  saveProvider(provider: OAuth2Provider): Promise<void>;
+  deleteProvider(id: string): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
   // pricingSelector, metric) conflict, quantities are summed exactly. The
@@ -600,6 +638,7 @@ export interface Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   oauth2: OAuth2Repo;
+  oauth2Config: OAuth2ConfigRepo;
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
