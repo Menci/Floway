@@ -6,12 +6,12 @@ type ParseUpstreamIdsResult =
   | { ok: true; value: UpstreamIdsValue }
   | { ok: false; error: string };
 
-// Empty arrays are rejected: a key that allows zero upstreams cannot serve any
-// model, and the UI has no affordance to express that intent.
-export const parseUpstreamIdsValue = (raw: unknown): ParseUpstreamIdsResult => {
+// Empty arrays are accepted only for user scopes, where they deliberately mean
+// no upstream access. API-key scopes keep their non-empty-list contract.
+export const parseUpstreamIdsValue = (raw: unknown, allowEmpty = false): ParseUpstreamIdsResult => {
   if (raw === null) return { ok: true, value: null };
   if (!Array.isArray(raw)) return { ok: false, error: 'upstream_ids must be null or an array of upstream ids' };
-  if (raw.length === 0) return { ok: false, error: 'upstream_ids must contain at least one upstream id; use null for Default mode' };
+  if (!allowEmpty && raw.length === 0) return { ok: false, error: 'upstream_ids must contain at least one upstream id; use null for Default mode' };
 
   const ids: string[] = [];
   const seen = new Set<string>();

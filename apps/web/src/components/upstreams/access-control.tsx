@@ -33,6 +33,50 @@ interface UpstreamAccessRow {
   upstreamEnabled: boolean;
 }
 
+export type UpstreamAccessState = boolean | 'mixed';
+
+export function BulkUpstreamAccessControl({
+  available,
+  disabled,
+  models,
+  onChange,
+  states,
+}: {
+  available: UpstreamOption[];
+  disabled: boolean;
+  models: ControlPlaneModel[];
+  onChange: (id: string, allowed: boolean) => void;
+  states: ReadonlyMap<string, UpstreamAccessState>;
+}) {
+  const { t } = useTranslation();
+  const rows = useMemo(() => accessRows(available, [], models), [available, models]);
+
+  return <ScrollArea axes="horizontal" className="min-w-0">
+    <Table aria-label={t('dashboard.users.bulkAccess.tableLabel')} className="min-w-[360px]">
+      <TableColumns widths={['96px', null, '120px']} />
+      <TableHeader><TableRow>
+        <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
+        <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
+        <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
+      </TableRow></TableHeader>
+      <TableBody>{rows.map(row => {
+        const state = states.get(row.id);
+        if (state === undefined) throw new Error(`Missing bulk upstream access state for ${row.id}`);
+        return <TableRow key={row.id}>
+          <TableCell><Checkbox
+            aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`}
+            checked={state}
+            disabled={disabled}
+            onChange={(_, data) => onChange(row.id, data.checked === true)}
+          /></TableCell>
+          <AccessProviderCell row={row} />
+          <AccessModelsCell row={row} />
+        </TableRow>;
+      })}</TableBody>
+    </Table>
+  </ScrollArea>;
+}
+
 export function UpstreamAccessControl({
   available,
   description,
@@ -116,13 +160,8 @@ export function UpstreamAccessControl({
               return <TableRow key={row.id}>
                 <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.selected} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
                 <TableCell><div className="inline-flex items-center gap-1"><ReorderButtons disabled={disabled || !override} downLabel={t('dashboard.upstreams.actions.moveDown', { name: row.name })} isFirst={index <= 0} isLast={index === -1 || index >= ids.length - 1} onMove={direction => moveUpstream(row.id, direction)} upLabel={t('dashboard.upstreams.actions.moveUp', { name: row.name })} /></div></TableCell>
-                <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
-                <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
-                  {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
-                  {row.modelCount === null
-                    ? t('dashboard.upstreamAccess.modelCountUnknown')
-                    : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
-                </span></TableCell>
+                <AccessProviderCell row={row} />
+                <AccessModelsCell row={row} />
               </TableRow>;
             })}</TableBody>
           </Table>
@@ -130,6 +169,20 @@ export function UpstreamAccessControl({
       </div>
     </SettingsExpander>
   </section>;
+}
+
+function AccessProviderCell({ row }: { row: UpstreamAccessRow }) {
+  return <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>;
+}
+
+function AccessModelsCell({ row }: { row: UpstreamAccessRow }) {
+  const { t } = useTranslation();
+  return <TableCell><span className="inline-flex items-center gap-1.5 min-w-0">
+    {!row.upstreamEnabled && <ProhibitedRegular className="block flex-none text-fui-fg2" aria-label={t('dashboard.upstreamAccess.upstreamDisabled')} />}
+    {row.modelCount === null
+      ? t('dashboard.upstreamAccess.modelCountUnknown')
+      : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
+  </span></TableCell>;
 }
 
 const accessRows = (

@@ -369,6 +369,12 @@ class SqlUsersRepo implements UsersRepo {
       .run();
   }
 
+  async setUpstreamIds(updates: readonly { id: number; upstreamIds: string[] | null }[]): Promise<void> {
+    await runStatements(this.db, updates.map(update => this.db
+      .prepare('UPDATE users SET upstream_ids = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(serializeUpstreamIds(update.upstreamIds), update.id)));
+  }
+
   async softDelete(id: number): Promise<boolean> {
     const result = await this.db
       .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')

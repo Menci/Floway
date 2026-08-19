@@ -19,6 +19,7 @@ const {
   TableHeader,
   TableHeaderCell,
   TableRow,
+  TableSelectionCell,
   Tooltip,
 } = fluentComponents;
 
@@ -28,6 +29,8 @@ export function UsersTable({
   onDelete,
   onEdit,
   onResetPassword,
+  onSelectionChange,
+  selectedUserIds,
   users,
 }: {
   actorId: number;
@@ -35,10 +38,28 @@ export function UsersTable({
   onDelete: (user: ControlPlaneUser) => void;
   onEdit: (user: ControlPlaneUser) => void;
   onResetPassword: (user: ControlPlaneUser) => void;
+  onSelectionChange: (ids: Set<number>) => void;
+  selectedUserIds: ReadonlySet<number>;
   users: ControlPlaneUser[];
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
+  const allSelected = users.every(user => selectedUserIds.has(user.id));
+  const someSelected = users.some(user => selectedUserIds.has(user.id));
+  const headerChecked = allSelected ? true : someSelected ? 'mixed' : false;
+
+  const toggleUser = (id: number) => {
+    if (disabled) return;
+    const next = new Set(selectedUserIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onSelectionChange(next);
+  };
+
+  const toggleAll = () => {
+    if (disabled) return;
+    onSelectionChange(allSelected ? new Set() : new Set(users.map(user => user.id)));
+  };
 
   if (users.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
@@ -47,9 +68,14 @@ export function UsersTable({
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
-        <TableColumns widths={[null, null, null, null, TABLE_ACTIONS_WIDTH]} />
+        <TableColumns widths={[null, null, null, null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
+            <TableSelectionCell
+              checked={headerChecked}
+              checkboxIndicator={{ disabled, 'aria-label': t('dashboard.users.table.selectAll') }}
+              onClick={toggleAll}
+            />
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
@@ -61,7 +87,21 @@ export function UsersTable({
           {users.map(user => {
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
-              <TableRow key={user.id}>
+              <TableRow
+                aria-selected={selectedUserIds.has(user.id)}
+                key={user.id}
+                onClick={() => toggleUser(user.id)}
+                onKeyDown={event => {
+                  if (disabled || event.key !== ' ' || event.target !== event.currentTarget) return;
+                  event.preventDefault();
+                  toggleUser(user.id);
+                }}
+                tabIndex={0}
+              >
+                <TableSelectionCell
+                  checked={selectedUserIds.has(user.id)}
+                  checkboxIndicator={{ disabled, 'aria-label': t('dashboard.users.table.selectNamed', { name: user.username }) }}
+                />
                 {/* The one name column that wraps instead of trimming: a
                     username has no second line to reveal it and no tooltip, so
                     the row grows to hold it. */}

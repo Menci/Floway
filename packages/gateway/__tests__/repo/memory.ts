@@ -137,6 +137,15 @@ class MemoryUsersRepo implements UsersRepo {
     else this.users.push({ ...user });
   }
 
+  async setUpstreamIds(updates: readonly { id: number; upstreamIds: string[] | null }[]): Promise<void> {
+    const indexes = updates.map(update => this.users.findIndex(user => user.id === update.id && user.deletedAt === null));
+    if (indexes.some(index => index === -1)) throw new Error('setUpstreamIds: active user not found');
+    updates.forEach((update, index) => {
+      const userIndex = indexes[index];
+      this.users[userIndex] = { ...this.users[userIndex], upstreamIds: update.upstreamIds };
+    });
+  }
+
   async softDelete(id: number): Promise<boolean> {
     const i = this.users.findIndex(u => u.id === id && u.deletedAt === null);
     if (i < 0) return false;

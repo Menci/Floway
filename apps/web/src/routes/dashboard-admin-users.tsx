@@ -19,7 +19,11 @@ import { useRefresh } from '../components/ui/use-refresh';
 import { UserDialog } from '../components/users/dialog';
 import { PasswordDialog } from '../components/users/password-dialog';
 import { UsersTable } from '../components/users/table';
+import { UserUpstreamAccessDialog } from '../components/users/upstream-access-dialog';
+import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
+
+const { Button } = fluentComponents;
 
 // `null` is a failed fetch, not an empty deployment: a gateway always has a user.
 interface LoaderData {
@@ -63,6 +67,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
   const passwordDialog = useDialogInvocation<ControlPlaneUser>();
   const deleteDialog = useDialogInvocation<ControlPlaneUser>();
+  const bulkAccessDialog = useDialogInvocation<ControlPlaneUser[]>();
+  const [selectedUserIds, setSelectedUserIds] = useState<ReadonlySet<number>>(() => new Set());
 
   // The error belongs to its attempt, so opening another user's dialog clears it.
   const openDeleteDialog = (target: ControlPlaneUser) => {
@@ -110,19 +116,28 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
   const { models, upstreams, users } = data;
   const loaded = users !== null && models !== null && upstreams !== null;
+  const selectedUsers = users?.filter(user => selectedUserIds.has(user.id)) ?? [];
 
   return (
     <section className="dashboard-page">
       <DashboardPageHeader
-        actions={<ResourceListActions
-          createDisabled={!loaded}
-          createLabel={t('dashboard.users.actions.create')}
-          disabled={deleting}
-          onCreate={() => editorDialog.open({ kind: 'create' })}
-          onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.users.actions.refresh')}
-          refreshing={refreshing}
-        />}
+        actions={<div className="flex items-center gap-2">
+          <ResourceListActions
+            createDisabled={!loaded}
+            createLabel={t('dashboard.users.actions.create')}
+            disabled={deleting}
+            onCreate={() => editorDialog.open({ kind: 'create' })}
+            onRefresh={() => void refresh()}
+            refreshLabel={t('dashboard.users.actions.refresh')}
+            refreshing={refreshing}
+          />
+          <Button
+            disabled={!loaded || selectedUsers.length === 0 || upstreams.length === 0 || deleting || refreshing}
+            onClick={() => bulkAccessDialog.open(selectedUsers)}
+          >
+            {t('dashboard.users.actions.bulkAccess')}
+          </Button>
+        </div>}
         description={t('dashboard.pages.users')}
         title={t('dashboard.nav.users')}
       />
@@ -141,6 +156,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
             onDelete={openDeleteDialog}
             onEdit={user => editorDialog.open({ kind: 'edit', user })}
             onResetPassword={passwordDialog.open}
+            onSelectionChange={setSelectedUserIds}
+            selectedUserIds={selectedUserIds}
             users={users}
           />
         </ResourceListPanel>
@@ -172,6 +189,18 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           onOpenChange={open => { if (!open) passwordDialog.close(); }}
           onSaved={refresh}
           user={passwordDialog.invocation.value}
+        />}
+        {bulkAccessDialog.invocation && <UserUpstreamAccessDialog
+          open={bulkAccessDialog.isOpen}
+          key={bulkAccessDialog.invocation.key}
+          models={models}
+          onOpenChange={open => { if (!open) bulkAccessDialog.close(); }}
+          onSaved={async () => {
+            setSelectedUserIds(new Set());
+            await refresh();
+          }}
+          upstreams={upstreams}
+          users={bulkAccessDialog.invocation.value}
         />}
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}

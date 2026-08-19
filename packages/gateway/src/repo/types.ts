@@ -378,6 +378,7 @@ export interface UsersRepo {
   // Throws when the username is already taken by another active row, so
   // duplicate-username races surface instead of silently overwriting state.
   save(user: User): Promise<void>;
+  setUpstreamIds(updates: readonly { id: number; upstreamIds: string[] | null }[]): Promise<void>;
   softDelete(id: number): Promise<boolean>;
   deleteAll(): Promise<void>;
 }

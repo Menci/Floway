@@ -1680,6 +1680,24 @@ test('v25 import rejects users[i].upstreamIds === undefined', async () => {
   expect(result.body.error).toMatch(/upstreamIds/);
 });
 
+test('v25 import accepts an empty user upstream whitelist', async () => {
+  const { app, repo } = setup();
+  const result = await doImport(app, 'replace', {
+    users: [SEED_ADMIN, { ...USER_BOB, upstreamIds: [] }],
+    oauth2Accounts: [],
+    oauth2Settings: OAUTH2_SETTINGS,
+    oauth2Providers: [],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
+  }, 25);
+  expect(result.status).toBe(200);
+  expect((await repo.users.getById(USER_BOB.id))?.upstreamIds).toEqual([]);
+});
+
 test('v25 import rejects users[i].deletedAt of non-string non-null type', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {

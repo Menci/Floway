@@ -226,6 +226,7 @@ const zhHansCN = {
           deleteNamed: '删除用户 {{name}}',
           refresh: '刷新用户',
           save: '保存更改',
+          bulkAccess: '批量编辑上游权限',
         },
         toast: {
           create: {
@@ -244,6 +245,10 @@ const zhHansCN = {
             pending: '正在删除用户 {{username}}',
             success: '已删除用户 {{username}}',
           },
+          bulkAccess: {
+            pending: '正在更新 {{count, number}} 个用户的上游权限',
+            success: '已更新 {{count, number}} 个用户的上游权限',
+          },
         },
         table: {
           label: 'Floway 用户',
@@ -252,6 +257,8 @@ const zhHansCN = {
           upstreams: '上游权限',
           created: '创建时间',
           actions: '操作',
+          selectAll: '选择所有用户',
+          selectNamed: '选择用户 {{name}}',
         },
         role: { admin: '管理员', operator: '操作员' },
         upstreams: {
@@ -262,6 +269,11 @@ const zhHansCN = {
           createTitle: '新建用户',
           editTitle: '编辑 {{username}}',
           passwordTitle: '重置 {{username}} 的密码',
+        },
+        bulkAccess: {
+          title: '编辑 {{count, number}} 个用户的上游权限',
+          description: '横线表示所选用户的权限不一致。未操作的上游保持每个用户原有状态；只有明确勾选或取消勾选的上游会被批量修改。',
+          tableLabel: '批量上游权限',
         },
         form: {
           username: '用户名',

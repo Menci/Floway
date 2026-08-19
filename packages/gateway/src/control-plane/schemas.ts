@@ -287,26 +287,41 @@ export const updateOAuth2ProviderBody = z.object({
   ...oauth2ProviderFields,
 }).strict();
 
-// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because zero upstreams cannot serve any model.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
+const upstreamIdsArraySchema = z.array(z.string().min(1))
+  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' });
+
+// API-key upstream_ids: null = inherit the user cap, non-empty array = whitelist.
+const upstreamIdsValueSchema = upstreamIdsArraySchema
   .min(1, 'Select at least one upstream, or turn off the override to allow all.')
-  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
+
+// A user may deliberately have no upstream access. null remains unrestricted;
+// an array, including [], is the complete user-level whitelist.
+const userUpstreamIdsValueSchema = upstreamIdsArraySchema.nullable();
 
 export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
+  upstreamIds: userUpstreamIdsValueSchema.optional(),
 });
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
-  upstreamIds: upstreamIdsValueSchema.optional(),
+  upstreamIds: userUpstreamIdsValueSchema.optional(),
 });
+
+export const updateUsersUpstreamAccessBody = z.object({
+  userIds: z.array(z.number().int().positive()).min(1)
+    .refine(ids => new Set(ids).size === ids.length, 'userIds contains duplicates'),
+  changes: z.array(z.object({
+    upstreamId: z.string().min(1),
+    allowed: z.boolean(),
+  }).strict()).min(1)
+    .refine(changes => new Set(changes.map(change => change.upstreamId)).size === changes.length, 'changes contains duplicate upstreamId'),
+}).strict();
 
 export const changeOwnPasswordBody = z.object({
   currentPassword: passwordSchema,

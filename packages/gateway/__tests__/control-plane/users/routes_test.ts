@@ -16,6 +16,11 @@ const adminPatch = (sessionId: string, id: number, body: unknown) => requestApp(
   headers: { 'content-type': 'application/json', 'x-floway-session': sessionId },
   body: JSON.stringify(body),
 });
+const adminBulkUpstreamPatch = (sessionId: string, body: unknown) => requestApp('/api/users/upstream-access', {
+  method: 'PATCH',
+  headers: { 'content-type': 'application/json', 'x-floway-session': sessionId },
+  body: JSON.stringify(body),
+});
 const adminDelete = (sessionId: string, id: number) => requestApp(`/api/users/${id}`, {
   method: 'DELETE',
   headers: { 'x-floway-session': sessionId },
@@ -49,6 +54,15 @@ test('POST /api/users rejects duplicate username + unknown upstream id', async (
   assertEquals(dup.status, 400);
   const unknown = await adminPost(adminSession, { username: 'bob', password: 'pw', upstreamIds: ['up_ghost'] });
   assertEquals(unknown.status, 400);
+});
+
+test('POST /api/users accepts an empty upstream whitelist', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const response = await adminPost(adminSession, { username: 'no-upstreams', password: 'pw', upstreamIds: [] });
+  assertEquals(response.status, 201);
+  const body = (await response.json()) as { user: { id: number; upstreamIds: string[] } };
+  assertEquals(body.user.upstreamIds, []);
+  assertEquals((await repo.users.getById(body.user.id))?.upstreamIds, []);
 });
 
 test('POST /api/users rejects a username that differs only in case', async () => {
@@ -113,6 +127,71 @@ test('PATCH /api/users/:id can demote a non-self admin', async () => {
   assertEquals(response.status, 200);
   const bob = await repo.users.getById(3);
   expect(bob?.isAdmin).toBe(false);
+});
+
+test('PATCH /api/users/upstream-access changes only named upstream membership for selected users', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 0 }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 1 }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_c', name: 'C', sortOrder: 2 }));
+  const admin = await repo.users.getById(1);
+  assertExists(admin);
+  await repo.users.save({ ...admin, upstreamIds: ['up_c', 'up_b'] });
+  await repo.users.save({
+    ...admin,
+    id: 3,
+    username: 'limited',
+    isAdmin: false,
+    upstreamIds: ['up_a'],
+  });
+  await repo.users.save({
+    ...admin,
+    id: 4,
+    username: 'untouched',
+    isAdmin: false,
+    upstreamIds: ['up_b'],
+  });
+
+  const response = await adminBulkUpstreamPatch(adminSession, {
+    userIds: [1, 3],
+    changes: [
+      { upstreamId: 'up_b', allowed: false },
+      { upstreamId: 'up_c', allowed: true },
+    ],
+  });
+  assertEquals(response.status, 200);
+  assertEquals((await repo.users.getById(1))?.upstreamIds, ['up_c']);
+  assertEquals((await repo.users.getById(3))?.upstreamIds, ['up_a', 'up_c']);
+  assertEquals((await repo.users.getById(4))?.upstreamIds, ['up_b']);
+});
+
+test('PATCH /api/users/upstream-access supports an empty whitelist and validates its targets', async () => {
+  const { adminSession, apiKey, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_only', name: 'Only' }));
+
+  const response = await adminBulkUpstreamPatch(adminSession, {
+    userIds: [1],
+    changes: [
+      { upstreamId: 'up_copilot', allowed: false },
+      { upstreamId: 'up_only', allowed: false },
+    ],
+  });
+  assertEquals(response.status, 200);
+  assertEquals((await repo.users.getById(1))?.upstreamIds, []);
+
+  assertEquals((await adminBulkUpstreamPatch(adminSession, {
+    userIds: [999],
+    changes: [{ upstreamId: 'up_only', allowed: true }],
+  })).status, 404);
+  assertEquals((await adminBulkUpstreamPatch(adminSession, {
+    userIds: [1],
+    changes: [{ upstreamId: 'up_missing', allowed: true }],
+  })).status, 400);
+  assertEquals((await requestApp('/api/users/upstream-access', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ userIds: [1], changes: [{ upstreamId: 'up_only', allowed: true }] }),
+  })).status, 403);
 });
 
 test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () => {

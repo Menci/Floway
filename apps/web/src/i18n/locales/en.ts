@@ -238,6 +238,7 @@ const en = {
           deleteNamed: 'Delete user {{name}}',
           refresh: 'Refresh users',
           save: 'Save changes',
+          bulkAccess: 'Edit upstream access',
         },
         toast: {
           create: {
@@ -256,6 +257,10 @@ const en = {
             pending: 'Deleting user {{username}}',
             success: 'Deleted user {{username}}',
           },
+          bulkAccess: {
+            pending: 'Updating upstream access for {{count, number}} users',
+            success: 'Updated upstream access for {{count, number}} users',
+          },
         },
         table: {
           label: 'Floway users',
@@ -264,6 +269,8 @@ const en = {
           upstreams: 'Upstream access',
           created: 'Created',
           actions: 'Actions',
+          selectAll: 'Select all users',
+          selectNamed: 'Select user {{name}}',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
         upstreams: {
@@ -275,6 +282,11 @@ const en = {
           createTitle: 'New user',
           editTitle: 'Edit {{username}}',
           passwordTitle: 'Reset password for {{username}}',
+        },
+        bulkAccess: {
+          title: 'Edit upstream access for {{count, number}} users',
+          description: 'A dash means the selected users have different access. Untouched upstreams keep each user’s existing state; only explicitly checked or cleared upstreams are changed in bulk.',
+          tableLabel: 'Bulk upstream access',
         },
         form: {
           username: 'Username',

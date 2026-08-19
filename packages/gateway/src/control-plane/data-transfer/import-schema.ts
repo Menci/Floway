@@ -250,7 +250,7 @@ const userSchema = z.object({
   isAdmin: z.boolean({ error: 'isAdmin must be a boolean' }),
   upstreamIds: parsedBy(value => {
     if (value === undefined) throw new Error('upstreamIds must be present (null or array)');
-    const result = parseUpstreamIdsValue(value);
+    const result = parseUpstreamIdsValue(value, true);
     if (!result.ok) throw new Error(result.error);
     return result.value;
   }),

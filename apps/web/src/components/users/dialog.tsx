@@ -19,7 +19,6 @@ import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
-import { refineUpstreamAccess } from '../upstreams/access-validation';
 
 const {
   Button,
@@ -74,7 +73,6 @@ export function UserDialog(props: UserDialogProps) {
       if (mode === 'create' && !value.password) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
       }
-      refineUpstreamAccess(value, ctx);
     }),
     [mode],
   );

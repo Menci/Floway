@@ -1,3 +1,4 @@
+import { applyUserUpstreamAccessChanges } from './upstream-access.ts';
 import { userToAdminWire } from './wire.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
@@ -8,7 +9,7 @@ import type { ApiKey, OAuth2Account, OAuth2Provider, User } from '../../repo/typ
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
-import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
+import type { changeOwnPasswordBody, createUserBody, updateUsersUpstreamAccessBody, updateUserBody } from '../schemas.ts';
 import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
@@ -83,6 +84,31 @@ export const unlinkUserOAuth2Account = async (c: AuthedContext<'/api/users/:id/o
 export const listUsers = async (c: AuthedContext) => {
   const [users, knownUpstreamIds] = await Promise.all([getRepo().users.list(), loadKnownUpstreamIds()]);
   return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds)));
+};
+
+export const updateUsersUpstreamAccess = async (c: CtxWithJson<typeof updateUsersUpstreamAccessBody>) => {
+  const body = c.req.valid('json');
+  const repo = getRepo();
+  const [users, upstreams] = await Promise.all([repo.users.list(), repo.upstreams.list()]);
+  const usersById = new Map(users.map(user => [user.id, user]));
+  const selected = body.userIds.map(id => usersById.get(id));
+  if (selected.some(user => user === undefined)) return c.json({ error: 'user not found' }, 404);
+  const selectedUsers = selected.filter((user): user is User => user !== undefined);
+
+  const catalogIds = upstreams.map(upstream => upstream.id);
+  const knownUpstreamIds = new Set(catalogIds);
+  const upstreamErr = unknownUpstreamIdsError(body.changes.map(change => change.upstreamId), knownUpstreamIds);
+  if (upstreamErr) return c.json({ error: upstreamErr }, 400);
+
+  const updated = selectedUsers.map(user => ({
+    user,
+    upstreamIds: applyUserUpstreamAccessChanges(user.upstreamIds, catalogIds, body.changes),
+  }));
+  await repo.users.setUpstreamIds(updated.map(({ user, upstreamIds }) => ({ id: user.id, upstreamIds })));
+
+  return c.json({
+    users: updated.map(({ user, upstreamIds }) => userToAdminWire({ ...user, upstreamIds }, knownUpstreamIds)),
+  });
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
