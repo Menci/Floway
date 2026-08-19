@@ -611,7 +611,7 @@ describe('the responses chain', () => {
           return stream(completed('CONDENSED SUMMARY'));
         },
       },
-      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+      { enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
     )]);
     const gateway = mockChatGatewayCtx({ wantsStream: false });
 
@@ -641,7 +641,7 @@ describe('the responses chain', () => {
           return stream(completed('hello'));
         },
       },
-      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+      { enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
     )]);
 
     const { facts } = await serve(false);
@@ -726,7 +726,7 @@ describe('the responses chain', () => {
           return stream(completed('hi'));
         },
       },
-      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+      { enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
     )]);
 
     await serve(false, continues);

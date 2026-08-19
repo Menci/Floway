@@ -42,7 +42,7 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocat
   payload,
   candidate: stubModelCandidate({
     model: { endpoints: { anthropicMessages: {} } },
-    enabledFlags: new Set(['messages-web-search-shim']),
+    enabledFlags: new Set(['anthropic-messages-web-search-shim']),
   }),
   targetApi: 'anthropicMessages',
   headers: new Headers(),

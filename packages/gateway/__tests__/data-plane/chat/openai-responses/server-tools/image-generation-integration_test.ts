@@ -167,7 +167,7 @@ const makeCtx = (
   toolChoice?: OpenAIResponsesToolChoice,
 ): OpenAIResponsesInvocation => ({
   candidate: stubModelCandidate({
-    enabledFlags: new Set(['responses-image-generation-shim']),
+    enabledFlags: new Set(['openai-responses-image-generation-shim']),
     model: { id: 'm', endpoints: { openaiResponses: {} } },
   }),
   targetApi: 'openaiResponses',

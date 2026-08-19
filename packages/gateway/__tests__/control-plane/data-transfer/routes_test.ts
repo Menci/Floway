@@ -82,7 +82,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   sortOrder: 10,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
-  flagOverrides: { 'messages-web-search-shim': true },
+  flagOverrides: { 'anthropic-messages-web-search-shim': true },
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
@@ -1232,7 +1232,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
 
   const { flag_overrides: _flagOverrides, ...customWithoutFlagOverrides } = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
   const legacyEnabledFixes = await doImport(app, 'replace', latestImportData({
-    upstreams: [{ ...customWithoutFlagOverrides, enabled_fixes: ['messages-web-search-shim'] }],
+    upstreams: [{ ...customWithoutFlagOverrides, enabled_fixes: ['anthropic-messages-web-search-shim'] }],
   }));
   const legacyAlongsideNew = await doImport(app, 'replace', latestImportData({
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), enabled_fixes: [] }],

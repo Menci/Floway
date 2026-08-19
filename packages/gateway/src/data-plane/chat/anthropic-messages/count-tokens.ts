@@ -121,7 +121,7 @@ const emitAnthropicMessagesTokenCount = defineStage<
  * ever sent. Only the rewrite runs here: there is no stream to intercept and no search to
  * execute, because nothing is generated.
  *
- * `messages-web-search-shim` is the whole of the gate, where generation also engages the
+ * `anthropic-messages-web-search-shim` is the whole of the gate, where generation also engages the
  * shim unconditionally on a translated wire: counting has only the native wire, so the
  * structural half of that condition can never hold.
  *
@@ -147,7 +147,7 @@ const prepareAnthropicMessagesWebSearchRequest = defineStage<
   },
   return: { provides: ['response.chat.anthropicMessages', 'response.usage.billable', 'response.http.headers'] },
   execute: async (facts, next) => {
-    if (!facts['route.attempt'].flags.includes('messages-web-search-shim')) return await next(facts);
+    if (!facts['route.attempt'].flags.includes('anthropic-messages-web-search-shim')) return await next(facts);
     const prepared = prepareAnthropicMessagesWebSearchShimRequest(facts['request.chat.anthropicMessages']);
     if (prepared.type === 'invalid-request') {
       // Nothing was dialled, which is what an empty billed set and an empty header list say

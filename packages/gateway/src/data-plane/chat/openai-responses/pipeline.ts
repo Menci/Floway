@@ -802,7 +802,7 @@ export const beginStoredAttempt = defineStage<
  * Whether this candidate's compactions are the shim's to simulate.
  *
  * Two ways to be, and an upstream only has to be one of them. The operator opted an OpenAI Responses
- * upstream in with `responses-compact-shim`, which is the say-so for one that would answer a
+ * upstream in with `openai-responses-compact-shim`, which is the say-so for one that would answer a
  * compaction itself. Or the candidate has no OpenAI Responses endpoint at all: no translation
  * carries a compaction, so an Anthropic Messages or OpenAI Chat Completions candidate has neither a compaction
  * to dial nor a translator that models the item asking for one — the shim is structurally
@@ -814,7 +814,7 @@ export const beginStoredAttempt = defineStage<
  */
 export const simulatesCompaction = (candidate: ModelCandidate, attempt: AttemptSelector): boolean =>
   openaiResponsesTarget.pick(candidate.model.endpoints) !== 'openaiResponses'
-  || attempt.flags.includes('responses-compact-shim');
+  || attempt.flags.includes('openai-responses-compact-shim');
 
 /**
  * Expands a compaction this gateway wrote back into the history it stood for.

@@ -24,7 +24,7 @@
 //     half above persists items and a response id from.
 //   - the simulation. An upstream with no compaction wire of its own — every Anthropic Messages
 //     and OpenAI Chat Completions candidate, and any OpenAI Responses candidate an operator opted in with
-//     `responses-compact-shim` — is sent an ordinary generate turn against the compactor's
+//     `openai-responses-compact-shim` — is sent an ordinary generate turn against the compactor's
 //     prompt over the wires generation would have used, and the summary it produces is packed
 //     into an envelope of this gateway's own. That is the whole of what the action pivot was:
 //     one wire dials `compact`, the other dials `generate` under the stage that folds the
@@ -314,7 +314,7 @@ const simulationWire: ChatWire = compose('openaiResponsesCompactSimulated', [sum
  * Picks how this candidate's compaction is produced.
  *
  * An upstream whose own endpoint compacts is asked to, unless the operator asked for the
- * simulation instead — which is what the `responses-compact-shim` flag is: an opt-in for an
+ * simulation instead — which is what the `openai-responses-compact-shim` flag is: an opt-in for an
  * OpenAI Responses upstream that would answer a compaction itself. Everything else is simulated,
  * structurally rather than by choice: no translation carries a compaction, so an Anthropic
  * Messages or OpenAI Chat Completions candidate has no compaction to dial.

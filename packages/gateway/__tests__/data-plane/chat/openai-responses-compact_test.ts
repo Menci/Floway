@@ -272,7 +272,7 @@ describe('the responses compaction chain', () => {
     const seen: { body?: Record<string, unknown>; action?: unknown } = {};
     resolves([candidate(
       { callOpenAIResponses: generates('SIMULATED SUMMARY', seen) },
-      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+      { enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
     )]);
 
     const { facts } = await compact();
@@ -294,7 +294,7 @@ describe('the responses compaction chain', () => {
     ]);
     resolves([candidate(
       { callOpenAIResponses: generates('S', seen) },
-      { enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+      { enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
     )]);
 
     await compact({
@@ -313,11 +313,11 @@ describe('the responses compaction chain', () => {
     resolves([
       candidate(
         { callOpenAIResponses: async (...args) => { tried.push('mute'); return await generates('')(...args as [unknown, unknown, unknown]); } },
-        { upstreamId: 'up_mute', enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+        { upstreamId: 'up_mute', enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
       ),
       candidate(
         { callOpenAIResponses: async (...args) => { tried.push('talkative'); return await generates('A SUMMARY')(...args as [unknown, unknown, unknown]); } },
-        { upstreamId: 'up_talkative', enabledFlags: new Set<FlagId>(['responses-compact-shim']) },
+        { upstreamId: 'up_talkative', enabledFlags: new Set<FlagId>(['openai-responses-compact-shim']) },
       ),
     ]);
 

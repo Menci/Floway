@@ -703,7 +703,7 @@ const planShimSlots = (
 };
 
 export const webSearchServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-web-search-shim')) {
+  if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('openai-responses-web-search-shim')) {
     return { type: 'inactive' };
   }
 

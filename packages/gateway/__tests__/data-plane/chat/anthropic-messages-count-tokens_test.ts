@@ -189,7 +189,7 @@ describe('the messages count-tokens chain', () => {
     const asked = { ...payload, tools: [{ type: 'web_search_20260209', max_uses: 3 }] } as unknown as AnthropicMessagesPayload;
     affinityPayload = asked;
     resolves([candidate(async (_model, body) => { sent = body as AnthropicMessagesPayload; return counted(13); }, {
-      enabledFlags: new Set<FlagId>(['messages-web-search-shim']),
+      enabledFlags: new Set<FlagId>(['anthropic-messages-web-search-shim']),
     })]);
 
     await count(asked);
@@ -217,7 +217,7 @@ describe('the messages count-tokens chain', () => {
     affinityPayload = asked;
     let dialled = 0;
     resolves([candidate(async () => { dialled += 1; return counted(0); }, {
-      enabledFlags: new Set<FlagId>(['messages-web-search-shim']),
+      enabledFlags: new Set<FlagId>(['anthropic-messages-web-search-shim']),
     })]);
 
     const { facts } = await count(asked);

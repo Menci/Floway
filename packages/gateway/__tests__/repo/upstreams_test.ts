@@ -128,7 +128,7 @@ test('memory upstream repo deeply clones configs and flag overrides at the repo 
   });
 
   const listed = await repo.list();
-  listed[0].flagOverrides['responses-web-search-shim'] = true;
+  listed[0].flagOverrides['openai-responses-web-search-shim'] = true;
   (listed[0].config as { nested: { headers: string[] } }).nested.headers.push('mutated-after-list');
 
   assertEquals((await repo.getById('up_custom_clone'))?.flagOverrides, { 'rewrite-developer-to-system': true, 'vendor-deepseek': true });
@@ -149,12 +149,12 @@ test('memory upstream repo sorts flag overrides by key when saving rows', async 
       kind: 'copilot',
       sortOrder: 0,
       createdAt: '2026-05-21T10:00:00.000Z',
-      flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': false, 'messages-web-search-shim': true },
+      flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': false, 'anthropic-messages-web-search-shim': true },
       disabledPublicModelIds: [],
     }),
   );
 
-  assertEquals((await repo.getById('up_copilot_fixes'))?.flagOverrides, { 'rewrite-developer-to-system': false, 'messages-web-search-shim': true, 'vendor-deepseek': true });
+  assertEquals((await repo.getById('up_copilot_fixes'))?.flagOverrides, { 'rewrite-developer-to-system': false, 'anthropic-messages-web-search-shim': true, 'vendor-deepseek': true });
 });
 
 const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
@@ -207,7 +207,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
     config: { baseUrl: 'https://updated.example/v1', authStyle: 'bearer', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
-    flagOverrides: { 'messages-web-search-shim': true, 'rewrite-developer-to-system': true },
+    flagOverrides: { 'anthropic-messages-web-search-shim': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
   assertEquals(

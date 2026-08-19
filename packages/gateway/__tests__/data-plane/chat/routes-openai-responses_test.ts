@@ -99,7 +99,7 @@ test('a turn reaches Copilot over its own OpenAI Responses endpoint and comes ba
 
   // What the turn looked like on the wire. The hosted image-generation tool never reached the
   // Copilot boundary that would have dropped it: Copilot carries the
-  // `responses-image-generation-shim` flag, so the server-tool stage got there first and sent a
+  // `openai-responses-image-generation-shim` flag, so the server-tool stage got there first and sent a
   // function tool the model can call and this gateway executes. What the boundary did make of
   // the rest is here — the description its namespace tool needs is filled, and neither field it
   // refuses travels.
