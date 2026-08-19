@@ -270,7 +270,7 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: new Headers({ 'anthropic-beta': 'context-1m' }), fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: [['anthropic-beta', 'context-1m']], fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await azureFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );

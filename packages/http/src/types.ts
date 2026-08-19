@@ -22,6 +22,15 @@ export type FetchInit = Omit<RequestInit, 'body'> & {
 export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
 
 /**
+ * Request header block in wire order. A name may repeat, because a repeated
+ * name is the only way to send several values whose combined form would be a
+ * different field value — and because the caller, not this layer, owns the
+ * choice between one field line and a comma-combined one.
+ * https://www.rfc-editor.org/rfc/rfc9110.html#section-5.3
+ */
+export type HttpHeaderLines = readonly (readonly [name: string, value: string])[];
+
+/**
  * HTTP/1.1 request shape, transport-agnostic. The caller has already
  * dialed and (if needed) TLS-wrapped the stream — this package only
  * serializes the request and parses the response.
@@ -39,7 +48,7 @@ export interface HttpRequest {
   method: string;
   /** Path + query string, e.g. `/v1/messages?stream=true`. */
   path: string;
-  headers: Record<string, string>;
+  headers: HttpHeaderLines;
   /** Optional bytes or a fresh-stream factory with an exact content length. */
   body?: Uint8Array | ReplayableBody;
 }
@@ -62,5 +71,13 @@ export interface RawHttpResponse {
    */
   statusText: string;
   headers: Headers;
+  /**
+   * Every response field line in wire order, including the repetitions a
+   * `Headers` merges away. `headers` stays the bridge to a Web `Response`;
+   * this is the view a caller reads when a repeated name has to survive.
+   * The `Transfer-Encoding` line is absent from both once this layer has
+   * decoded the coding it named.
+   */
+  headerLines: HttpHeaderLines;
   body: ReadableStream<Uint8Array>;
 }

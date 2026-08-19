@@ -1,6 +1,6 @@
 import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, type HttpHeaderLines, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;
@@ -19,11 +19,11 @@ const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse
 //
 // Reference (caozhiyuan/copilot-api uses the same split):
 // https://github.com/caozhiyuan/copilot-api/blob/dc3d4aaf249d534bc66d5f1cb221ac29489b9753/src/lib/api-config.ts
-const MODELS_HEADER_OVERRIDES = new Headers({
-  'openai-intent': 'model-access',
-  'x-interaction-type': 'model-access',
-  'content-type': '',
-});
+const MODELS_HEADER_OVERRIDES: HttpHeaderLines = [
+  ['openai-intent', 'model-access'],
+  ['x-interaction-type', 'model-access'],
+  ['content-type', ''],
+];
 
 export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(

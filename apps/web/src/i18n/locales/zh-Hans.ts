@@ -545,7 +545,7 @@ const zhHansCN = {
           empty: '（空值）',
           validation: {
             invalidName: '请输入有效的 HTTP 标头名称。',
-            duplicateName: '同一个标头名称只能出现一次。',
+            duplicatePassthrough: '同一个标头名称只能透传一次。',
             anthropicMessagesOwned: '此标头由 Anthropic Messages 协议管理。',
             transportOwned: '此标头由 Floway 的 HTTP 传输层管理。',
             invalidValue: '请输入不含控制字符的有效 HTTP 标头值。',

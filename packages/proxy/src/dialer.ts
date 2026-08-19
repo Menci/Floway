@@ -190,10 +190,7 @@ const runRequestOnStream = async (
     } else {
       fetchPrefix = dialed.prefix;
     }
-    let hasHost = false;
-    for (const k of Object.keys(request.headers)) {
-      if (k.toLowerCase() === 'host') { hasHost = true; break; }
-    }
+    const hasHost = request.headers.some(([name]) => name.toLowerCase() === 'host');
     let headers = request.headers;
     if (!hasHost) {
       // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when
@@ -203,7 +200,7 @@ const runRequestOnStream = async (
       const hostUriPart = formatHostForUri(target.host);
       const defaultPort = target.tls ? 443 : 80;
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
-      headers = { ...headers, Host: hostValue };
+      headers = [['Host', hostValue], ...headers];
     }
     return await fetchOnStream(stream, { ...request, headers }, fetchPrefix);
   } catch (err) {

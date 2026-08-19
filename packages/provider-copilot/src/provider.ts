@@ -22,7 +22,7 @@ import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type Anthr
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
-import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -210,7 +210,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
-    headers: Headers,
+    headers: HttpHeaderLines,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const response = await transport(
@@ -230,7 +230,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
-    headers: Headers,
+    headers: HttpHeaderLines,
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
     opts: UpstreamCallOptions,
   ) =>
@@ -341,7 +341,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const result = await runInterceptors<OpenAIChatCompletionsBoundaryCtx, object, ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>>(
         ctx, {}, COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchOpenAIChatCompletions, wireBody, signal, rawModel, ctx.headers, parseOpenAIChatCompletionsStream, opts));
+          return await liftStream(callStreaming(copilotFetchOpenAIChatCompletions, wireBody, signal, rawModel, [...ctx.headers], parseOpenAIChatCompletionsStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
@@ -370,7 +370,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           switch (ctx.action) {
           case 'generate': {
-            const stream = await callStreaming(copilotFetchOpenAIResponses, wireBody, signal, rawModel, ctx.headers, parseOpenAIResponsesStream, opts);
+            const stream = await callStreaming(copilotFetchOpenAIResponses, wireBody, signal, rawModel, [...ctx.headers], parseOpenAIResponsesStream, opts);
             return stream.ok
               ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
               : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
@@ -381,7 +381,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             const response = await copilotFetchOpenAIResponses(
               upstreamConfig,
               { method: 'POST', body: jsonRequestBody(triggered), signal },
-              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
+              { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
             const generated = (await response.json()) as OpenAIResponsesResult;
@@ -437,7 +437,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchAnthropicMessages, wireBody, signal, rawModel, headersForAnthropicMessagesCall(ctx.headers, ctx.anthropicBeta), parseAnthropicMessagesStream, opts));
+          return await liftStream(callStreaming(copilotFetchAnthropicMessages, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), parseAnthropicMessagesStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
@@ -451,13 +451,13 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const response = await runInterceptors<AnthropicMessagesBoundaryCtx, object, Response>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const { response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall(ctx.headers, ctx.anthropicBeta), opts);
+          const { response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), opts);
           return response;
         },
       );
       return { response, modelKey: rawModel.id };
     },
-    callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), opts.headers, opts),
+    callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), [...opts.headers], opts),
     // Copilot has no /images/* upstream; catalog never emits a kind='image'
     // model, so these stubs are unreachable.
     callOpenAIImagesGenerations: rejectUnsupported('callOpenAIImagesGenerations'),
