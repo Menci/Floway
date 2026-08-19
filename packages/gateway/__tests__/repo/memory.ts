@@ -45,6 +45,8 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
+  SiteSettings,
+  SiteSettingsRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
@@ -726,6 +728,19 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 
   save(config: WebSearchConfig): Promise<void> {
     this.config = structuredClone(config);
+    return Promise.resolve();
+  }
+}
+
+class MemorySiteSettingsRepo implements SiteSettingsRepo {
+  private settings: SiteSettings = { name: 'Floway' };
+
+  get(): Promise<SiteSettings> {
+    return Promise.resolve({ ...this.settings });
+  }
+
+  save(settings: SiteSettings): Promise<void> {
+    this.settings = { ...settings };
     return Promise.resolve();
   }
 }
@@ -1466,6 +1481,7 @@ export class InMemoryRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1487,6 +1503,7 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo(this.apiKeys);
     this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
+    this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

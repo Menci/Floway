@@ -9,11 +9,13 @@ import criticalCss from 'virtual:floway-critical.css?inline';
 import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
+import { getSiteSettings } from './api/site-settings';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
 import { GradientBackground } from './components/gradient-background';
 import { markPickerScript } from './components/logo-mark';
 import { NavigationProgress } from './components/navigation-progress';
+import { SiteSettingsProvider } from './components/site-settings-context';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
 import { fluentComponents } from './fluent';
@@ -82,13 +84,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
+export async function clientLoader() {
+  const result = await getSiteSettings();
+  if (result.error) throw new Error(result.error.message, { cause: result.error.cause });
+  return result.data;
+}
+
+export default function App({ loaderData }: Route.ComponentProps) {
   return (
-    <>
+    <SiteSettingsProvider value={loaderData}>
       <NavigationProgress />
       <DocumentTitleSync />
       <Outlet />
-    </>
+    </SiteSettingsProvider>
   );
 }
 

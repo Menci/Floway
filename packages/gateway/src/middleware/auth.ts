@@ -4,7 +4,7 @@ import { getRepo } from '../repo/index.ts';
 import type { ApiKey, User } from '../repo/types.ts';
 import { getEnvOptional, timingSafeEqual } from '@floway-dev/platform';
 
-const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
+const PUBLIC_PATHS = new Set(['/api/health', '/api/site-settings', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
 // The three slots auth middleware stamps on every authenticated request. All

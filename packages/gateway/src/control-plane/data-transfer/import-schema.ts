@@ -6,7 +6,7 @@ import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-mode
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, SiteSettings, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
@@ -41,6 +41,7 @@ export interface ParsedImportData {
   performance: PerformanceTelemetryRecord[];
   performanceIncluded: boolean;
   searchConfig: WebSearchConfig;
+  siteSettings: SiteSettings;
 }
 
 export type ImportDataParseResult = { type: 'ok'; data: ParsedImportData } | { type: 'invalid'; error: string };
@@ -79,6 +80,12 @@ const objectIncludingArraySchema = (message: string) => z.custom<Record<string, 
 const nonEmptyStringSchema = (field: string) => z.string({ error: `${field} must be a string` })
   .transform(value => value.trim())
   .refine(value => value !== '', { error: `${field} must be a non-empty string` });
+const siteSettingsSchema = z.object({
+  name: z.string({ error: 'name must be a string' })
+    .trim()
+    .min(1, { error: 'name must be a non-empty string' })
+    .max(64, { error: 'name must be at most 64 characters' }),
+}, { error: 'siteSettings must be an object' }).strict();
 const nonEmptyStringWithError = (message: string) => z.string({ error: message }).min(1, { error: message });
 const nullableStringSchema = (field: string) => z.union([
   z.string(),
@@ -508,6 +515,11 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
     return { type: 'invalid', error: `invalid searchConfig: ${messageFor(cause)}` };
   }
 
+  const siteSettingsResult = siteSettingsSchema.safeParse(value.siteSettings);
+  if (!siteSettingsResult.success) {
+    return { type: 'invalid', error: `invalid siteSettings: ${siteSettingsResult.error.issues[0].message}` };
+  }
+
   if (typeof value.performanceIncluded !== 'boolean') {
     return { type: 'invalid', error: 'performanceIncluded must be a boolean' };
   }
@@ -535,6 +547,7 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
       performance,
       performanceIncluded: value.performanceIncluded,
       searchConfig,
+      siteSettings: siteSettingsResult.data,
     },
   };
 };

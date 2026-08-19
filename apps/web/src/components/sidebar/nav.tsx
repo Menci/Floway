@@ -87,7 +87,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
 
 const AccountIcon = accountPage.icon;
 
-export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
+export function Sidebar({ onNavigate, siteName, user }: { onNavigate?: () => void; siteName: string; user: AuthUser }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigation = useNavigation();
@@ -127,7 +127,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
     >
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">
         <div className="flex items-center min-h-10">
-          <FlowayLogo />
+          <FlowayLogo name={siteName} />
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>

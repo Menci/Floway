@@ -263,6 +263,12 @@ export const changeOwnPasswordBody = z.object({
   newPassword: passwordSchema,
 });
 
+// --- site settings ---
+
+export const siteSettingsBody = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
 // --- api keys ---
 
 // `dump_retention_seconds`: null disables capture; a positive integer is the
@@ -701,7 +707,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(20, { error: 'version must be 20 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(21, { error: 'version must be 21 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

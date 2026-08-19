@@ -340,6 +340,15 @@ export interface WebSearchConfigRepo {
   save(config: WebSearchConfig): Promise<void>;
 }
 
+export interface SiteSettings {
+  name: string;
+}
+
+export interface SiteSettingsRepo {
+  get(): Promise<SiteSettings>;
+  save(settings: SiteSettings): Promise<void>;
+}
+
 export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
@@ -548,6 +557,7 @@ export interface Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
