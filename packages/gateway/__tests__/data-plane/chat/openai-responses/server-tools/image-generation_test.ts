@@ -1,6 +1,5 @@
 import { beforeEach, test } from 'vitest';
 
-import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import {
   buildImageGenerationFunctionTool,
   createImageSourceInspector,
@@ -24,6 +23,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputItem, OpenAIResponsesPayload, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.

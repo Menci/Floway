@@ -25,6 +25,7 @@ import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { isClaudeCodeProbe, probeFrames } from './claude-code-probe.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
+import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/turn-dump.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
@@ -519,6 +520,9 @@ export const anthropicMessagesServePipeline = (payload: AnthropicMessagesPayload
     }),
     materializeAttempt('request.chat.anthropicMessages'),
     answerClaudeCodeProbe,
+    // Below the probe, because a probe turn declares no tools; above the dial, because what it
+    // rewrites is the body that dial sends and the frames that dial hands back.
+    runAnthropicMessagesWebSearchTool({ targetOf: candidate => anthropicMessagesTarget.pick(candidate.model.endpoints) }),
     dialChatWire({
       source: 'request.chat.anthropicMessages',
       needs: ['request.chat.anthropicMessages', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],

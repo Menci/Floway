@@ -1,7 +1,6 @@
 import { beforeEach, test, vi } from 'vitest';
 
 import { driveServerToolStage } from './drive.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -9,7 +8,7 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResult, OpenAIResponsesStreamEvent, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
+import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest, type OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a

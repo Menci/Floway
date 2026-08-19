@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
+import { driveWebSearchStage } from './web-search-drive.ts';
 import {
   decodeWebSearchCitationPayload,
   decodeWebSearchResultPayload,
@@ -9,14 +9,12 @@ import {
   type AnthropicMessagesWebSearchShimState,
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
-  withAnthropicMessagesWebSearchRequestPrepared,
-  withAnthropicMessagesWebSearchShim,
-} from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
-import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
-import type { WebSearchProvider, WebSearchProviderResult } from '../../../../../src/data-plane/tools/web-search/types.ts';
-import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+} from '../../../../src/data-plane/chat/anthropic-messages/web-search-shim.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../src/data-plane/tools/web-search/config.ts';
+import type { WebSearchProvider, WebSearchProviderResult } from '../../../../src/data-plane/tools/web-search/types.ts';
+import { initRepo } from '../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -30,6 +28,7 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
+import type { AnthropicMessagesInvocation } from '@floway-dev/provider';
 import { assertEquals, assertExists, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {
@@ -587,44 +586,34 @@ test('generation and count_tokens prepare identical web-search request payloads'
   const generationInvocation = invocation(structuredClone(source));
   const countInvocation = invocation(structuredClone(source));
 
-  await withAnthropicMessagesWebSearchShim(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
+  await driveWebSearchStage(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
     type: 'events',
     events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEvent>>([]),
     modelIdentity: testTelemetryModelIdentity,
   }));
-  const countResponse = await withAnthropicMessagesWebSearchRequestPrepared(
-    countInvocation,
-    mockChatGatewayCtx(),
-    () => Promise.resolve(new Response(null, { status: 204 })),
-  );
-
-  assertEquals(countResponse.status, 204);
-  assertEquals(countInvocation.payload, generationInvocation.payload);
+  // `:countTokens` has no stream to rewrite, so its stage prepares the same request and dials
+  // it — measuring what generation would have sent rather than what the client wrote.
+  const counted = prepareAnthropicMessagesWebSearchShimRequest(countInvocation.payload);
+  assertEquals(counted.type, 'ok');
+  assertEquals(counted.type === 'ok' ? counted.payload : undefined, generationInvocation.payload);
   const rewrittenTool = generationInvocation.payload.tools?.[0] as AnthropicMessagesClientTool;
   assertEquals(rewrittenTool.name, 'web_search');
   assertEquals('type' in rewrittenTool, false);
 });
 
 test('count_tokens returns a native error response for invalid web-search tools', async () => {
-  const response = await withAnthropicMessagesWebSearchRequestPrepared(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'search' }],
-      tools: [{ type: 'web_search_20260209' }, { type: 'web_search_20260209' }],
-    }),
-    mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
-
-  assertEquals(response.status, 400);
-  assertEquals(await response.json(), {
-    type: 'error',
-    error: {
-      type: 'invalid_request_error',
-      message: 'Only one native web search tool definition is supported per request.',
-    },
+  const prepared = prepareAnthropicMessagesWebSearchShimRequest({
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [{ role: 'user', content: 'search' }],
+    tools: [{ type: 'web_search_20260209' }, { type: 'web_search_20260209' }],
   });
+
+  assertEquals(prepared.type, 'invalid-request');
+  assertEquals(
+    prepared.type === 'invalid-request' ? prepared.message : undefined,
+    'Only one native web search tool definition is supported per request.',
+  );
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEvent>[]> => {
@@ -632,7 +621,7 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
 
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
 
-  const result = await withAnthropicMessagesWebSearchShim(invocation(payload), mockChatGatewayCtx(), () =>
+  const result = await driveWebSearchStage(invocation(payload), mockChatGatewayCtx(), () =>
     Promise.resolve({
       type: 'events',
       events: toAsyncIterable(
@@ -672,23 +661,30 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
   return await collect(result.events);
 };
 
-test('withAnthropicMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+// A turn that needs a search backend the operator never configured is unanswerable, and that is
+// this gateway's own fault rather than a refusal to fail over — so it raises, and the seam turns
+// it into the internal-error envelope with the sentence and the stack on it.
+test('the web-search stage raises when the request needs a search provider the operator disabled', async () => {
   await initDisabledSearchRepo();
 
-  const result = await withAnthropicMessagesWebSearchShim(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ type: 'web_search_20260209' }],
-    }), mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
+  let raised: unknown;
+  try {
+    await driveWebSearchStage(
+      invocation({
+        model: 'claude-test',
+        max_tokens: 64,
+        messages: [{ role: 'user', content: 'latest React docs' }],
+        tools: [{ type: 'web_search_20260209' }],
+      }), mockChatGatewayCtx(),
+      () => Promise.reject(new Error('run should not be called')),
+    );
+  } catch (error) { raised = error; }
 
-  assertEquals(result.type, 'internal-error');
+  assertEquals(raised instanceof Error, true);
+  assertEquals((raised as Error).message, 'Native Anthropic Messages web search requires an enabled search provider.');
 });
 
-test('withAnthropicMessagesWebSearchShim allows replay-only history when the search provider is disabled', async () => {
+test('the web-search stage allows replay-only history when the search provider is disabled', async () => {
   const collected = await runReplayOnlyShim('msg_replay_only');
 
   const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
@@ -696,7 +692,7 @@ test('withAnthropicMessagesWebSearchShim allows replay-only history when the sea
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
-test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
+test('the web-search stage emits native-like citation deltas for replay-only history', async () => {
   const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
   const frames = collected.map(anthropicMessagesProtocolFrameToSSEFrame).filter(frame => frame !== null);

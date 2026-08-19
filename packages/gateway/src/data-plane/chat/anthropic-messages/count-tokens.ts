@@ -29,8 +29,8 @@
 
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { renderAnthropicMessagesError } from './errors.ts';
-import { prepareAnthropicMessagesWebSearchShimRequest } from './interceptors/web-search-shim.ts';
 import type { AnthropicMessagesFacts } from './pipeline.ts';
+import { prepareAnthropicMessagesWebSearchShimRequest } from './web-search-shim.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';

@@ -1,7 +1,6 @@
 import { beforeEach, test, vi } from 'vitest';
 
 import { driveServerToolStage } from './drive.ts';
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import {
   consumeTurnStreaming,
@@ -46,7 +45,7 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
+import { type EventResult, type ExecuteResult, type FlagId, type OpenAIResponsesInvocation } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
 
 const withOpenAIResponsesWebSearchShim = driveServerToolStage([webSearchServerTool]);
@@ -354,11 +353,11 @@ const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
   return out;
 };
 
-// The shim streams lazily: backend calls, ctx.payload.input mutation, and
-// subsequent run() calls all happen inside the events generator. Tests
-// asserting on side-effects MUST drain the events stream first.
+// The stage streams lazily: backend calls, the payload each descent sends, and the descents
+// themselves all happen inside the events generator. Tests asserting on side-effects MUST drain
+// the events stream first.
 const runShimAndDrain = async (
-  shim: OpenAIResponsesInterceptor,
+  shim: ReturnType<typeof driveServerToolStage>,
   inv: OpenAIResponsesInvocation,
   gatewayCtx: ChatGatewayCtx,
   run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>>,
