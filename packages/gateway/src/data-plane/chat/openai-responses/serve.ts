@@ -55,7 +55,7 @@ export const openaiResponsesServe = {
     // it). When present serve-prep expands it the same way generate does so
     // stored history is hydrated before candidate dispatch.
     //
-    // For non-openai-responses targets the responses-compact-shim picks up the
+    // For non-openai-responses targets the openai-responses-compact-shim picks up the
     // request inside the interceptor chain, flips action='compact' to
     // 'generate', runs a SUMMARIZATION_PROMPT turn through translation, and
     // re-tags the result as compact on the way out.

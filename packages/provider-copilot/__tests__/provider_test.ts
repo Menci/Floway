@@ -443,7 +443,7 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
 
 test('Copilot provider exposes its default flag set via ProviderModel.enabledFlags', async () => {
   const { copilotUpstream } = await setupCopilotTest({
-    flagOverrides: { 'messages-web-search-shim': true },
+    flagOverrides: { 'anthropic-messages-web-search-shim': true },
     disabledPublicModelIds: [],
   });
   const instance = createCopilotProvider(copilotUpstream);
@@ -475,7 +475,7 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
       const model = models[0];
       if (!model) throw new Error('expected at least one Copilot model in test fixture');
       assertEquals(model.enabledFlags.has('strip-billing-attribution'), true);
-      assertEquals(model.enabledFlags.has('messages-web-search-shim'), true);
+      assertEquals(model.enabledFlags.has('anthropic-messages-web-search-shim'), true);
     },
   );
 });

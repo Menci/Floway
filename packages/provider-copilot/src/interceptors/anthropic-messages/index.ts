@@ -47,7 +47,7 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor, CopilotAnthropicMessa
 //
 // `withAnthropicMessagesWebSearchShim` is intentionally NOT registered here. It runs
 // in the gateway's `anthropicMessagesInterceptors` (filtered by enabled flags); the
-// Copilot provider opts in by listing `messages-web-search-shim` in its
+// Copilot provider opts in by listing `anthropic-messages-web-search-shim` in its
 // default flag set (see COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
 export const COPILOT_ANTHROPIC_MESSAGES_BOUNDARY = [
   rewriteContextWindowError,

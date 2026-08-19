@@ -436,7 +436,7 @@ test('countTokens prepares the generation web-search request shape', async () =>
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callAnthropicMessagesCountTokens,
-      enabledFlags: new Set<FlagId>(['messages-web-search-shim']),
+      enabledFlags: new Set<FlagId>(['anthropic-messages-web-search-shim']),
     }),
     headers: new Headers(),
     anthropicBeta: [],

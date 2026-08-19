@@ -171,7 +171,7 @@ describe('codexRawToProviderModel', () => {
   });
 
   test('threads the supplied enabledFlags onto the produced model', () => {
-    const flags: ReadonlySet<FlagId> = new Set(['responses-web-search-shim']);
+    const flags: ReadonlySet<FlagId> = new Set(['openai-responses-web-search-shim']);
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, flags);
     expect(m.enabledFlags).toBe(flags);
   });
