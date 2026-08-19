@@ -69,9 +69,10 @@ describe('static asset caching', () => {
     expect([...headersRules.keys()]).toEqual(['/assets/*']);
   });
 
-  // The sourcemap content type is settled inside the cached block, where nginx
-  // resolves the more specific regex location first; moving it back out would
-  // take the cache header off every map with it.
+  // The sourcemap content type is settled inside the cached block because `^~`
+  // on that block stops the server-level regex locations being tested at all:
+  // a `\.map$` location moved back out would never match under /assets/, and
+  // every map there would fall back to `application/octet-stream`.
   it('settles the sourcemap content type inside the cached block', () => {
     expect(nginxAssets).toMatch(/location\s+~\s+\\\.map\$\s*\{[^}]*default_type\s+application\/json;/);
   });
