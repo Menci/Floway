@@ -4,7 +4,7 @@ const en = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       loading: shellLoadingLabel,
@@ -81,6 +81,7 @@ const en = {
         usage: 'Usage',
         performance: 'Performance',
         users: 'Users',
+        site: 'Site',
         backupRestore: 'Backup / Restore',
         settings: 'Settings',
       },
@@ -107,9 +108,23 @@ const en = {
             'Monitor latency, throughput, and upstream performance signals',
         users:
             'Manage console users, permissions, telemetry access, and upstream scopes',
+        site:
+            'Choose the site name shown in the dashboard and browser title',
         backupRestore:
             'Download a full copy of everything this gateway holds, or restore it from an earlier export',
         unavailable: 'This view could not be loaded',
+      },
+      siteSettings: {
+        heading: 'Site identity',
+        description: 'The mark stays the same; only the name beside it and in browser titles changes.',
+        name: 'Site name',
+        nameHint: 'Use 1 to 64 characters.',
+        save: 'Save',
+        saved: 'Site name updated',
+        validation: {
+          required: 'Enter a site name.',
+          max: 'Site name must be 64 characters or fewer.',
+        },
       },
       playground: {
         system: 'Custom system prompt',

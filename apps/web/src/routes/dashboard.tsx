@@ -15,6 +15,7 @@ import type { AuthUser } from '../api/auth';
 import { FlowayLogo } from '../components/logo';
 import { usePageFrames } from '../components/page-frames';
 import { Sidebar } from '../components/sidebar/nav';
+import { useSiteSettings } from '../components/site-settings-context';
 import { SCROLLPORT_FILL_CLASS } from '../components/ui/layout';
 import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -49,6 +50,7 @@ export default function Dashboard({}: Route.ComponentProps) {
 
 function DashboardShell({ user }: { user: AuthUser }) {
   const { t } = useTranslation();
+  const { name: siteName } = useSiteSettings();
   const [navigationOpen, setNavigationOpen] = useState(false);
   // The entrance is started on the element, not declared in the sheet;
   // ../winui/page-transition.css.ts says why. React state and a deliberate
@@ -101,7 +103,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
       </a>
       <div className="grid grid-cols-[clamp(240px,18vw,290px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] h-[100dvh] min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
         <div className="min-h-0 max-[900px]:hidden">
-          <Sidebar user={user} />
+          <Sidebar siteName={siteName} user={user} />
         </div>
         <header className="hidden max-[900px]:flex items-center gap-3 border-b border-b-solid border-fui-divider px-4">
           <Button
@@ -110,7 +112,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
             icon={<NavigationRegular />}
             onClick={() => setNavigationOpen(true)}
           />
-          <FlowayLogo />
+          <FlowayLogo name={siteName} />
         </header>
         <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] min-h-0">
           {frames.map(frame => <div
@@ -134,7 +136,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
         position="start"
       >
         <DrawerBody className="!p-0">
-          <Sidebar onNavigate={() => setNavigationOpen(false)} user={user} />
+          <Sidebar onNavigate={() => setNavigationOpen(false)} siteName={siteName} user={user} />
         </DrawerBody>
       </OverlayDrawer>
     </OutcomeToastProvider>

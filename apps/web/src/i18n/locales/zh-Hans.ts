@@ -2,7 +2,7 @@ const zhHansCN = {
   translation: {
     app: {
       title: 'Floway',
-      documentTitle: '{{title}} | Floway',
+      documentTitle: '{{title}} | {{siteName}}',
     },
     common: {
       loading: '加载中…',
@@ -79,6 +79,7 @@ const zhHansCN = {
         usage: '使用量',
         performance: '性能',
         users: '用户',
+        site: '站点',
         backupRestore: '备份 / 恢复',
         settings: '设置',
       },
@@ -98,8 +99,21 @@ const zhHansCN = {
         usage: '按用户、API 密钥、模型和上游查看 token 用量与流量',
         performance: '观察延迟、吞吐和上游性能信号',
         users: '管理控制台用户、权限、观测访问和上游范围',
+        site: '设置 Dashboard 左上角和浏览器标题中显示的站点名称',
         backupRestore: '下载此网关全部数据的完整副本，或从此前的导出中恢复',
         unavailable: '无法加载此视图',
+      },
+      siteSettings: {
+        heading: '站点标识',
+        description: '图标保持不变，只修改旁边的名称和浏览器标题中的名称。',
+        name: '站点名称',
+        nameHint: '可输入 1 至 64 个字符。',
+        save: '保存',
+        saved: '站点名称已更新',
+        validation: {
+          required: '请输入站点名称。',
+          max: '站点名称不能超过 64 个字符。',
+        },
       },
       playground: {
         system: '自定义系统提示词',

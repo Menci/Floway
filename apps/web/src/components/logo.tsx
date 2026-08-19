@@ -44,7 +44,7 @@ const useMarkStyles = makeStyles({
   glyph: { display: 'block', height: '24px', width: '24px' },
 });
 
-export function FlowayLogo() {
+export function FlowayLogo({ name = 'Floway' }: { name?: string }) {
   const ms = useMarkStyles();
   const mark = currentMark();
 
@@ -60,7 +60,7 @@ export function FlowayLogo() {
       <span
         className="font-fui-semibold text-fui-base500 leading-[var(--lineHeightBase500)]"
       >
-        Floway
+        {name}
       </span>
     </div>
   );

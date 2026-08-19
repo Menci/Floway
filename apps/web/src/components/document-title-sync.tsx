@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
 import { pageLabelKeys } from './sidebar/pages';
+import { useSiteSettings } from './site-settings-context';
 
 const titleKeyForPathname = (pathname: string) => {
   if (pathname === '/') return 'auth.login.title';
@@ -24,11 +25,12 @@ const titleKeyForPathname = (pathname: string) => {
 export function DocumentTitleSync() {
   const location = useLocation();
   const { i18n, t } = useTranslation();
+  const { name } = useSiteSettings();
 
   useEffect(() => {
     const title = t(titleKeyForPathname(location.pathname));
-    window.document.title = t('app.documentTitle', { title });
-  }, [i18n.language, location.pathname, t]);
+    window.document.title = t('app.documentTitle', { siteName: name, title });
+  }, [i18n.language, location.pathname, name, t]);
 
   return null;
 }
