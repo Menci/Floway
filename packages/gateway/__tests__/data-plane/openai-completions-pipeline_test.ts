@@ -285,9 +285,9 @@ describe('the OpenAI Completions pipeline', () => {
     expect(outcome.failed).toBe(false);
   });
 
-  // A run that reached no upstream bills nothing and samples nothing, which is what the
-  // replaced surface did: `recordPerformance` returns early without an attempt's telemetry,
-  // and there is no attempt. Settlement still runs — it is unconditional — and finds an
+  // A run that reached no upstream bills nothing and samples nothing:
+  // `recordPerformance` returns early without an attempt's telemetry, and there is no
+  // attempt. Settlement still runs — it is unconditional — and finds an
   // empty billed set, which is how "we did not call an upstream" is said.
   it('bills nothing and samples nothing when no upstream was reached', async () => {
     vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates: [], sawModel: false, failedUpstreams: [] });

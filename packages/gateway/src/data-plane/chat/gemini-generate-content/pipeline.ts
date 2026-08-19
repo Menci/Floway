@@ -30,9 +30,10 @@
 // than another wire under this pipeline — no stream, no billable turn, and a
 // `{ totalTokens }` envelope of its own — so it is a chain of its own in `count-tokens.ts`.
 //
-// What is not built, stated rather than implied: the Google-RPC envelope the replaced surface
-// wrote into a client's own stream for a turn that ended without a terminal event. The chain
-// detects one and leaves the run as a throw rather than as that 502 envelope.
+// A turn that ends without a terminal event is left as a throw rather than answered with a
+// Google-RPC envelope written into the client's own stream. Half a stream followed by an error
+// object is a turn that reads as complete-then-refused, and the client has already been handed
+// content it will keep; a run that ends is the honest report of an upstream that stopped.
 //
 // A refusal is the one place where having no wire of its own changes what a client is owed.
 // Every other family can hand an upstream's own error object on, because the upstream spoke

@@ -516,9 +516,9 @@ test('cross-protocol success still validates result items before rendering', asy
   assertEquals(performance.errorsNoOutput, 1);
 });
 
-// The replaced surface forwarded these bytes verbatim with the upstream's 200. Rerank is a
-// JSON protocol, so a body that is not JSON at all is no answer to serve and the gateway says
-// so itself rather than passing on something it never read.
+// Rerank is a JSON protocol, so a body that is not JSON at all is no answer to serve and the
+// gateway says so itself rather than passing on something it never read. Forwarding those
+// bytes verbatim under the upstream's 200 would report success for a turn nothing could read.
 test('same-protocol answer that is not JSON is refused rather than forwarded', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });

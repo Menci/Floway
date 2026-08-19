@@ -43,8 +43,8 @@ export const unreadableBody = (response: Response, body: UpstreamBody, protocolN
  * Nothing in the domain throws. A connection that was refused, timed out or was reset is an
  * outcome failover has to be able to see — a run that ends there has more candidates to try —
  * so the ending catches whatever the platform raised and hands it up like any other failure.
- * The status is the one the replaced surface answered with: the gateway reached no upstream,
- * which is what 502 says.
+ * The status says what happened rather than what the error was: the gateway reached no
+ * upstream at all, which is what 502 states.
  */
 export const dialFailure = (error: unknown): Failure => ({
   status: 502,

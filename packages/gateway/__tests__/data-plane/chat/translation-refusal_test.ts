@@ -1,19 +1,19 @@
 // A body the target protocol cannot represent is the client's fault.
 //
 // A translated wire runs the client's body through a translator, and a translator refuses input
-// it would otherwise have to coerce or silently drop. The replaced surface rendered that refusal
-// as a 400 in the client's own protocol; a run that let it escape as a throw would answer 500 with
-// a stack trace, telling the caller that the gateway broke on a request that was simply not
-// serveable over that wire.
+// it would otherwise have to coerce or silently drop. That refusal is rendered as a 400 in the
+// client's own protocol; a run that let it escape as a throw would answer 500 with a stack
+// trace, telling the caller that the gateway broke on a request that was simply not serveable
+// over that wire.
 //
-// It is answered rather than thrown for a second reason the replaced surface had no way to
-// express: the verdict belongs to one candidate. The next candidate may be reachable on a wire
-// whose protocol *can* carry the body, and failover re-runs the suffix to find out.
+// It is answered rather than thrown for a second reason: the verdict belongs to one candidate.
+// The next candidate may be reachable on a wire whose protocol *can* carry the body, and
+// failover re-runs the suffix to find out.
 //
 // Both of Gemini generateContent's actions cross a protocol boundary and both are covered: generation reaches
 // its target through a handoff, and `:countTokens` through the pair that asks the question in
-// Anthropic Messages. The replaced surface answered a refusal the same way on either, because what the
-// caller reads is the same protocol whichever action it asked for.
+// Anthropic Messages. A refusal is answered the same way on either, because what the caller
+// reads is the same protocol whichever action it asked for.
 
 import { test } from 'vitest';
 

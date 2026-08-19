@@ -9,8 +9,8 @@
 // Beside the matrix, three things that are about the fork rather than about a pair: that
 // failover moves from a native candidate onto a translated one, that a pair's own refusal
 // rewrite survives the trip, and that a rule which speaks about one protocol's wire does not
-// run on a turn that leaves for another — which is what the replaced surface said with
-// `ctx.targetApi !== <self>` and what position says here.
+// run on a turn that leaves for another — which a target-API guard inside each rule could also
+// say, and which position says here without a rule having to know where it sits.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -414,8 +414,8 @@ describe('the fork over wires', () => {
     const rendered = facts['response.chat.anthropicMessages.rendered'] as { type: string; error: { type: string; message: string } };
     expect(rendered.type).toBe('error');
     expect(rendered.error.type).toBe('permission_error');
-    // The upstream's own words survive as the sentence, which is what the replaced surface did
-    // with a body it could not forward.
+    // The upstream's own words survive as the sentence, which is all that can be kept of a
+    // body written in a protocol this client does not read.
     expect(rendered.error.message).toContain('no');
     await drain();
   });
@@ -511,9 +511,8 @@ describe('a rule that speaks about one protocol-s wire', () => {
 
   // And a rule the *other* wire owns stays off this turn. `stream_options` is an OpenAI Chat
   // Completions field, so an OpenAI Chat Completions turn dialled over Anthropic Messages must
-  // not carry it —
-  // which is what the replaced surface said with a target-API guard and
-  // what position says here.
+  // not carry it — which a target-API guard inside the rule could also say, and which position
+  // says here.
   it('does not carry another wire-s request rules onto the wire it dialled', async () => {
     let sent: Record<string, unknown> | undefined;
     resolves([candidate('up_a', { anthropicMessages: {} }, {
