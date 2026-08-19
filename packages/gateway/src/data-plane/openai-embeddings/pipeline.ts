@@ -13,7 +13,7 @@
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates, type Narrowing } from '../pipeline/stages.ts';
@@ -23,7 +23,7 @@ import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { compose, defineStage, move } from '@floway-dev/pipeline';
-import { parseDecimalString, renderErrorEnvelope, upstreamErrorMessage } from '@floway-dev/protocols/common';
+import { parseDecimalString, upstreamErrorMessage } from '@floway-dev/protocols/common';
 import {
   parseOpenAIEmbeddingsResponse,
   renderOpenAIEmbeddingsResponse,
@@ -85,14 +85,15 @@ const emitOpenAIEmbeddings = defineStage<
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.openaiEmbeddings.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.openaiEmbeddings.rendered': move(failure.body),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
         // happened, and a 429 arriving as a 200 is not that.
-        'response.http.status': answer.status,
+        'response.http.status': failure.status,
       };
     }
     return {

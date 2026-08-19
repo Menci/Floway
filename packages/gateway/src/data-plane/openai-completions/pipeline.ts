@@ -17,7 +17,7 @@ import { recordStream, streamReferenceOf, type RunDump } from '../../dump/run-si
 import type { UsageQuantities } from '../../repo/types.ts';
 import { tokenUsageQuantities } from '../../repo/usage-metrics.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
@@ -27,7 +27,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defer, defineStage, move, own, type Deferred, type Owned, type Pipeline } from '@floway-dev/pipeline';
-import { isOpenAIUsageOnlyEventShape, renderErrorEnvelope, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { isOpenAIUsageOnlyEventShape, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   openaiCompletionsProtocolFrameToSSEFrame,
   parseOpenAICompletionsResult,
@@ -125,25 +125,33 @@ const emitOpenAICompletions = defineStage<
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     // A refusal keeps the status the upstream gave it. Anything that answered is a 200 the
     // gateway says itself, because what the client receives is serialized here rather than
     // relayed — the upstream's own status is a fact further down for whoever wants it.
+    if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.http.status': failure.status,
+        'response.openaiCompletions.rendered': move(failure.body),
+      };
+    }
     return {
       ...rest,
-      'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
-      'response.http.status': isFailure(answer) ? answer.status : 200,
+      'response.http.headers': forClient,
+      'response.http.status': 200,
       'response.openaiCompletions.rendered': move(rendered(answer, back['ingress.openaiCompletions.wantsUsageChunk'])),
     };
   },
 });
 
 const rendered = (
-  answer: OpenAICompletionsFacts['response.openaiCompletions.payload'],
+  answer: Exclude<OpenAICompletionsFacts['response.openaiCompletions.payload'], Failure>,
   wantsUsageChunk: boolean,
 ): OpenAICompletionsFacts['response.openaiCompletions.rendered'] =>
-  isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
-    : isFrames(answer) ? renderSSE(answer, wantsUsageChunk)
-      : answer;
+  isFrames(answer) ? renderSSE(answer, wantsUsageChunk) : answer;
 
 const renderSSE = (frames: OpenAICompletionsFrames, wantsUsageChunk: boolean): AsyncIterable<SseFrame> => ({
   // The frames the client reads are a reframing of the ones the record holds, so this key
