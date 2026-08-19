@@ -11,6 +11,7 @@ const data = {
   searchUsage: [],
   performanceIncluded: false,
   searchConfig: null,
+  siteSettings: { name: 'Floway' },
 };
 
 const backup = (overrides: Record<string, unknown> = {}) => JSON.stringify({

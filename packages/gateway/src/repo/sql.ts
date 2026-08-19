@@ -37,6 +37,8 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
+  SiteSettings,
+  SiteSettingsRepo,
   SpilledFilesRepo,
   WebSearchConfigRepo,
   WebSearchUsageRecord,
@@ -865,6 +867,28 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 }
 
+class SqlSiteSettingsRepo implements SiteSettingsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(): Promise<SiteSettings> {
+    const row = await this.db
+      .prepare('SELECT name FROM site_settings WHERE id = 1')
+      .first<SiteSettings>();
+    if (!row) throw new Error('site_settings singleton row missing');
+    return row;
+  }
+
+  async save(settings: SiteSettings): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO site_settings (id, name) VALUES (1, ?)
+         ON CONFLICT (id) DO UPDATE SET name = excluded.name`,
+      )
+      .bind(settings.name)
+      .run();
+  }
+}
+
 // Losing once is ordinary on a row this contended, losing four times in a row
 // is not — and the attempts run back-to-back with no delay, so they observe
 // much the same contention rather than independent draws. The bound is a
@@ -1579,6 +1603,7 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
+  siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1598,6 +1623,7 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
+    this.siteSettings = new SqlSiteSettingsRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
