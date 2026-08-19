@@ -152,7 +152,11 @@ const CASES: RouteCase[] = [
     name: '/v1/completions reaches a Completions upstream',
     path: '/v1/completions',
     contentType: 'application/json',
-    body: () => JSON.stringify({ model: 'completions-model', prompt: 'hi' }),
+    // Asks to stream, because the upstream below answers with one. A
+    // non-streaming request whose upstream replies `text/event-stream` has no
+    // body this protocol can read, and the pipeline answers 502 rather than
+    // serving something it never parsed.
+    body: () => JSON.stringify({ model: 'completions-model', prompt: 'hi', stream: true }),
     upstreamPath: '/v1/completions',
     upstreamResponse: () => new Response(
       'data: {"id":"cmpl_1","object":"text_completion","created":1,"model":"completions-model","choices":[{"index":0,"text":"ok","finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
