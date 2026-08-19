@@ -130,9 +130,11 @@ test('an upstream refusal reaches the client in this protocol-s own envelope', a
     async () => await post(apiKey.key, 'gpt-route:generateContent'),
   );
 
-  // The status the upstream sent, with none of the coercion a Google-RPC envelope would force
-  // onto the codes it cannot express.
-  expect(response.status).toBe(402);
+  // Not the 402 the upstream sent. This envelope is minted rather than forwarded, and it
+  // states its code inside the body as well as naming it — a code this protocol has no name
+  // for reads `INTERNAL`, which belongs to 500. Answering 402 would put `code: 402` beside
+  // `status: "INTERNAL"`, so the status the envelope can express is the one that is sent.
+  expect(response.status).toBe(500);
 
   // Gemini generateContent has no wire of its own, so every refusal that gets here was written by whatever
   // protocol the candidate was dialled on — here OpenAI's. Handing that object on would answer
@@ -140,9 +142,9 @@ test('an upstream refusal reaches the client in this protocol-s own envelope', a
   // an OpenAI envelope has none, while `error.code` would arrive as a string where a number
   // belongs. So the upstream's words become the message and this protocol writes the shape.
   const body = await response.json() as { error: { code: number; message: string; status: string } };
-  expect(body.error.code).toBe(402);
-  // The Google-RPC name for the status, which is the field an SDK branches on. A code this
-  // envelope cannot express reads `INTERNAL`, and 402 is one of them.
+  expect(body.error.code).toBe(500);
+  // The Google-RPC name for the status, which is the field an SDK branches on — and the one
+  // the code above agrees with, because the two are decided together.
   expect(body.error.status).toBe('INTERNAL');
   expect(body.error.message).toContain('copilot said no');
 });
@@ -160,10 +162,10 @@ test('a refusal on a turn that asked to stream is a body, not an opened stream',
     async () => await post(apiKey.key, 'gpt-route:streamGenerateContent'),
   );
 
-  expect(response.status).toBe(402);
+  expect(response.status).toBe(500);
   expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
   const body = await response.json() as { error: { code: number; message: string; status: string } };
-  expect(body.error.code).toBe(402);
+  expect(body.error.code).toBe(500);
   expect(body.error.message).toContain('copilot said no');
 });
 

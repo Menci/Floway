@@ -33,7 +33,7 @@ import type { AnthropicMessagesFacts } from './pipeline.ts';
 import { prepareAnthropicMessagesWebSearchShimRequest } from './web-search-shim.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { Failure } from '../../pipeline/facts.ts';
-import { isFailure, renderFailure } from '../../pipeline/facts.ts';
+import { isFailure, mintedAs, renderFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -95,11 +95,12 @@ const emitAnthropicMessagesTokenCount = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedAs(({ status, message }) => renderAnthropicMessagesError(status, message)));
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.anthropicMessages.rendered': move(renderFailure(answer, () => renderAnthropicMessagesError(answer.status, answer.message))),
-        'response.http.status': answer.status,
+        'response.chat.anthropicMessages.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     return {

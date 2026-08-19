@@ -7,7 +7,7 @@
 // it over, and turn what the run answered with into a response. Everything between is stages.
 
 import { geminiGenerateContentCountTokensPipeline } from './count-tokens.ts';
-import { renderGeminiGenerateContentError } from './errors.ts';
+import { geminiGenerateContentErrorResponse } from './errors.ts';
 import { geminiGenerateContentServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
@@ -30,7 +30,7 @@ interface GeminiGenerateContentModelAction {
 // SDKs send it).
 /** A refusal about the route itself. It is answered before a model is resolved, so there is no
  *  attempt to record and nothing for a run to hold beyond the refusal. */
-const unknownAction = (message: string): Response => Response.json(renderGeminiGenerateContentError(404, message), { status: 404 });
+const unknownAction = (message: string): Response => geminiGenerateContentErrorResponse(404, message);
 
 const parseGeminiGenerateContentModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
   if (!modelAction) return unknownAction('Missing Gemini model action.');
@@ -77,7 +77,7 @@ const readRequest = <T>(bytes: Uint8Array, project: (body: unknown) => T): { typ
 const refuse = (c: AuthedContext, ingress: Ingress, message: string): Response => {
   const refused = openPrologue(c, ingress, { wantsStream: false });
   refused.gateway.dump?.error('gateway');
-  return finalizeGatewayResponse(refused.gateway, Response.json(renderGeminiGenerateContentError(400, message), { status: 400 }));
+  return finalizeGatewayResponse(refused.gateway, geminiGenerateContentErrorResponse(400, message));
 };
 
 const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {

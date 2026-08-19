@@ -28,7 +28,7 @@
 // stream, and a measurement has none.
 
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
-import { renderGeminiGenerateContentError } from './errors.ts';
+import { mintGeminiGenerateContentFailure } from './errors.ts';
 import type { GeminiGenerateContentFacts } from './pipeline.ts';
 import { asJsonObject, readJsonNumber } from '../../../shared/json-helpers.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
@@ -86,11 +86,12 @@ const emitGeminiGenerateContentTokenCount = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintGeminiGenerateContentFailure);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiGenerateContentError(answer.status, answer.message))),
-        'response.http.status': answer.status,
+        'response.chat.geminiGenerateContent.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     return {

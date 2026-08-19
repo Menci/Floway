@@ -26,7 +26,7 @@ import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFailure, renderFailure } from '../../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -124,14 +124,12 @@ const emitOpenAIChatCompletions = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.openaiChatCompletions.rendered': move(renderFailure(
-          answer,
-          () => ({ error: { message: answer.message, type: 'api_error' } }),
-        )),
-        'response.http.status': answer.status,
+        'response.chat.openaiChatCompletions.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     if (answer.kind === 'value') {

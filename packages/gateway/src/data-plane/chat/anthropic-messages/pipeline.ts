@@ -28,7 +28,7 @@ import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { bodyForAttempt } from '../../pipeline/attempt-body.ts';
 import type { BillableEntity } from '../../pipeline/facts.ts';
-import { isFailure, renderFailure } from '../../pipeline/facts.ts';
+import { isFailure, mintedAs, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { failover } from '../../pipeline/stages.ts';
@@ -116,11 +116,12 @@ const emitAnthropicMessages = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedAs(({ status, message }) => renderAnthropicMessagesError(status, message)));
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.anthropicMessages.rendered': move(renderFailure(answer, () => renderAnthropicMessagesError(answer.status, answer.message))),
-        'response.http.status': answer.status,
+        'response.chat.anthropicMessages.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     if (answer.kind === 'value') {

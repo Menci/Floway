@@ -41,13 +41,14 @@
 // is in none of them. So the words survive and the shape is this protocol's, which is what
 // the handoff arranges by dropping a foreign envelope on the way up.
 //
-// The status is still the upstream's, with no coercion of the codes a Google-RPC envelope
-// maps to `INTERNAL`. That part is a departure from the replaced surface, which raised such a
-// status to 500.
+// The status is the upstream's wherever the upstream stated one. Where this gateway mints the
+// envelope itself, it is the status the envelope's own name belongs to: a Google-RPC body
+// states its code twice, so `mintGeminiGenerateContentFailure` decides the two together and a
+// code this protocol cannot name is sent as the 500 that `INTERNAL` means.
 
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
-import { renderGeminiGenerateContentError } from './errors.ts';
+import { mintGeminiGenerateContentFailure } from './errors.ts';
 import { recordStream, streamReferenceOf } from '../../../dump/run-sink.ts';
 import { isFailure, renderFailure } from '../../pipeline/facts.ts';
 import type { StreamOutcome } from '../../pipeline/serve.ts';
@@ -136,11 +137,12 @@ const emitGeminiGenerateContent = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintGeminiGenerateContentFailure);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.chat.geminiGenerateContent.rendered': move(renderFailure(answer, () => renderGeminiGenerateContentError(answer.status, answer.message))),
-        'response.http.status': answer.status,
+        'response.chat.geminiGenerateContent.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     if (answer.kind === 'value') {
