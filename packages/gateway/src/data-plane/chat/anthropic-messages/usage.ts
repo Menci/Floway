@@ -26,7 +26,7 @@ export const createAnthropicMessagesBillableUsageReader = (): (event: AnthropicM
       : event.type === 'message_delta' ? event.usage
         : undefined;
     if (usage === undefined) return null;
-    merged = mergeAnthropicMessagesUsageSnapshot(merged, anthropicMessagesUsageSnapshot(usage));
+    merged = mergeAnthropicMessagesUsageSnapshot(merged, usage);
     return billableUsageFromAnthropicMessagesUsage(merged);
   };
 };

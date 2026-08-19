@@ -358,6 +358,30 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini generateC
   ]);
 });
 
+test('translateToSourceEvents counts null Anthropic cache fields as no cache activity', async () => {
+  const frames = await collect([
+    eventFrame(messageStart({
+      input_tokens: 10,
+      output_tokens: 0,
+      cache_read_input_tokens: null,
+      cache_creation_input_tokens: null,
+      cache_creation: null,
+    })),
+    eventFrame({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: { input_tokens: null, output_tokens: 7, cache_read_input_tokens: null, cache_creation_input_tokens: null },
+    }),
+    eventFrame({ type: 'message_stop' }),
+  ]);
+  const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
+  assertEquals(usage, {
+    promptTokenCount: 10,
+    candidatesTokenCount: 7,
+    totalTokenCount: 17,
+  });
+});
+
 test('translateToSourceEvents accepts late input accounting from message_delta', async () => {
   const frames = await collect([
     eventFrame(messageStart()),
