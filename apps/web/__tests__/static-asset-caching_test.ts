@@ -48,7 +48,10 @@ const nginxBlock = (source: string, header: string) => {
 };
 
 const headersRules = parseHeadersFile(readRepoFile('apps/web/public/_headers'));
-const nginxAssets = nginxBlock(readRepoFile('docker/nginx.conf'), 'location /assets/ {');
+// The block header carries `^~`, which is what keeps a regex location added to
+// docker/nginx.conf later from taking these paths away from it; naming it here
+// means dropping it fails this suite rather than only the next deploy.
+const nginxAssets = nginxBlock(readRepoFile('docker/nginx.conf'), 'location ^~ /assets/ {');
 
 describe('static asset caching', () => {
   it('caches the hashed asset directory for a year in every topology', () => {
@@ -70,6 +73,6 @@ describe('static asset caching', () => {
   // resolves the more specific regex location first; moving it back out would
   // take the cache header off every map with it.
   it('settles the sourcemap content type inside the cached block', () => {
-    expect(nginxAssets).toMatch(/location\s+~\s+\\\.map\$\s*\{\s*default_type\s+application\/json;/);
+    expect(nginxAssets).toMatch(/location\s+~\s+\\\.map\$\s*\{[^}]*default_type\s+application\/json;/);
   });
 });
