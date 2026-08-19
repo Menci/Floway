@@ -4,7 +4,7 @@ import { type AuthedContext, sessionIdFromContext, userFromContext } from '../..
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
-import type { ApiKey, User } from '../../repo/types.ts';
+import type { ApiKey, OAuth2Account, OAuth2Provider, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
@@ -14,6 +14,70 @@ import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstrea
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 1 ? n : null;
+};
+
+const oauth2AccountWire = (
+  account: OAuth2Account,
+  providerNames: ReadonlyMap<string, string>,
+  canUnlink: boolean,
+) => ({
+  provider_id: account.providerId,
+  provider_display_name: providerNames.get(account.providerId) ?? account.providerId,
+  provider_login: account.providerLogin,
+  created_at: account.createdAt,
+  last_login_at: account.lastLoginAt,
+  can_unlink: canUnlink,
+});
+
+const oauth2AccountsForUser = async (user: User) => {
+  const [accounts, providers] = await Promise.all([
+    getRepo().oauth2.listAccountsByUserId(user.id),
+    getRepo().oauth2Config.listProviders(),
+  ]);
+  const providerNames = new Map(providers.map((provider: OAuth2Provider) => [provider.id, provider.displayName]));
+  const canUnlink = user.passwordHash !== null || accounts.length > 1;
+  return accounts.map(account => oauth2AccountWire(account, providerNames, canUnlink));
+};
+
+const oauth2AccountsResponse = async (c: AuthedContext, userId: number) => {
+  const user = await getRepo().users.getById(userId);
+  if (!user) return c.json({ error: 'user not found' }, 404);
+  return c.json({ accounts: await oauth2AccountsForUser(user) });
+};
+
+const unlinkOAuth2Account = async (c: AuthedContext, userId: number, providerId: string) => {
+  const result = await getRepo().oauth2.unlinkAccount(userId, providerId);
+  if (result === 'not-found') return c.json({ error: 'OAuth2 account binding not found' }, 404);
+  if (result === 'last-login') {
+    return c.json({ error: 'Cannot unlink the last OAuth2 account until this user has a password or another OAuth2 account' }, 409);
+  }
+  return await oauth2AccountsResponse(c, userId);
+};
+
+export const listOwnOAuth2Accounts = async (c: AuthedContext) => {
+  if (!sessionIdFromContext(c)) {
+    return c.json({ error: 'OAuth2 account management requires a logged-in dashboard session' }, 401);
+  }
+  return await oauth2AccountsResponse(c, userFromContext(c).id);
+};
+
+export const unlinkOwnOAuth2Account = async (c: AuthedContext<'/api/users/me/oauth2-accounts/:provider'>) => {
+  if (!sessionIdFromContext(c)) {
+    return c.json({ error: 'OAuth2 account management requires a logged-in dashboard session' }, 401);
+  }
+  return await unlinkOAuth2Account(c, userFromContext(c).id, c.req.param('provider'));
+};
+
+export const listUserOAuth2Accounts = async (c: AuthedContext<'/api/users/:id/oauth2-accounts'>) => {
+  const id = parseUserId(c.req.param('id'));
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
+  return await oauth2AccountsResponse(c, id);
+};
+
+export const unlinkUserOAuth2Account = async (c: AuthedContext<'/api/users/:id/oauth2-accounts/:provider'>) => {
+  const id = parseUserId(c.req.param('id'));
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
+  return await unlinkOAuth2Account(c, id, c.req.param('provider'));
 };
 
 export const listUsers = async (c: AuthedContext) => {

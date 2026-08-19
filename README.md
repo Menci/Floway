@@ -86,6 +86,20 @@ state and browser binding are single-use and short-lived, PKCE uses S256, and
 callback handoffs travel in the URL fragment so reverse proxies and static
 asset servers do not receive them.
 
+For a Gitea provider, select the Gitea organization/team access policy in the
+same editor and enter the Gitea Base URL. Each allowed membership is either an
+organization name such as `company`, or an organization and team such as
+`company:owners`. Any matching entry grants access; every login and new account
+binding is checked against Gitea rather than a cached membership. Grant the
+OAuth2 application the `read:user` and `read:organization` scopes. Gitea's
+standard endpoints are `/login/oauth/authorize`, `/login/oauth/access_token`,
+and `/login/oauth/userinfo` under that Base URL.
+
+Signed-in users manage their own OAuth2 bindings under **Settings → OAuth2
+Accounts**. An account with no password must keep at least one OAuth2 binding;
+it can bind another enabled provider first and then remove the old binding.
+Administrators can inspect and unlink the same identities while editing a user.
+
 ## Compatibility
 
 ### Client APIs

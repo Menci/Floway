@@ -194,6 +194,79 @@ test('PATCH /api/users/me/password rejects API key auth (must be a session)', as
   assertEquals(response.status, 401);
 });
 
+test('OAuth2 account management preserves a login method for self-service and admin unlink', async () => {
+  const { adminSession, apiKey, repo } = await setupAppTest();
+  await repo.users.save({
+    id: 3,
+    username: 'oauth-only',
+    passwordHash: null,
+    isAdmin: false,
+    upstreamIds: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    deletedAt: null,
+  });
+  const session = await repo.sessions.create(3);
+  const account = (providerId: string) => ({
+    providerId,
+    providerUserId: `${providerId}-identity`,
+    userId: 3,
+    providerLogin: `${providerId}-login`,
+    createdAt: '2026-08-19T00:00:00.000Z',
+    lastLoginAt: '2026-08-19T00:00:00.000Z',
+  });
+  await repo.oauth2.saveAccount(account('first'));
+
+  const apiKeyAttempt = await requestApp('/api/users/me/oauth2-accounts', {
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(apiKeyAttempt.status, 401);
+
+  const firstList = await requestApp('/api/users/me/oauth2-accounts', {
+    headers: { 'x-floway-session': session.id },
+  });
+  assertEquals(firstList.status, 200);
+  assertEquals((await firstList.json() as { accounts: Array<{ can_unlink: boolean }> }).accounts[0]?.can_unlink, false);
+
+  const lastAttempt = await requestApp('/api/users/me/oauth2-accounts/first', {
+    method: 'DELETE',
+    headers: { 'x-floway-session': session.id },
+  });
+  assertEquals(lastAttempt.status, 409);
+
+  await repo.oauth2.saveAccount(account('second'));
+  const removed = await requestApp('/api/users/me/oauth2-accounts/first', {
+    method: 'DELETE',
+    headers: { 'x-floway-session': session.id },
+  });
+  assertEquals(removed.status, 200);
+  assertEquals(await removed.json(), {
+    accounts: [{
+      provider_id: 'second',
+      provider_display_name: 'second',
+      provider_login: 'second-login',
+      created_at: '2026-08-19T00:00:00.000Z',
+      last_login_at: '2026-08-19T00:00:00.000Z',
+      can_unlink: false,
+    }],
+  });
+
+  const user = await repo.users.getById(3);
+  assertExists(user);
+  await repo.users.save({ ...user, passwordHash: await hashPassword('local-password') });
+  const adminList = await requestApp('/api/users/3/oauth2-accounts', {
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(adminList.status, 200);
+  assertEquals((await adminList.json() as { accounts: Array<{ can_unlink: boolean }> }).accounts[0]?.can_unlink, true);
+
+  const adminRemoved = await requestApp('/api/users/3/oauth2-accounts/second', {
+    method: 'DELETE',
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(adminRemoved.status, 200);
+  assertEquals(await adminRemoved.json(), { accounts: [] });
+});
+
 test('GET /api/users and /auth/me drop a cap entry whose upstream was deleted', async () => {
   const { adminSession, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));

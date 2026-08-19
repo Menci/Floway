@@ -15,6 +15,31 @@ const endpoint = nonEmpty.transform(value => {
   return url.toString();
 });
 
+const giteaBaseUrl = nonEmpty.transform(value => {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`Gitea base URL must use http or https: ${value}`);
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(`Gitea base URL must not contain credentials, a query, or a fragment: ${value}`);
+  }
+  return url.toString().replace(/\/+$/, '');
+});
+
+const giteaMembership = nonEmpty.max(512).refine(value => {
+  const parts = value.split(':');
+  return parts.length <= 2 && parts.every(part => part.trim() !== '');
+}, 'Gitea membership must be an organization or organization:team');
+
+const accessPolicySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('allow_all') }).strict(),
+  z.object({
+    type: z.literal('gitea'),
+    baseUrl: giteaBaseUrl,
+    allowedMemberships: z.array(giteaMembership).min(1).max(100),
+  }).strict(),
+]);
+
 const providerSchema = z.object({
   id: nonEmpty.regex(/^[A-Za-z0-9_-]+$/),
   displayName: nonEmpty,
@@ -29,6 +54,7 @@ const providerSchema = z.object({
   userIdClaim: nonEmpty.nullable(),
   usernameClaim: nonEmpty.nullable(),
   authorizationParams: z.record(z.string(), z.string()),
+  accessPolicy: accessPolicySchema,
   createdAt: nonEmpty,
   updatedAt: nonEmpty,
 }).strict().superRefine((provider, context) => {
@@ -40,6 +66,18 @@ const providerSchema = z.object({
         message: `authorizationParams must not override ${key}`,
         path: ['authorizationParams', key],
       });
+    }
+  }
+  if (provider.accessPolicy.type === 'gitea') {
+    const scopes = new Set(provider.scopes);
+    for (const required of ['read:user', 'read:organization']) {
+      if (!scopes.has(required)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Gitea access policy requires the ${required} scope`,
+          path: ['scopes'],
+        });
+      }
     }
   }
 });
@@ -95,4 +133,9 @@ export const oauth2CallbackUrl = (config: OAuth2Config, provider: OAuth2Provider
 export const oauth2FrontendRedirect = (config: OAuth2Config, fragment: URLSearchParams): string => {
   if (config.publicBaseUrl === null) throw new Error('OAuth2 frontend redirect requested without an OAuth2 public base URL');
   return `${config.publicBaseUrl}/#${fragment.toString()}`;
+};
+
+export const oauth2BindingFrontendRedirect = (config: OAuth2Config, fragment: URLSearchParams): string => {
+  if (config.publicBaseUrl === null) throw new Error('OAuth2 binding redirect requested without an OAuth2 public base URL');
+  return `${config.publicBaseUrl}/dashboard/settings#${fragment.toString()}`;
 };

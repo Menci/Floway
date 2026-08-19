@@ -1,4 +1,6 @@
 import { oauth2CallbackUrl, type OAuth2Config, type OAuth2ProviderConfig } from './oauth2-config.ts';
+export { OAuth2ProtocolError } from './oauth2-protocol-error.ts';
+import { OAuth2ProtocolError } from './oauth2-protocol-error.ts';
 import { getFetch } from '@floway-dev/platform';
 
 const textEncoder = new TextEncoder();
@@ -41,8 +43,6 @@ export const oauth2AuthorizationUrl = async (
   if (provider.scopes.length > 0) url.searchParams.set('scope', provider.scopes.join(' '));
   return url.toString();
 };
-
-export class OAuth2ProtocolError extends Error {}
 
 const responseText = async (response: Response): Promise<string> => {
   const text = await response.text();

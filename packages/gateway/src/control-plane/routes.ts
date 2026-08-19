@@ -3,7 +3,7 @@ import { Hono, type Next } from 'hono';
 import { AGENT_SETUP_ROUTE_PATH, agentSetupControlRoutes } from './agent-setup.ts';
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
 import { createOAuth2Provider, deleteOAuth2Provider, getOAuth2Settings, listOAuth2AdminProviders, updateOAuth2Provider, updateOAuth2Settings } from './auth/oauth2-admin-routes.ts';
-import { finishOAuth2Callback, listOAuth2Providers, registerOAuth2User, resolveOAuth2Result, startOAuth2Login } from './auth/oauth2-routes.ts';
+import { finishOAuth2Callback, listOAuth2Providers, registerOAuth2User, resolveOAuth2Result, startOAuth2Binding, startOAuth2Login } from './auth/oauth2-routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
@@ -22,7 +22,7 @@ import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota
 import { listModels } from './upstreams/models.ts';
 import { ollamaUsage } from './upstreams/ollama.ts';
 import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
-import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
+import { changeOwnPassword, createUser, deleteUser, listOwnOAuth2Accounts, listUserOAuth2Accounts, listUsers, unlinkOwnOAuth2Account, unlinkUserOAuth2Account, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getRuntimeInfo } from '../runtime/runtime-info.ts';
@@ -47,6 +47,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .get('/auth/oauth2/providers', listOAuth2Providers)
   .get('/auth/oauth2/:provider/start', startOAuth2Login)
+  .post('/auth/oauth2/:provider/bind/start', startOAuth2Binding)
   .get('/auth/oauth2/:provider/callback', finishOAuth2Callback)
   .post('/auth/oauth2/result', zValidator('json', oauth2ResultBody), resolveOAuth2Result)
   .post('/auth/oauth2/register', zValidator('json', oauth2RegisterBody), registerOAuth2User)
@@ -78,6 +79,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.
   .patch('/api/users/me/password', zValidator('json', changeOwnPasswordBody), changeOwnPassword)
+  .get('/api/users/me/oauth2-accounts', listOwnOAuth2Accounts)
+  .delete('/api/users/me/oauth2-accounts/:provider', unlinkOwnOAuth2Account)
   .route('/api', new Hono<{ Variables: AuthVars }>()
     .use('*', adminOnlyMiddleware)
     .get('/oauth2/settings', getOAuth2Settings)
@@ -89,6 +92,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .get('/users', listUsers)
     .post('/users', zValidator('json', createUserBody), createUser)
     .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
+    .get('/users/:id/oauth2-accounts', listUserOAuth2Accounts)
+    .delete('/users/:id/oauth2-accounts/:provider', unlinkUserOAuth2Account)
     .delete('/users/:id', deleteUser)
     .get('/upstreams', listUpstreams)
     .get('/upstreams/blueprint', getUpstreamBlueprint)

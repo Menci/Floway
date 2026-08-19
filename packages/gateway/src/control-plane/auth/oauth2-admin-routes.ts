@@ -21,6 +21,13 @@ const providerToAdminWire = (provider: OAuth2Provider) => ({
   user_id_claim: provider.userIdClaim,
   username_claim: provider.usernameClaim,
   authorization_params: provider.authorizationParams,
+  access_policy: provider.accessPolicy.type === 'allow_all'
+    ? { type: 'allow_all' as const }
+    : {
+        type: 'gitea' as const,
+        base_url: provider.accessPolicy.baseUrl,
+        allowed_memberships: provider.accessPolicy.allowedMemberships,
+      },
   created_at: provider.createdAt,
   updated_at: provider.updatedAt,
 });
@@ -60,6 +67,13 @@ const bodyToProvider = (
   userIdClaim: body.user_id_claim,
   usernameClaim: body.username_claim,
   authorizationParams: body.authorization_params,
+  accessPolicy: body.access_policy.type === 'allow_all'
+    ? { type: 'allow_all' }
+    : {
+        type: 'gitea',
+        baseUrl: body.access_policy.base_url,
+        allowedMemberships: body.access_policy.allowed_memberships,
+      },
   ...timestamps,
 });
 

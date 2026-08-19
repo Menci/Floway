@@ -1,18 +1,22 @@
 import { PersonKey24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { api, callApi } from '../../api/client';
-import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../../api/types';
+import type { ControlPlaneModel, ControlPlaneUser, OAuth2Account, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { OAuth2AccountList } from '../oauth2/accounts';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { SectionHeader } from '../ui/section-header';
 import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
+import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 import { UpstreamAccessControl } from '../upstreams/access-control';
 import { refineUpstreamAccess } from '../upstreams/access-validation';
@@ -55,6 +59,10 @@ export function UserDialog(props: UserDialogProps) {
   const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauth2Accounts, setOAuth2Accounts] = useState<OAuth2Account[] | null>(null);
+  const [oauth2Error, setOAuth2Error] = useState<string | null>(null);
+  const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
+  const unlinkDialog = useDialogInvocation<OAuth2Account>();
   const schema = useMemo(
     () => z.object({
       username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'dashboard.users.validation.username'),
@@ -80,9 +88,40 @@ export function UserDialog(props: UserDialogProps) {
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { discardConfirmation, requestClose } = useDiscardGuard({ onClose: close, values });
 
+  useEffect(() => {
+    if (user === null) return;
+    const targetId = user.id;
+    const controller = new AbortController();
+    void callApi(() => api.api.users[':id']['oauth2-accounts'].$get({
+      param: { id: String(targetId) },
+    }, { init: { signal: controller.signal } })).then(result => {
+      if (controller.signal.aborted) return;
+      if (result.error) setOAuth2Error(result.error.message);
+      else setOAuth2Accounts(result.data.accounts);
+    });
+    return () => controller.abort();
+  }, [user]);
+
+  const unlinkOAuth2 = async (account: OAuth2Account) => {
+    if (props.mode !== 'edit' || unlinkingProvider !== null) return;
+    setUnlinkingProvider(account.provider_id);
+    setOAuth2Error(null);
+    const result = await callApi(() => api.api.users[':id']['oauth2-accounts'][':provider'].$delete({
+      param: { id: String(props.user.id), provider: account.provider_id },
+    }));
+    setUnlinkingProvider(null);
+    if (result.error) {
+      setOAuth2Error(result.error.message);
+      return;
+    }
+    unlinkDialog.close();
+    setOAuth2Accounts(result.data.accounts);
+    toasts.succeed(t('dashboard.oauth2.accounts.unlinked', { provider: account.provider_display_name }));
+  };
+
   const save = async (form: UserFormValues) => {
     // disabledFocusable leaves the submit button submittable while saving, so this guard is what makes the second press inert.
-    if (saving) return;
+    if (saving || unlinkingProvider !== null) return;
     setSaving(true);
     setError(null);
     try {
@@ -124,13 +163,13 @@ export function UserDialog(props: UserDialogProps) {
       open={props.open}
       actions={
         <DialogActions>
-          <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
-          <Button appearance="primary" disabledFocusable={saving} type="submit">
+          <Button disabled={saving || unlinkingProvider !== null} onClick={requestClose}>{t('common.cancel')}</Button>
+          <Button appearance="primary" disabledFocusable={saving || unlinkingProvider !== null} type="submit">
             {mode === 'create' ? t('dashboard.users.actions.create') : t('dashboard.users.actions.save')}
           </Button>
         </DialogActions>
       }
-      onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
+      onOpenChange={(_, data) => { if (!data.open && !saving && unlinkingProvider === null) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
@@ -190,11 +229,38 @@ export function UserDialog(props: UserDialogProps) {
         }}
         override={values.upstreamOverride}
       />
+      {mode === 'edit' && <div className="grid gap-3">
+        <SectionHeader
+          description={t('dashboard.oauth2.accounts.adminDescription')}
+          level={2}
+          title={t('dashboard.oauth2.accounts.title')}
+        />
+        <OAuth2AccountList
+          accounts={oauth2Accounts}
+          busyProvider={unlinkingProvider}
+          disabled={saving}
+          failed={oauth2Error !== null}
+          onUnlink={unlinkDialog.open}
+        />
+        {oauth2Error && <OutcomeMessageBar onDismiss={() => setOAuth2Error(null)}>{oauth2Error}</OutcomeMessageBar>}
+      </div>}
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    </DialogShell></>
+    </DialogShell>
+    {unlinkDialog.invocation && <ConfirmDialog
+      open={unlinkDialog.isOpen}
+      actionLabel={t('dashboard.oauth2.accounts.unlink')}
+      busy={unlinkingProvider !== null}
+      message={t('dashboard.oauth2.accounts.unlinkMessage', {
+        provider: unlinkDialog.invocation.value.provider_display_name,
+        login: unlinkDialog.invocation.value.provider_login,
+      })}
+      onConfirm={() => void unlinkOAuth2(unlinkDialog.invocation!.value)}
+      onOpenChange={open => { if (!open && unlinkingProvider === null) unlinkDialog.close(); }}
+      title={t('dashboard.oauth2.accounts.unlinkTitle')}
+    />}</>
   );
 }
 

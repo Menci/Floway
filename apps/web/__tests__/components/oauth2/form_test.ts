@@ -16,6 +16,9 @@ const valid = {
   userIdClaim: '',
   usernameClaim: 'data.login',
   authorizationParams: '{"prompt":"login"}',
+  accessPolicy: 'allow_all' as const,
+  giteaBaseUrl: '',
+  giteaAllowedMemberships: '',
 };
 
 describe('OAuth2 provider form', () => {
@@ -32,6 +35,7 @@ describe('OAuth2 provider form', () => {
       user_id_claim: null,
       username_claim: 'data.login',
       authorization_params: { prompt: 'login' },
+      access_policy: { type: 'allow_all' },
     });
   });
 
@@ -59,10 +63,31 @@ describe('OAuth2 provider form', () => {
       user_id_claim: null,
       username_claim: null,
       authorization_params: {},
+      access_policy: { type: 'allow_all' },
       created_at: '2026-08-19T00:00:00.000Z',
       updated_at: '2026-08-19T00:00:00.000Z',
     });
 
     expect(defaults.clientSecret).toBe('');
+  });
+
+  it('serializes and validates Gitea organization and team access', () => {
+    const gitea = {
+      ...valid,
+      scopes: 'read:user read:organization',
+      accessPolicy: 'gitea' as const,
+      giteaBaseUrl: 'https://gitea.example.com',
+      giteaAllowedMemberships: 'company:owners\nother-company',
+    };
+    expect(oauth2ProviderFormSchema('create').safeParse(gitea).success).toBe(true);
+    expect(oauth2ProviderBody(gitea).access_policy).toEqual({
+      type: 'gitea',
+      base_url: 'https://gitea.example.com',
+      allowed_memberships: ['company:owners', 'other-company'],
+    });
+    expect(oauth2ProviderFormSchema('create').safeParse({
+      ...gitea,
+      scopes: 'read:user',
+    }).success).toBe(false);
   });
 });

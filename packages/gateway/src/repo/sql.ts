@@ -23,6 +23,7 @@ import type {
   ModelAliasesRepo,
   ModelAliasRecord,
   OAuth2Account,
+  OAuth2AccessPolicy,
   OAuth2Authorization,
   OAuth2ConfigRepo,
   OAuth2Handoff,
@@ -450,6 +451,7 @@ interface OAuth2AuthorizationRow {
   provider_id: string;
   code_verifier: string;
   browser_verifier_hash: string;
+  user_id: number | null;
   expires_at: number;
 }
 
@@ -503,8 +505,8 @@ class SqlOAuth2Repo implements OAuth2Repo {
   async createAuthorization(stateHash: string, authorization: OAuth2Authorization): Promise<void> {
     await this.cleanupExpired(Date.now());
     await this.db
-      .prepare('INSERT INTO oauth2_authorizations (state_hash, provider_id, code_verifier, browser_verifier_hash, expires_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(stateHash, authorization.providerId, authorization.codeVerifier, authorization.browserVerifierHash, authorization.expiresAt)
+      .prepare('INSERT INTO oauth2_authorizations (state_hash, provider_id, code_verifier, browser_verifier_hash, user_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(stateHash, authorization.providerId, authorization.codeVerifier, authorization.browserVerifierHash, authorization.userId, authorization.expiresAt)
       .run();
   }
 
@@ -514,7 +516,7 @@ class SqlOAuth2Repo implements OAuth2Repo {
       .prepare(
         `DELETE FROM oauth2_authorizations
          WHERE state_hash = ? AND expires_at > ?
-         RETURNING provider_id, code_verifier, browser_verifier_hash, expires_at`,
+         RETURNING provider_id, code_verifier, browser_verifier_hash, user_id, expires_at`,
       )
       .bind(stateHash, now)
       .first<OAuth2AuthorizationRow>();
@@ -522,6 +524,7 @@ class SqlOAuth2Repo implements OAuth2Repo {
       providerId: row.provider_id,
       codeVerifier: row.code_verifier,
       browserVerifierHash: row.browser_verifier_hash,
+      userId: row.user_id,
       expiresAt: row.expires_at,
     } : null;
   }
@@ -686,6 +689,78 @@ class SqlOAuth2Repo implements OAuth2Repo {
     return results.map(toOAuth2Account);
   }
 
+  async listAccountsByUserId(userId: number): Promise<OAuth2Account[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${OAUTH2_ACCOUNT_COLUMNS} FROM oauth2_accounts WHERE user_id = ? ORDER BY created_at, provider_id`)
+      .bind(userId)
+      .all<OAuth2AccountRow>();
+    return results.map(toOAuth2Account);
+  }
+
+  async bindAccount(account: OAuth2Account): Promise<'bound' | 'user-not-found' | 'account-taken'> {
+    const row = await this.db
+      .prepare(
+        `INSERT INTO oauth2_accounts (${OAUTH2_ACCOUNT_COLUMNS})
+         SELECT ?, ?, users.id, ?, ?, ?
+         FROM users
+         WHERE users.id = ? AND users.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM oauth2_accounts
+             WHERE provider_id = ?
+               AND (
+                 (provider_user_id = ? AND user_id <> ?)
+                 OR (user_id = ? AND provider_user_id <> ?)
+               )
+           )
+         ON CONFLICT (provider_id, provider_user_id) DO UPDATE SET
+           provider_login = excluded.provider_login,
+           last_login_at = excluded.last_login_at
+         WHERE oauth2_accounts.user_id = excluded.user_id
+         RETURNING ${OAUTH2_ACCOUNT_COLUMNS}`,
+      )
+      .bind(
+        account.providerId,
+        account.providerUserId,
+        account.providerLogin,
+        account.createdAt,
+        account.lastLoginAt,
+        account.userId,
+        account.providerId,
+        account.providerUserId,
+        account.userId,
+        account.userId,
+        account.providerUserId,
+      )
+      .first<OAuth2AccountRow>();
+    if (row) return 'bound';
+    const user = await this.db
+      .prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL')
+      .bind(account.userId)
+      .first();
+    return user ? 'account-taken' : 'user-not-found';
+  }
+
+  async unlinkAccount(userId: number, providerId: string): Promise<'deleted' | 'not-found' | 'last-login'> {
+    const deleted = await this.db
+      .prepare(
+        `DELETE FROM oauth2_accounts
+         WHERE user_id = ? AND provider_id = ?
+           AND (
+             EXISTS (SELECT 1 FROM users WHERE id = ? AND password_hash IS NOT NULL AND deleted_at IS NULL)
+             OR (SELECT COUNT(*) FROM oauth2_accounts WHERE user_id = ?) > 1
+           )
+         RETURNING provider_id`,
+      )
+      .bind(userId, providerId, userId, userId)
+      .first<{ provider_id: string }>();
+    if (deleted) return 'deleted';
+    const existing = await this.db
+      .prepare('SELECT provider_id FROM oauth2_accounts WHERE user_id = ? AND provider_id = ?')
+      .bind(userId, providerId)
+      .first();
+    return existing ? 'last-login' : 'not-found';
+  }
+
   async saveAccount(account: OAuth2Account): Promise<void> {
     await this.db
       .prepare(
@@ -734,11 +809,12 @@ interface OAuth2ProviderRow {
   user_id_claim: string | null;
   username_claim: string | null;
   authorization_params_json: string;
+  access_policy_json: string;
   created_at: string;
   updated_at: string;
 }
 
-const OAUTH2_PROVIDER_COLUMNS = 'id, display_name, enabled, client_id, client_secret, authorization_endpoint, token_endpoint, userinfo_endpoint, scopes_json, client_authentication, user_id_claim, username_claim, authorization_params_json, created_at, updated_at';
+const OAUTH2_PROVIDER_COLUMNS = 'id, display_name, enabled, client_id, client_secret, authorization_endpoint, token_endpoint, userinfo_endpoint, scopes_json, client_authentication, user_id_claim, username_claim, authorization_params_json, access_policy_json, created_at, updated_at';
 
 const parseOAuth2StringArray = (raw: string, field: string): string[] => {
   let value: unknown;
@@ -767,6 +843,32 @@ const parseOAuth2StringRecord = (raw: string, field: string): Record<string, str
   return value as Record<string, string>;
 };
 
+const parseOAuth2AccessPolicy = (raw: string, field: string): OAuth2AccessPolicy => {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`OAuth2 provider ${field} contains malformed JSON`, { cause });
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`OAuth2 provider ${field} must contain an object`);
+  }
+  const policy = value as Record<string, unknown>;
+  if (policy.type === 'allow_all' && Object.keys(policy).length === 1) return { type: 'allow_all' };
+  if (policy.type === 'gitea'
+    && typeof policy.baseUrl === 'string'
+    && Array.isArray(policy.allowedMemberships)
+    && policy.allowedMemberships.every(item => typeof item === 'string')
+    && Object.keys(policy).length === 3) {
+    return {
+      type: 'gitea',
+      baseUrl: policy.baseUrl,
+      allowedMemberships: policy.allowedMemberships,
+    };
+  }
+  throw new TypeError(`OAuth2 provider ${field} contains an invalid access policy`);
+};
+
 const toOAuth2Provider = (row: OAuth2ProviderRow): OAuth2Provider => {
   if (row.client_authentication !== 'client_secret_post' && row.client_authentication !== 'client_secret_basic') {
     throw new TypeError(`OAuth2 provider ${row.id} has invalid client authentication ${row.client_authentication}`);
@@ -785,6 +887,7 @@ const toOAuth2Provider = (row: OAuth2ProviderRow): OAuth2Provider => {
     userIdClaim: row.user_id_claim,
     usernameClaim: row.username_claim,
     authorizationParams: parseOAuth2StringRecord(row.authorization_params_json, `${row.id}.authorization_params_json`),
+    accessPolicy: parseOAuth2AccessPolicy(row.access_policy_json, `${row.id}.access_policy_json`),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -804,6 +907,7 @@ const bindOAuth2Provider = (statement: SqlPreparedStatement, provider: OAuth2Pro
   provider.userIdClaim,
   provider.usernameClaim,
   JSON.stringify(provider.authorizationParams),
+  JSON.stringify(provider.accessPolicy),
   provider.createdAt,
   provider.updatedAt,
 );
@@ -848,7 +952,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
 
   async insertProvider(provider: OAuth2Provider): Promise<boolean> {
     const result = await bindOAuth2Provider(
-      this.db.prepare(`INSERT OR IGNORE INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      this.db.prepare(`INSERT OR IGNORE INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
       provider,
     ).run();
     return (result.meta.changes ?? 0) > 0;
@@ -861,7 +965,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
            display_name = ?, enabled = ?, client_id = ?, client_secret = ?,
            authorization_endpoint = ?, token_endpoint = ?, userinfo_endpoint = ?,
            scopes_json = ?, client_authentication = ?, user_id_claim = ?,
-           username_claim = ?, authorization_params_json = ?, updated_at = ?
+           username_claim = ?, authorization_params_json = ?, access_policy_json = ?, updated_at = ?
          WHERE id = ?`,
       )
       .bind(
@@ -877,6 +981,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
         provider.userIdClaim,
         provider.usernameClaim,
         JSON.stringify(provider.authorizationParams),
+        JSON.stringify(provider.accessPolicy),
         provider.updatedAt,
         provider.id,
       )
@@ -887,7 +992,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
   async saveProvider(provider: OAuth2Provider): Promise<void> {
     await bindOAuth2Provider(
       this.db.prepare(
-        `INSERT INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO oauth2_providers (${OAUTH2_PROVIDER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            display_name = excluded.display_name,
            enabled = excluded.enabled,
@@ -901,6 +1006,7 @@ class SqlOAuth2ConfigRepo implements OAuth2ConfigRepo {
            user_id_claim = excluded.user_id_claim,
            username_claim = excluded.username_claim,
            authorization_params_json = excluded.authorization_params_json,
+           access_policy_json = excluded.access_policy_json,
            updated_at = excluded.updated_at`,
       ),
       provider,

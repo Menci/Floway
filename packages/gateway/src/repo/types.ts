@@ -60,6 +60,14 @@ export interface OAuth2Account {
 
 export type OAuth2ClientAuthentication = 'client_secret_post' | 'client_secret_basic';
 
+export type OAuth2AccessPolicy =
+  | { type: 'allow_all' }
+  | {
+    type: 'gitea';
+    baseUrl: string;
+    allowedMemberships: string[];
+  };
+
 export interface OAuth2Provider {
   id: string;
   displayName: string;
@@ -74,6 +82,7 @@ export interface OAuth2Provider {
   userIdClaim: string | null;
   usernameClaim: string | null;
   authorizationParams: Record<string, string>;
+  accessPolicy: OAuth2AccessPolicy;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,8 +97,12 @@ export interface OAuth2Authorization {
   providerId: string;
   codeVerifier: string;
   browserVerifierHash: string;
+  userId: number | null;
   expiresAt: number;
 }
+
+export type OAuth2BindResult = 'bound' | 'user-not-found' | 'account-taken';
+export type OAuth2UnlinkResult = 'deleted' | 'not-found' | 'last-login';
 
 export interface OAuth2Handoff {
   tokenHash: string;
@@ -364,6 +377,9 @@ export interface OAuth2Repo {
   completeLogin(tokenHash: string, now: number): Promise<Session | null>;
   register(input: OAuth2RegistrationInput): Promise<OAuth2RegistrationResult>;
   listAccounts(): Promise<OAuth2Account[]>;
+  listAccountsByUserId(userId: number): Promise<OAuth2Account[]>;
+  bindAccount(account: OAuth2Account): Promise<OAuth2BindResult>;
+  unlinkAccount(userId: number, providerId: string): Promise<OAuth2UnlinkResult>;
   saveAccount(account: OAuth2Account): Promise<void>;
   deleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;

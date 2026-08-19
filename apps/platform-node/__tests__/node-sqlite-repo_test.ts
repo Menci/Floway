@@ -181,6 +181,7 @@ test('OAuth2 provider configuration round-trips through node:sqlite', () => with
     userIdClaim: 'subject.id',
     usernameClaim: null,
     authorizationParams: { audience: 'floway' },
+    accessPolicy: { type: 'allow_all' as const },
     createdAt: '2026-08-19T00:00:00.000Z',
     updatedAt: '2026-08-19T00:00:00.000Z',
   };

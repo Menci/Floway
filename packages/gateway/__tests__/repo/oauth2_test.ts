@@ -25,6 +25,7 @@ const provider: OAuth2Provider = {
   userIdClaim: 'data.subject',
   usernameClaim: 'data.login',
   authorizationParams: { prompt: 'login', access_type: 'offline' },
+  accessPolicy: { type: 'allow_all' },
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -58,8 +59,13 @@ for (const [kind, makeRepo] of repoFactories) {
       ...provider,
       displayName: 'Updated',
       enabled: false,
-      scopes: ['openid'],
+      scopes: ['read:user', 'read:organization'],
       authorizationParams: { audience: 'floway' },
+      accessPolicy: {
+        type: 'gitea' as const,
+        baseUrl: 'https://gitea.example.com',
+        allowedMemberships: ['company:owners'],
+      },
       updatedAt: '2026-08-19T01:00:00.000Z',
     };
     assertEquals(await config.updateProvider(updated), true);
@@ -145,5 +151,43 @@ for (const [kind, makeRepo] of repoFactories) {
     const created = sessions.filter(session => session !== null);
     assertEquals(created.length, 1);
     assertEquals(created[0]?.userId, 1);
+  });
+
+  test(`OAuth2 binding and unlink keep at least one login credential (${kind})`, async () => {
+    const repo = await makeRepo();
+    await repo.users.save({
+      id: 3,
+      username: 'oauth-user',
+      passwordHash: null,
+      isAdmin: false,
+      upstreamIds: null,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      deletedAt: null,
+    });
+    const account = (providerId: string, providerUserId: string, userId = 3) => ({
+      providerId,
+      providerUserId,
+      userId,
+      providerLogin: `${providerId}-login`,
+      createdAt: '2026-08-19T00:00:00.000Z',
+      lastLoginAt: '2026-08-19T00:00:00.000Z',
+    });
+
+    assertEquals(await repo.oauth2.bindAccount(account('first', 'identity-one', 99)), 'user-not-found');
+    assertEquals(await repo.oauth2.bindAccount(account('first', 'identity-one')), 'bound');
+    assertEquals(await repo.oauth2.bindAccount(account('first', 'identity-one', 1)), 'account-taken');
+    assertEquals(await repo.oauth2.bindAccount(account('first', 'another-identity')), 'account-taken');
+    assertEquals(await repo.oauth2.unlinkAccount(3, 'first'), 'last-login');
+
+    assertEquals(await repo.oauth2.bindAccount(account('second', 'identity-two')), 'bound');
+    assertEquals((await repo.oauth2.listAccountsByUserId(3)).map(item => item.providerId), ['first', 'second']);
+    assertEquals(await repo.oauth2.unlinkAccount(3, 'first'), 'deleted');
+    assertEquals(await repo.oauth2.unlinkAccount(3, 'second'), 'last-login');
+
+    const user = await repo.users.getById(3);
+    assertExists(user);
+    await repo.users.save({ ...user, passwordHash: 'scrypt$placeholder' });
+    assertEquals(await repo.oauth2.unlinkAccount(3, 'second'), 'deleted');
+    assertEquals(await repo.oauth2.listAccountsByUserId(3), []);
   });
 }

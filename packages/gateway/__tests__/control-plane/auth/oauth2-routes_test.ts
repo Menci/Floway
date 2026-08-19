@@ -21,6 +21,7 @@ const provider: OAuth2Provider = {
   userIdClaim: null,
   usernameClaim: null,
   authorizationParams: {},
+  accessPolicy: { type: 'allow_all' },
   createdAt: '2026-08-19T00:00:00.000Z',
   updatedAt: '2026-08-19T00:00:00.000Z',
 };
@@ -37,7 +38,7 @@ const configureOAuth2 = async (repo: InMemoryRepo, providers: OAuth2Provider[] =
   for (const item of providers) await repo.oauth2Config.saveProvider(item);
 };
 
-const start = async (): Promise<{ state: string; location: URL; cookie: string }> => {
+const start = async (expectedScope = 'profile'): Promise<{ state: string; location: URL; cookie: string }> => {
   const response = await requestApp('/auth/oauth2/custom/start', { method: 'GET' });
   assertEquals(response.status, 302);
   assertEquals(response.headers.get('cache-control'), 'no-store');
@@ -47,7 +48,7 @@ const start = async (): Promise<{ state: string; location: URL; cookie: string }
   assertEquals(location.origin + location.pathname, 'https://id.example.com/oauth/authorize');
   assertEquals(location.searchParams.get('client_id'), 'floway-client');
   assertEquals(location.searchParams.get('redirect_uri'), 'https://floway.example.com/auth/oauth2/custom/callback');
-  assertEquals(location.searchParams.get('scope'), 'profile');
+  assertEquals(location.searchParams.get('scope'), expectedScope);
   assertEquals(location.searchParams.get('code_challenge_method'), 'S256');
   expect(location.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
   assertEquals(location.searchParams.has('client_secret'), false);
@@ -258,4 +259,100 @@ test('OAuth2 configuration rejects a public base URL with an unsupported path pr
   });
 
   await expect(getOAuth2Config()).rejects.toThrow('must be an origin');
+});
+
+test('Gitea access policy admits an allowed organization team and denies other users', async () => {
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo, [{
+    ...provider,
+    scopes: ['read:user', 'read:organization'],
+    accessPolicy: {
+      type: 'gitea',
+      baseUrl: 'https://gitea.example.com',
+      allowedMemberships: ['company:owners'],
+    },
+  }]);
+  let allowed = true;
+  initFetch(async (url, init) => {
+    if (url === 'https://id.example.com/oauth/token') return Response.json({ access_token: 'gitea-access' });
+    if (url === 'https://id.example.com/api/user') return Response.json({ id: 42, login: 'alice' });
+    if (url === 'https://gitea.example.com/api/v1/user/teams?page=1&limit=100') {
+      assertEquals(new Headers(init.headers).get('authorization'), 'Bearer gitea-access');
+      return Response.json([{
+        name: allowed ? 'Owners' : 'Developers',
+        organization: { name: 'Company', username: 'company' },
+      }]);
+    }
+    throw new Error(`unexpected OAuth2 request: ${url}`);
+  });
+
+  const accepted = await start('read:user read:organization');
+  const handoff = await callbackHandoff(accepted.state, accepted.cookie);
+  assertExists(handoff);
+
+  allowed = false;
+  const denied = await start('read:user read:organization');
+  const response = await requestApp(`/auth/oauth2/custom/callback?state=${encodeURIComponent(denied.state)}&code=provider-code`, {
+    method: 'GET',
+    headers: { cookie: denied.cookie },
+  });
+  assertEquals(response.status, 302);
+  expect(new URL(response.headers.get('location')!).hash).toContain('does+not+belong+to+an+allowed+Gitea+organization+or+team');
+});
+
+test('Gitea access policy requires the user and organization scopes', async () => {
+  const { repo } = await setupAppTest();
+  await configureOAuth2(repo, [{
+    ...provider,
+    scopes: ['read:user'],
+    accessPolicy: {
+      type: 'gitea',
+      baseUrl: 'https://gitea.example.com',
+      allowedMemberships: ['company'],
+    },
+  }]);
+
+  await expect(getOAuth2Config()).rejects.toThrow('requires the read:organization scope');
+});
+
+test('a dashboard session binds an additional OAuth2 identity through a browser transaction', async () => {
+  const { adminSession, apiKey, repo } = await setupAppTest();
+  await configureOAuth2(repo);
+  initFetch(async url => {
+    if (url === 'https://id.example.com/oauth/token') return Response.json({ access_token: 'provider-access' });
+    if (url === 'https://id.example.com/api/user') return Response.json({ id: 77, login: 'bound-user' });
+    throw new Error(`unexpected OAuth2 request: ${url}`);
+  });
+
+  const apiKeyAttempt = await requestApp('/auth/oauth2/custom/bind/start', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(apiKeyAttempt.status, 401);
+
+  const response = await requestApp('/auth/oauth2/custom/bind/start', {
+    method: 'POST',
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 200);
+  const authorizationUrl = new URL(((await response.json()) as { authorizationUrl: string }).authorizationUrl);
+  const state = authorizationUrl.searchParams.get('state');
+  assertExists(state);
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  assertExists(cookie);
+
+  const callback = await requestApp(`/auth/oauth2/custom/callback?state=${encodeURIComponent(state)}&code=provider-code`, {
+    method: 'GET',
+    headers: { cookie },
+  });
+  assertEquals(callback.status, 302);
+  const location = new URL(callback.headers.get('location')!);
+  assertEquals(location.origin + location.pathname, 'https://floway.example.com/dashboard/settings');
+  assertEquals(new URLSearchParams(location.hash.slice(1)).get('oauth2_binding'), 'success');
+  const [account] = await repo.oauth2.listAccountsByUserId(1);
+  assertExists(account);
+  assertEquals(account.providerId, 'custom');
+  assertEquals(account.providerUserId, '77');
+  assertEquals(account.userId, 1);
+  assertEquals(account.providerLogin, 'bound-user');
 });

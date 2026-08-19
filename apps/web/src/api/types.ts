@@ -26,6 +26,7 @@ export type ApiKey = InferResponseType<typeof api.api.keys.$get, 200>[number];
 export type ControlPlaneUser = InferResponseType<typeof api.api.users.$get, 200>[number];
 export type OAuth2Settings = InferResponseType<typeof api.api.oauth2.settings.$get, 200>;
 export type OAuth2Provider = InferResponseType<typeof api.api.oauth2.providers.$get, 200>[number];
+export type OAuth2Account = InferResponseType<typeof api.api.users.me['oauth2-accounts']['$get'], 200>['accounts'][number];
 export type UpstreamOption = InferResponseType<typeof api.api['upstream-options']['$get'], 200>[number];
 
 export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 200>['data'][number];

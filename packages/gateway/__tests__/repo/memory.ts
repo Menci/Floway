@@ -309,6 +309,36 @@ class MemoryOAuth2Repo implements OAuth2Repo {
       .map(account => ({ ...account })));
   }
 
+  listAccountsByUserId(userId: number): Promise<OAuth2Account[]> {
+    return Promise.resolve([...this.accounts.values()]
+      .filter(account => account.userId === userId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.providerId.localeCompare(b.providerId))
+      .map(account => ({ ...account })));
+  }
+
+  async bindAccount(account: OAuth2Account): Promise<'bound' | 'user-not-found' | 'account-taken'> {
+    if (!(await this.users.getById(account.userId))) return 'user-not-found';
+    const identity = this.accounts.get(oauth2AccountKey(account.providerId, account.providerUserId));
+    if (identity && identity.userId !== account.userId) return 'account-taken';
+    const providerAccount = [...this.accounts.values()].find(candidate =>
+      candidate.providerId === account.providerId && candidate.userId === account.userId);
+    if (providerAccount && providerAccount.providerUserId !== account.providerUserId) return 'account-taken';
+    this.accounts.set(oauth2AccountKey(account.providerId, account.providerUserId), { ...account });
+    return 'bound';
+  }
+
+  async unlinkAccount(userId: number, providerId: string): Promise<'deleted' | 'not-found' | 'last-login'> {
+    const entry = [...this.accounts.entries()].find(([, account]) =>
+      account.userId === userId && account.providerId === providerId);
+    if (!entry) return 'not-found';
+    const user = await this.users.getById(userId);
+    if (!user) return 'not-found';
+    const accounts = [...this.accounts.values()].filter(account => account.userId === userId);
+    if (user.passwordHash === null && accounts.length === 1) return 'last-login';
+    this.accounts.delete(entry[0]);
+    return 'deleted';
+  }
+
   saveAccount(account: OAuth2Account): Promise<void> {
     const collision = [...this.accounts.values()].find(candidate =>
       candidate.providerId === account.providerId

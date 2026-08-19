@@ -1,8 +1,9 @@
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
-import { getOAuth2Config, oauth2FrontendRedirect, oauth2ProviderById, type OAuth2Config } from './oauth2-config.ts';
+import { getOAuth2Config, oauth2BindingFrontendRedirect, oauth2FrontendRedirect, oauth2ProviderById, type OAuth2Config, type OAuth2ProviderConfig } from './oauth2-config.ts';
+import { validateGiteaAccess } from './oauth2-gitea.ts';
 import { exchangeOAuth2Code, fetchOAuth2Identity, newOAuth2Secret, OAuth2ProtocolError, oauth2AuthorizationUrl } from './oauth2-protocol.ts';
-import type { AuthedContext } from '../../middleware/auth.ts';
+import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
@@ -38,6 +39,17 @@ const oauth2ErrorRedirect = (config: OAuth2Config, message: string): string => {
   return oauth2FrontendRedirect(config, new URLSearchParams({ oauth2_error: message.slice(0, 500) }));
 };
 
+const oauth2BindingErrorRedirect = (config: OAuth2Config, message: string): string =>
+  oauth2BindingFrontendRedirect(config, new URLSearchParams({ oauth2_binding_error: message.slice(0, 500) }));
+
+const callbackErrorRedirect = (
+  config: OAuth2Config,
+  userId: number | null,
+  message: string,
+): string => userId === null
+  ? oauth2ErrorRedirect(config, message)
+  : oauth2BindingErrorRedirect(config, message);
+
 const suggestedUsername = (providerLogin: string): string => {
   const normalized = providerLogin
     .normalize('NFKD')
@@ -56,12 +68,12 @@ export const listOAuth2Providers = async (c: AuthedContext) => {
   return c.json({ providers });
 };
 
-export const startOAuth2Login = async (c: AuthedContext<'/auth/oauth2/:provider/start'>) => {
-  preventOAuth2Caching(c);
-  const config = await getOAuth2Config();
-  const provider = oauth2ProviderById(config, c.req.param('provider'));
-  if (!provider) return c.json({ error: 'OAuth2 provider not found' }, 404);
-
+const beginOAuth2Authorization = async (
+  c: AuthedContext,
+  config: OAuth2Config,
+  provider: OAuth2ProviderConfig,
+  userId: number | null,
+): Promise<string> => {
   const state = newOAuth2Secret();
   const codeVerifier = newOAuth2Secret();
   const browserVerifier = newOAuth2Secret();
@@ -70,21 +82,37 @@ export const startOAuth2Login = async (c: AuthedContext<'/auth/oauth2/:provider/
     providerId: provider.id,
     codeVerifier,
     browserVerifierHash: await secretHash(browserVerifier),
+    userId,
     expiresAt: Date.now() + AUTHORIZATION_TTL_MS,
   });
   setCookie(c, transactionCookieName(stateHash), browserVerifier, transactionCookieOptions(config.publicBaseUrl));
-  return c.redirect(await oauth2AuthorizationUrl(config, provider, state, codeVerifier), 302);
+  return await oauth2AuthorizationUrl(config, provider, state, codeVerifier);
+};
+
+export const startOAuth2Login = async (c: AuthedContext<'/auth/oauth2/:provider/start'>) => {
+  preventOAuth2Caching(c);
+  const config = await getOAuth2Config();
+  const provider = oauth2ProviderById(config, c.req.param('provider'));
+  if (!provider) return c.json({ error: 'OAuth2 provider not found' }, 404);
+
+  return c.redirect(await beginOAuth2Authorization(c, config, provider, null), 302);
+};
+
+export const startOAuth2Binding = async (c: AuthedContext<'/auth/oauth2/:provider/bind/start'>) => {
+  preventOAuth2Caching(c);
+  if (!sessionIdFromContext(c)) {
+    return c.json({ error: 'OAuth2 account binding requires a logged-in dashboard session' }, 401);
+  }
+  const config = await getOAuth2Config();
+  const provider = oauth2ProviderById(config, c.req.param('provider'));
+  if (!provider) return c.json({ error: 'OAuth2 provider not found' }, 404);
+  return c.json({ authorizationUrl: await beginOAuth2Authorization(c, config, provider, userFromContext(c).id) });
 };
 
 export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provider/callback'>) => {
   preventOAuth2Caching(c);
   const config = await getOAuth2Config();
-  const provider = oauth2ProviderById(config, c.req.param('provider'));
-  if (!provider) {
-    if (config.publicBaseUrl === null) return c.json({ error: 'OAuth2 provider not found' }, 404);
-    return c.redirect(oauth2ErrorRedirect(config, 'OAuth2 provider not found'), 302);
-  }
-
+  if (config.publicBaseUrl === null) return c.json({ error: 'OAuth2 is not configured' }, 404);
   const state = c.req.query('state');
   if (!state) return c.redirect(oauth2ErrorRedirect(config, 'OAuth2 callback is missing state'), 302);
   const stateHash = await secretHash(state);
@@ -92,31 +120,56 @@ export const finishOAuth2Callback = async (c: AuthedContext<'/auth/oauth2/:provi
   const browserVerifier = getCookie(c, cookieName);
   deleteCookie(c, cookieName, transactionCookieOptions(config.publicBaseUrl));
   const authorization = await getRepo().oauth2.takeAuthorization(stateHash, Date.now());
-  if (!authorization || authorization.providerId !== provider.id) {
-    return c.redirect(oauth2ErrorRedirect(config, 'OAuth2 state is invalid or expired'), 302);
+  if (authorization?.providerId !== c.req.param('provider')) {
+    return c.redirect(callbackErrorRedirect(config, authorization?.userId ?? null, 'OAuth2 state is invalid or expired'), 302);
   }
   if (!browserVerifier || !(await secretMatchesHash(browserVerifier, authorization.browserVerifierHash))) {
-    return c.redirect(oauth2ErrorRedirect(config, 'OAuth2 login did not originate in this browser'), 302);
+    return c.redirect(callbackErrorRedirect(config, authorization.userId, 'OAuth2 login did not originate in this browser'), 302);
+  }
+  const provider = oauth2ProviderById(config, authorization.providerId);
+  if (!provider) {
+    return c.redirect(callbackErrorRedirect(config, authorization.userId, 'OAuth2 provider not found'), 302);
   }
 
   const providerError = c.req.query('error');
   if (providerError) {
     const description = c.req.query('error_description');
-    return c.redirect(oauth2ErrorRedirect(config, description ?? providerError), 302);
+    return c.redirect(callbackErrorRedirect(config, authorization.userId, description ?? providerError), 302);
   }
   const code = c.req.query('code');
-  if (!code) return c.redirect(oauth2ErrorRedirect(config, 'OAuth2 callback is missing code'), 302);
+  if (!code) return c.redirect(callbackErrorRedirect(config, authorization.userId, 'OAuth2 callback is missing code'), 302);
 
   let identity;
   try {
     const accessToken = await exchangeOAuth2Code(config, provider, code, authorization.codeVerifier, c.req.raw.signal);
     identity = await fetchOAuth2Identity(provider, accessToken, c.req.raw.signal);
+    if (provider.accessPolicy.type === 'gitea') {
+      await validateGiteaAccess(provider.accessPolicy, accessToken, c.req.raw.signal);
+    }
   } catch (cause) {
     if (!(cause instanceof OAuth2ProtocolError)) throw cause;
-    return c.redirect(oauth2ErrorRedirect(config, cause.message), 302);
+    return c.redirect(callbackErrorRedirect(config, authorization.userId, cause.message), 302);
   }
 
   const now = new Date().toISOString();
+  if (authorization.userId !== null) {
+    const result = await getRepo().oauth2.bindAccount({
+      providerId: provider.id,
+      providerUserId: identity.providerUserId,
+      userId: authorization.userId,
+      providerLogin: identity.providerLogin,
+      createdAt: now,
+      lastLoginAt: now,
+    });
+    if (result === 'user-not-found') {
+      return c.redirect(oauth2BindingErrorRedirect(config, 'The Floway user no longer exists'), 302);
+    }
+    if (result === 'account-taken') {
+      return c.redirect(oauth2BindingErrorRedirect(config, 'This OAuth2 account or provider is already bound'), 302);
+    }
+    return c.redirect(oauth2BindingFrontendRedirect(config, new URLSearchParams({ oauth2_binding: 'success' })), 302);
+  }
+
   const account = await getRepo().oauth2.findAccountAndTouch(
     provider.id,
     identity.providerUserId,
