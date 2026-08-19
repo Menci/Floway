@@ -4,11 +4,15 @@
 # per page load:
 # https://developers.cloudflare.com/workers/static-assets/headers/
 #
-# Everything the client build emits under /assets/ carries a content hash in its
-# filename, sourcemaps included -- a map is named after the chunk it belongs to,
-# so it rehashes with it. A URL there therefore always answers with the same
-# bytes and never needs revalidating. index.html is deliberately left out: it is
-# the unhashed document that names the current hashes.
+# Every chunk the client build emits under /assets/ is content-addressed, so a
+# URL there answers with the same bytes for as long as it exists and never needs
+# revalidating. A sourcemap carries the hash of the chunk it belongs to rather
+# than one of its own, so an edit that moves source positions without changing
+# the emitted chunk -- a comment-only edit is the plain case -- leaves the URL
+# fixed while the map behind it changes. Maps are declared immutable regardless:
+# the whole cost of holding a stale one is a stack trace restored against
+# out-of-date positions. index.html is deliberately left out: it is the unhashed
+# document that names the current hashes.
 #
 # The lifetime also lands on a response we did not intend it for, and we accept
 # that. `not_found_handling: single-page-application` answers a request for a

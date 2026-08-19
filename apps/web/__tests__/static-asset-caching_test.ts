@@ -59,10 +59,9 @@ describe('static asset caching', () => {
     }).toEqual({ wrangler: CACHE_CONTROL, nginx: CACHE_CONTROL });
   });
 
-  // index.html names the current hashes, so it is the one file whose URL
-  // answers with different bytes after a deploy. Both topologies leave it on
-  // their revalidating default, and a rule reaching beyond /assets/ would be
-  // how that is lost.
+  // index.html names the current hashes, so it is the document every deploy
+  // rewrites. Both topologies leave it on their revalidating default, and a
+  // rule reaching beyond /assets/ would be how that is lost.
   it('leaves the unhashed document out of the cached scope', () => {
     expect([...headersRules.keys()]).toEqual(['/assets/*']);
   });
