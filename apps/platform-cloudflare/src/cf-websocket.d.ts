@@ -17,6 +17,9 @@ declare global {
   interface WebSocket {
     // The server side of a WebSocketPair must opt into receiving frames.
     accept(): void;
+    // Per-reader state that survives hibernation; 16 KiB cap, and a byte offset is nothing.
+    serializeAttachment(value: unknown): void;
+    deserializeAttachment(): unknown;
   }
 }
 

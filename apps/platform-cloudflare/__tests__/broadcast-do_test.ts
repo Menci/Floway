@@ -25,6 +25,16 @@ class FakeWebSocket implements WebSocket {
 
   readonly sent: string[] = [];
   closed: { code: number; reason: string } | null = null;
+  private attachment: unknown = null;
+
+  // Hibernation carries per-reader state across an unload. `BroadcastDO` keeps none, but the
+  // runtime surface declares it, so the double has to answer.
+  serializeAttachment(value: unknown): void {
+    this.attachment = value;
+  }
+  deserializeAttachment(): unknown {
+    return this.attachment;
+  }
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     // BroadcastDO's `broadcast(payload: string)` contract forbids non-string
@@ -43,6 +53,9 @@ class FakeWebSocket implements WebSocket {
 
 class FakeState {
   readonly sockets: FakeWebSocket[] = [];
+  // `BroadcastDO` never reaches for storage; the property exists because the runtime surface
+  // declares it, and touching it here would be a test asserting something it does not test.
+  readonly storage = null as unknown as DurableObjectStorage;
   acceptWebSocket(ws: WebSocket): void {
     this.sockets.push(ws as FakeWebSocket);
   }
