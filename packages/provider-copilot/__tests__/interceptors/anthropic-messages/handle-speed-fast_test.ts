@@ -159,7 +159,7 @@ test('withSpeedFast surfaces non-events results (api-error / internal-error) ver
         name: 'Error',
         message: 'boom',
         stack: '',
-        target_api: 'messages',
+        target_api: 'anthropicMessages',
       },
     }));
 
