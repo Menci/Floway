@@ -10,6 +10,7 @@ import type {
   AnthropicMessagesThinkingBlock,
   AnthropicMessagesToolUseBlock,
   AnthropicMessagesUsage,
+  AnthropicMessagesUsageDelta,
   AnthropicMessagesWebSearchToolResultBlock,
 } from './index.ts';
 import { isJsonObject } from '../common/json.ts';
@@ -92,7 +93,11 @@ const KNOWN_BLOCK_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
 };
 const FALLBACK_BLOCK_KNOWN = new Set(['type']);
 
-const applyAnthropicMessagesUsage = (usage: AnthropicMessagesUsage, update: Partial<AnthropicMessagesUsage> | undefined): void => {
+// Both usage carriers repeat cumulative whole-message counters, so a counter
+// the upstream reports as absent or `null` leaves the running total alone
+// rather than erasing what an earlier event already stated.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/18ea26d324911c3236f2ce762dd0c87f04d038d3/src/lib/MessageStream.ts#L592-L616
+const applyAnthropicMessagesUsage = (usage: AnthropicMessagesUsage, update: AnthropicMessagesUsageDelta | undefined): void => {
   if (!update) return;
 
   if (update.input_tokens != null) usage.input_tokens = update.input_tokens;

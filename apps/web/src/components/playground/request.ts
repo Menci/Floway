@@ -70,10 +70,9 @@ const normalizeAnthropicMessagesSseLine = (line: string): string => {
       message?: { usage?: Record<string, unknown> };
     };
     if (event.type !== 'message_start' || !event.message) return line;
-    event.message.usage = {
-      input_tokens: 0,
-      ...event.message.usage,
-    };
+    const usage = event.message.usage ?? {};
+    if (typeof usage.input_tokens !== 'number') usage.input_tokens = 0;
+    event.message.usage = usage;
     return `data: ${JSON.stringify(event)}`;
   } catch {
     return line;
