@@ -3,7 +3,7 @@ import { jsonrepair } from 'jsonrepair';
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import type { StatefulOpenAIResponsesStore } from '../items/store.ts';
+import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -842,7 +842,7 @@ const synthesizeTerminalEnvelope = (
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
-  store: StatefulOpenAIResponsesStore,
+  store: OpenAIResponsesStatefulStore,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
@@ -880,7 +880,7 @@ async function* runMultiTurnLoop(args: {
   turn1Iter: AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>, TurnSummary>;
   firstResult: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'events' }>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
-  store: StatefulOpenAIResponsesStore;
+  store: OpenAIResponsesStatefulStore;
   canonicalInput: OpenAIResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestUpstreamMetadata;

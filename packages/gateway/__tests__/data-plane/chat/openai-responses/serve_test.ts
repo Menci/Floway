@@ -1,7 +1,7 @@
 import { afterEach, test, vi } from 'vitest';
 
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
-import { createOpenAIResponsesHttpStore, MemoryStatefulOpenAIResponsesBacking, LayeredStatefulOpenAIResponsesStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { createOpenAIResponsesHttpStore, MemoryOpenAIResponsesStatefulBacking, LayeredOpenAIResponsesStatefulStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../src/repo/types.ts';
@@ -425,10 +425,10 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
 // behind it, so an `expandPreviousResponseId` test can sit on a snapshot
 // that lives nowhere else.
 const memoryStore = async (snapshots: readonly StoredOpenAIResponsesSnapshot[], items: readonly StoredOpenAIResponsesItem[]) => {
-  const backing = new MemoryStatefulOpenAIResponsesBacking();
+  const backing = new MemoryOpenAIResponsesStatefulBacking();
   for (const item of items) await backing.insertItems([item]);
   for (const snapshot of snapshots) await backing.insertSnapshot(snapshot);
-  return new LayeredStatefulOpenAIResponsesStore({
+  return new LayeredOpenAIResponsesStatefulStore({
     apiKeyId: API_KEY_ID,
     reads: [backing],
     writes: [backing],
