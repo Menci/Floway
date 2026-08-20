@@ -45,7 +45,7 @@ import type { ProviderStreamResult } from '@floway-dev/provider';
 
 export type { AnthropicMessagesBoundaryCtx } from './types.ts';
 
-export const CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY: readonly Interceptor<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>[] = [
+export const CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY: readonly Interceptor<AnthropicMessagesBoundaryCtx, ProviderStreamResult<AnthropicMessagesStreamEvent>>[] = [
   backfillRequiredFields,
   synthesizeMetadataUserId,
   hoistUserSystemToMessages,

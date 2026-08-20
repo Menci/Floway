@@ -13,7 +13,6 @@ import { mapOpenAIResponsesTools } from '@floway-dev/protocols/openai-responses'
  */
 export const withEmptyNamespaceDescriptionsFilled = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   ctx.payload = mapOpenAIResponsesTools(ctx.payload, tool => tool.type === 'namespace' && tool.description === ''

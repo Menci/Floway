@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -27,7 +25,7 @@ test('Anthropic Messages initiator is user when the last message is a plain user
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -47,7 +45,7 @@ test('Anthropic Messages initiator is user when the last user turn mixes text an
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -66,7 +64,7 @@ test('Anthropic Messages initiator is agent when the last user turn is entirely 
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -81,7 +79,7 @@ test('Anthropic Messages initiator is agent when the final message is from the a
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });

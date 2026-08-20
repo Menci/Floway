@@ -20,7 +20,6 @@ import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/an
 // see a fully-formed payload. Caller-supplied values are never overwritten.
 export const backfillRequiredFields = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const next = { ...ctx.payload };

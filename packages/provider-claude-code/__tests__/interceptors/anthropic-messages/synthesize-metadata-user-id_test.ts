@@ -26,7 +26,7 @@ test('fills metadata.user_id with the new JSON shape when absent', async () => {
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  await synthesizeMetadataUserId(ctx, {}, okEvents);
+  await synthesizeMetadataUserId(ctx, okEvents);
 
   const userId = ctx.payload.metadata?.user_id;
   if (typeof userId !== 'string') throw new Error('expected user_id to be a string');
@@ -43,8 +43,8 @@ test('fills metadata.user_id with the new JSON shape when absent', async () => {
 test('device_id is stable per upstream id', async () => {
   const a = invocation({ model: 'claude-sonnet-4-5-20250929', max_tokens: 1, messages: [{ role: 'user', content: 'a' }] });
   const b = invocation({ model: 'claude-sonnet-4-5-20250929', max_tokens: 1, messages: [{ role: 'user', content: 'b' }] });
-  await synthesizeMetadataUserId(a, {}, okEvents);
-  await synthesizeMetadataUserId(b, {}, okEvents);
+  await synthesizeMetadataUserId(a, okEvents);
+  await synthesizeMetadataUserId(b, okEvents);
   const ad = parseMetadataUserID(a.payload.metadata!.user_id!)!;
   const bd = parseMetadataUserID(b.payload.metadata!.user_id!)!;
   assertEquals(ad.deviceId, bd.deviceId);
@@ -53,8 +53,8 @@ test('device_id is stable per upstream id', async () => {
 test('device_id differs across upstreams', async () => {
   const a = invocation({ model: 'm', max_tokens: 1, messages: [{ role: 'user', content: 'x' }] }, 'up_a');
   const b = invocation({ model: 'm', max_tokens: 1, messages: [{ role: 'user', content: 'x' }] }, 'up_b');
-  await synthesizeMetadataUserId(a, {}, okEvents);
-  await synthesizeMetadataUserId(b, {}, okEvents);
+  await synthesizeMetadataUserId(a, okEvents);
+  await synthesizeMetadataUserId(b, okEvents);
   const ad = parseMetadataUserID(a.payload.metadata!.user_id!)!;
   const bd = parseMetadataUserID(b.payload.metadata!.user_id!)!;
   if (ad.deviceId === bd.deviceId) throw new Error('expected different device ids per upstream');
@@ -63,8 +63,8 @@ test('device_id differs across upstreams', async () => {
 test('session_id is stable for same upstream + same first-user prefix', async () => {
   const a = invocation({ model: 'm', max_tokens: 1, messages: [{ role: 'user', content: 'prefix' }, { role: 'assistant', content: 'reply1' }] });
   const b = invocation({ model: 'm', max_tokens: 1, messages: [{ role: 'user', content: 'prefix' }, { role: 'assistant', content: 'reply2' }] });
-  await synthesizeMetadataUserId(a, {}, okEvents);
-  await synthesizeMetadataUserId(b, {}, okEvents);
+  await synthesizeMetadataUserId(a, okEvents);
+  await synthesizeMetadataUserId(b, okEvents);
   const ad = parseMetadataUserID(a.payload.metadata!.user_id!)!;
   const bd = parseMetadataUserID(b.payload.metadata!.user_id!)!;
   assertEquals(ad.sessionId, bd.sessionId);
@@ -78,7 +78,7 @@ test('preserves a caller-supplied user_id verbatim', async () => {
     messages: [{ role: 'user', content: 'x' }],
     metadata: { user_id: explicit },
   });
-  await synthesizeMetadataUserId(ctx, {}, okEvents);
+  await synthesizeMetadataUserId(ctx, okEvents);
   assertEquals(ctx.payload.metadata?.user_id, explicit);
 });
 
@@ -105,8 +105,8 @@ test('session_id differs when system prompt is shared but user message differs (
   // Drive the same step pair the production chain does: synthesize first,
   // then hoist. Synthesize sees the operator's real first user message;
   // hoist runs after and rewrites `messages` for the wire shape.
-  await synthesizeMetadataUserId(a, {}, () => hoistUserSystemToMessages(a, {}, okEvents));
-  await synthesizeMetadataUserId(b, {}, () => hoistUserSystemToMessages(b, {}, okEvents));
+  await synthesizeMetadataUserId(a, () => hoistUserSystemToMessages(a, okEvents));
+  await synthesizeMetadataUserId(b, () => hoistUserSystemToMessages(b, okEvents));
 
   const ad = parseMetadataUserID(a.payload.metadata!.user_id!)!;
   const bd = parseMetadataUserID(b.payload.metadata!.user_id!)!;

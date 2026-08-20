@@ -338,8 +338,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         headers: new Headers(opts.headers),
         model,
       };
-      const result = await runInterceptors<OpenAIChatCompletionsBoundaryCtx, object, ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>>(
-        ctx, {}, COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY, async () => {
+      const result = await runInterceptors<OpenAIChatCompletionsBoundaryCtx, ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>>(
+        ctx, COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           return await liftStream(callStreaming(copilotFetchOpenAIChatCompletions, wireBody, signal, rawModel, [...ctx.headers], parseOpenAIChatCompletionsStream, opts));
         },
@@ -365,8 +365,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // compression, vision/initiator headers — applies to both branches
       // identically. The item-id membrane also normalizes the compact value
       // envelope, while the whitespace guard only inspects generate streams.
-      return await runInterceptors<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>(
-        ctx, {}, COPILOT_OPENAI_RESPONSES_BOUNDARY, async () => {
+      return await runInterceptors<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult>(
+        ctx, COPILOT_OPENAI_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           switch (ctx.action) {
           case 'generate': {
@@ -434,8 +434,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         reasoningEffort: anthropicMessagesReasoningEffort(body),
         fast: body.speed === 'fast',
       });
-      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
-        ctx, {}, COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, async () => {
+      const result = await runInterceptors<AnthropicMessagesBoundaryCtx, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
+        ctx, COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           return await liftStream(callStreaming(copilotFetchAnthropicMessages, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), parseAnthropicMessagesStream, opts));
         },
@@ -448,8 +448,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: anthropicMessagesReasoningEffort(body),
       });
-      const response = await runInterceptors<AnthropicMessagesBoundaryCtx, object, Response>(
-        ctx, {}, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
+      const response = await runInterceptors<AnthropicMessagesBoundaryCtx, Response>(
+        ctx, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           const { response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), opts);
           return response;

@@ -11,6 +11,5 @@ export interface OpenAIResponsesBoundaryCtx {
 
 export type AzureOpenAIResponsesBoundaryInterceptor = Interceptor<
   OpenAIResponsesBoundaryCtx,
-  object,
   ProviderOpenAIResponsesResult
 >;

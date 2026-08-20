@@ -28,8 +28,6 @@ const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
-const stubRequest = {};
-
 const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMessagesStreamEvent> => eventFrame<AnthropicMessagesStreamEvent>({
   type: 'message_start',
   message: {
@@ -63,7 +61,7 @@ const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEvent>[]): Ex
 test('withSpeedFast strips speed=fast from the outbound payload', async () => {
   const ctx = makeCtx('fast');
 
-  await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
+  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
 });
@@ -71,7 +69,7 @@ test('withSpeedFast strips speed=fast from the outbound payload', async () => {
 test('withSpeedFast strips speed=standard (semantically equivalent to omitted)', async () => {
   const ctx = makeCtx('standard');
 
-  await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
+  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
 });
@@ -83,7 +81,7 @@ test('withSpeedFast leaves unknown speed values untouched so the upstream reject
   // error. We never invent a fall-through here.
   const ctx = makeCtx('priority');
 
-  await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
+  await withSpeedFast(ctx, () => Promise.resolve(streamResult([])));
 
   assertEquals(ctx.payload.speed, 'priority');
 });
@@ -91,7 +89,7 @@ test('withSpeedFast leaves unknown speed values untouched so the upstream reject
 test('withSpeedFast stamps usage.speed=fast on message_start when fast was requested', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, stubRequest, () =>
+  const result = await withSpeedFast(ctx, () =>
     Promise.resolve(streamResult([messageStart(baseUsage), messageStop(), doneFrame()])));
 
   assertEquals(result.type, 'events');
@@ -107,7 +105,7 @@ test('withSpeedFast stamps usage.speed=fast on message_start when fast was reque
 test('withSpeedFast stamps usage.speed=fast on every message_delta carrying usage', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, stubRequest, () =>
+  const result = await withSpeedFast(ctx, () =>
     Promise.resolve(streamResult([messageStart(baseUsage), messageDelta(7), messageStop()])));
 
   assertEquals(result.type, 'events');
@@ -128,7 +126,7 @@ test('withSpeedFast leaves the stream untouched when speed is absent', async () 
   const ctx = makeCtx();
   const frames = [messageStart(baseUsage), messageDelta(3), messageStop()];
 
-  const result = await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult(frames)));
+  const result = await withSpeedFast(ctx, () => Promise.resolve(streamResult(frames)));
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events');
@@ -140,7 +138,7 @@ test('withSpeedFast leaves the stream untouched when speed=standard (no fast int
   const ctx = makeCtx('standard');
   const frames = [messageStart(baseUsage), messageStop()];
 
-  const result = await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult(frames)));
+  const result = await withSpeedFast(ctx, () => Promise.resolve(streamResult(frames)));
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events');
@@ -150,7 +148,7 @@ test('withSpeedFast leaves the stream untouched when speed=standard (no fast int
 test('withSpeedFast surfaces non-events results (api-error / internal-error) verbatim', async () => {
   const ctx = makeCtx('fast');
 
-  const result = await withSpeedFast(ctx, stubRequest, () =>
+  const result = await withSpeedFast(ctx, () =>
     Promise.resolve({
       type: 'internal-error',
       status: 502,

@@ -1,4 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
+import { mapKeepingIdentity, withKeysChanged } from '@floway-dev/protocols/common';
 
 /**
  * Two `cache_control` sub-fields are beta extensions to the base
@@ -32,35 +33,36 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
  * - https://github.com/caozhiyuan/copilot-api/issues/269
  * - https://github.com/caozhiyuan/copilot-api/commit/ce8224c55933f811abe5bf9ba42f9336a7852997
  */
-const stripExtensions = (block: Record<string, unknown>): void => {
-  const cacheControl = block.cache_control;
-  if (!cacheControl || typeof cacheControl !== 'object') return;
+/** The block with its cache-control extensions gone, or the same block when it carried none.
+ *  Returning the original is what lets an untouched message ride through by identity. */
+const stripExtensions = <T extends object>(block: T): T => {
+  const cacheControl = (block as Record<string, unknown>).cache_control;
+  if (!cacheControl || typeof cacheControl !== 'object') return block;
 
   const { scope: _scope, ttl: _ttl, ...rest } = cacheControl as Record<string, unknown>;
-  if (Object.keys(rest).length > 0) block.cache_control = rest;
-  else delete block.cache_control;
+  return withKeysChanged(block, { cache_control: Object.keys(rest).length > 0 ? rest : undefined });
 };
 
-export const withCacheControlExtensionsStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  if (Array.isArray(ctx.payload.system)) {
-    for (const block of ctx.payload.system as unknown as Record<string, unknown>[]) {
-      stripExtensions(block);
-    }
-  }
+export const withCacheControlExtensionsStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
+  const payload = ctx.payload;
 
-  if (ctx.payload.tools) {
-    for (const tool of ctx.payload.tools as unknown as Record<string, unknown>[]) {
-      stripExtensions(tool);
-    }
-  }
+  const system = Array.isArray(payload.system)
+    ? mapKeepingIdentity(payload.system, stripExtensions)
+    : payload.system;
+  const tools = payload.tools === undefined ? payload.tools : mapKeepingIdentity(payload.tools, stripExtensions);
+  const messages = mapKeepingIdentity(payload.messages, message => (
+    Array.isArray(message.content)
+      // The content arrays are a union of per-role block types, so the walk is expressed over
+      // the shape they share — an object — and handed back at the array's own type.
+      ? withKeysChanged(message, { content: mapKeepingIdentity(message.content as readonly object[], stripExtensions) })
+      : message
+  ));
 
-  for (const message of ctx.payload.messages) {
-    if (!Array.isArray(message.content)) continue;
-
-    for (const block of message.content as unknown as Record<string, unknown>[]) {
-      stripExtensions(block);
-    }
-  }
+  ctx.payload = withKeysChanged(payload, {
+    ...(system === payload.system ? {} : { system }),
+    ...(tools === payload.tools ? {} : { tools }),
+    ...(messages === payload.messages ? {} : { messages }),
+  });
 
   return await run();
 };

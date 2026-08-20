@@ -10,8 +10,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -41,9 +39,8 @@ test('Claude Code SDK compact request: Claude-agent overrides compact intent, bo
     messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
   });
 
-  await runInterceptors<AnthropicMessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
+  await runInterceptors<AnthropicMessagesBoundaryCtx, ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>>(
     ctx,
-    stubRequest,
     COPILOT_ANTHROPIC_MESSAGES_BOUNDARY,
     okEvents,
   );

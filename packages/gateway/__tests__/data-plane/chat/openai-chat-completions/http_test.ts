@@ -355,7 +355,7 @@ test('POST /v1/chat/completions renders the OpenAI-shaped model-unsupported 400 
   installRepo();
   // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
   // the openaiChatCompletionsTarget picker rejects it (its preference list is
-  // `openai-chat-completions` > `messages` > `responses`), leaving zero viable
+  // `openaiChatCompletions` > `anthropicMessages` > `openaiResponses`), leaving zero viable
   // candidates, and with sawModel=true the serve renders model-unsupported
   // as a 400.
   queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);

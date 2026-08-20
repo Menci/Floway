@@ -51,7 +51,6 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
 
 export const withImageGenerationStripped = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   stripImageGenerationFromPayload(ctx.payload);

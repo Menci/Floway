@@ -81,7 +81,6 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
 // compaction chain.
 export const withInlineImagesCompressed = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   // Finish this nested activation before starting the upstream call. Its

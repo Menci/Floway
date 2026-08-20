@@ -97,46 +97,31 @@ test('Anthropic Messages usage snapshots keep the served tier a later null does 
     .toEqual({ output_tokens: 2, speed: undefined, service_tier: 'standard' });
 });
 
-test('Anthropic Messages usage snapshots preserve nullable iterations and isolate all nested iteration data', () => {
+test('Anthropic Messages usage snapshots carry the iterations union through, nulls included', () => {
+  // The array is opaque: nothing in this gateway reads inside an entry, so what a snapshot owes
+  // it is to arrive whole and to keep saying what the upstream said — including `null`, which is
+  // the upstream stating it has no iterations rather than not mentioning them.
   expect(anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: null })).toEqual({ output_tokens: 0, iterations: null });
 
-  const source = [{
+  const iterations = [{
     type: 'compaction',
     input_tokens: 7,
     cache_creation: { ephemeral_5m_input_tokens: 3 },
-    provider_metadata: {
-      attempts: [{ regions: ['us-east', 'us-west'] }],
-    },
+    provider_metadata: { attempts: [{ regions: ['us-east', 'us-west'] }] },
   }];
-  const snapshot = anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: source });
-  source[0].cache_creation.ephemeral_5m_input_tokens = 9;
-  source[0].provider_metadata.attempts[0].regions.push('eu-west');
+  const snapshot = anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations });
+  expect(snapshot.iterations).toEqual(iterations);
 
-  expect(snapshot.iterations).toEqual([{
-    type: 'compaction',
-    input_tokens: 7,
-    cache_creation: { ephemeral_5m_input_tokens: 3 },
-    provider_metadata: {
-      attempts: [{ regions: ['us-east', 'us-west'] }],
-    },
-  }]);
+  // A later reading replaces the array rather than merging into it, so a `null` delta is a
+  // statement and not an omission.
   expect(mergeAnthropicMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toBeNull();
 });
 
-test('Anthropic Messages usage snapshot merges isolate opaque nested iteration data from the delta', () => {
-  const iterations = [{
-    type: 'model',
-    provider_metadata: {
-      attempts: [{ warnings: ['slow'] }],
-    },
-  }];
-  const merged = mergeAnthropicMessagesUsageSnapshot({ output_tokens: 0 }, { output_tokens: 1, iterations });
-  iterations[0].provider_metadata.attempts[0].warnings[0] = 'mutated';
+test('Anthropic Messages usage snapshot merges take the delta-s iterations over the current-s', () => {
+  const current = anthropicMessagesUsageSnapshot({ output_tokens: 0, iterations: [{ type: 'model' }] });
+  const iterations = [{ type: 'model', provider_metadata: { attempts: [{ warnings: ['slow'] }] } }];
 
-  expect(merged.iterations).toEqual([{
-    type: 'model',
-    provider_metadata: {
-      attempts: [{ warnings: ['slow'] }],
-    },
-  }]);
+  expect(mergeAnthropicMessagesUsageSnapshot(current, { output_tokens: 1, iterations }).iterations).toEqual(iterations);
+  // And a delta that says nothing about them leaves what the run already had.
+  expect(mergeAnthropicMessagesUsageSnapshot(current, { output_tokens: 1 }).iterations).toEqual([{ type: 'model' }]);
 });

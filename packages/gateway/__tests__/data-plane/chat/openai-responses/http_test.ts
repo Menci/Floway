@@ -542,6 +542,85 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
+test('POST /v1/responses replays a stored turn when the next one names it as previous_response_id', async () => {
+  installRepo();
+  const observedBodies: Array<Omit<CanonicalOpenAIResponsesPayload, 'model'>> = [];
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    return {
+      action: 'generate', ok: true,
+      events: makeProviderEvents(completedEvents(`resp_upstream_${observedBodies.length}`)),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callOpenAIResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+  const app = makeApp();
+
+  const first = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', store: true }),
+  });
+  assertEquals(first.status, 200);
+  const stored = await first.json() as OpenAIResponsesResult;
+
+  const second = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      store: true,
+      previous_response_id: stored.id,
+      input: 'continue',
+    }),
+  });
+  assertEquals(second.status, 200);
+  await second.json();
+
+  // The prior turn is replayed as the rows the store holds — this turn's own input last —
+  // and the snapshot id names something only this gateway has, so it never reaches the wire.
+  const continued = observedBodies[1];
+  if (continued === undefined) throw new Error('expected a second upstream call');
+  assertEquals(continued.previous_response_id, undefined);
+  assertEquals(continued.input, [
+    { type: 'message', role: 'user', content: 'hello' },
+    {
+      type: 'message',
+      id: 'msg_1',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text: 'hi', annotations: [] }],
+    },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
+test('POST /v1/responses rejects an item_reference the store cannot resolve', async () => {
+  installRepo();
+
+  // No candidates need to be queued — hydration answers before routing runs.
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'item_reference', id: 'msg_missing' }],
+    }),
+  });
+
+  assertEquals(response.status, 404);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string | null } };
+  assertEquals(body.error, {
+    message: "Item with id 'msg_missing' not found.",
+    type: 'invalid_request_error',
+    param: 'input',
+    code: null,
+  });
+});
+
 test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
   installRepo();
 

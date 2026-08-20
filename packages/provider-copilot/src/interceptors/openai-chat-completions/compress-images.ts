@@ -46,7 +46,7 @@ const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Prom
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an
 // `image_url` part) in the outgoing OpenAI Chat Completions payload to WebP before
 // the Copilot upstream call. Remote https image references are left untouched.
-export const withInlineImagesCompressed: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
+export const withInlineImagesCompressed: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, run) => {
   // Finish this nested activation before starting the upstream call. Its
   // request-local memoizer keys are the full source data URLs, which can be
   // several megabytes each and must not stay live for the response stream.

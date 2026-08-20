@@ -15,8 +15,6 @@ const invocation = (): OpenAIChatCompletionsBoundaryCtx => ({
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
-const stubRequest = {};
-
 const baseChunk = (overrides: Partial<OpenAIChatCompletionsStreamEvent>): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_1',
   object: 'chat.completion.chunk',
@@ -34,7 +32,7 @@ const collect = async (result: ExecuteResult<ProtocolFrame<OpenAIChatCompletions
 };
 
 const runWith = async (frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<OpenAIChatCompletionsStreamEvent>[]> => {
-  const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
+  const result = await withToolArgumentWhitespaceAborted(invocation(), () =>
     Promise.resolve(
       eventResult(
         (async function* () {

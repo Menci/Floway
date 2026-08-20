@@ -1,127 +1,132 @@
-import { openaiResponsesInputErrorResult } from './errors.ts';
+// POST /v1/responses and POST /v1/responses/compact, both served through their own pipeline.
+// Generation is one chain; compaction is a second operation over the same protocol and is a
+// chain of its own rather than another wire under the first.
+//
+// Each entry is a prologue and an epilogue around that chain: read what the client sent, hand
+// it over, and turn what the run answered with into a response. Everything between is stages,
+// the stored-items membrane included — which is why a continuation that does not resolve is
+// answered by the chain on both routes rather than caught as a throw on either.
+
+import { openaiResponsesCompactPipeline } from './compact.ts';
 import { createOpenAIResponsesHttpStore } from './items/store.ts';
-import { respondOpenAIResponses, respondOpenAIResponsesFailure } from './respond.ts';
-import { PreviousResponseNotFoundError } from './serve-prep.ts';
-import { openaiResponsesServe } from './serve.ts';
+import { openaiResponsesServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
-import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
-import { settle } from '../../shared/telemetry/settle.ts';
-import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
+import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
+import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
+import { openChatPrologue } from '../prologue.ts';
+import { move } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
-// OpenAI's verbatim previous_response_not_found envelope. Codex compares this
-// body byte-for-byte against upstream — see the cross-references on
-// `PreviousResponseNotFoundError` in serve-prep.ts.
-const previousResponseNotFoundResponse = (id: string): Response =>
+/** The read, as a value rather than a throw, because a pipelined entry decides what to do
+ *  about a body it could not read before it opens a run rather than after one unwound.
+ *
+ *  What the reader rejected travels with the rejection. This protocol's envelope names the
+ *  field at fault and the code for the condition, and those are statements only the reader
+ *  can make: `input` and `input[0]` are different sentences, and a body with no `model` is
+ *  refused in words OpenAI's own clients already parse. */
+const readRequest = (bytes: Uint8Array):
+  | { type: 'ok'; payload: CanonicalOpenAIResponsesPayload }
+  | { type: 'invalid'; message: string; param?: string; code?: string } => {
+  try {
+    return { type: 'ok', payload: canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(bytes)) as OpenAIResponsesRequestPayload) };
+  } catch (error) {
+    if (!(error instanceof TranslatorInputError)) {
+      return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
+    }
+    return {
+      type: 'invalid',
+      message: error.message,
+      ...(error.param === undefined ? {} : { param: error.param }),
+      ...(error.code === undefined ? {} : { code: error.code }),
+    };
+  }
+};
+
+/** The rejection, as this protocol's clients read one. A reader that named neither field
+ *  still fills both slots, because the envelope declares them and `input` is where a body
+ *  this endpoint could not read went wrong. */
+const invalidRequestResponse = (invalid: { message: string; param?: string; code?: string }): Response =>
   Response.json(
     {
       error: {
-        message: `Previous response with id '${id}' not found.`,
+        message: invalid.message,
         type: 'invalid_request_error',
-        param: 'previous_response_id',
-        code: 'previous_response_not_found',
+        param: invalid.param ?? 'input',
+        code: invalid.code ?? null,
       },
     },
     { status: 400 },
   );
 
-// Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as an OpenAI-Responses-shaped 502 with the same internal-error envelope the
-// in-flow `internal-error` ExecuteResult produces. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
-// caller passes its outer `ctx` when one was already constructed (so the
-// dump row preserves the model attribution the request-time
-// `requestedModel` stamped, and the throwing-candidate telemetry stamped
-// in serve.ts survives onto the error row); a fresh ctx is minted only
-// for pre-parse failures where no payload was available to read model from.
-const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const response = respondOpenAIResponsesFailure(result, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
+/** A request the gateway refused before it reached a pipeline: there is no model to resolve
+ *  and no attempt to make, so there is nothing for a run to record beyond the refusal. */
+const refuse = (c: AuthedContext, ingress: Ingress, invalid: { message: string; param?: string; code?: string }): Response => {
+  const refused = openPrologue(c, ingress, { wantsStream: false });
+  refused.gateway.dump?.error('gateway');
+  return finalizeGatewayResponse(refused.gateway, invalidRequestResponse(invalid));
 };
-
-// Pre-stream throw dispatcher. `PreviousResponseNotFoundError` and the
-// translator-input case render protocol-shaped 400s; anything else falls
-// through to the internal-error 502 path.
-const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  if (error instanceof PreviousResponseNotFoundError) {
-    const response = previousResponseNotFoundResponse(error.previousResponseId);
-    ctx?.dump?.error('gateway');
-    return ctx ? finalizeGatewayResponse(ctx, response) : response;
-  }
-  if (error instanceof TranslatorInputError) {
-    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const response = respondOpenAIResponsesFailure(openaiResponsesInputErrorResult(error, effectiveCtx.attempt.telemetry), effectiveCtx);
-    return finalizeGatewayResponse(effectiveCtx, response);
-  }
-  return await respondWithInternalError(c, error, requestBody, ctx);
-};
-
-const parsePayload = (requestBody: RequestBody): CanonicalOpenAIResponsesPayload =>
-  canonicalizeOpenAIResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIResponsesRequestPayload);
 
 export const openaiResponsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = parsePayload(requestBody);
-      const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
-      const result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondOpenAIResponses(c, result, wantsStream, ctx, payload);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
-    }
+    const ingress = await readIngress(c);
+    const request = readRequest(ingress.body.bytes);
+    if (request.type === 'invalid') return refuse(c, ingress, request);
+
+    const { payload } = request;
+    const wantsStream = payload.stream === true;
+    const prologue = openChatPrologue(c, ingress, {
+      wantsStream,
+      model: payload.model,
+      storeFactory: (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
+    });
+
+    return await serveThrough(
+      c,
+      prologue,
+      openaiResponsesServePipeline(payload),
+      move({
+        'ingress.http.headers': prologue.headers,
+        'ingress.chat.sourceProtocol': 'openaiResponses',
+        'ingress.chat.openaiResponses.wantsStream': wantsStream,
+        'request.chat.openaiResponses': payload,
+        'serve.model': payload.model,
+      }) as never,
+      facts => {
+        const rendered = facts['response.chat.openaiResponses.rendered'];
+        if (isFrames(rendered)) return { frames: rendered };
+        return { body: JSON.stringify(rendered), contentType: 'application/json' };
+      },
+      facts => facts['response.chat.openaiResponses.streamedUsage'],
+    );
   },
 
   compact: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = parsePayload(requestBody);
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
-      const result = await openaiResponsesServe.compact({ payload, ctx, headers: inboundHeaders(c) });
-      if (result.type === 'result') {
-        // Compact drains the upstream stream into a single compaction
-        // resource with no per-token stamps; recordPerformance therefore
-        // lands in the neutral bucket (request counted, no TTFT/TPOT sample).
-        // `status` is not a `CompactResource` key — it survives the spread
-        // from the upstream turn — and it is authoritative for failure: a
-        // compact that surfaced as `response.failed` must be recorded as such
-        // so it shows up in the error column instead of masquerading as a
-        // success.
-        const failed = result.result.status === 'failed';
-        if (failed) {
-          ctx.dump?.failed('compact envelope status=failed');
-        } else {
-          ctx.dump?.success(result.modelIdentity, result.usage);
-        }
-        settle(
-          ctx,
-          result.performance,
-          result.modelIdentity,
-          result.usage,
-          failed,
-        );
-        const compactResponse = Response.json(result.result);
-        return finalizeGatewayResponse(ctx, compactResponse);
-      }
-      const response = await respondOpenAIResponses(c, result, false, ctx, payload);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
-    }
+    const ingress = await readIngress(c);
+    const request = readRequest(ingress.body.bytes);
+    if (request.type === 'invalid') return refuse(c, ingress, request);
+
+    const { payload } = request;
+    const prologue = openChatPrologue(c, ingress, {
+      wantsStream: false,
+      model: payload.model,
+      storeFactory: (apiKey, requestStartedAt) => createOpenAIResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined),
+    });
+
+    return await serveThrough(
+      c,
+      prologue,
+      openaiResponsesCompactPipeline(payload),
+      move({
+        'ingress.http.headers': prologue.headers,
+        'ingress.chat.sourceProtocol': 'openaiResponses',
+        'request.chat.openaiResponses': payload,
+        'serve.model': payload.model,
+      }) as never,
+      // A compaction is one resource however the turn went, so there is never a stream to
+      // write: the frames it came as were read into that resource before the run answered.
+      facts => ({ body: JSON.stringify(facts['response.chat.openaiResponses.rendered']), contentType: 'application/json' }),
+      facts => facts['response.chat.openaiResponses.streamedUsage'],
+    );
   },
 };

@@ -16,3 +16,4 @@ export * from './parse-events.ts';
 export { renderErrorEnvelope, upstreamErrorMessage } from './error-envelope.ts';
 export { isJsonObject, type JsonObject } from './json.ts';
 export { captureExtras } from './reassemble-extras.ts';
+export { mapKeepingIdentity, withIndexesChanged, withKeysChanged } from './rebuild.ts';

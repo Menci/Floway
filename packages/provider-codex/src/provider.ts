@@ -136,8 +136,8 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
         model,
         action,
       };
-      return await runInterceptors<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>(
-        ctx, {}, CODEX_OPENAI_RESPONSES_BOUNDARY, async () => {
+      return await runInterceptors<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult>(
+        ctx, CODEX_OPENAI_RESPONSES_BOUNDARY, async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
           const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };

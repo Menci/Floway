@@ -13,10 +13,10 @@
 //   callOpenAIAudioTranscriptionUpstream  the ending: dials, reads what came back, and
 //                                         provides the answer plus what is billable
 
-import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
@@ -25,7 +25,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { compose, defer, defineStage, move, own, type Deferred, type Logger, type Owned, type Pipeline } from '@floway-dev/pipeline';
-import { eventFrame, isEventStreamMediaType, parseDecimalString, parseSSEStream, renderErrorEnvelope, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isEventStreamMediaType, parseDecimalString, parseSSEStream, sseFrame, type SseFrame } from '@floway-dev/protocols/common';
 import {
   isOpenAIAudioTranscriptionDoneEvent,
   parseOpenAIAudioTranscription,
@@ -146,12 +146,13 @@ const emitOpenAIAudioTranscription = defineStage<
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
 
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.http.status': answer.status,
+        'response.http.status': failure.status,
         'response.openaiAudioTranscription.mediaType': 'application/json',
-        'response.openaiAudioTranscription.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.openaiAudioTranscription.rendered': move(failure.body),
       };
     }
     // Everything that reaches here answered. The same key carried the upstream's own status

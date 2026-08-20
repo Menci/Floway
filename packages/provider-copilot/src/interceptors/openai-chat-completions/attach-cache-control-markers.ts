@@ -63,13 +63,20 @@ const selectCacheMarkerIndexes = (messages: readonly OpenAIChatCompletionsMessag
   return [...new Set([...systemIndexes, ...nonSystemIndexes])].sort((a, b) => a - b);
 };
 
-export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
-  const indexes = selectCacheMarkerIndexes(ctx.payload.messages);
-  for (const index of indexes) {
-    // Fresh object per message so downstream mutations (none today, but
-    // cheap insurance) cannot bleed across messages.
-    (ctx.payload.messages[index] as CopilotCacheableMessage).copilot_cache_control = { ...COPILOT_CONTEXT_CACHE_CONTROL };
-  }
+export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, run) => {
+  const marked = new Set(selectCacheMarkerIndexes(ctx.payload.messages));
+  if (marked.size === 0) return await run();
+
+  ctx.payload = {
+    ...ctx.payload,
+    // A marker is its own object per message, so nothing downstream can carry a change from
+    // one to another. The messages that were not selected ride through by identity.
+    messages: ctx.payload.messages.map((message, index) => (
+      marked.has(index)
+        ? { ...message, copilot_cache_control: { ...COPILOT_CONTEXT_CACHE_CONTROL } } as CopilotCacheableMessage
+        : message
+    )),
+  };
 
   return await run();
 };

@@ -6,7 +6,6 @@ import type { OpenAIResponsesBoundaryCtx } from './types.ts';
 // https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579
 export const injectDefaultInstructions = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const instructions = ctx.payload.instructions;

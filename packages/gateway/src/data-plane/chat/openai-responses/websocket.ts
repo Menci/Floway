@@ -1,25 +1,37 @@
+// The OpenAI Responses WebSocket transport: a second entry against the same chain `POST
+// /v1/responses` runs. One `response.create` frame is one turn and one turn is one run, so
+// nothing about a turn outlives the frame that opened it except what the connection itself
+// holds — the session's item store and the ids a continuation may name.
+//
+// Entering the pipeline system takes no capability, so this handler opens a run exactly as a
+// Hono route handler does. What it does not do is answer through `serveThrough`: that builds
+// an HTTP `Response`, and a turn here writes its own frames to a socket, counts them, and
+// closes its own recording.
+
 import type { Context } from 'hono';
 
-import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
-import { createOpenAIResponsesWsSession } from './items/store.ts';
-import { PreviousResponseNotFoundError } from './serve-prep.ts';
-import { openaiResponsesServe } from './serve.ts';
-import type { TurnDump } from '../../../dump/turn-dump.ts';
+import { createOpenAIResponsesWsSession, type OpenAIResponsesStatefulStore } from './items/store.ts';
+import { openaiResponsesServePipeline, type OpenAIResponsesFacts, type OpenAIResponsesServeExit } from './pipeline.ts';
+import { openRunDump } from '../../../dump/run-sink.ts';
+import type { RunDump } from '../../../dump/run-sink.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
+import type { ApiKey } from '../../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { takeRequestBody } from '../../shared/request-body.ts';
+import { consoleLogSink } from '../../../runtime/log.ts';
+import { prologueFor, type Ingress } from '../../pipeline/serve.ts';
+import { settleBillable } from '../../pipeline/settlement.ts';
+import { takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
-import { settle } from '../../shared/telemetry/settle.ts';
-import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import type { ChatPrologue } from '../prologue.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
+import { SourceStreamState } from '../shared/source-stream-state.ts';
+import { move, run } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/openai-responses';
-import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ExecuteResult } from '@floway-dev/provider';
+import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesRequestPayload } from '@floway-dev/protocols/openai-responses';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeOpenAIResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
@@ -56,12 +68,12 @@ type OpenAIResponsesWebSocketUpgradeResolver = (
   events: OpenAIResponsesWebSocketHandlers,
 ) => Response | Promise<Response>;
 
-let _openai_responsesWebSocketUpgradeResolver: OpenAIResponsesWebSocketUpgradeResolver | null = null;
+let _responsesWebSocketUpgradeResolver: OpenAIResponsesWebSocketUpgradeResolver | null = null;
 
 export const initOpenAIResponsesWebSocketUpgradeResolver = (
   resolver: OpenAIResponsesWebSocketUpgradeResolver,
 ): void => {
-  _openai_responsesWebSocketUpgradeResolver = resolver;
+  _responsesWebSocketUpgradeResolver = resolver;
 };
 
 declare const WebSocketPair: {
@@ -88,8 +100,8 @@ export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Respon
   }
 
   const events = createOpenAIResponsesWebSocketEvents(c);
-  if (_openai_responsesWebSocketUpgradeResolver !== null) {
-    return await _openai_responsesWebSocketUpgradeResolver(c, events);
+  if (_responsesWebSocketUpgradeResolver !== null) {
+    return await _responsesWebSocketUpgradeResolver(c, events);
   }
 
   const pair = new WebSocketPair();
@@ -122,11 +134,12 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
   // during the fetch invocation; once the fetch handler returns the 101
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
-  // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, settle, recordFailedRequest — would therefore
-  // lose its write.
+  // registered reason to defer eviction for it). Every per-turn background
+  // task — the dump write, the usage row, the performance sample, the drain —
+  // would therefore lose its write, so this is the scheduler every turn's run
+  // is opened with rather than the context's.
   //
-  // Fix: give the ctx a scheduler that doesn't depend on the fetch's
+  // Fix: give the run a scheduler that doesn't depend on the fetch's
   // execution context at all. `sessionScheduler` tracks the task in
   // `pendingWork`; the isolate stays alive throughout because we register
   // ONE lifetime promise up-front (while the fetch handler is still
@@ -135,20 +148,11 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
   //
   // The drain uses a `while (size > 0)` loop rather than a single
   // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
-  // handler running at close time may still enqueue a final
-  // dump.finalize / settle / recordFailedRequest from its finally/catch after
-  // `sessionClosed` resolves. The loop keeps going until the Set is
-  // genuinely empty, which is bounded because `closed = true` short-
-  // circuits future message handlers at the top of `handleClientMessage`.
-  //
-  // That loop only ever runs while the Set is non-empty, which is why the
-  // message chain itself is tracked as session work in `onMessage`. A turn
-  // schedules nothing until its terminal `finally` — dump.finalize and
-  // settle are the only background work it produces, and both come after an
-  // `await` there — so a client closing mid-turn finds the Set empty at the
-  // exact moment `sessionClosed` resolves, and the drain would fall through
-  // before the turn recorded anything. Holding the chain keeps the lifetime
-  // open until the handler has unwound and its records are in the Set.
+  // handler running at close time may still enqueue a final write from its
+  // finally/catch after `sessionClosed` resolves. The loop keeps going until
+  // the Set is genuinely empty, which is bounded because `closed = true`
+  // short-circuits future message handlers at the top of
+  // `handleClientMessage`.
   const pendingWork = new Set<Promise<unknown>>();
   let sessionClosedResolve: (() => void) | undefined;
   const sessionClosed = new Promise<void>(resolve => { sessionClosedResolve = resolve; });
@@ -192,7 +196,6 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
-      sessionScheduler(queue);
     },
   };
 };
@@ -201,6 +204,66 @@ interface OpenAIResponsesWsTurnFailure {
   evict(): void;
   fail(status: number, error: Record<string, unknown>): void;
 }
+
+/**
+ * A turn's own run.
+ *
+ * `openChatPrologue` reads the turn's shape off the Hono context, and a turn on this
+ * transport shares none of that shape with the request that opened the socket. It is a `WS`
+ * turn on a connection whose upgrade was a `GET`; its body is the frame that just arrived
+ * rather than the upgrade's, which had none; it owns the abort controller the session cancels
+ * it with; and its background work outlives the fetch that returned the 101, so the scheduler
+ * it settles and records through is the session's rather than that fetch's. What it does not
+ * differ in is the services a chat run is given, which is why it hands those back in the shape
+ * every chat entry hands them over in.
+ */
+const openOpenAIResponsesWebSocketTurn = (
+  c: AuthedContext,
+  turn: {
+    readonly payload: CanonicalOpenAIResponsesPayload;
+    readonly body: RequestBody;
+    readonly headers: Ingress['headers'];
+    readonly downstreamAbortController: AbortController;
+    readonly backgroundScheduler: BackgroundScheduler;
+    readonly store: (apiKey: ApiKey, requestStartedAt: number) => OpenAIResponsesStatefulStore;
+  },
+): ChatPrologue => {
+  // The frame is this turn's request body, so an operator reading the dashboard sees the
+  // exact `response.create` that opened it, under its own `WS /v1/responses` row rather than
+  // under the upgrade that carried it.
+  const dump = openRunDump(
+    apiKeyFromContext(c),
+    { method: 'WS', path: new URL(c.req.raw.url).pathname, body: turn.body },
+    turn.backgroundScheduler,
+  );
+  const gateway = createChatGatewayCtxFromHono(c, {
+    wantsStream: true,
+    model: turn.payload.model,
+    requestBody: takeRequestBody(turn.body),
+    downstreamAbortController: turn.downstreamAbortController,
+    backgroundScheduler: turn.backgroundScheduler,
+    dump,
+  }, turn.store);
+  const base = prologueFor(gateway, { body: turn.body, headers: turn.headers }, dump);
+
+  let materialize: ((candidate: ModelCandidate) => unknown) | undefined;
+  return {
+    ...base,
+    gateway,
+    services: {
+      ...base.services,
+      gateway,
+      rememberChatSelection: payloadFor => { materialize = payloadFor; },
+      chatPayloadFor: selector => {
+        if (materialize === undefined) {
+          throw new Error('chatPayloadFor: nothing was resolved in this run; the selector did not come from it');
+        }
+        return materialize(base.services.resolveAttempt(selector));
+      },
+      selectAffinity: candidate => { gateway.affinity.select(candidate); },
+    },
+  };
+};
 
 const handleClientMessage = async (
   c: AuthedContext,
@@ -217,20 +280,17 @@ const handleClientMessage = async (
   let ctx: ChatGatewayCtx | undefined;
   let previousResponseId: string | undefined;
 
-  // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST
-  // evict the referenced `previous_response_id` from the connection-local
-  // cache. A later attempt to continue from that evicted `store=false`
-  // response ID on the same connection MUST fail with
-  // `previous_response_not_found`."
+  // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST evict the
+  // referenced `previous_response_id` from the connection-local cache. A later attempt to
+  // continue from that evicted `store=false` response ID on the same connection MUST fail
+  // with `previous_response_not_found`."
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
   //
-  // Eviction is wired at two points because a failing turn can leave through
-  // two exits that do not share a path. `fail` covers the turn that answers
-  // the client with an error envelope, including the `api-error` and
-  // `internal-error` results, which return before the streaming loop is
-  // entered; the loop's `finally` covers the turn that ends failed without
-  // one. A throw inside the loop is the single path that takes both, and
-  // `Map.delete` makes the second call inert.
+  // Eviction is wired at two points because a failing turn can leave through two exits that
+  // do not share a path. `fail` covers the turn that answers the client with an error
+  // envelope, including the refusals the chain hands back as a body rather than a stream; the
+  // streaming loop's `finally` covers the turn that ends failed without one. A throw inside
+  // the loop is the single path that takes both, and `Map.delete` makes the second call inert.
   const turnFailure: OpenAIResponsesWsTurnFailure = {
     evict: () => {
       if (ctx === undefined || previousResponseId === undefined) return;
@@ -243,11 +303,10 @@ const handleClientMessage = async (
   };
 
   try {
-    // Capture raw frame bytes up front so they're available as the dump's
-    // request body when `ctx` is constructed below. Payloads that fail to
-    // parse never reach ctx construction, so no dump record is emitted for
-    // them — there is no api-key-scoped turn to attribute them to.
-    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
+    // Capture raw frame bytes up front so they're available as the run's request body when
+    // the turn is opened below. Payloads that fail to parse never reach that point, so no
+    // dump record is emitted for them — there is no api-key-scoped turn to attribute them to.
+    const requestBody: RequestBody = { bytes: wsDataToBytes(data), streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       turnFailure.fail(401, {
         type: 'authentication_error',
@@ -280,41 +339,36 @@ const handleClientMessage = async (
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = openaiResponsesPayloadFromClientSource(source);
     previousResponseId = payload.previous_response_id ?? undefined;
-    ctx = createChatGatewayCtxFromHono(c, {
-      wantsStream: true,
+
+    const prologue = openOpenAIResponsesWebSocketTurn(c, {
+      payload,
+      body: requestBody,
+      // The upgrade's own headers are the connection's, and every turn on it is dialled with
+      // them: this transport has no per-turn header surface, so what a client wants a later
+      // turn to carry it carries in the frame body instead.
+      headers: [...c.req.raw.headers],
       downstreamAbortController,
-      // The WS upgrade has no HTTP body; the dump's request body is the
-      // per-turn JSON frame bytes so an operator reading the dashboard
-      // sees the exact `response.create` payload the client sent.
-      requestBody: takeRequestBody(requestBody),
-      method: 'WS',
-      model: payload.model,
       backgroundScheduler,
-    }, (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined));
+      store: (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined),
+    });
+    ctx = prologue.gateway;
 
-    let result;
-    try {
-      result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-    } catch (error) {
-      if (signal.aborted || isClosed()) return;
-      // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
-      // same body nested under the spec's WebSocket error envelope so clients
-      // can still compare error.message byte-for-byte against upstream.
-      if (error instanceof PreviousResponseNotFoundError) {
-        turnFailure.fail(400, {
-          message: error.message,
-          type: 'invalid_request_error',
-          param: 'previous_response_id',
-          code: 'previous_response_not_found',
-        });
-        ctx.dump?.failed(error);
-        ctx.dump?.finalize(400, []);
-        return;
-      }
-      throw error;
-    }
+    const { facts, drain } = await run(
+      // The transport frames its own answer, so the edge hands up the events rather than the
+      // SSE a body would have been written from.
+      openaiResponsesServePipeline(payload, 'events'),
+      move({
+        'ingress.http.headers': prologue.headers,
+        'ingress.chat.sourceProtocol': 'openaiResponses',
+        // A turn on this transport always streams, whatever the client wrote.
+        'ingress.chat.openaiResponses.wantsStream': true,
+        'request.chat.openaiResponses': payload,
+        'serve.model': payload.model,
+      }) as never,
+      prologue.services as never,
+    );
 
-    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
+    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -336,14 +390,12 @@ const handleClientMessage = async (
     }
     turnFailure.fail(500, serverErrorEnvelope(error));
     if (ctx !== undefined) {
-      // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
-      // exception not represented as a ChatServeFailure) never reach the
-      // respondOpenAIResponsesWebSocket result branches, so their `recordFailedRequest`
-      // call would be skipped. Attribute the failure to the last upstream stamped
-      // synchronously by `openaiResponsesServe.generate`, matching the HTTP transports.
+      // A throw that escapes the run never reached the settlement stage, so the sample that
+      // stage would have written is written here instead — attributed to the last upstream
+      // the chain stamped, which is the one that was being dialled when it threw.
       recordFailedRequest(ctx, ctx.attempt.telemetry);
       ctx.dump?.failed(error);
-      ctx.dump?.finalize(500, []);
+      ctx.dump?.finalize(500, 0);
     }
   }
 };
@@ -368,30 +420,38 @@ const validateClientMessage = (parsed: unknown): OpenAIResponsesWebSocketClientE
 const openaiResponsesPayloadFromClientSource = (source: object): CanonicalOpenAIResponsesPayload =>
   ({ ...canonicalizeOpenAIResponsesPayload(source as OpenAIResponsesRequestPayload), stream: true });
 
+/** The chain hands its answer up at one key, and this entry assembled it to hand up events
+ *  rather than the SSE frames an HTTP body is written from — so what is not a stream at that
+ *  key is the one object arm this transport can see. */
+const isRenderedStream = (
+  rendered: OpenAIResponsesFacts['response.chat.openaiResponses.rendered'],
+): rendered is AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => Symbol.asyncIterator in rendered;
+
 const respondOpenAIResponsesWebSocket = async (input: {
   readonly socket: OpenAIResponsesWebSocketSocket;
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
-  readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>;
-  readonly ctx: ChatGatewayCtx;
-  readonly payload: CanonicalOpenAIResponsesPayload;
+  readonly prologue: ChatPrologue;
+  readonly facts: OpenAIResponsesServeExit;
+  readonly drain: () => Promise<void>;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure } = input;
-  if (result.type === 'api-error') {
-    recordFailedRequest(ctx, result.performance);
-    ctx.dump?.error(result.source, result.upstreamId);
-    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
-    ctx.dump?.finalize(result.status, []);
-    return;
-  }
+  const { socket, eventId, signal, isClosed, prologue, facts, drain, turnFailure } = input;
+  const ctx = prologue.gateway;
+  const status = facts['response.http.status'];
+  const rendered = facts['response.chat.openaiResponses.rendered'];
 
-  if (result.type === 'internal-error') {
-    recordFailedRequest(ctx, result.performance);
-    ctx.dump?.failed(result.error.message);
-    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
-    ctx.dump?.finalize(result.status, []);
+  if (!isRenderedStream(rendered)) {
+    // A body at the rendered key is a refusal — the upstream's own, or one the chain made
+    // before reaching an upstream. Nothing else can arrive there on this transport: a turn
+    // here always asks to stream, and the one non-refusal body the chain can produce is a
+    // compaction envelope, which no `response.create` frame has a way to ask for. It goes out
+    // under the spec's WebSocket error envelope so a client can still compare error.message
+    // byte-for-byte against upstream. Nothing is left to read, so releasing starts at once.
+    prologue.services.background(drain());
+    turnFailure.fail(status, normalizeErrorBody(rendered, status));
+    ctx.dump?.finalize(status, 0);
     return;
   }
 
@@ -399,9 +459,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ClientOpenAIResponsesStreamEvent | undefined;
-    const observed = observeOpenAIResponsesWebSocketFrames(result.events, state, ctx);
-    const output = wrapOpenAIResponsesClientEgress(observed, ctx, payload);
-    const iterator = output[Symbol.asyncIterator]();
+    const iterator = observeOpenAIResponsesWebSocketFrames(rendered, state)[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
@@ -560,30 +618,39 @@ const respondOpenAIResponsesWebSocket = async (input: {
     state.failed = true;
     turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
-    const metadata = await eventResultMetadata(result);
+    // Writing the frames to the socket *is* releasing the body they came from, so the drain
+    // waits for that to finish. A client that stopped reading still gets here, which is what
+    // leaves nothing open behind it.
+    await drain();
+    // What the turn billed, as the chain read it off the upstream's own events while they
+    // passed. The answer is already on the socket by now, so it is settled here rather than
+    // handed to the background the way an entry that returns a response has to.
+    const streamedUsage = facts['response.chat.openaiResponses.streamedUsage'];
+    if (streamedUsage !== null) {
+      const outcome = await streamedUsage;
+      settleBillable({ ...prologue.services, log: consoleLogSink }, outcome.billable, outcome.failed);
+    }
     const failed = state.failedAfter(completion);
     if (failed) {
-      // `fail` cannot carry the eviction for every failed turn: one that
-      // streamed an `error` or `response.failed` terminal answered the client
-      // with an event rather than an error envelope, and one the client
-      // abandoned before the terminal event answered with nothing at all.
-      // Both settle here. For the abandoned turn the eviction is inert — the
+      // `fail` cannot carry the eviction for every failed turn: one that streamed an `error`
+      // or `response.failed` terminal answered the client with an event rather than an error
+      // envelope, and one the client abandoned before the terminal event answered with
+      // nothing at all. Both settle here. For the abandoned turn the eviction is inert — the
       // connection-local cache dies with the socket.
       turnFailure.evict();
-      ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-    } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
-    ctx.dump?.finalize(failed ? 500 : 200, []);
-    settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
+      ctx.dump?.failed(`openai-responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+    }
+    ctx.dump?.finalize(failed ? 500 : 200, 0);
   }
 };
 
+/** Reads the turn's own ending off the frames on their way to the socket. The record is not
+ *  its business: the edge tees these same frames, so what reaches here is already recorded. */
 const observeOpenAIResponsesWebSocketFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
   state: SourceStreamState,
-  ctx: ChatGatewayCtx,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
     if (frame.type === 'event') {
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';
@@ -660,31 +727,15 @@ const createDownstreamSequence = (): DownstreamSequence => {
   };
 };
 
-const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
-  const text = new TextDecoder().decode(body);
-  if (!isJsonMediaType(headers.get('content-type'))) return { message: text };
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return { message: text };
-  }
-};
-
-const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
-  type: error.type,
-  code: error.type,
-  name: error.name,
-  message: error.message,
-  stack: error.stack,
-  cause: error.cause,
-  target_api: error.target_api,
-});
-
 const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error),
   code: 'internal_error',
 });
 
+/** The rendered refusal, as this transport's envelope carries one. The chain already answered
+ *  in the words a refusal was made in — the upstream's own body when it sent one, and the
+ *  gateway's own envelope when the refusal was its — so what is left is to state the two
+ *  fields the WebSocket envelope requires of every error whatever wrote it. */
 const normalizeErrorBody = (body: unknown, status: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'
     ? (body as { error: Record<string, unknown> }).error
@@ -716,7 +767,7 @@ const sendError = (
   status: number,
   error: Record<string, unknown>,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): void => {
   sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
@@ -733,14 +784,14 @@ const sendOpenAIResponsesEvent = (
   socket: OpenAIResponsesWebSocketSocket,
   event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
-  dump?: TurnDump | null,
+  dump?: RunDump | null,
 ): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'

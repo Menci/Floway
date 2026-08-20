@@ -7,6 +7,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { searchServePipeline } from '../../../src/data-plane/alpha-search/pipeline.ts';
+import { anthropicMessagesCountTokensPipeline } from '../../../src/data-plane/chat/anthropic-messages/count-tokens.ts';
+import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
+import { geminiGenerateContentCountTokensPipeline } from '../../../src/data-plane/chat/gemini-generate-content/count-tokens.ts';
+import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
+import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
+import { openaiResponsesCompactPipeline } from '../../../src/data-plane/chat/openai-responses/compact.ts';
+import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { openaiAudioTranscriptionServePipeline } from '../../../src/data-plane/openai-audio/pipeline.ts';
 import { openaiCompletionsServePipeline } from '../../../src/data-plane/openai-completions/pipeline.ts';
 import { openaiEmbeddingsServePipeline } from '../../../src/data-plane/openai-embeddings/pipeline.ts';
@@ -16,11 +23,18 @@ import { rerankServePipeline } from '../../../src/data-plane/rerank/pipeline.ts'
 const FAMILIES: readonly (readonly [string, () => { readonly name: string }])[] = [
   ['OpenAI Embeddings', () => openaiEmbeddingsServePipeline],
   ['rerank', () => rerankServePipeline({ sourceProtocol: 'cohere-v2', raw: {}, query: 'q', documents: ['a'] } as never)],
-  ['OpenAI Images Generations', () => openaiImagesServePipeline({ operation: 'generations', parameters: {} } as never)],
-  ['OpenAI Images Edits', () => openaiImagesServePipeline({ operation: 'edits', images: [], parameters: {} } as never)],
+  ['OpenAI Images generations', () => openaiImagesServePipeline({ operation: 'generations', parameters: {} } as never)],
+  ['OpenAI Images edits', () => openaiImagesServePipeline({ operation: 'edits', images: [], parameters: {} } as never)],
   ['OpenAI Completions', () => openaiCompletionsServePipeline],
   ['OpenAI Audio Transcriptions', () => openaiAudioTranscriptionServePipeline],
   ['alpha search', () => searchServePipeline({ kind: 'search' } as never)],
+  ['OpenAI Chat Completions', () => openaiChatCompletionsServePipeline({ model: 'm', messages: [] } as never)],
+  ['Anthropic Messages', () => anthropicMessagesServePipeline({ model: 'm', messages: [] } as never)],
+  ['Gemini generateContent', () => geminiGenerateContentServePipeline({ model: 'm', contents: [] } as never)],
+  ['OpenAI Responses', () => openaiResponsesServePipeline({ model: 'm', input: [] } as never)],
+  ['Anthropic Messages count_tokens', () => anthropicMessagesCountTokensPipeline({ model: 'm', messages: [] } as never)],
+  ['Gemini generateContent countTokens', () => geminiGenerateContentCountTokensPipeline({ model: 'm', contents: [] } as never)],
+  ['OpenAI Responses compact', () => openaiResponsesCompactPipeline({ model: 'm', input: [] } as never)],
 ];
 
 describe('every family assembles', () => {

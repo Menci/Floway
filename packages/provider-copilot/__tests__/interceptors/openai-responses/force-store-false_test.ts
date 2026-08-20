@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -23,7 +21,7 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
 test('forces store:false when the caller requested store:true', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], store: true });
 
-  await withStoreForcedFalse(ctx, stubRequest, okEvents);
+  await withStoreForcedFalse(ctx, okEvents);
 
   assertEquals(ctx.payload.store, false);
 });
@@ -31,7 +29,7 @@ test('forces store:false when the caller requested store:true', async () => {
 test('sets store:false when the caller omitted store', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
 
-  await withStoreForcedFalse(ctx, stubRequest, okEvents);
+  await withStoreForcedFalse(ctx, okEvents);
 
   assertEquals(ctx.payload.store, false);
 });
@@ -39,7 +37,7 @@ test('sets store:false when the caller omitted store', async () => {
 test('leaves an explicit store:false untouched', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], store: false });
 
-  await withStoreForcedFalse(ctx, stubRequest, okEvents);
+  await withStoreForcedFalse(ctx, okEvents);
 
   assertEquals(ctx.payload.store, false);
 });

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { installDumpStubs } from './test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openRunDump } from '../../src/dump/run-sink.ts';
-import type { StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import type { StoredDumpRecord } from '../../src/dump/types.ts';
 import type { ApiKey } from '../../src/repo/types.ts';
 import { flushBackground, trackBackground } from '../test-utils/background-tracker.ts';
 import { compose, defineStage, move, run, type DumpEvent, type Event } from '@floway-dev/pipeline';
@@ -53,15 +53,14 @@ const shout = defineStage<Pick<Facts, 'in.text'>, Pick<Facts, 'in.text'>, Pick<F
 
 const pipeline = compose<Pick<Facts, 'in.text'>, Pick<Facts, 'out.result'>>('shout-it', [shout, answer]);
 
-const runRecordOf = (stored: { record: StoredDumpRecord } | undefined): StoredDumpRunRecord => {
+const runRecordOf = (stored: { record: StoredDumpRecord } | undefined): StoredDumpRecord => {
   if (!stored) throw new Error('expected a stored dump record');
-  if (stored.record.shape !== 'run') throw new Error(`expected the run shape, got ${stored.record.shape}`);
   return stored.record;
 };
 
-const ndjson = (record: StoredDumpRunRecord): string => new TextDecoder().decode(record.events);
+const ndjson = (record: StoredDumpRecord): string => new TextDecoder().decode(record.events);
 
-const lines = (record: StoredDumpRunRecord): DumpEvent[] =>
+const lines = (record: StoredDumpRecord): DumpEvent[] =>
   ndjson(record).split('\n').filter(Boolean).map(line => JSON.parse(line) as DumpEvent);
 
 test('a run under a key with retention stores its whole event stream as NDJSON', async () => {

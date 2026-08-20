@@ -2,6 +2,12 @@ export interface AnthropicMessagesUsageServerToolUse {
   web_search_requests?: number;
 }
 
+// The beta usage union includes model attempts, advisor attempts, and
+// compaction entries, and remains additively extensible. Floway carries it
+// opaquely: nothing reads inside an entry and nothing writes one, so the array
+// an upstream sent travels by reference from the event to the snapshot rather
+// than being deep-copied at each of the three hops that touch it.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
 export interface AnthropicMessagesUsageIteration {
   type: string;
   model?: string;
@@ -15,13 +21,6 @@ export interface AnthropicMessagesUsageIteration {
   } | null;
   [key: string]: unknown;
 }
-
-// The beta usage union includes model attempts, advisor attempts, and
-// compaction entries, and remains additively extensible. Floway only needs an
-// isolated opaque snapshot, not a closed projection of those variants.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
-export const cloneAnthropicMessagesUsageIterations = (iterations: AnthropicMessagesUsageIteration[] | null): AnthropicMessagesUsageIteration[] | null =>
-  iterations === null ? null : structuredClone(iterations);
 
 export interface AnthropicMessagesCacheCreationTtlTokens {
   ephemeral_5m_input_tokens?: number;
@@ -101,7 +100,7 @@ export const anthropicMessagesUsageSnapshot = (usage?: AnthropicMessagesUsageDel
       ...(present(usage.output_tokens_details) ? { output_tokens_details: { ...usage.output_tokens_details } } : {}),
       ...(present(usage.service_tier) ? { service_tier: usage.service_tier } : {}),
       ...(present(usage.speed) ? { speed: usage.speed } : {}),
-      ...(usage.iterations === undefined ? {} : { iterations: cloneAnthropicMessagesUsageIterations(usage.iterations) }),
+      ...(usage.iterations === undefined ? {} : { iterations: usage.iterations }),
     };
 
 export const mergeAnthropicMessagesUsageSnapshot = (

@@ -13,16 +13,16 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
 import type { GatewayServices } from './services.ts';
 import { settleBillable } from './settlement.ts';
-import { openRunDump } from '../../dump/run-sink.ts';
+import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { writeSSEFrames } from '../shared/sse.ts';
 import { run, type Deferred, type Pipeline } from '@floway-dev/pipeline';
-import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { sseCommentFrame, type SseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
@@ -69,23 +69,44 @@ export const openPrologue = (
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
 ): Prologue => {
+  const options_ = gatewayCtxOptions(c, ingress, options);
+  return prologueFor(createGatewayCtxFromHono(c, options_), ingress, runDumpOf(options_));
+};
+
+/** What a run's request context is built from. Exported because a family whose context is a
+ *  richer one builds that instead, and both have to be built from the same read of the body:
+ *  `takeRequestBody` empties what it is given, so calling this twice would hand the dump an
+ *  empty buffer the second time. */
+export const gatewayCtxOptions = (
+  c: AuthedContext,
+  ingress: Ingress,
+  options: { readonly wantsStream: boolean; readonly model?: string },
+): CreateGatewayCtxOptions => {
   const backgroundScheduler = backgroundSchedulerFromContext(c);
   // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
   // stage, both directions — so it opens that recording here instead of the edge one, and
   // no turn is ever written twice.
-  const runDump = openRunDump(
+  const dump = openRunDump(
     apiKeyFromContext(c),
     { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
     backgroundScheduler,
   );
-  const gateway = createGatewayCtxFromHono(c, {
+  return {
     wantsStream: options.wantsStream,
     ...(options.model === undefined ? {} : { model: options.model }),
     requestBody: takeRequestBody(ingress.body),
     backgroundScheduler,
-    dump: runDump,
-  });
+    dump,
+  };
+};
 
+/** The run recording those options opened, for the caller that has to hand its sink to
+ *  `run`. A context carries the recording; only the prologue needs the sink. */
+export const runDumpOf = (options: CreateGatewayCtxOptions): RunDump | null =>
+  (options.dump ?? null) as RunDump | null;
+
+/** The services every run is given, over whichever context it was opened with. */
+export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunDump | null = null): Prologue => {
   const live = new Map<string, ModelCandidate>();
 
   return {
@@ -127,6 +148,10 @@ export type Rendered =
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
     readonly frames: AsyncIterable<SseFrame>;
+    /** What is written on an idle connection to keep it open. A comment is invisible to any
+     *  client, but a protocol that defines its own idle event is read by clients that expect
+     *  one — Anthropic's `ping` is a frame Claude Code sees — so the family names it. */
+    readonly keepAlive?: SseWritableFrame;
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
@@ -226,7 +251,7 @@ const serveRun = async <
     return finalizeGatewayResponse(prologue.gateway, streamSSE(c, async stream => {
       try {
         await writeSSEFrames(stream, answer.frames, {
-          keepAlive: { frame: sseCommentFrame('keepalive') },
+          keepAlive: { frame: answer.keepAlive ?? sseCommentFrame('keepalive') },
           ...(prologue.gateway.downstreamAbortController === undefined
             ? {}
             : { downstreamAbortController: prologue.gateway.downstreamAbortController }),

@@ -220,7 +220,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 });
 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
-  installRepo();
+  const repo = installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
@@ -237,6 +237,15 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+
+  // A measurement goes through settlement like every other run. It names no billed entity —
+  // nothing here is billable today — but the row is written, because "count_tokens is exempt
+  // from billing" would hard-code today's commercial arrangement into the architecture. An
+  // upstream that began charging would provide a non-empty set and nothing else would change.
+  await flushBackground();
+  assertEquals(await repo.usage.listAll(), []);
+  // No latency to report either: nothing dialled an upstream on a path that measures.
+  assertEquals(await repo.performance.listAll(), []);
 });
 
 test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
@@ -296,10 +305,10 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
 });
 
-test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {
+test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the anthropic-messages-generate picker', async () => {
   installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
-  // anthropicMessagesGenerateTarget (messages > responses > openai-chat-completions) rejects
+  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // anthropicMessagesGenerateTarget (messages > responses > chat-completions) rejects
   // it, leaving zero viable candidates, and with sawModel=true the serve
   // renders model-unsupported as a 400.
   queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);

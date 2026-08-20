@@ -3,15 +3,17 @@ import { test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
 import type { DumpMetadata, DumpRecord, StoredDumpRecord } from '../../src/dump/types.ts';
-import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, fakeRunRecord, installDumpStubs } from '../dump/test-fixtures.ts';
+import { fakeMeta as baseFakeMeta, fakeRunRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
   baseFakeMeta({ id, completedAt, startedAt: completedAt - 1 });
 
+// A record with an empty stream: these cases are about the list and the row, not about what a
+// run put in it.
 const fakeRecord = (id: string, completedAt: number): StoredDumpRecord =>
-  baseFakeRecord({ id, completedAt, startedAt: completedAt - 1 });
+  fakeRunRecord([], { id, completedAt, startedAt: completedAt - 1 });
 
 test('GET /api/dump/keys/:keyId/records lists newest-first', async () => {
   const { repo, apiKey } = await setupAppTest();
@@ -80,14 +82,12 @@ test('GET /api/dump/keys/:keyId/records/:recordId returns the rehydrated record'
   assertEquals(body.meta.id, '01HZZ0000000000000000000XX');
 });
 
-// One list, both shapes — the metadata is common, so the dashboard's list says
-// nothing about which mechanism served a turn — and a detail fetch hands each
-// one back as what it is.
-test('GET /api/dump/keys/:keyId/records serves a run record beside an edge one', async () => {
+// The list is metadata and the detail is the run's own event stream. Both come from the same
+// row, which is what lets the dashboard list a turn without opening it.
+test('GET /api/dump/keys/:keyId/records serves the run a record holds', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000EDGE', 1000));
   stubs.seed(apiKey.id, fakeRunRecord(
     [
       { type: 'stage.entered', stageId: 1, name: 'serve', parentStageId: null, facts: { 'request.payload': { model: 'm' } } },
@@ -99,20 +99,14 @@ test('GET /api/dump/keys/:keyId/records serves a run record beside an edge one',
   const listed = await requestApp(`/api/dump/keys/${apiKey.id}/records`, { headers: { 'x-api-key': apiKey.key } });
   assertEquals(listed.status, 200);
   const { records } = await listed.json() as { records: DumpMetadata[] };
-  assertEquals(records.map(meta => meta.id), ['01HZZ00000000000000000RUN', '01HZZ0000000000000000EDGE']);
+  assertEquals(records.map(meta => meta.id), ['01HZZ00000000000000000RUN']);
 
   const run = await requestApp(`/api/dump/keys/${apiKey.id}/records/01HZZ00000000000000000RUN`, { headers: { 'x-api-key': apiKey.key } });
   const runBody = await run.json() as DumpRecord;
-  if (runBody.shape !== 'run') throw new Error(`expected the run shape, got ${runBody.shape}`);
   // The object space rides with the events that reference it, so the `object`
   // event carrying the payload arrives before the entry that points at it.
   assertEquals(runBody.events.trimEnd().split('\n').map(line => (JSON.parse(line) as { type: string }).type),
     ['object', 'stage.entered', 'stage.leaved']);
-
-  const edge = await requestApp(`/api/dump/keys/${apiKey.id}/records/01HZZ0000000000000000EDGE`, { headers: { 'x-api-key': apiKey.key } });
-  const edgeBody = await edge.json() as DumpRecord;
-  if (edgeBody.shape !== 'edge') throw new Error(`expected the edge shape, got ${edgeBody.shape}`);
-  assertEquals(edgeBody.request.method, 'POST');
 });
 
 test('GET /api/dump/keys/:keyId/records/:recordId 404s on unknown id', async () => {

@@ -23,7 +23,7 @@ test('drops a single billing block as system[0] with the pinned CLI version and 
     messages: [{ role: 'user', content: 'hello world' }],
   });
 
-  await injectBillingBlock(ctx, {}, okEvents);
+  await injectBillingBlock(ctx, okEvents);
 
   const system = ctx.payload.system;
   if (!Array.isArray(system)) throw new Error('expected system to be an array');
@@ -46,7 +46,7 @@ test('overwrites any pre-existing system array (hoist already ran)', async () =>
     system: [{ type: 'text', text: 'stale leftover' } satisfies AnthropicMessagesTextBlock],
   });
 
-  await injectBillingBlock(ctx, {}, okEvents);
+  await injectBillingBlock(ctx, okEvents);
 
   const system = ctx.payload.system;
   if (!Array.isArray(system)) throw new Error('expected system to be an array');

@@ -29,7 +29,6 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
 export const hoistUserSystemToMessages = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const system: string | AnthropicMessagesTextBlock[] | undefined = ctx.payload.system;

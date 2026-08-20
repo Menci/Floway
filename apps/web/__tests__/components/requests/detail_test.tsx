@@ -21,24 +21,7 @@ const meta: DumpMetadata = {
   error: null,
 };
 
-const edgeRecord: DumpRecord = {
-  shape: 'edge',
-  meta,
-  request: {
-    method: 'POST',
-    path: '/v1/embeddings',
-    headers: [['content-type', 'application/json']],
-    body: { encoding: 'utf8', data: '{"input":"hi"}' },
-  },
-  response: {
-    status: 200,
-    headers: [['content-type', 'application/json']],
-    body: { type: 'bytes', body: { encoding: 'utf8', data: '{"object":"list"}' } },
-  },
-};
-
 const runRecord: DumpRecord = {
-  shape: 'run',
   meta,
   events: '{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'
     + '{"type":"object","fromObjectId":1,"nodes":[{"model":"text-embedding-3-small"}]}\n'
@@ -48,33 +31,24 @@ const runRecord: DumpRecord = {
 const panel = (record: DumpRecord) =>
   renderInApp(<RequestDetailPanel collected={null} error={null} record={record} recordId={record.meta.id} retainLastRecord={false} />);
 
-// The shape follows the endpoint, so the panel is handed both and has to tell
-// them apart: an endpoint on the onion is recorded as its two edges, a pipelined
-// one as the whole run.
+// A record is a whole run — every stage, both directions — and the panel draws its event
+// stream, which is the whole of what it holds.
 describe('request detail panel', () => {
-  it('draws the two edges of an edge-shaped record', () => {
-    const { container } = panel(edgeRecord);
-    const headings = [...container.querySelectorAll('h3')].map(node => node.textContent);
-    expect(headings).toEqual(['Request', 'Request body', 'Response', 'Response body']);
-    expect(container.textContent).toContain('"input": "hi"');
-    expect(container.textContent).toContain('"object": "list"');
-  });
-
-  it('draws the event stream of a run-shaped record', () => {
+  it('draws the event stream a record holds', () => {
     const { container } = panel(runRecord);
     const headings = [...container.querySelectorAll('h3')].map(node => node.textContent);
-    expect(headings).toEqual(['Run']);
+    // The run's own events, and the one value the frames in them add up to.
+    expect(headings).toEqual(['Run', 'Collected']);
     // One block per NDJSON line, each labelled with the event's own kind.
     expect([...container.querySelectorAll('pre')]).toHaveLength(3);
     expect(container.textContent).toContain('stage.entered');
     expect(container.textContent).toContain('response.http.status');
-    // Nothing from the edge shape leaks into it: a run has no header tables and
-    // no separate request body.
+    // The stream is the whole panel: there are no header tables and no separate body section.
     expect(container.querySelector('table')).toBe(null);
   });
 
   it('says so when a run recorded no events at all', () => {
-    const { container } = panel({ shape: 'run', meta, events: '' });
+    const { container } = panel({ meta, events: '' });
     expect(container.textContent).toContain('This run recorded no events.');
   });
 });

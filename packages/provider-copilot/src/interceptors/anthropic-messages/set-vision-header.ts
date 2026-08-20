@@ -30,7 +30,6 @@ const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | Anth
 
 export const withVisionHeaderSet = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   if (ctx.payload.messages.some(message => contentHasImage(message.content))) {

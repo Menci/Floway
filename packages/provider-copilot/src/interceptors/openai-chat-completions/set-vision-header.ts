@@ -9,7 +9,7 @@ import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/cd0d0182eb4b9bf68a3376dc79728afa7f42ce07/src/services/copilot/create-chat-completions.ts#L28-L49
  */
-export const withVisionHeaderSet: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
+export const withVisionHeaderSet: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, run) => {
   const hasImage = ctx.payload.messages.some(
     message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'),
   );

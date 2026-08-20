@@ -59,7 +59,6 @@ const countCacheBreakpoints = (payload: AnthropicMessagesPayload): number => {
 // when this runs.
 export const injectDefaultTemplate = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   if (!Array.isArray(ctx.payload.system)) {

@@ -14,7 +14,6 @@ import type { OpenAIResponsesBoundaryCtx } from './types.ts';
  */
 export const withServiceTierStripped = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const { service_tier: _, ...payload } = ctx.payload;

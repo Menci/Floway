@@ -1,6 +1,6 @@
 import type { DumpBroker } from '../../src/dump/broker.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
+import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
 import { encodeRun, toNdjson, type Event } from '@floway-dev/pipeline';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({
@@ -21,38 +21,21 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
   ...overrides,
 });
 
-export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpEdgeRecord => ({
-  shape: 'edge',
-  meta: fakeMeta(overrides),
-  request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
-  response: { status: 200, headers: [], body: { type: 'none' } },
-});
-
 // A run record holds one NDJSON stream and no edge halves, so a fixture takes
 // the events a run emitted and encodes them the way the sink does — object
 // space, folding and all.
-export const fakeRunRecord = (events: readonly Event[], overrides: Partial<DumpMetadata> = {}): StoredDumpRunRecord => ({
-  shape: 'run',
+export const fakeRunRecord = (events: readonly Event[], overrides: Partial<DumpMetadata> = {}): StoredDumpRecord => ({
   meta: fakeMeta(overrides),
   events: new TextEncoder().encode(toNdjson(encodeRun(events))),
 });
 
-// A reader hands back whichever shape was written, so a test asserting on the
-// request or response halves says which one it wrote.
-export const edgeRecordOf = (record: StoredDumpRecord | null | undefined): StoredDumpEdgeRecord => {
+export const runRecordOf = (record: StoredDumpRecord | null | undefined): StoredDumpRecord => {
   if (!record) throw new Error('expected a stored dump record');
-  if (record.shape !== 'edge') throw new Error(`expected the edge shape, got ${record.shape}`);
-  return record;
-};
-
-export const runRecordOf = (record: StoredDumpRecord | null | undefined): StoredDumpRunRecord => {
-  if (!record) throw new Error('expected a stored dump record');
-  if (record.shape !== 'run') throw new Error(`expected the run shape, got ${record.shape}`);
   return record;
 };
 
 /** The events a run recorded, decoded from the NDJSON one line at a time. */
-export const eventsOf = (record: StoredDumpRunRecord): readonly Record<string, unknown>[] =>
+export const eventsOf = (record: StoredDumpRecord): readonly Record<string, unknown>[] =>
   new TextDecoder().decode(record.events).split('\n').filter(line => line.length > 0)
     .map(line => JSON.parse(line) as Record<string, unknown>);
 
@@ -85,19 +68,11 @@ export const installDumpStubs = (
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
-    async prepareRequestBody(body) {
-      return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength };
-    },
     async put(keyId, record) {
       if (throws.put) throw throws.put;
-      // The run shape is already stored-shaped; only the edge shape carries a
-      // separately prepared request body to rehydrate.
-      if (record.shape === 'edge' && record.request.body.encoding !== 'identity') {
-        throw new Error('dump test stub expected identity request body');
-      }
-      const storedRecord: StoredDumpRecord = record.shape === 'run'
-        ? record
-        : { ...record, request: { ...record.request, body: record.request.body.bytes } };
+      // A record is already stored-shaped: its stream is encoded once the run is over, so there
+      // is nothing prepared ahead of the write to rehydrate.
+      const storedRecord: StoredDumpRecord = record;
       stored.push({ keyId, record: storedRecord });
       const list = records.get(keyId) ?? [];
       list.unshift(storedRecord);

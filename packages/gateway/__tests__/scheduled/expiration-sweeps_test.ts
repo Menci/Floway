@@ -38,7 +38,6 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
 });
 
 const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  shape: 'edge',
   meta: {
     id,
     startedAt: completedAt - 1,
@@ -50,18 +49,14 @@ const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
     model: 'gpt-test',
     inputTokens: null,
     outputTokens: null,
-    requestBytes: 0,
-    responseBytes: 0,
+    requestBytes: 1,
+    responseBytes: 1,
     durationMs: 1,
     error: null,
   },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array(), decodedByteLength: 0 },
-  },
-  response: { status: 200, headers: [], body: { type: 'none' } },
+  // One line is enough: what these exercise is the row, its file and the sweep that retires
+  // both, not what a run put in the stream.
+  events: new TextEncoder().encode('{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'),
 });
 
 test('one fair driver drains bounded OpenAI Responses and dump backlogs', async () => {

@@ -25,7 +25,7 @@ type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 /** Everything about a candidate that is data. The live half — the provider instance, the
  *  fetcher, the models cache — stays out of the record and is looked back up by the
  *  resolver service at the moment of the call. */
-const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
+export const selectorFor = (candidate: ModelCandidate): AttemptSelector => ({
   upstreamId: candidate.provider.upstreamId,
   modelId: candidate.model.id,
   flags: [...providerModelOf(candidate).enabledFlags],

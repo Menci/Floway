@@ -53,7 +53,7 @@ const runStream = async (
   const iterable = Symbol.asyncIterator in frames
     ? frames as AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEvent>>
     : (async function* () { yield* frames as ProtocolFrame<OpenAIResponsesStreamEvent>[]; })();
-  const result = await withCopilotOpenAIResponsesItemIdMembrane(ctx, {}, () => Promise.resolve({
+  const result = await withCopilotOpenAIResponsesItemIdMembrane(ctx, () => Promise.resolve({
     action: 'generate',
     ok: true,
     events: iterable,
@@ -404,7 +404,7 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
   ];
   const ctx = invocation(input);
   let wireInput: OpenAIResponsesInputItem[] | undefined;
-  await withCopilotOpenAIResponsesItemIdMembrane(ctx, {}, () => {
+  await withCopilotOpenAIResponsesItemIdMembrane(ctx, () => {
     wireInput = structuredClone(ctx.payload.input);
     return Promise.resolve({
       action: 'generate',
@@ -445,7 +445,7 @@ test('rejects conflicting ids carried by one input item', async () => {
     ],
   }]);
 
-  await expect(withCopilotOpenAIResponsesItemIdMembrane(ctx, {}, () => {
+  await expect(withCopilotOpenAIResponsesItemIdMembrane(ctx, () => {
     throw new Error('must not reach upstream');
   })).rejects.toThrow(/conflicting upstream ids/);
 });
@@ -455,7 +455,7 @@ test('normalizes the generated compaction item without touching retained compact
     { type: 'message', id: 'msg_retained', status: 'completed', role: 'assistant', content: [] },
     { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
   ]);
-  const result = await withCopilotOpenAIResponsesItemIdMembrane(invocation(), {}, () => Promise.resolve({
+  const result = await withCopilotOpenAIResponsesItemIdMembrane(invocation(), () => Promise.resolve({
     action: 'compact',
     ok: true,
     result: compactResult,

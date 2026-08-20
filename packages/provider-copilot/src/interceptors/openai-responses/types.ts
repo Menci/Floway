@@ -22,6 +22,5 @@ export interface OpenAIResponsesBoundaryCtx {
 // abort, item-id membrane) inspect the result variant directly.
 export type CopilotOpenAIResponsesBoundaryInterceptor = Interceptor<
   OpenAIResponsesBoundaryCtx,
-  object,
   ProviderOpenAIResponsesResult
 >;

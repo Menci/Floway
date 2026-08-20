@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -52,7 +50,7 @@ test('strips scope and ttl from system, tools, and message content blocks while 
     ],
   });
 
-  await withCacheControlExtensionsStripped(ctx, stubRequest, okEvents);
+  await withCacheControlExtensionsStripped(ctx, okEvents);
 
   assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }]);
   assertEquals(ctx.payload.tools, [{ name: 't', input_schema: { type: 'object' }, cache_control: { type: 'ephemeral' } }]);
@@ -74,7 +72,7 @@ test('deletes cache_control entirely if no recognised field survives the strip',
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  await withCacheControlExtensionsStripped(ctx, stubRequest, okEvents);
+  await withCacheControlExtensionsStripped(ctx, okEvents);
 
   assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys' }]);
 });
@@ -88,7 +86,7 @@ test('no-op when no cache_control is present anywhere', async () => {
     tools: [{ name: 't', input_schema: { type: 'object' } }],
   });
 
-  await withCacheControlExtensionsStripped(ctx, stubRequest, okEvents);
+  await withCacheControlExtensionsStripped(ctx, okEvents);
 
   assertEquals(ctx.payload.system, 'plain system');
   assertEquals(ctx.payload.tools, [{ name: 't', input_schema: { type: 'object' } }]);

@@ -10,7 +10,7 @@
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { Secret, Owned } from '@floway-dev/pipeline';
-import type { PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { isJsonObject, renderErrorEnvelope, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 /** Everything about an attempt that is data: which upstream, which model row on it, and the
@@ -42,13 +42,55 @@ export interface BillableEntity {
 export interface Failure {
   readonly status: number;
   readonly message: string;
-  /** The upstream's own body, when there was one. A client is not owed the upstream's
-   *  exact bytes, but a dump reader is owed what actually came back. */
+  /** The upstream's own body, parsed, when it sent one this protocol can carry. It is what the
+   *  client is answered with — the refusing party's words rather than a restatement of them —
+   *  and a body that was not JSON at all leaves this absent, because there is nothing to carry
+   *  and an envelope minted from the status and the message is what stands in for it. */
   readonly body?: unknown;
+  /** What the gateway itself would write, when the refusal is its own. A protocol's envelope
+   *  carries more than a status and a sentence — which field was at fault, which code names
+   *  the condition — and only whoever refused knows those, so it is written where the refusal
+   *  is made rather than derived from the status where it is rendered. */
+  readonly envelope?: Record<string, unknown>;
 }
 
 export const isFailure = (value: unknown): value is Failure =>
   typeof value === 'object' && value !== null && 'status' in value && 'message' in value;
+
+/** What a failure is sent as. The two travel together because for some protocols they are one
+ *  decision: a Google-RPC envelope states its code inside the body, so a status chosen apart
+ *  from the envelope is a second answer to the same question. */
+export interface RenderedFailure {
+  readonly body: Record<string, unknown>;
+  readonly status: number;
+}
+
+/**
+ * What a client is sent for a failure, in three tiers, so no edge has to remember them.
+ *
+ * An upstream that sent a body is forwarded it — the answer to "why was I refused" is the
+ * refusing party's to give. A refusal the gateway made itself is written by whoever made it,
+ * because only there is it known which field was at fault and which code names the condition.
+ * The protocol's own rendering of a status and a sentence is what is left when neither holds.
+ *
+ * Only that third tier is the gateway's to word, and it is therefore the only one that may
+ * answer with a status other than the failure's: a forwarded body already states its own, and
+ * a refusal that wrote its own envelope wrote it against the status it refused with. So `mint`
+ * hands back both, and a protocol cannot state a code in the body that the response contradicts.
+ */
+export const renderFailure = (failure: Failure, mint: (failure: Failure) => RenderedFailure): RenderedFailure => {
+  if (isJsonObject(failure.body)) return { body: failure.body, status: failure.status };
+  if (failure.envelope !== undefined) return { body: failure.envelope, status: failure.status };
+  return mint(failure);
+};
+
+/** The third tier for every protocol whose envelope says nothing about the status — which is
+ *  all of them but Gemini generateContent. */
+export const mintedAs = (envelope: (failure: Failure) => Record<string, unknown>) =>
+  (failure: Failure): RenderedFailure => ({ body: envelope(failure), status: failure.status });
+
+/** The third tier for the OpenAI-shaped protocols, which is the same envelope in all three. */
+export const mintedErrorEnvelope = mintedAs(failure => renderErrorEnvelope(failure.message));
 
 export interface GatewayFacts {
   /** What the client sent, before anything read it. Every family hands these over, because

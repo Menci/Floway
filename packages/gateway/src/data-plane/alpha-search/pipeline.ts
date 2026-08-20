@@ -198,8 +198,8 @@ const executeSearchOperations = defineStage<
       filters: facts['request.search.filters'],
       apiKeyId: use.gateway.apiKeyId,
       pageCache: new Map(),
-      // Codex renders `output` as plain text; the search-action sources list is a Responses
-      // protocol concern with no place here.
+      // Codex renders `output` as plain text; the search-action sources list is an OpenAI
+      // Responses protocol concern with no place here.
       includeSearchActionSources: false,
       ...(use.gateway.abortSignal === undefined ? {} : { signal: use.gateway.abortSignal }),
     };

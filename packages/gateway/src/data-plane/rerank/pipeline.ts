@@ -12,7 +12,7 @@
 
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
 import { failover, resolveCandidates } from '../pipeline/stages.ts';
@@ -22,7 +22,7 @@ import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 import { defineStage, move, compose } from '@floway-dev/pipeline';
-import { parseDecimalString, renderErrorEnvelope, upstreamErrorMessage, type RerankProtocol, type RerankSourceProtocol } from '@floway-dev/protocols/common';
+import { parseDecimalString, upstreamErrorMessage, type RerankProtocol, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import {
   parseRerankResponse,
   parseRerankUsage,
@@ -85,14 +85,15 @@ const emitRerank = defineStage<
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
     const forClient = forwardable.length === headers.length ? headers : move(forwardable);
     if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.rerank.rendered': move(renderErrorEnvelope(answer.message, answer.body)),
+        'response.rerank.rendered': move(failure.body),
         // The upstream's own status, or the gateway's own when it refused before dialling.
         // A client is not owed the upstream's exact bytes; it is owed the truth about what
         // happened, and a 429 arriving as a 200 is not that.
-        'response.http.status': answer.status,
+        'response.http.status': failure.status,
       };
     }
     // Translating can fail on an answer that parsed: a result may index a document the
@@ -108,11 +109,17 @@ const emitRerank = defineStage<
         back['request.rerank.canonical'],
       );
     } catch (error) {
+      // The gateway's own failure, through the same three tiers as any other: it has neither an
+      // upstream body nor an envelope of its own, so what a client is sent is the mint.
+      const failure = renderFailure(
+        { status: 502, message: error instanceof Error ? error.message : String(error) },
+        mintedErrorEnvelope,
+      );
       return {
         ...rest,
         'response.http.headers': forClient,
-        'response.rerank.rendered': move(renderErrorEnvelope(error instanceof Error ? error.message : String(error))),
-        'response.http.status': 502,
+        'response.rerank.rendered': move(failure.body),
+        'response.http.status': failure.status,
       };
     }
     return {

@@ -9,6 +9,7 @@ import {
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
+import { withIndexesChanged, withKeysChanged } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -134,36 +135,34 @@ const materializeOpenAIResponsesPayload = (
   projectionsByItem: ReadonlyMap<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>,
 ): CanonicalOpenAIResponsesPayload => {
   if (projectionsByItem.size === 0) return payload;
+  // Rebuilt the way its three sibling families are: an item no projection touches rides through
+  // by identity, and what one candidate is owed differs from the next by the slots a projection
+  // actually spoke about.
   const input = payload.input.flatMap((item, itemIndex): OpenAIResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
     if (projections === undefined) return [item];
     if (projections === null) return [];
 
-    const replacement = { ...item } as OpenAIResponsesInputItem & Record<string, unknown>;
-    for (const { location, projection } of projections) {
-      if (location.contentIndex !== undefined) continue;
-      if (projection.kind === 'preserve') replacement[location.slot] = projection.value;
-      else delete replacement[location.slot];
-    }
+    const slots = Object.fromEntries(projections.flatMap(({ location, projection }) =>
+      location.contentIndex !== undefined
+        ? []
+        : [[location.slot, projection.kind === 'preserve' ? projection.value : undefined] as const]));
+    const rewritten = withKeysChanged(item, slots);
+    if (item.type !== 'agent_message') return [rewritten];
 
-    if (item.type === 'agent_message') {
-      const nested = new Map(projections.flatMap(projection =>
-        projection.location.contentIndex === undefined ? [] : [[projection.location.contentIndex, projection] as const]));
-      if (nested.size > 0) {
-        const agentMessage = replacement as Extract<OpenAIResponsesInputItem, { type: 'agent_message' }>;
-        agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
-          const projected = nested.get(contentIndex);
-          if (projected === undefined) return [content];
-          return projected.projection.kind === 'preserve'
-            ? [{ ...content, encrypted_content: projected.projection.value }]
-            : [];
-        });
-      }
-    }
-
-    return [replacement];
+    const content = (rewritten as Extract<OpenAIResponsesInputItem, { type: 'agent_message' }>).content;
+    const nested = new Map(projections.flatMap(({ location, projection }) =>
+      location.contentIndex === undefined
+        ? []
+        : [[
+            location.contentIndex,
+            projection.kind === 'preserve'
+              ? { ...content[location.contentIndex], encrypted_content: projection.value }
+              : null,
+          ] as const]));
+    return nested.size === 0 ? [rewritten] : [withKeysChanged(rewritten, { content: withIndexesChanged(content, nested) })];
   });
-  return { ...payload, input };
+  return withKeysChanged(payload, { input });
 };
 
 const evaluateOpenAIResponsesCandidate = (

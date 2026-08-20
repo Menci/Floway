@@ -268,7 +268,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
 // Dual-path coverage: usage + performance + dump telemetry must land
 // equivalently on both the non-streaming JSON and the streaming SSE
 // branches. The handler does not force `stream: true` upstream the way
-// openai-chat-completions does (no interceptor framework to feed), so the two
+// openai-chat-completions does (no chat chain to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
 test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
@@ -317,10 +317,9 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 7);
   assertEquals(dump.meta.outputTokens, 2);
-  // The shape follows the endpoint: a pipelined turn is recorded as its whole run, so what
-  // is stored is the event stream rather than the two edges. The metadata is common to both,
-  // which is what lets the dashboard list them together.
-  assertEquals(runRecordOf(dumpStubs.stored[0]!.record).shape, 'run');
+  // A turn is recorded as its whole run, so what is stored is the event stream and the metadata
+  // beside it — which is what lets the dashboard list a turn without opening it.
+  assertEquals(eventsOf(runRecordOf(dumpStubs.stored[0]!.record)).length > 0, true);
 });
 
 // A stream that stops before its terminator did not produce what it said it would, and the

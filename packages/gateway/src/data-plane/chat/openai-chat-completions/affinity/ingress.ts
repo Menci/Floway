@@ -1,4 +1,5 @@
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { withKeysChanged } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
@@ -16,14 +17,18 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
+      // Rebuilt rather than cloned: the payload is the record's, so it is frozen, and a message
+      // no projection touches rides through by identity. What one candidate is owed differs from
+      // what the next is by a handful of objects, not by a copy of the conversation.
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        for (const { index, projection } of projections) {
-          const message = candidatePayload.messages[index];
-          if (projection.kind === 'preserve') message.reasoning_opaque = projection.value;
-          else if (projection.kind === 'remove') delete message.reasoning_opaque;
-        }
-        return candidatePayload;
+        const rewritten = new Map(projections.map(({ index, projection }) => [
+          index,
+          withKeysChanged(payload.messages[index], {
+            reasoning_opaque: projection.kind === 'preserve' ? projection.value : undefined,
+          }),
+        ]));
+        const messages = payload.messages.map((message, index) => rewritten.get(index) ?? message);
+        return withKeysChanged(payload, { messages });
       },
     };
   });

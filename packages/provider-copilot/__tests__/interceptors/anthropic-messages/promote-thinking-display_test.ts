@@ -31,8 +31,6 @@ const makeCtx = (
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEvent>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 test('resolveAnthropicMessagesDownstreamThinkingDisplay exposes 4.7+ omitted by default and older Claude as summarized', () => {
@@ -85,7 +83,7 @@ test('resolveAnthropicMessagesDownstreamThinkingDisplay ignores unknown explicit
 test('withThinkingDisplayPromoted sends summarized upstream when thinking display is omitted', async () => {
   const ctx = makeCtx({ type: 'adaptive' });
 
-  await withThinkingDisplayPromoted(ctx, stubRequest, () =>
+  await withThinkingDisplayPromoted(ctx, () =>
     Promise.resolve({
       type: 'internal-error',
       status: 418,
@@ -105,8 +103,8 @@ test('withThinkingDisplayPromoted overrides omitted but preserves full', async (
   const omittedCtx = makeCtx({ type: 'adaptive', display: 'omitted' });
   const fullCtx = makeCtx({ type: 'adaptive', display: 'full' });
 
-  await withThinkingDisplayPromoted(omittedCtx, stubRequest, okEvents);
-  await withThinkingDisplayPromoted(fullCtx, stubRequest, okEvents);
+  await withThinkingDisplayPromoted(omittedCtx, okEvents);
+  await withThinkingDisplayPromoted(fullCtx, okEvents);
 
   assertEquals(omittedCtx.payload.thinking?.display, 'summarized');
   assertEquals(fullCtx.payload.thinking?.display, 'full');
@@ -116,8 +114,8 @@ test('withThinkingDisplayPromoted leaves disabled or absent thinking untouched',
   const disabledCtx = makeCtx({ type: 'disabled' });
   const absentCtx = makeCtx(undefined);
 
-  await withThinkingDisplayPromoted(disabledCtx, stubRequest, okEvents);
-  await withThinkingDisplayPromoted(absentCtx, stubRequest, okEvents);
+  await withThinkingDisplayPromoted(disabledCtx, okEvents);
+  await withThinkingDisplayPromoted(absentCtx, okEvents);
 
   assertEquals(disabledCtx.payload.thinking, { type: 'disabled' });
   assertEquals(absentCtx.payload.thinking, undefined);
@@ -127,7 +125,7 @@ test('withThinkingDisplayPromoted leaves unknown display values for upstream val
   const ctx = makeCtx({ type: 'adaptive' });
   (ctx.payload.thinking as { display?: unknown }).display = 'omit';
 
-  await withThinkingDisplayPromoted(ctx, stubRequest, okEvents);
+  await withThinkingDisplayPromoted(ctx, okEvents);
 
   assertEquals((ctx.payload.thinking as { display?: unknown }).display, 'omit');
 });
@@ -135,7 +133,7 @@ test('withThinkingDisplayPromoted leaves unknown display values for upstream val
 test('withThinkingDisplayPromoted simulates omitted display on protocol events', async () => {
   const ctx = makeCtx({ type: 'adaptive' });
 
-  const result = await withThinkingDisplayPromoted(ctx, stubRequest, () =>
+  const result = await withThinkingDisplayPromoted(ctx, () =>
     Promise.resolve(
       eventResult(
         (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEvent>> {

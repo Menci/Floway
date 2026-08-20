@@ -9,8 +9,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -47,7 +45,7 @@ test('rewrites a base64 image_url data URL to a WebP data URL', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(imageUrl(ctx.payload), 'data:image/webp;base64,AQID');
   assertEquals(imageUrl(payload), 'data:image/png;base64,AAAA');
@@ -79,7 +77,7 @@ test('leaves remote https image references untouched', async () => {
   };
   const ctx = invocation(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(imageUrl(ctx.payload), 'https://example.com/cat.png');
   assert(ctx.payload === payload);
@@ -114,7 +112,7 @@ test('compresses each unique inline image only once when the same data URL repea
     ],
   });
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, okEvents);
 
   assertEquals(calls, 2);
 });

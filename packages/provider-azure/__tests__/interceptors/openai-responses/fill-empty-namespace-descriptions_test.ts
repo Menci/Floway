@@ -36,7 +36,7 @@ test('fills Codex OpenAI Responses Lite namespace descriptions before Azure disp
     }],
   });
 
-  await withEmptyNamespaceDescriptionsFilled(ctx, {}, async () => {});
+  await withEmptyNamespaceDescriptionsFilled(ctx, async () => {});
 
   const [item] = ctx.payload.input;
   if (item?.type !== 'additional_tools') throw new Error('expected additional_tools input');

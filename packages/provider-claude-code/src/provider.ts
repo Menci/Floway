@@ -97,9 +97,8 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
       if (looksShaped) return await terminal();
 
-      return await runInterceptors<AnthropicMessagesBoundaryCtx, object, ProviderStreamResult<AnthropicMessagesStreamEvent>>(
+      return await runInterceptors<AnthropicMessagesBoundaryCtx, ProviderStreamResult<AnthropicMessagesStreamEvent>>(
         ctx,
-        {},
         CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY,
         terminal,
       );

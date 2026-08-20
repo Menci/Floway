@@ -15,7 +15,7 @@ import type { ProviderOpenAIResponsesResult } from '@floway-dev/provider';
 // terminal — the streaming `generate` + non-streaming `compact` dispatch —
 // returns its `ProviderOpenAIResponsesResult` directly without any per-frame
 // lift/lower step.
-export const CODEX_OPENAI_RESPONSES_BOUNDARY: readonly Interceptor<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>[] = [
+export const CODEX_OPENAI_RESPONSES_BOUNDARY: readonly Interceptor<OpenAIResponsesBoundaryCtx, ProviderOpenAIResponsesResult>[] = [
   injectDefaultInstructions,
   stripUnsupportedFields,
 ];

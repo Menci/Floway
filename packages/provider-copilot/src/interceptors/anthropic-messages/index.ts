@@ -45,10 +45,12 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor, CopilotAnthropicMessa
 //   compact-tagged value above — that mirrors the pre-boundary target-side
 //   override.
 //
-// `withAnthropicMessagesWebSearchShim` is intentionally NOT registered here. It runs
-// in the gateway's `anthropicMessagesInterceptors` (filtered by enabled flags); the
-// Copilot provider opts in by listing `anthropic-messages-web-search-shim` in its
-// default flag set (see COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
+// `withAnthropicMessagesWebSearchShim` is intentionally NOT registered here. The shim
+// is the gateway's rather than this provider's — it rewrites Anthropic's
+// native server tool into an ordinary client tool and runs the search itself,
+// which is work no provider boundary does. This provider opts into it by
+// listing `anthropic-messages-web-search-shim` in its default flag set (see
+// COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
 export const COPILOT_ANTHROPIC_MESSAGES_BOUNDARY = [
   rewriteContextWindowError,
   withCompactHeadersSet,

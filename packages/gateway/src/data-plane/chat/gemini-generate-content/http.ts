@@ -1,16 +1,21 @@
-import { translatorInputErrorResult } from './errors.ts';
-import { geminiGenerateContentInternalRpcErrorResponse, geminiGenerateContentRpcErrorResponse, respondGeminiGenerateContent } from './respond.ts';
-import { geminiGenerateContentServe } from './serve.ts';
+// `/v1beta/models/:modelAction`, whose three actions are each served through a pipeline.
+// `:generateContent` and `:streamGenerateContent` are one chain; `:countTokens` is a second
+// operation over the same protocol and is a chain of its own rather than another wire under
+// the first.
+//
+// Each entry is a prologue and an epilogue around that chain: read what the client sent, hand
+// it over, and turn what the run answered with into a response. Everything between is stages.
+
+import { geminiGenerateContentCountTokensPipeline } from './count-tokens.ts';
+import { geminiGenerateContentErrorResponse } from './errors.ts';
+import { geminiGenerateContentServePipeline } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
-import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { isFrames, openPrologue, readIngress, serveThrough, type Ingress } from '../../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
-import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { openChatPrologue } from '../prologue.ts';
+import { move } from '@floway-dev/pipeline';
 import type { GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;
@@ -23,10 +28,14 @@ interface GeminiGenerateContentModelAction {
 // we split on the trailing `:` here so each entry sees just the action and
 // the resolved model id (with a leading `models/` prefix tolerated, as Google
 // SDKs send it).
+/** A refusal about the route itself. It is answered before a model is resolved, so there is no
+ *  attempt to record and nothing for a run to hold beyond the refusal. */
+const unknownAction = (message: string): Response => geminiGenerateContentErrorResponse(404, message);
+
 const parseGeminiGenerateContentModelAction = (modelAction: string | undefined): GeminiGenerateContentModelAction | Response => {
-  if (!modelAction) return geminiGenerateContentRpcErrorResponse(404, 'Missing Gemini model action.');
+  if (!modelAction) return unknownAction('Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
-  if (separator <= 0 || separator === modelAction.length - 1) return geminiGenerateContentRpcErrorResponse(404, `Unknown Gemini model action: ${modelAction}`);
+  if (separator <= 0 || separator === modelAction.length - 1) return unknownAction(`Unknown Gemini model action: ${modelAction}`);
   return { model: modelAction.slice(0, separator).replace(/^models\//, ''), action: modelAction.slice(separator + 1) };
 };
 
@@ -36,53 +45,6 @@ const parseGeminiGenerateContentModelAction = (modelAction: string | undefined):
 const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
   const shape = (body ?? {}) as { contents?: GeminiGenerateContentContent[]; generateContentRequest?: GeminiGenerateContentPayload };
   return shape.generateContentRequest ?? { contents: shape.contents };
-};
-
-const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {
-  try {
-    const raw = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
-    return project(raw);
-  } catch (error) {
-    return geminiGenerateContentInternalRpcErrorResponse(500, error);
-  }
-};
-
-// Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
-// `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
-// HTTP handlers do. `TranslatorInputError` renders a 400 INVALID_ARGUMENT
-// envelope (caller-input violation). A `ProviderModelsUnavailableError`
-// carrying an upstream HTTP body relays that body through the `api-error`
-// path with `source: 'upstream'`; everything else collapses to an
-// `internal-error` result rendered as the Gemini generateContent internal-error envelope
-// (status, code, message, stack, cause, target_api). The throwing-
-// candidate telemetry stamped in serve.ts survives onto the error row via
-// `ctx.attempt.telemetry` so a mid-attempt throw still lands in
-// performance_summary against the throwing upstream.
-const respondWithGeminiGenerateContentError = async (
-  c: AuthedContext,
-  error: unknown,
-  ctx: ChatGatewayCtx,
-  wantsStream: boolean,
-): Promise<Response> => {
-  if (error instanceof TranslatorInputError) {
-    const response = await respondGeminiGenerateContent(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  }
-  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
-    const { status, headers, body } = error.httpResponse;
-    const apiErrorResult = {
-      type: 'api-error' as const,
-      source: 'upstream' as const,
-      status,
-      headers: new Headers(headers),
-      body: new TextEncoder().encode(body),
-    };
-    const response = await respondGeminiGenerateContent(c, apiErrorResult, wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  }
-  const internalResult = internalErrorResult(500, toInternalDebugError(error), ctx.attempt.telemetry);
-  const response = await respondGeminiGenerateContent(c, internalResult, wantsStream, ctx);
-  return finalizeGatewayResponse(ctx, response);
 };
 
 // Single entry for `/v1beta/models/:modelAction`. Splits the model and action
@@ -96,35 +58,85 @@ export const geminiGenerateContentHttp = async (c: AuthedContext): Promise<Respo
   if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
     return await runGeminiGenerateContentGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
   }
-  return geminiGenerateContentRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
+  return unknownAction(`Unknown Gemini model action: ${parsed.action}`);
+};
+
+/** A body the gateway could not read is reported in the words this protocol's own clients
+ *  parse, rather than as a fault of the gateway's. Each action reads the same bytes into its
+ *  own shape, which is why the projection is the caller's. */
+const readRequest = <T>(bytes: Uint8Array, project: (body: unknown) => T): { type: 'ok'; payload: T } | { type: 'invalid'; message: string } => {
+  try {
+    return { type: 'ok', payload: project(JSON.parse(new TextDecoder().decode(bytes)) as unknown) };
+  } catch (error) {
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+/** A request the gateway refused before it reached a pipeline: there is no model to resolve
+ *  and no attempt to make, so there is nothing for a run to record beyond the refusal. */
+const refuse = (c: AuthedContext, ingress: Ingress, message: string): Response => {
+  const refused = openPrologue(c, ingress, { wantsStream: false });
+  refused.gateway.dump?.error('gateway');
+  return finalizeGatewayResponse(refused.gateway, geminiGenerateContentErrorResponse(400, message));
 };
 
 const runGeminiGenerateContentGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const payload = parseGeminiGenerateContentBodyBytes(requestBody, body => body as GeminiGenerateContentPayload);
-  if (payload instanceof Response) return payload;
+  const ingress = await readIngress(c);
+  const request = readRequest(ingress.body.bytes, (body): GeminiGenerateContentPayload => body as GeminiGenerateContentPayload);
+  if (request.type === 'invalid') return refuse(c, ingress, request.message);
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-  try {
-    const result = await geminiGenerateContentServe.generate({ payload, ctx, model, headers: inboundHeaders(c) });
-    const response = await respondGeminiGenerateContent(c, result, wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  } catch (error) {
-    return await respondWithGeminiGenerateContentError(c, error, ctx, wantsStream);
-  }
+  const { payload } = request;
+  const prologue = openChatPrologue(c, ingress, {
+    wantsStream,
+    model,
+    storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
+  });
+
+  return await serveThrough(
+    c,
+    prologue,
+    geminiGenerateContentServePipeline(payload),
+    move({
+      'ingress.http.headers': prologue.headers,
+      'ingress.chat.sourceProtocol': 'geminiGenerateContent',
+      'ingress.chat.geminiGenerateContent.wantsStream': wantsStream,
+      'request.chat.geminiGenerateContent': payload,
+      // Gemini generateContent carries the model in the path rather than the body, so the id the run
+      // resolves against is the one the route split off.
+      'serve.model': model,
+    }) as never,
+    facts => {
+      const rendered = facts['response.chat.geminiGenerateContent.rendered'];
+      if (isFrames(rendered)) return { frames: rendered };
+      return { body: JSON.stringify(rendered), contentType: 'application/json' };
+    },
+    facts => facts['response.chat.geminiGenerateContent.streamedUsage'],
+  );
 };
 
 const runGeminiGenerateContentCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const payload = parseGeminiGenerateContentBodyBytes(requestBody, parseGeminiGenerateContentCountTokensPayload);
-  if (payload instanceof Response) return payload;
+  const ingress = await readIngress(c);
+  const request = readRequest(ingress.body.bytes, parseGeminiGenerateContentCountTokensPayload);
+  if (request.type === 'invalid') return refuse(c, ingress, request.message);
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-  try {
-    const result = await geminiGenerateContentServe.countTokens({ payload, ctx, model, headers: inboundHeaders(c) });
-    const response = await respondGeminiGenerateContent(c, result, false, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  } catch (error) {
-    return await respondWithGeminiGenerateContentError(c, error, ctx, false);
-  }
+  const { payload } = request;
+  const prologue = openChatPrologue(c, ingress, {
+    wantsStream: false,
+    model,
+    storeFactory: apiKey => createNonOpenAIResponsesSourceStore(apiKey.id),
+  });
+
+  return await serveThrough(
+    c,
+    prologue,
+    geminiGenerateContentCountTokensPipeline(payload),
+    move({
+      'ingress.http.headers': prologue.headers,
+      'ingress.chat.sourceProtocol': 'geminiGenerateContent',
+      'request.chat.geminiGenerateContent': payload,
+      'serve.model': model,
+    }) as never,
+    // A measurement is one body however the turn went, so there is never a stream to write.
+    facts => ({ body: JSON.stringify(facts['response.chat.geminiGenerateContent.rendered']), contentType: 'application/json' }),
+  );
 };

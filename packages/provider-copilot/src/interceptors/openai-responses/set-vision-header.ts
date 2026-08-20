@@ -21,7 +21,6 @@ const itemHasImage = (item: OpenAIResponsesInputItem): boolean => {
 
 export const withVisionHeaderSet = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   if (ctx.payload.input.some(itemHasImage)) ctx.headers.set('copilot-vision-request', 'true');

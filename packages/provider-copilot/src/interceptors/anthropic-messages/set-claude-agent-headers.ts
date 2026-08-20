@@ -42,7 +42,7 @@ import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
  */
 const UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY = new Set(['claude-opus-4-8']);
 
-export const withClaudeAgentHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+export const withClaudeAgentHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, run) => {
   if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(ctx.payload.model)) {
     return await run();
   }

@@ -23,7 +23,6 @@ import type { AnthropicMessagesBoundaryCtx } from './types.ts';
  */
 export const withInitiatorHeaderSet = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const lastMessage = ctx.payload.messages[ctx.payload.messages.length - 1];

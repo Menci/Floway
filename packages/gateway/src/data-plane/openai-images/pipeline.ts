@@ -11,10 +11,10 @@
 //   failover                  runs what follows once per candidate
 //   callOpenAIImagesUpstream  the ending: dials, and provides what came back
 
-import { recordStream, streamReferenceOf } from '../../dump/turn-dump.ts';
+import { recordStream, streamReferenceOf } from '../../dump/run-sink.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import type { BillableEntity, Failure, GatewayFacts } from '../pipeline/facts.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { writeSettlement } from '../pipeline/settlement.ts';
@@ -29,7 +29,6 @@ import {
   isEventStreamMediaType,
   mediaTypeEssence,
   parseDecimalString,
-  renderErrorEnvelope,
   upstreamErrorMessage,
   type ModelEndpointKey,
   type SseFrame,
@@ -137,19 +136,29 @@ const emitOpenAIImages = defineStage<
     // would misdescribe a body this gateway serialized itself, does not. A filter that removed
     // nothing hands the same array on, so the record shows no change where none happened.
     const forwardable = headers.filter(([name]) => isForwardableUpstreamHeader(name));
+    const forClient = forwardable.length === headers.length ? headers : move(forwardable);
+    if (isFailure(answer)) {
+      const failure = renderFailure(answer, mintedErrorEnvelope);
+      return {
+        ...rest,
+        'response.http.headers': forClient,
+        'response.http.status': failure.status,
+        'response.openaiImages.rendered': move(failure.body),
+      };
+    }
     return {
       ...rest,
-      'response.http.headers': forwardable.length === headers.length ? headers : move(forwardable),
-      'response.http.status': isFailure(answer) ? answer.status : 200,
+      'response.http.headers': forClient,
+      'response.http.status': 200,
       'response.openaiImages.rendered': move(rendered(answer)),
     };
   },
 });
 
-const rendered = (answer: OpenAIImagesFacts['response.openaiImages.canonical']): OpenAIImagesFacts['response.openaiImages.rendered'] =>
-  isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
-    : isFrames(answer) ? renderSSE(answer)
-      : renderOpenAIImagesResponse(answer);
+const rendered = (
+  answer: Exclude<OpenAIImagesFacts['response.openaiImages.canonical'], Failure>,
+): OpenAIImagesFacts['response.openaiImages.rendered'] =>
+  isFrames(answer) ? renderSSE(answer) : renderOpenAIImagesResponse(answer);
 
 const renderSSE = (frames: OpenAIImagesFrames): AsyncIterable<SseFrame> => ({
   // The frames the client reads are a reframing of the ones the record holds, so this key

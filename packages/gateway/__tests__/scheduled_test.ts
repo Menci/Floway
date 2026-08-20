@@ -30,7 +30,6 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
 });
 
 const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  shape: 'edge',
   meta: {
     id,
     startedAt: completedAt - 1,
@@ -47,13 +46,9 @@ const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord 
     durationMs: 1,
     error: null,
   },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array([1]), decodedByteLength: 1 },
-  },
-  response: { status: 200, headers: [], body: { type: 'bytes', body: new Uint8Array([2]) } },
+  // One line is enough: what these exercise is the row, its file and the sweep that retires
+  // both, not what a run put in the stream.
+  events: new TextEncoder().encode('{"type":"stage.entered","stageId":1,"name":"serve","parentStageId":null}\n'),
 });
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
@@ -115,14 +110,15 @@ test('one maintenance tick collects every file retired by its four dump units', 
   }
   const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')
     .all<{ file_key: string }>();
-  expect(ownedFiles).toHaveLength(400);
+  // One file per record — the run's own stream.
+  expect(ownedFiles).toHaveLength(200);
 
   await runScheduledMaintenance();
 
   expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await Promise.all(ownedFiles.map(row => files.get(row.file_key))))
-    .toEqual(Array.from({ length: 400 }, () => null));
+    .toEqual(Array.from({ length: 200 }, () => null));
 });
 
 test('scheduled maintenance lease keeps overlapping ticks within one budget', async () => {

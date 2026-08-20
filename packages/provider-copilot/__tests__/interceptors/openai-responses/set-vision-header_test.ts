@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -35,7 +33,7 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header det
     ])],
   });
 
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
+  await withVisionHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
@@ -46,7 +44,7 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header ign
     input: [wrap([{ type: 'input_text', text: 'plain text only' }])],
   });
 
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
+  await withVisionHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.has('copilot-vision-request'), false);
 });

@@ -28,8 +28,6 @@ const invocation = (): OpenAIResponsesBoundaryCtx => ({
   action: 'generate',
 });
 
-const stubRequest = {};
-
 const argsDelta = (outputIndex: number, delta: string): OpenAIResponsesStreamEvent =>
   ({
     type: 'response.function_call_arguments.delta',
@@ -46,7 +44,7 @@ const collect = async (result: ProviderOpenAIResponsesResult): Promise<ProtocolF
 };
 
 const runWith = async (frames: ProtocolFrame<OpenAIResponsesStreamEvent>[]): Promise<ProtocolFrame<OpenAIResponsesStreamEvent>[]> => {
-  const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
+  const result = await withToolArgumentWhitespaceAborted(invocation(), () =>
     Promise.resolve<ProviderOpenAIResponsesResult>({
       action: 'generate',
       ok: true,

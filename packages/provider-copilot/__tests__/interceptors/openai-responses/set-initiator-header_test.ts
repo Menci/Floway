@@ -8,8 +8,6 @@ import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
@@ -32,7 +30,7 @@ test.each(['user', 'system', 'developer'] as const)('OpenAI Responses initiator 
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -40,7 +38,7 @@ test.each(['user', 'system', 'developer'] as const)('OpenAI Responses initiator 
 test('OpenAI Responses initiator is user when input is an empty array', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [] });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -55,7 +53,7 @@ test('OpenAI Responses initiator is user for the role-bearing additional_tools i
     }],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
@@ -84,7 +82,7 @@ test('OpenAI Responses initiator is agent when the last input item is a function
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -112,7 +110,7 @@ test('OpenAI Responses initiator is agent when the last input item is a custom_t
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -130,7 +128,7 @@ test('OpenAI Responses initiator is agent when the last canonical item is reason
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
@@ -152,7 +150,7 @@ test('OpenAI Responses initiator is agent when the last input item is an assista
     ],
   });
 
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+  await withInitiatorHeaderSet(ctx, okEvents);
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
