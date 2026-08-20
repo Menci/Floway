@@ -1,5 +1,20 @@
 import { type RouteConfig, index, route } from '@react-router/dev/routes';
 
+import { LEGACY_REDIRECT_RULES } from './lib/legacy-redirects';
+
+const legacyRedirectRoute = (path: string) =>
+  route(path, 'routes/legacy-redirects.tsx', { id: `routes/legacy-redirects-${path.replace(/[^\w]+/g, '-')}` });
+
+const rootLegacyRoutes = LEGACY_REDIRECT_RULES
+  .map(rule => rule.from)
+  .filter(path => !path.startsWith('/dashboard/'))
+  .map(path => legacyRedirectRoute(path.replace(/^\//, '')));
+
+const dashboardLegacyRoutes = LEGACY_REDIRECT_RULES
+  .map(rule => rule.from)
+  .filter(path => path.startsWith('/dashboard/'))
+  .map(path => legacyRedirectRoute(path.slice('/dashboard/'.length)));
+
 // The gallery renders every Fluent control the dashboard uses so the WinUI
 // layer can be judged in one place. It is scaffolding, not a product surface:
 // no navigation entry, no translations, and its copy is English placeholder
@@ -22,6 +37,7 @@ const developmentRoutes =
 
 export default [
   index('routes/home.tsx'),
+  ...rootLegacyRoutes,
   route('dashboard', 'routes/dashboard.tsx', [
     index('routes/dashboard-index.tsx'),
     route('playground', 'routes/dashboard-playground.tsx'),
@@ -39,6 +55,7 @@ export default [
     route('admin/users', 'routes/dashboard-admin-users.tsx'),
     route('admin/backup-restore', 'routes/dashboard-admin-backup-restore.tsx'),
     route('settings', 'routes/dashboard-settings.tsx'),
+    ...dashboardLegacyRoutes,
     ...developmentRoutes,
   ]),
 ] satisfies RouteConfig;
