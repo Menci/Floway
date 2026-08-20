@@ -403,6 +403,7 @@ const zhHansCN = {
           refresh: '刷新上游',
           delete: '删除上游',
           editNamed: '编辑上游 {{name}}',
+          copyNamed: '复制上游 {{name}}',
           deleteNamed: '删除上游 {{name}}',
           toggle: '切换上游 {{name}} 的启用状态',
           moveUp: '上移上游 {{name}}',
@@ -460,6 +461,9 @@ const zhHansCN = {
           copilot: 'GitHub Copilot 账号',
           noAccount: '尚未连接账号',
         },
+        copy: {
+          nameSuffix: '{{name}} 副本',
+        },
         errors: {
           missing: '该上游已不存在。',
           models: '模型数量不可用：{{message}}',
@@ -486,6 +490,7 @@ const zhHansCN = {
         },
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',
+        documentTitleCopy: '复制上游',
         optional: '可选',
         unsaved: '有未保存更改',
         secretKeep: '留空以保持不变。',
@@ -1105,8 +1110,9 @@ const zhHansCN = {
       modelAliases: {
         description: '创建虚拟模型 ID，将请求路由到一个或多个目标模型，并可锁定请求规则', listTitle: '别名', empty: '尚未配置别名。创建别名以公开虚拟模型 ID。',
         columns: { alias: '别名', kind: '类型', targets: '目标', selection: '选择策略', visibility: '模型列表', actions: '操作' },
-        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
-        dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}' },
+        actions: { create: '新建别名', refresh: '刷新别名', save: '保存', delete: '删除', addTarget: '添加目标', editNamed: '编辑别名 {{name}}', copyNamed: '复制别名 {{name}}', deleteNamed: '删除别名 {{name}}' },
+        dialog: { createTitle: '创建别名', editTitle: '编辑别名：{{name}}', copyTitle: '复制别名：{{name}}' },
+        copy: { nameSuffix: '{{name}} 副本' },
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见', visibleHint: '关闭只是不在列表中展示，别名仍然可以按名称请求' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
         target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number, number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_other: '{{count, number}} 个目标' },

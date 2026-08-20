@@ -185,7 +185,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       // the create branch's toast outlives the navigation that follows it.
       const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
       const result = data.mode === 'create'
-        ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
+        ? await callApi(() => api.api.upstreams.$post({
+            json: createBody(record, values, data.preserveCredentials === true ? { preserveStoredSecret: true } : undefined),
+          }))
         : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
       if (result.error) { handle.settle(); setSaving(false); setSaveError(result.error.message); return; }
       let saved: UpstreamRecord = result.data;

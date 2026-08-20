@@ -28,6 +28,7 @@ export default [
     route('providers/upstreams', 'routes/dashboard-providers-upstreams.tsx'),
     route('providers/upstreams/new/:provider', 'routes/dashboard-providers-upstreams-new.tsx'),
     route('providers/upstreams/:id', 'routes/dashboard-providers-upstreams-edit.tsx'),
+    route('providers/upstreams/:id/copy', 'routes/dashboard-providers-upstreams-copy.tsx'),
     route('providers/search', 'routes/dashboard-providers-search.tsx'),
     route('providers/proxy', 'routes/dashboard-providers-proxy.tsx'),
     route('providers/model-aliases', 'routes/dashboard-providers-model-aliases.tsx'),
