@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
+import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, setupAppTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -330,6 +332,35 @@ describe('/alpha/search data plane', () => {
       expect(body.output).toContain('Blocked by tool filters');
       // Blocked URLs never reach the provider.
       expect(stub.calls).toHaveLength(0);
+    });
+  });
+
+  // The endpoint is served by the pipeline that was written for it, which is what a run record
+  // says and nothing else does: the handler it replaced opened no run at all, so a turn on this
+  // path produced no record however much retention the key had.
+  describe('the run it is served by', () => {
+    it('records the whole run, stage by stage', async () => {
+      const { apiKey, repo } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
+      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+      const stub = makeStubProvider();
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+
+      const response = await postSearch(buildAlphaSearchApp(), apiKey.key, { commands: { search_query: [{ q: 'Floway' }] } });
+      expect(response.status).toBe(200);
+      await response.json();
+      await flushAsyncWork();
+
+      expect(dumpStubs.stored).toHaveLength(1);
+      const record = runRecordOf(dumpStubs.stored[0]?.record);
+      expect(record.meta.path).toBe(SEARCH_PATH);
+      expect(record.meta.status).toBe(200);
+      // The chain the operator's configuration assembled: the edge, settlement, and the local
+      // ending's two stages.
+      const entered = eventsOf(record)
+        .filter(event => event.type === 'stage.entered')
+        .map(event => event.name);
+      expect(entered).toEqual(['emitAlphaSearch', 'writeSettlement', 'parseSearchOperations', 'executeSearchOperations']);
     });
   });
 

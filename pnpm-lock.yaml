@@ -330,6 +330,9 @@ importers:
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform

@@ -1,5 +1,7 @@
 import { test, vi } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
@@ -148,6 +150,44 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, []);
+});
+
+// A subtitle document is carried, so every convention the upstream did not follow survives:
+// the ordinal it started at, the line ending it chose, and the fraction digits it wrote.
+// Reading the cues and writing them back would have normalized all three.
+test('/v1/audio/transcriptions forwards SubRip with the numbering and line endings the upstream chose', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const document = '7\r\n00:00:00,0 --> 00:00:01,5\r\nhello\r\n';
+  await withMockedFetch(
+    () => new Response(document, { headers: { 'content-type': 'application/x-subrip' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'srt']]),
+      });
+      assertEquals(response.headers.get('content-type'), 'application/x-subrip');
+      assertEquals(await response.text(), document);
+    },
+  );
+});
+
+// The document never becomes a string on the way through, so an upstream that answered under
+// a charset nobody here asked about is forwarded rather than mangled: decoding these bytes as
+// UTF-8 and encoding them again would replace both of them with U+FFFD.
+test('/v1/audio/transcriptions forwards a document the gateway never decoded', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const latin1 = new Uint8Array([0x63, 0x61, 0x66, 0xE9, 0x20, 0xE0, 0x20, 0x31]);
+  await withMockedFetch(
+    () => new Response(latin1, { headers: { 'content-type': 'text/plain; charset=iso-8859-1' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
+      });
+      assertEquals(response.headers.get('content-type'), 'text/plain; charset=iso-8859-1');
+      assertEquals(new Uint8Array(await response.arrayBuffer()), latin1);
+    },
+  );
 });
 
 test('/v1/audio/transcriptions skips JSON parsing for text responses without warning', async () => {
@@ -331,9 +371,11 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
 
 test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
   });
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
   await withMockedFetch(
     () => new Response([
       'data: {"type":"transcript.text.delta","delta":"hel"}',
@@ -362,6 +404,16 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.neutral, 1);
   assertEquals(performance.errorsNoOutput, 0);
+
+  // This family's stream is bare protocol events rather than protocol frames, so the record is
+  // told how one becomes a frame — and until it was, a streamed transcription was recorded as
+  // stage boundaries with the transcript missing entirely.
+  const events = eventsOf(runRecordOf(dumpStubs.stored[0]?.record));
+  const frames = events
+    .filter(event => event.type === 'stream.frame')
+    .flatMap(event => (event as unknown as { frames: readonly unknown[] }).frames);
+  assertEquals(frames.length, 2);
+  assertEquals(events.filter(event => event.type === 'stream.end'), [{ type: 'stream.end', streamId: 1 }]);
 });
 
 test('/v1/audio/transcriptions preserves a terminal stream event with malformed usage', async () => {

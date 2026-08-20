@@ -1,23 +1,26 @@
-// POST /v1/audio/transcriptions — buffered OpenAI-compatible multipart
-// transcription. The full body is parsed before routing because multipart
-// field order is unconstrained; providers receive ordered semantic entries
-// and rebuild a fresh body per candidate.
+// POST /v1/audio/transcriptions, served through the pipeline.
+//
+// The multipart body is read and parsed before routing because field order is unconstrained
+// and every candidate builds a fresh body from the entries. What the handler decides for
+// itself is written in that form: which of the six renderings the client asked for, and
+// whether the request streams — the run has to be opened knowing the second.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L714-L1040
 
 import type { Context } from 'hono';
 
-import { respondOpenAIAudioTranscription } from './respond.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { openaiAudioTranscriptionServePipeline } from './pipeline.ts';
+import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
+import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { move } from '@floway-dev/pipeline';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
+import { parseOpenAIAudioTranscriptionResponseFormat, type OpenAIAudioTranscriptionResponseFormat } from '@floway-dev/protocols/openai-audio';
 import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedOpenAIAudioTranscription =
   | {
     readonly type: 'ok';
     readonly model: string;
+    readonly responseFormat: OpenAIAudioTranscriptionResponseFormat;
     readonly wantsStream: boolean;
     readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
   }
@@ -43,6 +46,16 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
   if (files.length === 0 || files.some(file => !(file instanceof File))) {
     return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must include a file upload.' };
   }
+  const declaredFormat = form.get('response_format');
+  if (declaredFormat !== null && typeof declaredFormat !== 'string') {
+    return { type: 'invalid', message: 'OpenAI Audio Transcriptions response_format must be a text field.' };
+  }
+  let responseFormat: OpenAIAudioTranscriptionResponseFormat;
+  try {
+    responseFormat = parseOpenAIAudioTranscriptionResponseFormat(declaredFormat ?? undefined);
+  } catch (error) {
+    return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
+  }
 
   const entries: OpenAIAudioTranscriptionFormEntry[] = [];
   for (const [name, value] of form.entries()) {
@@ -51,35 +64,62 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
   return {
     type: 'ok',
     model,
+    responseFormat,
     wantsStream: form.get('stream') === 'true',
     entries,
   };
 };
 
+/** The client is sent bytes on every path, never a string, so nothing downstream of here
+ *  guesses a media type: a `Response` built over a string is labelled `text/plain` by the
+ *  platform, and an upstream that declared no media type has not asked for that. */
+const bodyOf = (rendered: Record<string, unknown> | Uint8Array): Uint8Array =>
+  rendered instanceof Uint8Array ? rendered : new TextEncoder().encode(JSON.stringify(rendered));
+
+/**
+ * The epilogue: what the run answered with, as a response.
+ *
+ * It is `serveThrough` like every other family, and it took two things at the seam to make it
+ * one. A carried document goes out under the upstream's own media type, including the upstream
+ * that declared none — so `Rendered.contentType` carries a null and the seam answers without
+ * the header rather than inventing one. And a transcription's stream states its own outcome in
+ * its last event, which the family's meter reads because it is the one place that knows — so
+ * what `DeferredUsage` hands back is both what was billed and whether the stream finished,
+ * settled from one promise while the request is still live.
+ */
 export const openaiAudioTranscriptions = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const request = await prepareOpenAIAudioTranscription(requestBody.bytes, c.req.header('content-type'));
-  const ctx = createGatewayCtxFromHono(c, {
-    wantsStream: request.type === 'ok' ? request.wantsStream : false,
-    requestBody: takeRequestBody(requestBody),
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-  });
+  const ingress = await readIngress(c);
+  const request = await prepareOpenAIAudioTranscription(ingress.body.bytes, c.req.header('content-type'));
   if (request.type === 'invalid') {
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
+    // A request the gateway could not read never reaches a pipeline: there is no model to
+    // resolve and no attempt to make, so there is nothing for a run to record.
+    const refused = openPrologue(c, ingress, { wantsStream: false });
+    refused.gateway.dump?.error('gateway');
+    return finalizeGatewayResponse(
+      refused.gateway,
+      Response.json({ error: { message: request.message, type: 'api_error' } }, { status: 400 }),
+    );
   }
 
-  ctx.dump?.requestedModel(request.model);
-  const response = await passthroughServe({
+  const prologue = openPrologue(c, ingress, { wantsStream: request.wantsStream, model: request.model });
+
+  return await serveThrough(
     c,
-    ctx,
-    sourceApi: '/audio/transcriptions',
-    operation: 'audio_transcription',
-    model: request.model,
-    kind: 'transcription',
-    modelServesEndpoint: model => model.endpoints.openaiAudioTranscriptions !== undefined,
-    call: (provider, model, opts) => provider.instance.callOpenAIAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
-    response: { format: 'strategy', respond: respondOpenAIAudioTranscription },
-  });
-  return finalizeGatewayResponse(ctx, response);
+    prologue,
+    openaiAudioTranscriptionServePipeline,
+    move({
+      'ingress.http.headers': prologue.headers,
+      'ingress.openaiAudioTranscription.responseFormat': request.responseFormat,
+      'request.openaiAudioTranscription.form': request.entries,
+      'serve.model': request.model,
+    }) as never,
+    facts => {
+      const rendered = facts['response.openaiAudioTranscription.rendered'];
+      if (isFrames(rendered)) return { frames: rendered };
+      // The upstream's own media type, or none where it declared none: a document this
+      // gateway carried rather than wrote is not one it can describe.
+      return { body: bodyOf(rendered) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };
+    },
+    facts => facts['response.openaiAudioTranscription.streamedOutcome'],
+  );
 };

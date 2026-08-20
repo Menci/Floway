@@ -957,6 +957,8 @@ const en = {
         apiKeysLink: 'API Keys',
         request: 'Request',
         requestBody: 'Request body',
+        run: 'Run',
+        noRunEvents: 'This run recorded no events.',
         response: 'Response',
         responseBody: 'Response body',
         noRequestBody: 'No request body',

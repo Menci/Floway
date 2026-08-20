@@ -4,7 +4,7 @@ import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { createOpenAIResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { openaiResponsesServe } from './serve.ts';
-import type { DumpAccumulator } from '../../../dump/accumulator.ts';
+import type { TurnDump } from '../../../dump/turn-dump.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
@@ -716,7 +716,7 @@ const sendError = (
   status: number,
   error: Record<string, unknown>,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: TurnDump | null,
 ): void => {
   sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
@@ -733,14 +733,14 @@ const sendOpenAIResponsesEvent = (
   socket: OpenAIResponsesWebSocketSocket,
   event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: TurnDump | null,
 ): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: TurnDump | null,
 ): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'

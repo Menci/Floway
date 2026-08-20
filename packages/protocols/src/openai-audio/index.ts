@@ -1,20 +1,29 @@
-// OpenAI-compatible audio transcription stream terminal. The wire remains open
-// so provider additions pass through unchanged while the gateway observes only
-// the terminal event it needs.
-// https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L61780-L61924
+// OpenAI-compatible audio transcription. One request shape — a multipart form — and
+// several response renderings, which is the family's whole character: `response_format`
+// picks between three JSON objects and three text documents, and `stream` picks a sequence
+// of events instead of any of them.
 
-export interface OpenAIAudioTranscriptionStreamEvent {
-  type: string;
-  [key: string]: unknown;
-}
+export type { OpenAIAudioTranscriptionCue, SubtitleDialect } from './subtitles.ts';
+export { parseSubtitleDocument } from './subtitles.ts';
 
-export interface OpenAIAudioTranscriptionDoneEvent extends OpenAIAudioTranscriptionStreamEvent {
-  type: 'transcript.text.done';
-  text: string;
-}
+export type {
+  OpenAIAudioTranscriptionObjectFormat,
+  OpenAIAudioTranscriptionResponseFormat,
+  OpenAIAudioTranscriptionUsage,
+  CanonicalOpenAIAudioTranscription,
+} from './transcription.ts';
+export {
+  OPENAI_AUDIO_TRANSCRIPTION_RESPONSE_FORMATS,
+  isOpenAIAudioTranscriptionObjectFormat,
+  parseOpenAIAudioTranscription,
+  parseOpenAIAudioTranscriptionResponseFormat,
+  parseOpenAIAudioTranscriptionUsage,
+  renderOpenAIAudioTranscription,
+} from './transcription.ts';
 
-export const isOpenAIAudioTranscriptionDoneEvent = (event: unknown): event is OpenAIAudioTranscriptionDoneEvent =>
-  typeof event === 'object'
-  && event !== null
-  && (event as { type?: unknown }).type === 'transcript.text.done'
-  && typeof (event as { text?: unknown }).text === 'string';
+export type { OpenAIAudioTranscriptionDoneEvent, OpenAIAudioTranscriptionStreamEvent } from './stream.ts';
+export {
+  isOpenAIAudioTranscriptionDoneEvent,
+  parseOpenAIAudioTranscriptionStreamEvent,
+  parseOpenAIAudioTranscriptionStreamUsage,
+} from './stream.ts';

@@ -6,11 +6,12 @@ import { expect, test } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
 import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
+import type { DumpWriteEdgeRecord, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
+import { encodeRun, toNdjson, type Facts } from '@floway-dev/pipeline';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -36,7 +37,8 @@ const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const requestBody = utf8('{"hello":"world"}');
 
-const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
+const baseRecord = (id: string, completedAt: number): DumpWriteEdgeRecord => ({
+  shape: 'edge',
   meta: {
     id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
     upstream: null, model: 'm', inputTokens: 1, outputTokens: 2,
@@ -54,6 +56,14 @@ const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   },
 });
 
+// Every fixture above writes the edge shape, and a reader hands back what was
+// written — so a test that asserts on the request or response halves says so.
+const edgeOf = (record: StoredDumpRecord | null): StoredDumpEdgeRecord => {
+  assertExists(record);
+  if (record.shape !== 'edge') throw new Error('expected the edge shape');
+  return record;
+};
+
 test('FileDumpStore prepares request gzip before terminal persistence', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();
@@ -61,7 +71,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
   const prepared = await store.prepareRequestBody(raw);
   const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...base,
     meta: { ...base.meta, requestBytes: raw.byteLength },
     request: {
@@ -76,8 +86,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   assertEquals(prepared.decodedByteLength, raw.byteLength);
   assertEquals(prepared.bytes.byteLength < raw.byteLength, true);
   await store.put('key_x', record);
-  const fetched = await store.get('key_x', record.meta.id);
-  assertExists(fetched);
+  const fetched = edgeOf(await store.get('key_x', record.meta.id));
   assertEquals(Array.from(fetched.request.body), Array.from(raw));
 });
 
@@ -88,8 +97,7 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
   const record = baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
   await store.put('key_x', record);
-  const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
-  assertExists(fetched);
+  const fetched = edgeOf(await store.get('key_x', '01HZZ0000000000000000000A1'));
   assertEquals(fetched.meta.id, record.meta.id);
   assertEquals(new TextDecoder().decode(fetched.request.body), '{"hello":"world"}');
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
@@ -101,7 +109,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...baseRecord('01HZZ0000000000000000000PNG', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,
@@ -111,8 +119,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   };
 
   await store.put('key_x', record);
-  const fetched = await store.get('key_x', '01HZZ0000000000000000000PNG');
-  assertExists(fetched);
+  const fetched = edgeOf(await store.get('key_x', '01HZZ0000000000000000000PNG'));
   // The header pair must survive verbatim — no `;base64` suffix tacked on.
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'image/png');
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
@@ -126,7 +133,7 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
   // 204-style: real upstream response with status + headers but a zero-length
   // body. Persistence drops the body file (nothing to gzip), but headers are
   // still written — the read path must surface this as `bytes`, not `none`.
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...baseRecord('01HZZ0000000000000000000E1', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 204,
@@ -136,8 +143,7 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
   };
 
   await store.put('key_x', record);
-  const fetched = await store.get('key_x', '01HZZ0000000000000000000E1');
-  assertExists(fetched);
+  const fetched = edgeOf(await store.get('key_x', '01HZZ0000000000000000000E1'));
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
   assertEquals(fetched.response.body.body.byteLength, 0);
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'application/json');
@@ -147,7 +153,7 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   const db = await openDb();
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,
@@ -162,11 +168,96 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
     },
   };
   await store.put('key_x', record);
-  const fetched = await store.get('key_x', '01HZZ0000000000000000000A2');
-  assertExists(fetched);
+  const fetched = edgeOf(await store.get('key_x', '01HZZ0000000000000000000A2'));
   if (fetched.response.body.type !== 'stream') throw new Error('expected stream');
   assertEquals(fetched.response.body.events.length, 2);
   assertEquals(fetched.response.body.events[0]!.frame.type, 'event');
+});
+
+// A pipelined turn stores the run rather than its edges: one NDJSON body file
+// under the same contract, and a row that carries the same metadata.
+const runRecord = (id: string, completedAt: number): StoredDumpRunRecord => {
+  const entered: Facts = { 'request.http.path': '/v1/embeddings' };
+  const left: Facts = { ...entered, 'response.http.status': 200 };
+  return {
+    shape: 'run',
+    meta: baseRecord(id, completedAt).meta,
+    events: new TextEncoder().encode(toNdjson(encodeRun([
+      { type: 'stage.entered', stageId: 1, name: 'serve', parentStageId: null, facts: entered },
+      { type: 'stage.entered', stageId: 2, name: 'dial', parentStageId: 1, facts: entered },
+      { type: 'stage.leaved', stageId: 2, facts: left },
+      { type: 'stage.leaved', stageId: 1, facts: left },
+    ]))),
+  };
+};
+
+test('FileDumpStore round-trips a run record as its NDJSON event stream', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record = runRecord('01HZZ00000000000000000RUN1', Date.UTC(2026, 5, 1, 12, 0, 0));
+
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', record.meta.id);
+  assertExists(fetched);
+  if (fetched.shape !== 'run') throw new Error(`expected the run shape, got ${fetched.shape}`);
+  assertEquals(new TextDecoder().decode(fetched.events), new TextDecoder().decode(record.events));
+
+  // The stream is a body file like the other two: gzipped, named for what it
+  // holds, and pointed at by the row's descriptor.
+  const row = await db.prepare('SELECT request_body_descriptor, response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?')
+    .bind('key_x', record.meta.id)
+    .first<{ request_body_descriptor: string | null; response_body_descriptor: string }>();
+  assertExists(row);
+  assertEquals(row.request_body_descriptor, null);
+  const descriptor = decodeDumpBodyDescriptor(row.response_body_descriptor, 'test run descriptor');
+  assertEquals(descriptor.type, 'run');
+  assertEquals(descriptor.key.endsWith('.run.gz'), true);
+});
+
+test('FileDumpStore lists a run record alongside an edge-shaped one', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const base = Date.UTC(2026, 5, 1, 12, 0, 0);
+  await store.put('key_x', baseRecord('01HZZ00000000000000000EDG1', base));
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN2', base + 1));
+
+  const listed = await store.list('key_x', { limit: 10 });
+  assertEquals(listed.map(meta => meta.id), ['01HZZ00000000000000000RUN2', '01HZZ00000000000000000EDG1']);
+  // One metadata shape for both: the list says nothing about how a turn was
+  // served, and every column a row renders is filled either way.
+  assertEquals(listed.map(meta => meta.model), ['m', 'm']);
+  assertEquals(listed.map(meta => meta.status), [200, 200]);
+});
+
+test('FileDumpStore retires an expired run record and collects its stream file', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const store = new FileDumpStore(db, files);
+  const now = Date.UTC(2026, 5, 1, 12, 0, 0);
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN3', Date.UTC(2026, 5, 1, 9, 0, 0)));
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN4', now));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
+
+  const originalNow = Date.now;
+  Date.now = () => now + 1;
+  try {
+    assertEquals((await store.list('key_x', { limit: 10 })).map(meta => meta.id), ['01HZZ00000000000000000RUN4']);
+    assertEquals(await store.get('key_x', '01HZZ00000000000000000RUN3'), null);
+    assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
+    await collectSpilledFiles(now + 1);
+  } finally {
+    Date.now = originalNow;
+  }
+
+  const { results: remaining } = await db
+    .prepare("SELECT file_key FROM spilled_files WHERE state = 'owned' ORDER BY file_key")
+    .all<{ file_key: string }>();
+  assertEquals(remaining.map(row => row.file_key.endsWith('.run.gz')), [true]);
+  assertEquals(remaining.every(row => !row.file_key.includes('2026060109')), true);
 });
 
 test('FileDumpStore rejects malformed metadata with its row identity', async () => {
@@ -212,7 +303,7 @@ test('FileDumpStore rejects malformed stream events with record and file context
   const db = await openDb();
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...baseRecord('01HZZ000000000000000000BADE', Date.UTC(2026, 5, 1, 12)),
     response: {
       status: 200,
@@ -415,8 +506,7 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO', async ()
     const record = baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
     await store.put('key_x', record);
-    const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
-    assertExists(fetched);
+    const fetched = edgeOf(await store.get('key_x', '01HZZ0000000000000000000A1'));
     assertEquals(new TextDecoder().decode(fetched.request.body), '{"hello":"world"}');
     if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
     assertEquals(new TextDecoder().decode(fetched.response.body.body), '{"id":"abc"}');
