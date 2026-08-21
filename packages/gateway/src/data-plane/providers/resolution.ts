@@ -7,7 +7,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind } from '@floway-dev/protocols/common';
+import { isAliasTargetEnabled, type ModelKind } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type ModelCandidate } from '@floway-dev/provider';
 
 // Resolve one inbound id against one upstream. The upstream's
@@ -141,9 +141,11 @@ const resolveRealCandidates = async (
 // targets. Within a single target's real-catalog walk the per-upstream
 // order is always preserved (registry enumeration order); shuffling
 // applies to the target list, not to a target's candidates.
+// Disabled targets stay in the row for editing but never enter the walk.
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
-  if (alias.selection === 'first-available') return alias.targets;
-  const shuffled = [...alias.targets];
+  const enabledTargets = alias.targets.filter(isAliasTargetEnabled);
+  if (alias.selection === 'first-available') return enabledTargets;
+  const shuffled = [...enabledTargets];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];

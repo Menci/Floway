@@ -147,6 +147,20 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(row.targets[2].rules, {});
   });
 
+  test(`[${backend}] targets enabled flag round-trips through the JSON column`, async () => {
+    const repo = await freshRepo();
+    await repo.modelAliases.insert(aliasFixture({
+      name: 'mixed-enabled',
+      targets: [
+        { target_model_id: 'gpt-5.4', enabled: false, rules: {} },
+        { target_model_id: 'gpt-4.1', rules: {} },
+      ],
+    }));
+    const row = await repo.modelAliases.getByName('mixed-enabled');
+    assertExists(row);
+    assertEquals(row.targets.map(target => target.enabled), [false, undefined]);
+  });
+
   test(`[${backend}] visibleInModelsList=false round-trips`, async () => {
     const repo = await freshRepo();
     await repo.modelAliases.insert(aliasFixture({ visibleInModelsList: false }));
@@ -193,8 +207,8 @@ test('[sql] migration 0046 seeds the codex-auto-review alias with its two-target
   assertEquals(seed.selection, 'first-available');
   assertEquals(seed.kind, 'chat');
   assertEquals(seed.targets, [
-    { target_model_id: 'codex-auto-review', rules: {} },
-    { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
+    { target_model_id: 'codex-auto-review', rules: {}, enabled: true },
+    { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } }, enabled: true },
   ]);
 });
 

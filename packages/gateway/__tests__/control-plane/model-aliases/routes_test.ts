@@ -77,6 +77,26 @@ test('POST /api/aliases creates an alias and returns the snake_case wire shape',
   assertEquals(stored.visibleInModelsList, true);
 });
 
+test('POST /api/aliases stores per-target enabled flags', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+
+  const resp = await requestApp('/api/aliases', authed(adminSession, baseBody({
+    targets: [
+      { target_model_id: 'gpt-5.4', enabled: false, rules: {} },
+      { target_model_id: 'gpt-4.1', rules: {} },
+    ],
+  })));
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as ModelAlias;
+  assertEquals(created.targets[0].enabled, false);
+  assertEquals(created.targets[1].enabled, undefined);
+
+  const stored = await repo.modelAliases.getByName('gpt-fast');
+  assertExists(stored);
+  assertEquals(stored.targets[0].enabled, false);
+});
+
 test('POST /api/aliases rejects a name collision with 409', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
