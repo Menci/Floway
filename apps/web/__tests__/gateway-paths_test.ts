@@ -4,15 +4,15 @@ import { resolve } from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { describe, expect, it } from 'vitest';
 
+import { isGatewayPath } from '../../platform-node/src/static-web.ts';
 import { wranglerProxiedPaths } from '../gateway-paths';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
-// Two hosting topologies each restate the set of paths that belong to the
-// gateway, in two syntaxes, and neither can consult the other at run
-// time. `PUBLIC_DATA_PLANE_ROUTES` is the table the gateway itself registers
-// from, so it is the one description that cannot be wrong; replaying it through
-// each topology's own matching rules is what turns a silent divergence into a
-// failing suite.
+// Three hosting topologies each restate the set of paths that belong to the
+// gateway, in three syntaxes, and none can consult the others at run time.
+// `PUBLIC_DATA_PLANE_ROUTES` is the table the gateway itself registers from,
+// so replaying it through each topology's own matching rules turns a silent
+// divergence into a failing suite.
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const readRepoFile = (path: string) => readFileSync(resolve(repoRoot, path), 'utf8');
 
@@ -64,15 +64,17 @@ describe('gateway path coverage', () => {
   it.each(gatewayUrls)('routes %s to the gateway in every topology', url => {
     expect({
       vite: viteProxies(url),
+      node: isGatewayPath(url),
       wrangler: wranglerProxies(url),
-    }).toEqual({ vite: true, wrangler: true });
+    }).toEqual({ vite: true, node: true, wrangler: true });
   });
 
   it('leaves SPA routes to the static handler in every topology', () => {
     for (const url of ['/', '/login', '/dashboard/upstreams', '/assets/root-abcdef12.js']) {
-      expect({ url, vite: viteProxies(url), wrangler: wranglerProxies(url) }).toEqual({
+      expect({ url, vite: viteProxies(url), node: isGatewayPath(url), wrangler: wranglerProxies(url) }).toEqual({
         url,
         vite: false,
+        node: false,
         wrangler: false,
       });
     }

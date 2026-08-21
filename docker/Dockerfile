@@ -69,6 +69,9 @@ RUN pnpm run build:web
 FROM base AS server
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 COPY --from=web-build /app/apps/web/dist/client ./apps/web/dist/client
+# The former nginx dashboard image exposed the repository license at /LICENSE.
+# Keep that public path while the Node static handler owns the web bundle.
+COPY LICENSE ./apps/web/dist/client/LICENSE
 
 ENV NODE_ENV=production
 ENV PORT=8788

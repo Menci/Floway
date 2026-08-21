@@ -2,6 +2,22 @@
 
 Podman Quadlets allow you to manage containers as native systemd services. These configuration files allow you to deploy and auto-start Floway using systemd.
 
+## Upgrade from the split dashboard container
+
+This release serves the dashboard from `floway-server`; the separate
+`floway-web` image is no longer published. Before updating an existing Quadlet
+deployment, remove its `floway-web.container` unit, then reload systemd and
+restart `floway-server`:
+
+```bash
+rm ~/.config/containers/systemd/floway-web.container
+systemctl --user daemon-reload
+systemctl --user restart floway-server
+```
+
+For a root-managed deployment, replace the path and commands with their `sudo`
+equivalents under `/etc/containers/systemd/`.
+
 ## Rootless installation
 
 1. Install [Podman](https://podman.io).
