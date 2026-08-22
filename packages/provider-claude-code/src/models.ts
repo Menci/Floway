@@ -203,7 +203,7 @@ export const buildClaudeCodeCatalog = (
     display_name: api.display_name,
     owned_by: 'anthropic',
     kind: 'chat',
-    endpoints: { messages: {} },
+    endpoints: { anthropicMessages: {} },
     enabledFlags,
     limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,

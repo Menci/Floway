@@ -1,10 +1,10 @@
 export type {
-  ChatCompletionsInvocation,
-  GeminiInvocation,
+  OpenAIChatCompletionsInvocation,
+  GeminiGenerateContentInvocation,
   ChatTargetApi,
-  MessagesInvocation,
+  AnthropicMessagesInvocation,
   ModelCandidate,
-  ResponsesInvocation,
+  OpenAIResponsesInvocation,
 } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
 
@@ -52,17 +52,17 @@ export type {
   ProviderCallResult,
   ProviderRerankCallResult,
   ProviderModule,
-  MessagesUpstreamCallOptions,
-  ProviderResponsesResult,
+  AnthropicMessagesUpstreamCallOptions,
+  ProviderOpenAIResponsesResult,
   ProviderStreamResult,
-  ResponsesAction,
+  OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export { headersForMessagesCall } from './messages.ts';
-export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
+export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
+export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
-export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
-export { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
+export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
+export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 
@@ -100,7 +100,7 @@ export {
 export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
-export type { Fetcher, FetchInit, ReplayableBody, UpstreamFetchOptions } from './options.ts';
+export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody, UpstreamFetchOptions } from './options.ts';
 export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody } from './options.ts';
 
 export { isAbortError } from './abort.ts';

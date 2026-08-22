@@ -21,7 +21,7 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
     apiKey: '',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false },
     models: [],
@@ -147,23 +147,42 @@ describe('Custom ingress header rules', () => {
     expect(document.activeElement).toBe(key);
   });
 
-  it('distinguishes duplicate, protocol-owned, and transport-owned names', async () => {
+  it('distinguishes repeated passthrough, protocol-owned, and transport-owned names', async () => {
     renderInApp(<Harness />);
     const first = screen.getByLabelText(label('keyForRow', 1));
     fireEvent.change(first, { target: { value: 'x-route' } });
     const second = screen.getByLabelText(label('keyForRow', 2));
     fireEvent.change(second, { target: { value: 'X-Route' } });
     fireEvent.blur(second);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicateName'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeTruthy();
 
     fireEvent.change(first, { target: { value: 'Anthropic-Beta' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.messagesOwned'))).toBeTruthy();
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicateName'))).toBeNull();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
+    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
 
     fireEvent.change(first, { target: { value: 'Authorization' } });
     fireEvent.blur(first);
     expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.transportOwned'))).toBeTruthy();
+  });
+
+  it('accepts a name repeated with configured values', async () => {
+    renderInApp(<Harness />);
+    const first = screen.getByLabelText(label('keyForRow', 1));
+    fireEvent.change(first, { target: { value: 'x-route' } });
+    fireEvent.change(screen.getByLabelText(label('valueForRow', 1)), { target: { value: 'one' } });
+    const second = screen.getByLabelText(label('keyForRow', 2));
+    fireEvent.change(second, { target: { value: 'X-Route' } });
+    fireEvent.change(screen.getByLabelText(label('valueForRow', 2)), { target: { value: 'two' } });
+    fireEvent.blur(second);
+    fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
+
+    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
+    expect(JSON.parse(screen.getByTestId('rules').textContent!)).toEqual([
+      { key: 'x-route', value: 'one' },
+      { key: 'x-route', value: 'two' },
+      { key: '', value: null },
+    ]);
   });
 
   it('shows invalid replacement values beneath the value control', async () => {

@@ -21,7 +21,7 @@ import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } f
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const registerEmbeddingsUpstream = async (
+const registerOpenAIEmbeddingsUpstream = async (
   repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
   ingressHeadersRules: { key: string; value: string | null }[] = [],
 ): Promise<void> => {
@@ -43,7 +43,7 @@ const registerEmbeddingsUpstream = async (
 
 test('passthrough-serve: usage-record failure does not turn upstream 2xx into 502', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
 
   repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -96,7 +96,7 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
 
 test('passthrough-serve: Custom resolves configured ingress header rules before provider dispatch', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo, [
+  await registerOpenAIEmbeddingsUpstream(repo, [
     { key: 'x-passthrough', value: null },
     { key: 'x-overwrite', value: 'configured' },
     { key: 'x-empty', value: '' },
@@ -138,7 +138,7 @@ test('passthrough-serve: Custom resolves configured ingress header rules before 
 
 test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
 
   const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -187,7 +187,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
 
 test('passthrough-serve: response header blocklist preserves vendor metadata and drops unsafe headers', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
 
   await withMockedFetch(
     request => {
@@ -246,7 +246,7 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
   // + sawModel=false, and the passthrough seam surfaces the regular
   // model-missing 404. No upstream call should fire.
   const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
+  await registerOpenAIEmbeddingsUpstream(repo);
   await repo.modelAliases.insert({
     id: 'alias_embed-fast',
     name: 'embed-fast',
@@ -293,7 +293,7 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
 // the shared narrow phase produces a two-element candidate list ordered by
 // `sortOrder`. The passthrough loop must try `up_a` first (sortOrder 100)
 // and `up_b` second (sortOrder 200).
-const registerTwoEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -308,10 +308,10 @@ const registerTwoEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof se
 
 test('passthrough-serve: 5xx from the first candidate falls through to the next successful upstream', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerTwoEmbeddingsUpstreams(repo);
+  await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
-  let firstEmbeddingsCalls = 0;
-  let secondEmbeddingsCalls = 0;
+  let firstOpenAIEmbeddingsCalls = 0;
+  let secondOpenAIEmbeddingsCalls = 0;
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
@@ -319,11 +319,11 @@ test('passthrough-serve: 5xx from the first candidate falls through to the next 
         return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
       }
       if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
-        firstEmbeddingsCalls += 1;
+        firstOpenAIEmbeddingsCalls += 1;
         return new Response('upstream boom', { status: 503 });
       }
       if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
-        secondEmbeddingsCalls += 1;
+        secondOpenAIEmbeddingsCalls += 1;
         return jsonResponse({
           object: 'list',
           model: 'custom-embed-model',
@@ -347,13 +347,13 @@ test('passthrough-serve: 5xx from the first candidate falls through to the next 
     },
   );
 
-  assertEquals(firstEmbeddingsCalls, 1);
-  assertEquals(secondEmbeddingsCalls, 1);
+  assertEquals(firstOpenAIEmbeddingsCalls, 1);
+  assertEquals(secondOpenAIEmbeddingsCalls, 1);
 });
 
 test('passthrough-serve: when every candidate returns non-2xx the most recent upstream response is forwarded verbatim', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerTwoEmbeddingsUpstreams(repo);
+  await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
   await withMockedFetch(
     request => {
@@ -394,7 +394,7 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
 // throwing candidate, not the previously-succeeded one.
 test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await registerTwoEmbeddingsUpstreams(repo);
+  await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

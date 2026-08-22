@@ -16,7 +16,7 @@ const baseRecord: UpstreamRecord = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,
@@ -35,7 +35,7 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
       ...(baseRecord.config as Record<string, unknown>),
       modelsFetch: { enabled: false },
       models: [
-        { upstreamModelId: 'pinned', endpoints: { chatCompletions: {} }, display_name: 'Pinned' },
+        { upstreamModelId: 'pinned', endpoints: { openaiChatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
@@ -68,9 +68,29 @@ test('assertCustomUpstreamRecord canonicalizes ingress header rules without coll
   ]);
 });
 
-test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rules', () => {
+test('assertCustomUpstreamRecord keeps several rules under one name', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      ingressHeadersRules: [
+        { key: 'X-Route', value: null },
+        { key: 'x-route', value: 'appended' },
+        { key: 'x-route', value: '' },
+      ],
+    },
+  });
+
+  assertEquals(config.ingressHeadersRules, [
+    { key: 'x-route', value: null },
+    { key: 'x-route', value: 'appended' },
+    { key: 'x-route', value: '' },
+  ]);
+});
+
+test('assertCustomUpstreamRecord rejects invalid ingress header rules', () => {
   for (const [rules, message] of [
-    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: 'other' }], 'duplicate key x-route'],
+    [[{ key: 'X-Route', value: null }, { key: 'x-route', value: null }], 'passes x-route through more than once'],
     [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
     [[{ key: 'x-route', value: 'control\u0001byte' }], 'value is not a valid HTTP header value'],
@@ -82,7 +102,7 @@ test('assertCustomUpstreamRecord rejects invalid or duplicate ingress header rul
     [[{ key: 1, value: null }], 'key must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 1 }], 'value must be a string or null'],
     [[{ key: 'Content-Length', value: null }], 'content-length is owned by the HTTP transport'],
-    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Messages protocol'],
+    [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Anthropic Messages protocol'],
     [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
     [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
     [[{ key: 'X-Forwarded-Port', value: null }], 'x-forwarded-port is owned by the HTTP transport'],
@@ -267,7 +287,7 @@ test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () =>
     config: {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
@@ -301,7 +321,7 @@ test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () 
         config: {
           baseUrl: 'https://custom.example.com',
           authStyle: 'bearer',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           ingressHeadersRules: [],
         },
       }),

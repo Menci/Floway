@@ -3,14 +3,14 @@ import { test } from 'vitest';
 import { assertCustomUpstreamRecord } from '../src/config.ts';
 import {
   customFetchAlphaSearch,
-  customFetchAudioTranscriptions,
-  customFetchChatCompletions,
-  customFetchEmbeddings,
-  customFetchMessages,
-  customFetchMessagesCountTokens,
+  customFetchOpenAIAudioTranscriptions,
+  customFetchOpenAIChatCompletions,
+  customFetchOpenAIEmbeddings,
+  customFetchAnthropicMessages,
+  customFetchAnthropicMessagesCountTokens,
   customFetchModels,
-  customFetchResponses,
-  customFetchResponsesCompact,
+  customFetchOpenAIResponses,
+  customFetchOpenAIResponsesCompact,
 } from '../src/fetch.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -29,7 +29,7 @@ const baseRecord: UpstreamRecord = {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
   },
   state: null,
@@ -51,14 +51,14 @@ test('typed transports use default /v1/* paths', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
@@ -95,13 +95,13 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       // count_tokens / compact follow their parent override.
-      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       // Endpoints without an override fall back to the OpenAI default.
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -196,7 +196,7 @@ test('authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -220,7 +220,7 @@ test('authStyle "anthropic" preserves a caller-supplied anthropic-version', asyn
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchMessages(
+      await customFetchAnthropicMessages(
         config,
         { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
         { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
@@ -237,7 +237,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
     config: {
       baseUrl: 'https://internal.example.com',
       authStyle: 'none',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
@@ -252,7 +252,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -261,14 +261,14 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
   assertEquals(anthropicVersion, null);
 });
 
-test('Custom provider callImagesEdits forwards multipart body with model field appended', async () => {
+test('Custom provider callOpenAIImagesEdits forwards multipart body with model field appended', async () => {
   const record: UpstreamRecord = {
     ...baseRecord,
     config: {
       baseUrl: 'https://custom.example.com',
       authStyle: 'bearer',
       apiKey: 'sk-custom',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   };
@@ -286,7 +286,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
     async () => {
       const provider = createCustomProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callImagesEdits(model, {
+      const result = await provider.instance.callOpenAIImagesEdits(model, {
         parameters: { prompt: 'add a kite' },
         images: [{
           type: 'upload',
@@ -303,7 +303,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('image') instanceof File, true);
 });
 
-test('Custom provider callAudioTranscriptions preserves multipart entries and honors the path override', async () => {
+test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries and honors the path override', async () => {
   const record: UpstreamRecord = {
     ...baseRecord,
     config: {
@@ -314,7 +314,7 @@ test('Custom provider callAudioTranscriptions preserves multipart entries and ho
       ingressHeadersRules: [],
       pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   };
   let forwarded: { url: string; form: FormData } | undefined;
@@ -326,7 +326,7 @@ test('Custom provider callAudioTranscriptions preserves multipart entries and ho
     async () => {
       const provider = createCustomProvider(record);
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callAudioTranscriptions(model, {
+      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
         entries: [
           { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
           { name: 'model', value: 'public-model' },

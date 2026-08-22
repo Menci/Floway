@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, expect, test } from 'vitest';
 
-import { createNodeFetchHandler, nodeWebDistDir } from '../src/static-web.ts';
+import { createNodeFetchHandler, nodeWebDistDir, STATIC_ASSET_CACHE_CONTROL } from '../src/static-web.ts';
 
 const directories: string[] = [];
 
@@ -58,6 +58,7 @@ test('preserves static content types and supports conditional revalidation', asy
 
   const font = await fetch(new Request('http://floway.test/assets/font.ttf'));
   expect(font.headers.get('content-type')).toBe('font/ttf');
+  expect(font.headers.get('cache-control')).toBe(STATIC_ASSET_CACHE_CONTROL);
   expect(await font.text()).toBe('font');
 
   const robots = await fetch(new Request('http://floway.test/robots.txt'));

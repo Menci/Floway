@@ -17,7 +17,7 @@ The provider code and the reference URLs beside each workaround are the
 inventory; there is no separate documentation list to reconcile.
 
 1. Start from
-   `packages/provider-copilot/src/interceptors/{chat-completions,messages,responses}/index.ts`
+   `packages/provider-copilot/src/interceptors/{openai-chat-completions,anthropic-messages,openai-responses}/index.ts`
    and `packages/provider-copilot/src/defaults.ts`. Follow every registered
    interceptor and default-enabled shim to its implementation and tests.
 2. Sweep the rest of `packages/provider-copilot/src` for non-pricing reference
@@ -29,8 +29,8 @@ inventory; there is no separate documentation list to reconcile.
    `fetch-models.ts`, `known-models.ts`, `model-selection.ts`, and
    `merge-claude-variants.ts` together with their imports and tests.
 4. Include the authentication fingerprint and management/data-plane behavior in
-   `auth.ts`, plus Responses item identity and replay handling rooted at
-   `interceptors/responses/item-id-membrane.ts`. Follow adjacent carrier and
+   `auth.ts`, plus OpenAI Responses item identity and replay handling rooted at
+   `interceptors/openai-responses/item-id-membrane.ts`. Follow adjacent carrier and
    compaction modules rather than assuming the interceptor registry contains the
    whole workaround.
 5. Record each item's owning module, reference URLs, affected source and target

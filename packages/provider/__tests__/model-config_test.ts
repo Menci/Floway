@@ -198,7 +198,7 @@ describe('modelsField metadata integration', () => {
   test('derives transcription kind from the audio transcription endpoint', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
     }], 'p');
     expect(model.kind).toBe('transcription');
   });
@@ -207,17 +207,17 @@ describe('modelsField metadata integration', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
       kind: 'chat',
-      endpoints: { audioTranscriptions: {} },
+      endpoints: { openaiAudioTranscriptions: {} },
     }], 'p');
     expect(model.kind).toBe('chat');
-    expect(model.endpoints).toEqual({ audioTranscriptions: {} });
+    expect(model.endpoints).toEqual({ openaiAudioTranscriptions: {} });
   });
 
   test('rejects chat on non-chat kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'm',
       kind: 'embedding',
-      endpoints: { embeddings: {} },
+      endpoints: { openaiEmbeddings: {} },
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p')).toThrow(/chat .* only allowed when kind/);
   });
@@ -226,7 +226,7 @@ describe('modelsField metadata integration', () => {
     const [m] = modelsField([{
       upstreamModelId: 'm',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       chat: { modalities: { input: ['text'], output: ['text'] } },
     }], 'p');
     expect(m.chat?.modalities?.input).toEqual(['text']);
@@ -256,13 +256,13 @@ describe('modelsField rerank targets', () => {
     expect(() => modelsField([{
       upstreamModelId: 'chat',
       kind: 'chat',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       rerankTarget: { protocol: 'cohere-v2' },
     }], 'p')).toThrow(/rerankTarget is only allowed/);
     expect(() => modelsField([{
       upstreamModelId: 'reranker',
       kind: 'rerank',
-      endpoints: { chatCompletions: {} },
+      endpoints: { openaiChatCompletions: {} },
       rerankTarget: { protocol: 'cohere-v2' },
     }], 'p')).toThrow(/rerankTarget is only allowed/);
   });
@@ -285,7 +285,7 @@ test('modelsField parses a full model entry', () => {
       {
         upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-5',
-        endpoints: { chatCompletions: {}, responses: {} },
+        endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
         display_name: 'GPT Prod',
         limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
         pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
@@ -300,7 +300,7 @@ test('modelsField parses a full model entry', () => {
       upstreamModelId: 'gpt-prod',
       publicModelId: 'gpt-5',
       kind: 'chat',
-      endpoints: { chatCompletions: {}, responses: {} },
+      endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
       display_name: 'GPT Prod',
       limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
       pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
@@ -311,16 +311,16 @@ test('modelsField parses a full model entry', () => {
 
 test('modelsField parses a minimal model entry', () => {
   const models = modelsField(
-    [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }],
+    [{ upstreamModelId: 'gpt-prod', endpoints: { openaiChatCompletions: {} } }],
     'custom',
   );
 
-  assertEquals(models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { chatCompletions: {} } }]);
+  assertEquals(models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
 });
 
 test('modelsField rejects a missing upstreamModelId', () => {
   assertThrows(
-    () => modelsField([{ endpoints: { chatCompletions: {} } }], 'azure'),
+    () => modelsField([{ endpoints: { openaiChatCompletions: {} } }], 'azure'),
     Error,
     'Malformed azure models[0].upstreamModelId: must be a non-empty string',
   );
@@ -363,24 +363,24 @@ test('modelsField rejects an unsupported endpoint key', () => {
 });
 
 test('modelsField derives kind from endpoints when omitted', () => {
-  const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { embeddings: {} } }], 'custom');
+  const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { openaiEmbeddings: {} } }], 'custom');
   assertEquals(embedding.kind, 'embedding');
-  const [image] = modelsField([{ upstreamModelId: 'i', endpoints: { imagesGenerations: {}, imagesEdits: {} } }], 'custom');
+  const [image] = modelsField([{ upstreamModelId: 'i', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } }], 'custom');
   assertEquals(image.kind, 'image');
-  const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { audioTranscriptions: {} } }], 'custom');
+  const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { openaiAudioTranscriptions: {} } }], 'custom');
   assertEquals(audio.kind, 'transcription');
-  const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { responses: {} } }], 'custom');
+  const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { openaiResponses: {} } }], 'custom');
   assertEquals(chat.kind, 'chat');
 });
 
 test('modelsField accepts a valid kind and rejects an unknown one', () => {
   const models = modelsField(
-    [{ upstreamModelId: 'm', kind: 'embedding', endpoints: { embeddings: {} } }],
+    [{ upstreamModelId: 'm', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
     'custom',
   );
   assertEquals(models[0].kind, 'embedding');
   assertThrows(
-    () => modelsField([{ upstreamModelId: 'm', kind: 'bogus', endpoints: { chatCompletions: {} } }], 'custom'),
+    () => modelsField([{ upstreamModelId: 'm', kind: 'bogus', endpoints: { openaiChatCompletions: {} } }], 'custom'),
     Error,
     'Malformed custom models[0].kind: must be one of chat, embedding, image, rerank, transcription',
   );
@@ -388,7 +388,7 @@ test('modelsField accepts a valid kind and rejects an unknown one', () => {
 
 test('modelsField accepts pricing with only a subset of metrics set', () => {
   const models = modelsField(
-    [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '2.5' } }] } }],
+    [{ upstreamModelId: 'gpt-prod', endpoints: { openaiChatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '2.5' } }] } }],
     'azure',
   );
   assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '2.5' } }] });
@@ -398,7 +398,7 @@ test('modelsField rejects pricing with a negative input', () => {
   assertThrows(
     () =>
       modelsField(
-        [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '-1', output_tokens: '1' } }] } }],
+        [{ upstreamModelId: 'gpt-prod', endpoints: { openaiChatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '-1', output_tokens: '1' } }] } }],
         'azure',
       ),
     Error,
@@ -413,7 +413,7 @@ test('modelsField rejects a non-object flagOverrides', () => {
         [
           {
             upstreamModelId: 'gpt-prod',
-            endpoints: { chatCompletions: {} },
+            endpoints: { openaiChatCompletions: {} },
             flagOverrides: 'not-an-object',
           },
         ],
@@ -431,7 +431,7 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
         [
           {
             upstreamModelId: 'gpt-prod',
-            endpoints: { chatCompletions: {} },
+            endpoints: { openaiChatCompletions: {} },
             flagOverrides: { 'made-up-flag': true },
           },
         ],

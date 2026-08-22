@@ -10,7 +10,7 @@ import type { TranslateTripResult } from '@floway-dev/translate';
 //
 // On an upstream api-error the trip's optional `apiError` hook is invoked so
 // the pair can rewrite the body into the source protocol's envelope — the
-// canonical case is `messages-via-*` translating an upstream context-window
+// canonical case is `anthropic-messages-via-*` translating an upstream context-window
 // error into the Anthropic `prompt is too long:` shape Claude Code recognizes
 // for auto-compaction. Pairs that don't set `apiError` (or return `undefined`)
 // pass the upstream body through verbatim.

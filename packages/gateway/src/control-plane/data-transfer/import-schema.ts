@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
+import { isOpenAIResponsesRetentionSeconds, OPENAI_RESPONSES_RETENTION_MAX_SECONDS, OPENAI_RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/openai-responses-retention.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
 import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { ApiKey, PerformanceMetric, PerformanceTelemetryRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
@@ -196,9 +196,9 @@ const dumpRetentionSchema = parsedBy((value): number | null => {
   }
   return value;
 });
-const responsesRetentionSchema = parsedBy((value): number => {
-  if (!isResponsesRetentionSeconds(value)) {
-    throw new Error(`responsesRetentionSeconds must be 0 or a whole-day integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS}`);
+const openaiResponsesRetentionSchema = parsedBy((value): number => {
+  if (!isOpenAIResponsesRetentionSeconds(value)) {
+    throw new Error(`openaiResponsesRetentionSeconds must be 0 or a whole-day integer from ${OPENAI_RESPONSES_RETENTION_MIN_SECONDS} to ${OPENAI_RESPONSES_RETENTION_MAX_SECONDS}`);
   }
   return value;
 });
@@ -217,7 +217,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
     ? {}
     : { lastUsedAt: parseValue(nonEmptyStringSchema('lastUsedAt'), wire.lastUsedAt) };
   const dumpRetentionSeconds = parseValue(dumpRetentionSchema.optional().default(null), wire.dumpRetentionSeconds);
-  const responsesRetentionSeconds = parseValue(responsesRetentionSchema, wire.responsesRetentionSeconds);
+  const openaiResponsesRetentionSeconds = parseValue(openaiResponsesRetentionSchema, wire.openaiResponsesRetentionSeconds);
   return {
     id,
     userId,
@@ -229,7 +229,7 @@ const apiKeySchema = parsedBy((value): ApiKey => {
     upstreamIds,
     deletedAt,
     dumpRetentionSeconds,
-    responsesRetentionSeconds,
+    openaiResponsesRetentionSeconds,
   };
 });
 

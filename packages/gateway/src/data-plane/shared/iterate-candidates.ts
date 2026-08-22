@@ -8,7 +8,7 @@ import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider'
 //     attempt on a different upstream does not start once the client has
 //     begun consuming events.
 //   - The non-streaming envelope landed: `PlainResult` with a 2xx status,
-//     or the Responses-compact `{type:'result'}` envelope.
+//     or the OpenAI-Responses-compact `{type:'result'}` envelope.
 // `api-error` and `internal-error` are failures: the serve loop falls
 // through to the next candidate. 4xx is on the failure side — 429
 // (rate-limit) is the responsibility of the upstream that issued it, and

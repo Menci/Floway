@@ -6,7 +6,7 @@
 // realm's `BaseObjectList`, which is a GC root, and `Blob.prototype.stream()`
 // leaves the source buffer attached to it. Nothing ever collects it, and
 // because the bytes are native the retention is invisible in `heapUsed` — a
-// gateway storing Responses payloads leaked one full copy of every payload it
+// gateway storing OpenAI Responses payloads leaked one full copy of every payload it
 // compressed, and only RSS showed it. Feeding the transform from a plain
 // `ReadableStream` keeps the pipeline identical and allocates no Blob.
 // https://github.com/nodejs/node/issues/63574

@@ -8,6 +8,8 @@ import type { ExecutionContext } from 'hono';
 
 type FetchHandler = (request: Request, env?: object, executionCtx?: ExecutionContext) => Promise<Response> | Response;
 
+export const STATIC_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
 // Every path the gateway owns. The Vite proxy and Cloudflare static-assets
 // configuration restate this set in their own syntax; gateway-paths_test.ts
 // replays PUBLIC_DATA_PLANE_ROUTES through all three to keep them aligned.
@@ -101,7 +103,7 @@ const responseFromFile = async (path: string, request: Request, immutable: boole
     const etag = etagFor(info.size, info.mtimeMs);
     const headers = new Headers({
       'content-type': contentTypeFor(path),
-      'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'cache-control': immutable ? STATIC_ASSET_CACHE_CONTROL : 'no-cache',
       'content-length': String(info.size),
       etag,
       'last-modified': info.mtime.toUTCString(),

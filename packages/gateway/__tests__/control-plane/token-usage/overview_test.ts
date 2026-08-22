@@ -15,7 +15,7 @@ const adminKey: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 };
 
 const seedUsage = async (
