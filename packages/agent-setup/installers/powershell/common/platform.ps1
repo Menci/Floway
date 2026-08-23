@@ -13,6 +13,11 @@ function Get-SetupTimeoutSeconds {
 }
 
 function Get-SetupPlatform {
+  # The AGENT_SETUP_TEST_FORCE_WINDOWS hook lets the harness exercise
+  # Windows-only config-path branches on a non-Windows host; it must not
+  # affect Test-SetupIsWindows, whose callers also gate owner-only ACL APIs
+  # that do not exist on Linux.
+  if ($env:AGENT_SETUP_TEST_FORCE_WINDOWS) { return 'windows' }
   if (Test-SetupIsWindows) { return 'windows' }
   if ($IsMacOS) { return 'macos' }
   return 'linux'

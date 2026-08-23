@@ -2,13 +2,24 @@ import {
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
   SETUP_BASH_COMMON,
+  SETUP_BASH_OMP,
+  SETUP_BASH_VSCODE,
+  SETUP_BASH_ZED,
+  SETUP_BASH_OPENCODE,
   SETUP_POWERSHELL_CLAUDE,
   SETUP_POWERSHELL_CODEX,
   SETUP_POWERSHELL_COMMON,
+  SETUP_POWERSHELL_OMP,
+  SETUP_POWERSHELL_VSCODE,
+  SETUP_POWERSHELL_ZED,
+  SETUP_POWERSHELL_OPENCODE,
+  SETUP_PYTHON_CONVERTERS,
 } from './script-assets.generated.ts';
 
-export type ScriptAgent = 'claude' | 'codex';
+export type ScriptAgent = 'claude' | 'codex' | 'omp' | 'vscode' | 'zed' | 'opencode';
 export type ScriptLanguage = 'sh' | 'ps1';
+
+export { SETUP_PYTHON_CONVERTERS };
 
 export const SETUP_SCRIPT_BODIES = {
   claude: {
@@ -18,5 +29,21 @@ export const SETUP_SCRIPT_BODIES = {
   codex: {
     sh: SETUP_BASH_COMMON + SETUP_BASH_CODEX,
     ps1: SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_CODEX,
+  },
+  omp: {
+    sh: SETUP_BASH_COMMON + SETUP_BASH_OMP,
+    ps1: SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_OMP,
+  },
+  vscode: {
+    sh: SETUP_BASH_COMMON + SETUP_BASH_VSCODE,
+    ps1: SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_VSCODE,
+  },
+  zed: {
+    sh: SETUP_BASH_COMMON + SETUP_BASH_ZED,
+    ps1: SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_ZED,
+  },
+  opencode: {
+    sh: SETUP_BASH_COMMON + SETUP_BASH_OPENCODE,
+    ps1: SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_OPENCODE,
   },
 } as const satisfies Record<ScriptAgent, Record<ScriptLanguage, string>>;
