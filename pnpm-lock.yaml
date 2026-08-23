@@ -139,6 +139,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@floway-dev/agent-setup':
+        specifier: workspace:*
+        version: link:../../packages/agent-setup
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -296,6 +299,9 @@ importers:
 
   packages/agent-setup:
     dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.22)(zod@4.4.3)

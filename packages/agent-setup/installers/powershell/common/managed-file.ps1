@@ -1,3 +1,50 @@
+# The file a managed path ultimately names. chezmoi and stow both place a
+# symlink where an editor expects its document, and replacing that path with a
+# staged file replaces the link itself: the operator's dotfile silently stops
+# being what the editor reads, and their next change there has no effect.
+# Resolving up front keeps the write, the backup, the mode, and the backup prune
+# all acting on the real document. Mirrors _resolve_managed_path.
+#
+# `Get-Item -Force` rather than ResolveLinkTarget, which arrived in .NET 6 and
+# is therefore missing on pwsh 7.0-7.1; the hop loop this needs anyway also
+# bounds a link cycle, which the framework call would raise on.
+function Resolve-SetupManagedPath {
+  param([string]$Path)
+  # Every path leaves here canonical, not only one that went through a link:
+  # the prune compares against Get-ChildItem's own FullName, and the resolved
+  # path is what the run reports. `Get-Location` rather than GetFullPath's own
+  # anchor, which is the process directory PowerShell does not move with
+  # `Set-Location`.
+  if (-not [System.IO.Path]::IsPathRooted($Path)) { $Path = Join-Path (Get-Location).ProviderPath $Path }
+  $Path = [System.IO.Path]::GetFullPath($Path)
+  for ($hops = 0; $hops -lt 40; $hops++) {
+    # LinkType, not merely a non-empty Target: on the Windows PowerShell 5.1
+    # build Target also enumerates a file's hard-link names. Measured there
+    # (5.1.26100.8875): a file with only its own name reports Target empty, and
+    # one given a second name with `mklink /H` reports that name — so the loop
+    # below would resolve such a document to itself until the hop bound tripped
+    # and the run stopped having configured nothing. LinkType reads HardLink
+    # there and SymbolicLink for a real link, which is the question `[ -L ]`
+    # asks on the other half.
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item -or $item.LinkType -ne 'SymbolicLink') { return $Path }
+    $target = @($item.Target)[0]
+    # Canonicalized on both branches, not just the relative one: the prune
+    # compares against Get-ChildItem's own canonical FullName, so a target
+    # written with a `..` segment — which is how a dotfile manager may well
+    # write it — would match nothing there and take the backup meant to be
+    # kept. The prune canonicalizes its keep-path too, so either alone closes
+    # that; the pair is what the symlink test observes, and each stands for a
+    # reason of its own — this one so every downstream use of the path, the
+    # reported one included, is the canonical form.
+    #
+    # Refs: the `..` leg of `writes through a symlinked settings file`.
+    $Path = [System.IO.Path]::GetFullPath(
+      $(if ([System.IO.Path]::IsPathRooted($target)) { $target } else { Join-Path (Split-Path -Parent $Path) $target }))
+  }
+  Stop-Setup "$Path does not resolve to a file: too many symlink hops."
+}
+
 # Restrict a file to the current user: chmod 0600 on Unix, an inheritance-free
 # owner-only ACL on Windows.
 function Protect-SetupFile {
@@ -10,6 +57,11 @@ function Protect-SetupFile {
   # Set-Acl routes through the PowerShell filesystem provider and may persist
   # the untouched SACL, demanding SeSecurityPrivilege from a normal user. The
   # direct .NET APIs write only this descriptor's modified DACL.
+  #
+  # Measured on Windows PowerShell 5.1.26100.8875: the file comes back with
+  # inheritance blocked and exactly one rule, for the running user. The harness
+  # runs on Unix, where this branch never executes, so that is the only
+  # observation of it there is.
   # https://github.com/PowerShell/PowerShell/blob/0c226762e2580cd7853c058dd03fc32638a73971/src/System.Management.Automation/namespaces/FileSystemSecurity.cs#L130-L200
   # https://github.com/dotnet/runtime/blob/f94898a9b55df07348434e86915c7405962427b6/src/libraries/System.IO.FileSystem.AccessControl/src/System/Security/AccessControl/FileSystemSecurity.cs#L103-L125
   $acl = New-Object System.Security.AccessControl.FileSecurity
@@ -21,6 +73,22 @@ function Protect-SetupFile {
     [System.IO.File]::SetAccessControl($Path, $acl)
   } else {
     [System.IO.FileSystemAclExtensions]::SetAccessControl([System.IO.FileInfo]::new($Path), $acl)
+  }
+}
+
+# Copies a document to its backup path, leaving nothing behind when either the
+# copy or the mode restriction fails: a partial file beside the operator's own
+# outlives a run that reported changing nothing, and a rollback would later hand
+# it back as their document. The original failure is rethrown, so each caller
+# still says what it wants said about its own file.
+function Backup-SetupManagedFile {
+  param([string]$Path, [string]$Destination, [switch]$Protect)
+  try {
+    Copy-Item -LiteralPath $Path -Destination $Destination
+    if ($Protect) { Protect-SetupFile $Destination }
+  } catch {
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+    throw
   }
 }
 
@@ -52,11 +120,38 @@ function Restore-SetupManagedFile {
   }
 }
 
+# A directory under the backup prefix is refused rather than removed or skipped.
+# This installer only ever creates files there, so a directory is a state nobody
+# here produced and removing it recursively could take something of the
+# operator's along. `-File` would have skipped it and reported success, while
+# the Bash half's `rm -f` fails on it — one run's outcome must not depend on
+# which half served it.
+#
+# The question is link-ness, not which wrapper .NET chose: a symlink pointing at
+# a directory arrives as DirectoryInfo and is unlinked rather than refused,
+# which is what `rm -f` does with it on the other half.
 function Remove-SetupOlderBackups {
   param([string]$Path, [string]$Keep)
   $directory = Split-Path -Parent $Path
   $prefix = [System.IO.Path]::GetFileName($Path) + '.floway-backup.'
-  Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
-    Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
-    Remove-Item -Force -ErrorAction Stop
+  # Empty when this run made no backup, and GetFullPath rejects an empty path.
+  $keepFull = if ([string]::IsNullOrEmpty($Keep)) { $Keep } else { [System.IO.Path]::GetFullPath($Keep) }
+  Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop |
+    Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $keepFull } |
+    ForEach-Object {
+      if ($_ -is [System.IO.DirectoryInfo] -and $null -eq $_.LinkType) {
+        throw "could not remove obsolete backup $($_.FullName)"
+      }
+      if ($_ -is [System.IO.DirectoryInfo]) {
+        # A symlink to a directory. `Remove-Item -Force` unlinks it on pwsh 7
+        # but on Windows PowerShell 5.1 it asks for confirmation regardless —
+        # measured: the call blocks, which in an `irm | iex` console is a prompt
+        # nobody expects mid-install and in a non-interactive host is a hang.
+        # Directory.Delete with recurse:$false unlinks on both and leaves what
+        # the link pointed at alone.
+        [System.IO.Directory]::Delete($_.FullName, $false)
+      } else {
+        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+      }
+    }
 }

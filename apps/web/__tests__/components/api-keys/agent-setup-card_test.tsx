@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiKey } from '../../../src/api/types';
 import type { AgentSetupConfiguration, AgentSetupLease } from '../../../src/components/api-keys/agent-setup';
 import { AgentSetupCard } from '../../../src/components/api-keys/agent-setup-card';
+import { catalogModel } from '../../api/model-fixture';
 import { renderInApp } from '../../render';
 
 const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
@@ -23,6 +24,8 @@ const configuration = (apiKeyId: string): AgentSetupConfiguration => ({
     modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null },
+  zed: { providerName: 'Floway' },
+  vscode: { providerName: 'Floway', apiType: 'messages' },
 });
 
 const lease = (apiKeyId: string): AgentSetupLease => ({
@@ -34,6 +37,8 @@ const lease = (apiKeyId: string): AgentSetupLease => ({
   scripts: {
     claude: { sh: '/claude.sh', ps1: '/claude.ps1' },
     codex: { sh: '/codex.sh', ps1: '/codex.ps1' },
+    zed: { sh: '/zed.sh', ps1: '/zed.ps1' },
+    vscode: { sh: '/vscode.sh', ps1: '/vscode.ps1' },
   },
 });
 
@@ -51,6 +56,12 @@ const apiKey = (id: string): ApiKey => ({
 const clipboard = { copy: vi.fn(), outcomeFor: () => 'idle' as const };
 
 const PICK_SECOND_KEY = 'pick the second key';
+
+// What a stubbed fetch was asked to send. A field that shows an error while the
+// value is already on its way is the failure these tests exist to catch, so the
+// assertion has to read the request rather than the screen.
+const requestBodies = (fetchMock: { mock: { calls: unknown[][] } }): string[] =>
+  fetchMock.mock.calls.map(call => String((call[1] as RequestInit | undefined)?.body ?? ''));
 
 const Host = () => {
   const [keyId, setKeyId] = useState('key-1');
@@ -92,5 +103,266 @@ describe('Agent Setup card fields', () => {
     act(() => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
     expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true });
     vi.unstubAllGlobals();
+  });
+});
+
+// The provider name is the only free-text field here, so the only one whose
+// value the gateway can reject. A rejected draft is not retryable, so an
+// invalid name must never leave the component. Both editors share one field,
+// and the suite is parameterized over them so a tab that hand-builds its own
+// Input instead fails here.
+describe.each([
+  { tab: 'Zed', key: 'zed' as const },
+  { tab: 'VS Code', key: 'vscode' as const },
+])('$tab provider name', ({ key, tab }) => {
+  const showTab = () => { act(() => { screen.getByRole('tab', { name: tab }).click(); }); };
+
+  it('reports a padded name at the field and withholds it from the draft', async () => {
+    const saved = vi.fn(() => new Promise<Response>(() => {}));
+    renderInApp(<Host />);
+    showTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', saved);
+    act(() => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
+    expect(input.value).toBe('Floway ');
+
+    // The half of the name this test claims: past the save debounce, nothing
+    // carrying the padding may have left.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    expect(requestBodies(saved).some(body => body.includes('Floway '))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  // A text input strips only CR and LF, so a tab pasted from a spreadsheet
+  // reaches the field. Showing the error is not the guarantee — never sending
+  // the value is: the gateway rejects it with a 400 that is not retryable, so a
+  // value that reaches the draft strands the lease.
+  it('withholds a name carrying a control character', async () => {
+    const sent = vi.fn(() => new Promise<Response>(() => {}));
+    renderInApp(<Host />);
+    showTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', sent);
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Ops\tbox');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
+
+    // Past the save debounce: nothing carrying the tab may have left.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    expect(requestBodies(sent).some(body => body.includes('Ops\\tbox') || body.includes('Ops\tbox'))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  // The mirror of the two withholding cases: showing no error is not the
+  // guarantee, reaching the draft is. A name held back never reaches the served
+  // script or the pasted snippet, and nothing on screen would say so.
+  it('sends a valid name to the draft', async () => {
+    const sent = vi.fn(() => new Promise<Response>(() => {}));
+    renderInApp(<Host />);
+    showTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    vi.stubGlobal('fetch', sent);
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Floway prod');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(screen.queryByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeNull();
+    expect(input.value).toBe('Floway prod');
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 600)); });
+    expect(requestBodies(sent).some(body => body.includes('"providerName":"Floway prod"'))).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  // The local hold exists only to keep an invalid value out of the draft. It is
+  // keyed on the configuration it belongs to, so once a lease for another key
+  // lands the field shows that lease's name rather than the half-typed one.
+  it('yields to a configuration that arrives for another key', async () => {
+    const arriving = configuration('key-2');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
+      JSON.stringify({ ...lease('key-2'), configuration: { ...arriving, [key]: { ...arriving[key], providerName: 'Second' } } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))));
+    renderInApp(<Host />);
+    showTab();
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Half-typed ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(input.value).toBe('Half-typed ');
+
+    await act(async () => { screen.getByRole('button', { name: PICK_SECOND_KEY }).click(); });
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ }).value).toBe('Second');
+    vi.unstubAllGlobals();
+  });
+});
+
+// Both editor installers refuse a catalog with no chat models, and VS Code
+// registers a group only `if (models.length)` — so an empty snippet would leave
+// the operator with no provider and no error at all. The Host renders with an
+// empty catalog, which is exactly that case.
+// The warning names the editor whose tab it is: a VS Code operator told to fix
+// Zed has no way to know the sentence is about the tab they are not on.
+describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s snippet with no chat models', (tab, editor) => {
+  it('offers the warning instead of a document that configures nothing', () => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.getByText(`No chat model this gateway serves can be configured for ${editor} yet. Add an upstream that serves one.`)).toBeTruthy();
+    expect(screen.queryByText(/customendpoint|anthropic_compatible/)).toBeNull();
+  });
+});
+
+// Both tabs render the same field at the same position, so React keeps one
+// component instance across a tab switch. The hold belongs to one editor's name,
+// not to the configuration as a whole, or the other editor's field shows a value
+// its own setting never had.
+describe('provider name across editors', () => {
+  const showTab = (tab: string) => { act(() => { screen.getByRole('tab', { name: tab }).click(); }); };
+  const providerNameInput = () => screen.getByRole<HTMLInputElement>('textbox', { name: /Provider name/ });
+  const type = (value: string) => {
+    const input = providerNameInput();
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  it('does not carry one editor\'s typed name into the other', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderInApp(<Host />);
+    showTab('Zed');
+    type('Zed Prod');
+    showTab('VS Code');
+    expect(providerNameInput().value).toBe('Floway');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not carry one editor\'s withheld invalid name into the other', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    renderInApp(<Host />);
+    showTab('Zed');
+    type('');
+    expect(screen.getByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeTruthy();
+    showTab('VS Code');
+    expect(providerNameInput().value).toBe('Floway');
+    expect(screen.queryByText('Enter a name with no leading or trailing spaces and no control characters.')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
+
+// The dashboard knows the installer will refuse this catalog before the
+// operator runs anything, and the setup pane is the one they see first —
+// handing over a command that fails there is worse than saying so.
+describe.each([['Zed', 'Zed'], ['VS Code', 'VS Code']])('%s with no chat models', (tab, editor) => {
+  it('warns in the setup pane instead of offering a command', () => {
+    renderInApp(<Host />);
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    expect(screen.getByText(`No chat model this gateway serves can be configured for ${editor} yet. Add an upstream that serves one.`)).toBeTruthy();
+    expect(screen.queryByText(/curl |irm /)).toBeNull();
+  });
+});
+
+// A catalog that is not known yet is not an empty catalog. Before a key is
+// picked the card has nothing to project, and saying "no chat models" there
+// tells a first-time visitor their upstreams are wrong when they have simply
+// not chosen a key.
+// Every other case here renders an empty catalog, which is the warning path.
+// The panes also have to build something when there is a catalog, and each one
+// projects it — so a projection that answered with nothing for one editor would
+// blank that tab with no test saying so.
+describe('a catalog with chat models', () => {
+  const withModels = () => renderInApp(<AgentSetupCard
+    clipboard={clipboard}
+    initialApiKeyId="key-1"
+    initialError={null}
+    initialLease={lease('key-1')}
+    models={[catalogModel('claude-opus-4-6', { contextWindow: 200_000 })]}
+    selectedKey={apiKey('key-1')}
+  />);
+  const showSnippet = (tab: string) => {
+    act(() => { screen.getByRole('tab', { name: tab }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+  };
+
+  it('offers the VS Code group instead of the warning', () => {
+    withModels();
+    showSnippet('VS Code');
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    expect(screen.getAllByText(/customendpoint/).length).toBeGreaterThan(0);
+  });
+
+  it('offers the Zed provider instead of the warning', () => {
+    withModels();
+    showSnippet('Zed');
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    expect(screen.getAllByText(/anthropic_compatible/).length).toBeGreaterThan(0);
+  });
+
+  // The command, not merely the absence of the warning: a pane that rendered
+  // nothing at all would satisfy that on its own.
+  it('offers the setup command on both editor tabs', () => {
+    withModels();
+    for (const { tab, script } of [{ tab: 'Zed', script: '/zed.sh' }, { tab: 'VS Code', script: '/vscode.sh' }]) {
+      act(() => { screen.getByRole('tab', { name: tab }).click(); });
+      expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+      expect(screen.getAllByText(new RegExp(script)).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('an unknown catalog', () => {
+  const renderUnknown = (selectedKey: ApiKey | null) => renderInApp(<AgentSetupCard
+    clipboard={clipboard}
+    initialApiKeyId={selectedKey?.id ?? null}
+    initialError={null}
+    initialLease={selectedKey ? lease(selectedKey.id) : null}
+    models={null}
+    selectedKey={selectedKey}
+  />);
+
+  // A listing that failed is not a gateway with nothing to serve. Both panes
+  // have to tell those apart; the setup pane learned it first and the snippet
+  // pane kept collapsing `null` to an empty array.
+  // Codex and Claude build their snippets from the configuration alone, so a
+  // catalog nobody could list is no reason to blank their pane.
+  // The VS Code branch projects a catalog too, so its guard must sit inside the
+  // branch for the same reason Zed's does.
+  it('blames the catalog on neither VS Code pane', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'VS Code' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+  });
+
+  it('still offers the Codex snippet, which needs no catalog', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'Codex' }).click(); });
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.getAllByText(/model_provider/).length).toBeGreaterThan(0);
+  });
+
+  it('blames the catalog on neither Zed pane', () => {
+    renderUnknown(apiKey('key-1'));
+    act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+    act(() => { screen.getByRole('tab', { name: 'Config snippet' }).click(); });
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
+  });
+
+  it('asks for a key rather than blaming the catalog', () => {
+    renderUnknown(null);
+    act(() => { screen.getByRole('tab', { name: 'Zed' }).click(); });
+    expect(screen.getByText(/Select an API key above/)).toBeTruthy();
+    expect(screen.queryByText(/No chat model this gateway serves/)).toBeNull();
   });
 });

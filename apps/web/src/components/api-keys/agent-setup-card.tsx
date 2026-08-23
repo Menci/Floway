@@ -3,23 +3,29 @@ import { useMemo, useState } from 'react';
 import {
   buildAgentClaudeSnippet,
   buildAgentCodexSnippet,
+  buildAgentVSCodeSnippet,
+  buildAgentZedSnippet,
   codexUnixCredentialSnippet,
   codexWindowsCredentialSnippet,
   detectAgentSetupPlatform,
+  zedUnixCredentialSnippet,
+  zedWindowsCredentialSnippet,
   type AgentSetupConfiguration,
   type AgentSetupLease,
   type AgentSetupPlatform,
 } from './agent-setup';
-import { modelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { modelOptions, projectVSCodeModels, projectZedModels, rankAgentSetupModels, type ClaudePicker, type VSCodeModel, type ZedModel } from './agent-setup-models';
 import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import vscodeIconUrl from '../../assets/vscode.svg';
+import zedIconUrl from '../../assets/zed.svg';
 import { fluentComponents } from '../../fluent';
 import { Trans, useTranslation } from '../../i18n/translation';
 import { filterModelOptions } from '../../lib/model-query';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Dropdown } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -28,12 +34,44 @@ import { SwitchSetting } from '../ui/switch-setting';
 import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, Option, Tab, TabList, Text } = fluentComponents;
-type Agent = 'claude' | 'codex';
+type Agent = 'claude' | 'codex' | 'zed' | 'vscode';
+const AGENTS = ['claude', 'codex', 'zed', 'vscode'] as const satisfies readonly Agent[];
 type Platform = AgentSetupPlatform;
 // The option that stands for no override. Model overrides reject NUL at the
 // gateway boundary, so this UI-only value cannot collide with an opaque model
 // id.
 const MODEL_DEFAULT = '\u0000default';
+// What the editor tabs would configure from this catalog, and `null` for the
+// agents that build their configuration without one. Both panes ask through
+// this, so the tab that hands over a command and the tab that hands over a
+// document cannot disagree about whether there is anything to configure.
+type ApiType = AgentSetupConfiguration['vscode']['apiType'];
+function editorCatalog(agent: 'zed', models: ControlPlaneModel[], apiType: ApiType): ZedModel[];
+function editorCatalog(agent: 'vscode', models: ControlPlaneModel[], apiType: ApiType): VSCodeModel[];
+function editorCatalog(agent: Agent, models: ControlPlaneModel[], apiType: ApiType): ZedModel[] | VSCodeModel[] | null;
+function editorCatalog(agent: Agent, models: ControlPlaneModel[], apiType: ApiType) {
+  if (agent === 'zed') return projectZedModels(models);
+  if (agent === 'vscode') return projectVSCodeModels(models, apiType);
+  return null;
+}
+
+// Both editor installers refuse a catalog with no chat models rather than write
+// a provider that has none, so neither pane may hand the operator something
+// that would leave the editor with an unusable entry and no error. VS Code is
+// worse than Zed here: it records a group only `if (models.length)`, and the
+// sibling catch branch that would surface a message only runs when the provider
+// throws — resolving to no models is silent, so an empty group yields no
+// provider and no error at all.
+// Refs: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1236-L1252
+//       https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/src/vs/workbench/contrib/chat/common/languageModels.ts#L1264-L1273
+function NoChatModels({ editor }: { editor: 'zed' | 'vscode' }) {
+  const { t } = useTranslation();
+  return <div className="border-t border-t-solid border-fui-divider pt-4">
+    <OutcomeMessageBar intent="warning">
+      {t(editor === 'zed' ? 'dashboard.apiKeys.agentSetup.zedNoChatModels' : 'dashboard.apiKeys.agentSetup.vscodeNoChatModels')}
+    </OutcomeMessageBar>
+  </div>;
+}
 const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
 const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // https://code.claude.com/docs/en/settings#available-settings
@@ -43,12 +81,33 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // accepts and nothing else.
 // https://docs.claude.com/en/docs/claude-code/settings
 const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>[];
+// Restated rather than imported: the dashboard reaches @floway-dev/agent-setup
+// only through its `/models` subpath, and `editorProviderName` lives in
+// configuration.ts alongside the route factories, which are not on that
+// surface. It only stops typing early — the gateway still enforces the rule.
+const PROVIDER_NAME_MAX_LENGTH = 120;
+// Mirrors `editorProviderName` at the gateway, and is the single condition both
+// the error state and the draft gate ask. A text input strips only CR and LF, so
+// a tab pasted from a spreadsheet reaches the field; its 400 is not retryable,
+// which strands the lease with the copy button disabled and an untranslated Zod
+// issue on screen — the outcome this field exists to prevent. Two conditions
+// here would mean a value shown as invalid could still have been sent.
+const acceptableProviderName = (candidate: string): boolean =>
+  candidate.length > 0
+  && candidate === candidate.trim()
+  && !/[\u0000-\u001f\u007f]/.test(candidate);
+// The three paths `customendpoint` resolves a bare base URL to. Floway serves
+// all of them for every model, so the choice is a preference.
+// Ref: https://github.com/microsoft/vscode/blob/c780ea96132b1cabf170a454aced493d8317eee7/extensions/copilot/src/extension/byok/vscode-node/customEndpointProvider.ts#L22-L59
+const vscodeApiTypes = ['chat-completions', 'responses', 'messages'] as const satisfies readonly AgentSetupConfiguration['vscode']['apiType'][];
 
 export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initialLease, models, selectedKey }: {
   initialApiKeyId: string | null;
   initialError: string | null;
   initialLease: AgentSetupLease | null;
-  models: ControlPlaneModel[];
+  // `null` while the catalog is unknown: no key selected, or the listing
+  // failed. An empty array is a catalog that really serves nothing.
+  models: ControlPlaneModel[] | null;
   clipboard: ClipboardCopy;
   selectedKey: ApiKey | null;
 }) {
@@ -58,6 +117,16 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
   const [platform, setPlatform] = useState<Platform>(() => detectAgentSetupPlatform(window.navigator.platform, window.navigator.userAgent));
   const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError, initialApiKeyId);
 
+  // The installer refuses a catalog it cannot configure, and the dashboard knows
+  // that before the operator runs anything — so the setup pane says it rather
+  // than handing over a command that will fail. The snippet pane says the same
+  // thing in its own place.
+  // Gated on the key as well as the catalog: with no key selected there is
+  // nothing to project, and the pane's own "select a key" hint is the answer.
+  // Saying "no chat models" there tells a first-time visitor their upstreams
+  // are wrong when they have simply not chosen one.
+  const nothingToConfigure = selectedKey !== null && models !== null
+    && editorCatalog(agent, models, setup.draft.vscode.apiType)?.length === 0;
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
   // Both shells comment with `#`, so an unavailable command says why inside the block it will occupy.
@@ -75,9 +144,11 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
     <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
-        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(AGENTS.find(candidate => candidate === data.value) ?? 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
+          <AgentTab icon={zedIconUrl} label={t('dashboard.apiKeys.configuration.zed')} value="zed" />
+          <AgentTab icon={vscodeIconUrl} label={t('dashboard.apiKeys.configuration.vscode')} value="vscode" />
         </TabList>
       </nav>
 
@@ -93,23 +164,25 @@ export function AgentSetupCard({ clipboard, initialApiKeyId, initialError, initi
 
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={3} title={t('dashboard.apiKeys.agentSetup.modelSelection')} />
-          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
+          <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models ?? []} onChange={setup.updateDraft} />
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} models={models} clipboard={clipboard} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
-            : <div className="border-t border-t-solid border-fui-divider pt-4">
-                <CodeBlock
-                  code={command}
-                  copyOutcome={clipboard.outcomeFor(`agent-setup-${agent}-${platform}`)}
-                  disabled={!setup.canCopy}
-                  header={<PlatformTabs onChange={setPlatform} platform={platform} />}
-                  language={platform === 'unix' ? 'bash' : 'powershell'}
-                  onCopy={() => setup.canCopy && clipboard.copy(command, `agent-setup-${agent}-${platform}`)}
-                />
-              </div>}
+            : nothingToConfigure
+              ? <NoChatModels editor={agent === 'zed' ? 'zed' : 'vscode'} />
+              : <div className="border-t border-t-solid border-fui-divider pt-4">
+                  <CodeBlock
+                    code={command}
+                    copyOutcome={clipboard.outcomeFor(`agent-setup-${agent}-${platform}`)}
+                    disabled={!setup.canCopy}
+                    header={<PlatformTabs onChange={setPlatform} platform={platform} />}
+                    language={platform === 'unix' ? 'bash' : 'powershell'}
+                    onCopy={() => setup.canCopy && clipboard.copy(command, `agent-setup-${agent}-${platform}`)}
+                  />
+                </div>}
 
         {(selectedKey !== null || view === 'setup') && (
           <Text size={200} className="text-fui-fg2">
@@ -142,10 +215,14 @@ function PlatformTabs({ onChange, platform }: { onChange: (platform: Platform) =
   </TabList>;
 }
 
-function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatformChange, platform }: {
+function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, models, onPlatformChange, platform }: {
   agent: Agent;
   apiKey: string;
   configuration: AgentSetupConfiguration;
+  // `null` while the catalog is unknown — a listing that failed — as against an
+  // empty array, which is a gateway that serves nothing. Only the second is the
+  // operator's to act on.
+  models: ControlPlaneModel[] | null;
   clipboard: ClipboardCopy;
   onPlatformChange: (platform: Platform) => void;
   platform: Platform;
@@ -164,11 +241,49 @@ function AgentConfigSnippets({ agent, apiKey, clipboard, configuration, onPlatfo
   // Both snippets are one platform's pair -- the config's auth command reads the
   // file the credential snippet writes -- so one choice drives them and each
   // block carries the picker, whichever the reader reaches first.
+  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
+  if (agent === 'vscode') {
+    // Nothing to project from a catalog that is not known yet; the page's own
+    // listing error is the message that belongs there. The guard sits in each
+    // catalog-projecting branch rather than above them, because Codex and
+    // Claude build their snippets from the configuration alone.
+    if (models === null) return null;
+    const vscodeModels = editorCatalog('vscode', models, configuration.vscode.apiType);
+    if (vscodeModels.length === 0) return <NoChatModels editor="vscode" />;
+    const snippet = buildAgentVSCodeSnippet(origin, apiKey, configuration.vscode, vscodeModels);
+    return <div className="grid gap-2 border-t border-t-solid border-fui-divider pt-4">
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey="dashboard.apiKeys.configuration.vscodeConfigHint" />
+      </Text>
+      <CodeBlock code={snippet} copyOutcome={clipboard.outcomeFor('agent-snippet-vscode')} language="json" onCopy={() => clipboard.copy(snippet, 'agent-snippet-vscode')} />
+      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.vscodeAuthHint')}</Text>
+    </div>;
+  }
+  if (agent === 'zed') {
+    // Nothing to project from a catalog that is not known yet; the page's own
+    // listing error is the message that belongs there. Only the editors that
+    // embed a catalog are blank here — Codex and Claude build their snippets
+    // from the configuration alone and need no models at all.
+    if (models === null) return null;
+    const zedModels = editorCatalog('zed', models, configuration.vscode.apiType);
+    if (zedModels.length === 0) return <NoChatModels editor="zed" />;
+    const config = buildAgentZedSnippet(origin, configuration.zed, zedModels);
+    const credential = platform === 'windows' ? zedWindowsCredentialSnippet(origin, apiKey) : zedUnixCredentialSnippet(origin, apiKey);
+    const configTag = platform === 'windows' ? 'agent-snippet-zed-windows' : 'agent-snippet-zed-unix';
+    const credentialTag = `${configTag}-credential`;
+    return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
+      <Text size={200} className="text-fui-fg2">
+        <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.zedConfigHintWindows' : 'dashboard.apiKeys.configuration.zedConfigHint'} />
+      </Text>
+      <CodeBlock code={config} copyOutcome={clipboard.outcomeFor(configTag)} header={tabs} language="json" onCopy={() => clipboard.copy(config, configTag)} />
+      <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.zedAuthHint')}</Text>
+      <CodeBlock code={credential} copyOutcome={clipboard.outcomeFor(credentialTag)} header={tabs} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => clipboard.copy(credential, credentialTag)} />
+    </div>;
+  }
   const config = buildAgentCodexSnippet(origin, configuration.codex, platform);
   const credential = platform === 'windows' ? codexWindowsCredentialSnippet(apiKey) : codexUnixCredentialSnippet(apiKey);
   const configTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
   const credentialTag = `${configTag}-token`;
-  const tabs = <PlatformTabs onChange={onPlatformChange} platform={platform} />;
   return <div className="grid gap-3 border-t border-t-solid border-fui-divider pt-4">
     <Text size={200} className="text-fui-fg2">
       <Trans components={{ path: <code className="font-mono mono-size-xs" /> }} i18nKey={platform === 'windows' ? 'dashboard.apiKeys.configuration.codexConfigHintWindows' : 'dashboard.apiKeys.configuration.codexConfigHint'} />
@@ -192,6 +307,8 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const { t } = useTranslation();
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
+  const patchZed = (patch: Partial<AgentSetupConfiguration['zed']>) => onChange(current => ({ ...current, zed: { ...current.zed, ...patch } }));
+  const patchVSCode = (patch: Partial<AgentSetupConfiguration['vscode']>) => onChange(current => ({ ...current, vscode: { ...current.vscode, ...patch } }));
   const codexModel = configuration.codex.model
     ? models.find(model => model.id === configuration.codex.model)
     : rankAgentSetupModels(models, { family: 'codex' })[0];
@@ -272,6 +389,32 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
     </section>
   </div>;
 
+  if (agent === 'vscode') return <div className="grid gap-3">
+    <div className={FIELD_GRID_CLASS}>
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/vscode`} hintKey="vscodeProviderNameHint" value={configuration.vscode.providerName} onChange={providerName => patchVSCode({ providerName })} />
+      <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.apiType'), t('dashboard.apiKeys.agentSetup.apiTypeHint')) }}>
+        <Dropdown
+          selectedOptions={[configuration.vscode.apiType]}
+          value={configuration.vscode.apiType}
+          onOptionSelect={(_, data) => {
+            const apiType = vscodeApiTypes.find(candidate => candidate === data.optionValue);
+            if (apiType !== undefined) patchVSCode({ apiType });
+          }}
+        >
+          {vscodeApiTypes.map(apiType => <Option key={apiType} value={apiType}>{apiType}</Option>)}
+        </Dropdown>
+      </Field>
+    </div>
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.vscodeModelSnapshot')}</Text>
+  </div>;
+
+  if (agent === 'zed') return <div className="grid gap-3">
+    <div className={FIELD_GRID_CLASS}>
+      <ProviderNameField fieldId={`${configuration.apiKeyId}/zed`} hintKey="zedProviderNameHint" value={configuration.zed.providerName} onChange={providerName => patchZed({ providerName })} />
+    </div>
+    <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.zedModelSnapshot')}</Text>
+  </div>;
+
   return <div className={FIELD_GRID_CLASS}>
     <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="codex" picker="default" value={configuration.codex.model} onChange={model => patchCodex({ model })} />
     <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
@@ -280,6 +423,46 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       </Combobox>
     </Field>
   </div>;
+}
+
+// The one free-text field in Agent Setup, so the only one whose draft the
+// gateway can reject. `editorProviderName` refuses empty, padded, and
+// control-character names; an invalid value is held locally and never patched
+// into the draft, because a 400 is not retryable and would strand the lease
+// with the copy button disabled and an untranslated Zod issue on screen.
+function ProviderNameField({ fieldId, hintKey, onChange, value }: {
+  fieldId: string;
+  // The hint names where the operator will see this name, which differs by
+  // editor — Zed's model picker against a group in VS Code's provider list.
+  // Not asserted anywhere: it renders inside an InfoButton popover, which does
+  // not open under the test renderer.
+  hintKey: 'zedProviderNameHint' | 'vscodeProviderNameHint';
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const { t } = useTranslation();
+  // The local hold keeps an invalid value out of the draft while it is being
+  // typed. Both editors render this field at the same position, so React keeps
+  // one instance across a tab switch; the hold is therefore keyed on the field
+  // it belongs to — the configuration and the editor together — rather than on
+  // the configuration alone, which would show one editor's name under the other.
+  const [draft, setDraft] = useState<{ against: string; value: string } | null>(null);
+  const shown = draft?.against === fieldId ? draft.value : value;
+  const invalid = !acceptableProviderName(shown);
+  return <Field
+    label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.providerName'), t(hintKey === 'zedProviderNameHint' ? 'dashboard.apiKeys.agentSetup.zedProviderNameHint' : 'dashboard.apiKeys.agentSetup.vscodeProviderNameHint')) }}
+    validationMessage={invalid ? t('dashboard.apiKeys.agentSetup.providerNameInvalid') : undefined}
+    validationState={invalid ? 'error' : undefined}
+  >
+    <Input
+      maxLength={PROVIDER_NAME_MAX_LENGTH}
+      value={shown}
+      onChange={(_, data) => {
+        setDraft({ against: fieldId, value: data.value });
+        if (acceptableProviderName(data.value)) onChange(data.value);
+      }}
+    />
+  </Field>;
 }
 
 function ModelSelect({ family, label, models, onChange, picker, value }: {

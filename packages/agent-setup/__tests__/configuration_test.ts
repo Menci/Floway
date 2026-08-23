@@ -25,6 +25,13 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
 
 describe('agentSetupConfigurationSchema', () => {
@@ -40,6 +47,8 @@ describe('agentSetupConfigurationSchema', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
+      zed: { providerName: 'Floway' },
+      vscode: { providerName: 'Floway', apiType: 'messages' },
     }).success).toBe(true);
   });
 
@@ -103,10 +112,31 @@ describe('agentSetupConfigurationSchema', () => {
       codex: { ...fullConfiguration.codex, unexpected: true },
     }).success).toBe(false);
   });
+
+  test('accepts a Zed provider name with spaces and non-ASCII characters', () => {
+    for (const providerName of ['Floway', 'Ops box', '自建网关', 'floway.dev', 'F'.repeat(120)]) {
+      expect(agentSetupConfigurationSchema.safeParse({
+        ...fullConfiguration,
+        zed: { providerName },
+      }).success).toBe(true);
+    }
+  });
+
+  // The length bound is the one condition the dashboard's own check leaves to
+  // the input's maxLength attribute, so the schema is the only place it is
+  // enforced against anything that did not come from that field.
+  test('rejects a Zed provider name that is empty, padded, over-long, or carries a control character', () => {
+    for (const providerName of ['', ' Floway', 'Floway ', 'Flo\tway', 'Flo\0way', 'Flo\x7fway', 'F'.repeat(121)]) {
+      expect(agentSetupConfigurationSchema.safeParse({
+        ...fullConfiguration,
+        zed: { providerName },
+      }).success).toBe(false);
+    }
+  });
 });
 
 describe('defaultAgentSetupConfiguration', () => {
-  test('sets the given key, enables both agents, nulls overrides, enables discovery', () => {
+  test('sets the given key, nulls every override, enables discovery, and names the Zed provider', () => {
     expect(defaultAgentSetupConfiguration('key-a')).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
@@ -114,6 +144,8 @@ describe('defaultAgentSetupConfiguration', () => {
         defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
+      zed: { providerName: 'Floway' },
+      vscode: { providerName: 'Floway', apiType: 'messages' },
     });
   });
 

@@ -22,7 +22,22 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
+
+const ZED_MODELS = [{
+  name: 'claude-opus-4-6',
+  display_name: 'Claude Opus 4.6',
+  max_tokens: 1_000_000,
+  capabilities: { tools: true, images: true, prompt_caching: true },
+  max_output_tokens: 64_000,
+}] as const;
 
 describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
@@ -72,6 +87,38 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
+  test('carries the Zed provider name and catalog, through the same literal encoder', () => {
+    const prefix = renderShellPrefix({
+      agent: 'zed',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+      editorModels: ZED_MODELS,
+    });
+    expect(prefix).toContain("SETUP_ZED_PROVIDER_NAME='Ops'\\'' box'");
+    // Spelled out rather than recomputed with JSON.stringify: an expectation
+    // built by the production serializer follows it through any change of key
+    // order or spacing, which is exactly what jq's --slurpfile would then have
+    // to parse differently.
+    expect(prefix).toContain(`SETUP_ZED_MODELS='[{"name":"${ZED_MODELS[0]!.name}",`);
+    expect(prefix).toContain('"capabilities":{"tools":true,');
+    expect(prefix).not.toContain('SETUP_ZED_MODELS=\'[\n');
+    expect(prefix).not.toContain('SETUP_CLAUDE_');
+    expect(prefix).not.toContain('SETUP_CODEX_');
+  });
+
+  // Zed cannot discover models, so a script without the catalog would register
+  // a provider with none. A caller that forgot it is a wiring mistake, not an
+  // empty catalog, and must not render.
+  test('refuses to render an editor script with no projection', () => {
+    expect(() => renderShellPrefix({
+      agent: 'zed',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: fullConfiguration,
+    })).toThrow(/no projected models/);
+  });
+
   test('renders empty values for disabled target-agent overrides', () => {
     const prefix = renderShellPrefix({
       agent: 'claude',
@@ -84,6 +131,8 @@ describe('renderShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        zed: { providerName: 'Floway' },
+        vscode: { providerName: 'Floway', apiType: 'messages' },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -143,6 +192,31 @@ describe('renderPowerShellPrefix', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
+  test('carries the Zed provider name and catalog, through the same literal encoder', () => {
+    const input = {
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: { ...fullConfiguration, zed: { providerName: "Ops' box" } },
+      editorModels: ZED_MODELS,
+    } as const;
+    const prefix = renderPowerShellPrefix({ agent: 'zed', ...input });
+    expect(prefix).toContain("$SetupZedProviderName = 'Ops'' box'");
+    // Spelled out for the same reason the shell case spells it out: an
+    // expectation built by the production serializer would follow it through
+    // any change of key order or spacing.
+    expect(prefix).toContain(`$SetupZedModels = '[{"name":"${ZED_MODELS[0]!.name}",`);
+    expect(prefix).toContain('"capabilities":{"tools":true,');
+    // And the two halves carry one serialization, not two: the installers'
+    // merges are two implementations of one mapping, so a catalog that differed
+    // between them would be a provider that differed between them.
+    const shellCatalog = /SETUP_ZED_MODELS='(.*)'\n/.exec(renderShellPrefix({ agent: 'zed', ...input }));
+    const powerShellCatalog = /\$SetupZedModels = '(.*)'\n/.exec(prefix);
+    expect(shellCatalog?.[1]).toBeTruthy();
+    expect(powerShellCatalog?.[1]).toBe(shellCatalog?.[1]);
+    expect(prefix).not.toContain('$SetupClaude');
+    expect(prefix).not.toContain('$SetupCodex');
+  });
+
   test('renders $false and $null for disabled target-agent overrides', () => {
     const prefix = renderPowerShellPrefix({
       agent: 'claude',
@@ -155,6 +229,8 @@ describe('renderPowerShellPrefix', () => {
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
+        zed: { providerName: 'Floway' },
+        vscode: { providerName: 'Floway', apiType: 'messages' },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');

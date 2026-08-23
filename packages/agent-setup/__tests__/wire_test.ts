@@ -22,6 +22,13 @@ const fullConfiguration: AgentSetupConfiguration = {
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
+  zed: {
+    providerName: 'Floway',
+  },
+  vscode: {
+    providerName: 'Floway',
+    apiType: 'messages',
+  },
 };
 
 describe('agent setup request bodies', () => {

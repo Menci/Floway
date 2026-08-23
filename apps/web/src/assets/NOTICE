@@ -108,6 +108,37 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Simple Icons
+------------
+
+lobe-icons carries neither of these marks, so they come from simple-icons at commit
+34c22501f9ac9f22b12f825677ccbab1fb22e14b:
+
+- zed.svg
+  https://github.com/simple-icons/simple-icons/blob/34c22501f9ac9f22b12f825677ccbab1fb22e14b/icons/zedindustries.svg
+- vscode.svg
+  https://github.com/simple-icons/simple-icons/blob/34c22501f9ac9f22b12f825677ccbab1fb22e14b/icons/vscodium.svg
+
+The path data is verbatim in both. The root element gains the sizing and
+`fill="currentColor"` attributes the lobe-icons marks carry, so each renders at
+the same optical size and inherits colour the same way, and the title is
+replaced with the label beside it.
+
+vscode.svg is the VSCodium mark rather than a Visual Studio Code one. Neither
+icon set carries the Microsoft-branded mark, and the tab it labels configures
+the Code, Insiders, and VSCodium builds alike, so the unbranded shape is the
+more accurate label as well as the freely licensed one.
+
+CC0-1.0 Universal
+
+The person who associated a work with this deed has dedicated the work to the
+public domain by waiving all of his or her rights to the work worldwide under
+copyright law, including all related and neighboring rights, to the extent
+allowed by law. You can copy, modify, distribute and perform the work, even for
+commercial purposes, all without asking permission.
+
+https://github.com/simple-icons/simple-icons/blob/34c22501f9ac9f22b12f825677ccbab1fb22e14b/LICENSE.md
+
 Meslo LG S
 ----------
 
