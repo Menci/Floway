@@ -7,6 +7,7 @@ const en = {
       documentTitle: '{{title}} | Floway',
     },
     common: {
+      language: 'Language',
       loading: shellLoadingLabel,
       on: 'On',
       off: 'Off',

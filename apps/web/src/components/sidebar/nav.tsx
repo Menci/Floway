@@ -12,6 +12,7 @@ import { NavSelectionIndicator } from './nav-selection-indicator';
 import { accountPage, dashboardPages, navGroups } from './pages';
 import { useTranslation } from '../../i18n/translation';
 import { useAuthStore } from '../../stores/auth-store';
+import { LanguageSelector } from '../language-selector';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { ScrollArea } from '../ui/scroll-area';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
@@ -128,6 +129,9 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">
         <div className="flex items-center min-h-10">
           <FlowayLogo />
+          {!onNavigate && <div className="ml-auto flex items-center gap-2">
+            <LanguageSelector />
+          </div>}
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>
