@@ -99,6 +99,155 @@ test('fetchCustomModels reads superset fields (display_name, limits, pricing) fr
   );
 });
 
+test('fetchCustomModels parses the hyper.charm.land OpenAI-compatible shape (top-level limits, flat per-M pricing)', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{
+        id: 'deepseek-v4-flash',
+        object: 'model',
+        created: 1783361967,
+        owned_by: 'hyper',
+        display_name: 'DeepSeek V4 Flash',
+        context_window: 1000000,
+        max_output_tokens: 384000,
+        capabilities: { vision: false },
+        reasoning: { effort_levels: [{ value: 'high', display: 'High' }], default_effort_level: 'high' },
+        pricing: { input: 0.2, output: 0.4, cache_create: 0, cache_hit: 0.04 },
+      }],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      const model = result.data[0];
+      assertEquals(model.id, 'deepseek-v4-flash');
+      assertEquals(model.display_name, 'DeepSeek V4 Flash');
+      assertEquals(model.created, 1783361967);
+      assertEquals(model.owned_by, 'hyper');
+      assertEquals(model.limits?.max_context_window_tokens, 1000000);
+      assertEquals(model.limits?.max_output_tokens, 384000);
+      assertEquals(model.chat?.reasoning?.effort?.supported, ['high']);
+      assertEquals(model.chat?.reasoning?.effort?.default, 'high');
+      assertEquals(model.chat?.modalities, undefined);
+      assertEquals(model.pricing?.entries[0]?.rates.input_tokens, '0.0000002');
+      assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '0.0000004');
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_write_tokens, '0');
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.00000004');
+    },
+  );
+});
+
+test('fetchCustomModels maps a partial flat pricing block to per-token rates', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', pricing: { input: 1.5, output: 3 } }] }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data[0].pricing?.entries[0]?.rates.input_tokens, '0.0000015');
+      assertEquals(result.data[0].pricing?.entries[0]?.rates.output_tokens, '0.000003');
+    },
+  );
+});
+
+test('fetchCustomModels drops flat pricing blocks with unknown keys or non-numeric rates', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list', data: [
+        { id: 'unknown-key', pricing: { input: 1, reasoning: 5 } },
+        { id: 'nan-rate', pricing: { input: Number.NaN } },
+        { id: 'string-rate', pricing: { input: '1' } },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data.map(model => model.pricing), [undefined, undefined, undefined]);
+    },
+  );
+});
+
+test('fetchCustomModels merges top-level context limits with a nested limits object', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list', data: [
+        { id: 'm-1', context_window: 1000000, max_output_tokens: 384000 },
+        { id: 'm-2', context_window: 200000, max_output_tokens: 8192, limits: { max_output_tokens: 4096, max_prompt_tokens: 1000 } },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      const topLevel = result.data[0];
+      assertEquals(topLevel.limits?.max_context_window_tokens, 1000000);
+      assertEquals(topLevel.limits?.max_output_tokens, 384000);
+      const merged = result.data[1];
+      assertEquals(merged.limits?.max_context_window_tokens, 200000);
+      assertEquals(merged.limits?.max_output_tokens, 4096);
+      assertEquals(merged.limits?.max_prompt_tokens, 1000);
+    },
+  );
+});
+
+test('fetchCustomModels derives vision and reasoning effort from OpenAI-compat top-level fields', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'vision', capabilities: { vision: true } },
+        { id: 'multi', capabilities: { vision: true }, reasoning: { effort_levels: [{ value: 'low', display: 'Low' }, { value: 'high', display: 'High' }], default_effort_level: 'high' } },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data[0].chat?.modalities, { input: ['text', 'image'], output: ['text'] });
+      assertEquals(result.data[1].chat?.modalities, { input: ['text', 'image'], output: ['text'] });
+      assertEquals(result.data[1].chat?.reasoning?.effort?.supported, ['low', 'high']);
+      assertEquals(result.data[1].chat?.reasoning?.effort?.default, 'high');
+    },
+  );
+});
+
+test('fetchCustomModels skips malformed OpenAI-compat reasoning without dropping the model', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'empty-levels', reasoning: { effort_levels: [], default_effort_level: 'high' } },
+        { id: 'missing-default', reasoning: { effort_levels: [{ value: 'high', display: 'High' }] } },
+        { id: 'default-not-supported', reasoning: { effort_levels: [{ value: 'high', display: 'High' }], default_effort_level: 'xhigh' } },
+        { id: 'bad-level-shape', reasoning: { effort_levels: ['high'], default_effort_level: 'high' } },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data.map(model => model.chat), [undefined, undefined, undefined, undefined]);
+    },
+  );
+});
+
+test('fetchCustomModels merges explicit Floway chat with OpenAI-compat derivation (explicit wins per field)', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{
+        id: 'm-1',
+        capabilities: { vision: true },
+        reasoning: { effort_levels: [{ value: 'low', display: 'Low' }], default_effort_level: 'low' },
+        chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'low' } } },
+      }],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      const model = result.data[0];
+      assertEquals(model.chat?.modalities, { input: ['text', 'image'], output: ['text'] });
+      assertEquals(model.chat?.reasoning?.effort, { supported: ['low', 'medium'], default: 'low' });
+    },
+  );
+});
+
 test('fetchCustomModels keeps a `pricing` block with any subset of billing metrics', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(

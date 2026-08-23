@@ -32,6 +32,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
   if (model.pricing) partial.pricing = model.pricing;
+  if (model.chat) partial.chat = model.chat;
   return partial;
 };
 

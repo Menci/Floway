@@ -411,6 +411,36 @@ test('Custom provider projects display_name / created / limits / pricing from a 
   );
 });
 
+test('Custom provider projects limits and per-token pricing from a hyper.charm.land-style /models response', async () => {
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{
+        id: 'deepseek-v4-flash',
+        object: 'model',
+        display_name: 'DeepSeek V4 Flash',
+        context_window: 1000000,
+        max_output_tokens: 384000,
+        reasoning: { effort_levels: [{ value: 'high', display: 'High' }, { value: 'xhigh', display: 'X-High' }], default_effort_level: 'high' },
+        pricing: { input: 0.2, output: 0.4, cache_create: 0, cache_hit: 0.04 },
+      }],
+    }),
+    async () => {
+      const [model] = await createCustomProvider(buildCustomUpstream()).instance.getProvidedModels(directFetcher);
+      assertEquals(model.id, 'deepseek-v4-flash');
+      assertEquals(model.kind, 'chat');
+      assertEquals(model.limits.max_context_window_tokens, 1000000);
+      assertEquals(model.limits.max_output_tokens, 384000);
+      assertEquals(model.chat?.reasoning?.effort?.supported, ['high', 'xhigh']);
+      assertEquals(model.chat?.reasoning?.effort?.default, 'high');
+      assertEquals(model.pricing?.entries[0]?.rates.input_tokens, '0.0000002');
+      assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '0.0000004');
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_write_tokens, '0');
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.00000004');
+    },
+  );
+});
+
 test('Custom provider falls back to `name` when display_name is missing (loose OpenAI-compat upstreams)', async () => {
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-named', name: 'Named Model' }] }),
