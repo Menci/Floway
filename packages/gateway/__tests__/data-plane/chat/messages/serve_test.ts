@@ -776,6 +776,48 @@ test('Claude Code count_tokens decodes its synthetic model id before resolution'
   assertEquals(lastResolveCall.model, 'gpt-5');
 });
 
+// The Claude Desktop app embeds the Claude Code picker but its `/v1/messages`
+// inference requests carry an Electron `Mozilla/5.0 … Claude/<version> …`
+// User-Agent, not the CLI's `claude-cli/*` token. A model id the desktop
+// picker surfaces with the `claude-code!` prefix must still decode before
+// resolution, otherwise the prefixed id reaches the resolver verbatim and
+// the pick fails. Captured against Claude Desktop 1.34493.1.
+test('Claude Desktop generation decodes the synthetic model-id prefix before resolution', async () => {
+  installRepo();
+  const desktopUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/1.34493.1 Chrome/148.0.7778.280 Electron/42.9.2 Safari/537.36';
+  for (const [requested, resolved] of [
+    ['claude-code!gpt-5', 'gpt-5'],
+    ['claude-code!claude-code!gpt-5', 'claude-code!gpt-5'],
+    ['claude-haiku-4-5', 'claude-haiku-4-5'],
+  ] as const) {
+    queueResolution([], { sawModel: false });
+    const payload = makePayload({ model: requested });
+
+    await messagesServe.generate({
+      payload,
+      ctx: makeGatewayCtx(),
+      headers: new Headers({ 'user-agent': desktopUserAgent }),
+    });
+
+    assertEquals(lastResolveCall.model, resolved);
+    assertEquals(payload.model, requested);
+  }
+});
+
+test('Claude Desktop count_tokens decodes its synthetic model id before resolution', async () => {
+  installRepo();
+  queueResolution([], { sawModel: false });
+  const desktopUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/1.34493.1 Chrome/148.0.7778.280 Electron/42.9.2 Safari/537.36';
+
+  await messagesServe.countTokens({
+    payload: makePayload({ model: 'claude-code!gpt-5' }),
+    ctx: makeGatewayCtx(),
+    headers: new Headers({ 'user-agent': desktopUserAgent }),
+  });
+
+  assertEquals(lastResolveCall.model, 'gpt-5');
+});
+
 test('non-inference User-Agents preserve literal synthetic-looking model ids', async () => {
   installRepo();
   for (const userAgent of [undefined, 'claude-code/2.1.211', 'openai-python/2.0.0']) {

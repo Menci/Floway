@@ -5,7 +5,7 @@
 
 import type { Context } from 'hono';
 
-import { encodeClaudeCodeModelId } from './claude-code-prefix.ts';
+import { encodeClaudeCodeModelId, isClaudeCodeDiscoveryUserAgent } from './claude-code-prefix.ts';
 import { loadModels } from './load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -33,20 +33,22 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // the suffix remains a discovery-protocol representation of the advertised
 // context limit, not a cross-provider header-forwarding policy.
 //
-// (2) The picker only accepts discovered ids matching
-// `/^(claude|anthropic)/i` — Anthropic documents this at
-// https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
-// ("ignores entries whose `id` doesn't begin with `claude` or
-// `anthropic`"); see ./claude-code-prefix.ts for the extracted predicate
-// and the second, built-in-family-collision filter it pairs with. Any
-// non-Anthropic model advertised through gateway discovery is silently
-// dropped from the menu unless its id starts with one of those two
-// prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX` on those ids so
-// the picker admits them; because the picker renders `display_name`
-// (with id as a fallback), the original label the operator configured
-// is what the user sees. The Messages entry boundary decodes exactly one
-// prefix layer when the same id comes back from a `claude-cli/*` inference
-// request, so generic model resolution remains unaware of this client
+// (2) The picker only keeps discovered ids containing `claude` or
+// `anthropic` (case-insensitive, anywhere in the string) — Anthropic
+// documents this at
+// https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery;
+// see ./claude-code-prefix.ts for the extracted predicate (kept on the
+// stricter begins-with form so one encoding survives both the pre- and
+// post-v2.1.223 picker) and the second, built-in-family-collision filter
+// it pairs with. Any non-Anthropic model advertised through gateway
+// discovery is silently dropped from the menu unless its id carries one
+// of those substrings. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX` on ids
+// that don't, so the picker admits them; because the picker renders
+// `display_name` (with id as a fallback), the original label the operator
+// configured is what the user sees. The Messages entry boundary decodes
+// exactly one prefix layer when the same id comes back from a Claude Code
+// inference request (`claude-cli/*` or the Claude Desktop app's Electron
+// UA), so generic model resolution remains unaware of this client
 // compatibility projection.
 //
 // (3) Mirroring the official shape (instead of the OpenAI-Anthropic
@@ -93,9 +95,6 @@ const toClaudeCodeCatalog = (response: PublicModelsResponse) => {
   };
 };
 
-const isClaudeCodeUserAgent = (userAgent: string | undefined): boolean =>
-  userAgent?.startsWith('claude-code/') ?? false;
-
 export const serveModels = async (c: Context): Promise<Response> => {
   try {
     const userAgent = c.req.header('user-agent');
@@ -108,14 +107,16 @@ export const serveModels = async (c: Context): Promise<Response> => {
     }
 
     const publicCatalog = await loadModels(upstreamIds, fetcherForUpstream, scheduler, getRepo().modelAliases);
-    // The Claude Code CLI's model discovery request identifies itself with
-    // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
-    // helper — verified in the v2.1.206 binary). The CLI's other request
-    // paths use the Anthropic SDK's `claude-cli/*` UA, so match on the
-    // discovery UA specifically. Every other caller (OpenAI SDKs,
-    // Anthropic SDKs, dashboards) receives the standard PublicModel
-    // superset.
-    return Response.json(isClaudeCodeUserAgent(userAgent)
+    // The Claude Code model discovery request identifies itself with a
+    // `claude-code/<version>` User-Agent (built from the CLI's `n_()`
+    // helper — verified in the v2.1.206 binary). The Claude Desktop app
+    // embeds the same picker but sends an Electron `Mozilla/5.0 …
+    // Claude/<version> …` UA; isClaudeCodeDiscoveryUserAgent admits both.
+    // The CLI's inference paths use the Anthropic SDK's `claude-cli/*` UA,
+    // so match on the discovery UA specifically. Every other caller
+    // (OpenAI SDKs, Anthropic SDKs, dashboards) receives the standard
+    // PublicModel superset.
+    return Response.json(isClaudeCodeDiscoveryUserAgent(userAgent)
       ? toClaudeCodeCatalog(publicCatalog)
       : publicCatalog);
   } catch (e) {

@@ -1175,3 +1175,72 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
     },
   );
 });
+
+// The Claude Desktop app embeds the Claude Code picker but its HTTP layer
+// is an Electron browser fetch, so its `/v1/models` discovery request
+// arrives with a `Mozilla/5.0 … Claude/<version> … Electron/…`
+// User-Agent instead of the CLI's `claude-code/<version>` token. The
+// handler must still serve it the Anthropic-native catalog with prefixed
+// non-Anthropic ids — otherwise the picker's `claude`/`anthropic` filter
+// silently drops every non-Anthropic model the gateway advertises, which
+// is the whole class of model the prefix exists to surface. Captured
+// against Claude Desktop 1.34493.1 (embedding claude-cli 2.1.237).
+test('/v1/models serves the prefixed Anthropic-shape catalog to the Claude Desktop app', async () => {
+  const { apiKey } = await setupAppTest();
+  // Real Electron UA from a Claude Desktop gateway-discovery capture.
+  const desktopUserAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/1.34493.1 Chrome/148.0.7778.280 Electron/42.9.2 Safari/537.36';
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-haiku-4.5',
+              display_name: 'Claude Haiku 4.5',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 200_000,
+            },
+            {
+              id: 'gpt-4o',
+              display_name: 'GPT-4o',
+              supported_endpoints: ['/chat/completions'],
+              maxContextWindowTokens: 128_000,
+            },
+          ]),
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const desktopResp = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': desktopUserAgent },
+      });
+      assertEquals(desktopResp.status, 200);
+      const desktopBody = (await desktopResp.json()) as {
+        object?: unknown;
+        has_more: boolean;
+        data: Array<{ id: string; type: string; display_name: string }>;
+      };
+      // Anthropic-native envelope, not the OpenAI-Anthropic superset.
+      assertEquals(desktopBody.object, undefined);
+      assertEquals(desktopBody.has_more, false);
+      const byDisplayName = new Map(desktopBody.data.map(m => [m.display_name, m.id]));
+      // Anthropic id passes the picker filter as-is; non-Anthropic id is
+      // prefixed so the picker's `claude`/`anthropic` filter admits it.
+      assertEquals(byDisplayName.get('Claude Haiku 4.5'), 'claude-haiku-4-5');
+      assertEquals(byDisplayName.get('GPT-4o'), 'claude-code!gpt-4o');
+      assertEquals(desktopBody.data.every(m => m.type === 'model'), true);
+    },
+  );
+});
