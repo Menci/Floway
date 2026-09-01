@@ -10,7 +10,7 @@ import type { ApiKey } from '../api/types';
 import { RequestDetailPanel } from '../components/requests/detail';
 import { refreshRequestKeys } from '../components/requests/key-refresh';
 import { RequestListPanel } from '../components/requests/list';
-import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
+import { collectKindFromTargetApi, collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
@@ -36,6 +36,7 @@ const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = f
 // key they may already have.
 interface LoaderData {
   collected: CollectedStream | null;
+  upstreamCollected: CollectedStream | null;
   error: string | null;
   keys: ApiKey[] | null;
   record: DumpRecord | null;
@@ -56,7 +57,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
   const recordId = url.searchParams.get('record');
   if (!selectedKeyId) {
-    return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
+    return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
     callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } })),
@@ -68,8 +69,15 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
   const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
+  // The pre-translation upstream view: dispatched by `meta.targetApi` (the
+  // target protocol) rather than `meta.path` (the source protocol). Only
+  // translated turns carry an upstream body.
+  const upstreamCollectKind = record?.meta.targetApi ? collectKindFromTargetApi(record.meta.targetApi) : null;
+  const upstreamStreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
+  const upstreamCollected = upstreamCollectKind && upstreamStreamEvents.length ? await collectStream(upstreamCollectKind, upstreamStreamEvents) : null;
   return {
     collected,
+    upstreamCollected,
     error: keysResult.error?.message ?? null,
     keys,
     record,
@@ -183,14 +191,14 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">
             <div className="h-full min-h-0" inert={selectedRecordId === null}>
-              <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
+              <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
             </div>
           </DrawerBody>
         </OverlayDrawer>
       </> : (
         <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
-            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
+            <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel

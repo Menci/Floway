@@ -982,6 +982,8 @@ const zhHansCN = {
         noCollector: '此路径没有对应的协议聚合器，请切换到事件视图检查原始帧。',
         unlabeled: '未命名',
         jsonParseFailed: 'JSON 解析失败',
+        upstreamResponseBody: '上游（翻译前）响应体',
+        upstreamStreamView: '上游响应体视图',
       },
       charts: {
         series: {

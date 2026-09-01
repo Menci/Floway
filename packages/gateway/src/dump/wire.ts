@@ -2,8 +2,10 @@ import type {
   DumpBody,
   DumpRecord,
   DumpResponseBody,
+  DumpUpstreamResponse,
   StoredDumpRecord,
   StoredDumpResponseBody,
+  StoredDumpUpstreamResponse,
 } from './types.ts';
 import { encodeBase64, isTextualMediaType } from '@floway-dev/protocols/common';
 
@@ -30,6 +32,20 @@ const responseBodyToWire = (body: StoredDumpResponseBody, contentType: string): 
   }
 };
 
+const upstreamResponseToWire = (
+  upstream: StoredDumpUpstreamResponse | undefined,
+  contentType: string,
+): DumpUpstreamResponse | undefined => {
+  if (upstream === undefined) return undefined;
+  // The upstream body's content-type comes from the upstream response headers
+  // (api-error path); the `stream` branch ignores it.
+  return {
+    status: upstream.status,
+    headers: upstream.headers,
+    body: responseBodyToWire(upstream.body, contentType),
+  };
+};
+
 // Sole place the storage shape crosses into the wire shape. Called once,
 // at the control-plane HTTP boundary, just before `c.json(...)`.
 export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
@@ -44,5 +60,11 @@ export const dumpRecordToWire = (record: StoredDumpRecord): DumpRecord => ({
     status: record.response.status,
     headers: record.response.headers,
     body: responseBodyToWire(record.response.body, contentTypeOf(record.response.headers)),
+    ...(record.response.upstream !== undefined ? {
+      upstream: upstreamResponseToWire(
+        record.response.upstream,
+        contentTypeOf(record.response.upstream.headers),
+      ),
+    } : {}),
   },
 });

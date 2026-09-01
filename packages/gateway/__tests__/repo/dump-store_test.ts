@@ -169,6 +169,96 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   assertEquals(fetched.response.body.events[0]!.frame.type, 'event');
 });
 
+// The optional pre-translation upstream body spills to its own file under the
+// `resp.up` side and round-trips independently of the downstream body. The
+// `meta.targetApi` names the target protocol so the dashboard can render the
+// upstream frames with the right serializer.
+test('FileDumpStore round-trips the upstream stream body alongside the downstream body', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record: DumpWriteRecord = {
+    ...baseRecord('01HZZ0000000000000000000UP1', Date.UTC(2026, 5, 1, 12, 0, 0)),
+    meta: {
+      ...baseRecord('01HZZ0000000000000000000UP1', Date.UTC(2026, 5, 1, 12, 0, 0)).meta,
+      targetApi: 'openaiResponses',
+    },
+    response: {
+      status: 200,
+      headers: [['content-type', 'text/event-stream']],
+      body: {
+        type: 'stream',
+        events: [{ frame: { type: 'done' }, ts: 20 }],
+      },
+      upstream: {
+        status: null,
+        headers: [],
+        body: {
+          type: 'stream',
+          events: [
+            { frame: { type: 'event', event: { type: 'response.created' } }, ts: 5 },
+            { frame: { type: 'done' }, ts: 15 },
+          ],
+        },
+      },
+    },
+  };
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000UP1');
+  assertExists(fetched);
+  assertEquals(fetched.meta.targetApi, 'openaiResponses');
+  const upstream = fetched.response.upstream;
+  assertExists(upstream);
+  if (upstream.body.type !== 'stream') throw new Error('expected upstream stream');
+  assertEquals(upstream.body.events.length, 2);
+  assertEquals(upstream.body.events[0]!.frame.type, 'event');
+});
+
+test('FileDumpStore round-trips the upstream bytes body (api-error envelope)', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record: DumpWriteRecord = {
+    ...baseRecord('01HZZ0000000000000000000UP2', Date.UTC(2026, 5, 1, 12, 0, 0)),
+    meta: {
+      ...baseRecord('01HZZ0000000000000000000UP2', Date.UTC(2026, 5, 1, 12, 0, 0)).meta,
+      targetApi: 'openaiChatCompletions',
+    },
+    response: {
+      status: 200,
+      headers: [['content-type', 'text/event-stream']],
+      body: { type: 'stream', events: [] },
+      upstream: {
+        status: 413,
+        headers: [['content-type', 'application/json']],
+        body: { type: 'bytes', body: utf8('{"error":"too large"}') },
+      },
+    },
+  };
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000UP2');
+  assertExists(fetched);
+  const upstream = fetched.response.upstream;
+  assertExists(upstream);
+  if (upstream.body.type !== 'bytes') throw new Error('expected upstream bytes');
+  assertEquals(new TextDecoder().decode(upstream.body.body), '{"error":"too large"}');
+});
+
+// A record written without an upstream body (native turn, or written before
+// this field existed) round-trips with `upstream` absent — the dashboard
+// renders no upstream tab. `meta.targetApi` is also absent on native turns.
+test('FileDumpStore omits upstream and targetApi for a native (non-translated) record', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record = baseRecord('01HZZ0000000000000000000NT1', Date.UTC(2026, 5, 1, 12, 0, 0));
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000NT1');
+  assertExists(fetched);
+  assertEquals(fetched.response.upstream, undefined);
+  assertEquals(fetched.meta.targetApi, undefined);
+});
+
 test('FileDumpStore rejects malformed metadata with its row identity', async () => {
   const db = await openDb();
   const store = new FileDumpStore(db, new MemoryFileStore());

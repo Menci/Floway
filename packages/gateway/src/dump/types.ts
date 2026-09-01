@@ -73,10 +73,26 @@ export type StoredDumpResponseBody =
   | { type: 'bytes'; body: Uint8Array }
   | { type: 'none' };
 
+// The pre-translation (target-protocol) view of what the upstream returned.
+// Present only for turns that traversed a translation (`traverseTranslation`)
+// and only when the inner attempt produced events or an upstream api-error.
+// Native turns and gateway-synthesized errors have no upstream view.
+export interface StoredDumpUpstreamResponse {
+  status: number | null;
+  headers: Array<[string, string]>;
+  body: StoredDumpResponseBody;
+}
+
 export interface StoredDumpResponse {
   status: number | null;
   headers: Array<[string, string]>;
   body: StoredDumpResponseBody;
+  // Parallel pre-translation upstream body. Absent on native turns and on
+  // records written before this field existed. Named `upstream` here (the
+  // response body — what the upstream sent before Floway translated it)
+  // independently of `DumpMetadata.upstream` (a provider identity); the two
+  // live on different objects.
+  readonly upstream?: StoredDumpUpstreamResponse;
 }
 
 export type StoredDumpRecord = {
@@ -113,10 +129,17 @@ export type DumpResponseBody =
   | { type: 'bytes'; body: DumpBody }
   | { type: 'none' };
 
+export interface DumpUpstreamResponse {
+  status: number | null;
+  headers: Array<[string, string]>;
+  body: DumpResponseBody;
+}
+
 interface DumpResponse {
   status: number | null;
   headers: Array<[string, string]>;
   body: DumpResponseBody;
+  readonly upstream?: DumpUpstreamResponse;
 }
 
 export type DumpRecord = {

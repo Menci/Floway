@@ -11,6 +11,7 @@ import { renderInApp } from '../render';
 // all, which the page reports differently.
 const loaderData = {
   collected: null,
+  upstreamCollected: null,
   error: 'HTTP 500',
   keys: [],
   record: null,

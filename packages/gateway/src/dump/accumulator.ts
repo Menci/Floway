@@ -22,7 +22,7 @@ import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
 // the handler already consumed.
@@ -106,6 +106,11 @@ export class DumpAccumulator {
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
   private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
+  // Pre-translation (target-protocol) view. Populated only on translated turns
+  // via `traverseTranslation`'s capture hook; stays empty on native turns.
+  private readonly upstreamEvents: DumpStreamEvent[] = [];
+  private upstreamTargetApi: ChatTargetApi | null = null;
+  private upstreamApiErrorEnvelope: { status: number; headers: Array<[string, string]>; body: Uint8Array } | null = null;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -142,6 +147,29 @@ export class DumpAccumulator {
   // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
+  }
+
+  // --- pre-translation upstream hooks (called from `traverseTranslation`) ---
+
+  // Stamped eagerly at capture construction so `meta.targetApi` is set even
+  // when the upstream stream produces zero frames (e.g. immediate done).
+  setUpstreamTargetApi(api: ChatTargetApi): void {
+    this.upstreamTargetApi = api;
+  }
+
+  // Records one ORIGINAL target-protocol frame, before Floway translates it
+  // into the source protocol. Same shape as `frame()` so the dashboard renders
+  // the upstream view with the same collected+events experience, dispatched
+  // by `meta.targetApi` instead of `meta.path`.
+  upstreamFrame(frame: ProtocolFrame<unknown>): void {
+    this.upstreamEvents.push({ frame, ts: Date.now() - this.startedAt });
+  }
+
+  // Captures the verbatim upstream api-error envelope (status/headers/body)
+  // BEFORE the optional `trip.apiError` rewrite. The bytes variant of the
+  // upstream body; the dashboard renders it like any non-stream response body.
+  upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void {
+    this.upstreamApiErrorEnvelope = { status: error.status, headers: headerPairs(error.headers), body: error.body };
   }
 
   recordSentPayloadBytes(byteLength: number): void {
@@ -275,6 +303,20 @@ export class DumpAccumulator {
       error: this.errorMeta
         ?? (this.requestSnapshot.streamError !== null ? { kind: 'failed', reason: this.requestSnapshot.streamError } : null)
         ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
+      targetApi: this.upstreamTargetApi,
+    };
+
+    // Build the parallel pre-translation upstream body ONLY when upstream
+    // data was captured. An empty upstream stream with no api-error means the
+    // turn produced nothing to show (or was native) — omit the field so old
+    // records and native turns share the same shape.
+    const hasUpstream = this.upstreamEvents.length > 0 || this.upstreamApiErrorEnvelope !== null;
+    const upstream = !hasUpstream ? undefined : {
+      status: this.upstreamApiErrorEnvelope?.status ?? null,
+      headers: this.upstreamApiErrorEnvelope?.headers ?? [],
+      body: (this.upstreamApiErrorEnvelope !== null
+        ? { type: 'bytes' as const, body: this.upstreamApiErrorEnvelope.body }
+        : { type: 'stream' as const, events: this.upstreamEvents }) satisfies StoredDumpResponseBody,
     };
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
@@ -291,6 +333,7 @@ export class DumpAccumulator {
           status: response.status,
           headers: response.headers.map(([k, v]) => [k, v]),
           body: responseBody,
+          ...(upstream !== undefined ? { upstream } : {}),
         },
       };
       await getDumpStore().put(this.apiKey.id, record);

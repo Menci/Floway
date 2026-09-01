@@ -22,6 +22,7 @@ import type {
   StoredDumpRequest,
   StoredDumpResponse,
   StoredDumpResponseBody,
+  StoredDumpUpstreamResponse,
 } from '../dump/types.ts';
 import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
@@ -43,6 +44,7 @@ interface DumpRow {
   response_headers_json: string | null;
   request_body_descriptor: string | null;
   response_body_descriptor: string | null;
+  response_upstream_body_descriptor: string | null;
 }
 
 // A null `upstream_id` means no upstream was identified at capture time
@@ -72,7 +74,7 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
+const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp' | 'resp.up'): string =>
   `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const putRawBody = async (
@@ -123,9 +125,22 @@ export class FileDumpStore implements DumpStore {
       : record.response.body.type === 'none'
         ? null
         : bodyPath(keyId, bucket, record.meta.id, 'resp');
+    // The pre-translation upstream body, when present. Same descriptor shape
+    // as the downstream response body (`{key, type}`), spilled under a
+    // distinct `resp.up` side so the sweep can own it independently.
+    const upstream = record.response.upstream;
+    const upstreamBody = upstream?.body;
+    const upstreamFileKey = upstreamBody === undefined
+      ? null
+      : upstreamBody.type === 'bytes' && upstreamBody.body.byteLength === 0
+        ? null
+        : upstreamBody.type === 'none'
+          ? null
+          : bodyPath(keyId, bucket, record.meta.id, 'resp.up');
     const staged = [
       ...(requestFileKey === null ? [] : [{ fileKey: requestFileKey, ownerKind: 'dump-request' }]),
       ...(responseFileKey === null ? [] : [{ fileKey: responseFileKey, ownerKind: 'dump-response' }]),
+      ...(upstreamFileKey === null ? [] : [{ fileKey: upstreamFileKey, ownerKind: 'dump-response-upstream' }]),
     ];
     if (staged.length > 0) {
       await this.db
@@ -160,12 +175,28 @@ export class FileDumpStore implements DumpStore {
       );
     }
 
+    let upstreamDescriptor: DumpBodyDescriptor | null = null;
+    if (upstreamBody !== undefined) {
+      if (upstreamBody.type === 'bytes') {
+        if (upstreamBody.body.byteLength > 0) {
+          upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, upstreamBody.body, 'bytes');
+        }
+      } else if (upstreamBody.type === 'stream') {
+        upstreamDescriptor = await putRawBody(
+          this.files,
+          upstreamFileKey!,
+          new TextEncoder().encode(encodeDumpStreamEvents(upstreamBody.events, `dump record ${record.meta.id} upstream response events`)),
+          'events',
+        );
+      }
+    }
+
     // Files before row — a partial failure leaves orphan files the sweep
     // collects, never an orphan row whose detail fetch would 404.
     await this.db.prepare(
       `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor, response_upstream_body_descriptor)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       keyId,
       record.meta.id,
@@ -182,6 +213,9 @@ export class FileDumpStore implements DumpStore {
       responseDescriptor === null
         ? null
         : encodeDumpBodyDescriptor(responseDescriptor, `dump record ${record.meta.id} response body descriptor`),
+      upstreamDescriptor === null
+        ? null
+        : encodeDumpBodyDescriptor(upstreamDescriptor, `dump record ${record.meta.id} upstream response body descriptor`),
     ).run();
   }
 
@@ -220,7 +254,7 @@ export class FileDumpStore implements DumpStore {
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
       'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
-      + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
+      + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor, d.response_upstream_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
       + 'WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000',
@@ -241,6 +275,9 @@ export class FileDumpStore implements DumpStore {
     const responseDescriptor = row.response_body_descriptor === null
       ? null
       : decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} response body descriptor`);
+    const upstreamDescriptor = row.response_upstream_body_descriptor === null
+      ? null
+      : decodeDumpBodyDescriptor(row.response_upstream_body_descriptor, `dump record ${recordId} upstream response body descriptor`);
 
     const request: StoredDumpRequest = {
       method: meta.method,
@@ -267,10 +304,33 @@ export class FileDumpStore implements DumpStore {
       responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
     }
 
+    // The pre-translation upstream body, when a descriptor was persisted.
+    // Same rehydration rules as the downstream body; absent on native turns
+    // and on records written before the upstream column existed (NULL).
+    let upstream: StoredDumpUpstreamResponse | undefined;
+    if (upstreamDescriptor !== null) {
+      let upstreamBody: StoredDumpResponseBody;
+      if (upstreamDescriptor.type === 'events') {
+        const text = new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor));
+        upstreamBody = {
+          type: 'stream',
+          events: decodeDumpStreamEvents(text, `dump record ${recordId} upstream response events at key=${upstreamDescriptor.key}`),
+        };
+      } else {
+        upstreamBody = { type: 'bytes', body: await fetchBody(this.files, upstreamDescriptor) };
+      }
+      // Upstream headers/status were not persisted separately (the bytes case
+      // carries an api-error envelope the dashboard renders as a body, not as
+      // a headered response). An empty header set + null status is the honest
+      // representation for what was captured.
+      upstream = { status: null, headers: [], body: upstreamBody };
+    }
+
     const response: StoredDumpResponse = {
       status: meta.status,
       headers: responseHeaders ?? [],
       body: responseBody,
+      ...(upstream !== undefined ? { upstream } : {}),
     };
     return { meta, request, response };
   }

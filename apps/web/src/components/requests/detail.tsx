@@ -9,6 +9,7 @@ import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import {
+  collectKindFromTargetApi,
   detectCollectKind,
   renderStreamEvents,
   streamEventsCopyText,
@@ -165,8 +166,9 @@ function HeaderSectionBody({ children }: PropsWithChildren) {
   return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full">{children}</ScrollArea>;
 }
 
-export function RequestDetailPanel({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
+export function RequestDetailPanel({ collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId, retainLastRecord }: {
   collected: CollectedStream | null;
+  upstreamCollected: CollectedStream | null;
   error: string | null;
   record: DumpRecord | null;
   recordId: string | null;
@@ -177,22 +179,24 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const s = useStyles();
   const dangerText = useDangerTextClass();
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
+  const [upstreamView, setUpstreamView] = useState<'collected' | 'events'>('collected');
 
   // Deriving the retained record during render rather than in an effect keeps
   // the swap out of the first frame of the leave animation.
-  const [shown, setShown] = useState({ collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId });
+  const [shown, setShown] = useState({ collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId });
   const incoming = retainLastRecord && selectedRecordId === null
     ? shown
-    : { collected: loadedCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId };
+    : { collected: loadedCollected, upstreamCollected: loadedUpstreamCollected, error: loadedError, record: loadedRecord, recordId: selectedRecordId };
   if (shown.recordId !== incoming.recordId) {
     setShown(incoming);
     setStreamView('collected');
+    setUpstreamView('collected');
   } else if (shown.record !== incoming.record || shown.error !== incoming.error) {
     // Recollecting the same events only rebuilds an equal value, so a reload of
     // the same record keeps the collected stream and the tab showing it.
-    setShown({ ...incoming, collected: shown.collected });
+    setShown({ ...incoming, collected: shown.collected, upstreamCollected: shown.upstreamCollected });
   }
-  const { collected, error, record, recordId } = shown;
+  const { collected, upstreamCollected, error, record, recordId } = shown;
 
   const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
   const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
@@ -202,6 +206,16 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   );
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
+  // Pre-translation upstream view. Dispatched by `meta.targetApi` (target
+  // protocol) rather than `meta.path` (source protocol). Only translated turns
+  // carry an upstream body; native turns have none.
+  const upstreamStreamEvents = useMemo<DumpStreamEvent[]>(
+    () => record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [],
+    [record],
+  );
+  const upstreamCollectKind = record ? collectKindFromTargetApi(record.meta.targetApi) : null;
+  const upstreamRenderedEvents = useMemo(() => renderStreamEvents(upstreamCollectKind, upstreamStreamEvents), [upstreamCollectKind, upstreamStreamEvents]);
+  const upstreamBytesBody = record?.response.upstream?.body.type === 'bytes' ? renderBody(record.response.upstream.body.body, contentTypeOf(record.response.upstream.headers)) : EMPTY_BODY;
 
   if (!recordId) return <div className="grid h-full place-items-center p-4"><EmptyStateLine>{t('dashboard.requests.selectPrompt')}</EmptyStateLine></div>;
   // This replaces every section rather than sitting in one, so it takes the
@@ -217,6 +231,10 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
   const collectedCopyText = collected?.result === null || collected?.result === undefined
     ? undefined
     : JSON.stringify(collected.result, null, 2);
+  const upstreamCollectedCopyText = upstreamCollected?.result === null || upstreamCollected?.result === undefined
+    ? undefined
+    : JSON.stringify(upstreamCollected.result, null, 2);
+  const upstream = record.response.upstream;
 
   return (
     <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
@@ -276,6 +294,44 @@ export function RequestDetailPanel({ collected: loadedCollected, error: loadedEr
           ))}
         </SectionBody>
       </section>
+      {upstream !== undefined && (
+        <section>
+          <DetailSectionHeader
+            title={t('dashboard.requests.upstreamResponseBody')}
+            actions={upstream.body.type === 'stream' ? (
+              <TabList aria-label={t('dashboard.requests.upstreamStreamView')} selectedValue={upstreamView} onTabSelect={(_, data) => setUpstreamView(data.value as 'collected' | 'events')} size="small">
+                <Tab value="collected">{t('dashboard.requests.collected')}</Tab>
+                <Tab value="events">{t('dashboard.requests.events', { count: upstreamStreamEvents.length })}</Tab>
+              </TabList>
+            ) : undefined}
+            copyText={upstream.body.type === 'bytes' && upstreamBytesBody.text
+              ? upstreamBytesBody.copyText
+              : upstream.body.type === 'stream' && upstreamView === 'events'
+                ? streamEventsCopyText(upstreamCollectKind, upstreamStreamEvents)
+                : upstream.body.type === 'stream' && upstreamView === 'collected'
+                  ? upstreamCollectedCopyText
+                  : undefined}
+          />
+          <SectionBody>
+            {upstream.body.type === 'bytes' && (upstreamBytesBody.text ? <CodeView body={upstreamBytesBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.emptyBody')}</EmptyStateLine>)}
+            {upstream.body.type === 'stream' && upstreamView === 'collected' && (
+              upstreamCollectKind === null ? <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.noCollector')}</OutcomeMessageBar>
+                : upstreamCollected === null ? null
+                  : <>
+                      {upstreamCollected.error && <OutcomeMessageBar className="!m-3">{upstreamCollected.error}</OutcomeMessageBar>}
+                      {!upstreamCollected.error && upstreamCollected.truncated && <OutcomeMessageBar className="!m-3" intent="warning">{t('dashboard.requests.truncatedStream')}</OutcomeMessageBar>}
+                      {upstreamCollected.result !== null && <CodeView body={{ text: JSON.stringify(upstreamCollected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
+                    </>
+            )}
+            {upstream.body.type === 'stream' && upstreamView === 'events' && upstreamRenderedEvents.map((event, index) => (
+              <div className={s.section} key={index}>
+                <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={dangerText}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
+                <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
+              </div>
+            ))}
+          </SectionBody>
+        </section>
+      )}
     </ScrollArea>
   );
 }

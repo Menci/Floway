@@ -48,6 +48,18 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
+// Mirror of `detectCollectKind` for the target protocol of a translated turn.
+// The downstream view derives its kind from `meta.path` (the client path =
+// source protocol); the upstream view cannot, because the client path names
+// the source, not the target. `meta.targetApi` is stamped at capture time by
+// `traverseTranslation` and names the target protocol the inner attempt spoke.
+export const collectKindFromTargetApi = (api: string | null | undefined): CollectKind | null => {
+  if (api === 'anthropicMessages') return 'anthropic-messages';
+  if (api === 'openaiResponses') return 'openai-responses';
+  if (api === 'openaiChatCompletions') return 'openai-chat-completions';
+  return null;
+};
+
 export const streamEndedCleanly = (events: DumpStreamEvent[]): boolean =>
   events.at(-1)?.frame.type === 'done';
 
