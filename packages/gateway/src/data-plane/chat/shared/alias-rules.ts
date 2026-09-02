@@ -9,8 +9,7 @@
 // each source IR.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import type { AliasRules } from '@floway-dev/protocols/common';
-import { isFastServiceTier } from '@floway-dev/protocols/common';
+import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
