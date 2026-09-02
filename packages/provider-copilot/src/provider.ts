@@ -13,7 +13,7 @@ import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeCopilotVariants } from './merge-variants.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastVariant, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
-import { groupCopilotVariants } from './model-variants.ts';
+import { copilotVariantIndex } from './model-variants.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
@@ -159,12 +159,12 @@ const finalizeCopilotModels = (
   rawModels: CopilotRawModel[],
   upstreamOverrides: FlagOverrides,
 ): ProviderModel[] => {
-  const merged = mergeCopilotVariants({ object: 'list', data: rawModels });
-  const groups = groupCopilotVariants(rawModels);
+  const index = copilotVariantIndex(rawModels);
+  const merged = mergeCopilotVariants(index);
 
   const models: ProviderModel[] = [];
-  for (const mergedModel of merged.data) {
-    const variants = groups.get(mergedModel.id);
+  for (const mergedModel of merged) {
+    const variants = index.families.get(mergedModel.id);
     if (variants === undefined) {
       const rawIds = rawModels.length === 0 ? 'none' : rawModels.map(model => model.id).join(', ');
       throw new Error(`Copilot model projection invariant violated: merged model '${mergedModel.id}' has no raw variant group (raw model ids: ${rawIds})`);

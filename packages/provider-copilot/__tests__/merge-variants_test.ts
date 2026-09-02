@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { mergeCopilotVariants } from '../src/merge-variants.ts';
-import type { CopilotModelsResponse, CopilotRawModel } from '../src/types.ts';
+import { copilotVariantIndex } from '../src/model-variants.ts';
+import type { CopilotRawModel } from '../src/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const assertSameSet = <T>(actual: readonly T[] | undefined, expected: T[]) => {
@@ -40,43 +41,40 @@ const claudeVariant = (
 });
 
 test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [
-      claudeVariant('claude-opus-4.7-1m-internal', {
-        maxContextWindowTokens: 1_000_000,
-        maxPromptTokens: 936_000,
-        maxOutputTokens: 64_000,
-        reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
-      }),
-      claudeVariant('claude-opus-4.7-high', {
+  const input: CopilotRawModel[] = [
+    claudeVariant('claude-opus-4.7-1m-internal', {
+      maxContextWindowTokens: 1_000_000,
+      maxPromptTokens: 936_000,
+      maxOutputTokens: 64_000,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+    }),
+    claudeVariant('claude-opus-4.7-high', {
+      maxContextWindowTokens: 200_000,
+      maxPromptTokens: 168_000,
+      maxOutputTokens: 32_000,
+      reasoningEfforts: ['high'],
+    }),
+    claudeVariant('claude-opus-4.7-xhigh', {
+      maxContextWindowTokens: 200_000,
+      maxPromptTokens: 168_000,
+      maxOutputTokens: 32_000,
+      reasoningEfforts: ['xhigh'],
+    }),
+    {
+      ...claudeVariant('claude-opus-4.7', {
         maxContextWindowTokens: 200_000,
         maxPromptTokens: 168_000,
         maxOutputTokens: 32_000,
-        reasoningEfforts: ['high'],
+        reasoningEfforts: ['medium'],
       }),
-      claudeVariant('claude-opus-4.7-xhigh', {
-        maxContextWindowTokens: 200_000,
-        maxPromptTokens: 168_000,
-        maxOutputTokens: 32_000,
-        reasoningEfforts: ['xhigh'],
-      }),
-      {
-        ...claudeVariant('claude-opus-4.7', {
-          maxContextWindowTokens: 200_000,
-          maxPromptTokens: 168_000,
-          maxOutputTokens: 32_000,
-          reasoningEfforts: ['medium'],
-        }),
-        name: 'Claude Opus 4.7',
-        display_name: 'Claude Opus 4.7',
-      },
-    ],
-  };
+      name: 'Claude Opus 4.7',
+      display_name: 'Claude Opus 4.7',
+    },
+  ];
 
-  const merged = mergeCopilotVariants(input);
-  assertEquals(merged.data.length, 1);
-  const m = merged.data[0];
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
+  assertEquals(merged.length, 1);
+  const m = merged[0];
   const capabilities = m.capabilities!;
 
   assertEquals(m.id, 'claude-opus-4-7');
@@ -90,25 +88,22 @@ test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => 
 });
 
 test('mergeCopilotVariants merges 4.6 base + 1m', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [
-      claudeVariant('claude-opus-4.6-1m', {
-        maxContextWindowTokens: 1_000_000,
-        maxPromptTokens: 936_000,
-        maxOutputTokens: 64_000,
-      }),
-      claudeVariant('claude-opus-4.6', {
-        maxContextWindowTokens: 200_000,
-        maxPromptTokens: 168_000,
-        maxOutputTokens: 32_000,
-      }),
-    ],
-  };
+  const input: CopilotRawModel[] = [
+    claudeVariant('claude-opus-4.6-1m', {
+      maxContextWindowTokens: 1_000_000,
+      maxPromptTokens: 936_000,
+      maxOutputTokens: 64_000,
+    }),
+    claudeVariant('claude-opus-4.6', {
+      maxContextWindowTokens: 200_000,
+      maxPromptTokens: 168_000,
+      maxOutputTokens: 32_000,
+    }),
+  ];
 
-  const merged = mergeCopilotVariants(input);
-  assertEquals(merged.data.length, 1);
-  const m = merged.data[0];
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
+  assertEquals(merged.length, 1);
+  const m = merged[0];
   const capabilities = m.capabilities!;
 
   assertEquals(m.id, 'claude-opus-4-6');
@@ -118,30 +113,27 @@ test('mergeCopilotVariants merges 4.6 base + 1m', () => {
 });
 
 test('mergeCopilotVariants merges 4.6 base + 1m + fast', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [
-      claudeVariant('claude-opus-4.6-1m', {
-        maxContextWindowTokens: 1_000_000,
-        maxPromptTokens: 936_000,
-        maxOutputTokens: 64_000,
-      }),
-      claudeVariant('claude-opus-4.6-fast', {
-        maxContextWindowTokens: 200_000,
-        maxPromptTokens: 168_000,
-        maxOutputTokens: 16_000,
-      }),
-      claudeVariant('claude-opus-4.6', {
-        maxContextWindowTokens: 200_000,
-        maxPromptTokens: 168_000,
-        maxOutputTokens: 32_000,
-      }),
-    ],
-  };
+  const input: CopilotRawModel[] = [
+    claudeVariant('claude-opus-4.6-1m', {
+      maxContextWindowTokens: 1_000_000,
+      maxPromptTokens: 936_000,
+      maxOutputTokens: 64_000,
+    }),
+    claudeVariant('claude-opus-4.6-fast', {
+      maxContextWindowTokens: 200_000,
+      maxPromptTokens: 168_000,
+      maxOutputTokens: 16_000,
+    }),
+    claudeVariant('claude-opus-4.6', {
+      maxContextWindowTokens: 200_000,
+      maxPromptTokens: 168_000,
+      maxOutputTokens: 32_000,
+    }),
+  ];
 
-  const merged = mergeCopilotVariants(input);
-  assertEquals(merged.data.length, 1);
-  const m = merged.data[0];
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
+  assertEquals(merged.length, 1);
+  const m = merged[0];
 
   // The merged surface shows one public id; -fast collapses into it the
   // same way -1m does. Per-tier behavior is resolved at request time via
@@ -151,28 +143,22 @@ test('mergeCopilotVariants merges 4.6 base + 1m + fast', () => {
 });
 
 test('mergeCopilotVariants leaves non-Claude models untouched', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [claudeVariant('gpt-5.4', { maxContextWindowTokens: 272_000 }), claudeVariant('gemini-2.5-pro', { maxContextWindowTokens: 1_000_000 })],
-  };
+  const input: CopilotRawModel[] = [claudeVariant('gpt-5.4', { maxContextWindowTokens: 272_000 }), claudeVariant('gemini-2.5-pro', { maxContextWindowTokens: 1_000_000 })];
 
-  const merged = mergeCopilotVariants(input);
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
   assertEquals(
-    merged.data.map(m => m.id),
+    merged.map(m => m.id),
     ['gpt-5.4', 'gemini-2.5-pro'],
   );
-  assertEquals(merged.data[0].capabilities?.limits?.max_context_window_tokens, 272_000);
+  assertEquals(merged[0].capabilities?.limits?.max_context_window_tokens, 272_000);
 });
 
 test('mergeCopilotVariants preserves order across mixed claude/non-claude models', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [claudeVariant('claude-opus-4.7-1m-internal'), claudeVariant('gpt-5.5'), claudeVariant('claude-opus-4.7'), claudeVariant('claude-sonnet-4.6')],
-  };
+  const input: CopilotRawModel[] = [claudeVariant('claude-opus-4.7-1m-internal'), claudeVariant('gpt-5.5'), claudeVariant('claude-opus-4.7'), claudeVariant('claude-sonnet-4.6')];
 
-  const merged = mergeCopilotVariants(input);
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
   assertEquals(
-    merged.data.map(m => m.id),
+    merged.map(m => m.id),
     ['claude-opus-4-7', 'gpt-5.5', 'claude-sonnet-4-6'],
   );
 });
@@ -180,37 +166,34 @@ test('mergeCopilotVariants preserves order across mixed claude/non-claude models
 test('mergeCopilotVariants preserves vision/adaptive_thinking/budget from base variant', () => {
   // These fields are uniform per family (every variant shares the same base
   // capability), so the merge just keeps the base's value via the ...supports spread.
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [
-      {
-        ...claudeVariant('claude-opus-4.7', { reasoningEfforts: ['medium'] }),
-        capabilities: {
-          type: 'chat',
-          limits: { max_context_window_tokens: 200_000 },
-          supports: {
-            vision: true,
-            reasoning_effort: ['medium'],
-            min_thinking_budget: 1024,
-            max_thinking_budget: 32768,
-            adaptive_thinking: true,
-          },
+  const input: CopilotRawModel[] = [
+    {
+      ...claudeVariant('claude-opus-4.7', { reasoningEfforts: ['medium'] }),
+      capabilities: {
+        type: 'chat',
+        limits: { max_context_window_tokens: 200_000 },
+        supports: {
+          vision: true,
+          reasoning_effort: ['medium'],
+          min_thinking_budget: 1024,
+          max_thinking_budget: 32768,
+          adaptive_thinking: true,
         },
       },
-      {
-        ...claudeVariant('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] }),
-        capabilities: {
-          type: 'chat',
-          limits: { max_context_window_tokens: 200_000 },
-          supports: { vision: true, reasoning_effort: ['xhigh'] },
-        },
+    },
+    {
+      ...claudeVariant('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] }),
+      capabilities: {
+        type: 'chat',
+        limits: { max_context_window_tokens: 200_000 },
+        supports: { vision: true, reasoning_effort: ['xhigh'] },
       },
-    ],
-  };
+    },
+  ];
 
-  const merged = mergeCopilotVariants(input);
-  assertEquals(merged.data.length, 1);
-  const supports = merged.data[0].capabilities?.supports;
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
+  assertEquals(merged.length, 1);
+  const supports = merged[0].capabilities?.supports;
   // vision and budget fields come from the base via spread
   assertEquals(supports?.vision, true);
   assertEquals(supports?.min_thinking_budget, 1024);
@@ -221,17 +204,14 @@ test('mergeCopilotVariants preserves vision/adaptive_thinking/budget from base v
 });
 
 test('mergeCopilotVariants merges a non-Claude base with its -fast lane', () => {
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [
-      claudeVariant('gpt-5.6-sol', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
-      claudeVariant('gpt-5.6-sol-fast', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
-    ],
-  };
+  const input: CopilotRawModel[] = [
+    claudeVariant('gpt-5.6-sol', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
+    claudeVariant('gpt-5.6-sol-fast', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
+  ];
 
-  const merged = mergeCopilotVariants(input);
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
   assertEquals(
-    merged.data.map(m => m.id),
+    merged.map(m => m.id),
     ['gpt-5.6-sol'],
   );
 });
@@ -239,14 +219,11 @@ test('mergeCopilotVariants merges a non-Claude base with its -fast lane', () => 
 test('mergeCopilotVariants keeps a -fast id whose base does not exist', () => {
   // `grok-code-fast` names a model, not the lane of a `grok-code` that the
   // catalog has never published.
-  const input: CopilotModelsResponse = {
-    object: 'list',
-    data: [claudeVariant('grok-code-fast'), claudeVariant('gpt-5.6-sol'), claudeVariant('gpt-5.6-sol-fast')],
-  };
+  const input: CopilotRawModel[] = [claudeVariant('grok-code-fast'), claudeVariant('gpt-5.6-sol'), claudeVariant('gpt-5.6-sol-fast')];
 
-  const merged = mergeCopilotVariants(input);
+  const merged = mergeCopilotVariants(copilotVariantIndex(input));
   assertEquals(
-    merged.data.map(m => m.id),
+    merged.map(m => m.id),
     ['grok-code-fast', 'gpt-5.6-sol'],
   );
 });

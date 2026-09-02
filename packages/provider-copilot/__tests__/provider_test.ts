@@ -2,9 +2,10 @@ import { test, vi } from 'vitest';
 
 import { clearInProcessCopilotTokenCache } from '../src/auth.ts';
 import { emptyKnownModels, mergeKnownModels } from '../src/known-models.ts';
+import type { CopilotVariantIndex } from '../src/model-variants.ts';
 import { createCopilotProvider } from '../src/provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/state.ts';
-import type { CopilotModelsResponse } from '../src/types.ts';
+import type { CopilotRawModel } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -12,15 +13,17 @@ import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const mergeVariantsControl = vi.hoisted<{
-  override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
+  override: ((merged: CopilotRawModel[]) => CopilotRawModel[]) | null;
 }>(() => ({ override: null }));
 
 vi.mock('../src/merge-variants.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../src/merge-variants.ts')>();
   return {
     ...original,
-    mergeCopilotVariants: (models: CopilotModelsResponse): CopilotModelsResponse =>
-      mergeVariantsControl.override?.(models) ?? original.mergeCopilotVariants(models),
+    mergeCopilotVariants: (index: CopilotVariantIndex): CopilotRawModel[] => {
+      const merged = original.mergeCopilotVariants(index);
+      return mergeVariantsControl.override?.(merged) ?? merged;
+    },
   };
 });
 
@@ -746,10 +749,10 @@ const copilotPreflight = (request: Request): Response | null => {
 test('Copilot provider rejects a merged public model without a raw variant group', async () => {
   const harness = await setupCopilotTest();
   const instance = createCopilotProvider(harness.copilotUpstream);
-  mergeVariantsControl.override = models => {
-    const rawModel = models.data[0];
-    if (rawModel === undefined) throw new Error('expected a raw model fixture');
-    return { ...models, data: [{ ...rawModel, id: 'orphan-public-model' }] };
+  mergeVariantsControl.override = merged => {
+    const mergedModel = merged[0];
+    if (mergedModel === undefined) throw new Error('expected a merged model fixture');
+    return [{ ...mergedModel, id: 'orphan-public-model' }];
   };
 
   try {

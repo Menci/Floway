@@ -1,5 +1,5 @@
 import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
-import { copilotCatalogIds, copilotFamilyPublicId, groupCopilotVariants, variantSuffixOf } from './model-variants.ts';
+import { copilotVariantIndex, type CopilotVariantIndex } from './model-variants.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
@@ -57,7 +57,7 @@ const chooseVariant = (
   candidates: readonly CopilotRawModel[],
   base: CopilotRawModel | undefined,
   hints: ModelSelectionHints,
-  catalogIds: ReadonlySet<string>,
+  index: CopilotVariantIndex,
 ): CopilotRawModel | undefined => {
   const effort = hints.reasoningEffort;
   if (!hints.context1m && !effort && !hints.fast) {
@@ -69,7 +69,7 @@ const chooseVariant = (
   // within that context family even when its effort cannot be met;
   // effort-only selection prefers 1m variants because they tend to advertise
   // broader effort coverage.
-  const pool = hints.fast ? narrow(candidates, model => variantSuffixOf(model.id, catalogIds) === 'fast') : candidates;
+  const pool = hints.fast ? narrow(candidates, model => index.suffixOf(model.id) === 'fast') : candidates;
 
   if (hints.context1m) {
     const oneMillion = pool.filter(supportsOneMillionContext);
@@ -82,19 +82,19 @@ const chooseVariant = (
 };
 
 export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: string, hints: ModelSelectionHints = {}): CopilotRawModel | undefined => {
-  const catalogIds = copilotCatalogIds(models.data);
+  const index = copilotVariantIndex(models.data);
   const normalized = normalizedLookupId(modelId);
   const exact = models.data.find(model => model.id === normalized);
 
   // An id that already names a lane variant is its own answer: the caller
   // pinned a raw id rather than the merged public model, and honouring it
   // beats re-deriving a lane from request fields.
-  if (exact && variantSuffixOf(exact.id, catalogIds) !== undefined) return exact;
+  if (exact && index.suffixOf(exact.id) !== undefined) return exact;
 
-  const candidates = groupCopilotVariants(models.data).get(copilotFamilyPublicId(normalized, catalogIds));
+  const candidates = index.families.get(index.publicIdOf(normalized));
   if (candidates === undefined) return exact;
 
-  return chooseVariant(candidates, exact, hints, catalogIds);
+  return chooseVariant(candidates, exact, hints, index);
 };
 
 // Whether the family can serve the accelerated lane at all.
@@ -104,6 +104,6 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 // downgrade afterwards. The OpenAI spelling of the same lane needs no
 // pre-check: that upstream reports the tier it served.
 export const copilotModelSupportsFastVariant = (rawModels: readonly CopilotRawModel[]): boolean => {
-  const catalogIds = copilotCatalogIds(rawModels);
-  return rawModels.some(model => variantSuffixOf(model.id, catalogIds) === 'fast');
+  const index = copilotVariantIndex(rawModels);
+  return rawModels.some(model => index.suffixOf(model.id) === 'fast');
 };

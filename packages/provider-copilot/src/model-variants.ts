@@ -40,14 +40,12 @@ const CANONICAL_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
 // holds the date-stripped raw ids of the catalog under consideration.
 const isBaseId = (id: string, catalogIds: ReadonlySet<string>): boolean => catalogIds.has(id) || CANONICAL_BASE_ID.test(id);
 
-// The date-stripped raw ids a family resolution is judged against. Callers
-// hold either the whole catalog or the one family's variants; both are a
-// closed world for the ids inside them.
-export const copilotCatalogIds = (rawModels: readonly CopilotRawModel[]): ReadonlySet<string> => new Set(rawModels.map(model => stripClaudeDateSuffix(model.id)));
+const catalogIdsOf = (rawModels: readonly CopilotRawModel[]): ReadonlySet<string> => new Set(rawModels.map(model => stripClaudeDateSuffix(model.id)));
 
-// Splits a date-stripped raw id into its base and lane suffix. Suffixes are
-// tried longest-first so `-1m-internal` wins over the `-internal` tail it
-// contains.
+// Splits a date-stripped raw id into its base and lane suffix. No two
+// suffixes above can match the same id — `-1m-internal` does not end in `-1m`,
+// and `-xhigh` does not end in `-high` — so the first match is the only match;
+// the loop order is a deterministic tie-break should that ever stop holding.
 const splitVariantSuffix = (id: string, catalogIds: ReadonlySet<string>): { base: string; suffix: VariantSuffix } | undefined => {
   for (const suffix of VARIANT_SUFFIXES) {
     if (!id.endsWith(`-${suffix}`)) continue;
@@ -60,28 +58,36 @@ const splitVariantSuffix = (id: string, catalogIds: ReadonlySet<string>): { base
 // The public model id a raw variant collapses into: its lane suffix removed,
 // then the Claude id spelling normalized. Non-Claude ids that carry no lane
 // suffix pass through untouched.
-export const copilotFamilyPublicId = (rawId: string, catalogIds: ReadonlySet<string>): string => {
+const familyPublicId = (rawId: string, catalogIds: ReadonlySet<string>): string => {
   const dateless = stripClaudeDateSuffix(rawId);
   return copilotPublicModelId(splitVariantSuffix(dateless, catalogIds)?.base ?? dateless);
 };
 
-// Groups a raw catalog into one entry per public model id, preserving the
-// order in which each family is first seen. The single place that decides
-// which raw variants belong together — the outbound `/v1/models` merge and
-// the inbound raw-variant selector both read families from here.
-export const groupCopilotVariants = (rawModels: readonly CopilotRawModel[]): Map<string, CopilotRawModel[]> => {
-  const catalogIds = copilotCatalogIds(rawModels);
+// One resolution of a raw catalog into variant families. Both consumers — the
+// outbound `/v1/models` merge and the inbound raw-variant selector — read
+// their whole view of which ids belong together from a single index, so the
+// id set a lane is judged against can never disagree with the grouping built
+// from it. `families` preserves the order in which each family is first seen.
+export interface CopilotVariantIndex {
+  families: ReadonlyMap<string, CopilotRawModel[]>;
+  publicIdOf: (rawId: string) => string;
+  // The lane a raw id occupies, or `undefined` when it names a base.
+  suffixOf: (rawId: string) => VariantSuffix | undefined;
+}
+
+export const copilotVariantIndex = (rawModels: readonly CopilotRawModel[]): CopilotVariantIndex => {
+  const catalogIds = catalogIdsOf(rawModels);
+  const publicIdOf = (rawId: string): string => familyPublicId(rawId, catalogIds);
   const families = new Map<string, CopilotRawModel[]>();
   for (const model of rawModels) {
-    const publicId = copilotFamilyPublicId(model.id, catalogIds);
+    const publicId = publicIdOf(model.id);
     const family = families.get(publicId);
     if (family) family.push(model);
     else families.set(publicId, [model]);
   }
-  return families;
+  return {
+    families,
+    publicIdOf,
+    suffixOf: rawId => splitVariantSuffix(stripClaudeDateSuffix(rawId), catalogIds)?.suffix,
+  };
 };
-
-// The lane a raw variant occupies within its own catalog, or `undefined` when
-// the id names a base rather than a lane.
-export const variantSuffixOf = (rawId: string, catalogIds: ReadonlySet<string>): VariantSuffix | undefined =>
-  splitVariantSuffix(stripClaudeDateSuffix(rawId), catalogIds)?.suffix;

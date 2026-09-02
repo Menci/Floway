@@ -15,8 +15,8 @@
 //                                                             siblings, taken
 //                                                             from base
 
-import { groupCopilotVariants } from './model-variants.ts';
-import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
+import type { CopilotVariantIndex } from './model-variants.ts';
+import type { CopilotRawModel } from './types.ts';
 
 const maxOf = (...values: (number | undefined)[]): number | undefined => {
   const defined = values.filter((v): v is number => typeof v === 'number');
@@ -70,7 +70,5 @@ const mergeVariantGroup = (publicId: string, variants: CopilotRawModel[]): Copil
   };
 };
 
-export const mergeCopilotVariants = (models: CopilotModelsResponse): CopilotModelsResponse => ({
-  object: models.object,
-  data: [...groupCopilotVariants(models.data)].map(([publicId, variants]) => mergeVariantGroup(publicId, variants)),
-});
+export const mergeCopilotVariants = (index: CopilotVariantIndex): CopilotRawModel[] =>
+  [...index.families].map(([publicId, variants]) => mergeVariantGroup(publicId, variants));
