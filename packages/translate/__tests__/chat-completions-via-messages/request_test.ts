@@ -71,7 +71,7 @@ test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier o
   assertFalse('service_tier' in result);
 });
 
-test('buildTargetRequest passes service_tier:priority through as service_tier (no speed override)', async () => {
+test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
@@ -79,8 +79,8 @@ test('buildTargetRequest passes service_tier:priority through as service_tier (n
     }),
   );
 
-  assertEquals(result.service_tier, 'priority');
-  assertFalse('speed' in result);
+  assertEquals(result.speed, 'fast');
+  assertFalse('service_tier' in result);
 });
 
 test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
@@ -1287,15 +1287,15 @@ test('buildTargetRequest rejects an unknown user content part type', async () =>
 
 // ── service_tier forwarding ──
 
-test('buildTargetRequest forwards service_tier verbatim', async () => {
+test('buildTargetRequest forwards a non-accelerated service_tier verbatim', async () => {
   const result = await buildTargetRequest(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],
-      service_tier: 'priority',
+      service_tier: 'flex',
     }),
   );
 
-  assertEquals(result.service_tier, 'priority');
+  assertEquals(result.service_tier, 'flex');
 });
 
 test('buildTargetRequest does not emit thinking or fast-mode fields for a bare payload', async () => {

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { copilotModelSupportsFastMode, resolveCopilotRawModel } from '../src/model-selection.ts';
+import { copilotModelSupportsFastVariant, resolveCopilotRawModel } from '../src/model-selection.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from '../src/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -164,8 +164,31 @@ test('resolveCopilotRawModel honors effort within the fast-narrowed pool when bo
   assertEquals(resolved?.id, 'claude-opus-4.7-fast');
 });
 
-test('copilotModelSupportsFastMode is true iff any raw variant has the -fast suffix', () => {
-  assertEquals(copilotModelSupportsFastMode([model('claude-opus-4.6'), model('claude-opus-4.6-fast')]), true);
-  assertEquals(copilotModelSupportsFastMode([model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })]), false);
-  assertEquals(copilotModelSupportsFastMode([]), false);
+test('copilotModelSupportsFastVariant is true iff any raw variant has the -fast suffix', () => {
+  assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.6'), model('claude-opus-4.6-fast')]), true);
+  assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })]), false);
+  assertEquals(copilotModelSupportsFastVariant([]), false);
+});
+
+test('resolveCopilotRawModel picks the -fast variant of a non-Claude family', () => {
+  const catalog = models(model('gpt-5.6-sol'), model('gpt-5.6-sol-fast'));
+
+  assertEquals(resolveCopilotRawModel(catalog, 'gpt-5.6-sol', { fast: true })?.id, 'gpt-5.6-sol-fast');
+  assertEquals(resolveCopilotRawModel(catalog, 'gpt-5.6-sol', {})?.id, 'gpt-5.6-sol');
+});
+
+test('resolveCopilotRawModel leaves a -fast id that has no base sibling alone', () => {
+  // `grok-code-fast` is its own model: there is no `grok-code` for it to be a
+  // lane of, so the suffix is part of the name and the id resolves to itself
+  // whatever the hints say.
+  const catalog = models(model('grok-code-fast'));
+
+  assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', {})?.id, 'grok-code-fast');
+  assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', { fast: true })?.id, 'grok-code-fast');
+  assertEquals(copilotModelSupportsFastVariant([model('grok-code-fast')]), false);
+});
+
+test('copilotModelSupportsFastVariant sees the lane on a non-Claude family too', () => {
+  assertEquals(copilotModelSupportsFastVariant([model('gpt-5.6-sol'), model('gpt-5.6-sol-fast')]), true);
+  assertEquals(copilotModelSupportsFastVariant([model('gpt-5.6-terra')]), false);
 });

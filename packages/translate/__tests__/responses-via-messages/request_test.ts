@@ -215,11 +215,11 @@ test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier o
   assertFalse('service_tier' in result.target);
 });
 
-test('buildTargetRequest passes service_tier:priority through as service_tier (no speed override)', async () => {
+test('buildTargetRequest maps service_tier:priority to speed:fast (no service_tier on target)', async () => {
   const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'priority' });
 
-  assertEquals(result.target.service_tier, 'priority');
-  assertFalse('speed' in result.target);
+  assertEquals(result.target.speed, 'fast');
+  assertFalse('service_tier' in result.target);
 });
 
 test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {

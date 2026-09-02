@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { mergeClaudeVariants } from '../src/merge-claude-variants.ts';
+import { mergeCopilotVariants } from '../src/merge-variants.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from '../src/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -39,7 +39,7 @@ const claudeVariant = (
   supported_endpoints: ['/v1/messages', '/chat/completions'],
 });
 
-test('mergeClaudeVariants merges 4.7 base + high + xhigh + 1m-internal', () => {
+test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
     data: [
@@ -74,7 +74,7 @@ test('mergeClaudeVariants merges 4.7 base + high + xhigh + 1m-internal', () => {
     ],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(merged.data.length, 1);
   const m = merged.data[0];
   const capabilities = m.capabilities!;
@@ -89,7 +89,7 @@ test('mergeClaudeVariants merges 4.7 base + high + xhigh + 1m-internal', () => {
   assertSameSet(capabilities.supports?.reasoning_effort, ['low', 'medium', 'high', 'xhigh']);
 });
 
-test('mergeClaudeVariants merges 4.6 base + 1m', () => {
+test('mergeCopilotVariants merges 4.6 base + 1m', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
     data: [
@@ -106,7 +106,7 @@ test('mergeClaudeVariants merges 4.6 base + 1m', () => {
     ],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(merged.data.length, 1);
   const m = merged.data[0];
   const capabilities = m.capabilities!;
@@ -117,7 +117,7 @@ test('mergeClaudeVariants merges 4.6 base + 1m', () => {
   assertEquals(capabilities.limits?.max_output_tokens, 64_000);
 });
 
-test('mergeClaudeVariants merges 4.6 base + 1m + fast', () => {
+test('mergeCopilotVariants merges 4.6 base + 1m + fast', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
     data: [
@@ -139,7 +139,7 @@ test('mergeClaudeVariants merges 4.6 base + 1m + fast', () => {
     ],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(merged.data.length, 1);
   const m = merged.data[0];
 
@@ -150,13 +150,13 @@ test('mergeClaudeVariants merges 4.6 base + 1m + fast', () => {
   assertEquals(m.capabilities?.limits?.max_context_window_tokens, 1_000_000);
 });
 
-test('mergeClaudeVariants leaves non-Claude models untouched', () => {
+test('mergeCopilotVariants leaves non-Claude models untouched', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
     data: [claudeVariant('gpt-5.4', { maxContextWindowTokens: 272_000 }), claudeVariant('gemini-2.5-pro', { maxContextWindowTokens: 1_000_000 })],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(
     merged.data.map(m => m.id),
     ['gpt-5.4', 'gemini-2.5-pro'],
@@ -164,20 +164,20 @@ test('mergeClaudeVariants leaves non-Claude models untouched', () => {
   assertEquals(merged.data[0].capabilities?.limits?.max_context_window_tokens, 272_000);
 });
 
-test('mergeClaudeVariants preserves order across mixed claude/non-claude models', () => {
+test('mergeCopilotVariants preserves order across mixed claude/non-claude models', () => {
   const input: CopilotModelsResponse = {
     object: 'list',
     data: [claudeVariant('claude-opus-4.7-1m-internal'), claudeVariant('gpt-5.5'), claudeVariant('claude-opus-4.7'), claudeVariant('claude-sonnet-4.6')],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(
     merged.data.map(m => m.id),
     ['claude-opus-4-7', 'gpt-5.5', 'claude-sonnet-4-6'],
   );
 });
 
-test('mergeClaudeVariants preserves vision/adaptive_thinking/budget from base variant', () => {
+test('mergeCopilotVariants preserves vision/adaptive_thinking/budget from base variant', () => {
   // These fields are uniform per family (every variant shares the same base
   // capability), so the merge just keeps the base's value via the ...supports spread.
   const input: CopilotModelsResponse = {
@@ -208,7 +208,7 @@ test('mergeClaudeVariants preserves vision/adaptive_thinking/budget from base va
     ],
   };
 
-  const merged = mergeClaudeVariants(input);
+  const merged = mergeCopilotVariants(input);
   assertEquals(merged.data.length, 1);
   const supports = merged.data[0].capabilities?.supports;
   // vision and budget fields come from the base via spread
@@ -218,4 +218,35 @@ test('mergeClaudeVariants preserves vision/adaptive_thinking/budget from base va
   assertEquals(supports?.adaptive_thinking, true);
   // reasoning_effort is the union
   assertSameSet(supports?.reasoning_effort, ['medium', 'xhigh']);
+});
+
+test('mergeCopilotVariants merges a non-Claude base with its -fast lane', () => {
+  const input: CopilotModelsResponse = {
+    object: 'list',
+    data: [
+      claudeVariant('gpt-5.6-sol', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
+      claudeVariant('gpt-5.6-sol-fast', { maxContextWindowTokens: 1_050_000, reasoningEfforts: ['low', 'medium', 'high'] }),
+    ],
+  };
+
+  const merged = mergeCopilotVariants(input);
+  assertEquals(
+    merged.data.map(m => m.id),
+    ['gpt-5.6-sol'],
+  );
+});
+
+test('mergeCopilotVariants keeps a -fast id whose base does not exist', () => {
+  // `grok-code-fast` names a model, not the lane of a `grok-code` that the
+  // catalog has never published.
+  const input: CopilotModelsResponse = {
+    object: 'list',
+    data: [claudeVariant('grok-code-fast'), claudeVariant('gpt-5.6-sol'), claudeVariant('gpt-5.6-sol-fast')],
+  };
+
+  const merged = mergeCopilotVariants(input);
+  assertEquals(
+    merged.data.map(m => m.id),
+    ['grok-code-fast', 'gpt-5.6-sol'],
+  );
 });

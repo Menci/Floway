@@ -19,8 +19,8 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
 test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
   const expected = {
     'gpt-5.6-sol': [
-      published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
-      published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }),
+      published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }),
+      published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }),
     ],
     'gpt-5.6-terra': [
       published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
@@ -36,6 +36,27 @@ test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
     assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, short);
     assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, long);
   }
+});
+
+test('Copilot GPT-5.6 Sol prices its accelerated lane on the served priority tier', () => {
+  const pricing = pricingForCopilotPublicModelId('gpt-5.6-sol');
+  assertEquals(
+    priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates,
+    published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '40' }),
+  );
+  assertEquals(
+    priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 + 1 }).rates,
+    published({ input_tokens: '16', input_cache_read_tokens: '1.6', input_cache_write_tokens: '20', output_tokens: '60' }),
+  );
+});
+
+// The lane is reachable only on models that publish a `-fast` raw variant; the
+// rest fall back to their standard rates rather than inventing a tier.
+test('Copilot GPT-5.6 Terra falls back to its standard rates on a priority tier', () => {
+  assertEquals(
+    priceRequest(pricingForCopilotPublicModelId('gpt-5.6-terra'), { serviceTier: 'priority', inputTokens: 0 }).rates,
+    published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
+  );
 });
 
 test('Copilot GPT and Gemini threshold entries apply whole-request rates', () => {

@@ -10,6 +10,7 @@
 
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { AliasRules } from '@floway-dev/protocols/common';
+import { isFastServiceTier } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
@@ -75,14 +76,16 @@ export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: Alias
   }
   // `verbosity` has no native Messages slot; drop silently.
   if (rules.serviceTier !== undefined) {
-    // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
-    // `service_tier: 'fast'`; on a native Messages target the alias rule
-    // `serviceTier: 'fast'` lands on `speed` so the upstream sees Fast Mode
-    // through its native field. Other tier values pass through on
-    // `service_tier` since Messages's native enum (`auto`/`standard_only`)
-    // doesn't model them. Whichever branch we take, clear the sibling field
-    // so the upstream never sees two tiers in conflict.
-    if (rules.serviceTier === 'fast') {
+    // The cross-protocol bridge in translate maps `speed: 'fast'` ↔ the
+    // OpenAI accelerated lane; on a native Messages target an alias rule
+    // naming that lane lands on `speed` so the upstream sees Fast Mode
+    // through its native field. Both OpenAI spellings count, since OpenAI
+    // itself accepts `priority` and `fast` interchangeably. Other tier values
+    // pass through on `service_tier` since Messages's native request enum
+    // (`auto`/`standard_only`) doesn't model them. Whichever branch we take,
+    // clear the sibling field so the upstream never sees two tiers in
+    // conflict.
+    if (isFastServiceTier(rules.serviceTier)) {
       body.speed = 'fast';
       delete body.service_tier;
     } else {

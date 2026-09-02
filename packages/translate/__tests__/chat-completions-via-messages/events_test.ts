@@ -1015,7 +1015,7 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
 
 // ── speed / service_tier pass-through ──
 
-test('Anthropic speed:fast maps to service_tier:fast on the usage chunk', () => {
+test('Anthropic speed:fast maps to service_tier:priority on the usage chunk', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
 
@@ -1029,7 +1029,7 @@ test('Anthropic speed:fast maps to service_tier:fast on the usage chunk', () => 
   ) as ChatCompletionsStreamEvent[];
 
   const usageChunk = result[1];
-  assertEquals(usageChunk.service_tier, 'fast');
+  assertEquals(usageChunk.service_tier, 'priority');
 });
 
 test('Anthropic service_tier:standard with no speed passes service_tier:standard through on the usage chunk', () => {

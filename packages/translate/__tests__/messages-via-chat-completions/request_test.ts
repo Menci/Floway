@@ -546,7 +546,7 @@ test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound Ch
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('buildTargetRequest omits service_tier when speed is absent', () => {

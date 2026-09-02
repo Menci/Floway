@@ -32,16 +32,32 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
-  // GPT-5.6 standard short/long entries. Copilot exposes no priority/flex lane.
+  // GPT-5.6 Sol, and the lane Copilot publishes as the separate raw variant
+  // `gpt-5.6-sol-fast` and this table reaches through the merged public id.
+  // Rates are OpenAI's published ones for the tier each lane is served at, in
+  // keeping with the rest of this table: it records what the same request
+  // would have cost at the vendor, not what GitHub charges for it — `gpt-4.1`
+  // is quoted here at OpenAI's $2/$0.50/$8 while Copilot serves it for zero.
+  //
+  // Which lane is which comes from Copilot's own catalog, which quotes models
+  // in credits per million tokens (microsoft/vscode names the unit in
+  // `agentModelPricing.ts`). Sol is quoted at 200/20/250/1000 and the `-fast`
+  // variant at exactly double, and the variant's response reports
+  // `service_tier: "priority"` — so the suffixed id is Sol's accelerated
+  // lane, which OpenAI sells as Fast mode, and not a second model.
+  // https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/0b2318a699fb140b7e568228e05d3212c9f095dc/providers/openai/models/gpt-5.6-sol.toml
+  ['gpt-5.6-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '40' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '1.6', input_cache_write_tokens: '20', output_tokens: '60' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
   // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', modelPricing(
-    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
-    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
-  )],
   ['gpt-5.6-terra', modelPricing(
     tokenPricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
     tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),

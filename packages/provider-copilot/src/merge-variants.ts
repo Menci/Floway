@@ -1,8 +1,9 @@
-// Merge Claude reasoning-effort and 1M-context variants into a single base id
-// for /v1/models surfacing. The data plane keeps requesting upstream by their
-// real ids — each provider still resolves the raw variant from request fields
-// before calling upstream. This merge is purely an outbound view so
-// OpenAI/Anthropic-shaped clients see one Claude model id per family.
+// Merge a family's raw lane variants (see `model-variants.ts`) into a single
+// public model for /v1/models surfacing. The data plane keeps requesting
+// upstream by their real ids — each provider still resolves the raw variant
+// from request fields before calling upstream. This merge is purely an
+// outbound view so OpenAI/Anthropic-shaped clients see one model id per
+// family.
 //
 // Field policy:
 //   id, version                                             -> public base id
@@ -14,10 +15,8 @@
 //                                                             siblings, taken
 //                                                             from base
 
-import { copilotPublicModelId } from './model-name.ts';
+import { groupCopilotVariants } from './model-variants.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
-
-const isClaudeModel = (model: CopilotRawModel): boolean => model.id.startsWith('claude-');
 
 const maxOf = (...values: (number | undefined)[]): number | undefined => {
   const defined = values.filter((v): v is number => typeof v === 'number');
@@ -35,27 +34,25 @@ const unionStrings = (...lists: (readonly string[] | undefined)[]): string[] | u
   return saw ? seen : undefined;
 };
 
-const pickBase = (variants: CopilotRawModel[]): CopilotRawModel => {
-  const baseId = copilotPublicModelId(variants[0].id);
-  const exact = variants.find(m => m.id === baseId);
+const pickBase = (publicId: string, variants: CopilotRawModel[]): CopilotRawModel => {
+  const exact = variants.find(m => m.id === publicId);
   if (exact) return exact;
   // No exact base id (e.g. only suffixed variants exist); pick the shortest id
   // so the variant closest to the base wins.
   return [...variants].sort((a, b) => a.id.length - b.id.length)[0];
 };
 
-const mergeVariantGroup = (variants: CopilotRawModel[]): CopilotRawModel => {
-  const base = pickBase(variants);
-  const baseId = copilotPublicModelId(base.id);
-  const displayName = base.display_name ?? base.name ?? baseId;
+const mergeVariantGroup = (publicId: string, variants: CopilotRawModel[]): CopilotRawModel => {
+  const base = pickBase(publicId, variants);
+  const displayName = base.display_name ?? base.name ?? publicId;
   const limits = base.capabilities?.limits ?? {};
   const supports = base.capabilities?.supports ?? {};
 
   return {
     ...base,
-    id: baseId,
+    id: publicId,
     name: displayName,
-    version: baseId,
+    version: publicId,
     display_name: displayName,
     capabilities: {
       ...base.capabilities,
@@ -73,21 +70,7 @@ const mergeVariantGroup = (variants: CopilotRawModel[]): CopilotRawModel => {
   };
 };
 
-export const mergeClaudeVariants = (models: CopilotModelsResponse): CopilotModelsResponse => {
-  const groups = new Map<string, CopilotRawModel[]>();
-  const order: string[] = [];
-
-  for (const model of models.data) {
-    const key = isClaudeModel(model) ? copilotPublicModelId(model.id) : model.id;
-    if (!groups.has(key)) {
-      groups.set(key, []);
-      order.push(key);
-    }
-    groups.get(key)!.push(model);
-  }
-
-  return {
-    object: models.object,
-    data: order.map(key => mergeVariantGroup(groups.get(key)!)),
-  };
-};
+export const mergeCopilotVariants = (models: CopilotModelsResponse): CopilotModelsResponse => ({
+  object: models.object,
+  data: [...groupCopilotVariants(models.data)].map(([publicId, variants]) => mergeVariantGroup(publicId, variants)),
+});

@@ -196,10 +196,17 @@ test('messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', ()
   assertEquals(body.service_tier, undefined);
 });
 
-test('messages: non-fast serviceTier lands on service_tier directly', () => {
+test('messages: serviceTier=priority maps to speed=fast (OpenAI renamed the lane, both spellings reach it)', () => {
   const body = msgPayload();
   applyRulesToUpstreamMessages(body, { serviceTier: 'priority' });
-  assertEquals(body.service_tier, 'priority');
+  assertEquals(body.speed, 'fast');
+  assertEquals(body.service_tier, undefined);
+});
+
+test('messages: non-accelerated serviceTier lands on service_tier directly', () => {
+  const body = msgPayload();
+  applyRulesToUpstreamMessages(body, { serviceTier: 'flex' });
+  assertEquals(body.service_tier, 'flex');
   assertEquals(body.speed, undefined);
 });
 
@@ -208,16 +215,16 @@ test('messages: serviceTier=fast clears a pre-existing body.service_tier on the 
   // same request — Anthropic treats them as alternates and the wire
   // semantics for a conflict are undefined. The overlay clears the
   // sibling field whichever branch it takes.
-  const body = msgPayload({ service_tier: 'priority' });
+  const body = msgPayload({ service_tier: 'flex' });
   applyRulesToUpstreamMessages(body, { serviceTier: 'fast' });
   assertEquals(body.speed, 'fast');
   assertEquals(body.service_tier, undefined);
 });
 
-test('messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
+test('messages: non-accelerated serviceTier clears a pre-existing body.speed on the same payload', () => {
   const body = msgPayload({ speed: 'fast' });
-  applyRulesToUpstreamMessages(body, { serviceTier: 'priority' });
-  assertEquals(body.service_tier, 'priority');
+  applyRulesToUpstreamMessages(body, { serviceTier: 'flex' });
+  assertEquals(body.service_tier, 'flex');
   assertEquals(body.speed, undefined);
 });
 
