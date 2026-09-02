@@ -55,7 +55,7 @@ test('Copilot GPT-5.6 Sol prices its accelerated lane on the served priority tie
 test('Copilot GPT-5.6 Terra falls back to its standard rates on a priority tier', () => {
   assertEquals(
     priceRequest(pricingForCopilotPublicModelId('gpt-5.6-terra'), { serviceTier: 'priority', inputTokens: 0 }).rates,
-    published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
+    published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
   );
 });
 
