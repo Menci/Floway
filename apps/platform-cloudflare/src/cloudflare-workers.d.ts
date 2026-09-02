@@ -20,11 +20,26 @@ declare module 'cloudflare:workers' {
   }
 }
 
-// The runtime's `DurableObjectState` surface the actor touches — just the
-// WebSocket Hibernation entry points.
+// The runtime's `DurableObjectState` surface the actors touch — the WebSocket Hibernation
+// entry points, and the SQLite-backed storage `LogStreamDO` keeps its segments in.
 interface DurableObjectState {
   acceptWebSocket(server: WebSocket): void;
   getWebSockets(): WebSocket[];
+  readonly storage: DurableObjectStorage;
+}
+
+interface DurableObjectStorage {
+  readonly sql: SqlStorage;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number): Promise<void>;
+  deleteAlarm(): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
+// `exec` is synchronous, which is what lets an append read the current length, slice off what
+// is already stored and write the remainder inside one JavaScript turn.
+interface SqlStorage {
+  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): Iterable<T>;
 }
 
 // Cloudflare extends Web Crypto with a constant-time comparison primitive.
