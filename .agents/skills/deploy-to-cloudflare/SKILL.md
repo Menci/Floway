@@ -27,7 +27,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
 4. Run `pnpm jiti scripts/require-wrangler-config.ts`.
 5. Run `pnpm wrangler deployments status --json`. Continue only when Wrangler explicitly reports that the configured Worker does not exist. Stop when it reports an existing deployment or any authentication, network, account, or ambiguous failure.
 6. Run `pnpm run build:web`, because the shared Wrangler configuration includes `apps/web/dist/client` as its Static Assets directory.
-7. Publish the bootstrap probe while retaining the final Worker name, bindings, Durable Object migration, assets, cron, and routes. This first version installs the configured `new_sqlite_classes` migration:
+7. Publish the bootstrap probe through a reviewed command file, retaining the final Worker name, bindings, Durable Object migration, assets, cron, and routes. This first version installs the configured `new_sqlite_classes` migration:
 
    ```bash
    pnpm wrangler deploy .agents/skills/deploy-to-cloudflare/assets/binding-probe.js \
@@ -35,7 +35,7 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
      --message "Initial binding bootstrap before $(git rev-parse HEAD)"
    ```
 
-8. Publish the same probe a second time after the Durable Object migration exists. This creates the version used for end-to-end binding verification:
+8. Publish the same probe a second time through a reviewed command file, after the Durable Object migration exists. This creates the version used for end-to-end binding verification:
 
    ```bash
    pnpm wrangler deploy .agents/skills/deploy-to-cloudflare/assets/binding-probe.js \
@@ -55,6 +55,17 @@ Run Wrangler through `pnpm wrangler` and preserve its live terminal output. Read
 10. Require HTTP 200, the exact body `Hello World`, and `x-floway-binding-probe: DB,FILES,IMAGES,KV,BROADCAST_DO`. The probe performs a D1 query, an R2 read, a KV read, an Images inspection, and a Durable Object request. Stop before migrations when any check fails.
 11. Set `ADMIN_KEY` with `pnpm wrangler secret put ADMIN_KEY`; accept the value only through Wrangler's secret prompt or redirected secure input. Confirm its name in `pnpm wrangler secret list`.
 12. Continue with the deployment-state collection below. Treat the probe deployment as the current code version and omit the historical Floway `CHANGELOG.md` diff because no previous Floway deployment exists at this Worker name.
+
+## Execute a reviewed command file
+
+Every command that changes remote state runs from a file that was written, read back, and reviewed before it is executed. Writing the command down is what keeps a chained command whole: the shell reads the file, so no step can be dropped, reordered, or run without the step it guards.
+
+1. Create a uniquely named temporary directory inside the repository worktree. Do not place it in Git internals or a user-level configuration directory.
+2. Write the complete command into `run.sh` in that directory, under `set -euo pipefail`. Substitute every placeholder — Worker name, `<DB_NAME>`, bookmark, version id — with its literal resolved value. Take no value from an unreviewed environment variable or positional argument.
+3. Read `run.sh` in full and validate its syntax with `bash -n`. Confirm that it holds only the intended commands, in the intended order, joined by `&&` wherever one guards the next, and that every substituted value matches the deployment state just collected.
+4. Restate the fully resolved command in chat, compare that restatement against the file, and confirm explicitly that it is correct. Rewrite the file and review it again whenever anything is wrong.
+5. Execute the reviewed file. Never reconstruct, retype, or partially run its commands, and do not modify the file between the successful review and execution.
+6. Delete `run.sh` and remove its now-empty directory as soon as the script returns, before reading any result, while preserving its exit status for reporting.
 
 ## Collect deployment state
 
@@ -109,15 +120,15 @@ For a first deployment, identify the probe version as the only code fallback and
 
 ## Publish Floway
 
-Print the exact applicable command before running it. State that rerunning the same command recovers safely after a partial failure because remote D1 migration application is idempotent and Wrangler republishes the current code.
+Publish through a reviewed command file. State that rerunning that same file recovers safely after a partial failure, because remote D1 migration application is idempotent and Wrangler republishes the current code.
 
-Use the chained command when migrations are pending:
+Write the chained command when migrations are pending, and treat the chain as one indivisible step. Applying a migration without publishing the code that reads its result leaves production serving the previous build against rewritten operator configuration, and that failure is not loud: `0083_canonical_protocol_names.sql` rewrites endpoint capability keys and flag ids in place, where an unknown endpoint key takes a whole azure or custom upstream down and a stale flag id silently stops matching.
 
 ```bash
 pnpm run db:migrate:remote && pnpm run deploy
 ```
 
-Use the deploy command when no migration is pending:
+Write the deploy command alone when no migration is pending:
 
 ```bash
 pnpm run deploy

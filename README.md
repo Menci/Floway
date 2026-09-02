@@ -111,13 +111,14 @@ update and rollback flow by default. A deployment named as new first runs an
 isolated binding-probe bootstrap and requires its `Hello World` response before
 publishing Floway.
 
-For a manual production update, configure the admin secret, apply the remote
-migrations, and deploy:
+For a manual production update, configure the admin secret, then apply the
+remote migrations and deploy as one step — publishing the code that reads a
+migration's result is part of applying it, and stopping in between leaves the
+previous build serving rewritten configuration:
 
 ```bash
 pnpm wrangler secret put ADMIN_KEY
-pnpm run db:migrate:remote
-pnpm run deploy
+pnpm run db:migrate:remote && pnpm run deploy
 ```
 
 ### Node.js
