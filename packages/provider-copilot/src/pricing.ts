@@ -53,6 +53,8 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '40' }, { serviceTier: 'priority' }),
     tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '1.6', input_cache_write_tokens: '20', output_tokens: '60' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
+  // Terra and Luna standard short/long entries; neither publishes a `-fast`
+  // sibling in Copilot's catalog, so neither has an accelerated lane to price.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json

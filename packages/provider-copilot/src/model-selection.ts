@@ -99,10 +99,10 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 
 // Whether the family can serve the accelerated lane at all.
 // `callAnthropicMessages` pre-checks this because Anthropic rejects
-// `speed: 'fast'` on a model that
-// cannot serve it, and Copilot never echoes `usage.speed` for us to notice a
-// downgrade afterwards. The OpenAI spelling of the same lane needs no
-// pre-check: that upstream reports the tier it served.
+// `speed: 'fast'` on a model that cannot serve it, and Copilot never echoes
+// `usage.speed` for us to notice a downgrade afterwards. The OpenAI spelling
+// of the same lane needs no pre-check: that upstream reports the tier it
+// served.
 export const copilotModelSupportsFastVariant = (rawModels: readonly CopilotRawModel[]): boolean => {
   const index = copilotVariantIndex(rawModels);
   return rawModels.some(model => index.suffixOf(model.id) === 'fast');
