@@ -185,10 +185,11 @@ test('resolveCopilotRawModel leaves a -fast id that has no base sibling alone', 
 
   assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', {})?.id, 'grok-code-fast');
   assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', { fast: true })?.id, 'grok-code-fast');
-  assertEquals(copilotModelSupportsFastVariant([model('grok-code-fast')]), false);
 });
 
 test('copilotModelSupportsFastVariant sees the lane on a non-Claude family too', () => {
   assertEquals(copilotModelSupportsFastVariant([model('gpt-5.6-sol'), model('gpt-5.6-sol-fast')]), true);
   assertEquals(copilotModelSupportsFastVariant([model('gpt-5.6-terra')]), false);
+  // `-fast` with no base sibling is a name, not a lane.
+  assertEquals(copilotModelSupportsFastVariant([model('grok-code-fast')]), false);
 });
