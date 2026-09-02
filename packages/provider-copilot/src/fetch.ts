@@ -35,7 +35,7 @@ const captureQuotaFireAndForget = (
   waitUntil?.(persist);
 };
 
-// Token-exchange failures surface as regular Responses so callers handle them via the same 4xx/5xx path.
+// Token-exchange failures surface as regular OpenAI Responses so callers handle them via the same 4xx/5xx path.
 const copilotFetchInternal = async (
   config: CopilotFetchConfig,
   path: string,
@@ -57,15 +57,15 @@ const copilotFetchInternal = async (
   return response;
 };
 
-export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchOpenAIChatCompletions = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
-export const copilotFetchResponses = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchOpenAIResponses = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/responses', init, options);
-export const copilotFetchMessages = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchAnthropicMessages = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages', init, options);
-export const copilotFetchMessagesCountTokens = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchAnthropicMessagesCountTokens = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages/count_tokens', init, options);
-export const copilotFetchEmbeddings = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
+export const copilotFetchOpenAIEmbeddings = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/embeddings', init, options);
 export const copilotFetchModels = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/models', init, options);

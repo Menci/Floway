@@ -47,7 +47,7 @@ test('assertOllamaUpstreamRecord parses manual model overrides', () => {
     config: {
       ...(baseRecord.config as Record<string, unknown>),
       models: [
-        { upstreamModelId: 'gpt-oss:120b', endpoints: { chatCompletions: {} }, display_name: 'GPT-OSS 120B' },
+        { upstreamModelId: 'gpt-oss:120b', endpoints: { openaiChatCompletions: {} }, display_name: 'GPT-OSS 120B' },
       ],
     },
   });

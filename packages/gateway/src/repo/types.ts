@@ -20,9 +20,9 @@ export interface ApiKey {
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
-  // 0 = durable Stateful Responses disabled; a positive value is seconds in
+  // 0 = durable Stateful OpenAI Responses disabled; a positive value is seconds in
   // whole-day increments. Reuse lifetime is quantized to UTC days.
-  responsesRetentionSeconds: number;
+  openaiResponsesRetentionSeconds: number;
 }
 
 export interface User {
@@ -261,7 +261,7 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
+  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
 
 export interface UsersRepo {
@@ -464,15 +464,15 @@ export interface ModelAliasesRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface StoredResponsesItem {
+export interface StoredOpenAIResponsesItem {
   id: string;
   apiKeyId: string;
-  payload: StoredResponsesItemPayload;
+  payload: StoredOpenAIResponsesItemPayload;
   itemHash: string;
   refreshedAt: number;
 }
 
-export interface StoredResponsesItemPayload {
+export interface StoredOpenAIResponsesItemPayload {
   item: unknown;
   // Ancillary state stashed alongside the public `item` body but never sent on
   // the wire: a server-only slot to preserve data a stateless client strips
@@ -481,26 +481,26 @@ export interface StoredResponsesItemPayload {
   private?: unknown;
 }
 
-export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]>;
-  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[], earliestVisibleCutoff: number): Promise<void>;
-  refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void>;
+export interface OpenAIResponsesItemsRepo {
+  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesItem[]>;
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesItem[]>;
+  insertMany(items: readonly StoredOpenAIResponsesItem[], earliestVisibleCutoff: number): Promise<void>;
+  refreshMany(items: readonly StoredOpenAIResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
   findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
-export interface StoredResponsesSnapshot {
+export interface StoredOpenAIResponsesSnapshot {
   id: string;
   apiKeyId: string;
   itemIds: string[];
   refreshedAt: number;
 }
 
-export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredResponsesSnapshot | null>;
-  insert(snapshot: StoredResponsesSnapshot): Promise<void>;
+export interface OpenAIResponsesSnapshotsRepo {
+  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredOpenAIResponsesSnapshot | null>;
+  insert(snapshot: StoredOpenAIResponsesSnapshot): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
   findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
@@ -553,8 +553,8 @@ export interface Repo {
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;
-  responsesItems: ResponsesItemsRepo;
-  responsesSnapshots: ResponsesSnapshotsRepo;
+  openaiResponsesItems: OpenAIResponsesItemsRepo;
+  openaiResponsesSnapshots: OpenAIResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
   expirationSweeps: ExpirationSweepsRepo;
   scheduledMaintenance: ScheduledMaintenanceRepo;

@@ -21,7 +21,7 @@
 //    `database_id` below; `database_name` is the same value you passed.
 // 4. Run `pnpm wrangler r2 bucket create <bucket_name>` for the FILES
 //    bucket. It stores file-backed request/response dump bodies and oversized
-//    Stateful Responses item payloads. Put its name in `bucket_name` below.
+//    Stateful OpenAI Responses item payloads. Put its name in `bucket_name` below.
 // 5. Run `pnpm wrangler kv namespace create <name>` and paste the returned
 //    id into `kv_namespaces[0].id`.
 {

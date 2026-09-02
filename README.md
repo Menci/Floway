@@ -38,7 +38,7 @@ the password. Then:
 
 The data-plane and control-plane APIs are also exposed directly at
 <http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
-Stateful Responses item payloads persist in the `floway-data` volume.
+Stateful OpenAI Responses item payloads persist in the `floway-data` volume.
 
 The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,

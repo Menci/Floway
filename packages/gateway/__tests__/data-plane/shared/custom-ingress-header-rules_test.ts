@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -27,12 +27,12 @@ const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['
       ingressHeadersRules: INGRESS_HEADERS_RULES,
       modelsFetch: { enabled: false },
       models: [
-        { upstreamModelId: 'chat-model', endpoints: { chatCompletions: {} } },
-        { upstreamModelId: 'messages-model', endpoints: { messages: {} } },
-        { upstreamModelId: 'embedding-model', endpoints: { embeddings: {} } },
-        { upstreamModelId: 'completions-model', endpoints: { completions: {} } },
-        { upstreamModelId: 'image-model', endpoints: { imagesGenerations: {} } },
-        { upstreamModelId: 'transcription-model', endpoints: { audioTranscriptions: {} } },
+        { upstreamModelId: 'chat-model', endpoints: { openaiChatCompletions: {} } },
+        { upstreamModelId: 'messages-model', endpoints: { anthropicMessages: {} } },
+        { upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } },
+        { upstreamModelId: 'completions-model', endpoints: { openaiCompletions: {} } },
+        { upstreamModelId: 'image-model', endpoints: { openaiImagesGenerations: {} } },
+        { upstreamModelId: 'transcription-model', endpoints: { openaiAudioTranscriptions: {} } },
         { upstreamModelId: 'rerank-model', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
       ],
     },
@@ -74,7 +74,7 @@ const CASES: RouteCase[] = [
     contentType: 'application/json',
     body: () => JSON.stringify({ model: 'chat-model', messages: [{ role: 'user', content: 'hi' }] }),
     upstreamPath: '/v1/chat/completions',
-    upstreamResponse: () => sseChatCompletionsResponse({
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_1', model: 'chat-model', created: 1,
       choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -86,7 +86,7 @@ const CASES: RouteCase[] = [
     contentType: 'application/json',
     body: () => JSON.stringify({ model: 'chat-model', max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }),
     upstreamPath: '/v1/chat/completions',
-    upstreamResponse: () => sseChatCompletionsResponse({
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_2', model: 'chat-model', created: 1,
       choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -98,7 +98,7 @@ const CASES: RouteCase[] = [
     contentType: 'application/json',
     body: () => JSON.stringify({ model: 'chat-model', input: 'hi' }),
     upstreamPath: '/v1/chat/completions',
-    upstreamResponse: () => sseChatCompletionsResponse({
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_3', model: 'chat-model', created: 1,
       choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -110,7 +110,7 @@ const CASES: RouteCase[] = [
     contentType: 'application/json',
     body: () => JSON.stringify({ model: 'messages-model', messages: [{ role: 'user', content: 'hi' }] }),
     upstreamPath: '/v1/messages',
-    upstreamResponse: () => sseMessagesResponse({
+    upstreamResponse: () => sseAnthropicMessagesResponse({
       id: 'msg_1', model: 'messages-model', role: 'assistant',
       content: [{ type: 'text', text: 'ok' }],
       usage: { input_tokens: 1, output_tokens: 1 },
@@ -122,7 +122,7 @@ const CASES: RouteCase[] = [
     contentType: 'application/json',
     body: () => JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
     upstreamPath: '/v1/chat/completions',
-    upstreamResponse: () => sseChatCompletionsResponse({
+    upstreamResponse: () => sseOpenAIChatCompletionsResponse({
       id: 'chatcmpl_4', model: 'chat-model', created: 1,
       choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },

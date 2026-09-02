@@ -62,7 +62,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // the gap between two consecutive reads of the upstream response at 120s;
   // Node's `fetch` is undici, whose `bodyTimeout` "monitors time between
   // receiving body data" and defaults to 300s. Either one kills a Copilot
-  // Responses stream that has already returned HTTP 200 and then thinks —
+  // OpenAI Responses stream that has already returned HTTP 200 and then thinks —
   // measured silences run past both bounds (120s and 300.113s observed on the
   // same workload), and neither limit is reachable from here. A raw socket has
   // no such bound: the same workload survived 233s of measured upstream silence

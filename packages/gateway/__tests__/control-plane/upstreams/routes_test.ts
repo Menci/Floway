@@ -25,7 +25,7 @@ const customConfig = {
   authStyle: 'bearer',
   ingressHeadersRules: [],
   apiKey: 'sk-test',
-  endpoints: { chatCompletions: {} },
+  endpoints: { openaiChatCompletions: {} },
 };
 
 const azureConfig = {
@@ -35,7 +35,7 @@ const azureConfig = {
     {
       upstreamModelId: 'gpt-prod',
       publicModelId: 'gpt-public',
-      endpoints: { chatCompletions: {}, responses: {} },
+      endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
     },
   ],
 };
@@ -108,7 +108,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(items[0].config.apiKey, undefined);
 });
 
-// `completions` must survive request validation as a complete endpoint map;
+// `openaiCompletions` must survive request validation as a complete endpoint map;
 // stripping it would make this otherwise valid model fail provider validation.
 test('POST /api/upstreams accepts a custom model whose only endpoint is /completions', async () => {
   const { repo, adminSession } = await setupAppTest();
@@ -121,13 +121,13 @@ test('POST /api/upstreams accepts a custom model whose only endpoint is /complet
       ingressHeadersRules: [],
       endpoints: {},
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'davinci-002', endpoints: { completions: {} } }],
+      models: [{ upstreamModelId: 'davinci-002', endpoints: { openaiCompletions: {} } }],
     },
   })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.config.models[0].endpoints, { completions: {} });
+  assertEquals(created.config.models[0].endpoints, { openaiCompletions: {} });
 });
 
 test('POST /api/upstreams validates Azure models and redacts API keys', async () => {
@@ -305,7 +305,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
         },
         body: JSON.stringify({
           config: {
-            endpoints: { responses: {} },
+            endpoints: { openaiResponses: {} },
             ingressHeadersRules: [{ key: 'X-Route', value: 'patched' }],
           },
         }),
@@ -316,7 +316,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
 
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
-  assertEquals((updated?.config as Record<string, unknown>).endpoints, { responses: {} });
+  assertEquals((updated?.config as Record<string, unknown>).endpoints, { openaiResponses: {} });
   assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
   const cached = updated?.modelsCache;
@@ -344,7 +344,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
-      models: [{ upstreamModelId: 'gpt-prod', endpoints: { messages: {} } }],
+      models: [{ upstreamModelId: 'gpt-prod', endpoints: { anthropicMessages: {} } }],
     },
     state: null,
   });
@@ -357,7 +357,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     },
     body: JSON.stringify({
       config: {
-        models: [{ upstreamModelId: 'gpt-prod', endpoints: { responses: {} } }],
+        models: [{ upstreamModelId: 'gpt-prod', endpoints: { openaiResponses: {} } }],
       },
     }),
   });
@@ -367,7 +367,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   assertEquals(stored?.config, {
     endpoint: 'https://example.openai.azure.com/openai/v1',
     apiKey: 'az-secret',
-    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { responses: {} } }],
+    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiResponses: {} } }],
   });
 });
 
@@ -391,7 +391,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
-      models: [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }],
+      models: [{ upstreamModelId: 'gpt-prod', endpoints: { openaiChatCompletions: {} } }],
     },
     state: null,
   });
@@ -403,7 +403,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
       config: {
         models: [{
           upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
+          endpoints: { openaiChatCompletions: {} },
           flagOverrides: { 'vendor-deepseek': true },
         }],
       },
@@ -433,7 +433,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
   await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });
@@ -482,7 +482,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { openaiChatCompletions: {} } },
     state: null,
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
@@ -579,10 +579,10 @@ test('POST /api/upstreams/list-models projects an ollama draft into UpstreamMode
       assertEquals(ids, ['gpt-oss:120b', 'nomic-embed-text:latest']);
       const gptoss = body.data.find(m => m.upstreamModelId === 'gpt-oss:120b')!;
       assertEquals(gptoss.kind, 'chat');
-      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
+      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
       const embed = body.data.find(m => m.upstreamModelId === 'nomic-embed-text:latest')!;
       assertEquals(embed.kind, 'embedding');
-      assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['embeddings']);
+      assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['openaiEmbeddings']);
     },
   );
 });
@@ -2160,7 +2160,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     config: {
       endpoint: 'https://invariant.openai.azure.com',
       apiKey: 'sk-invariant',
-      models: [{ upstreamModelId: 'gpt-4o', publicModelId: 'gpt-4o', kind: 'chat', endpoints: { chatCompletions: {} } }],
+      models: [{ upstreamModelId: 'gpt-4o', publicModelId: 'gpt-4o', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
     },
     state: null,
   };
@@ -2216,7 +2216,7 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
-  assertEquals(custom.config.endpoints, { chatCompletions: {} });
+  assertEquals(custom.config.endpoints, { openaiChatCompletions: {} });
   assertEquals(custom.config.ingressHeadersRules, []);
   assertEquals(custom.config.modelsFetch, { enabled: true });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;

@@ -11,7 +11,7 @@ describe('Agent Setup model ranking', () => {
       catalogModel('vendor/claude-opus-4-8', { contextWindow: 200_000 }),
       catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
       catalogModel('gpt-4o', { contextWindow: 200_000 }),
-      catalogModel('embedding', { kind: 'embedding', endpoints: { embeddings: {} } }),
+      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
     ], { family: 'claude', picker: 'default' }).map(entry => entry.id)).toEqual([
       'vendor/claude-opus-4-8',
       'claude-sonnet-4-5',

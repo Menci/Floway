@@ -9,27 +9,27 @@ import {
   replaceSoleAccount,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
-import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { parseMessagesStream } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import {
   getProviderRepo,
-  headersForMessagesCall,
+  headersForAnthropicMessagesCall,
   jsonRequestBody,
   streamingProviderCall,
-  type MessagesUpstreamCallOptions,
+  type AnthropicMessagesUpstreamCallOptions,
   type ProviderModel,
   type ProviderStreamResult,
 } from '@floway-dev/provider';
 
-const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+const ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
 
-export interface CallClaudeCodeMessagesOptions {
+export interface CallClaudeCodeAnthropicMessagesOptions {
   upstreamId: string;
   model: ProviderModel;
-  body: Omit<MessagesPayload, 'model'>;
+  body: Omit<AnthropicMessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
   // traffic. The gateway has reduced ordinary headers to the provider module's
-  // allowlist and carries anthropic-beta as typed Messages metadata, so the
+  // allowlist and carries anthropic-beta as typed Anthropic Messages metadata, so the
   // wire path preserves the complete genuine fingerprint. It supplies a
   // default Content-Type when absent and sets cached OAuth auth.
   // `shaped: false` means the gateway's re-mimicry chain rebuilt the
@@ -37,7 +37,7 @@ export interface CallClaudeCodeMessagesOptions {
   // the pinned CC set so the wire shape matches end-to-end.
   shaped: boolean;
   signal?: AbortSignal;
-  call: MessagesUpstreamCallOptions;
+  call: AnthropicMessagesUpstreamCallOptions;
 }
 
 const synthetic503 = (message: string): Response =>
@@ -292,7 +292,7 @@ const maybePersistTerminalFromBodyFireAndForget = (
 const syntheticReturn = (
   upstreamModelId: string,
   response: Response,
-): ProviderStreamResult<MessagesStreamEvent> => ({
+): ProviderStreamResult<AnthropicMessagesStreamEvent> => ({
   ok: false,
   modelKey: upstreamModelId,
   response,
@@ -302,9 +302,9 @@ const syntheticReturn = (
 // refresh failures; other errors propagate. Used at both the cold-start
 // call site and the 401-retry branch so the catch shape lives in one place.
 const ensureOrSession503 = async (
-  opts: CallClaudeCodeMessagesOptions,
+  opts: CallClaudeCodeAnthropicMessagesOptions,
   upstreamModelId: string,
-): Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>> => {
+): Promise<EnsuredAccessToken | ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
   try {
     return await ensureClaudeCodeAccessToken({
       upstreamId: opts.upstreamId,
@@ -320,9 +320,9 @@ const ensureOrSession503 = async (
   }
 };
 
-export const callClaudeCodeMessages = async (
-  opts: CallClaudeCodeMessagesOptions,
-): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+export const callClaudeCodeAnthropicMessages = async (
+  opts: CallClaudeCodeAnthropicMessagesOptions,
+): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
   // `opts.model.id` is the public alias on the catalog; the dated upstream id
   // Anthropic expects on the wire — and that the pricing table keys by — rides
   // on `opts.model.providerData.upstreamModelId`. Resolve once so synthetic
@@ -359,18 +359,18 @@ export const callClaudeCodeMessages = async (
 };
 
 const performUpstreamCall = async (
-  opts: CallClaudeCodeMessagesOptions,
+  opts: CallClaudeCodeAnthropicMessagesOptions,
   upstreamModelId: string,
   accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
-): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
     // The gateway already reduced ordinary headers to the Claude Code module's
-    // allowlist. This path restores typed Messages metadata, preserves the
+    // allowlist. This path restores typed Anthropic Messages metadata, preserves the
     // resulting fingerprint, fills Content-Type when absent, and sets
     // provider-owned OAuth auth.
-    const passthrough = Object.fromEntries(headersForMessagesCall([...opts.call.headers], opts.call.anthropicBeta));
+    const passthrough = Object.fromEntries(headersForAnthropicMessagesCall([...opts.call.headers], opts.call.anthropicBeta));
     // Sub2api always sets Content-Type when the inbound omits it
     // (`gateway_service.go` request-forwarding path), so the upstream
     // never receives a body-bearing request without a media type.
@@ -381,13 +381,13 @@ const performUpstreamCall = async (
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is
-  // what the gateway boundary expects; non-streaming Messages is routed
+  // what the gateway boundary expects; non-streaming Anthropic Messages is routed
   // elsewhere. Safe in the shaped passthrough path too: shaped detection
   // requires CC client headers + system blocks + a valid metadata.user_id,
   // and the real Claude Code client always sets `stream: true`.
-  const wireBody: MessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
+  const wireBody: AnthropicMessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
-  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
+  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
     body: jsonRequestBody(wireBody),
@@ -412,7 +412,7 @@ const performUpstreamCall = async (
     return response;
   });
 
-  const result = await streamingProviderCall(upstreamFetch, parseMessagesStream, upstreamModelId, opts.signal);
+  const result = await streamingProviderCall(upstreamFetch, parseAnthropicMessagesStream, upstreamModelId, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
     // Cached token rejected; invalidate so the next mint reads stale=null,

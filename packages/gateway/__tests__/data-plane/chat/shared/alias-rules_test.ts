@@ -6,44 +6,44 @@
 
 import { test } from 'vitest';
 
-import { applyRulesToUpstreamChatCompletions, applyRulesToUpstreamMessages, applyRulesToUpstreamResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const ccPayload = (overrides: Partial<ChatCompletionsPayload> = {}): ChatCompletionsPayload => ({
+const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
   model: 'gpt-5.4',
   messages: [{ role: 'user', content: 'hi' }],
   ...overrides,
 });
 
-const resPayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
+const resPayload = (overrides: Partial<OpenAIResponsesPayload> = {}): OpenAIResponsesPayload => ({
   model: 'gpt-5.4',
   input: 'hi',
   ...overrides,
 });
 
-const msgPayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
+const msgPayload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
   model: 'claude-opus-4-7',
   max_tokens: 32,
   messages: [{ role: 'user', content: 'hi' }],
   ...overrides,
 });
 
-// ── ChatCompletions target ──
+// ── OpenAI Chat Completions target ──
 
-test('chat-completions: empty rules leave the payload unchanged', () => {
+test('openai-chat-completions: empty rules leave the payload unchanged', () => {
   const body = ccPayload({ reasoning_effort: 'high', verbosity: 'low', service_tier: 'priority' });
-  applyRulesToUpstreamChatCompletions(body, {});
+  applyRulesToUpstreamOpenAIChatCompletions(body, {});
   assertEquals(body.reasoning_effort, 'high');
   assertEquals(body.verbosity, 'low');
   assertEquals(body.service_tier, 'priority');
 });
 
-test('chat-completions: rules stamp every supported native field onto the IR', () => {
+test('openai-chat-completions: rules stamp every supported native field onto the IR', () => {
   const body = ccPayload();
-  applyRulesToUpstreamChatCompletions(body, {
+  applyRulesToUpstreamOpenAIChatCompletions(body, {
     reasoning: { effort: 'high' },
     verbosity: 'low',
     serviceTier: 'priority',
@@ -53,22 +53,22 @@ test('chat-completions: rules stamp every supported native field onto the IR', (
   assertEquals(body.service_tier, 'priority');
 });
 
-test('chat-completions: budget_tokens / adaptive / summary have no native slot — silently dropped', () => {
+test('openai-chat-completions: budget_tokens / adaptive / summary have no native slot — silently dropped', () => {
   const body = ccPayload();
-  applyRulesToUpstreamChatCompletions(body, {
+  applyRulesToUpstreamOpenAIChatCompletions(body, {
     reasoning: { budget_tokens: 1024, adaptive: true, summary: 'detailed' },
   });
   assertEquals(body.reasoning_effort, undefined);
   // Nothing surfaces on the CC IR because none of those rules map to
-  // Chat Completions' native fields.
+  // OpenAI Chat Completions' native fields.
   assertEquals('thinking_budget' in body, false);
   assertEquals('adaptive_thinking' in body, false);
   assertEquals('reasoning_summary' in body, false);
 });
 
-test('chat-completions: alias rules overwrite existing IR fields', () => {
+test('openai-chat-completions: alias rules overwrite existing IR fields', () => {
   const body = ccPayload({ reasoning_effort: 'low', verbosity: 'high', service_tier: 'default' });
-  applyRulesToUpstreamChatCompletions(body, {
+  applyRulesToUpstreamOpenAIChatCompletions(body, {
     reasoning: { effort: 'xhigh' },
     verbosity: 'low',
     serviceTier: 'priority',
@@ -78,11 +78,11 @@ test('chat-completions: alias rules overwrite existing IR fields', () => {
   assertEquals(body.service_tier, 'priority');
 });
 
-// ── Responses target ──
+// ── OpenAI Responses target ──
 
 test('responses: empty rules leave the payload unchanged', () => {
   const body = resPayload({ reasoning: { effort: 'high' }, text: { verbosity: 'low' }, service_tier: 'priority' });
-  applyRulesToUpstreamResponses(body, {});
+  applyRulesToUpstreamOpenAIResponses(body, {});
   assertEquals(body.reasoning?.effort, 'high');
   assertEquals(body.text?.verbosity, 'low');
   assertEquals(body.service_tier, 'priority');
@@ -90,7 +90,7 @@ test('responses: empty rules leave the payload unchanged', () => {
 
 test('responses: rules stamp every supported native field onto the IR', () => {
   const body = resPayload();
-  applyRulesToUpstreamResponses(body, {
+  applyRulesToUpstreamOpenAIResponses(body, {
     reasoning: { effort: 'high', summary: 'concise' },
     verbosity: 'medium',
     serviceTier: 'flex',
@@ -103,7 +103,7 @@ test('responses: rules stamp every supported native field onto the IR', () => {
 
 test('responses: budget_tokens / adaptive have no native slot — silently dropped', () => {
   const body = resPayload();
-  applyRulesToUpstreamResponses(body, {
+  applyRulesToUpstreamOpenAIResponses(body, {
     reasoning: { budget_tokens: 1024, adaptive: true },
   });
   assertEquals(body.reasoning, undefined);
@@ -117,7 +117,7 @@ test('responses: alias rules overwrite owned fields while preserving reasoning.c
     service_tier: 'default',
     text: { verbosity: 'high' },
   });
-  applyRulesToUpstreamResponses(body, {
+  applyRulesToUpstreamOpenAIResponses(body, {
     reasoning: { effort: 'xhigh', summary: 'detailed' },
     verbosity: 'low',
     serviceTier: 'priority',
@@ -127,11 +127,11 @@ test('responses: alias rules overwrite owned fields while preserving reasoning.c
   assertEquals(body.service_tier, 'priority');
 });
 
-// ── Messages target ──
+// ── Anthropic Messages target ──
 
 test('messages: empty rules leave the payload unchanged', () => {
   const body = msgPayload({ output_config: { effort: 'high' }, thinking: { type: 'enabled', budget_tokens: 512 }, speed: 'fast' });
-  applyRulesToUpstreamMessages(body, {});
+  applyRulesToUpstreamAnthropicMessages(body, {});
   assertEquals(body.output_config?.effort, 'high');
   assertEquals(body.thinking?.budget_tokens, 512);
   assertEquals(body.speed, 'fast');
@@ -139,7 +139,7 @@ test('messages: empty rules leave the payload unchanged', () => {
 
 test('messages: effort lands on output_config, budget+adaptive land on thinking', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, {
+  applyRulesToUpstreamAnthropicMessages(body, {
     reasoning: { effort: 'high', budget_tokens: 2048 },
   });
   assertEquals(body.output_config?.effort, 'high');
@@ -149,39 +149,39 @@ test('messages: effort lands on output_config, budget+adaptive land on thinking'
 
 test('messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { verbosity: 'low' });
+  applyRulesToUpstreamAnthropicMessages(body, { verbosity: 'low' });
   assertEquals('verbosity' in body, false);
 });
 
 test('messages: summary=concise|detailed collapses onto thinking.display=summarized (enables thinking)', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { reasoning: { summary: 'concise' } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'concise' } });
   assertEquals(body.thinking?.type, 'enabled');
   assertEquals(body.thinking?.display, 'summarized');
 });
 
 test('messages: summary=omitted collapses onto thinking.display=omitted', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { reasoning: { summary: 'omitted' } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
   assertEquals(body.thinking?.display, 'omitted');
 });
 
 test('messages: summary=auto is a no-op (Anthropic default takes over)', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { reasoning: { summary: 'auto' } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'auto' } });
   assertEquals(body.thinking, undefined);
 });
 
 test('messages: adaptive=true sets thinking.type=adaptive and ignores budget_tokens', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { reasoning: { adaptive: true, budget_tokens: 4096 } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { adaptive: true, budget_tokens: 4096 } });
   assertEquals(body.thinking?.type, 'adaptive');
 });
 
 test('messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
   const body = msgPayload();
   body.thinking = { type: 'enabled', budget_tokens: 5000 };
-  applyRulesToUpstreamMessages(body, { reasoning: { adaptive: true } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { adaptive: true } });
   assertEquals(body.thinking?.type, 'adaptive');
   // The prior client budget must not leak into the adaptive block — adaptive
   // auto-determines the budget and a sibling budget_tokens violates the
@@ -191,14 +191,14 @@ test('messages: adaptive=true strips a client-set budget_tokens from body.thinki
 
 test('messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { serviceTier: 'fast' });
+  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'fast' });
   assertEquals(body.speed, 'fast');
   assertEquals(body.service_tier, undefined);
 });
 
 test('messages: non-fast serviceTier lands on service_tier directly', () => {
   const body = msgPayload();
-  applyRulesToUpstreamMessages(body, { serviceTier: 'priority' });
+  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
   assertEquals(body.service_tier, 'priority');
   assertEquals(body.speed, undefined);
 });
@@ -209,21 +209,21 @@ test('messages: serviceTier=fast clears a pre-existing body.service_tier on the 
   // semantics for a conflict are undefined. The overlay clears the
   // sibling field whichever branch it takes.
   const body = msgPayload({ service_tier: 'priority' });
-  applyRulesToUpstreamMessages(body, { serviceTier: 'fast' });
+  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'fast' });
   assertEquals(body.speed, 'fast');
   assertEquals(body.service_tier, undefined);
 });
 
 test('messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
   const body = msgPayload({ speed: 'fast' });
-  applyRulesToUpstreamMessages(body, { serviceTier: 'priority' });
+  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
   assertEquals(body.service_tier, 'priority');
   assertEquals(body.speed, undefined);
 });
 
 test('messages: alias rules overwrite existing thinking + output_config fields', () => {
   const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
-  applyRulesToUpstreamMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
+  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
   assertEquals(body.output_config?.effort, 'xhigh');
   assertEquals(body.thinking?.budget_tokens, 9999);
 });

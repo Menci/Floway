@@ -20,10 +20,10 @@ test('GET /api/keys never exposes the server secret', async () => {
   assertEquals(body.length, 1);
   assertEquals(Object.hasOwn(body[0]!, 'serverSecret'), false);
   assertEquals(Object.hasOwn(body[0]!, 'server_secret'), false);
-  assertEquals(body[0]!.responses_retention_seconds, apiKey.responsesRetentionSeconds);
+  assertEquals(body[0]!.responses_retention_seconds, apiKey.openaiResponsesRetentionSeconds);
 });
 
-test('POST /api/keys defaults durable Responses persistence off', async () => {
+test('POST /api/keys defaults durable OpenAI Responses persistence off', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', {
     method: 'POST',
@@ -33,22 +33,22 @@ test('POST /api/keys defaults durable Responses persistence off', async () => {
   assertEquals(response.status, 201);
   const body = (await response.json()) as { id: string; responses_retention_seconds: number };
   assertEquals(body.responses_retention_seconds, 0);
-  assertEquals((await repo.apiKeys.getById(body.id))?.responsesRetentionSeconds, 0);
+  assertEquals((await repo.apiKeys.getById(body.id))?.openaiResponsesRetentionSeconds, 0);
 });
 
-test('PATCH /api/keys/:id changes only the rolling Responses duration', async () => {
+test('PATCH /api/keys/:id changes only the rolling OpenAI Responses duration', async () => {
   const { repo, apiKey } = await setupAppTest();
   const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 7 * 24 * 60 * 60 }, apiKey.key);
   assertEquals(enabled.status, 200);
   assertEquals(((await enabled.json()) as { responses_retention_seconds: number }).responses_retention_seconds, 7 * 24 * 60 * 60);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.openaiResponsesRetentionSeconds, 7 * 24 * 60 * 60);
 
   const disabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key);
   assertEquals(disabled.status, 200);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.responsesRetentionSeconds, 0);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.openaiResponsesRetentionSeconds, 0);
 });
 
-test('PATCH /api/keys/:id rejects unsupported Responses retention values', async () => {
+test('PATCH /api/keys/:id rejects unsupported OpenAI Responses retention values', async () => {
   const { apiKey } = await setupAppTest();
   for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key)).status, 400);

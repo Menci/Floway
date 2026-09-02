@@ -4,7 +4,7 @@ import type { CustomIngressHeaderRule } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
 
@@ -27,14 +27,14 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
     apiKey: 'sk-test',
-    endpoints: { chatCompletions: {} },
+    endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false },
     models,
   },
 });
 
-const CHAT_MODEL: UpstreamModelConfig[] = [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { chatCompletions: {} } }];
+const CHAT_MODEL: UpstreamModelConfig[] = [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { openaiChatCompletions: {} } }];
 
 // What the operator configures for one header name. `null` is the passthrough
 // preset, `''` the empty preset, anything else a typed value. An empty rule
@@ -119,7 +119,7 @@ const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string 
 
   const [model] = await provider.instance.getProvidedModels(directFetcher);
   assertExists(model);
-  await provider.instance.callChatCompletions(
+  await provider.instance.callOpenAIChatCompletions(
     model,
     { messages: [] },
     undefined,
@@ -163,14 +163,14 @@ test('every endpoint resolves the same rules', async () => {
   const provider = createCustomProvider(buildCustomUpstream(rules, [
     {
       upstreamModelId: 'chat', kind: 'chat', endpoints: {
-        audioTranscriptions: {},
-        chatCompletions: {},
-        completions: {},
-        embeddings: {},
-        imagesEdits: {},
-        imagesGenerations: {},
-        messages: {},
-        responses: {},
+        openaiAudioTranscriptions: {},
+        openaiChatCompletions: {},
+        openaiCompletions: {},
+        openaiEmbeddings: {},
+        openaiImagesEdits: {},
+        openaiImagesGenerations: {},
+        anthropicMessages: {},
+        openaiResponses: {},
       },
     },
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
@@ -192,23 +192,23 @@ test('every endpoint resolves the same rules', async () => {
       assertExists(rerankModel);
       const headers = () => admittedBag(provider.inboundHeaderAllowlist, 'client-a');
       const opts = () => noopUpstreamCallOptions({ headers: headers() });
-      const messagesOpts = () => noopMessagesUpstreamCallOptions({ headers: headers() });
+      const messagesOpts = () => noopAnthropicMessagesUpstreamCallOptions({ headers: headers() });
       const messagesBody = { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] };
 
       await provider.instance.callAlphaSearch(model, { query: 'hi' }, undefined, opts());
-      await provider.instance.callChatCompletions(model, { messages: [] }, undefined, opts());
-      await provider.instance.callCompletions(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callResponses(model, { input: [] }, 'generate', undefined, opts());
-      await provider.instance.callResponses(model, { input: [] }, 'compact', undefined, opts());
-      await provider.instance.callMessages(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callMessagesCountTokens(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callEmbeddings(model, { input: 'hi' }, undefined, opts());
-      await provider.instance.callImagesGenerations(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callImagesEdits(model, {
+      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts());
+      await provider.instance.callOpenAICompletions(model, { prompt: 'hi' }, undefined, opts());
+      await provider.instance.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts());
+      await provider.instance.callOpenAIResponses(model, { input: [] }, 'compact', undefined, opts());
+      await provider.instance.callAnthropicMessages(model, messagesBody, undefined, messagesOpts());
+      await provider.instance.callAnthropicMessagesCountTokens(model, messagesBody, undefined, messagesOpts());
+      await provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts());
+      await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, opts());
+      await provider.instance.callOpenAIImagesEdits(model, {
         parameters: { prompt: 'hi' },
         images: [{ type: 'upload', file: new File([new Uint8Array([1])], 'photo.png', { type: 'image/png' }) }],
       }, undefined, opts());
-      await provider.instance.callAudioTranscriptions(model, {
+      await provider.instance.callOpenAIAudioTranscriptions(model, {
         entries: [{ name: 'file', value: new File([new Uint8Array([1])], 'voice.ogg', { type: 'audio/ogg' }) }],
       }, undefined, opts());
       await provider.instance.callRerank(

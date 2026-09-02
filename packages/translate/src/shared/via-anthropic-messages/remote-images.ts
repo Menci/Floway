@@ -1,0 +1,71 @@
+import type { RemoteImageLoader } from '../../types.ts';
+import type { AnthropicMessagesImageBlock } from '@floway-dev/protocols/anthropic-messages';
+import { encodeBase64, mediaTypeEssence } from '@floway-dev/protocols/common';
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+// Pure translation has no runtime egress of its own. Direct callers that omit
+// a loader retain the existing "unavailable remote image is dropped" semantic;
+// gateway call sites inject the platform-backed loader explicitly.
+export const unavailableRemoteImageLoader: RemoteImageLoader = () => Promise.resolve(null);
+
+const parseDataUrl = (url: string): { mediaType: string; data: string } | null => {
+  const match = url.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mediaType = mediaTypeEssence(match[1]);
+  return mediaType === null ? null : { mediaType, data: match[2] };
+};
+
+const inferMediaTypeFromUrl = (url: string): string | null => {
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
+    if (path.endsWith('.png')) return 'image/png';
+    if (path.endsWith('.gif')) return 'image/gif';
+    if (path.endsWith('.webp')) return 'image/webp';
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const resolveRemoteImage = async (url: string, loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesImageBlock | null> => {
+  const image = await loadRemoteImage(url);
+  if (!image) return null;
+
+  let mediaType = mediaTypeEssence(image.mediaType) ?? '';
+  if (!ALLOWED_IMAGE_TYPES.has(mediaType)) {
+    mediaType = inferMediaTypeFromUrl(url) ?? '';
+  }
+  if (!ALLOWED_IMAGE_TYPES.has(mediaType)) return null;
+
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: mediaType as AnthropicMessagesImageBlock['source']['media_type'],
+      data: encodeBase64(image.data),
+    },
+  };
+};
+
+export const resolveImageUrlToAnthropicMessagesImage = async (url: string, loadRemoteImage: RemoteImageLoader): Promise<AnthropicMessagesImageBlock | null> => {
+  const dataUrl = parseDataUrl(url);
+
+  if (dataUrl) {
+    if (!ALLOWED_IMAGE_TYPES.has(dataUrl.mediaType)) return null;
+
+    return {
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: dataUrl.mediaType as AnthropicMessagesImageBlock['source']['media_type'],
+        data: dataUrl.data,
+      },
+    };
+  }
+
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+  return await resolveRemoteImage(url, loadRemoteImage);
+};
