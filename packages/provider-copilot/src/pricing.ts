@@ -42,13 +42,21 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
     tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
+  // Terra and Luna at OpenAI's current standard rates; the values they
+  // replace were the launch card OpenAI has since cut, Luna's by a factor of
+  // five. Luna is also the one place where Copilot and OpenAI disagree on the
+  // long-context boundary rather than the rate — Copilot caps Luna's default
+  // band at 200k where OpenAI's card steps every GPT-5.6 model at 272k — and
+  // the threshold here follows the rate card it prices against.
+  // https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/9b6e58f1e296f12af4d06a04bb216dcf73baba5a/providers/openai/models/gpt-5.6-terra.toml
   ['gpt-5.6-terra', modelPricing(
-    tokenPricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
-    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-luna', modelPricing(
-    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
-    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' }),
+    tokenPricingEntry({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.8' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   // Copilot's live catalog exposes a 1.05M context window for GPT-5.5/5.4;
   // OpenAI reprices the whole request above 272k input tokens.
@@ -86,11 +94,15 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 200000 } }),
   )],
   ['gemini-3.5-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' })],
-  // Gemini 3.6 Flash keeps 3.5 Flash's input rate and cuts output to $7.50. It
-  // is one of the Gemini 3 models Google excludes from the >200k tier: the
-  // Vertex table lists identical rates in both columns.
+  // Gemini 3.6 and 3.7 Flash share one promotional rate card, halved from the
+  // standard $1.50/$0.15/$7.50 through 2026-12-31 and reverting on
+  // 2027-01-01 — recheck these two after that date. Both are among the
+  // Gemini 3 models Google excludes from the >200k tier: the Vertex table
+  // lists identical rates in both columns, and Copilot's catalog quotes one
+  // band whose `long_context` repeats the default.
+  // https://ai.google.dev/gemini-api/docs/pricing
   // https://cloud.google.com/vertex-ai/generative-ai/pricing
-  ['gemini-3.6-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '7.5' })],
+  [/^gemini-3\.[67]-flash$/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' })],
   // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
   // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
   // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.
@@ -99,11 +111,28 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.3', output_tokens: '6' }),
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }, { inputTokens: { operator: 'gte', value: 200000 } }),
   )],
+  // Grok 4.6 keeps 4.5's input and output rates and charges more for cached
+  // reads. Here xAI, Copilot's catalog and models.dev all publish the same
+  // $0.50/$1.00, so this entry carries no counterpart to the cached-read
+  // conflict recorded on 4.5 above.
+  ['grok-4.6', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '6' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '1', output_tokens: '12' }, { inputTokens: { operator: 'gte', value: 200000 } }),
+  )],
   [/^grok-code-fast/, tokenBasePricing({ input_tokens: '0.2', output_tokens: '1.5' })],
   ['goldeneye', tokenBasePricing({ input_tokens: '1.25', input_cache_read_tokens: '0.125', output_tokens: '10' })],
   ['raptor-mini', tokenBasePricing({ input_tokens: '0.25', input_cache_read_tokens: '0.025', output_tokens: '2' })],
   ['minimax-m2.5', tokenBasePricing({ input_tokens: '0.3', output_tokens: '1.2' })],
+  // Microsoft sells no MAI-Code API, so Copilot's own catalog quote is the
+  // only rate surface either of these has; the 1-Flash entry below already
+  // reflects it. Unlike its predecessor, 1.1-Flash quotes a cache-write rate.
+  // https://github.com/microsoft/vscode/blob/main/src/vs/platform/agentHost/common/agentModelPricing.ts
+  ['mai-code-1.1-flash', tokenBasePricing({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' })],
   [/^mai-code-1-flash/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
+  // `trajectory-compaction` stays absent: Copilot quotes it at zero, but this
+  // table records vendor rates rather than Copilot's charges — the same
+  // reason `gpt-4.1` above carries OpenAI's price and not the zero Copilot
+  // bills for it — and no vendor sells that model.
   [/^text-embedding-3-small/, tokenBasePricing({ input_tokens: '0.02', output_tokens: '0' })],
   ['text-embedding-ada-002', tokenBasePricing({ input_tokens: '0.1', output_tokens: '0' })],
 ];

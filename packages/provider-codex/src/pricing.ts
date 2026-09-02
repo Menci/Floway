@@ -34,29 +34,50 @@ export const GPT_IMAGE_2_PRICING = modelPricing(
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
-  // GPT-5.6 publishes standard short/long and priority-short entries. OpenAI-
-  // direct does not publish priority-long rates, so that exact combination is
-  // deliberately absent and resolves to the whole Base vector.
-  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
-  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
-  // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
+  // The GPT-5.6 family, refreshed from OpenAI's current card — the values
+  // these replace were the launch rates, since cut across the board and by a
+  // factor of five on Luna. OpenAI now publishes all four columns (standard,
+  // flex, batch, fast mode) in both context bands, so the priority-long
+  // combination that used to be deliberately absent is present here; flex
+  // and batch quote the same numbers, and the entries carry the `flex`
+  // coordinate because that is the one Codex can ask for. Priority is
+  // recorded under its `priority` spelling even though OpenAI renamed the
+  // lane to Fast mode on 2026-07-30, because `priority` is what responses
+  // report back and therefore what billing selects on.
+  // https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/0b2318a699fb140b7e568228e05d3212c9f095dc/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
-  // Cross-check only:
-  // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
   ['gpt-5.6-sol', modelPricing(
-    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
-    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '60' }, { serviceTier: 'priority' }),
-    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '40' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '1.6', input_cache_write_tokens: '20', output_tokens: '60' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '15' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-terra', modelPricing(
-    tokenPricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
-    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }, { serviceTier: 'priority' }),
-    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '24' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '36' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-luna', modelPricing(
-    tokenPricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
-    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }, { serviceTier: 'priority' }),
-    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' }),
+    tokenPricingEntry({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.8' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '2.4' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '0.8', input_cache_read_tokens: '0.08', input_cache_write_tokens: '1', output_tokens: '3.6' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.6' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '0.9' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // Codex's own model, absent from this table until now. OpenAI lists it in
+  // the specialized-models card with a Fast mode column at double the
+  // standard rates and no long-context band.
+  // https://platform.openai.com/docs/pricing
+  ['gpt-5.3-codex', modelPricing(
+    tokenPricingEntry({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }),
+    tokenPricingEntry({ input_tokens: '3.5', input_cache_read_tokens: '0.35', output_tokens: '28' }, { serviceTier: 'priority' }),
   )],
   ['gpt-5.5', modelPricing(
     tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '30' }),

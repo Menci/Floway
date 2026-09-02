@@ -23,12 +23,12 @@ test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
       published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }),
     ],
     'gpt-5.6-terra': [
-      published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
-      published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }),
+      published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
+      published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '18' }),
     ],
     'gpt-5.6-luna': [
-      published({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
-      published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }),
+      published({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' }),
+      published({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.8' }),
     ],
   } as const;
   for (const [id, [short, long]] of Object.entries(expected)) {
@@ -51,11 +51,15 @@ test('Copilot Grok 4.5 long-context band starts at the 200k prompt itself', () =
   assertEquals(priceRequest(pricing, { inputTokens: 200000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }));
 });
 
-test('Copilot Gemini 3.6 Flash prices long prompts at its single base rate', () => {
-  const pricing = pricingForCopilotPublicModelId('gemini-3.6-flash');
-  const base = published({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '7.5' });
-  assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
-  assertEquals(priceRequest(pricing, { inputTokens: 936000 }).rates, base);
+test('Copilot Gemini 3.6 and 3.7 Flash share one rate across every prompt length', () => {
+  const base = published({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' });
+  for (const id of ['gemini-3.6-flash', 'gemini-3.7-flash']) {
+    const pricing = pricingForCopilotPublicModelId(id);
+    assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
+    assertEquals(priceRequest(pricing, { inputTokens: 936000 }).rates, base);
+  }
+  // 3.5 Flash is not swept up by the shared rule.
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.5-flash'), { inputTokens: 0 }).rates, published({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' }));
 });
 
 test('Copilot pricing resolves exact and regex model families', () => {
@@ -65,4 +69,18 @@ test('Copilot pricing resolves exact and regex model families', () => {
   assertEquals(pricingForCopilotPublicModelId('totally-made-up-model'), null);
   // Copilot's hidden compaction model has no vendor SKU to price against.
   assertEquals(pricingForCopilotPublicModelId('trajectory-compaction'), null);
+});
+
+test('Copilot prices the models added to the live catalog since the last refresh', () => {
+  const rates = (id: string) => priceRequest(pricingForCopilotPublicModelId(id), { inputTokens: 0 }).rates;
+  const longRates = (id: string, threshold: number) => priceRequest(pricingForCopilotPublicModelId(id), { inputTokens: threshold + 1 }).rates;
+
+  assertEquals(rates('grok-4.6'), published({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '6' }));
+  assertEquals(longRates('grok-4.6', 199999), published({ input_tokens: '4', input_cache_read_tokens: '1', output_tokens: '12' }));
+  // 4.5 keeps the lower cached-read rate xAI publishes for it.
+  assertEquals(rates('grok-4.5'), published({ input_tokens: '2', input_cache_read_tokens: '0.3', output_tokens: '6' }));
+
+  assertEquals(rates('mai-code-1.1-flash'), published({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' }));
+  // The 1-Flash prefix rule must not swallow the dotted 1.1 id.
+  assertEquals(rates('mai-code-1-flash-picker'), published({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' }));
 });

@@ -7,27 +7,33 @@ import { assertEquals } from '@floway-dev/test-utils';
 const published = (rates: PriceVector): PriceVector => perMillionTokenRates(rates);
 
 // Every GPT-5.6 variant is a full (service tier × input length) grid:
-// standard/priority × short/long. `priceRequest(pricing, tier,
-// inputTokens threshold)` must return the explicit rates for each of the four entries;
-// there is no silent composition of one axis onto the other.
+// standard/priority/flex × short/long. `priceRequest(pricing, tier,
+// inputTokens threshold)` must return the explicit rates for each of the six
+// entries; there is no silent composition of one axis onto the other.
 const CODEX_GPT_5_6_GRID = {
   'gpt-5.6-sol': {
-    standardShort: published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
-    priorityShort: published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '60' }),
-    standardLong: published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }),
-    priorityLong: published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
+    standardShort: published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '20' }),
+    standardLong: published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '30' }),
+    priorityShort: published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '40' }),
+    priorityLong: published({ input_tokens: '16', input_cache_read_tokens: '1.6', input_cache_write_tokens: '20', output_tokens: '60' }),
+    flexShort: published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    flexLong: published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '15' }),
   },
   'gpt-5.6-terra': {
-    standardShort: published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
-    priorityShort: published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
-    standardLong: published({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }),
-    priorityLong: published({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
+    standardShort: published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
+    standardLong: published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '18' }),
+    priorityShort: published({ input_tokens: '4', input_cache_read_tokens: '0.4', input_cache_write_tokens: '5', output_tokens: '24' }),
+    priorityLong: published({ input_tokens: '8', input_cache_read_tokens: '0.8', input_cache_write_tokens: '10', output_tokens: '36' }),
+    flexShort: published({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
+    flexLong: published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }),
   },
   'gpt-5.6-luna': {
-    standardShort: published({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
-    priorityShort: published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }),
-    standardLong: published({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }),
-    priorityLong: published({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
+    standardShort: published({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' }),
+    standardLong: published({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '1.8' }),
+    priorityShort: published({ input_tokens: '0.4', input_cache_read_tokens: '0.04', input_cache_write_tokens: '0.5', output_tokens: '2.4' }),
+    priorityLong: published({ input_tokens: '0.8', input_cache_read_tokens: '0.08', input_cache_write_tokens: '1', output_tokens: '3.6' }),
+    flexShort: published({ input_tokens: '0.1', input_cache_read_tokens: '0.01', input_cache_write_tokens: '0.125', output_tokens: '0.6' }),
+    flexLong: published({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '0.9' }),
   },
 } as const;
 
@@ -35,19 +41,30 @@ for (const [modelKey, entries] of Object.entries(CODEX_GPT_5_6_GRID)) {
   test(`Codex ${modelKey} resolves every (service tier × input length) grid entry`, () => {
     const pricing = pricingForCodexModelKey(modelKey);
     assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, entries.standardShort);
-    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, entries.priorityShort);
     assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, entries.standardLong);
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, entries.priorityShort);
     assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 + 1 }).rates, entries.priorityLong);
+    assertEquals(priceRequest(pricing, { serviceTier: 'flex', inputTokens: 0 }).rates, entries.flexShort);
+    assertEquals(priceRequest(pricing, { serviceTier: 'flex', inputTokens: 272000 + 1 }).rates, entries.flexLong);
   });
 
   test(`Codex ${modelKey} declares one standard inputTokens >272000 entry`, () => {
     const pricing = pricingForCodexModelKey(modelKey);
     assertEquals(pricing?.entries.filter(entry => {
       const coordinate = entry.selector?.inputTokens;
-      return typeof coordinate === 'object' && coordinate.operator === 'gt' && coordinate.value === 272000;
+      return entry.selector?.serviceTier === undefined && typeof coordinate === 'object' && coordinate.operator === 'gt' && coordinate.value === 272000;
     }).length, 1);
   });
 }
+
+test('Codex gpt-5.3-codex prices its Fast mode lane and declares no long-context band', () => {
+  const pricing = pricingForCodexModelKey('gpt-5.3-codex');
+  assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, published({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }));
+  assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, published({ input_tokens: '3.5', input_cache_read_tokens: '0.35', output_tokens: '28' }));
+  // OpenAI publishes no long-context card for this model, so a long request
+  // stays on the same rates rather than resolving a band that does not exist.
+  assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, published({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }));
+});
 
 test('Codex gpt-5.5 keeps its explicit flex and priority entries', () => {
   const pricing = pricingForCodexModelKey('gpt-5.5');
