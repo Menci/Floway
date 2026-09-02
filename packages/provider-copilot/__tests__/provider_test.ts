@@ -2,25 +2,28 @@ import { test, vi } from 'vitest';
 
 import { clearInProcessCopilotTokenCache } from '../src/auth.ts';
 import { emptyKnownModels, mergeKnownModels } from '../src/known-models.ts';
+import type { CopilotVariantIndex } from '../src/model-variants.ts';
 import { createCopilotProvider } from '../src/provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/state.ts';
-import type { CopilotModelsResponse } from '../src/types.ts';
+import type { CopilotRawModel } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const mergeClaudeVariantsControl = vi.hoisted<{
-  override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
+const mergeVariantsControl = vi.hoisted<{
+  override: ((merged: CopilotRawModel[]) => CopilotRawModel[]) | null;
 }>(() => ({ override: null }));
 
-vi.mock('../src/merge-claude-variants.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../src/merge-claude-variants.ts')>();
+vi.mock('../src/merge-variants.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../src/merge-variants.ts')>();
   return {
     ...original,
-    mergeClaudeVariants: (models: CopilotModelsResponse): CopilotModelsResponse =>
-      mergeClaudeVariantsControl.override?.(models) ?? original.mergeClaudeVariants(models),
+    mergeCopilotVariants: (index: CopilotVariantIndex): CopilotRawModel[] => {
+      const merged = original.mergeCopilotVariants(index);
+      return mergeVariantsControl.override?.(merged) ?? merged;
+    },
   };
 });
 
@@ -746,10 +749,10 @@ const copilotPreflight = (request: Request): Response | null => {
 test('Copilot provider rejects a merged public model without a raw variant group', async () => {
   const harness = await setupCopilotTest();
   const instance = createCopilotProvider(harness.copilotUpstream);
-  mergeClaudeVariantsControl.override = models => {
-    const rawModel = models.data[0];
-    if (rawModel === undefined) throw new Error('expected a raw model fixture');
-    return { ...models, data: [{ ...rawModel, id: 'orphan-public-model' }] };
+  mergeVariantsControl.override = merged => {
+    const mergedModel = merged[0];
+    if (mergedModel === undefined) throw new Error('expected a merged model fixture');
+    return [{ ...mergedModel, id: 'orphan-public-model' }];
   };
 
   try {
@@ -772,7 +775,7 @@ test('Copilot provider rejects a merged public model without a raw variant group
       },
     );
   } finally {
-    mergeClaudeVariantsControl.override = null;
+    mergeVariantsControl.override = null;
   }
 });
 
@@ -1438,4 +1441,65 @@ test('Copilot provider leaves the persisted snapshot alone when a response carri
   );
 
   assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
+});
+
+test('Copilot provider merges the -fast raw variant and reaches it through service_tier', async () => {
+  // `gpt-5.6-sol-fast` is the Fast mode lane of `gpt-5.6-sol`, not a model of
+  // its own: it is merged out of the public catalog, and a request naming the
+  // lane through `service_tier` is what selects the raw id. The field itself
+  // never reaches Copilot, which answers HTTP 400 for any value of it.
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  const sent: Record<string, unknown>[] = [];
+  let listed: string[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(
+          copilotModels([
+            { id: 'gpt-5.6-sol', supported_endpoints: ['/responses'] },
+            { id: 'gpt-5.6-sol-fast', supported_endpoints: ['/responses'] },
+            // No `grok-code` sibling, so the `-fast` tail is part of the name.
+            { id: 'grok-code-fast', supported_endpoints: ['/responses'] },
+          ]),
+        );
+      }
+      if (url.pathname === '/responses') {
+        sent.push((await request.json()) as Record<string, unknown>);
+        return sseResponse();
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      listed = models.map(model => model.id);
+      const sol = models.find(model => model.id === 'gpt-5.6-sol')!;
+      const opts = noopUpstreamCallOptions();
+
+      await provider.callOpenAIResponses(sol, { input: [] }, 'generate', undefined, opts);
+      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'priority' }, 'generate', undefined, opts);
+      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'fast' }, 'generate', undefined, opts);
+      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'flex' }, 'generate', undefined, opts);
+    },
+  );
+
+  assertEquals(listed, ['gpt-5.6-sol', 'grok-code-fast']);
+  assertEquals(sent.map(body => body.model), ['gpt-5.6-sol', 'gpt-5.6-sol-fast', 'gpt-5.6-sol-fast', 'gpt-5.6-sol']);
+  assertEquals(sent.every(body => !('service_tier' in body)), true);
 });

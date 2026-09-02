@@ -860,10 +860,10 @@ test('flattened namespace tool calls recover their source OpenAI Responses name'
 
 // ── speed / service_tier pass-through ──
 
-test('Anthropic speed:fast maps to service_tier:fast on the OpenAI Responses result', () => {
+test('Anthropic speed:fast maps to service_tier:priority on the OpenAI Responses result', () => {
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5 }, { speed: 'fast' });
 
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('Anthropic service_tier:standard with no speed passes service_tier:standard through', () => {
@@ -885,7 +885,7 @@ test('Anthropic Messages message_start service_tier survives when message_delta 
 
 test('Anthropic Messages message_start speed:fast survives when message_delta omits it', () => {
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' });
-  assertEquals(result.service_tier, 'fast');
+  assertEquals(result.service_tier, 'priority');
 });
 
 test('Anthropic Messages delta atomically replaces tier and merges late cache accounting into OpenAI Responses', () => {

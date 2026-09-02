@@ -9,7 +9,7 @@
 // each source IR.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import type { AliasRules } from '@floway-dev/protocols/common';
+import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
@@ -75,14 +75,16 @@ export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPay
   }
   // `verbosity` has no native Anthropic Messages slot; drop silently.
   if (rules.serviceTier !== undefined) {
-    // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
-    // `service_tier: 'fast'`; on a native Anthropic Messages target the alias rule
-    // `serviceTier: 'fast'` lands on `speed` so the upstream sees Fast Mode
-    // through its native field. Other tier values pass through on
-    // `service_tier` since Anthropic Messages's native enum (`auto`/`standard_only`)
-    // doesn't model them. Whichever branch we take, clear the sibling field
-    // so the upstream never sees two tiers in conflict.
-    if (rules.serviceTier === 'fast') {
+    // The cross-protocol bridge in translate maps `speed: 'fast'` ↔ the
+    // OpenAI accelerated lane; on a native Anthropic Messages target an alias
+    // rule naming that lane lands on `speed` so the upstream sees Fast Mode
+    // through its native field. Both OpenAI spellings count, since OpenAI
+    // itself accepts `priority` and `fast` interchangeably. Other tier values
+    // pass through on `service_tier` since Anthropic Messages's native request
+    // enum (`auto`/`standard_only`) doesn't model them. Whichever branch we
+    // take, clear the sibling field so the upstream never sees two tiers in
+    // conflict.
+    if (isFastServiceTier(rules.serviceTier)) {
       body.speed = 'fast';
       delete body.service_tier;
     } else {
