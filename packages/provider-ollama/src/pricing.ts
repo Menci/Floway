@@ -78,11 +78,14 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://docs.z.ai/guides/overview/pricing
   ['glm-4.7', tokenBasePricing({ input_tokens: '0.6', input_cache_read_tokens: '0.11', output_tokens: '2.2' })],
 
-  // GLM 5.x — Z.ai first-party. Bare `glm-5` is cheaper than `glm-5.1`
-  // and `glm-5.2`, so they need separate rules.
+  // GLM 5.x — Z.ai first-party. Bare `glm-5` is cheaper than the 5.1/5.2/5.3
+  // trio, which Z.ai lists at one shared rate, so it needs its own rule.
+  // 5.3-Flash is on a limited-time promotion at half its listed
+  // $0.15/$0.03/$0.50 — recheck when Z.ai drops the strikethrough.
   // https://docs.z.ai/guides/overview/pricing
   ['glm-5', tokenBasePricing({ input_tokens: '1.0', input_cache_read_tokens: '0.2', output_tokens: '3.2' })],
-  [/^glm-5\.[12]$/, tokenBasePricing({ input_tokens: '1.4', input_cache_read_tokens: '0.26', output_tokens: '4.4' })],
+  ['glm-5.3-flash', tokenBasePricing({ input_tokens: '0.075', input_cache_read_tokens: '0.015', output_tokens: '0.25' })],
+  [/^glm-5\.[123]$/, tokenBasePricing({ input_tokens: '1.4', input_cache_read_tokens: '0.26', output_tokens: '4.4' })],
 
   // Kimi K2.x — Moonshot international API. K2.5 has a cheaper CN-only rate;
   // the international SKU is the defensible reference across regions.
