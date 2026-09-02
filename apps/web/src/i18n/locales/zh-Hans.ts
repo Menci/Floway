@@ -114,7 +114,7 @@ const zhHansCN = {
         emptyResponse: '（空响应）',
         noKey: '请先创建 API 密钥，再使用 Playground',
         noKeyOption: '没有 API 密钥',
-        apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
+        apis: { openaiResponses: 'OpenAI Responses', openaiChatCompletions: 'OpenAI Chat Completions', anthropicMessages: 'Anthropic Messages' },
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         edit: { title: '编辑消息', message: '消息', imageUrl: '图片 URL' },
@@ -190,9 +190,9 @@ const zhHansCN = {
         endpointNames: {
           openAiModels: 'OpenAI 模型列表', geminiModels: 'Gemini 模型列表', geminiModel: 'Gemini 模型详情',
           openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
-          openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses 压缩', openAiResponsesWs: 'Responses WebSocket',
+          openAiResponses: 'OpenAI Responses', openAiCompact: 'OpenAI Responses 压缩', openAiResponsesWs: 'OpenAI Responses WebSocket',
           anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Token 计数',
-          geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent（SSE）', geminiCount: 'Gemini countTokens',
+          geminiGenerateContentGenerate: 'Gemini generateContent', geminiGenerateContentStream: 'Gemini streamGenerateContent（SSE）', geminiGenerateContentCount: 'Gemini countTokens',
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI 图像生成', openAiImageEdit: 'OpenAI 图像编辑', openAiTranscription: 'OpenAI 音频转录',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex Alpha 搜索',
@@ -345,8 +345,8 @@ const zhHansCN = {
           customKeyPlaceholder: '粘贴自定义 API 密钥',
           retention: '记录请求转储',
           viewCapturedRequests: '查看已捕获的请求',
-          responsesRetention: 'Stateful Responses 保留',
-          responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
+          openaiResponsesRetention: 'Stateful OpenAI Responses 保留',
+          openaiResponsesRetentionHint: '该 API 密钥的 OpenAI Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录',
         },
@@ -373,8 +373,8 @@ const zhHansCN = {
           invalid: '请输入有效的保留时长。',
           warningDisable: '保存后会删除该 API 密钥的已捕获请求。',
           warningShrink: '保存后会删除超过新窗口的已捕获请求。',
-          responsesWarningDisable: '保存后会删除该 API 密钥已存储的 Responses 条目。后续请求按 id 引用时将无法找到。',
-          responsesWarningShrink: '保存后会删除超过新窗口的 Responses 条目。后续请求按 id 引用时将无法找到。',
+          openaiResponsesWarningDisable: '保存后会删除该 API 密钥已存储的 OpenAI Responses 条目。后续请求按 id 引用时将无法找到。',
+          openaiResponsesWarningShrink: '保存后会删除超过新窗口的 OpenAI Responses 条目。后续请求按 id 引用时将无法找到。',
         },
         configuration: {
           title: '配置你的 Agent',
@@ -546,7 +546,7 @@ const zhHansCN = {
           validation: {
             invalidName: '请输入有效的 HTTP 标头名称。',
             duplicatePassthrough: '同一个标头名称只能透传一次。',
-            messagesOwned: '此标头由 Messages 协议管理。',
+            anthropicMessagesOwned: '此标头由 Anthropic Messages 协议管理。',
             transportOwned: '此标头由 Floway 的 HTTP 传输层管理。',
             invalidValue: '请输入不含控制字符的有效 HTTP 标头值。',
           },
@@ -598,25 +598,25 @@ const zhHansCN = {
               description:
                   'Kimi 的 API 在缓存 Token 用量统计方面采用了非标准格式。\n开启此开关，以将 Kimi 响应中的扁平缓存 Token 字段 (`cached_tokens`) 归一化为 OpenAI 规范格式 (`prompt_tokens_details.cached_tokens`)。\n当上游为 **Kimi（月之暗面）chat completions API** 时应开启。',
             },
-            'messages-web-search-shim': {
-              label: 'Messages 网页搜索兼容层',
+            'anthropic-messages-web-search-shim': {
+              label: 'Anthropic Messages 网页搜索兼容层',
               description:
                   'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
             },
-            'responses-web-search-shim': {
-              label: 'Responses 网页搜索兼容层',
+            'openai-responses-web-search-shim': {
+              label: 'OpenAI Responses 网页搜索兼容层',
               description:
-                  'Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-image-generation-shim': {
-              label: 'Responses 图像生成兼容层',
+            'openai-responses-image-generation-shim': {
+              label: 'OpenAI Responses 图像生成兼容层',
               description:
-                  'Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含图像生成能力，但本上游可能不支持图像生成。\n开启此开关，以把图像生成工具（`image_generation`）转发到 Floway 中其它支持图像生成（包含 `gpt-image-*`）的上游来执行，而非转发到本上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
-            'responses-compact-shim': {
-              label: 'Responses 上下文压缩兼容层',
+            'openai-responses-compact-shim': {
+              label: 'OpenAI Responses 上下文压缩兼容层',
               description:
-                  'Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 Responses API 时，此开关被视为开启。',
+                  'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',
@@ -626,7 +626,7 @@ const zhHansCN = {
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:
-                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
+                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Anthropic Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
             },
             'rewrite-developer-to-system': {
               label: '改写 developer 角色为 system',
@@ -1077,7 +1077,7 @@ const zhHansCN = {
       searchConfig: {
         heading: '搜索提供商',
         description:
-            '配置 Anthropic Messages / Responses API 网络搜索工具调用的提供商',
+            '配置 Anthropic Messages / OpenAI Responses API 网络搜索工具调用的提供商',
         providerLabel: '提供商',
         providerHint: '响应网络搜索工具调用的服务',
         provider: {
@@ -1086,7 +1086,7 @@ const zhHansCN = {
           microsoftWebIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
-        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
+        passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 OpenAI Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
         unavailable: '{{id}}（不可用）',
         getKeyLink: '获取 API 密钥',
         apiKeyLabel: 'API 密钥',

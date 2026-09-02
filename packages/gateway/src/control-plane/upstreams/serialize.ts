@@ -198,7 +198,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself
     // publishes. The blueprint is the create form's opening record, so this is
     // the only place a new upstream's starting values are decided.
-    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { chatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true }, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true }, models: [] }, state: null };
   case 'azure':
     return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
   case 'codex':

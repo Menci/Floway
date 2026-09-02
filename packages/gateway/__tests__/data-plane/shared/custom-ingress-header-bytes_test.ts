@@ -112,7 +112,7 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'embedding-model', endpoints: { embeddings: {} } }],
+      models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
     },
   }));
 

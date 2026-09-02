@@ -174,12 +174,12 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // missing" (404) from "model wrong kind" (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
-// `model.endpoints`, or checking the specific `imagesEdits` /
-// `imagesGenerations` / `audioTranscriptions` / `completions` endpoint key —
+// `model.endpoints`, or checking the specific `openaiImagesEdits` /
+// `openaiImagesGenerations` / `openaiAudioTranscriptions` / `openaiCompletions` endpoint key —
 // is the caller's job.
 // This function stays endpoint-blind so the same path serves chat,
-// embeddings, image generation/edits, rerank, audio transcription, and
-// completions.
+// OpenAI Embeddings, OpenAI Images Generations/Edits, rerank, OpenAI Audio
+// Transcriptions, and OpenAI Completions.
 //
 // The alias walk is a natural top-of-chain check: by construction an
 // alias's target id is a real model id, so the shadow pattern (an alias

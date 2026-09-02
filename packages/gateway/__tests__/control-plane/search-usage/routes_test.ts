@@ -14,7 +14,7 @@ const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryR
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    openaiResponsesRetentionSeconds: 0,
   });
 
   await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });

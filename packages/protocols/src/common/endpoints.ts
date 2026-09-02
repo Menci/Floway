@@ -24,22 +24,22 @@ export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind 
 // Structured endpoint map. A key being present means the model is served by
 // that endpoint; its value object carries endpoint-specific metadata, if any.
 // Sub-paths derived from a base endpoint
-// (`/messages/count_tokens` from `messages`, `/responses/compact` from
-// `responses`) are not modeled separately — presence of the base endpoint
-// implies them.
+// (`/messages/count_tokens` from `anthropicMessages`, `/responses/compact`
+// from `openaiResponses`) are not modeled separately — presence of the base
+// endpoint implies them.
 export interface ModelEndpoints {
   // OpenAI text completions (`/v1/completions`). Passthrough only — we
   // never translate it to or from the three chat endpoints below, so it has
-  // no endpoint-specific metadata. Orthogonal to `chatCompletions`: a model can
-  // declare any non-empty subset.
-  completions?: {};
-  chatCompletions?: {};
-  responses?: {};
-  messages?: {};
-  embeddings?: {};
-  imagesGenerations?: {};
-  imagesEdits?: {};
-  audioTranscriptions?: {};
+  // no endpoint-specific metadata. Orthogonal to `openaiChatCompletions`: a
+  // model can declare any non-empty subset.
+  openaiCompletions?: {};
+  openaiChatCompletions?: {};
+  openaiResponses?: {};
+  anthropicMessages?: {};
+  openaiEmbeddings?: {};
+  openaiImagesGenerations?: {};
+  openaiImagesEdits?: {};
+  openaiAudioTranscriptions?: {};
   rerank?: {};
 }
 
@@ -47,15 +47,16 @@ export interface ModelEndpoints {
 // addressed by identity rather than as a presence map.
 export type ModelEndpointKey = keyof ModelEndpoints;
 
-// Derive the high-level model kind from the supported endpoints. `embeddings`
-// implies embedding, `imagesGenerations`/`imagesEdits` implies image, `rerank`
-// implies rerank, `audioTranscriptions` implies transcription, and generation
-// protocols imply chat. Mixed endpoint sets use this first-match order for the
+// Derive the high-level model kind from the supported endpoints.
+// `openaiEmbeddings` implies embedding,
+// `openaiImagesGenerations`/`openaiImagesEdits` implies image, `rerank`
+// implies rerank, `openaiAudioTranscriptions` implies transcription, and
+// generation protocols imply chat. Mixed endpoint sets use this first-match order for the
 // single kind while dispatch continues to narrow on each endpoint's presence.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
-  if (endpoints.embeddings) return 'embedding';
-  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  if (endpoints.openaiEmbeddings) return 'embedding';
+  if (endpoints.openaiImagesGenerations || endpoints.openaiImagesEdits) return 'image';
   if (endpoints.rerank) return 'rerank';
-  if (endpoints.audioTranscriptions) return 'transcription';
+  if (endpoints.openaiAudioTranscriptions) return 'transcription';
   return 'chat';
 };

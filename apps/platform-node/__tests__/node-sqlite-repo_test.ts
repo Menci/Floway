@@ -30,7 +30,7 @@ const seedKey = (repo: SqlRepo): Promise<void> => repo.apiKeys.save({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  openaiResponsesRetentionSeconds: 0,
 });
 
 test('api key update lands every patched column and leaves the rest alone', () => withRepo(async repo => {
@@ -41,7 +41,7 @@ test('api key update lands every patched column and leaves the rest alone', () =
   assertEquals(touched?.lastUsedAt, '2026-07-26T12:00:00.000Z');
   // The columns whose CASE WHEN guard is false must survive untouched.
   assertEquals(touched?.name, 'Node key');
-  assertEquals(touched?.responsesRetentionSeconds, 0);
+  assertEquals(touched?.openaiResponsesRetentionSeconds, 0);
 
   // The control-plane edits (PATCH /api/keys/:id, rotate) share the bind.
   const edited = await repo.apiKeys.update('key_node', {
@@ -49,7 +49,7 @@ test('api key update lands every patched column and leaves the rest alone', () =
     key: 'rotated_key',
     upstreamIds: ['up-a'],
     dumpRetentionSeconds: 3600,
-    responsesRetentionSeconds: 7 * 24 * 60 * 60,
+    openaiResponsesRetentionSeconds: 7 * 24 * 60 * 60,
   });
   assertEquals(edited?.name, 'Renamed');
   assertEquals(edited?.upstreamIds, ['up-a']);
@@ -75,7 +75,7 @@ test('expiration sweep completion lands on both discriminants', () => withRepo(a
   assertEquals(await repo.expirationSweeps.claim('claim-empty', 20_000, 0), null);
 }));
 
-test('repository JSON codecs round-trip upstream, alias, and Responses state through node:sqlite', () => withRepo(async repo => {
+test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses state through node:sqlite', () => withRepo(async repo => {
   await seedKey(repo);
   await repo.upstreams.save({
     id: 'up_node',
@@ -115,7 +115,7 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
     createdAt: '2026-08-05T00:00:00.000Z',
     updatedAt: '2026-08-05T00:00:00.000Z',
   });
-  await repo.responsesSnapshots.insert({
+  await repo.openaiResponsesSnapshots.insert({
     id: 'resp_node',
     apiKeyId: 'key_node',
     itemIds: ['msg-a', 'msg-b'],
@@ -128,5 +128,5 @@ test('repository JSON codecs round-trip upstream, alias, and Responses state thr
   assertEquals(upstream?.modelsCache?.models[0].id, 'node-model');
   assertEquals(upstream?.modelsCache?.models[0].enabledFlags instanceof Set, true);
   assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
-  assertEquals((await repo.responsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
+  assertEquals((await repo.openaiResponsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));

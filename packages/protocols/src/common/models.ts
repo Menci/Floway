@@ -93,10 +93,11 @@ export interface PublicModel {
   // advertised here is served natively by at least one of them. It is not a
   // list of client-callable Floway routes. Translation widens the callable
   // chat surface past the listed keys — a chat source protocol reaches any
-  // candidate carrying one of its preferred chat targets, and Gemini has no
-  // key of its own at all. The non-chat keys (`completions`, `embeddings`,
-  // `imagesGenerations`, `imagesEdits`, `rerank`, `audioTranscriptions`) are
-  // callable exactly where they appear.
+  // candidate carrying one of its preferred chat targets, and Gemini
+  // generateContent has no key of its own at all. The non-chat keys
+  // (`openaiCompletions`, `openaiEmbeddings`, `openaiImagesGenerations`,
+  // `openaiImagesEdits`, `rerank`, `openaiAudioTranscriptions`) are callable
+  // exactly where they appear.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;

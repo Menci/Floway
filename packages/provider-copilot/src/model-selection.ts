@@ -43,11 +43,11 @@ const byModelPreference = (a: CopilotRawModel, b: CopilotRawModel): number => {
 const firstPreferred = (models: readonly CopilotRawModel[]): CopilotRawModel | undefined => [...models].sort(byModelPreference)[0];
 
 // A narrowing filter that rolls back to the original pool when it would empty
-// it. On the Responses path that rollback is the feature: OpenAI answers an
-// unavailable Fast mode by serving the standard lane and saying so, and
-// `callResponses` mirrors it. `callMessages` never reaches the rollback
-// because Anthropic makes Fast Mode a hard contract and the entry point
-// pre-checks it.
+// it. On the OpenAI Responses path that rollback is the feature: OpenAI
+// answers an unavailable Fast mode by serving the standard lane and saying
+// so, and `callOpenAIResponses` mirrors it. `callAnthropicMessages` never
+// reaches the rollback because Anthropic makes Fast Mode a hard contract and
+// the entry point pre-checks it.
 const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawModel) => boolean): readonly CopilotRawModel[] => {
   const filtered = pool.filter(predicate);
   return filtered.length > 0 ? filtered : pool;
@@ -97,8 +97,9 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
   return chooseVariant(candidates, exact, hints, catalogIds);
 };
 
-// Whether the family can serve the accelerated lane at all. `callMessages`
-// pre-checks this because Anthropic rejects `speed: 'fast'` on a model that
+// Whether the family can serve the accelerated lane at all.
+// `callAnthropicMessages` pre-checks this because Anthropic rejects
+// `speed: 'fast'` on a model that
 // cannot serve it, and Copilot never echoes `usage.speed` for us to notice a
 // downgrade afterwards. The OpenAI spelling of the same lane needs no
 // pre-check: that upstream reports the tier it served.

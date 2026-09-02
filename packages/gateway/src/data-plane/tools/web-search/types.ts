@@ -1,5 +1,5 @@
 import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
-import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
+import type { AnthropicMessagesWebSearchErrorCode } from '@floway-dev/protocols/anthropic-messages';
 
 export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 
@@ -11,7 +11,7 @@ export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 // for every provider so the shim's truncation handling is provider-agnostic.
 export const MAX_FETCH_PAGE_BYTES = 10_240;
 
-export type WebSearchProviderErrorCode = Exclude<MessagesWebSearchErrorCode, 'max_uses_exceeded'>;
+export type WebSearchProviderErrorCode = Exclude<AnthropicMessagesWebSearchErrorCode, 'max_uses_exceeded'>;
 
 export interface WebSearchProviderRequest {
   query: string;
@@ -23,7 +23,7 @@ export interface WebSearchProviderRequest {
     country?: string;
     timezone?: string;
   };
-  // When undefined, the provider applies its own default count. The Responses
+  // When undefined, the provider applies its own default count. The OpenAI Responses
   // shim populates this from the client tool's `search_context_size` field.
   maxResults?: number;
   // Aborted when the downstream client disconnects. Providers MUST

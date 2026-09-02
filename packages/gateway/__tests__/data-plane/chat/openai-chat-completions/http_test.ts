@@ -1,0 +1,374 @@
+import { type Context, Hono } from 'hono';
+import { test, vi } from 'vitest';
+
+import type { AuthVars } from '../../../../src/middleware/auth.ts';
+import { initRepo } from '../../../../src/repo/index.ts';
+import type { ApiKey, User } from '../../../../src/repo/types.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+
+const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+  return {
+    ...original,
+    enumerateModelCandidates: vi.fn(async () => {
+      const next = candidatesQueue.shift();
+      if (next === undefined) throw new Error('http_test: no candidates enqueued');
+      return next;
+    }),
+  };
+});
+
+const { openaiChatCompletionsHttp } = await import('../../../../src/data-plane/chat/openai-chat-completions/http.ts');
+
+const API_KEY_ID = 'key_chat_completions_http_test';
+
+const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+};
+
+const installRepo = (): InMemoryRepo => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  return repo;
+};
+
+const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
+  id: API_KEY_ID,
+  userId: 1,
+  name: 'http_test',
+  key: 'sk-http-test',
+  serverSecret: '00'.repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  openaiResponsesRetentionSeconds: 0,
+  ...overrides,
+});
+
+const buildUser = (overrides: Partial<User> = {}): User => ({
+  id: 1,
+  username: 'http_test',
+  passwordHash: null,
+  isAdmin: false,
+  upstreamIds: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  deletedAt: null,
+  ...overrides,
+});
+
+const makeApp = (middleware?: (c: Context) => void): Hono<{ Variables: AuthVars }> => {
+  const app = new Hono<{ Variables: AuthVars }>();
+  app.use('*', async (c, next) => {
+    c.set('apiKey', buildApiKey());
+    c.set('user', buildUser());
+    middleware?.(c);
+    await next();
+  });
+  app.post('/v1/chat/completions', openaiChatCompletionsHttp.generate);
+  return app;
+};
+
+const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
+  {
+    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+    choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+  },
+  {
+    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+  },
+  {
+    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+  },
+  {
+    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+    choices: [],
+    usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+  },
+];
+
+const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
+  for (const event of events) yield eventFrame(event);
+  yield doneFrame();
+};
+
+const makeCandidate = (overrides: {
+  upstream?: string;
+  endpoints?: ModelEndpoints;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+} = {}): ModelCandidate => {
+  const upstream = overrides.upstream ?? 'up_test';
+  const provider = stubProvider({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
+  return {
+    provider: {
+      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+    },
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    fetcher: directFetcher,
+  };
+};
+
+test('POST /v1/chat/completions streams a successful SSE body', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+  const body = await response.text();
+  assert(body.includes('chatcmpl_http'));
+  assert(body.includes('[DONE]'));
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+});
+
+test('POST /v1/chat/completions returns a single JSON body when stream is omitted', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { choices: Array<{ message: { role: string; content: string } }> };
+  assertEquals(body.choices[0].message.role, 'assistant');
+  assertEquals(body.choices[0].message.content, 'hi');
+});
+
+test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
+  installRepo();
+  const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
+  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    observedBodies.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
+    const turn = observedBodies.length;
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        {
+          id: `chatcmpl_affinity_${turn}`,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'test-model',
+          choices: [{ index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
+        },
+        {
+          id: `chatcmpl_affinity_${turn}`,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        },
+      ]),
+      modelKey: 'a',
+      headers: new Headers(),
+    };
+  });
+  const callB = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    throw new Error('affinity should have reordered candidate A before B');
+  });
+  const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
+  const candidateB = makeCandidate({ upstream: 'up-b', callOpenAIChatCompletions: callB });
+  queueCandidates([candidateA, candidateB]);
+
+  const first = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
+  });
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const assistant = firstBody.choices[0].message;
+  assert(assistant.reasoning_opaque !== 'opaque-a');
+
+  queueCandidates([candidateB, candidateA]);
+  const second = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [
+        { role: 'user', content: 'first' },
+        assistant,
+        { role: 'user', content: 'continue' },
+      ],
+    }),
+  });
+
+  assertEquals(second.status, 200);
+  assertEquals(callB.mock.calls.length, 0);
+  assertEquals(callA.mock.calls.length, 2);
+  assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
+});
+
+test('synthetic affinity keeps first-available candidate order when no reasoning blob would be lost', async () => {
+  installRepo();
+  const observedB: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
+  const result = (): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
+    ok: true,
+    events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()),
+    modelKey: 'k',
+    headers: new Headers(),
+  });
+  const callA = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => result());
+  const callB = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    observedB.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
+    return result();
+  });
+  const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
+  const candidateB = makeCandidate({ upstream: 'up-b', callOpenAIChatCompletions: callB });
+  queueCandidates([candidateA]);
+
+  const first = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
+  });
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const assistant = firstBody.choices[0].message;
+  assert(typeof assistant.reasoning_opaque === 'string');
+
+  queueCandidates([candidateB, candidateA]);
+  const second = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [
+        { role: 'user', content: 'first' },
+        assistant,
+        { role: 'user', content: 'continue' },
+      ],
+    }),
+  });
+
+  assertEquals(second.status, 200);
+  assertEquals(callA.mock.calls.length, 1);
+  assertEquals(callB.mock.calls.length, 1);
+  assertEquals(observedB[0].messages?.[1].reasoning_opaque, undefined);
+});
+
+test('POST /v1/chat/completions omits the usage-only chunk unless stream_options.include_usage is set', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.text();
+  // The usage-only chunk has empty choices array; absence verifies the filter.
+  assert(!body.includes('"choices":[]'));
+});
+
+test('POST /v1/chat/completions emits the usage-only chunk when stream_options.include_usage is true', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.text();
+  assert(body.includes('"choices":[]'));
+  assert(body.includes('"prompt_tokens":4'));
+});
+
+// The http entry MUST NOT mutate any non-auth Hono context slot — caller
+// intent (stream_options.include_usage, etc.) belongs in the request-scoped
+// locals the entry threads through serve, never in middleware-visible
+// context-slot smuggling.
+test('POST /v1/chat/completions does not write any non-auth Hono context slot', async () => {
+  installRepo();
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
+
+  const knownAuthKeys = new Set(['apiKey', 'user']);
+  const observedKeys: string[] = [];
+
+  const app = makeApp(c => {
+    const originalSet = c.set.bind(c);
+    c.set = ((key: string, value: unknown) => {
+      observedKeys.push(key);
+      return originalSet(key, value);
+    }) as typeof c.set;
+  });
+
+  const response = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  await response.text();
+
+  const unexpectedKeys = observedKeys.filter(key => !knownAuthKeys.has(key));
+  assertEquals(unexpectedKeys, []);
+});
+
+test('POST /v1/chat/completions renders the OpenAI-shaped model-unsupported 400 when no candidate matches the openai-chat-completions picker', async () => {
+  installRepo();
+  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
+  // the openaiChatCompletionsTarget picker rejects it (its preference list is
+  // `openai-chat-completions` > `messages` > `responses`), leaving zero viable
+  // candidates, and with sawModel=true the serve renders model-unsupported
+  // as a 400.
+  queueCandidates([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'wrong-endpoint-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { error: { message: string; type: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('does not support'));
+});

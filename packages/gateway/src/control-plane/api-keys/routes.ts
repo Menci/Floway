@@ -32,7 +32,7 @@ const apiKeyToJson = (key: ApiKey, reachable: ReadonlySet<string>) => ({
   last_used_at: key.lastUsedAt ?? null,
   upstream_ids: pruneUnreachableUpstreamIds(key.upstreamIds, reachable),
   dump_retention_seconds: key.dumpRetentionSeconds,
-  responses_retention_seconds: key.responsesRetentionSeconds,
+  responses_retention_seconds: key.openaiResponsesRetentionSeconds,
 });
 
 const normalizeCustomKey = (value: unknown): { ok: true; key: string } | KeyWriteError => {
@@ -143,7 +143,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
     dumpRetentionSeconds: body.dump_retention_seconds ?? null,
-    responsesRetentionSeconds: body.responses_retention_seconds ?? 0,
+    openaiResponsesRetentionSeconds: body.responses_retention_seconds ?? 0,
   } satisfies Omit<ApiKey, 'key'>;
 
   const result = await writeKeyForRequest(template, body);
@@ -178,7 +178,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const body = c.req.valid('json');
 
   if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
-    return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful Responses retention to update.' }, 400);
+    return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful OpenAI Responses retention to update.' }, 400);
   }
 
   const owned = await ownedKeyForUser(c, id);
@@ -194,7 +194,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
-    ...(body.responses_retention_seconds !== undefined ? { responsesRetentionSeconds: body.responses_retention_seconds } : {}),
+    ...(body.responses_retention_seconds !== undefined ? { openaiResponsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });
   if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
 

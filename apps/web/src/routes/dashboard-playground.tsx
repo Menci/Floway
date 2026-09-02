@@ -148,7 +148,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const s = useStyles();
-  const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('responses');
+  const [playgroundApi, setPlaygroundApi] = useState<PlaygroundApi>('openaiResponses');
   const [keyId, setKeyId] = useState(loaderData.keys?.[0]?.id ?? '');
   const [publicModelId, setPublicModelId] = useState('');
   // `null` shows the selection; a string is a live search term. Opening the list
