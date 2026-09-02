@@ -126,15 +126,16 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // Microsoft sells no MAI-Code API, so Copilot's own catalog quote is the
   // only rate surface either of these has; the 1-Flash entry below already
   // reflects it. Unlike its predecessor, 1.1-Flash quotes a cache-write rate.
-  // https://github.com/microsoft/vscode/blob/main/src/vs/platform/agentHost/common/agentModelPricing.ts
+  // https://github.com/microsoft/vscode/blob/5582533430f001c356c9eb45d2de5faae08e7481/src/vs/platform/agentHost/common/agentModelPricing.ts
   ['mai-code-1.1-flash', tokenBasePricing({ input_tokens: '0.2', input_cache_read_tokens: '0.02', input_cache_write_tokens: '0.25', output_tokens: '1.2' })],
   [/^mai-code-1-flash/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
-  // `trajectory-compaction` stays absent: Copilot quotes it at zero, but this
-  // table records vendor rates rather than Copilot's charges — the same
-  // reason `gpt-4.1` above carries OpenAI's price and not the zero Copilot
-  // bills for it — and no vendor sells that model.
   [/^text-embedding-3-small/, tokenBasePricing({ input_tokens: '0.02', output_tokens: '0' })],
   ['text-embedding-ada-002', tokenBasePricing({ input_tokens: '0.1', output_tokens: '0' })],
+  // No rule for `trajectory-compaction`, and none is coming: Copilot quotes
+  // its internal compaction helper at zero, but this table records vendor
+  // rates rather than Copilot's charges — the same reason `gpt-4.1` above
+  // carries OpenAI's price and not the zero Copilot bills for it — and no
+  // vendor sells that model.
 ];
 
 const matchPricing = (publicName: string): ModelPricing | null => {
