@@ -34,6 +34,24 @@ export const GPT_IMAGE_2_PRICING = modelPricing(
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
+  // Announced on 2026-09-03 and rolling out first to enterprises in OpenAI's
+  // Trusted Access Program; broader API and subscription access is coming in
+  // the following days. The public model card already fixes the id, limits and
+  // all six rate coordinates, so the notional table can price it before this
+  // account's `/codex/models` catalog starts returning it. There is no
+  // models.dev row to cross-check yet; OpenAI's Python SDK independently
+  // recognizes the exact `gpt-6-astra` id.
+  // https://developers.openai.com/api/docs/models/gpt-6-astra
+  // https://openai.com/index/gpt-6-astra/
+  // https://github.com/openai/openai-python/blob/3cc8d784ad05f75a265012ee86638adaf93d8bf2/src/openai/types/shared/chat_model.py
+  ['gpt-6-astra', modelPricing(
+    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
+    tokenPricingEntry({ input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '75' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '100' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '40', input_cache_read_tokens: '4', input_cache_write_tokens: '50', output_tokens: '150' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }, { serviceTier: 'flex' }),
+    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '37.5' }, { serviceTier: 'flex', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // The GPT-5.6 family, refreshed from OpenAI's current card — the values
   // these replace were the launch rates, since cut across the board and by a
   // factor of five on Luna. OpenAI now publishes all four columns (standard,

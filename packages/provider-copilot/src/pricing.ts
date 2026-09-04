@@ -107,15 +107,19 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
     tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 200000 } }),
   )],
   ['gemini-3.5-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' })],
-  // Gemini 3.6 and 3.7 Flash share one promotional rate card, halved from the
-  // standard $1.50/$0.15/$7.50 through 2026-12-31 and reverting on
-  // 2027-01-01 — recheck these two after that date. Both are among the
+  // Gemini 3.6, 3.7 and 3.8 Flash share one promotional rate card, halved
+  // from the standard $1.50/$0.15/$7.50 through 2026-12-31 and reverting on
+  // 2027-01-01 — recheck the trio after that date. All three are among the
   // Gemini 3 models Google excludes from the >200k tier: the Vertex table
   // lists identical rates in both columns, and Copilot's catalog quotes one
-  // band whose `long_context` repeats the default.
-  // https://ai.google.dev/gemini-api/docs/pricing
+  // band whose `long_context` repeats the default. Gemini 3.8 Flash reached
+  // GA on 2026-09-02 with this stable id; two Copilot accounts returned the
+  // same 1,048,576-token capability and rate metadata.
+  // https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+  // https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash
+  // https://github.com/github/docs/blob/f067ad0f9840f1b4afb5a801a77f74ef70951189/data/tables/copilot/model-release-status.yml
   // https://cloud.google.com/vertex-ai/generative-ai/pricing
-  [/^gemini-3\.[67]-flash$/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' })],
+  [/^gemini-3\.[678]-flash$/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' })],
   // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
   // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
   // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.

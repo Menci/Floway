@@ -90,3 +90,19 @@ test('Codex gpt-5.4 and gpt-5.4-mini keep their explicit flex and priority entri
 test('pricingForCodexModelKey returns null for an unknown slug', () => {
   assertEquals(pricingForCodexModelKey('totally-made-up-model'), null);
 });
+
+test('Codex GPT-6 Astra resolves the announced standard, priority and flex rate grid', () => {
+  const pricing = pricingForCodexModelKey('gpt-6-astra');
+  const cases = [
+    [{ inputTokens: 272000 }, { input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }],
+    [{ inputTokens: 272001 }, { input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '75' }],
+    [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '100' }],
+    [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '40', input_cache_read_tokens: '4', input_cache_write_tokens: '50', output_tokens: '150' }],
+    [{ serviceTier: 'flex', inputTokens: 272000 }, { input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }],
+    [{ serviceTier: 'flex', inputTokens: 272001 }, { input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '37.5' }],
+  ] as const;
+
+  for (const [facts, rates] of cases) {
+    assertEquals(priceRequest(pricing, facts).rates, published(rates));
+  }
+});

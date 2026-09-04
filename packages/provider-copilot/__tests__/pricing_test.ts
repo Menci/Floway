@@ -72,9 +72,9 @@ test('Copilot Grok 4.5 long-context band starts at the 200k prompt itself', () =
   assertEquals(priceRequest(pricing, { inputTokens: 200000 }).rates, published({ input_tokens: '4', input_cache_read_tokens: '0.6', output_tokens: '12' }));
 });
 
-test('Copilot Gemini 3.6 and 3.7 Flash share one rate across every prompt length', () => {
+test('Copilot Gemini 3.6, 3.7 and 3.8 Flash share one rate across every prompt length', () => {
   const base = published({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '3.75' });
-  for (const id of ['gemini-3.6-flash', 'gemini-3.7-flash']) {
+  for (const id of ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
     const pricing = pricingForCopilotPublicModelId(id);
     assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, base);
     assertEquals(priceRequest(pricing, { inputTokens: 936000 }).rates, base);
