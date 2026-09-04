@@ -32,6 +32,18 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
   [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
   ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
+  // Two Copilot accounts began returning GPT-6 Astra on 2026-09-05 and served
+  // a real `/responses` request as `model: "gpt-6-astra"` with
+  // `service_tier: "default"`. Their catalogs quote exactly OpenAI's standard
+  // short/long rates and publish no sibling raw variant, so Copilot gets those
+  // two bands only — adding the priority or flex lanes here would claim a
+  // GitHub path neither catalog exposes. models.dev has no Astra row yet.
+  // https://developers.openai.com/api/docs/models/gpt-6-astra
+  // https://openai.com/index/gpt-6-astra/
+  ['gpt-6-astra', modelPricing(
+    tokenPricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
+    tokenPricingEntry({ input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '75' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // GPT-5.6 Sol, and the lane Copilot publishes as the separate raw variant
   // `gpt-5.6-sol-fast` and this table reaches through the merged public id.
   // Rates are OpenAI's published ones for the tier each lane is served at, in

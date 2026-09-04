@@ -105,3 +105,21 @@ test('Copilot prices the models added to the live catalog since the last refresh
   // The 1-Flash prefix rule must not swallow the dotted 1.1 id.
   assertEquals(rates('mai-code-1-flash-picker'), published({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' }));
 });
+
+test('Copilot GPT-6 Astra prices the standard short and long bands its catalog serves', () => {
+  const pricing = pricingForCopilotPublicModelId('gpt-6-astra');
+  assertEquals(
+    priceRequest(pricing, { inputTokens: 272000 }).rates,
+    published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
+  );
+  assertEquals(
+    priceRequest(pricing, { inputTokens: 272001 }).rates,
+    published({ input_tokens: '20', input_cache_read_tokens: '2', input_cache_write_tokens: '25', output_tokens: '75' }),
+  );
+  // Copilot publishes no accelerated Astra sibling and reports `default`, so
+  // an unserved tier falls back to Base rather than gaining an invented rate.
+  assertEquals(
+    priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates,
+    published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }),
+  );
+});
