@@ -149,6 +149,10 @@ interface LeaseResponse {
   scripts: {
     claude: { sh: string; ps1: string };
     codex: { sh: string; ps1: string };
+    omp: { sh: string; ps1: string };
+    vscode: { sh: string; ps1: string };
+    zed: { sh: string; ps1: string };
+    opencode: { sh: string; ps1: string };
   };
 }
 
@@ -427,6 +431,53 @@ test('GET serves the PowerShell prefix + common and target-agent fragments', asy
   expect(body).toContain(SETUP_POWERSHELL_COMMON);
   expect(body).toContain(SETUP_POWERSHELL_CODEX);
   expect(body).not.toContain(SETUP_POWERSHELL_CLAUDE);
+});
+
+test('lease projection exposes the harness converter scripts for every agent', async () => {
+  const h = harness();
+  const body = await create(h);
+  assertEquals(body.scripts.omp.sh, `/api/setup/${body.token}/omp.sh`);
+  assertEquals(body.scripts.omp.ps1, `/api/setup/${body.token}/omp.ps1`);
+  assertEquals(body.scripts.vscode.sh, `/api/setup/${body.token}/vscode.sh`);
+  assertEquals(body.scripts.vscode.ps1, `/api/setup/${body.token}/vscode.ps1`);
+  assertEquals(body.scripts.zed.sh, `/api/setup/${body.token}/zed.sh`);
+  assertEquals(body.scripts.zed.ps1, `/api/setup/${body.token}/zed.ps1`);
+  assertEquals(body.scripts.opencode.sh, `/api/setup/${body.token}/opencode.sh`);
+  assertEquals(body.scripts.opencode.ps1, `/api/setup/${body.token}/opencode.ps1`);
+});
+
+test('harness agents render a prefix with only the API key and its label', async () => {
+  const h = harness();
+  const lease = await create(h);
+  for (const agent of ['omp', 'vscode', 'zed', 'opencode'] as const) {
+    const text = await (await h.request(lease.scripts[agent].sh, { method: 'GET' })).text();
+    const body = SETUP_SCRIPT_BODIES[agent].sh;
+    const prefix = text.slice(0, text.indexOf(body));
+    expect(prefix).toContain("SETUP_API_KEY='raw-key'");
+    expect(prefix).not.toContain('SETUP_CLAUDE_');
+    expect(prefix).not.toContain('SETUP_CODEX_');
+    expect(prefix).not.toContain('SETUP_ENDPOINT');
+    expect(text).toContain(body);
+  }
+});
+
+test('the harness converter static route serves each Python source without a lease', async () => {
+  const h = harness();
+  for (const name of ['omp', 'vscode', 'zed', 'opencode'] as const) {
+    const response = await h.request(`/api/setup/harness/${name}.py`, { method: 'GET' });
+    assertEquals(response.status, 200);
+    assertEquals(response.headers.get('content-type'), 'text/x-python; charset=utf-8');
+    const text = await response.text();
+    expect(text).toContain('#!/usr/bin/env python3');
+    expect(text).toContain('json.load(sys.stdin.buffer)');
+  }
+});
+
+test('the harness converter route rejects unknown names and non-GET methods', async () => {
+  const h = harness();
+  assertEquals((await h.request('/api/setup/harness/nope.py', { method: 'GET' })).status, 404);
+  assertEquals((await h.request('/api/setup/harness/omp.py', { method: 'POST' })).status, 404);
+  assertEquals((await h.request('/api/setup/harness/omp.txt', { method: 'GET' })).status, 404);
 });
 
 test('HEAD validates but returns an empty body', async () => {

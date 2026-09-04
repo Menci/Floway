@@ -103,6 +103,20 @@ describe('renderShellPrefix', () => {
       configuration: fullConfiguration,
     })).toThrow();
   });
+
+  test('renders only the API key and label for the harness agents', () => {
+    for (const agent of ['omp', 'vscode', 'zed', 'opencode'] as const) {
+      const prefix = renderShellPrefix({ agent, apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+      expect(prefix).toBe([
+        'set +x',
+        "SETUP_API_KEY='sk-raw-key'",
+        "SETUP_API_KEY_NAME='Primary key'",
+        '',
+      ].join('\n'));
+      expect(prefix).not.toContain('SETUP_CLAUDE_');
+      expect(prefix).not.toContain('SETUP_CODEX_');
+    }
+  });
 });
 
 describe('renderPowerShellPrefix', () => {
@@ -177,5 +191,19 @@ describe('renderPowerShellPrefix', () => {
     expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
     expect(prefix).toContain('$SetupClaudeDisableAutoMemory = $true');
     expect(prefix).toContain('$SetupClaudeDisableAgentView = $true');
+  });
+
+  test('renders only the API key and label for the harness agents', () => {
+    for (const agent of ['omp', 'vscode', 'zed', 'opencode'] as const) {
+      const prefix = renderPowerShellPrefix({ agent, apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+      expect(prefix).toBe([
+        'Set-PSDebug -Off',
+        "$SetupApiKey = 'sk-raw-key'",
+        "$SetupApiKeyName = 'Primary key'",
+        '',
+      ].join('\n'));
+      expect(prefix).not.toContain('$SetupClaude');
+      expect(prefix).not.toContain('$SetupCodex');
+    }
   });
 });

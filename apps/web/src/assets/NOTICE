@@ -108,6 +108,42 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Agent setup marks
+-----------------
+
+The API-key agent setup tabs wear the following agent marks, each pinned to the
+upstream commit whose artwork it began from:
+
+- omp.svg
+  https://github.com/can1357/oh-my-pi/blob/565d53515b54df32fada2564d1fe9caf1a17b738/packages/collab-web/public/favicon.svg
+- opencode.svg
+  https://github.com/anomalyco/opencode/blob/1251a870cb384543c150c4a72fb101b55eec971b/packages/identity/mark.svg
+- vscode.svg
+  https://github.com/devicons/devicon/blob/65476530e1afea9b1f850efb1cc0efec19ee0ef0/icons/vscode/vscode-original.svg
+- zed.svg
+  https://github.com/zed-industries/zed/blob/ccc939124fa2f366b3029926447fd0a0c46a85c7/assets/icons/logo_96.svg
+
+All four get the shared icon conveniences (a `<title>`, `height`/`width`
+of 1em, and `style="flex:none"`). Beyond that:
+
+- omp.svg is verbatim: the dark rounded chip and gradient Pi glyph as
+  upstream publishes it.
+- opencode.svg is verbatim except that the outer SVG wrapper and the inert
+  `prefers-color-scheme` style block are dropped.
+- vscode.svg is the upstream mark with its two Gaussian-blur drop-shadow
+  filters dropped; they blur a 0.25-opacity black halo past the silhouette
+  that no surface in this app wants. Masks, fills, and the gradient sheen
+  are as upstream ships them.
+- zed.svg is the official white glyph rescaled from 96 to 24 units and
+  filled with the brand blue #084CCF (the colour zed.dev paints its own
+  material in, https://zed.dev) so the mark keeps reading on the app's
+  WinUI dark surface, where the wall asset's white-on-transparent glyph
+  would vanish. The shape is otherwise unmodified.
+
+Devicon is MIT-licensed. oh-my-pi and opencode are MIT-licensed. Zed's editor
+repository is GPL-licensed; the logo is its author's trademark, reproduced for
+identification as the other marks here are.
+
 Meslo LG S
 ----------
 
