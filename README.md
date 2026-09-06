@@ -147,14 +147,20 @@ pnpm run dev
 pnpm run verify
 ```
 
-`verify` chains every check `.github/workflows/verify.yaml` runs, so a green run
-locally is a green run on a pull request. Each link is also a script of its own,
-in the order the chain runs them: `typegen`, `lint`, `typecheck`, `test`,
-`test:installers`, `check:agents-md`, `check:generated-assets`,
-`check:verify-parity`, and `build:web`, which carries the assertions about the
-emitted bundle. `typegen` comes first because the generated route types are not
-checked in and the lint configuration is type-aware, so a fresh clone has to
-produce them before anything else can read the dashboard's sources.
+`verify` chains every check in `.github/workflows/verify.yaml`: `typegen`,
+`lint`, `typecheck`, `test`, `test:installers`, `check:agents-md`,
+`check:generated-assets`, `check:verify-parity`, and `build:web`. Each check is
+also available as a root script. Route type generation runs first because the
+web app's generated types are not checked in and its lint configuration is
+type-aware. The web build includes assertions on the emitted bundle.
+
+The protocol tests cover opaque-value wire compatibility, lossless UTF-16
+code-unit recovery, and retained-memory growth during history replay. The
+memory regression runs a bounded fixture in a separate Node.js process with
+explicit garbage collection, samples the retained heap before content checks
+can flatten strings, and then verifies every decoded value. It runs through
+`pnpm run test` and `pnpm run verify` without additional setup; this local
+regression is not a measurement of a production Worker's peak memory.
 
 [AGENTS.md](./AGENTS.md) defines the repository-wide agent requirements and
 indexes its CI workflows, skills, workspace packages, and their responsibilities.
