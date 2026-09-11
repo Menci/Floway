@@ -85,10 +85,17 @@ test('PATCH /api/keys/:id resets to default with upstream_ids: null', async () =
   assertEquals(stored.upstreamIds, null);
 });
 
-test('PATCH /api/keys/:id rejects an empty upstream_ids array', async () => {
-  const { apiKey } = await setupAppTest();
+test('PATCH /api/keys/:id saves an empty upstream restriction and can disable it', async () => {
+  const { repo, apiKey } = await setupAppTest();
   const response = await ownerPatch(apiKey.id, { upstream_ids: [] }, apiKey.key);
-  assertEquals(response.status, 400);
+  assertEquals(response.status, 200);
+  assertEquals((await response.json()).upstream_ids, []);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.upstreamIds, []);
+
+  const unrestricted = await ownerPatch(apiKey.id, { upstream_ids: null }, apiKey.key);
+  assertEquals(unrestricted.status, 200);
+  assertEquals((await unrestricted.json()).upstream_ids, null);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.upstreamIds, null);
 });
 
 test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error', async () => {
@@ -206,6 +213,20 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
   assertExists(stored);
   assertEquals(stored.userId, apiKey.userId);
   assertEquals(/^[0-9a-f]{64}$/.test(stored.serverSecret), true);
+});
+
+test('POST /api/keys preserves an empty upstream restriction', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const response = await requestApp('/api/keys', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'No upstreams', upstream_ids: [] }),
+  });
+
+  assertEquals(response.status, 201);
+  const body = (await response.json()) as { id: string; upstream_ids: string[] | null };
+  assertEquals(body.upstream_ids, []);
+  assertEquals((await repo.apiKeys.getById(body.id))?.upstreamIds, []);
 });
 
 test('POST /api/keys mints a generated key when key_source is generate', async () => {

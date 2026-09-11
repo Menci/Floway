@@ -284,7 +284,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope',
+        description: 'When off, all selectable upstreams are available',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -294,7 +294,7 @@ const en = {
         modelCount_other: '{{count, number}} models',
         modelCountUnknown: 'Count unavailable',
         upstreamDisabled: 'Upstream disabled',
-        validation: 'Select at least one upstream, or turn off the limit.',
+        emptyWarning: 'No upstreams are selected. No upstreams will be available while this limit is on.',
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',

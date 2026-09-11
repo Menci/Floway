@@ -65,6 +65,18 @@ class ScalarOnlySqlDatabase implements SqlDatabase {
 }
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {
+  test(`[${backend}] api keys preserve empty upstream restrictions across save and update`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey({ upstreamIds: [] }));
+    assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.upstreamIds, []);
+
+    await repo.apiKeys.update('key_dump', { upstreamIds: null });
+    assertEquals((await repo.apiKeys.getById('key_dump'))?.upstreamIds, null);
+
+    await repo.apiKeys.update('key_dump', { upstreamIds: [] });
+    assertEquals((await repo.apiKeys.getById('key_dump'))?.upstreamIds, []);
+  });
+
   test(`[${backend}] api keys repo defaults dumpRetentionSeconds to null on save`, async () => {
     const repo = await makeRepo();
     await repo.apiKeys.save(baseKey());

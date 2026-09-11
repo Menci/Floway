@@ -271,7 +271,7 @@ const zhHansCN = {
       },
       upstreamAccess: {
         title: '限制可用上游',
-        description: '关闭时，访问权限会继承上一级范围内的全部上游',
+        description: '关闭时，所有可选择的上游均可用',
         tableLabel: '可用上游',
         enabled: '启用',
         order: '顺序',
@@ -280,7 +280,7 @@ const zhHansCN = {
         modelCount_other: '{{count, number}} 个模型',
         modelCountUnknown: '数量不可用',
         upstreamDisabled: '上游已停用',
-        validation: '至少选择一个上游，或关闭限制。',
+        emptyWarning: '未选择任何上游。启用限制时，将没有可用上游。',
       },
       apiKeys: {
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',

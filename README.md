@@ -77,6 +77,18 @@ Audio transcription is a buffered multipart passthrough for Custom, Azure, and
 Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
 responses retain their upstream wire shape.
 
+### Upstream Access
+
+Users and API keys can limit their available upstreams to an ordered selection.
+With the limit off (`null` in the API), every selectable upstream remains
+available. With the limit on, only the selected upstreams are available; an
+empty selection (`[]`) grants no upstream access and can be saved. The dashboard
+shows a warning for that empty selection.
+
+An API key's selection is always capped by its user's access. Turning off a
+key's limit therefore allows all upstreams available to that user. These values
+are preserved through export and import.
+
 ### Upstreams
 
 | Provider | Connection | Model catalog |
