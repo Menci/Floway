@@ -201,8 +201,8 @@ export function KeyDialog(props: KeyDialogProps) {
         models={models}
         override={values.upstreamOverride}
         onChange={next => {
-          setValue('upstreamOverride', next.override, { shouldValidate: true });
-          setValue('upstreamIds', next.ids, { shouldValidate: true });
+          setValue('upstreamOverride', next.override);
+          setValue('upstreamIds', next.ids);
         }}
       />
 
