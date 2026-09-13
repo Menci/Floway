@@ -1,6 +1,7 @@
 import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-responses-payload.ts';
 import { openaiResponsesReasoningToAnthropicMessagesUpstreamBlock } from '../shared/anthropic-messages-and-openai-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
+import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-anthropic-messages/cache-breakpoints.ts';
@@ -444,7 +445,8 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
   const payload = canonicalizeOpenAIResponsesPayload(source);
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
-  const { tools, namespaceToolNames } = translateTools(payload.tools, customToolNames);
+  const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
+  const { tools, namespaceToolNames } = translateTools(allowed.tools, customToolNames);
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateOpenAIResponsesInput(
     payload.input,
     options.loadRemoteImage ?? unavailableRemoteImageLoader,
@@ -498,7 +500,7 @@ export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, 
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
     tools,
-    tool_choice: translateToolChoice(payload.tool_choice, namespaceToolNames.sourceToTarget),
+    tool_choice: translateToolChoice(allowed.choice, namespaceToolNames.sourceToTarget),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,

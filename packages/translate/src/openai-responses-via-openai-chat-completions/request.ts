@@ -2,6 +2,7 @@ import { canonicalizeOpenAIResponsesPayload } from '../canonicalize-openai-respo
 import { openaiResponsesContentToOpenAIChatCompletionsContent, openaiResponsesContentToText } from '../shared/openai-chat-completions-and-openai-responses/content.ts';
 import { addOpenAIResponsesReasoningToOpenAIChatCompletionsProjection, type OpenAIChatCompletionsReasoningProjection, openaiChatCompletionsReasoningProjectionFields, createOpenAIChatCompletionsReasoningProjection } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { agentMessageContent } from '../shared/openai-responses-via/agent-message.ts';
+import { restrictAllowedTools } from '../shared/openai-responses-via/allowed-tools.ts';
 import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -291,7 +292,8 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
   flushAssistant();
   flushToolOutputImages();
 
-  const tools = translateOpenAIResponsesTools(payload.tools, customToolNames);
+  const allowed = restrictAllowedTools(payload.tools, payload.tool_choice);
+  const tools = translateOpenAIResponsesTools(allowed.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // OpenAI-Responses-only state such as `previous_response_id` remains native-only.
   const target: OpenAIChatCompletionsPayload = {
@@ -313,7 +315,7 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     // OpenAI Chat Completions has no request-level counterpart for OpenAI Responses
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
-    tool_choice: translateOpenAIResponsesToolChoice(payload.tool_choice),
+    tool_choice: translateOpenAIResponsesToolChoice(allowed.choice),
   };
 
   return { target, customToolNames };
