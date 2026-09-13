@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY, CODEX_RESPONSES_LITE_HEADER } from '../src/constants.ts';
 import { createCodexProvider } from '../src/provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -59,8 +60,8 @@ const sseResponse = (): Response => new Response(
 
 const modelsResponse = (): Response => new Response(JSON.stringify({
   models: [
-    { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
-    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000, use_responses_lite: false },
+    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000, use_responses_lite: true },
   ],
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
@@ -115,6 +116,8 @@ describe('createCodexProvider', () => {
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     expect(models[0].endpoints).toEqual({ openaiResponses: {} });
+    expect(models[0].providerData).toEqual({ useResponsesLite: false });
+    expect(models[1].providerData).toEqual({ useResponsesLite: true });
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
@@ -242,6 +245,48 @@ describe('createCodexProvider', () => {
       { type: 'message', role: 'user', content: 'hi' },
       { type: 'message', role: 'developer', content: 'inline instructions' },
     ]);
+  });
+
+  test.each(['generate', 'compact'] as const)('%s retains the full Standard body through interceptors before private Lite encoding', async action => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
+      ? sseResponse()
+      : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
+    const provider = createCodexProvider(baseRecord);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
+    const input = [
+      { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] },
+      { type: 'message' as const, role: 'developer' as const, content: 'inline instructions' },
+      { type: 'message' as const, role: 'user' as const, content: 'hello' },
+    ];
+    const options = noopUpstreamCallOptions();
+    options.headers.set(CODEX_RESPONSES_LITE_HEADER, 'true');
+    const result = await provider.instance.callOpenAIResponses(model, {
+      input,
+      tools: [{ type: 'custom', name: 'patch' }],
+      text: { verbosity: 'low' },
+      client_metadata: { [CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
+    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], action, undefined, options);
+    expect(result.ok).toBe(true);
+    expect(result.action).toBe(action);
+    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('instructions');
+    expect(wire).not.toHaveProperty('tools');
+    expect(wire.text).toEqual({ verbosity: 'low' });
+    expect(wire.input).toEqual([
+      {
+        type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
+        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }, tool] }],
+      },
+      {
+        type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/),
+        content: [{ type: 'input_text', text: "You're a helpful assistant." }],
+        internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] },
+      },
+      ...input.slice(1),
+    ]);
+    expect(input).toHaveLength(3);
+    expect(options.headers.get(CODEX_RESPONSES_LITE_HEADER)).toBe('true');
   });
 
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {

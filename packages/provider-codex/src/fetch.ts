@@ -2,27 +2,37 @@ import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToke
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
+  CODEX_CLI_VERSION,
   CODEX_ALPHA_SEARCH_PATH,
   CODEX_OPENAI_IMAGES_EDITS_PATH,
   CODEX_OPENAI_IMAGES_GENERATIONS_PATH,
   CODEX_ORIGINATOR,
   CODEX_OPENAI_RESPONSES_COMPACT_PATH,
   CODEX_OPENAI_RESPONSES_PATH,
+  CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY,
+  CODEX_RESPONSES_LITE_HEADER,
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { sha256JsonUuid, uuidV7 } from './ids.ts';
-import { codexPlanSupportsImages } from './models.ts';
+import { codexModelUsesResponsesLite, codexPlanSupportsImages } from './models.ts';
 import {
   hasCodexQuotaReading,
   parseCodexQuotaHeaders,
   putCodexQuota,
 } from './quota.ts';
+import {
+  encodeCodexResponsesLiteRequest,
+  restoreCodexResponsesCompactionResult,
+  restoreCodexResponsesFrames,
+  type CodexResponsesBody,
+  type CodexResponsesLiteRequest,
+} from './responses-lite.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
-import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResult, OpenAIResponsesInputItem, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: OpenAIResponsesCompactionResult; modelKey: string }
@@ -55,7 +65,7 @@ export interface CallCodexOpenAIResponsesOptions extends CodexBackendCallBase {
 }
 
 export interface CallCodexOpenAIResponsesCompactOptions extends CodexBackendCallBase {
-  body: Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'>;
+  body: Omit<CanonicalOpenAIResponsesPayload, 'model'>;
 }
 
 export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
@@ -72,18 +82,24 @@ export interface CallCodexOpenAIImagesEditsOptions extends CodexBackendCallBase 
   fallbackPlanType: string;
 }
 
-type CodexOpenAIResponsesBody = CallCodexOpenAIResponsesOptions['body'] | CallCodexOpenAIResponsesCompactOptions['body'];
+type CodexOpenAIResponsesBody = CodexResponsesBody;
 
 export const callCodexOpenAIResponses = async (opts: CallCodexOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
+  const prepared = prepareCodexResponsesRequest(opts, 'generate');
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performStreamingOpenAIResponsesCall(opts, ready.accessToken, false);
+  const result = await performStreamingOpenAIResponsesCall(opts, prepared, ready.accessToken, false);
+  if (!result.ok || !result.headers?.has(CODEX_RESPONSES_LITE_HEADER)) return result;
+  const headers = new Headers(result.headers);
+  headers.delete(CODEX_RESPONSES_LITE_HEADER);
+  return { ...result, headers };
 };
 
 export const callCodexOpenAIResponsesCompact = async (opts: CallCodexOpenAIResponsesCompactOptions): Promise<ProviderCompactionResult> => {
+  const prepared = prepareCodexResponsesRequest(opts, 'compact');
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
-  return await performUnaryCompactCall(opts, ready.accessToken, false);
+  return await performUnaryCompactCall(opts, prepared, ready.accessToken, false);
 };
 
 export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): Promise<ProviderCallResult> => {
@@ -369,18 +385,55 @@ const buildCodexClientMetadata = (identity: CodexRequestIdentity, turnMetadataJs
   'x-codex-turn-metadata': turnMetadataJson,
 });
 
+interface PreparedCodexResponsesRequest {
+  identity: CodexRequestIdentity;
+  turnMetadataJson: CodexTurnMetadataJson;
+  lite?: CodexResponsesLiteRequest;
+  body: ReplayableBody;
+}
+
+const prepareCodexResponsesRequest = (
+  opts: CallCodexOpenAIResponsesOptions | CallCodexOpenAIResponsesCompactOptions,
+  action: 'generate' | 'compact',
+): PreparedCodexResponsesRequest => {
+  const clientMetadata = { ...clientCodexClientMetadata(opts.body) };
+  delete clientMetadata[CODEX_RESPONSES_LITE_CLIENT_METADATA_KEY];
+  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
+  const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
+  const metadata: CodexTurnMetadataOptions = action === 'compact'
+    ? { requestKind: 'compaction' }
+    : opts.body.input.some(item => item.type === 'compaction_trigger')
+      ? CODEX_OPENAI_RESPONSES_COMPACTION_V2_TURN_METADATA
+      : { requestKind: 'turn' };
+  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
+  const standard = { ...opts.body, client_metadata: clientMetadata };
+  const lite = codexModelUsesResponsesLite(opts.model)
+    ? encodeCodexResponsesLiteRequest(standard, identity.threadId)
+    : undefined;
+  const wire = lite?.body ?? standard;
+  return {
+    identity,
+    turnMetadataJson,
+    lite,
+    body: jsonRequestBody(action === 'compact'
+      ? buildCodexOpenAIResponsesCompactBody(wire, opts.model.id)
+      : buildCodexOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body)),
+  };
+};
+
 const buildCodexOpenAIResponsesBody = (
-  opts: CallCodexOpenAIResponsesOptions,
+  wire: CodexResponsesBody,
+  modelKey: string,
   identity: CodexRequestIdentity,
   turnMetadataJson: string,
 ): Record<string, unknown> => {
   const callerExtras: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(clientCodexClientMetadata(opts.body))) {
+  for (const [k, v] of Object.entries(clientCodexClientMetadata(wire))) {
     if (!IDENTITY_MIRRORED_CLIENT_METADATA_KEYS.has(k)) callerExtras[k] = v;
   }
   const body: Record<string, unknown> = {
-    ...(opts.body as unknown as Record<string, unknown>),
-    model: opts.model.id,
+    ...wire,
+    model: modelKey,
     store: false,
     stream: true,
     client_metadata: {
@@ -389,6 +442,24 @@ const buildCodexOpenAIResponsesBody = (
     },
   };
   if (body.prompt_cache_key === undefined) body.prompt_cache_key = identity.threadId;
+  return body;
+};
+
+// Codex's private compact endpoint accepts these create-only fields in addition
+// to the public compact payload. Encode before projecting so relocated tool
+// and instruction carriers reach the wire.
+// https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L651-L678
+const CODEX_COMPACT_EXTENSION_FIELDS = ['tools', 'parallel_tool_calls', 'reasoning', 'text'] as const;
+
+const buildCodexOpenAIResponsesCompactBody = (
+  wire: CodexResponsesBody,
+  modelKey: string,
+): Record<string, unknown> => {
+  const body: Record<string, unknown> = { ...toCompactPayloadShape(wire), model: modelKey };
+  for (const field of CODEX_COMPACT_EXTENSION_FIELDS) {
+    const value = wire[field];
+    if (value !== undefined) body[field] = value;
+  }
   return body;
 };
 
@@ -405,15 +476,17 @@ const dispatchCodexHttpCall = async (
   accessToken: string,
   path: string,
   accept: string,
-  body: Record<string, unknown>,
+  body: ReplayableBody,
   identity: CodexRequestIdentity,
   turnMetadataJson: string | null,
+  responsesLite = false,
 ): Promise<Response> => {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
   headers.set('originator', CODEX_ORIGINATOR);
   headers.set('user-agent', CODEX_USER_AGENT);
+  headers.set('version', CODEX_CLI_VERSION);
   headers.set('accept', accept);
   headers.set('content-type', 'application/json');
   headers.set('session-id', identity.sessionId);
@@ -421,11 +494,12 @@ const dispatchCodexHttpCall = async (
   headers.set('x-client-request-id', identity.clientRequestId);
   headers.set('x-codex-window-id', identity.windowId);
   if (turnMetadataJson !== null) headers.set('x-codex-turn-metadata', turnMetadataJson);
+  if (responsesLite) headers.set(CODEX_RESPONSES_LITE_HEADER, 'true');
 
   const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
     headers,
-    body: jsonRequestBody(body),
+    body,
     signal: opts.signal,
   }));
 
@@ -483,6 +557,7 @@ const dispatchCodexImageCall = async (
     'chatgpt-account-id': opts.account.chatgptAccountId,
     originator: trimHeader(opts.headers, 'originator') ?? CODEX_ORIGINATOR,
     'user-agent': CODEX_USER_AGENT,
+    version: CODEX_CLI_VERSION,
     accept: 'application/json',
     'content-type': 'application/json',
     'x-codex-image-turn-id': turnId,
@@ -545,30 +620,37 @@ const mergeRetryPlan = (
 
 const performStreamingOpenAIResponsesCall = async (
   opts: CallCodexOpenAIResponsesOptions,
+  prepared: PreparedCodexResponsesRequest,
   accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<OpenAIResponsesStreamEvent>> => {
-  const clientMetadata = clientCodexClientMetadata(opts.body);
-  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
-  const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata: CodexTurnMetadataOptions = opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_OPENAI_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' };
-  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,
     accessToken.token,
     CODEX_OPENAI_RESPONSES_PATH,
     'text/event-stream',
-    buildCodexOpenAIResponsesBody(opts, identity, turnMetadataJson.body),
-    identity,
-    turnMetadataJson.header,
+    prepared.body,
+    prepared.identity,
+    prepared.turnMetadataJson.header,
+    prepared.lite !== undefined,
   ).then(ensureSseContentType);
 
-  const result = await streamingProviderCall(upstreamFetch, parseOpenAIResponsesStream, opts.model.id, opts.signal);
+  const lite = prepared.lite;
+  const result = await streamingProviderCall(
+    upstreamFetch,
+    lite === undefined
+      ? parseOpenAIResponsesStream
+      : (stream, parserOpts) => restoreCodexResponsesFrames(
+          parseOpenAIResponsesStream(stream, parserOpts), lite.callableIdentities, lite.requestEchoes,
+        ),
+    opts.model.id,
+    opts.signal,
+  );
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performStreamingOpenAIResponsesCall(opts, fresh.accessToken, true);
+    return await performStreamingOpenAIResponsesCall(opts, prepared, fresh.accessToken, true);
   }
 
   return result;
@@ -576,34 +658,37 @@ const performStreamingOpenAIResponsesCall = async (
 
 const performUnaryCompactCall = async (
   opts: CallCodexOpenAIResponsesCompactOptions,
+  prepared: PreparedCodexResponsesRequest,
   accessToken: CodexAccessTokenEntry,
   alreadyRetried: boolean,
 ): Promise<ProviderCompactionResult> => {
-  const clientMetadata = clientCodexClientMetadata(opts.body);
-  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
-  const identity = buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata: CodexTurnMetadataOptions = { requestKind: 'compaction' };
-  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,
     accessToken.token,
     CODEX_OPENAI_RESPONSES_COMPACT_PATH,
     'application/json',
-    { ...opts.body, model: opts.model.id },
-    identity,
-    turnMetadataJson.header,
+    prepared.body,
+    prepared.identity,
+    prepared.turnMetadataJson.header,
+    prepared.lite !== undefined,
   );
 
   if (response.status === 401 && !alreadyRetried) {
     const fresh = await refreshAccessTokenForRetry(opts, accessToken);
     if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performUnaryCompactCall(opts, fresh.accessToken, true);
+    return await performUnaryCompactCall(opts, prepared, fresh.accessToken, true);
   }
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
   const result = await response.json() as OpenAIResponsesCompactionResult;
-  return { ok: true, modelKey: opts.model.id, result };
+  return {
+    ok: true,
+    modelKey: opts.model.id,
+    result: prepared.lite === undefined
+      ? result
+      : restoreCodexResponsesCompactionResult(result, prepared.lite.callableIdentities, prepared.lite.generatedPrefix),
+  };
 };
 
 const performAlphaSearchCall = async (
@@ -627,7 +712,7 @@ const performAlphaSearchCall = async (
     accessToken.token,
     CODEX_ALPHA_SEARCH_PATH,
     'application/json',
-    { ...opts.body, model: opts.model.id },
+    jsonRequestBody({ ...opts.body, model: opts.model.id }),
     identity,
     turnMetadataJson,
   );
@@ -694,7 +779,7 @@ const synthetic503 = (message: string): Response => new Response(JSON.stringify(
 // content-type as a contract violation, so we synthesize the header on the
 // way through. Body stream is preserved verbatim.
 const ensureSseContentType = (response: Response): Response => {
-  if (isEventStreamMediaType(response.headers.get('content-type'))) return response;
+  if (!response.ok || isEventStreamMediaType(response.headers.get('content-type'))) return response;
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
