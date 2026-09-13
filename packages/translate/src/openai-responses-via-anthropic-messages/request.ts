@@ -95,7 +95,7 @@ const translateUserMessage = async (message: OpenAIResponsesInputMessage, loadRe
   return { role: 'user', content: content.length > 0 ? content : '' };
 };
 
-// Multimodal `function_call_output` outputs carry the same content parts as a
+// Function and custom tool outputs carry the same content parts as a
 // user message; map them to Anthropic Messages tool_result blocks (which natively carry
 // image blocks) rather than flattening images away.
 const translateToolOutput = async (output: string | OpenAIResponsesInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | AnthropicMessagesToolResultContentBlock[]> => {
@@ -254,6 +254,7 @@ const translateOpenAIResponsesInput = async (
       break;
     }
     case 'function_call_output':
+    case 'custom_tool_call_output':
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
@@ -269,16 +270,6 @@ const translateOpenAIResponsesInput = async (
         id: item.call_id,
         name: item.name,
         input: { input: item.input },
-      });
-      break;
-    case 'custom_tool_call_output':
-      if (typeof item.output !== 'string') {
-        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
-      }
-      appendUserBlock(messages, {
-        type: 'tool_result',
-        tool_use_id: item.call_id,
-        content: item.output,
       });
       break;
     case 'reasoning': {

@@ -6,7 +6,7 @@ import { buildCustomToolInputSchema } from '../shared/openai-responses-via/custo
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../shared/openai-responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { OpenAIChatCompletionsContentPart, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsTool, OpenAIChatCompletionsToolCall } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, OpenAIResponsesInputText, OpenAIResponsesPayload, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesCustomToolCallOutputItem, OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputImage, OpenAIResponsesInputText, OpenAIResponsesPayload, OpenAIResponsesRequestPayload, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 interface AssistantAccumulator {
   message: OpenAIChatCompletionsMessage;
@@ -46,7 +46,7 @@ const appendAssistantToolCall = (
   return next;
 };
 
-interface FunctionCallOutputProjection {
+interface ToolCallOutputProjection {
   toolContent: string;
   liftedImageContent: OpenAIChatCompletionsContentPart[];
 }
@@ -57,7 +57,7 @@ interface FunctionCallOutputProjection {
 // message so vision targets receive a legal, usable shape.
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
 // https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
-const projectFunctionCallOutput = (item: OpenAIResponsesFunctionCallOutputItem): FunctionCallOutputProjection => {
+const projectToolCallOutput = (item: OpenAIResponsesFunctionCallOutputItem | OpenAIResponsesCustomToolCallOutputItem): ToolCallOutputProjection => {
   if (typeof item.output === 'string') return { toolContent: item.output, liftedImageContent: [] };
   if (item.output.some(part => part.type === 'input_file')) {
     throw new TranslatorInputError('Cannot translate input_file tool output to OpenAI Chat Completions.');
@@ -218,9 +218,9 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
       continue;
     }
 
-    if (item.type === 'function_call_output') {
+    if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
       flushAssistant();
-      const projected = projectFunctionCallOutput(item);
+      const projected = projectToolCallOutput(item);
       messages.push({
         role: 'tool',
         tool_call_id: item.call_id,
@@ -237,19 +237,6 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
         call_id: item.call_id,
         name: item.name,
         arguments: JSON.stringify({ input: item.input }),
-      });
-      continue;
-    }
-
-    if (item.type === 'custom_tool_call_output') {
-      if (typeof item.output !== 'string') {
-        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
-      }
-      flushAssistant();
-      messages.push({
-        role: 'tool',
-        tool_call_id: item.call_id,
-        content: item.output,
       });
       continue;
     }
